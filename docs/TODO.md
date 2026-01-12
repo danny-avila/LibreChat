@@ -477,9 +477,60 @@ E2B_DEFAULT_MAX_CPU_PERCENT=80
 
 ---
 
+## 2026-01-12 流式传输优化 ✅
+
+### ✅ SSE 流式传输完整修复
+- [x] **问题诊断**: 发现 E2B Agent 响应格式与 OpenAI Assistants 不一致
+  - E2B 使用 `{ message: true, text: "..." }` → 触发 messageHandler (批量模式)
+  - OpenAI 使用 `{ type: "text", text: { value: "..." } }` → 触发 contentHandler (流式模式)
+- [x] **事件格式统一**: 修改 E2B 后端事件格式为 OpenAI Assistants 兼容格式
+  ```javascript
+  // 旧格式
+  { message: true, text: fullResponseText }
+  
+  // 新格式（OpenAI 兼容）
+  { 
+    type: 'text',
+    index: 0,
+    text: { value: fullResponseText },
+    messageId, 
+    conversationId 
+  }
+  ```
+- [x] **移除 thread_id 依赖**: E2B 不使用 OpenAI threads，前端可正确处理 undefined
+- [x] **Compression 中间件问题修复** (Critical):
+  - **根本原因**: `api/server/index.js` 全局启用 `compression()` 中间件
+  - **影响**: 响应被缓冲以优化压缩率，所有 SSE 事件在同一毫秒到达浏览器
+  - **解决方案**: 在 `sendEvent()` 后立即调用 `res.flush()` 强制刷新缓冲区
+  ```javascript
+  sendEvent(res, eventData);
+  // FLUSH: Critical for real-time streaming when compression is enabled
+  if (res.flush) res.flush();
+  ```
+- [x] **验证结果**: 
+  - ✅ 浏览器 DevTools 显示每个事件独立到达
+  - ✅ 文本逐字累积显示（`在` → `在分析` → `在分析泰坦尼克号数据集`）
+  - ✅ 真正的实时流式体验
+
+### 📝 技术要点
+- **前端事件路由**: `useSSE.ts` 根据事件字段判断处理器
+  - `data.type != null` → contentHandler（使用 messageMap，支持流式）
+  - `data.message != null` → messageHandler（重建数组，批量显示）
+- **OpenAI 标准格式**: 嵌套结构 `text: { value: string }` 而非扁平 `text: string`
+- **Compression 与 SSE**: Express compression 需要显式 flush 才能实时传输
+- **res.flush() 来源**: `compression` 中间件会为响应对象添加此方法
+
+### 🎯 性能特点
+- Token 生成速度: OpenAI gpt-4o 非常快（每秒几十个 token）
+- 网络延迟: 低延迟环境下多个事件可能在同一毫秒到达
+- 这是**正常且期望的行为** - 系统应尽可能快地显示内容
+- 用户体验: "快速流式" > "慢速打字机效果"
+
+---
+
 **创建日期**: 2025-12-23  
-**最后更新**: 2026-01-07  
-**当前状态**: ✅ 核心功能完成！架构优化完成！助手配置、历史对话、图像显示、沙箱复用均已正常工作。关键 Bug（路径嵌套、无限循环）已修复。
+**最后更新**: 2026-01-12  
+**当前状态**: ✅ 核心功能完成！架构优化完成！流式传输完全修复！助手配置、历史对话、图像显示、沙箱复用、实时流式响应均已正常工作。
 **当前分支**: `feature/e2b-integration`
 
 ---

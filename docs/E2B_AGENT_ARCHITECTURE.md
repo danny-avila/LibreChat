@@ -93,7 +93,7 @@
 ┌──────────────────┐    ┌─────────────────────────────────┐
 │  OpenAI API   │    │   E2B Sandbox Manager (748 行)  │
 │                  │    │   initialize.js                 │
-│ - ChatGPT 4O     │    │                                 │
+│ - ChatGPT 4o     │    │                                 │
 │ - Tool calling   │    │ 职责:                           │
 │ - Streaming      │    │ - 沙箱创建/复用/销毁            │
 └──────────────────┘    │ - 文件上传/下载/列表            │
@@ -983,7 +983,7 @@ Controller (619 行)
 ```
 用户消息 → Controller → Agent → Context Manager
                                ↓
-                          LLM (Claude)
+                          LLM (OpenAI)
                                ↓
                        Tool Calls (execute_code)
                                ↓
@@ -998,7 +998,7 @@ Controller (619 行)
 
 **文档版本**: v2.0  
 **最后更新**: 2026-01-08  
-**维护者**: LibreChat E2B Agent Team  
+**维护者**: Li Ruisen 
 **相关文档**: 
 - [问题解决文档](./E2B_AGENT_FIXES.md)
 - [开发文档](./E2B_DATA_ANALYST_AGENT_DEVELOPMENT.md)

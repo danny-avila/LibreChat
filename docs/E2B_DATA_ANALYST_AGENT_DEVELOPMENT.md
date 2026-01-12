@@ -52,9 +52,15 @@
 
 ### 3.1 核心依赖
 - **E2B Code Interpreter SDK**: `@e2b/code-interpreter` (v2.8.4+)
-- **OpenAI API**: `openai` (用于LLM)
-- **MongoDB**: 存储Assistant配置
-- **Node.js/Express.js**: 后端框架
+- **OpenAI API**: `openai` (v4.x) - 用于 LLM 推理（GPT-4, GPT-4o 等模型）
+- **MongoDB**: 存储 Assistant 配置、对话历史、文件元数据
+- **Node.js/Express.js**: 后端框架（v18+）
+
+### 3.2 LLM 说明
+本项目使用 **OpenAI API** 进行推理，支持的模型包括：
+- GPT-4 / GPT-4-turbo
+- GPT-4o / GPT-4o-mini
+- 或任何兼容 OpenAI API 的模型（如通过代理访问的其他模型）
 
 ---
 
@@ -69,68 +75,124 @@ LibreChat/
 │   │   ├── services/
 │   │   │   ├── Agents/
 │   │   │   │   └── e2bAgent/
-│   │   │   │       ├── index.js        # [已实现] Data Analyst Agent核心
-│   │   │   │       ├── prompts.js     # [已实现] 系统提示词
-│   │   │   │       └── tools.js       # [已实现] 工具定义
+│   │   │   │       ├── index.js           # [已实现] 446行 - ReAct循环Agent核心
+│   │   │   │       ├── contextManager.js  # [已实现] 387行 - 上下文管理器 
+│   │   │   │       ├── prompts.js         # [已实现] 154行 - 系统提示词
+│   │   │   │       └── tools.js           # [已实现] 266行 - 工具定义与执行
 │   │   │   ├── Endpoints/
 │   │   │   │   └── e2bAssistants/
-│   │   │   │       ├── index.js       # [已实现] 端点入口
-│   │   │   │       ├── initialize.js  # [已实现] E2B客户端管理器 (E2BClientManager)
-│   │   │   │       └── buildOptions.js # [已实现] 选项构建
+│   │   │   │       ├── index.js           # [已实现] 端点入口
+│   │   │   │       ├── initialize.js      # [已实现] 748行 - E2B沙箱生命周期管理
+│   │   │   │       └── buildOptions.js    # [已实现] 选项构建
 │   │   │   ├── Sandbox/
-│   │   │   │   ├── codeExecutor.js    # [已实现] 代码执行服务
-│   │   │   │   └── fileHandler.js     # [已实现] 文件处理服务 (支持Local/S3/Azure)
+│   │   │   │   ├── codeExecutor.js        # [已实现] 163行 - Python代码执行
+│   │   │   │   └── fileHandler.js         # [已实现] 172行 - 文件同步与持久化
 │   │   └── routes/
 │   │       └── e2bAssistants/
-│   │           ├── index.js           # [已实现] 路由注册
-│   │           └── controller.js      # [已实现] 控制器逻辑
+│   │           ├── index.js               # [已实现] 路由注册
+│   │           └── controller.js          # [已实现] 619行 - HTTP/SSE控制器
 │   └── tests/
 │       └── e2b/
-│           ├── codeExecutor.test.js   # [已实现] CodeExecutor单元测试
-│           ├── fileHandler.test.js    # [已实现] FileHandler单元测试
-│           ├── real_integration.js    # [已实现] 真实环境端到端测试
-│           └── debug_sandbox.js       # [已实现] 沙箱调试脚本
+│           ├── codeExecutor.test.js       # [已实现] CodeExecutor单元测试
+│           ├── fileHandler.test.js        # [已实现] FileHandler单元测试
+│           ├── real_integration.js        # [已实现] 真实环境端到端测试
+│           └── debug_sandbox.js           # [已实现] 沙箱调试脚本
 ├── packages/
 │   └── data-schemas/
 │       ├── src/
 │       │   ├── schema/
-│       │   │   └── e2bAssistant.ts    # [已实现] E2B Assistant Schema
+│       │   │   └── e2bAssistant.ts        # [已实现] E2B Assistant Schema
 │       │   ├── models/
-│       │   │   └── e2bAssistant.ts    # [已实现] E2B Assistant Model
+│       │   │   └── e2bAssistant.ts        # [已实现] E2B Assistant Model
 │       │   └── types/
-│       │       └── e2bAssistant.ts    # [已实现] TypeScript类型定义
+│       │       └── e2bAssistant.ts        # [已实现] TypeScript类型定义
+├── docs/
+│   ├── E2B_AGENT_ARCHITECTURE.md          # [已实现] 系统架构文档
+│   ├── E2B_AGENT_FIXES.md                 # [已实现] 问题解决文档
+│   ├── E2B_DATA_ANALYST_AGENT_DEVELOPMENT.md # [本文档] 开发文档
+│   └── E2B_AGENT_TEST_CASES.md            # [已实现] 测试用例
 ```
 
 ---
 
 ## 5. 核心模块实现详情
 
-### 5.1 E2BClientManager (`initialize.js`)
-- **功能**: 管理 E2B 沙箱生命周期（创建、销毁、重用）。
-- **SDK适配**: 适配了 `@e2b/code-interpreter` v2.8.4，使用 `Sandbox.create()` 和 `sandbox.kill()`。
-- **文件操作**: 使用 `.files` API 进行文件读写。
-- **配置**: 默认 `secure: false` 以增强兼容性，并支持智能模板选择。
+### 5.1 Context Manager (`contextManager.js`) 
+- **功能**: 上下文管理的 Single Source of Truth
+- **代码**: 387 行
+- **职责**:
+  - **内部/外部ID分离**: 存储带UUID的 file_id，对外只暴露干净文件名
+  - **上下文生成**: 为 LLM 生成结构化上下文（文件列表、对话历史、工件信息）
+  - **错误恢复**: 提供分层错误建议（关键错误 + 通用调试）
+  - **conversationId追踪**: 防止跨对话混淆
+- **关键方法**:
+  - `getContextForIteration()`: 生成当前迭代的完整上下文
+  - `updateFileContext()`: 更新文件映射
+  - `generateErrorGuidance()`: 生成错误恢复建议
 
-### 5.2 CodeExecutor (`codeExecutor.js`)
-- **功能**: 在沙箱中执行 Python 代码，处理 `stdout`/`stderr`，并提取生成的图表。
+### 5.2 E2BDataAnalystAgent (`index.js`)
+- **功能**: 基于 ReAct 循环的智能代理核心
+- **代码**: 446 行
+- **LLM**: 使用 **OpenAI API**（GPT-4/GPT-4o）
+- **特性**:
+  - **ReAct循环**: Thought → Action → Observation → 最多20次迭代
+  - **沙箱复用**: 同一对话使用相同沙箱实例
+  - **双层恢复**: Layer 1 (初始化) + Layer 2 (执行时)
+  - **自愈能力**: 错误自动反馈给 LLM，通过通用调试策略自主修复
+  - **工具调用**: `execute_code`, `upload_file`（已移除冗余的 download_file）
+  - **流式输出**: 支持 SSE 逐 token 返回
+
+### 5.3 E2B Sandbox Manager (`initialize.js`)
+- **功能**: 管理 E2B 沙箱生命周期（创建、销毁、重用）
+- **代码**: 748 行
+- **SDK适配**: 适配了 `@e2b/code-interpreter` v2.8.4
+- **关键特性**:
+  - 使用 `Sandbox.create()` 和 `sandbox.kill()`
+  - 文件操作：`.files.write()`, `.files.read()` 与异步流处理
+  - 配置：默认 `secure: false` 以增强兼容性
+  - 智能模板选择：支持自定义模板或默认模板
+  - **双层文件恢复**:
+    * Layer 1: processMessage 检测沙箱过期并恢复文件
+    * Layer 2: tools.js 执行超时检测并重建沙箱
+
+### 5.4 Tools (`tools.js`)
+- **功能**: 工具定义与执行逻辑
+- **代码**: 266 行
+- **工具列表**:
+  - `execute_code`: 执行 Python 代码，自动捕获图表
+  - `upload_file`: 上传文件到沙箱
+- **关键改进**:
+  - **统一观察格式**: 成功/失败都返回完整结构（消除无限循环）
+  - **Layer 2 恢复**: 捕获沙箱超时并自动重建
+  - **路径简化**: 直接在 observation 中提供正确的 Web 路径
+
+### 5.5 CodeExecutor (`codeExecutor.js`)
+- **功能**: 在沙箱中执行 Python 代码，处理 `stdout`/`stderr`，并提取生成的图表
+- **代码**: 163 行
 - **特性**: 
-  - **图表提取**: 自动从 execution results 中提取 PNG/JPEG/SVG 格式的图片，并转换为 Base64。
-  - **安全校验**: 包含基础的代码安全检查，拦截危险函数（如 `os.system`）。
-  - **批量执行**: 支持按顺序执行多个代码块。
+  - **图表提取**: 自动从 execution results 中提取 PNG/JPEG/SVG 格式的图片
+  - **安全校验**: 基础代码安全检查，拦截危险函数（如 `os.system`）
+  - **批量执行**: 支持按顺序执行多个代码块
+  - **错误捕获**: 完整的 traceback 传递
 
-### 5.3 FileHandler (`fileHandler.js`)
-- **功能**: 处理 LibreChat 系统存储与 E2B 沙箱之间的文件同步。
+### 5.6 FileHandler (`fileHandler.js`)
+- **功能**: 处理 LibreChat 系统存储与 E2B 沙箱之间的文件同步
+- **代码**: 172 行
 - **特性**:
-  - **多存储支持**: 兼容 Local, S3, Azure Blob Storage。
-  - **Artifacts 持久化**: 将沙箱生成的分析结果（图片、CSV等）下载并保存到 LibreChat 系统存储，创建对应的数据库记录。
-  - **内存持久化**: 支持直接将内存中的 Buffer (如生成的图表) 保存到存储系统，无需重复下载。
+  - **多存储支持**: 兼容 Local, S3, Azure Blob Storage
+  - **Artifacts 持久化**: 将沙箱生成的图片/CSV 下载并保存到系统存储
+  - **内存持久化**: 支持直接将 Buffer 保存，无需重复下载
+  - **UUID剥离**: 上传到沙箱时移除文件名中的 UUID 前缀
+  - **沙箱文件恢复**: 从数据库重新上传所有文件到新沙箱
 
-### 5.4 E2BDataAnalystAgent (`index.js`)
-- **功能**: 基于 ReAct 循环的智能代理。
+### 5.7 Controller (`controller.js`)
+- **功能**: HTTP/SSE 请求处理
+- **代码**: 619 行
 - **特性**:
-  - **自愈能力**: 当代码执行失败时，将错误反馈给 LLM 并自动重试。
-  - **工具调用**: 集成 `execute_code`, `upload_file`, `download_file` 工具。
-  - **多轮对话**: 维护对话上下文和沙箱状态。
+  - **SSE 流式**: 创建 SSE 连接，逐 token 返回
+  - **消息持久化**: 保存用户消息和 Agent 响应到 MongoDB
+  - **历史加载**: 多轮对话时加载历史消息
+  - **错误处理**: 统一错误响应格式
 
 ---
 

@@ -238,6 +238,12 @@ class E2BDataAnalystAgent {
                 message.content += delta.content;
                 accumulatedContent += delta.content; // Also accumulate for final processing
                 tokenCount++;
+                
+                // ✅ 添加调试：确认正在调用 onToken
+                if (tokenCount <= 3 || tokenCount % 50 === 0) {
+                  logger.info(`[E2BAgent] Calling onToken #${tokenCount} with content: "${delta.content.substring(0, 20).replace(/\n/g, '\\n')}..."`);
+                }
+                
                 onToken(delta.content); // Send token to client
               }
               
@@ -310,6 +316,17 @@ class E2BDataAnalystAgent {
               }
 
               logger.debug(`[E2BAgent] Streaming tool result:`, JSON.stringify(result, null, 2));
+              
+              // Send tool completion indicator to client (optional, for better UX)
+              if (result.success) {
+                const completionIndicator = `[✓ 完成]\n`;
+                accumulatedContent += completionIndicator;
+                onToken(completionIndicator);
+              } else if (result.error) {
+                const errorIndicator = `[✗ 错误: ${result.error}]\n`;
+                accumulatedContent += errorIndicator;
+                onToken(errorIndicator);
+              }
 
               // 记录中间步骤
               intermediateSteps.push({

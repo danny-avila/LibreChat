@@ -335,7 +335,7 @@ const deleteAssistant = async (req, res) => {
 const chat = async (req, res) => {
   try {
     const assistant_id = req.params.assistant_id || req.body.assistant_id;
-    const { text, conversationId, parentMessageId, files } = req.body;
+    const { text, conversationId, parentMessageId, files, messageId } = req.body;
     
     if (!assistant_id) {
       return res.status(400).json({ error: 'Assistant ID is required' });
@@ -360,8 +360,10 @@ const chat = async (req, res) => {
     });
 
     // Generate IDs (use UUID for conversationId to pass validation)
-    const userMessageId = uuidv4();
-    const responseMessageId = uuidv4();
+    // CRITICAL: Use client-provided messageId if available to match frontend state
+    const userMessageId = messageId || uuidv4();
+    // CRITICAL: Use userMessageId + '_' for response to match frontend's createdHandler logic
+    const responseMessageId = userMessageId + '_'; 
     const finalConversationId = conversationId || uuidv4();
 
     // Create user message
@@ -381,6 +383,9 @@ const chat = async (req, res) => {
       message: userMessage, 
       created: true 
     });
+    
+    // FLUSH: Ensure the created event is sent immediately
+    if (res.flush) res.flush();
 
     // CRITICAL: Save conversation FIRST (before messages)
     // This ensures conversation exists in DB so saveMessage won't fail validation
@@ -485,26 +490,36 @@ const chat = async (req, res) => {
     let tokenCount = 0;
     let eventsSent = 0;
     
-    // Stream callback - send every token immediately for real-time streaming
+    // Stream callback - send incremental tokens for real-time streaming
     const onToken = (token) => {
       fullResponseText += token;
       tokenCount++;
       eventsSent++;
       
-      const eventData = {
-        message: true,
-        initial: tokenCount === 1,
-        text: fullResponseText,
-        messageId: responseMessageId,
-        parentMessageId: userMessageId,
-        conversationId: finalConversationId,
-      };
-      
-      if (eventsSent <= 3 || eventsSent % 10 === 0) {
-        logger.debug(`[E2B Streaming] Event #${eventsSent}: tokens=${tokenCount}, textLen=${fullResponseText.length}, initial=${eventData.initial}`);
+      // ✅ 添加详细调试日志
+      if (eventsSent <= 5 || eventsSent % 20 === 0) {
+        logger.info(`[E2B onToken] Event #${eventsSent}: cumulative_len=${fullResponseText.length}, latest_token="${token.substring(0, 30).replace(/\n/g, '\\n')}..."`);
       }
       
-      sendEvent(res, eventData);
+      // ✅ Send in OpenAI Assistants format (triggers contentHandler for streaming)
+      const eventData = {
+        type: 'text',  // ✅ 关键：使用 type 而非 message，触发 contentHandler
+        index: 0,      // ✅ 内容索引（固定为 0，因为只有一个文本块）
+        text: {
+          value: fullResponseText  // ✅ 累积文本，嵌套在 value 中
+        },
+        messageId: responseMessageId,
+        conversationId: finalConversationId,
+        // E2B doesn't use thread_id (no OpenAI threads), frontend can handle undefined
+      };
+      
+      try {
+        sendEvent(res, eventData);
+        // FLUSH: Critical for real-time streaming when compression is enabled
+        if (res.flush) res.flush();
+      } catch (error) {
+        logger.error(`[E2B onToken] Failed to send event: ${error.message}`);
+      }
     };
     
     logger.info(`[E2B Assistant] onToken callback created for messageId=${responseMessageId}`);
@@ -559,6 +574,9 @@ const chat = async (req, res) => {
       requestMessage: sanitizeMessageForTransmit(userMessage),
       responseMessage: sanitizeMessageForTransmit(responseMessage),
     });
+    
+    // FLUSH: Ensure final event is sent
+    if (res.flush) res.flush();
     
     res.end();
 
