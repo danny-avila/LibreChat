@@ -449,14 +449,13 @@ endpoints:
   #   # Models Configuration
   #   # Specify which models are available (equivalent to BEDROCK_AWS_MODELS env variable)
   #   models:
-  #     - "claude-sonnet-4-5"  # Friendly name (maps to inference profile below)
   #     - "anthropic.claude-3-7-sonnet-20250219-v1:0"
   #     - "anthropic.claude-3-5-sonnet-20241022-v2:0"
   #
   #   # Inference Profiles Configuration
-  #   # Maps model IDs to their inference profile ARNs for cross-region inference
+  #   # Maps model IDs to their inference profile ARNs
   #   # IMPORTANT: The model ID (key) MUST be a valid AWS Bedrock model ID that you've added to the models list above
-  #   # The ARN (value) is the inference profile ARN that enables cross-region inference for that model
+  #   # The ARN (value) is the inference profile you wish to map to for that model
   #   # Both the model ID and ARN are sent to AWS - the model ID for validation/metadata, the ARN for routing
   #   inferenceProfiles:
   #     "us.anthropic.claude-sonnet-4-20250514-v1:0": "${BEDROCK_INFERENCE_PROFILE_CLAUDE_SONNET}"
