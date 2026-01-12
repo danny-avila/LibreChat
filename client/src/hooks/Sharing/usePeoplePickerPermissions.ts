@@ -4,6 +4,7 @@ import { useHasAccess } from '~/hooks';
 
 /**
  * Hook to check people picker permissions and return the appropriate type filter
+ * Note: SHARE_PUBLIC is now per-resource type (AGENTS, PROMPTS, MCP_SERVERS), not on PEOPLE_PICKER
  * @returns Object with permission states and type filter
  */
 export const usePeoplePickerPermissions = () => {

@@ -26,10 +26,10 @@ describe('canAccessMCPServerResource middleware', () => {
     await Role.create({
       name: 'test-role',
       permissions: {
-        MCPSERVERS: {
+        MCP_SERVERS: {
           USE: true,
           CREATE: true,
-          SHARED_GLOBAL: false,
+          SHARE: true,
         },
       },
     });

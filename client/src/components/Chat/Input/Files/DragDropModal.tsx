@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
+  Providers,
   inferMimeType,
   EToolResources,
   EModelEndpoint,
@@ -46,7 +47,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
    * Use definition for agents endpoint for ephemeral agents
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
-  const { conversationId, agentId, endpoint, endpointType } = useDragDropContext();
+  const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
   const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
   const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
     agentId,
@@ -55,15 +56,28 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
 
   const options = useMemo(() => {
     const _options: FileOption[] = [];
-    const currentProvider = provider || endpoint;
+    let currentProvider = provider || endpoint;
+
+    // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
+    if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
+      currentProvider = Providers.OPENROUTER;
+    }
 
     /** Helper to get inferred MIME type for a file */
     const getFileType = (file: File) => inferMimeType(file.name, file.type);
 
+    const isAzureWithResponsesApi =
+      currentProvider === EModelEndpoint.azureOpenAI && useResponsesApi;
+
     // Check if provider supports document upload
-    if (isDocumentSupportedProvider(endpointType) || isDocumentSupportedProvider(currentProvider)) {
-      const isGoogleProvider = currentProvider === EModelEndpoint.google;
-      const validFileTypes = isGoogleProvider
+    if (
+      isDocumentSupportedProvider(endpointType) ||
+      isDocumentSupportedProvider(currentProvider) ||
+      isAzureWithResponsesApi
+    ) {
+      const supportsImageDocVideoAudio =
+        currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER;
+      const validFileTypes = supportsImageDocVideoAudio
         ? files.every((file) => {
             const type = getFileType(file);
             return (
@@ -123,6 +137,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     endpoint,
     endpointType,
     capabilities,
+    useResponsesApi,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
   ]);

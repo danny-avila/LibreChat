@@ -27,16 +27,27 @@ export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick();
+    }
+  };
+
   return (
     <div className="flex items-center gap-4">
       <div
+        role="button"
+        tabIndex={0}
         onClick={handleClick}
-        className="bg-token-surface-secondary dark:bg-token-surface-tertiary border-token-border-medium flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center rounded-[1.5rem] border-2 border-dashed"
+        onKeyDown={handleKeyDown}
+        aria-label={localize('com_ui_upload_icon')}
+        className="bg-token-surface-secondary dark:bg-token-surface-tertiary border-token-border-medium flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center rounded-xl border-2 border-dashed focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
       >
         {previewUrl ? (
           <img
             src={previewUrl}
-            className="h-full w-full rounded-[1.5rem] object-cover"
+            className="h-full w-full rounded-xl object-cover"
             alt="MCP Icon"
             width="64"
             height="64"
@@ -49,7 +60,7 @@ export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
         <span className="token-text-secondary text-sm">
           {localize('com_ui_icon')} {localize('com_ui_optional')}
         </span>
-        <span className="token-text-tertiary text-xs">{localize('com_agents_mcp_icon_size')}</span>
+        <span className="text-xs text-text-secondary">{localize('com_agents_mcp_icon_size')}</span>
       </div>
       <input
         accept="image/png,.png,image/jpeg,.jpg,.jpeg,image/gif,.gif,image/webp,.webp"

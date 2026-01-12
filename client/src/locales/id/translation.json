@@ -211,7 +211,6 @@
   "com_ui_bookmark_delete_confirm": "Apakah Anda yakin ingin menghapus penanda ini?",
   "com_ui_bookmarks": "Penanda",
   "com_ui_bookmarks_add_to_conversation": "Tambahkan ke percakapan saat ini",
-  "com_ui_bookmarks_count": "Jumlah",
   "com_ui_bookmarks_create_error": "Terjadi kesalahan saat membuat penanda",
   "com_ui_bookmarks_create_success": "Penanda berhasil dibuat",
   "com_ui_bookmarks_delete_error": "Terjadi kesalahan saat menghapus penanda",

@@ -524,7 +524,6 @@
   "com_ui_bookmarks": "Marcadors",
   "com_ui_bookmarks_add": "Afegeix marcadors",
   "com_ui_bookmarks_add_to_conversation": "Afegeix a la conversa actual",
-  "com_ui_bookmarks_count": "Quantitat",
   "com_ui_bookmarks_create_error": "S'ha produït un error en crear el marcador",
   "com_ui_bookmarks_create_exists": "Aquest marcador ja existeix",
   "com_ui_bookmarks_create_success": "Marcador creat amb èxit",

@@ -192,15 +192,14 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       // Add server
       await registry.addServer(serverName, testRawConfig, 'CACHE');
 
-      // Verify server exists
-      const configBefore = await registry.getServerConfig(serverName);
-      expect(configBefore).toBeDefined();
+      // Verify server exists in underlying cache repository (not via getServerConfig to avoid populating read-through cache)
+      expect(await registry['cacheConfigsRepo'].get(serverName)).toBeDefined();
 
       // Remove server
       await registry.removeServer(serverName, 'CACHE');
 
-      // Verify server was removed
-      const configAfter = await registry.getServerConfig(serverName);
+      // Verify server was removed from underlying cache repository
+      const configAfter = await registry['cacheConfigsRepo'].get(serverName);
       expect(configAfter).toBeUndefined();
     });
   });

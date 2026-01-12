@@ -27,7 +27,13 @@ type TContentHandler = {
 export default function useContentHandler({ setMessages, getMessages }: TUseContentHandler) {
   const queryClient = useQueryClient();
   const messageMap = useMemo(() => new Map<string, TMessage>(), []);
-  return useCallback(
+
+  /** Reset the message map - call this after sync to prevent stale state from overwriting synced content */
+  const resetMessageMap = useCallback(() => {
+    messageMap.clear();
+  }, [messageMap]);
+
+  const handler = useCallback(
     ({ data, submission }: TContentHandler) => {
       const { type, messageId, thread_id, conversationId, index } = data;
 
@@ -41,8 +47,11 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       let response = messageMap.get(messageId);
       if (!response) {
+        // Check if message already exists in current messages (e.g., after sync)
+        // Use that as base instead of stale initialResponse
+        const existingMessage = _messages?.find((m) => m.messageId === messageId);
         response = {
-          ...(initialResponse as TMessage),
+          ...(existingMessage ?? (initialResponse as TMessage)),
           parentMessageId: userMessage?.messageId ?? '',
           conversationId,
           messageId,
@@ -82,4 +91,6 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
     },
     [queryClient, getMessages, messageMap, setMessages],
   );
+
+  return { contentHandler: handler, resetContentHandler: resetMessageMap };
 }
