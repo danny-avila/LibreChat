@@ -20,7 +20,12 @@ import type { GenericTool, LCToolRegistry, ToolMap } from '@librechat/agents';
 import type { Response as ServerResponse } from 'express';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
-import { getModelMaxTokens, extractLibreChatParams, optionalChainWithEmptyCheck } from '~/utils';
+import {
+  optionalChainWithEmptyCheck,
+  extractLibreChatParams,
+  getThreadMessageIds,
+  getModelMaxTokens,
+} from '~/utils';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
@@ -58,6 +63,8 @@ export interface InitializeAgentParams {
   agent: Agent;
   /** Conversation ID (optional) */
   conversationId?: string | null;
+  /** Parent message ID for determining the current thread (optional) */
+  parentMessageId?: string | null;
   /** Request files */
   requestFiles?: IMongoFile[];
   /** Function to load agent tools */
@@ -99,8 +106,12 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   getToolFilesByIds: (fileIds: string[], toolSet: Set<EToolResources>) => Promise<unknown[]>;
   /** Get conversation file IDs */
   getConvoFiles: (conversationId: string) => Promise<string[] | null>;
-  /** Get code-generated files by conversation ID */
-  getCodeGeneratedFiles: (conversationId: string) => Promise<unknown[]>;
+  /** Get code-generated files by conversation ID and optional message IDs */
+  getCodeGeneratedFiles?: (conversationId: string, messageIds?: string[]) => Promise<unknown[]>;
+  /** Get messages for a conversation */
+  getMessages?: (filter: {
+    conversationId: string;
+  }) => Promise<Array<{ messageId: string; parentMessageId?: string }> | null>;
 }
 
 /**
@@ -127,6 +138,7 @@ export async function initializeAgent(
     requestFiles = [],
     conversationId,
     endpointOption,
+    parentMessageId,
     allowedProviders,
     isInitialAgent = false,
   } = params;
@@ -178,11 +190,25 @@ export async function initializeAgent(
     }
     const toolFiles = (await db.getToolFilesByIds(fileIds, toolResourceSet)) as IMongoFile[];
 
-    // Also retrieve code-generated files from the conversation
-    // These are files created by the execute_code tool that are stored locally
+    /**
+     * Retrieve code-generated files from the conversation, filtered to the current thread.
+     * This ensures only files from the current linear thread are included, not files from other branches.
+     */
     let codeGeneratedFiles: IMongoFile[] = [];
     if (toolResourceSet.has(EToolResources.execute_code) && db.getCodeGeneratedFiles) {
-      codeGeneratedFiles = (await db.getCodeGeneratedFiles(conversationId)) as IMongoFile[];
+      let threadMessageIds: string[] | undefined;
+
+      if (parentMessageId && db.getMessages) {
+        const messages = await db.getMessages({ conversationId });
+        if (messages && messages.length > 0) {
+          threadMessageIds = getThreadMessageIds(messages, parentMessageId);
+        }
+      }
+
+      codeGeneratedFiles = (await db.getCodeGeneratedFiles(
+        conversationId,
+        threadMessageIds,
+      )) as IMongoFile[];
     }
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles);

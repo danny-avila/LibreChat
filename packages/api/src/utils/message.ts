@@ -1,3 +1,4 @@
+import { Constants } from 'librechat-data-provider';
 import type { TFile, TMessage } from 'librechat-data-provider';
 
 /** Fields to strip from files before client transmission */
@@ -65,4 +66,44 @@ export function sanitizeMessageForTransmit<T extends Partial<TMessage>>(
   }
 
   return sanitized;
+}
+
+/**
+ * Gets the message IDs for a linear thread, traversing from parentMessageId to the root.
+ * Uses the same logic as BaseClient.getMessagesForConversation.
+ *
+ * @param messages - All messages in the conversation
+ * @param parentMessageId - The ID of the parent message to start traversal from
+ * @returns Array of message IDs in the current thread
+ */
+export function getThreadMessageIds(
+  messages: Array<{ messageId: string; parentMessageId?: string | null }>,
+  parentMessageId: string | null | undefined,
+): string[] {
+  if (!messages || messages.length === 0 || !parentMessageId) {
+    return [];
+  }
+
+  const messageIds: string[] = [];
+  let currentMessageId: string | null | undefined = parentMessageId;
+  const visitedMessageIds = new Set<string>();
+
+  while (currentMessageId) {
+    if (visitedMessageIds.has(currentMessageId)) {
+      break;
+    }
+
+    const message = messages.find((msg) => msg.messageId === currentMessageId);
+    visitedMessageIds.add(currentMessageId);
+
+    if (!message) {
+      break;
+    }
+
+    messageIds.push(message.messageId);
+    currentMessageId =
+      message.parentMessageId === Constants.NO_PARENT ? null : message.parentMessageId;
+  }
+
+  return messageIds;
 }

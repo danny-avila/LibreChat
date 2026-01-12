@@ -129,6 +129,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const requestFiles = req.body.files ?? [];
   /** @type {string} */
   const conversationId = req.body.conversationId;
+  /** @type {string | undefined} */
+  const parentMessageId = req.body.parentMessageId;
 
   const primaryConfig = await initializeAgent(
     {
@@ -137,6 +139,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       loadTools,
       requestFiles,
       conversationId,
+      parentMessageId,
       agent: primaryAgent,
       endpointOption,
       allowedProviders,
@@ -146,6 +149,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getConvoFiles,
       getFiles: db.getFiles,
       getUserKey: db.getUserKey,
+      getMessages: db.getMessages,
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getToolFilesByIds: db.getToolFilesByIds,
@@ -189,6 +193,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         loadTools,
         requestFiles,
         conversationId,
+        parentMessageId,
         endpointOption,
         allowedProviders,
       },
@@ -196,6 +201,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
+        getMessages: db.getMessages,
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
@@ -260,6 +266,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     loadTools,
     requestFiles,
     conversationId,
+    parentMessageId,
     allowedProviders,
     agentConfigs,
     primaryAgentId: primaryConfig.id,
