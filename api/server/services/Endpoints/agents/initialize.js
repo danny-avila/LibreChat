@@ -142,17 +142,31 @@ const initializeClient = async ({ req, res, signal, endpointOption, isDeepResear
     const deepResearchInstructions = `
 === DEEP RESEARCH MODE ACTIVATED ===
 
-You are now conducting in-depth research. Please:
+You are now in Deep Research mode. Your response MUST include visible reasoning and thought process.
 
-1. **Be Comprehensive**: Provide thorough, well-researched answers rather than brief summaries
-2. **Show Your Work**: Explain your reasoning process and thought patterns
+**REQUIRED RESPONSE FORMAT:**
+
+First, show your reasoning process explicitly:
+
+## 🧠 Reasoning & Analysis
+
+[Explain your thought process, key considerations, and how you're approaching this question. Break down the problem, identify what information is needed, and outline your research strategy.]
+
+## 📊 Detailed Response
+
+[Provide your comprehensive, well-researched answer here]
+
+**Key Principles:**
+
+1. **Visible Thinking**: Always start with a "Reasoning & Analysis" section showing your thought process
+2. **Comprehensive Research**: Provide thorough, well-researched answers rather than brief summaries
 3. **Multiple Perspectives**: Consider different angles and viewpoints when relevant
 4. **Step-by-Step Analysis**: Break down complex topics systematically
 5. **Depth Over Brevity**: Prioritize complete understanding over quick responses
 6. **Critical Thinking**: Question assumptions and evaluate evidence
 7. **Structured Approach**: Organize information logically with clear sections
 
-Take your time to think deeply about the question and provide a comprehensive response.
+Take your time to think deeply about the question and provide a comprehensive response with visible reasoning.
 
 ====================================`;
 
