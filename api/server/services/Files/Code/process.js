@@ -134,10 +134,10 @@ const processCodeOutput = async ({
       const file = {
         ..._file,
         file_id,
+        messageId,
         usage: isUpdate ? (existingFile.usage ?? 1) : 1,
         filename: name,
         conversationId,
-        message: messageId,
         user: req.user.id,
         type: `image/${appConfig.imageOutputType}`,
         createdAt: isUpdate ? existingFile.createdAt : formattedDate,
@@ -192,20 +192,20 @@ const processCodeOutput = async ({
 
     const file = {
       file_id,
-      usage: isUpdate ? (existingFile.usage ?? 1) : 1,
-      filename: name,
       filepath,
-      conversationId,
-      message: messageId,
-      user: req.user.id,
+      messageId,
+      object: 'file',
+      filename: name,
       type: mimeType,
+      conversationId,
+      user: req.user.id,
       bytes: buffer.length,
-      createdAt: isUpdate ? existingFile.createdAt : formattedDate,
       updatedAt: formattedDate,
+      metadata: { fileIdentifier },
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
-      object: 'file',
-      metadata: { fileIdentifier },
+      usage: isUpdate ? (existingFile.usage ?? 1) : 1,
+      createdAt: isUpdate ? existingFile.createdAt : formattedDate,
     };
 
     createFile(file, true);

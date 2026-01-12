@@ -83,7 +83,7 @@ const getCodeGeneratedFiles = async (conversationId, messageIds) => {
 
     /** Filter by messageIds if provided (linear thread filtering) */
     if (messageIds && messageIds.length > 0) {
-      filter.message = { $in: messageIds };
+      filter.messageId = { $in: messageIds };
     }
 
     const selectFields = { text: 0 };
