@@ -368,6 +368,115 @@ describe('AgentClient - recordCollectedUsage', () => {
       // Verify correct value
       expect(usage.output_tokens).toBe(301); // 151 + 150
     });
+
+    it('should correctly handle cache tokens with multiple tool calls', async () => {
+      // Real production data: Claude Opus with cache tokens (prompt caching)
+      // First entry has cache_creation, subsequent entries have cache_read
+      const collectedUsage = [
+        {
+          input_tokens: 788,
+          output_tokens: 163,
+          total_tokens: 951,
+          input_token_details: { cache_read: 0, cache_creation: 30808 },
+          model: 'claude-opus-4-5-20251101',
+        },
+        {
+          input_tokens: 3802,
+          output_tokens: 149,
+          total_tokens: 3951,
+          input_token_details: { cache_read: 30808, cache_creation: 768 },
+          model: 'claude-opus-4-5-20251101',
+        },
+        {
+          input_tokens: 26808,
+          output_tokens: 225,
+          total_tokens: 27033,
+          input_token_details: { cache_read: 31576, cache_creation: 0 },
+          model: 'claude-opus-4-5-20251101',
+        },
+        {
+          input_tokens: 80912,
+          output_tokens: 204,
+          total_tokens: 81116,
+          input_token_details: { cache_read: 31576, cache_creation: 0 },
+          model: 'claude-opus-4-5-20251101',
+        },
+        {
+          input_tokens: 136454,
+          output_tokens: 206,
+          total_tokens: 136660,
+          input_token_details: { cache_read: 31576, cache_creation: 0 },
+          model: 'claude-opus-4-5-20251101',
+        },
+        {
+          input_tokens: 146316,
+          output_tokens: 224,
+          total_tokens: 146540,
+          input_token_details: { cache_read: 31576, cache_creation: 0 },
+          model: 'claude-opus-4-5-20251101',
+        },
+        {
+          input_tokens: 150402,
+          output_tokens: 1248,
+          total_tokens: 151650,
+          input_token_details: { cache_read: 31576, cache_creation: 0 },
+          model: 'claude-opus-4-5-20251101',
+        },
+        {
+          input_tokens: 156268,
+          output_tokens: 139,
+          total_tokens: 156407,
+          input_token_details: { cache_read: 31576, cache_creation: 0 },
+          model: 'claude-opus-4-5-20251101',
+        },
+        {
+          input_tokens: 167126,
+          output_tokens: 2961,
+          total_tokens: 170087,
+          input_token_details: { cache_read: 31576, cache_creation: 0 },
+          model: 'claude-opus-4-5-20251101',
+        },
+      ];
+
+      await client.recordCollectedUsage({
+        collectedUsage,
+        balance: { enabled: true },
+        transactions: { enabled: true },
+      });
+
+      // input_tokens = first entry's input + cache_creation + cache_read
+      // = 788 + 30808 + 0 = 31596
+      expect(client.usage.input_tokens).toBe(31596);
+
+      // output_tokens = sum of all output_tokens
+      // = 163 + 149 + 225 + 204 + 206 + 224 + 1248 + 139 + 2961 = 5519
+      expect(client.usage.output_tokens).toBe(5519);
+
+      // First 2 entries have cache tokens, should use spendStructuredTokens
+      // Remaining 7 entries have cache_read but no cache_creation, still structured
+      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(9);
+      expect(mockSpendTokens).toHaveBeenCalledTimes(0);
+
+      // Verify first entry uses structured tokens with cache_creation
+      expect(mockSpendStructuredTokens).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ model: 'claude-opus-4-5-20251101' }),
+        {
+          promptTokens: { input: 788, write: 30808, read: 0 },
+          completionTokens: 163,
+        },
+      );
+
+      // Verify second entry uses structured tokens with both cache_creation and cache_read
+      expect(mockSpendStructuredTokens).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ model: 'claude-opus-4-5-20251101' }),
+        {
+          promptTokens: { input: 3802, write: 768, read: 30808 },
+          completionTokens: 149,
+        },
+      );
+    });
   });
 
   describe('cache token handling', () => {
