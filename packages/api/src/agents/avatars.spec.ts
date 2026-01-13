@@ -79,22 +79,10 @@ describe('refreshListAvatars', () => {
     expect(mockRefreshS3Url).not.toHaveBeenCalled();
   });
 
-  it('should skip agents without author', async () => {
-    const agent = createAgent({ author: undefined });
-
-    const stats = await refreshListAvatars({
-      agents: [agent],
-      userId,
-      refreshS3Url: mockRefreshS3Url,
-      updateAgent: mockUpdateAgent,
-    });
-
-    expect(stats.no_author).toBe(1);
-    expect(mockRefreshS3Url).not.toHaveBeenCalled();
-  });
-
-  it('should skip agents not owned by user', async () => {
+  it('should refresh avatars for agents owned by other users (VIEW access)', async () => {
     const agent = createAgent({ author: 'otherUser' });
+    mockRefreshS3Url.mockResolvedValue('new-path.jpg');
+    mockUpdateAgent.mockResolvedValue({});
 
     const stats = await refreshListAvatars({
       agents: [agent],
@@ -103,8 +91,9 @@ describe('refreshListAvatars', () => {
       updateAgent: mockUpdateAgent,
     });
 
-    expect(stats.not_owner).toBe(1);
-    expect(mockRefreshS3Url).not.toHaveBeenCalled();
+    expect(stats.updated).toBe(1);
+    expect(mockRefreshS3Url).toHaveBeenCalled();
+    expect(mockUpdateAgent).toHaveBeenCalled();
   });
 
   it('should refresh and persist S3 avatars', async () => {
@@ -209,6 +198,7 @@ describe('refreshListAvatars', () => {
         id: 'agent3',
         avatar: { source: 'local', filepath: 'local.jpg' } as AgentAvatar,
       }),
+      createAgent({ id: '' }), // no id
     ];
 
     mockRefreshS3Url.mockResolvedValue('new-path.jpg');
@@ -221,9 +211,9 @@ describe('refreshListAvatars', () => {
       updateAgent: mockUpdateAgent,
     });
 
-    expect(stats.updated).toBe(1);
-    expect(stats.not_owner).toBe(1);
-    expect(stats.not_s3).toBe(1);
+    expect(stats.updated).toBe(2); // agent1 and agent2 (other user's agent now refreshed)
+    expect(stats.not_s3).toBe(1); // agent3
+    expect(stats.no_id).toBe(1); // agent with empty id
   });
 });
 

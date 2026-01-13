@@ -1355,7 +1355,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.json).toHaveBeenCalled();
     });
 
-    test('should only refresh avatars for user-owned agents', async () => {
+    test('should refresh avatars for all accessible agents (VIEW permission)', async () => {
       mockCache.get.mockResolvedValue(false);
       // User A has access to both their own agent and userB's agent
       findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id, agentOwnedByOther._id]);
@@ -1373,8 +1373,8 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       await getListAgentsHandler(mockReq, mockRes);
 
-      // Should only be called once - for userA's own agent
-      expect(refreshS3Url).toHaveBeenCalledTimes(1);
+      // Should be called for both agents - any user with VIEW access can refresh
+      expect(refreshS3Url).toHaveBeenCalledTimes(2);
     });
 
     test('should skip non-S3 avatars', async () => {

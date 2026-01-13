@@ -26,8 +26,6 @@ export type RefreshStats = {
   updated: number;
   not_s3: number;
   no_id: number;
-  no_author: number;
-  not_owner: number;
   no_change: number;
   s3_error: number;
   persist_error: number;
@@ -39,6 +37,10 @@ export type RefreshStats = {
  * Only list responses are refreshed because they're the highest-traffic surface and
  * the avatar URLs have a short-lived TTL. The refresh is cached per-user for 30 minutes
  * so we refresh once per interval at most.
+ *
+ * Any user with VIEW access to an agent can refresh its avatar URL. This ensures
+ * avatars remain accessible even when the owner hasn't logged in recently.
+ * The agents array should already be filtered to only include agents the user can access.
  */
 export const refreshListAvatars = async ({
   agents,
@@ -50,8 +52,6 @@ export const refreshListAvatars = async ({
     updated: 0,
     not_s3: 0,
     no_id: 0,
-    no_author: 0,
-    not_owner: 0,
     no_change: 0,
     s3_error: 0,
     persist_error: 0,
@@ -79,20 +79,6 @@ export const refreshListAvatars = async ({
             agent._id,
           );
           stats.no_id++;
-          return;
-        }
-
-        if (!agent?.author) {
-          logger.debug(
-            '[refreshListAvatars] Skipping S3 avatar refresh for agent: %s, author is not set',
-            agent._id,
-          );
-          stats.no_author++;
-          return;
-        }
-
-        if (agent.author.toString() !== userId) {
-          stats.not_owner++;
           return;
         }
 
