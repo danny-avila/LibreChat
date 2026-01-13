@@ -116,7 +116,7 @@ const refreshListAvatars = async (agents, userId) => {
           }
         }
       } catch (err) {
-        logger.debug('[/Agents] Avatar refresh error for list item: %o', err);
+        logger.error('[/Agents] Avatar S3 avatar refresh error: %o', err);
       }
     }),
   );
@@ -590,7 +590,7 @@ const getListAgentsHandler = async (req, res) => {
         await refreshListAvatars(fullList?.data ?? [], userId);
         await cache.set(refreshKey, true, Time.THIRTY_MINUTES);
       } catch (err) {
-        logger.debug('[/Agents] Error refreshing avatars for full list: %o', err);
+        logger.error('[/Agents] Error refreshing avatars for full list: %o', err);
       }
     }
 
