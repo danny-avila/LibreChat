@@ -90,7 +90,7 @@ const exchangeTokenForGraphAccess = async (config, accessToken, sub) => {
       clientOptions[Symbol.for('openid-client.custom.fetch')] = (url, options = {}) => {
           return nodeFetch(url, { ...options, agent: httpsAgent });
       };
-    }      
+    }
 
     const grantResponse = await client.genericGrantRequest(
       config,
