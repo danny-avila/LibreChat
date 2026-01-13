@@ -32,7 +32,7 @@ jest.mock('~/server/middleware/checkPeoplePickerAccess', () => ({
 
 // Import actual middleware to get canAccessResource
 const { canAccessResource } = require('~/server/middleware');
-const { findMCPServerById } = require('~/models');
+const { findMCPServerByObjectId } = require('~/models');
 
 /**
  * Security Tests for SBA-ADV-20251203-02
@@ -151,7 +151,7 @@ describe('Access Permissions Routes - Security Tests (SBA-ADV-20251203-02)', () 
           resourceType: ResourceType.MCPSERVER,
           requiredPermission,
           resourceIdParam: 'resourceId',
-          idResolver: findMCPServerById,
+          idResolver: findMCPServerByObjectId,
         });
       } else {
         return res.status(400).json({
