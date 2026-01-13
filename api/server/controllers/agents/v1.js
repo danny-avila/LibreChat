@@ -69,12 +69,7 @@ const refreshListAvatars = async (agents, userId) => {
     return;
   }
 
-  const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
-  const refreshKey = `${userId}:agents_list`;
-  const alreadyChecked = await cache.get(refreshKey);
-  if (alreadyChecked) {
-    return;
-  }
+  logger.debug('[/Agents] Refreshing S3 avatars for agents: %d', agents.length);
 
   await Promise.all(
     agents.map(async (agent) => {
@@ -82,18 +77,52 @@ const refreshListAvatars = async (agents, userId) => {
         return;
       }
 
+      if (!agent?.id) {
+        logger.debug('[/Agents] Skipping S3 avatar refresh for agent: %s, ID is not set', agent._id);
+        return;
+      }
+
+      if (!agent?.author) {
+        logger.debug('[/Agents] Skipping S3 avatar refresh for agent: %s, author is not set', agent._id);
+        return;
+      }
+
+      // Only persist for the user's own agents to avoid "viewers" of shared/public agents from mutating other users' agents
+      if (agent.author.toString() !== userId) {
+        return;
+      }
+
+      logger.debug('[/Agents] Refreshing S3 avatar for agent: %s', agent._id);
+
       try {
         const newPath = await refreshS3Url(agent.avatar);
         if (newPath && newPath !== agent.avatar.filepath) {
+          logger.debug('[/Agents] New S3 avatar path args: %s', newPath.split('?')[1] ?? newPath);
           agent.avatar = { ...agent.avatar, filepath: newPath };
+
+          try {
+            await updateAgent(
+              { id: agent.id },
+              {
+                avatar: {
+                  filepath: newPath,
+                  source: agent.avatar.source,
+                },
+              },
+              {
+                updatingUserId: userId,
+                skipVersioning: true, // Skip versioning to avoid creating a new version for the avatar refresh
+              },
+            );
+          } catch (persistErr) {
+            logger.debug('[/Agents] Avatar refresh persist error: %o', persistErr);
+          }
         }
       } catch (err) {
-        logger.debug('[/Agents] Avatar refresh error for list item', err);
+        logger.debug('[/Agents] Avatar refresh error for list item: %o', err);
       }
     }),
   );
-
-  await cache.set(refreshKey, true, Time.THIRTY_MINUTES);
 };
 
 /**
@@ -544,6 +573,31 @@ const getListAgentsHandler = async (req, res) => {
       requiredPermissions: PermissionBits.VIEW,
     });
 
+    /**
+     * Refresh all S3 avatars for this user's accessible agent set (not only the current page)
+     * This addresses page-size limits preventing refresh of agents beyond the first page
+     */
+    const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+    const refreshKey = `${userId}:agents_avatar_refresh`;
+    const alreadyChecked = await cache.get(refreshKey);
+    logger.debug('[/Agents] Already checked: %s', alreadyChecked);
+    if (alreadyChecked) {
+      logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
+    } else {
+      try {
+        const fullList = await getListAgentsByAccess({
+          accessibleIds,
+          otherParams: {},
+          limit: null,
+          after: null,
+        });
+        await refreshListAvatars(fullList?.data ?? [], userId);
+        await cache.set(refreshKey, true, Time.THIRTY_MINUTES);
+      } catch (err) {
+        logger.debug('[/Agents] Error refreshing avatars for full list: %o', err);
+      }
+    }
+
     // Use the new ACL-aware function
     const data = await getListAgentsByAccess({
       accessibleIds,
@@ -571,15 +625,9 @@ const getListAgentsHandler = async (req, res) => {
       return agent;
     });
 
-    // Opportunistically refresh S3 avatar URLs for list results with caching
-    try {
-      await refreshListAvatars(data.data, req.user.id);
-    } catch (err) {
-      logger.debug('[/Agents] Skipping avatar refresh for list', err);
-    }
     return res.json(data);
   } catch (error) {
-    logger.error('[/Agents] Error listing Agents', error);
+    logger.error('[/Agents] Error listing Agents: %o', error);
     res.status(500).json({ error: error.message });
   }
 };
