@@ -241,7 +241,10 @@ const createMeiliMongooseModel = ({
             updateOps = [];
 
             // Log progress
-            const progress = Math.round((processedCount / approxTotalCount) * 100);
+            // Calculate percentage based on approximate total count sometimes might lead to more than 100%
+            // the difference is very small and acceptable for progress tracking
+            const percent = Math.round((processedCount / approxTotalCount) * 100);
+            const progress = Math.min(percent, 100);
             logger.info(`[syncWithMeili] Progress: ${progress}% (count: ${processedCount})`);
 
             // Add delay to prevent overwhelming resources

@@ -204,5 +204,64 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(typeof result).toBe('number');
       expect(result).toBeGreaterThanOrEqual(0);
     });
+
+    test('syncWithMeili handles mix of syncable and TTL documents correctly', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+      mockAddDocuments.mockClear();
+
+      // Create syncable documents (expiredAt: null)
+      await messageModel.create({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: true,
+        expiredAt: null,
+      });
+
+      await messageModel.create({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: false,
+        expiredAt: null,
+      });
+
+      // Create TTL documents (expiredAt set to a date)
+      await messageModel.create({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: true,
+        expiredAt: new Date(),
+      });
+
+      await messageModel.create({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: false,
+        expiredAt: new Date(),
+      });
+
+      // estimatedDocumentCount should count all documents (both syncable and TTL)
+      const estimatedCount = await messageModel.estimatedDocumentCount();
+      expect(estimatedCount).toBe(4);
+
+      // Actual syncable documents (expiredAt: null)
+      const syncableCount = await messageModel.countDocuments({ expiredAt: null });
+      expect(syncableCount).toBe(2);
+
+      // Sync should complete successfully even though estimated count is higher than processed count
+      await expect(messageModel.syncWithMeili()).resolves.not.toThrow();
+
+      // Only syncable documents should be indexed (2 documents, not 4)
+      // The mock should be called once per batch, and we have 2 documents
+      expect(mockAddDocuments).toHaveBeenCalled();
+
+      // Verify that only 2 documents were indexed (the syncable ones)
+      const indexedCount = await messageModel.countDocuments({ _meiliIndex: true });
+      expect(indexedCount).toBe(2);
+    });
   });
 });
