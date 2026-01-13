@@ -37,7 +37,7 @@ jest.mock('@librechat/api', () => ({
 }));
 
 jest.mock('jsonwebtoken', () => ({
-  sign: jest.fn((payload, secret, options) => {
+  sign: jest.fn((payload, _secret, _options) => {
     if (payload.id) {
       return `mocked-jwt-token-${payload.id}`;
     }
@@ -95,11 +95,15 @@ jest.mock('~/server/utils', () => ({
 const { setOpenIDAuthTokens } = require('../AuthService');
 
 describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
+  let mockReq;
   let mockRes;
   let mockTokenset;
   const testUserId = 'test-user-id-12345';
 
   beforeEach(() => {
+    // mockReq without session to test cookie fallback path
+    mockReq = {};
+
     mockRes = {
       cookie: jest.fn(),
     };
@@ -138,7 +142,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       process.env.OPENID_REUSE_TOKENS = 'false';
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'false';
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       expect(mockRes.cookie).toHaveBeenCalledTimes(3);
       const cookieNames = mockRes.cookie.mock.calls.map((call) => call[0]);
@@ -149,7 +153,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       process.env.OPENID_REUSE_TOKENS = 'true';
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'false';
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       expect(mockRes.cookie).toHaveBeenCalledTimes(4);
       const cookieNames = mockRes.cookie.mock.calls.map((call) => call[0]);
@@ -165,7 +169,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       process.env.OPENID_REUSE_TOKENS = 'true';
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       expect(mockRes.cookie).toHaveBeenCalledTimes(5);
       const cookieNames = mockRes.cookie.mock.calls.map((call) => call[0]);
@@ -182,7 +186,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       process.env.OPENID_REUSE_TOKENS = 'false';
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       expect(mockRes.cookie).toHaveBeenCalledTimes(4);
       const cookieNames = mockRes.cookie.mock.calls.map((call) => call[0]);
@@ -200,7 +204,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       process.env.OPENID_REUSE_TOKENS = 'true';
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       const refreshTokenCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'refreshToken');
       const accessTokenCall = mockRes.cookie.mock.calls.find(
@@ -221,7 +225,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
     it('should create JWT-signed openid_sub cookie when OPENID_EXPOSE_SUB_COOKIE is true', () => {
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
       expect(openidSubCall).toBeDefined();
@@ -235,7 +239,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
     it('should not create openid_sub cookie when OPENID_EXPOSE_SUB_COOKIE is false', () => {
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'false';
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
       expect(openidSubCall).toBeUndefined();
@@ -245,7 +249,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
       const jwt = require('jsonwebtoken');
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       expect(jwt.sign).toHaveBeenCalledWith(
         { sub: 'cognito-sub-12345' },
@@ -261,7 +265,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       const expiryInMs = 1000 * 60 * 60 * 24 * 7; // 7 days
       const beforeTime = Date.now() + expiryInMs;
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       const afterTime = Date.now() + expiryInMs;
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
@@ -277,7 +281,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       // Simulate AWS Bedrock AgentCore setup
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
 
@@ -298,7 +302,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       process.env.OPENID_REUSE_TOKENS = 'true';
       // OPENID_EXPOSE_SUB_COOKIE not set
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
       expect(openidSubCall).toBeUndefined();
@@ -308,7 +312,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       process.env.OPENID_REUSE_TOKENS = 'false';
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       // Should set 4 cookies: 3 standard + openid_sub
       expect(mockRes.cookie).toHaveBeenCalledTimes(4);
@@ -328,7 +332,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
       delete process.env.JWT_REFRESH_SECRET;
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
 
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
       expect(openidSubCall).toBeUndefined();
@@ -346,7 +350,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
 
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
       mockTokenset.access_token = 'token-without-sub';
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
       expect(openidSubCall).toBeUndefined();
@@ -361,7 +365,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
 
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
       mockTokenset.access_token = 'invalid-token';
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
       expect(openidSubCall).toBeUndefined();
@@ -376,7 +380,7 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
 
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
       mockTokenset.access_token = 'invalid-token';
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+      setOpenIDAuthTokens(mockTokenset, mockReq, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
       expect(openidSubCall).toBeUndefined();
