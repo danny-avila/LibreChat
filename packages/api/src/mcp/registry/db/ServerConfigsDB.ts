@@ -134,7 +134,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       );
     }
 
-    const existingServer = await this._dbMethods.findMCPServerById(serverName);
+    const existingServer = await this._dbMethods.findMCPServerByServerName(serverName);
     let configToSave: ParsedServerConfig = { ...config };
 
     // Transform user-provided API key config (adds customUserVars and headers)
@@ -204,7 +204,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @returns The parsed server config or undefined if not found. If accessed via agent, consumeOnly will be true.
    */
   public async get(serverName: string, userId?: string): Promise<ParsedServerConfig | undefined> {
-    const server = await this._dbMethods.findMCPServerById(serverName);
+    const server = await this._dbMethods.findMCPServerByServerName(serverName);
     if (!server) return undefined;
 
     // Check public access if no userId
