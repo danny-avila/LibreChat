@@ -29,7 +29,12 @@ describe('File Process', () => {
   test('processImageFile() handles temporary files', async () => {
     const now = new Date();
 
-    const mockHandleImageUpload = jest.fn().mockReturnValue({});
+    const mockHandleImageUpload = jest.fn().mockReturnValue({
+      filepath: 'ignore',
+      bytes: 1,
+      width: 1,
+      height: 1,
+    });
     getStrategyFunctions.mockImplementation(() => {
       return { handleImageUpload: mockHandleImageUpload };
     });
@@ -72,7 +77,10 @@ describe('File Process', () => {
   test('processFileUpload() handles temporary files', async () => {
     const now = new Date();
 
-    const mockHandleFileUpload = jest.fn().mockReturnValue({});
+    const mockHandleFileUpload = jest.fn().mockReturnValue({
+      filepath: 'ignore',
+      bytes: 1,
+    });
     getStrategyFunctions.mockImplementation(() => {
       return { handleFileUpload: mockHandleFileUpload };
     });
