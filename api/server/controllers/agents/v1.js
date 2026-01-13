@@ -5,7 +5,9 @@ const { logger } = require('@librechat/data-schemas');
 const {
   agentCreateSchema,
   agentUpdateSchema,
+  refreshListAvatars,
   mergeAgentOcrConversion,
+  MAX_AVATAR_REFRESH_AGENTS,
   convertOcrToContextInPlace,
 } = require('@librechat/api');
 const {
@@ -55,72 +57,6 @@ const systemTools = {
 
 const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/**
- * Opportunistically refreshes S3-backed avatars for agent list responses.
- * Only list responses are refreshed because they're the highest-traffic surface and
- * the avatar URLs have a short-lived TTL. The refresh is cached per-user for 30 minutes
- * via {@link CacheKeys.S3_EXPIRY_INTERVAL} so we refresh once per interval at most.
- * @param {Array} agents - Agents being enriched with S3-backed avatars
- * @param {string} userId - User identifier used for the cache refresh key
- */
-const refreshListAvatars = async (agents, userId) => {
-  if (!agents?.length) {
-    return;
-  }
-
-  logger.debug('[/Agents] Refreshing S3 avatars for agents: %d', agents.length);
-
-  await Promise.all(
-    agents.map(async (agent) => {
-      if (agent?.avatar?.source !== FileSources.s3 || !agent?.avatar?.filepath) {
-        return;
-      }
-
-      if (!agent?.id) {
-        logger.debug('[/Agents] Skipping S3 avatar refresh for agent: %s, ID is not set', agent._id);
-        return;
-      }
-
-      if (!agent?.author) {
-        logger.debug('[/Agents] Skipping S3 avatar refresh for agent: %s, author is not set', agent._id);
-        return;
-      }
-
-      // Only persist for the user's own agents to avoid "viewers" of shared/public agents from mutating other users' agents
-      if (agent.author.toString() !== userId) {
-        return;
-      }
-
-      try {
-        logger.debug('[/Agents] Refreshing S3 avatar for agent: %s', agent._id);
-        const newPath = await refreshS3Url(agent.avatar);
-        if (newPath && newPath !== agent.avatar.filepath) {
-          agent.avatar = { ...agent.avatar, filepath: newPath };
-          try {
-            await updateAgent(
-              { id: agent.id },
-              {
-                avatar: {
-                  filepath: newPath,
-                  source: agent.avatar.source,
-                },
-              },
-              {
-                updatingUserId: userId,
-                skipVersioning: true, // Skip versioning to avoid creating a new version for the avatar refresh
-              },
-            );
-          } catch (persistErr) {
-            logger.debug('[/Agents] Avatar refresh persist error: %o', persistErr);
-          }
-        }
-      } catch (err) {
-        logger.error('[/Agents] Avatar S3 avatar refresh error: %o', err);
-      }
-    }),
-  );
-};
 
 /**
  * Creates an Agent.
@@ -584,10 +520,15 @@ const getListAgentsHandler = async (req, res) => {
         const fullList = await getListAgentsByAccess({
           accessibleIds,
           otherParams: {},
-          limit: null,
+          limit: MAX_AVATAR_REFRESH_AGENTS,
           after: null,
         });
-        await refreshListAvatars(fullList?.data ?? [], userId);
+        await refreshListAvatars({
+          agents: fullList?.data ?? [],
+          userId,
+          refreshS3Url,
+          updateAgent,
+        });
         await cache.set(refreshKey, true, Time.THIRTY_MINUTES);
       } catch (err) {
         logger.error('[/Agents] Error refreshing avatars for full list: %o', err);

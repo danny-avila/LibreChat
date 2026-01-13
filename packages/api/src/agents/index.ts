@@ -1,3 +1,4 @@
+export * from './avatars';
 export * from './chain';
 export * from './edges';
 export * from './initialize';
