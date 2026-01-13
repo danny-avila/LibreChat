@@ -92,14 +92,11 @@ const refreshListAvatars = async (agents, userId) => {
         return;
       }
 
-      logger.debug('[/Agents] Refreshing S3 avatar for agent: %s', agent._id);
-
       try {
+        logger.debug('[/Agents] Refreshing S3 avatar for agent: %s', agent._id);
         const newPath = await refreshS3Url(agent.avatar);
         if (newPath && newPath !== agent.avatar.filepath) {
-          logger.debug('[/Agents] New S3 avatar path args: %s', newPath.split('?')[1] ?? newPath);
           agent.avatar = { ...agent.avatar, filepath: newPath };
-
           try {
             await updateAgent(
               { id: agent.id },
@@ -580,7 +577,6 @@ const getListAgentsHandler = async (req, res) => {
     const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
     const refreshKey = `${userId}:agents_avatar_refresh`;
     const alreadyChecked = await cache.get(refreshKey);
-    logger.debug('[/Agents] Already checked: %s', alreadyChecked);
     if (alreadyChecked) {
       logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
     } else {
