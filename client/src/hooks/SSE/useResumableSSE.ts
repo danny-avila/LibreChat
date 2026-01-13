@@ -4,6 +4,7 @@ import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  apiBaseUrl,
   request,
   Constants,
   QueryKeys,
@@ -144,7 +145,7 @@ export default function useResumableSSE(
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
 
-      const baseUrl = `/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
+      const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
       console.log('[ResumableSSE] Subscribing to stream:', url, { isResume });
 
