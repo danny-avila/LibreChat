@@ -129,4 +129,80 @@ describe('Meilisearch Mongoose plugin', () => {
 
     expect(mockAddDocuments).not.toHaveBeenCalled();
   });
+
+  describe('estimatedDocumentCount usage in syncWithMeili', () => {
+    test('syncWithMeili completes successfully with estimatedDocumentCount', async () => {
+      // Clear any previous documents
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+
+      // Create test documents
+      await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test Conversation 1',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test Conversation 2',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      // Trigger sync - should use estimatedDocumentCount internally
+      await expect(conversationModel.syncWithMeili()).resolves.not.toThrow();
+
+      // Verify documents were processed
+      expect(mockAddDocuments).toHaveBeenCalled();
+    });
+
+    test('syncWithMeili handles empty collection correctly', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+
+      // Verify collection is empty
+      const count = await messageModel.estimatedDocumentCount();
+      expect(count).toBe(0);
+
+      // Sync should complete without error even with 0 estimated documents
+      await expect(messageModel.syncWithMeili()).resolves.not.toThrow();
+    });
+
+    test('estimatedDocumentCount returns count for non-empty collection', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+
+      // Create documents
+      await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test 1',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test 2',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const estimatedCount = await conversationModel.estimatedDocumentCount();
+      expect(estimatedCount).toBeGreaterThanOrEqual(2);
+    });
+
+    test('estimatedDocumentCount is available on model', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+
+      // Verify the method exists and is callable
+      expect(typeof messageModel.estimatedDocumentCount).toBe('function');
+
+      // Should be able to call it
+      const result = await messageModel.estimatedDocumentCount();
+      expect(typeof result).toBe('number');
+      expect(result).toBeGreaterThanOrEqual(0);
+    });
+  });
 });
