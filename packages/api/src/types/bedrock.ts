@@ -57,7 +57,7 @@ export interface BedrockLLMConfigResult {
     credentials?: BedrockCredentials;
     endpointHost?: string;
     guardrailConfig?: GuardrailConfiguration;
-    inferenceProfileArn?: string;
+    applicationInferenceProfile?: string;
   };
   configOptions: Record<string, unknown>;
 }
