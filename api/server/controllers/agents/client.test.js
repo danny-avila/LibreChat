@@ -336,6 +336,25 @@ describe('AgentClient - titleConvo', () => {
       expect(client.recordCollectedUsage).not.toHaveBeenCalled();
     });
 
+    it('should skip title generation for temporary chats', async () => {
+      // Set isTemporary to true
+      mockReq.body.isTemporary = true;
+
+      const text = 'Test temporary chat';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should return undefined without generating title
+      expect(result).toBeUndefined();
+
+      // generateTitle should NOT have been called
+      expect(mockRun.generateTitle).not.toHaveBeenCalled();
+
+      // recordCollectedUsage should NOT have been called
+      expect(client.recordCollectedUsage).not.toHaveBeenCalled();
+    });
+
     it('should skip title generation when titleConvo is false in all config', async () => {
       // Set titleConvo to false in "all" config
       mockReq.config = {
@@ -1609,6 +1628,225 @@ describe('AgentClient - titleConvo', () => {
 
       expect(result).toBeUndefined();
       expect(mockProcessMemory).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMessagesForConversation - mapMethod and mapCondition', () => {
+    const createMessage = (id, parentId, text, extras = {}) => ({
+      messageId: id,
+      parentMessageId: parentId,
+      text,
+      isCreatedByUser: false,
+      ...extras,
+    });
+
+    it('should apply mapMethod to all messages when mapCondition is not provided', () => {
+      const messages = [
+        createMessage('msg-1', null, 'First message'),
+        createMessage('msg-2', 'msg-1', 'Second message'),
+        createMessage('msg-3', 'msg-2', 'Third message'),
+      ];
+
+      const mapMethod = jest.fn((msg) => ({ ...msg, mapped: true }));
+
+      const result = AgentClient.getMessagesForConversation({
+        messages,
+        parentMessageId: 'msg-3',
+        mapMethod,
+      });
+
+      expect(result).toHaveLength(3);
+      expect(mapMethod).toHaveBeenCalledTimes(3);
+      result.forEach((msg) => {
+        expect(msg.mapped).toBe(true);
+      });
+    });
+
+    it('should apply mapMethod only to messages where mapCondition returns true', () => {
+      const messages = [
+        createMessage('msg-1', null, 'First message', { addedConvo: false }),
+        createMessage('msg-2', 'msg-1', 'Second message', { addedConvo: true }),
+        createMessage('msg-3', 'msg-2', 'Third message', { addedConvo: true }),
+        createMessage('msg-4', 'msg-3', 'Fourth message', { addedConvo: false }),
+      ];
+
+      const mapMethod = jest.fn((msg) => ({ ...msg, mapped: true }));
+      const mapCondition = (msg) => msg.addedConvo === true;
+
+      const result = AgentClient.getMessagesForConversation({
+        messages,
+        parentMessageId: 'msg-4',
+        mapMethod,
+        mapCondition,
+      });
+
+      expect(result).toHaveLength(4);
+      expect(mapMethod).toHaveBeenCalledTimes(2);
+
+      expect(result[0].mapped).toBeUndefined();
+      expect(result[1].mapped).toBe(true);
+      expect(result[2].mapped).toBe(true);
+      expect(result[3].mapped).toBeUndefined();
+    });
+
+    it('should not apply mapMethod when mapCondition returns false for all messages', () => {
+      const messages = [
+        createMessage('msg-1', null, 'First message', { addedConvo: false }),
+        createMessage('msg-2', 'msg-1', 'Second message', { addedConvo: false }),
+      ];
+
+      const mapMethod = jest.fn((msg) => ({ ...msg, mapped: true }));
+      const mapCondition = (msg) => msg.addedConvo === true;
+
+      const result = AgentClient.getMessagesForConversation({
+        messages,
+        parentMessageId: 'msg-2',
+        mapMethod,
+        mapCondition,
+      });
+
+      expect(result).toHaveLength(2);
+      expect(mapMethod).not.toHaveBeenCalled();
+      result.forEach((msg) => {
+        expect(msg.mapped).toBeUndefined();
+      });
+    });
+
+    it('should not call mapMethod when mapMethod is null', () => {
+      const messages = [
+        createMessage('msg-1', null, 'First message'),
+        createMessage('msg-2', 'msg-1', 'Second message'),
+      ];
+
+      const mapCondition = jest.fn(() => true);
+
+      const result = AgentClient.getMessagesForConversation({
+        messages,
+        parentMessageId: 'msg-2',
+        mapMethod: null,
+        mapCondition,
+      });
+
+      expect(result).toHaveLength(2);
+      expect(mapCondition).not.toHaveBeenCalled();
+    });
+
+    it('should handle mapCondition with complex logic', () => {
+      const messages = [
+        createMessage('msg-1', null, 'User message', { isCreatedByUser: true, addedConvo: true }),
+        createMessage('msg-2', 'msg-1', 'Assistant response', { addedConvo: true }),
+        createMessage('msg-3', 'msg-2', 'Another user message', { isCreatedByUser: true }),
+        createMessage('msg-4', 'msg-3', 'Another response', { addedConvo: true }),
+      ];
+
+      const mapMethod = jest.fn((msg) => ({ ...msg, processed: true }));
+      const mapCondition = (msg) => msg.addedConvo === true && !msg.isCreatedByUser;
+
+      const result = AgentClient.getMessagesForConversation({
+        messages,
+        parentMessageId: 'msg-4',
+        mapMethod,
+        mapCondition,
+      });
+
+      expect(result).toHaveLength(4);
+      expect(mapMethod).toHaveBeenCalledTimes(2);
+
+      expect(result[0].processed).toBeUndefined();
+      expect(result[1].processed).toBe(true);
+      expect(result[2].processed).toBeUndefined();
+      expect(result[3].processed).toBe(true);
+    });
+
+    it('should preserve message order after applying mapMethod with mapCondition', () => {
+      const messages = [
+        createMessage('msg-1', null, 'First', { addedConvo: true }),
+        createMessage('msg-2', 'msg-1', 'Second', { addedConvo: false }),
+        createMessage('msg-3', 'msg-2', 'Third', { addedConvo: true }),
+      ];
+
+      const mapMethod = (msg) => ({ ...msg, text: `[MAPPED] ${msg.text}` });
+      const mapCondition = (msg) => msg.addedConvo === true;
+
+      const result = AgentClient.getMessagesForConversation({
+        messages,
+        parentMessageId: 'msg-3',
+        mapMethod,
+        mapCondition,
+      });
+
+      expect(result[0].text).toBe('[MAPPED] First');
+      expect(result[1].text).toBe('Second');
+      expect(result[2].text).toBe('[MAPPED] Third');
+    });
+
+    it('should work with summary option alongside mapMethod and mapCondition', () => {
+      const messages = [
+        createMessage('msg-1', null, 'First', { addedConvo: false }),
+        createMessage('msg-2', 'msg-1', 'Second', {
+          summary: 'Summary of conversation',
+          addedConvo: true,
+        }),
+        createMessage('msg-3', 'msg-2', 'Third', { addedConvo: true }),
+        createMessage('msg-4', 'msg-3', 'Fourth', { addedConvo: false }),
+      ];
+
+      const mapMethod = jest.fn((msg) => ({ ...msg, mapped: true }));
+      const mapCondition = (msg) => msg.addedConvo === true;
+
+      const result = AgentClient.getMessagesForConversation({
+        messages,
+        parentMessageId: 'msg-4',
+        mapMethod,
+        mapCondition,
+        summary: true,
+      });
+
+      /** Traversal stops at msg-2 (has summary), so we get msg-4 -> msg-3 -> msg-2 */
+      expect(result).toHaveLength(3);
+      expect(result[0].text).toBe('Summary of conversation');
+      expect(result[0].role).toBe('system');
+      expect(result[0].mapped).toBe(true);
+      expect(result[1].mapped).toBe(true);
+      expect(result[2].mapped).toBeUndefined();
+    });
+
+    it('should handle empty messages array', () => {
+      const mapMethod = jest.fn();
+      const mapCondition = jest.fn();
+
+      const result = AgentClient.getMessagesForConversation({
+        messages: [],
+        parentMessageId: 'msg-1',
+        mapMethod,
+        mapCondition,
+      });
+
+      expect(result).toHaveLength(0);
+      expect(mapMethod).not.toHaveBeenCalled();
+      expect(mapCondition).not.toHaveBeenCalled();
+    });
+
+    it('should handle undefined mapCondition explicitly', () => {
+      const messages = [
+        createMessage('msg-1', null, 'First'),
+        createMessage('msg-2', 'msg-1', 'Second'),
+      ];
+
+      const mapMethod = jest.fn((msg) => ({ ...msg, mapped: true }));
+
+      const result = AgentClient.getMessagesForConversation({
+        messages,
+        parentMessageId: 'msg-2',
+        mapMethod,
+        mapCondition: undefined,
+      });
+
+      expect(result).toHaveLength(2);
+      expect(mapMethod).toHaveBeenCalledTimes(2);
+      result.forEach((msg) => {
+        expect(msg.mapped).toBe(true);
+      });
     });
   });
 });

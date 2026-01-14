@@ -163,7 +163,7 @@ module.exports = {
       isArchived = false,
       tags,
       search,
-      sortBy = 'createdAt',
+      sortBy = 'updatedAt',
       sortDirection = 'desc',
     } = {},
   ) => {
@@ -251,10 +251,12 @@ module.exports = {
 
       let nextCursor = null;
       if (convos.length > limit) {
-        const lastConvo = convos.pop();
-        const primaryValue = lastConvo[finalSortBy];
+        convos.pop(); // Remove extra item used to detect next page
+        // Create cursor from the last RETURNED item (not the popped one)
+        const lastReturned = convos[convos.length - 1];
+        const primaryValue = lastReturned[finalSortBy];
         const primaryStr = finalSortBy === 'title' ? primaryValue : primaryValue.toISOString();
-        const secondaryStr = lastConvo.updatedAt.toISOString();
+        const secondaryStr = lastReturned.updatedAt.toISOString();
         const composite = { primary: primaryStr, secondary: secondaryStr };
         nextCursor = Buffer.from(JSON.stringify(composite)).toString('base64');
       }
@@ -290,8 +292,9 @@ module.exports = {
       const limited = filtered.slice(0, limit + 1);
       let nextCursor = null;
       if (limited.length > limit) {
-        const lastConvo = limited.pop();
-        nextCursor = lastConvo.updatedAt.toISOString();
+        limited.pop(); // Remove extra item used to detect next page
+        // Create cursor from the last RETURNED item (not the popped one)
+        nextCursor = limited[limited.length - 1].updatedAt.toISOString();
       }
 
       const convoMap = {};

@@ -32,11 +32,11 @@ export type FavoriteItem = {
 };
 
 export function getFavorites(): Promise<FavoriteItem[]> {
-  return request.get('/api/user/settings/favorites');
+  return request.get(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`);
 }
 
 export function updateFavorites(favorites: FavoriteItem[]): Promise<FavoriteItem[]> {
-  return request.post('/api/user/settings/favorites', { favorites });
+  return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, { favorites });
 }
 
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
@@ -720,11 +720,11 @@ export function updateConversation(
 export function archiveConversation(
   payload: t.TArchiveConversationRequest,
 ): Promise<t.TArchiveConversationResponse> {
-  return request.post(endpoints.updateConversation(), { arg: payload });
+  return request.post(endpoints.archiveConversation(), { arg: payload });
 }
 
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
-  return request.post(endpoints.genTitle(), payload);
+  return request.get(endpoints.genTitle(payload.conversationId));
 }
 
 export const listMessages = (params?: q.MessagesListParams): Promise<q.MessagesListResponse> => {
@@ -754,6 +754,12 @@ export const editArtifact = async ({
   ...params
 }: m.TEditArtifactRequest): Promise<m.TEditArtifactResponse> => {
   return request.post(endpoints.messagesArtifacts(messageId), params);
+};
+
+export const branchMessage = async (
+  payload: m.TBranchMessageRequest,
+): Promise<m.TBranchMessageResponse> => {
+  return request.post(endpoints.messagesBranch(), payload);
 };
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
@@ -1037,3 +1043,12 @@ export function getGraphApiToken(params: q.GraphTokenParams): Promise<q.GraphTok
 export function getDomainServerBaseUrl(): string {
   return `${endpoints.apiBaseUrl()}/api`;
 }
+
+/* Active Jobs */
+export interface ActiveJobsResponse {
+  activeJobIds: string[];
+}
+
+export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
+  return request.get(endpoints.activeJobs());
+};

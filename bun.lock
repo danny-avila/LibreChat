@@ -36,7 +36,7 @@
     },
     "api": {
       "name": "@librechat/backend",
-      "version": "0.8.2-rc1",
+      "version": "0.8.2-rc2",
       "dependencies": {
         "@aws-sdk/client-bedrock-runtime": "^3.941.0",
         "@aws-sdk/client-s3": "^3.758.0",
@@ -124,7 +124,7 @@
     },
     "client": {
       "name": "@librechat/frontend",
-      "version": "0.8.2-rc1",
+      "version": "0.8.2-rc2",
       "dependencies": {
         "@ariakit/react": "^0.4.15",
         "@ariakit/react-core": "^0.4.17",
@@ -254,7 +254,7 @@
     },
     "packages/api": {
       "name": "@librechat/api",
-      "version": "1.7.10",
+      "version": "1.7.20",
       "devDependencies": {
         "@babel/preset-env": "^7.21.5",
         "@babel/preset-react": "^7.18.6",
@@ -321,7 +321,7 @@
     },
     "packages/client": {
       "name": "@librechat/client",
-      "version": "0.4.2",
+      "version": "0.4.4",
       "devDependencies": {
         "@babel/core": "^7.28.5",
         "@babel/preset-env": "^7.28.5",
@@ -409,7 +409,7 @@
     },
     "packages/data-provider": {
       "name": "librechat-data-provider",
-      "version": "0.8.210",
+      "version": "0.8.220",
       "dependencies": {
         "axios": "^1.12.1",
         "dayjs": "^1.11.13",
@@ -447,7 +447,7 @@
     },
     "packages/data-schemas": {
       "name": "@librechat/data-schemas",
-      "version": "0.0.32",
+      "version": "0.0.33",
       "devDependencies": {
         "@rollup/plugin-alias": "^5.1.0",
         "@rollup/plugin-commonjs": "^29.0.0",
