@@ -158,52 +158,26 @@ class E2BClientManager {
         timeoutMs: options.timeoutMs || sandboxData.config?.timeout_ms || this.defaultConfig.timeoutMs,
       });
       
-      
       logger.info(`[E2B] Code execution completed in sandbox ${sandboxData.id}`);
       
       // 如果有错误，记录详细信息
-      let hasError = false;
-      let errorMessage = null;
-      let errorName = null;
-      let errorTraceback = null;
-      
       if (result.error) {
-        hasError = true;
-        errorName = result.error.name;
-        errorMessage = result.error.message || result.error.value || String(result.error);
-        errorTraceback = result.error.traceback;
-        
         const pythonError = {
-          name: errorName,
-          message: errorMessage,
-          traceback: errorTraceback
+          name: result.error.name,
+          message: result.error.message || result.error.value,
+          traceback: result.error.traceback
         };
         logger.error(`[E2B] Execution result contains error: ${JSON.stringify(pythonError, null, 2)}`);
       }
       
       // 修正：根据E2B v2结构，stdout和stderr在logs对象中
       return {
-        success: !hasError,
-        stdout: result.logs?.stdout || [],
-        stderr: result.logs?.stderr || [],
+        success: !result.error,
+        stdout: result.logs?.stdout || [], // 从logs对象获取
+        stderr: result.logs?.stderr || [], // 从logs对象获取
         results: result.results || [],
-        error: hasError ? errorMessage : null,
-        errorName: hasError ? errorName : null,
-        traceback: hasError ? errorTraceback : null,
-        logs: result.logs || [],
-        exitCode: result.exitCode || 0,
-        runtime: result.runtime || 0,
-      };
-      // 修正：根据E2B v2结构，stdout和stderr在logs对象中
-      return {
-        success: !hasError,
-        stdout: result.logs?.stdout || [],
-        stderr: result.logs?.stderr || [],
-        results: result.results || [],
-        error: hasError ? errorMessage : null,
-        errorName: hasError ? errorName : null,
-        traceback: hasError ? errorTraceback : null,
-        logs: result.logs || [],
+        error: result.error ? result.error.message : null,
+        logs: result.logs || [], // 保留完整的logs对象
         exitCode: result.exitCode || 0,
         runtime: result.runtime || 0,
       };

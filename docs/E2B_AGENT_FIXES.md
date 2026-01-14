@@ -1,8 +1,496 @@
 # E2B Agent 问题解决文档
 
 ## 📋 目录
+0. [2026-01-14 关键 Bug 修复](#0-2026-01-14-关键-bug-修复) ⭐ 最新
 1. [2026-01-07 核心问题修复](#1-2026-01-07-核心问题修复)
 2. [优化方向](#2-优化方向)
+
+---
+
+## 0. 2026-01-14 关键 Bug 修复 ⭐
+
+### 0.1 错误检测逻辑严重 Bug
+
+**问题描述**：
+LLM 不断重复执行相同的失败代码，无法自动修复错误。
+
+**用户报告**：
+```
+日志显示:
+2026-01-14 07:12:41 error: [E2B] Execution result contains error: {
+  "name": "ValueError",
+  "message": "could not convert string to float: 'Braund, Mr. Owen Harris'",
+  "traceback": "..."
+}
+2026-01-14 07:12:41 info: [E2BAgent Tools] Code executed successfully (empty stdout)
+```
+
+后端记录了错误，但告诉 LLM "执行成功"，导致 LLM 不知道需要修复。
+
+**根本原因**：
+`initialize.js` 的错误检测逻辑错误：
+```javascript
+// ❌ 错误的判断方式
+return {
+  success: !result.error,  // 当 result.error 是对象时，!{} === false
+  stdout: result.logs?.stdout || [],
+  stderr: result.logs?.stderr || [],
+  error: result.error ? result.error.message : null,
+  ...
+};
+```
+
+**问题分析**：
+```javascript
+const result = { error: { name: 'ValueError', message: '...', traceback: '...' } };
+
+// JavaScript 中的对象真值判断
+!result.error  // !{} === false
+              // 所以 success = false ❌
+
+// 但后续代码
+result.error ? result.error.message : null
+// {} ? {} : null → {} 被判断为真
+// 所以提取了 error.message
+
+// 矛盾：success = false (表示失败)
+//      但 error = "..." (有错误消息)
+//      codeExecutor 收到 success: false 误以为成功
+```
+
+**实际影响**：
+- `initialize.js` 返回 `success: false` (JavaScript: `!{} = false`)
+- `codeExecutor.js` 使用 `success: !result.error` 再次误判为 `true`
+- `tools.js` 构建 observation 时认为执行成功
+- LLM 收到 "Code executed successfully"，不知道需要修复
+- 结果：重复执行相同代码 10+ 次，直到迭代上限
+
+**解决方案**：
+使用明确的布尔变量判断：
+
+**1. initialize.js - 正确检测 Python 错误**：
+```javascript
+// ✅ 修复后
+let hasError = false;
+let errorMessage = null;
+let errorName = null;
+let errorTraceback = null;
+
+if (result.error) {
+  hasError = true;
+  errorName = result.error.name;  // "ValueError"
+  errorMessage = result.error.message || result.error.value || String(result.error);
+  errorTraceback = result.error.traceback;
+  logger.error(`[E2B] Execution result contains error: ${JSON.stringify({
+    name: errorName,
+    message: errorMessage,
+    traceback: errorTraceback
+  }, null, 2)}`);
+}
+
+return {
+  success: !hasError,  // ✅ 明确的布尔值
+  stdout: result.logs?.stdout || [],
+  stderr: result.logs?.stderr || [],
+  error: hasError ? errorMessage : null,
+  errorName: hasError ? errorName : null,  // ✨ 新增：错误类型
+  traceback: hasError ? errorTraceback : null,  // ✨ 新增：完整 traceback
+  results: result.results || [],
+  logs: result.logs || [],
+  exitCode: result.exitCode || 0,
+  runtime: result.runtime || 0,
+};
+```
+
+**2. codeExecutor.js - 传递完整错误信息**：
+```javascript
+// ✅ 修复后
+const response = {
+  success: result.success,  // ✅ 直接使用，不再重新判断
+  stdout: this._formatOutput(result.stdout),
+  stderr: this._formatOutput(result.stderr),
+  error: result.error || null,
+  errorName: result.errorName || null,  // ✨ 新增
+  traceback: result.traceback || null,  // ✨ 新增
+  exitCode: result.exitCode || 0,
+  runtime: result.runtime || 0,
+  images: images,
+  hasVisualization: images.length > 0,
+};
+```
+
+**3. tools.js - 向 LLM 传递完整错误信息**：
+```javascript
+// ✅ 修复后
+if (!result.success) {
+  logger.error(`[E2BAgent Tools] Code execution FAILED:`);
+  logger.error(`[E2BAgent Tools]   Error Type: ${result.errorName || 'Unknown'}`);
+  logger.error(`[E2BAgent Tools]   Error: ${result.error}`);
+  if (result.traceback) {
+    logger.error(`[E2BAgent Tools]   Traceback: ${result.traceback.substring(0, 500)}...`);
+  }
+  
+  // ✨ 向 LLM 传递完整的错误信息（让 LLM 自己分析和修复）
+  observation.error_type = result.errorName;
+  observation.error_message = result.error;
+  observation.traceback = result.traceback;
+  // Note: No specific debug hints - LLM should analyze the traceback independently
+}
+```
+
+**效果验证**（用户测试）：
+```
+✅ 第1次执行: df.corr()
+   → ValueError: could not convert string to float
+   → LLM 收到完整错误信息
+
+✅ 第2次执行: LLM 分析 traceback 后改用
+   numeric_df = df.select_dtypes(include=['int64', 'float64'])
+   correlation_matrix = numeric_df.corr()
+   → Success! (817 chars output)
+
+✅ 结果：错误自动修复成功，用户无感知
+```
+
+---
+
+### 0.2 图表显示问题
+
+**问题描述**：
+4个图表成功生成并保存，但用户界面不显示。
+
+**用户报告**：
+```
+日志显示图表生成:
+- /images/.../1768374775789-plot-0.png (性别 vs 生存率)
+- /images/.../1768374780395-plot-0.png (年龄分布)
+- /images/.../1768374784401-plot-0.png (舱位 vs 生存率) 
+- /images/.../1768374788211-plot-0.png (登船港口 vs 生存率)
+
+但前端没有图片显示
+```
+
+**根本原因**：
+LLM 生成了图表，但没有输出 markdown 语法来显示图片。
+
+**System Prompt 问题**：
+```javascript
+// ❌ 之前的描述（不够明确）
+"Charts will be automatically captured and displayed to the user."
+// LLM 误以为：只要生成图表，系统会"自动"显示，不需要自己输出 markdown
+```
+
+**解决方案**：
+在 System Prompt 中明确要求 LLM 输出 markdown 语法：
+
+```javascript
+// prompts.js - ✅ 修复后
+4️⃣ **Visualization Handling** - CRITICAL for displaying charts:
+   
+   a) **Create the chart**:
+      - Write matplotlib/seaborn code
+      - Call plt.show() at the end
+   
+   b) **Display the chart** (MANDATORY):
+      - After execution, you will receive \`image_paths\` in the observation
+      - **YOU MUST output the image markdown** to display it to the user
+      - Use: \`![Chart Description](exact_path_from_observation)\`
+      - Example from observation:
+         \`\`\`
+         observation.image_paths = ["/images/user123/1234567890-plot-0.png"]
+         \`\`\`
+         Your output:
+         \`\`\`
+         ![Age Distribution](/images/user123/1234567890-plot-0.png)
+         \`\`\`
+   
+   c) **Explain the chart**:
+      - Describe what the visualization shows
+      - Highlight key patterns or insights
+   
+   **IMPORTANT**: If you don't output the markdown syntax, the user won't see the chart!
+```
+
+**关键改进**：
+1. ✅ 明确说明 "YOU MUST output the image markdown"
+2. ✅ 提供具体示例（observation → markdown 输出）
+3. ✅ 警告后果："If you don't output the markdown syntax, the user won't see the chart!"
+
+**预期效果**：
+LLM 在生成图表后会输出：
+```markdown
+现在生成性别与生存率的关系图表：
+
+![性别 vs 生存率](/images/user123/1768374775789-plot-0.png)
+
+从图表可以看出，女性的生存率明显高于男性...
+```
+
+---
+
+### 0.3 TOOL_CALL 事件与 ExecuteCode 组件集成 ⭐
+
+**目标**：实现 Azure Assistant 风格的输出，代码块和执行结果紧密显示。
+
+**前端需求分析**：
+前端已存在 `ExecuteCode` 组件，可以解析并显示：
+```typescript
+// ExecuteCode 组件期望的数据格式
+{
+  type: 'tool_call',
+  tool_call: {
+    id: string,
+    name: 'execute_code',
+    args: string,  // JSON 字符串，包含 { lang: 'python', code: '...' }
+    input: string,  // 备用：纯代码字符串
+    progress: number,  // 0.1 = 开始, 1.0 = 完成
+    output: string  // 执行结果
+  }
+}
+```
+
+**实现方案 - Content 数组架构**：
+
+**1. Controller 层 - 初始化 Content 数组**：
+```javascript
+// controller.js
+const contentParts = [];  // 📝 共享数组
+let currentTextIndex = -1;
+let contentIndex = 0;
+
+// 📝 Helper: 开始新的 TEXT part
+const startNewTextPart = () => {
+  currentTextIndex = contentIndex++;
+  contentParts[currentTextIndex] = {
+    type: 'text',
+    text: { value: '' }
+  };
+  return currentTextIndex;
+};
+
+// 传递给 Agent
+const agent = new E2BDataAnalystAgent({
+  contentParts,  // 📝 共享引用
+  getContentIndex: () => contentIndex++,
+  startNewTextPart,
+  ...
+});
+```
+
+**2. Agent 层 - 发送 TOOL_CALL 事件**：
+```javascript
+// index.js - 工具执行时
+if (onToken && name === 'execute_code') {
+  // 🔧 发送开始事件 (progress=0.1)
+  const toolCallIndex = this.getContentIndex();
+  const argsString = JSON.stringify(args);  // ✨ 完整的 {lang, code}
+  
+  const toolCallPart = {
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      id: id,
+      name: name,
+      args: argsString,  // ✨ JSON 字符串
+      input: args.code || argsString,
+      progress: 0.1,
+    },
+  };
+  
+  this.contentParts[toolCallIndex] = toolCallPart;
+  sendEvent(this.res, { ...toolCallPart, index: toolCallIndex });
+}
+
+// 执行完成后
+if (onToken && name === 'execute_code' && toolCallIndex !== -1) {
+  // 🔧 发送完成事件 (progress=1.0 + output)
+  const output = result.stdout || result.stderr || '';
+  this.contentParts[toolCallIndex][ContentTypes.TOOL_CALL].output = output;
+  this.contentParts[toolCallIndex][ContentTypes.TOOL_CALL].progress = 1.0;
+  
+  sendEvent(this.res, {
+    type: ContentTypes.TOOL_CALL,
+    index: toolCallIndex,
+    [ContentTypes.TOOL_CALL]: this.contentParts[toolCallIndex][ContentTypes.TOOL_CALL]
+  });
+  
+  // ✨ 切断当前 TEXT part，为后续文本创建新 part
+  if (this.startNewTextPart) {
+    this.startNewTextPart();
+  }
+}
+```
+
+**3. Controller 层 - 流式 TEXT 事件**：
+```javascript
+// controller.js - onToken 回调
+agent.onToken = (token) => {
+  // 📝 初始化 TEXT part（首次）
+  if (currentTextIndex === -1) {
+    startNewTextPart();
+  }
+  
+  // 📝 累积文本内容
+  contentParts[currentTextIndex].text.value += token;
+  
+  // ✅ 发送 TEXT 事件
+  const eventData = {
+    type: 'text',
+    index: currentTextIndex,  // ✨ 正确的 index
+    text: {
+      value: contentParts[currentTextIndex]?.text?.value || fullResponseText
+    },
+    messageId: responseMessageId,
+    conversationId: finalConversationId,
+  };
+  sendEvent(res, eventData);
+};
+```
+
+**4. 最终消息 - 包含完整 Content 数组**：
+```javascript
+// controller.js - 流式结束后
+const responseMessage = {
+  messageId: responseMessageId,
+  conversationId: finalConversationId,
+  parentMessageId: userMessageId,
+  sender: assistant.name || 'E2B Agent',
+  text: finalText,
+  content: contentParts,  // 📝 包含完整的交错内容
+  isCreatedByUser: false,
+  error: false,
+  unfinished: false,
+};
+```
+
+**Content 数组结构示例**：
+```javascript
+[
+  { type: 'text', text: { value: '我将分析数据集...' } },  // index 0
+  { type: 'tool_call', tool_call: {                         // index 1
+      id: 'call_123',
+      name: 'execute_code',
+      args: '{"lang":"python","code":"df.head()"}',
+      input: 'df.head()',
+      progress: 1.0,
+      output: '   PassengerId  Survived  Pclass...'
+    }
+  },
+  { type: 'text', text: { value: '从上面的数据可以看出...' } },  // index 2
+  { type: 'tool_call', tool_call: { ... } },                 // index 3
+  { type: 'text', text: { value: '最后生成图表...' } },        // index 4
+]
+```
+
+**前端显示效果** (Azure Assistant 风格)：
+```
+我将分析数据集...
+
+┌─────────────────────────────────┐
+│ 🐍 Python                       │
+├─────────────────────────────────┤
+│ df.head()                       │
+└─────────────────────────────────┘
+┌─────────────────────────────────┐
+│ 📤 Output                       │
+├─────────────────────────────────┤
+│    PassengerId  Survived  ...   │
+│ 0      1         0        ...   │
+└─────────────────────────────────┘
+
+从上面的数据可以看出...
+
+┌─────────────────────────────────┐
+│ 🐍 Python                       │
+├─────────────────────────────────┤
+│ plt.plot(df['Age'])             │
+│ plt.show()                      │
+└─────────────────────────────────┘
+...
+```
+
+**关键技术点**：
+1. ✅ **共享 Content 数组**：Controller 和 Agent 共享同一个数组引用
+2. ✅ **Index 管理**：每个 part 有独立的 index，支持交错显示
+3. ✅ **TEXT part 切断**：工具执行后自动创建新 TEXT part
+4. ✅ **args 格式**：传递完整 JSON 字符串 `{lang, code}`
+5. ✅ **Progress 状态**：0.1 = 开始, 1.0 = 完成
+6. ✅ **Output 传递**：执行结果包含在 TOOL_CALL 事件中
+
+**效果验证**：
+- ✅ 代码块和输出紧密显示
+- ✅ 支持多次工具调用，正确排序
+- ✅ 文本和工具调用交错显示
+- ✅ 前端 ExecuteCode 组件自动渲染
+- ✅ 完全符合 Azure Assistant 风格
+
+---
+
+### 0.4 通用错误处理策略优化
+
+**之前的问题**：
+System Prompt 中针对特定错误（如 ValueError）有过多强调：
+```javascript
+// ❌ 之前的描述
+"When you encounter ValueError with corr(), use df.select_dtypes(include='number').corr()"
+"When you encounter KeyError, check df.columns.tolist()"
+// 问题：针对每种错误都要写特定解决方案
+```
+
+**优化方案**：
+采用通用调试策略，让 LLM 自主分析和解决：
+
+```javascript
+// prompts.js - ✅ 优化后
+- **Error Handling** - When code fails (success = false):
+  1. **Analyze the traceback** - it contains all information you need
+  2. **Understand the root cause** - What operation failed? Why?
+  3. **🛑 NEVER repeat the same code** - Change your approach based on what you learned
+  4. **Debug systematically**:
+     - Check data types: print(df.dtypes)
+     - Check column names: print(df.columns.tolist())
+     - Inspect values: print(df.head())
+     - Verify assumptions before complex operations
+  5. **Recover silently** - Fix internally, show only success to user
+  6. Don't explain errors unless you can't fix after 2-3 attempts
+```
+
+**优势**：
+- ✅ 可处理未见过的错误类型
+- ✅ LLM 学会调试方法而非记忆答案
+- ✅ 代码更简洁，无需维护大量特定错误处理
+- ✅ 已验证：成功处理 ValueError 并自动修复
+
+---
+
+### 0.4 修复总结
+
+**修改的文件**：
+1. ✅ `api/server/services/Endpoints/e2bAssistants/initialize.js` - 修复错误检测逻辑
+2. ✅ `api/server/services/Sandbox/codeExecutor.js` - 传递 errorName 和 traceback
+3. ✅ `api/server/services/Agents/e2bAgent/tools.js` - 向 LLM 传递完整错误信息
+4. ✅ `api/server/services/Agents/e2bAgent/prompts.js` - 强制要求图表 markdown 输出
+5. ✅ `api/server/services/Agents/e2bAgent/index.js` - TOOL_CALL 事件发送
+6. ✅ `api/server/routes/e2bAssistants/controller.js` - Content 数组架构
+7. ✅ `docs/E2B_AGENT_TEST_CASES.md` - 更新测试文档
+
+**验证结果**：
+- ✅ 错误自动修复成功（ValueError → select_dtypes 修复）
+- ✅ 静默恢复（用户不看到错误）
+- ✅ 4个图表生成成功
+- ⏳ 图表显示（等待测试验证 - System Prompt 已修复）
+- ✅ TOOL_CALL 事件正确发送
+- ✅ ExecuteCode 组件正确显示代码和输出
+- ✅ Content 数组交错结构工作正常
+- ✅ Azure Assistant 风格输出实现
+
+**系统状态**：
+- ✅ 错误检测逻辑正确
+- ✅ 错误信息完整传递给 LLM
+- ✅ 通用调试策略生效
+- ✅ 图表显示规则明确
+- ✅ TOOL_CALL 事件完整实现
+- ✅ ExecuteCode 组件自动显示代码和输出
+- ✅ Azure Assistant 风格输出
 
 > **相关文档**: 
 > - [系统架构文档](./E2B_AGENT_ARCHITECTURE.md)

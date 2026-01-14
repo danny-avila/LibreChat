@@ -33,8 +33,17 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
         // Log execution results for debugging
         if (!result.success) {
           logger.error(`[E2BAgent Tools] Code execution FAILED:`);
+          logger.error(`[E2BAgent Tools]   Error Type: ${result.errorName || 'Unknown'}`);
           logger.error(`[E2BAgent Tools]   Error: ${result.error}`);
-          logger.error(`[E2BAgent Tools]   Stderr: ${result.stderr}`);
+          if (result.traceback) {
+            logger.error(`[E2BAgent Tools]   Traceback: ${result.traceback.substring(0, 500)}...`);
+          }
+          
+          // ✨ 向 LLM 传递完整的错误信息（让 LLM 自己分析和修复）
+          observation.error_type = result.errorName;
+          observation.error_message = result.error;
+          observation.traceback = result.traceback;
+          // Note: No specific debug hints - LLM should analyze the traceback independently
         } else if (!result.stdout && !result.hasVisualization) {
           logger.info(`[E2BAgent Tools] Code executed successfully (empty stdout - likely assignment statement)`);
         } else {

@@ -1,4 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
+const { ContentTypes } = require('librechat-data-provider');
+const { sendEvent } = require('@librechat/api');
 const { getToolFunctions } = require('./tools');
 const { getSystemPrompt, getToolsDefinitions } = require('./prompts');
 const ContextManager = require('./contextManager');
@@ -17,15 +19,23 @@ class E2BDataAnalystAgent {
    * @param {Object} params.openai - 初始化好的 OpenAI 客户端
    * @param {string} params.userId - 用户 ID
    * @param {string} params.conversationId - 对话 ID
+   * @param {string} params.responseMessageId - 响应消息 ID
+   * @param {Array} params.contentParts - Content parts 数组（用于累积 TOOL_CALL）
+   * @param {Function} params.getContentIndex - 获取下一个 content index 的函数
+   * @param {Function} params.startNewTextPart - 开始新的 TEXT part 的函数
    * @param {Object} params.assistant - E2BAssistant 数据库文档对象
    * @param {Array} params.files - 附加的文件列表
    */
-  constructor({ req, res, openai, userId, conversationId, assistant, files = [] }) {
+  constructor({ req, res, openai, userId, conversationId, responseMessageId, contentParts, getContentIndex, startNewTextPart, assistant, files = [] }) {
     this.req = req;
     this.res = res;
     this.openai = openai;
     this.userId = userId;
     this.conversationId = conversationId;
+    this.responseMessageId = responseMessageId;
+    this.contentParts = contentParts || [];  // Reference to shared array
+    this.getContentIndex = getContentIndex || (() => this.contentParts.length);  // Function to get next index
+    this.startNewTextPart = startNewTextPart;  // Function to start new TEXT part
     this.assistant = assistant;
     this.files = files; // Store files
     
@@ -314,8 +324,37 @@ class E2BDataAnalystAgent {
               logger.info(`[E2BAgent] Calling tool: ${name}`);
               logger.debug(`[E2BAgent] Tool arguments:`, JSON.stringify(args, null, 2));
               
-              // 不发送工具标记到前端（保持流式和最终内容一致）
-              // 用户只看到清理后的分析内容，不看到技术细节
+              // 🔧 发送 TOOL_CALL 开始事件（progress=0.1）
+              let toolCallIndex = -1;
+              if (onToken && name === 'execute_code') {
+                toolCallIndex = this.getContentIndex();
+                // ✨ 传递完整的 args 对象（包含 lang 和 code）
+                const argsString = JSON.stringify(args);
+                logger.info(`[E2BAgent] TOOL_CALL args: ${argsString.substring(0, 150)}...`);
+                
+                const toolCallPart = {
+                  type: ContentTypes.TOOL_CALL,
+                  [ContentTypes.TOOL_CALL]: {
+                    id: id,
+                    name: name,
+                    args: argsString,  // ✨ JSON 字符串，包含 {lang, code}
+                    input: args.code || argsString,  // 备用：纯代码字符串
+                    progress: 0.1,
+                  },
+                };
+                
+                // Add to content array
+                this.contentParts[toolCallIndex] = toolCallPart;
+                
+                const toolCallEvent = {
+                  ...toolCallPart,
+                  index: toolCallIndex,
+                  messageId: this.responseMessageId,
+                  conversationId: this.conversationId,
+                };
+                sendEvent(this.res, toolCallEvent);
+                logger.info(`[E2BAgent] Sent TOOL_CALL start event (index=${toolCallIndex})`);
+              }
               
               let result;
               try {
@@ -336,8 +375,39 @@ class E2BDataAnalystAgent {
 
               logger.debug(`[E2BAgent] Tool result:`, JSON.stringify(result, null, 2));
               
-              // 不发送工具完成标记到前端（保持简洁的用户体验）
-              // 工具执行状态通过日志记录，用户只看到分析结果
+              // 🔧 发送 TOOL_CALL 完成事件（progress=1.0 + output）
+              if (onToken && name === 'execute_code' && toolCallIndex !== -1) {
+                let output = '';
+                if (result.success) {
+                  // result 是 observation 对象，已包含 stdout/stderr
+                  output = result.stdout || result.stderr || '';
+                } else {
+                  output = result.error || 'Execution failed';
+                }
+                
+                // 添加调试日志
+                logger.info(`[E2BAgent] Preparing TOOL_CALL output: "${output.substring(0, 100)}..." (${output.length} chars)`);
+                
+                // Update content array
+                this.contentParts[toolCallIndex][ContentTypes.TOOL_CALL].output = output;
+                this.contentParts[toolCallIndex][ContentTypes.TOOL_CALL].progress = 1.0;
+                
+                const toolCallEvent = {
+                  type: ContentTypes.TOOL_CALL,
+                  index: toolCallIndex,
+                  [ContentTypes.TOOL_CALL]: this.contentParts[toolCallIndex][ContentTypes.TOOL_CALL],
+                  messageId: this.responseMessageId,
+                  conversationId: this.conversationId,
+                };
+                sendEvent(this.res, toolCallEvent);
+                logger.info(`[E2BAgent] Sent TOOL_CALL complete event (index=${toolCallIndex}, output=${output.length} chars)`);
+
+                // ✨ 通知 controller 切断当前 TEXT part，为后续文本创建新 part
+                if (this.startNewTextPart) {
+                  logger.info(`[E2BAgent] Triggering new TEXT part after tool execution: ${name}`);
+                  this.startNewTextPart();
+                }
+              }
 
               // 记录中间步骤
               intermediateSteps.push({
@@ -492,31 +562,46 @@ class E2BDataAnalystAgent {
   /**
    * Clean up error descriptions from accumulated content.
    * Removes sentences/paragraphs that describe execution errors or issues.
+   * Preserves code blocks and their content.
    * @private
    */
   _cleanErrorDescriptions(content) {
     if (!content) return content;
     
-    // Patterns that indicate error descriptions (case-insensitive)
+    // Step 1: Extract and protect code blocks (python, javascript, etc.)
+    const codeBlocks = [];
+    let protectedContent = content.replace(/(```[\s\S]*?```)/g, (match, block) => {
+      const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+      codeBlocks.push(block);
+      return placeholder;
+    });
+    
+    // Step 2: Clean error descriptions (only in non-code text)
     const errorPatterns = [
       /It seems there (?:was|is) (?:an? )?(?:issue|error|problem)[^.!?]*[.!?]/gi,
       /Let me try (?:again|a different approach)[^.!?]*[.!?]/gi,
       /(?:I'll|I will) (?:attempt|try) (?:again|once more|a different)[^.!?]*[.!?]/gi,
       /(?:Unfortunately|Apologies),? (?:the|there|I)[^.!?]*(?:error|issue|problem|failed)[^.!?]*[.!?]/gi,
       /There (?:was|is) (?:an? )?(?:error|issue|problem) (?:with|in|during)[^.!?]*[.!?]/gi,
-      /The (?:code|execution|output) (?:failed|did not work|returned no)[^.!?]*[.!?]/gi,
+      // ❌ Removed: /The (?:code|execution|output) (?:failed|did not work|returned no)[^.!?]*[.!?]/gi,
+      // This could match code comments, so we remove it
       /No output was returned[^.!?]*[.!?]/gi,
     ];
     
-    let cleaned = content;
+    let cleaned = protectedContent;
     errorPatterns.forEach(pattern => {
       cleaned = cleaned.replace(pattern, '');
     });
     
-    // Remove excessive line breaks (more than 2 consecutive)
+    // Step 3: Restore code blocks
+    codeBlocks.forEach((block, index) => {
+      cleaned = cleaned.replace(`__CODE_BLOCK_${index}__`, block);
+    });
+    
+    // Step 4: Clean up excessive line breaks (more than 2 consecutive)
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
     
-    // Trim leading/trailing whitespace
+    // Step 5: Trim leading/trailing whitespace
     cleaned = cleaned.trim();
     
     return cleaned;

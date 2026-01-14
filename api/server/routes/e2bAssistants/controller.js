@@ -475,12 +475,32 @@ const chat = async (req, res) => {
       }
     }
 
+    // 📝 Track content parts (TOOL_CALL + TEXT) - MUST declare before agent
+    const contentParts = [];
+    let currentTextIndex = -1;  // Will be set on first text token
+    let contentIndex = 0;  // Global content index
+    
+    // 📝 Helper: Start a new TEXT part (called when text output resumes after tool call)
+    const startNewTextPart = () => {
+      currentTextIndex = contentIndex++;
+      contentParts[currentTextIndex] = {
+        type: 'text',
+        text: { value: '' }
+      };
+      logger.info(`[E2B Assistant] Started new TEXT part at index ${currentTextIndex}`);
+      return currentTextIndex;
+    };
+
     const agent = new E2BDataAnalystAgent({
       req,
       res,
       openai,
       userId: req.user.id,
       conversationId: finalConversationId,
+      responseMessageId,
+      contentParts,  // 📝 Pass shared content array
+      getContentIndex: () => contentIndex++,  // 📝 Pass index generator
+      startNewTextPart,  // ✨ Pass startNewTextPart function
       assistant,
       files,
     });
@@ -496,17 +516,25 @@ const chat = async (req, res) => {
       tokenCount++;
       eventsSent++;
       
+      // 📝 Initialize TEXT content part on first token (or if reset)
+      if (currentTextIndex === -1) {
+        startNewTextPart();
+      }
+      
+      // 📝 Accumulate text content
+      contentParts[currentTextIndex].text.value += token;
+      
       // ✅ 添加详细调试日志
       if (eventsSent <= 5 || eventsSent % 20 === 0) {
-        logger.info(`[E2B onToken] Event #${eventsSent}: cumulative_len=${fullResponseText.length}, latest_token="${token.substring(0, 30).replace(/\n/g, '\\n')}..."`);
+        logger.info(`[E2B onToken] Event #${eventsSent}: index=${currentTextIndex}, cumulative_len=${fullResponseText.length}, latest_token="${token.substring(0, 30).replace(/\n/g, '\\n')}..."`);
       }
       
       // ✅ Send in OpenAI Assistants format (triggers contentHandler for streaming)
       const eventData = {
-        type: 'text',  // ✅ 关键：使用 type 而非 message，触发 contentHandler
-        index: 0,      // ✅ 内容索引（固定为 0，因为只有一个文本块）
+        type: 'text',
+        index: currentTextIndex,  // ✨ 使用正确的 index，支持交错显示
         text: {
-          value: fullResponseText  // ✅ 累积文本，嵌套在 value 中
+          value: contentParts[currentTextIndex]?.text?.value || fullResponseText
         },
         messageId: responseMessageId,
         conversationId: finalConversationId,
@@ -535,6 +563,13 @@ const chat = async (req, res) => {
     logger.info(`[E2B Assistant] Agent finished. Accumulated: ${fullResponseText.length} chars, Final (with image paths): ${result.text?.length} chars`);
     logger.info(`[E2B Assistant] Final text preview: ${finalText?.substring(0, 200)}...`);
     
+    // 📝 Replace image paths in each TEXT part
+    // NOTE: Each contentPart already has correct text from streaming.
+    // We only need to ensure image paths are correct (already handled by agent)
+    // DO NOT overwrite with finalText (which is cumulative)!
+    
+    logger.info(`[E2B Assistant] Final content parts: ${contentParts.length} (${contentParts.map(p => p.type).join(', ')})`);
+    
     // Create response message
     const responseMessage = {
       messageId: responseMessageId,
@@ -542,6 +577,7 @@ const chat = async (req, res) => {
       parentMessageId: userMessageId,
       sender: assistant.name || 'E2B Agent',
       text: finalText,
+      content: contentParts,  // 📝 Include content array!
       isCreatedByUser: false,
       error: false,
       unfinished: false,

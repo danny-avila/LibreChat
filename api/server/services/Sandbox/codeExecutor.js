@@ -56,10 +56,12 @@ class CodeExecutor {
       
       // 3. 构建标准响应对象
       const response = {
-        success: !result.error,
+        success: result.success,  // ✅ 直接使用 result.success
         stdout: this._formatOutput(result.stdout),
         stderr: this._formatOutput(result.stderr),
-        error: result.error ? result.error : null,
+        error: result.error || null,  // ✅ 保留错误消息
+        errorName: result.errorName || null,  // ✨ 新增：错误类型
+        traceback: result.traceback || null,  // ✨ 新增：traceback
         exitCode: result.exitCode || 0,
         runtime: result.runtime || 0,
         images: images, 

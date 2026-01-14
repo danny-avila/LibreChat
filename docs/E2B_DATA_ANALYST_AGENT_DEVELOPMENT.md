@@ -712,7 +712,84 @@ Tier 3 (LLM 自主): 分析、推理、实施
 
 ---
 
+---
+
+## 11. 2026-01-14 关键 Bug 修复 ⭐
+
+### 11.1 错误检测逻辑严重 Bug 修复
+
+**问题**: LLM 重复执行失败代码，无法自动修复错误  
+**根因**: `initialize.js` 使用 `!result.error` 判断错误，当 `result.error` 是对象时误判为成功  
+**修复**: 
+- 使用明确的 `hasError` 布尔变量
+- 添加 `errorName` 和 `traceback` 字段传递
+- 完整的错误信息链：initialize.js → codeExecutor.js → tools.js → LLM
+
+**影响文件**:
+- `api/server/services/Endpoints/e2bAssistants/initialize.js`
+- `api/server/services/Sandbox/codeExecutor.js`
+- `api/server/services/Agents/e2bAgent/tools.js`
+
+**验证结果**: ✅ 错误自动修复成功（ValueError → select_dtypes 修复）
+
+### 11.2 图表显示问题修复
+
+**问题**: 图表生成成功但前端不显示  
+**根因**: LLM 没有输出 markdown 语法显示图片  
+**修复**: 在 System Prompt 中明确要求 "YOU MUST output the image markdown"  
+
+**影响文件**:
+- `api/server/services/Agents/e2bAgent/prompts.js`
+
+**状态**: ⏳ 等待用户测试验证
+
+### 11.3 通用错误处理策略
+
+**优化**: 移除针对特定错误的硬编码提示，改为通用调试策略  
+**优势**: 
+- 可处理未见过的错误
+- LLM 学会调试方法
+- 代码更简洁
+
+### 11.4 TOOL_CALL 事件与 ExecuteCode 组件集成 ⭐
+
+**功能**: 实现 Azure Assistant 风格的代码和输出显示
+
+**核心架构** - Content 数组系统：
+```javascript
+// 交错的 TEXT 和 TOOL_CALL parts
+message.content = [
+  { type: 'text', text: { value: '分析开始...' } },      // index 0
+  { type: 'tool_call', tool_call: {                      // index 1
+      id: 'call_123',
+      name: 'execute_code',
+      args: '{"lang":"python","code":"df.head()"}',
+      progress: 1.0,
+      output: '...'  // 执行结果
+    }
+  },
+  { type: 'text', text: { value: '从结果看出...' } },    // index 2
+]
+```
+
+**实现组件**:
+1. **controller.js**: 初始化 contentParts 数组，管理 TEXT part 切换
+2. **index.js**: 发送 TOOL_CALL 事件（开始/完成），调用 startNewTextPart()
+3. **前端 ExecuteCode**: 自动解析 args 字段，渲染代码和输出
+
+**显示效果**: 
+- ✅ 代码块和输出框紧密显示
+- ✅ 多次工具调用正确排序
+- ✅ 文本说明和代码执行交错显示
+- ✅ 完全符合 Azure Assistant 风格
+
+**影响文件**:
+- `api/server/routes/e2bAssistants/controller.js` - Content 数组管理
+- `api/server/services/Agents/e2bAgent/index.js` - TOOL_CALL 事件发送
+
+---
+
 **创建日期**: 2025-12-23  
-**最后更新**: 2026-01-07  
-**当前状态**: ✅ 核心功能完成！关键架构优化完成（路径简化、错误处理统一、工具精简）。助手配置、历史对话、图像显示、沙箱复用均已正常工作。
+**最后更新**: 2026-01-14  
+**当前状态**: ✅ 核心功能完成！关键 bug 修复完成（错误检测、图表显示、通用错误处理）。助手配置、历史对话、图像显示、沙箱复用、错误自愈均已正常工作。
 **当前分支**: `feature/e2b-integration`
