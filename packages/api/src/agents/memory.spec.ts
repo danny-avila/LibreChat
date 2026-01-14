@@ -20,6 +20,7 @@ jest.mock('@librechat/agents', () => ({
   },
   Providers: {
     OPENAI: 'openai',
+    BEDROCK: 'bedrock',
   },
   GraphEvents: {
     TOOL_END: 'tool_end',
@@ -294,5 +295,66 @@ describe('Memory Agent Header Resolution', () => {
     expect(safeUser).not.toHaveProperty('refreshToken');
     expect(safeUser).toHaveProperty('id');
     expect(safeUser).toHaveProperty('email');
+  });
+
+  it('should include instructions in user message for Bedrock provider', async () => {
+    const llmConfig = {
+      provider: 'bedrock',
+      model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    };
+
+    const { HumanMessage } = await import('@langchain/core/messages');
+    const testMessage = new HumanMessage('test chat content');
+
+    await processMemory({
+      res: mockRes,
+      userId: 'user-123',
+      setMemory: mockMemoryMethods.setMemory,
+      deleteMemory: mockMemoryMethods.deleteMemory,
+      messages: [testMessage],
+      memory: 'existing memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      validKeys: ['preferences'],
+      instructions: 'test instructions',
+      llmConfig,
+      user: testUser,
+    });
+
+    expect(Run.create as jest.Mock).toHaveBeenCalled();
+    const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
+
+    // For Bedrock, instructions should NOT be passed to graphConfig
+    expect(runConfig.graphConfig.instructions).toBeUndefined();
+    expect(runConfig.graphConfig.additional_instructions).toBeUndefined();
+  });
+
+  it('should pass instructions to graphConfig for non-Bedrock providers', async () => {
+    const llmConfig = {
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+    };
+
+    await processMemory({
+      res: mockRes,
+      userId: 'user-123',
+      setMemory: mockMemoryMethods.setMemory,
+      deleteMemory: mockMemoryMethods.deleteMemory,
+      messages: [],
+      memory: 'existing memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      validKeys: ['preferences'],
+      instructions: 'test instructions',
+      llmConfig,
+      user: testUser,
+    });
+
+    expect(Run.create as jest.Mock).toHaveBeenCalled();
+    const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
+
+    // For non-Bedrock providers, instructions should be passed to graphConfig
+    expect(runConfig.graphConfig.instructions).toBe('test instructions');
+    expect(runConfig.graphConfig.additional_instructions).toBeDefined();
   });
 });
