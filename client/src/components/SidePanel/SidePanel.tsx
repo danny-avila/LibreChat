@@ -9,6 +9,8 @@ import { useLocalStorage, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import NavToggle from '~/components/Nav/NavToggle';
 import { useSidePanelContext } from '~/Providers';
+import { useSetRecoilState } from 'recoil';
+import { pdfBuilderState } from '~/store/pdfBuilder';
 import { cn } from '~/utils';
 import Nav from './Nav';
 
@@ -48,6 +50,7 @@ const SidePanel = ({
   const [isHovering, setIsHovering] = useState(false);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const setPDFBuilderState = useSetRecoilState(pdfBuilderState);
 
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
@@ -81,6 +84,10 @@ const SidePanel = ({
     panelRef.current?.collapse();
   }, [panelRef, setMinSize, setIsCollapsed, setFullCollapse, setCollapsedSize]);
 
+  const openPDFBuilder = useCallback(() => {
+    setPDFBuilderState((prev) => ({ ...prev, isOpen: true }));
+  }, [setPDFBuilderState]);
+
   const Links = useSideNavLinks({
     endpoint,
     hidePanel,
@@ -88,6 +95,7 @@ const SidePanel = ({
     endpointType,
     interfaceConfig,
     endpointsConfig,
+    openPDFBuilder,
   });
 
   const toggleNavVisible = useCallback(() => {
