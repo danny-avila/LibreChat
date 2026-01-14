@@ -396,10 +396,26 @@ ${memory ?? 'No existing memories'}`;
 
     if (isBedrock) {
       const combinedInstructions = [instructions, memoryStatus].filter(Boolean).join('\n\n');
-      const originalContent =
-        messages.length > 0 && typeof messages[0].content === 'string' ? messages[0].content : '';
-      const bedrockUserMessage = new HumanMessage(`${combinedInstructions}\n\n${originalContent}`);
-      processedMessages = [bedrockUserMessage];
+
+      if (messages.length > 0) {
+        const firstMessage = messages[0];
+        const originalContent =
+          typeof firstMessage.content === 'string' ? firstMessage.content : '';
+
+        if (typeof firstMessage.content !== 'string') {
+          logger.warn(
+            'Bedrock memory processing: First message has non-string content, using empty string',
+          );
+        }
+
+        const bedrockUserMessage = new HumanMessage(
+          `${combinedInstructions}\n\n${originalContent}`,
+        );
+        processedMessages = [bedrockUserMessage, ...messages.slice(1)];
+      } else {
+        processedMessages = [new HumanMessage(combinedInstructions)];
+      }
+
       graphInstructions = undefined;
       graphAdditionalInstructions = undefined;
     }

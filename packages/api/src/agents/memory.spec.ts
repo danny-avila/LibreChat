@@ -1,16 +1,41 @@
 import { Types } from 'mongoose';
-import type { Response } from 'express';
 import { Run } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
-import { createSafeUser } from '~/utils/env';
+import type { Response } from 'express';
 import { processMemory } from './memory';
 
 jest.mock('~/stream/GenerationJobManager');
+
+const mockCreateSafeUser = jest.fn((user) => ({
+  id: user?.id,
+  email: user?.email,
+  name: user?.name,
+  username: user?.username,
+}));
+
+const mockResolveHeaders = jest.fn((opts) => {
+  const headers = opts.headers || {};
+  const user = opts.user || {};
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    let resolved = value as string;
+    resolved = resolved.replace(/\$\{(\w+)\}/g, (_match, envVar) => process.env[envVar] || '');
+    resolved = resolved.replace(/\{\{LIBRECHAT_USER_EMAIL\}\}/g, user.email || '');
+    resolved = resolved.replace(/\{\{LIBRECHAT_USER_ID\}\}/g, user.id || '');
+    result[key] = resolved;
+  }
+  return result;
+});
+
 jest.mock('~/utils', () => ({
   Tokenizer: {
     getTokenCount: jest.fn(() => 10),
   },
+  createSafeUser: (user: unknown) => mockCreateSafeUser(user),
+  resolveHeaders: (opts: unknown) => mockResolveHeaders(opts),
 }));
+
+const { createSafeUser } = jest.requireMock('~/utils');
 
 jest.mock('@librechat/agents', () => ({
   Run: {
