@@ -369,6 +369,19 @@ ${memory ?? 'No existing memories'}`;
       }
     }
 
+    // Handle Bedrock with thinking enabled - temperature must be 1
+    const bedrockConfig = finalLLMConfig as {
+      additionalModelRequestFields?: { thinking?: unknown };
+      temperature?: number;
+    };
+    if (
+      llmConfig?.provider === Providers.BEDROCK &&
+      bedrockConfig.additionalModelRequestFields?.thinking != null &&
+      bedrockConfig.temperature != null
+    ) {
+      (finalLLMConfig as unknown as Record<string, unknown>).temperature = 1;
+    }
+
     const llmConfigWithHeaders = finalLLMConfig as OpenAIClientOptions;
     if (llmConfigWithHeaders?.configuration?.defaultHeaders != null) {
       llmConfigWithHeaders.configuration.defaultHeaders = resolveHeaders({
