@@ -7,7 +7,10 @@ import {
   request,
   Constants,
   QueryKeys,
+  ErrorTypes,
+  apiBaseUrl,
   createPayload,
+  ViolationTypes,
   LocalStorageKeys,
   removeNullishValues,
 } from 'librechat-data-provider';
@@ -144,7 +147,7 @@ export default function useResumableSSE(
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
 
-      const baseUrl = `/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
+      const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
       console.log('[ResumableSSE] Subscribing to stream:', url, { isResume });
 
@@ -333,8 +336,11 @@ export default function useResumableSSE(
       });
 
       /**
-       * Error event - fired on actual network failures (non-200, connection lost, etc.)
-       * This should trigger reconnection with exponential backoff, except for 404 errors.
+       * Error event handler - handles BOTH:
+       * 1. HTTP-level errors (responseCode present) - 404, 401, network failures
+       * 2. Server-sent error events (event: error with data) - known errors like ViolationTypes/ErrorTypes
+       *
+       * Order matters: check responseCode first since HTTP errors may also include data
        */
       sse.addEventListener('error', async (e: MessageEvent) => {
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
@@ -346,7 +352,6 @@ export default function useResumableSSE(
         if (responseCode === 404) {
           console.log('[ResumableSSE] Stream not found (404) - job completed or expired');
           sse.close();
-          // Optimistically remove from active jobs since job is gone
           removeActiveJob(currentStreamId);
           setIsSubmitting(false);
           setShowStopButton(false);
@@ -354,8 +359,6 @@ export default function useResumableSSE(
           reconnectAttemptRef.current = 0;
           return;
         }
-
-        console.log('[ResumableSSE] Stream error (network failure) - will attempt reconnect');
 
         // Check for 401 and try to refresh token (same pattern as useSSE)
         if (responseCode === 401) {
@@ -365,7 +368,6 @@ export default function useResumableSSE(
             if (!newToken) {
               throw new Error('Token refresh failed.');
             }
-            // Update headers on same SSE instance and retry (like useSSE)
             sse.headers = {
               Authorization: `Bearer ${newToken}`,
             };
@@ -376,6 +378,64 @@ export default function useResumableSSE(
             console.log('[ResumableSSE] Token refresh failed:', error);
           }
         }
+
+        /**
+         * Server-sent error event (event: error with data) - no responseCode.
+         * These are known errors (ErrorTypes, ViolationTypes) that should be displayed to user.
+         * Only check e.data if there's no HTTP responseCode, since HTTP errors may also have body data.
+         */
+        if (!responseCode && e.data) {
+          console.log('[ResumableSSE] Server-sent error event received:', e.data);
+          sse.close();
+          removeActiveJob(currentStreamId);
+
+          try {
+            const errorData = JSON.parse(e.data);
+            const errorString = errorData.error ?? errorData.message ?? JSON.stringify(errorData);
+
+            // Check if it's a known error type (ViolationTypes or ErrorTypes)
+            let isKnownError = false;
+            try {
+              const parsed =
+                typeof errorString === 'string' ? JSON.parse(errorString) : errorString;
+              const errorType = parsed?.type ?? parsed?.code;
+              if (errorType) {
+                const violationValues = Object.values(ViolationTypes) as string[];
+                const errorTypeValues = Object.values(ErrorTypes) as string[];
+                isKnownError =
+                  violationValues.includes(errorType) || errorTypeValues.includes(errorType);
+              }
+            } catch {
+              // Not JSON or parsing failed - treat as generic error
+            }
+
+            console.log('[ResumableSSE] Error type check:', { isKnownError, errorString });
+
+            // Display the error to user via errorHandler
+            errorHandler({
+              data: { text: errorString } as unknown as Parameters<typeof errorHandler>[0]['data'],
+              submission: currentSubmission as EventSubmission,
+            });
+          } catch (parseError) {
+            console.error('[ResumableSSE] Failed to parse server error:', parseError);
+            errorHandler({
+              data: { text: e.data } as unknown as Parameters<typeof errorHandler>[0]['data'],
+              submission: currentSubmission as EventSubmission,
+            });
+          }
+
+          setIsSubmitting(false);
+          setShowStopButton(false);
+          setStreamId(null);
+          reconnectAttemptRef.current = 0;
+          return;
+        }
+
+        // Network failure or unknown HTTP error - attempt reconnection with backoff
+        console.log('[ResumableSSE] Stream error (network failure) - will attempt reconnect', {
+          responseCode,
+          hasData: !!e.data,
+        });
 
         if (reconnectAttemptRef.current < MAX_RETRIES) {
           // Increment counter BEFORE close() so abort handler knows we're reconnecting

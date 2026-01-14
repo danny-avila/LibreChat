@@ -134,10 +134,10 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Find an MCP server by serverName
-   * @param serverName - The MCP server ID
+   * @param serverName - The unique server name identifier
    * @returns The MCP server document or null
    */
-  async function findMCPServerById(serverName: string): Promise<MCPServerDocument | null> {
+  async function findMCPServerByServerName(serverName: string): Promise<MCPServerDocument | null> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
     return await MCPServer.findOne({ serverName }).lean();
   }
@@ -311,7 +311,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
 
   return {
     createMCPServer,
-    findMCPServerById,
+    findMCPServerByServerName,
     findMCPServerByObjectId,
     findMCPServersByAuthor,
     getListMCPServersByIds,

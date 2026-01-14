@@ -129,4 +129,139 @@ describe('Meilisearch Mongoose plugin', () => {
 
     expect(mockAddDocuments).not.toHaveBeenCalled();
   });
+
+  describe('estimatedDocumentCount usage in syncWithMeili', () => {
+    test('syncWithMeili completes successfully with estimatedDocumentCount', async () => {
+      // Clear any previous documents
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+
+      // Create test documents
+      await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test Conversation 1',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test Conversation 2',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      // Trigger sync - should use estimatedDocumentCount internally
+      await expect(conversationModel.syncWithMeili()).resolves.not.toThrow();
+
+      // Verify documents were processed
+      expect(mockAddDocuments).toHaveBeenCalled();
+    });
+
+    test('syncWithMeili handles empty collection correctly', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+
+      // Verify collection is empty
+      const count = await messageModel.estimatedDocumentCount();
+      expect(count).toBe(0);
+
+      // Sync should complete without error even with 0 estimated documents
+      await expect(messageModel.syncWithMeili()).resolves.not.toThrow();
+    });
+
+    test('estimatedDocumentCount returns count for non-empty collection', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+
+      // Create documents
+      await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test 1',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test 2',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const estimatedCount = await conversationModel.estimatedDocumentCount();
+      expect(estimatedCount).toBeGreaterThanOrEqual(2);
+    });
+
+    test('estimatedDocumentCount is available on model', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+
+      // Verify the method exists and is callable
+      expect(typeof messageModel.estimatedDocumentCount).toBe('function');
+
+      // Should be able to call it
+      const result = await messageModel.estimatedDocumentCount();
+      expect(typeof result).toBe('number');
+      expect(result).toBeGreaterThanOrEqual(0);
+    });
+
+    test('syncWithMeili handles mix of syncable and TTL documents correctly', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+      mockAddDocuments.mockClear();
+
+      // Create syncable documents (expiredAt: null)
+      await messageModel.create({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: true,
+        expiredAt: null,
+      });
+
+      await messageModel.create({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: false,
+        expiredAt: null,
+      });
+
+      // Create TTL documents (expiredAt set to a date)
+      await messageModel.create({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: true,
+        expiredAt: new Date(),
+      });
+
+      await messageModel.create({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: false,
+        expiredAt: new Date(),
+      });
+
+      // estimatedDocumentCount should count all documents (both syncable and TTL)
+      const estimatedCount = await messageModel.estimatedDocumentCount();
+      expect(estimatedCount).toBe(4);
+
+      // Actual syncable documents (expiredAt: null)
+      const syncableCount = await messageModel.countDocuments({ expiredAt: null });
+      expect(syncableCount).toBe(2);
+
+      // Sync should complete successfully even though estimated count is higher than processed count
+      await expect(messageModel.syncWithMeili()).resolves.not.toThrow();
+
+      // Only syncable documents should be indexed (2 documents, not 4)
+      // The mock should be called once per batch, and we have 2 documents
+      expect(mockAddDocuments).toHaveBeenCalled();
+
+      // Verify that only 2 documents were indexed (the syncable ones)
+      const indexedCount = await messageModel.countDocuments({ _meiliIndex: true });
+      expect(indexedCount).toBe(2);
+    });
+  });
 });

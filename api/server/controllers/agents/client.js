@@ -784,6 +784,7 @@ class AgentClient extends BaseClient {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
+    // Use first entry's input_tokens as the base input (represents initial user message context)
     // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
     const firstUsage = collectedUsage[0];
     const input_tokens =
@@ -795,10 +796,11 @@ class AgentClient extends BaseClient {
         Number(firstUsage?.cache_read_input_tokens) ||
         0);
 
-    let output_tokens = 0;
-    let previousTokens = input_tokens; // Start with original input
-    for (let i = 0; i < collectedUsage.length; i++) {
-      const usage = collectedUsage[i];
+    // Sum output_tokens directly from all entries - works for both sequential and parallel execution
+    // This avoids the incremental calculation that produced negative values for parallel agents
+    let total_output_tokens = 0;
+
+    for (const usage of collectedUsage) {
       if (!usage) {
         continue;
       }
@@ -811,6 +813,9 @@ class AgentClient extends BaseClient {
       const cache_read =
         Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
 
+      // Accumulate output tokens for the usage summary
+      total_output_tokens += Number(usage.output_tokens) || 0;
+
       const txMetadata = {
         context,
         balance,
@@ -820,18 +825,6 @@ class AgentClient extends BaseClient {
         endpointTokenConfig: this.options.endpointTokenConfig,
         model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
       };
-
-      if (i > 0) {
-        // Count new tokens generated (input_tokens minus previous accumulated tokens)
-        output_tokens +=
-          (Number(usage.input_tokens) || 0) + cache_creation + cache_read - previousTokens;
-      }
-
-      // Add this message's output tokens
-      output_tokens += Number(usage.output_tokens) || 0;
-
-      // Update previousTokens to include this message's output
-      previousTokens += Number(usage.output_tokens) || 0;
 
       if (cache_creation > 0 || cache_read > 0) {
         spendStructuredTokens(txMetadata, {
@@ -862,7 +855,7 @@ class AgentClient extends BaseClient {
 
     this.usage = {
       input_tokens,
-      output_tokens,
+      output_tokens: total_output_tokens,
     };
   }
 
