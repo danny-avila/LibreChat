@@ -1,5 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { Sandbox } = require('@e2b/code-interpreter');
+const OpenAI = require('openai');
+const { ProxyAgent } = require('undici');
 
 /**
  * E2B Client Manager - 使用E2B SDK v2
@@ -745,15 +747,86 @@ const e2bClientManager = new E2BClientManager();
 
 /**
  * 标准初始化函数 - 适配 LibreChat 端点架构
+ * 同时初始化 E2B Client 和 OpenAI Client (支持 Azure OpenAI)
  * @param {Object} params
  * @param {ServerRequest} params.req
  * @param {ServerResponse} params.res
  * @returns {Promise<Object>} 初始化后的客户端环境
  */
 const initializeClient = async ({ req, res }) => {
-  // 返回管理器作为客户端实例
+  // 从环境变量中读取 OpenAI/Azure OpenAI 配置
+  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+  const azureApiKey = process.env.AZURE_OPENAI_API_KEY;
+  const azureApiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-02-15-preview';
+  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o';
+  
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  const PROXY = process.env.PROXY;
+
+  let openai;
+
+  // 优先使用 Azure OpenAI
+  if (azureEndpoint && azureApiKey && azureApiKey !== 'user_provided') {
+    logger.info('[E2B] Initializing Azure OpenAI client for E2B Agent');
+    logger.info(`[E2B] Azure Endpoint: ${azureEndpoint}`);
+    logger.info(`[E2B] Azure Deployment: ${azureDeployment}`);
+    logger.info(`[E2B] Azure API Version: ${azureApiVersion}`);
+
+    const opts = {
+      apiKey: azureApiKey,
+      baseURL: `${azureEndpoint}/openai/deployments/${azureDeployment}`,
+      defaultQuery: { 'api-version': azureApiVersion },
+      defaultHeaders: { 'api-key': azureApiKey },
+    };
+
+    if (PROXY) {
+      const proxyAgent = new ProxyAgent(PROXY);
+      opts.fetchOptions = {
+        dispatcher: proxyAgent,
+      };
+    }
+
+    openai = new OpenAI(opts);
+    openai.locals = { 
+      azureOptions: {
+        azureOpenAIApiDeploymentName: azureDeployment,
+        azureOpenAIApiVersion: azureApiVersion,
+      }
+    };
+    // Store deployment name for E2B Agent to use as model parameter
+    openai.azureDeployment = azureDeployment;
+    
+  } else if (openaiApiKey && openaiApiKey !== 'user_provided') {
+    // 使用标准 OpenAI API
+    logger.info('[E2B] Initializing OpenAI client for E2B Agent');
+    
+    const opts = {
+      apiKey: openaiApiKey,
+    };
+
+    if (PROXY) {
+      const proxyAgent = new ProxyAgent(PROXY);
+      opts.fetchOptions = {
+        dispatcher: proxyAgent,
+      };
+    }
+
+    openai = new OpenAI(opts);
+  } else {
+    throw new Error('[E2B] No valid API key found. Please set AZURE_OPENAI_API_KEY or OPENAI_API_KEY in .env file');
+  }
+
+  openai.req = req;
+  openai.res = res;
+
+  // 返回管理器和 OpenAI 客户端
+  // 如果使用 Azure，返回 Azure key；否则返回标准 OpenAI key
+  const apiKeyToReturn = azureApiKey || openaiApiKey;
+  
   return {
     e2bClient: e2bClientManager,
+    openai,
+    openAIApiKey: apiKeyToReturn,
   };
 };
 

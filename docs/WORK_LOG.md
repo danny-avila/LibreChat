@@ -4,6 +4,79 @@
 
 ---
 
+## 2026-01-15 (周三)
+
+### 🚀 Azure OpenAI 集成 + System Prompt 优化
+**Git Commit**: (待提交) - feat: Add Azure OpenAI support and optimize system prompt for gpt-5-mini
+
+### 主要工作
+1. **Azure OpenAI API 集成** ⭐⭐⭐
+   - **需求**: 从硬编码的 OpenAI API Key 迁移到 Azure OpenAI Service
+   - **实现**:
+     - 修改 `initialize.js`: 检测 `OPENAI_API_KEY=user_provided` 时优先使用 Azure 配置
+     - 使用部署特定的 baseURL: `${azureEndpoint}/openai/deployments/${azureDeployment}`
+     - 在 OpenAI 客户端对象上附加 `azureDeployment` 属性
+   - **环境变量**:
+     ```env
+     OPENAI_API_KEY=user_provided
+     AZURE_OPENAI_ENDPOINT=https://hkubs-airi.cognitiveservices.azure.com/
+     AZURE_OPENAI_API_KEY=A4J32nz2...
+     AZURE_OPENAI_API_VERSION=2025-01-01-preview
+     AZURE_OPENAI_DEPLOYMENT=gpt-5-mini
+     ```
+
+2. **错误修复过程** 🐛
+   - **错误 1**: `azureOpenAIApiVersion is not defined`
+     - 原因: ES6 property shorthand 变量名不匹配
+     - 修复: 使用显式赋值 `azureOpenAIApiVersion: azureApiVersion`
+   
+   - **错误 2**: 401 Incorrect API key "user_pro*ided"
+     - 原因: `index.js` 创建了新的 OpenAI 客户端覆盖 initialize.js 的配置
+     - 修复: 删除 `index.js` 中的重复客户端创建逻辑
+   
+   - **错误 3**: 400 temperature does not support 0
+     - 原因: Azure OpenAI gpt-5-mini 仅支持 temperature=1（默认值）
+     - 修复: 在 `e2bAgent/index.js` 中检测 Azure 并跳过 temperature 参数
+   
+   - **错误 4**: 模型名称显示为 gpt-4o 而非 gpt-5-mini
+     - 原因: `this.assistant.model` 为空，使用了默认值
+     - 修复: 优先使用 `this.openai.azureDeployment`
+
+3. **System Prompt 优化** 📝
+   - **背景**: gpt-5-mini 是轻量级模型，存在重复性输出、结构化不足问题
+   - **优化内容** (`prompts.js`):
+     - 明确工作流程: Plan (首次) → Execute (迭代循环)
+     - 强调直接调用工具，禁止先写 ```python 代码块
+     - 强制使用 Markdown 语法显示图像: `![Description](path)`
+     - 改进错误处理提示: 分析 traceback，自主修复，无需询问
+   - **效果**: 输出更结构化，减少重复，图像显示更可靠
+
+4. **代码清理**
+   - 清理所有临时调试日志（原计划的 lines 237-240, 247 已在之前版本清理）
+   - 简化 temperature 处理逻辑
+   - Azure 检测机制稳定
+
+### 验证结果
+- ✅ Azure OpenAI 初始化成功（日志显示正确的 endpoint, deployment, version）
+- ✅ E2B Agent 使用 gpt-5-mini 部署名称
+- ✅ Temperature 参数正确省略
+- ✅ Titanic 数据集分析成功（5 次工具调用，生成 1 张热力图）
+- ✅ 优化后的 prompt 输出更结构化
+- ✅ 图像正确显示在前端
+
+### 文档更新
+- 更新 `E2B_DATA_ANALYST_AGENT_DEVELOPMENT.md`:
+  - 添加 Azure OpenAI 集成章节
+  - 添加 System Prompt 优化章节
+  - 更新最后更新日期和状态
+
+### 待办事项
+- ⏳ 创建 Git commit 并推送到远程仓库
+- ⏳ 考虑支持前端动态选择 OpenAI / Azure OpenAI
+- ⏳ 针对不同模型微调 prompt（GPT-4o vs gpt-5-mini）
+
+---
+
 ## 2026-01-14 (周二)
 
 ### 🐛 关键 Bug 修复日

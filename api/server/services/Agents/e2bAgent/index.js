@@ -219,7 +219,8 @@ class E2BDataAnalystAgent {
         logger.debug(`[E2BAgent] Loop iteration ${iteration}`);
 
         // 4. 调用 LLM with retry logic for rate limits
-        const model = this.assistant.model || 'gpt-4o';
+        // For Azure OpenAI, use deployment name as model
+        const model = this.openai.azureDeployment || this.assistant.model || 'gpt-4o';
         const streamingEnabled = !!onToken;
         
         logger.info(`[E2BAgent] LLM call - streaming: ${streamingEnabled}, iteration: ${iteration}`);
@@ -231,14 +232,30 @@ class E2BDataAnalystAgent {
         // Retry loop wraps entire LLM call + processing
         while (retryCount <= maxRetries) {
           try {
-            const response = await this.openai.chat.completions.create({
+            // Check if we're using Azure OpenAI
+            const isAzureOpenAI = !!this.openai.locals?.azureOptions;
+            const requestedTemperature = this.assistant.model_parameters?.temperature ?? 0;
+            
+            // Azure OpenAI's gpt-5 models (including gpt-5-mini) don't support temperature=0
+            // They only support default value (1). So we omit the parameter entirely.
+            const temperature = (isAzureOpenAI && requestedTemperature === 0) 
+              ? undefined 
+              : requestedTemperature;
+            
+            const completionParams = {
               model,
               messages,
               tools: getToolsDefinitions(),
               tool_choice: 'auto',
-              temperature: this.assistant.model_parameters?.temperature ?? 0,
               stream: streamingEnabled, // Enable streaming if callback provided
-            });
+            };
+            
+            // Only add temperature if it's defined
+            if (temperature !== undefined) {
+              completionParams.temperature = temperature;
+            }
+            
+            const response = await this.openai.chat.completions.create(completionParams);
 
             // Handle streaming response
             if (streamingEnabled) {

@@ -60,7 +60,40 @@
 本项目使用 **OpenAI API** 进行推理，支持的模型包括：
 - GPT-4 / GPT-4-turbo
 - GPT-4o / GPT-4o-mini
+- **Azure OpenAI** (推荐配置)
+  - 支持 Azure OpenAI Service 部署
+  - 支持 gpt-5-mini 等最新预览模型
+  - 自动处理 Azure 特定的 API 版本和端点格式
 - 或任何兼容 OpenAI API 的模型（如通过代理访问的其他模型）
+
+#### Azure OpenAI 集成 (2026-01-15)
+项目已完全支持 Azure OpenAI API，配置方式如下：
+
+**环境变量配置**:
+```env
+# 保持默认值触发 Azure 优先级
+OPENAI_API_KEY=user_provided
+
+# Azure OpenAI 配置
+AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com/
+AZURE_OPENAI_API_KEY=your_azure_api_key
+AZURE_OPENAI_API_VERSION=2025-01-01-preview
+AZURE_OPENAI_DEPLOYMENT=gpt-5-mini
+```
+
+**初始化逻辑** (`initialize.js`):
+- 检测到 `OPENAI_API_KEY=user_provided` 时，优先使用 Azure 配置
+- 创建 Azure OpenAI 客户端时使用部署特定的 baseURL：
+  ```javascript
+  baseURL: `${azureEndpoint}/openai/deployments/${azureDeployment}`
+  ```
+- 在客户端对象上附加 `azureDeployment` 属性供 Agent 使用
+
+**Azure 特性处理**:
+1. **模型名称**: E2B Agent 优先使用 `openai.azureDeployment` 而非 `assistant.model`
+2. **Temperature 限制**: Azure OpenAI 的 gpt-5-mini 不支持 temperature=0，仅支持默认值 (1)
+   - Agent 自动检测 Azure 并跳过 temperature 参数
+3. **API 版本**: 使用 `2025-01-01-preview` 支持最新模型特性
 
 ---
 
@@ -193,6 +226,46 @@ LibreChat/
   - **消息持久化**: 保存用户消息和 Agent 响应到 MongoDB
   - **历史加载**: 多轮对话时加载历史消息
   - **错误处理**: 统一错误响应格式
+
+### 5.8 System Prompt 优化 (2026-01-15)
+
+**背景**: gpt-5-mini 是轻量级预览模型，在数据分析场景中存在以下问题：
+- 重复性输出（重复执行相同分析）
+- 结构化不足（缺少清晰的段落和章节）
+- 缺乏系统性思考（未按逻辑顺序推进）
+
+**优化策略** (`prompts.js`):
+
+#### 1. 明确工作流程
+```
+## 🔄 Execution Workflow
+1️⃣ **Plan** (First turn only)
+   - List 5-10 analysis steps
+
+2️⃣ **Execute** (Iterative loop):
+   - **State Step**: Briefly describe current step
+   - **Action**: Call `execute_code` directly
+     - 🛑 **DO NOT** write Python code in markdown block before calling tool
+     - ✅ **DO** call tool immediately with code in arguments
+   - **Observation**: Review result, note success/error
+   - **Progress**: Check if complete or continue
+```
+
+#### 2. 关键约束
+- **禁止 Markdown 代码块**: 强调直接调用工具，不要先写 ```python 块
+- **强制图像显示**: 必须使用 `![Description](path_from_result)` 显示图片
+- **错误自愈**: 遇到错误时分析 traceback，修复后重试，无需询问用户
+
+#### 3. 环境说明
+- 列出可用的 Python 库（pandas, numpy, matplotlib, seaborn, scikit-learn 等）
+- 说明文件路径规则（使用完整路径，不添加 UUID 前缀）
+- 可视化提示（使用 `plt.show()`，图像自动捕获）
+
+**效果**:
+- 输出更结构化（清晰的步骤划分）
+- 减少重复执行（按计划逐步推进）
+- 图像显示更可靠（强制 Markdown 语法）
+- 错误恢复更自主（分析错误并自动修复）
 
 ---
 
@@ -344,10 +417,34 @@ LibreChat/
 - **错误重试**: 增强 LLM 工具调用失败的重试机制
 - **Token 优化**: 减少系统提示词和工具定义的 Token 消耗
 - **访问控制**: 实现私有/公共助手权限管理（待协作人员完成）
+- **模型切换**: 支持前端动态选择 OpenAI / Azure OpenAI / 其他兼容 API
+- **Prompt 微调**: 针对不同模型（GPT-4o, gpt-5-mini）优化 system prompt
 
 ---
 
-## 10. 版本历史与修复记录
+## 10. 最新更新 (2026-01-15)
+
+### Azure OpenAI 集成
+- ✅ 支持 Azure OpenAI Service（优先于标准 OpenAI API）
+- ✅ 使用部署特定的 baseURL 格式
+- ✅ 自动处理 Azure 的 temperature 限制
+- ✅ 模型名称优先使用 Azure deployment 名称
+
+### System Prompt 优化
+- ✅ 针对 gpt-5-mini 优化工作流程
+- ✅ 强调结构化输出（Plan → Execute 迭代循环）
+- ✅ 禁止 Markdown 代码块，直接调用工具
+- ✅ 强制使用 Markdown 语法显示图像
+- ✅ 改进错误自愈能力
+
+### 代码质量
+- ✅ 清理所有临时调试日志
+- ✅ Temperature 处理逻辑简化
+- ✅ Azure 检测机制稳定
+
+---
+
+## 11. 版本历史与修复记录
 
 为了保持本文档的简洁性，详细的架构优化记录、Bug 修复详情和历史变更已移动到以下专门文档：
 
@@ -364,6 +461,6 @@ LibreChat/
 ---
 
 **创建日期**: 2025-12-23  
-**最后更新**: 2026-01-14  
-**当前状态**: ✅ 核心功能完成！关键 bug 修复完成（错误检测、图表显示、TOOL_CALL 事件、通用错误处理）。助手配置、历史对话、图像显示、沙箱复用、实时流式响应、错误自愈、Azure 风格输出均已正常工作。
+**最后更新**: 2026-01-15  
+**当前状态**: ✅ 核心功能完成！Azure OpenAI 集成完成，System Prompt 优化完成。助手配置、历史对话、图像显示、沙箱复用、实时流式响应、错误自愈、Azure 风格输出均已正常工作。
 **当前分支**: `feature/e2b-integration`
