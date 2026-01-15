@@ -189,8 +189,10 @@ const createMeiliMongooseModel = ({
           query._id = { $gt: options.resumeFromId };
         }
 
-        // Get total count for progress tracking
-        const totalCount = await this.countDocuments(query);
+        // Get approximate total count for progress tracking
+        const approxTotalCount = await this.estimatedDocumentCount();
+        logger.info(`[syncWithMeili] Approximate total number of documents to sync: ${approxTotalCount}`);
+        
         let processedCount = 0;
 
         // First, handle documents that need to be removed from Meili
@@ -239,8 +241,11 @@ const createMeiliMongooseModel = ({
             updateOps = [];
 
             // Log progress
-            const progress = Math.round((processedCount / totalCount) * 100);
-            logger.info(`[syncWithMeili] Progress: ${progress}% (${processedCount}/${totalCount})`);
+            // Calculate percentage based on approximate total count sometimes might lead to more than 100%
+            // the difference is very small and acceptable for progress tracking
+            const percent = Math.round((processedCount / approxTotalCount) * 100);
+            const progress = Math.min(percent, 100);
+            logger.info(`[syncWithMeili] Progress: ${progress}% (count: ${processedCount})`);
 
             // Add delay to prevent overwhelming resources
             if (delayMs > 0) {

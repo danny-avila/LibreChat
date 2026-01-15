@@ -137,7 +137,9 @@ export const bedrockInputParser = s.tConversationSchema
       if (additionalFields.thinking === true && additionalFields.thinkingBudget === undefined) {
         additionalFields.thinkingBudget = 2000;
       }
-      additionalFields.anthropic_beta = ['output-128k-2025-02-19'];
+      if (typedData.model.includes('anthropic.')) {
+        additionalFields.anthropic_beta = ['output-128k-2025-02-19'];
+      }
     } else if (additionalFields.thinking != null || additionalFields.thinkingBudget != null) {
       delete additionalFields.thinking;
       delete additionalFields.thinkingBudget;
