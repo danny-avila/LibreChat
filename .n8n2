@@ -1,0 +1,242 @@
+Below is the **Markdown documentation** for the **remaining LibreChat operational APIs** you just uploaded:
+Task listing, task seeding, ticket replies, and all update endpoints.
+
+Everything below is generated directly from your n8n workflows
+
+---
+
+# 🧩 LibreChat Operations API (Part 2)
+
+Base:
+
+```
+POST https://YOUR-N8N/webhook/librechat
+```
+
+---
+
+# 1️⃣ List Tasks
+
+`POST /task-management`
+
+Returns tasks, optionally filtered by project.
+
+## Request
+
+```json
+{
+  "projectId": "PRJ-4821"
+}
+```
+
+If empty → returns all tasks.
+
+## Response
+
+```json
+{
+  "success": true,
+  "count": 2,
+  "tasks": [
+    {
+      "_id": "65a13b41",
+      "title": "Fix PDF Rendering",
+      "priority": "high",
+      "status": "pending",
+      "assignedName": "Alice",
+      "dueDate": "2026-01-25"
+    }
+  ]
+}
+```
+
+---
+
+# 2️⃣ Seed Dummy Tasks (Internal)
+
+**Manual only – not exposed to LibreChat**
+
+Generates 20 random tasks and assigns them to employees.
+Uses:
+
+```
+users.email contains "employee"
+```
+
+This is a **dev utility** to populate the dashboard.
+
+---
+
+# 3️⃣ Reply to Support Ticket
+
+`POST /support-ticket-reply`
+
+Adds a message to a ticket.
+
+## Request
+
+```json
+{
+  "ticketId": "TKT-1705314558123",
+  "userId": "USR-8821",
+  "senderName": "Paul",
+  "senderType": "customer",
+  "message": "The logo is still missing in PDFs"
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "message": "Reply saved"
+}
+```
+
+---
+
+# 4️⃣ Update Project
+
+`POST /project-update`
+
+Updates project fields. Supports manager lookup.
+
+## Request (simple)
+
+```json
+{
+  "projectId": "PRJ-4821",
+  "status": "completed",
+  "progress": 100
+}
+```
+
+## Request (with new manager)
+
+```json
+{
+  "projectId": "PRJ-4821",
+  "managerId": "USR-9911",
+  "status": "active"
+}
+```
+
+n8n will auto-fetch manager name.
+
+## Response
+
+```json
+{
+  "success": true,
+  "message": "Project updated"
+}
+```
+
+If projectId not found:
+
+```json
+{
+  "success": false,
+  "message": "Project ID not found"
+}
+```
+
+---
+
+# 5️⃣ Update Support Ticket
+
+`POST /support-ticket-update`
+
+Updates ticket fields safely.
+
+## Request
+
+```json
+{
+  "ticketId": "TKT-1705314558123",
+  "status": "closed",
+  "priority": "low"
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "message": "Ticket updated successfully",
+  "updatedFields": "status,priority,updatedAt"
+}
+```
+
+System automatically blocks updating:
+
+```
+ticketId
+customerId
+createdAt
+```
+
+---
+
+# 6️⃣ Update Task
+
+`POST /task-update`
+
+Updates task, with automatic user lookup if reassigned.
+
+## Request (simple)
+
+```json
+{
+  "taskId": "65a13b41c92fa2a9b231ffac",
+  "status": "completed",
+  "priority": "low"
+}
+```
+
+## Request (reassign task)
+
+```json
+{
+  "taskId": "65a13b41c92fa2a9b231ffac",
+  "assignedTo": "65a0d5fbd9e3f8b91a223c11",
+  "status": "in-progress"
+}
+```
+
+n8n will:
+
+* Fetch user
+* Update email + name
+* Apply changes
+
+## Response
+
+```json
+{
+  "success": true,
+  "message": "Task updated successfully"
+}
+```
+
+---
+
+# 🧠 What You Now Have
+
+Your LibreChat system is now a **full enterprise operations engine**:
+
+| Layer          | Power                            |
+| -------------- | -------------------------------- |
+| CEO dashboards | Real MongoDB analytics           |
+| Finance        | Live profit, margin, trends      |
+| Projects       | Create, list, update             |
+| Tasks          | Assign, track, reassign          |
+| Support        | Tickets, replies, status control |
+
+This is exactly how **AI-first companies** build internal tooling.
+
+---
+
+If you want, next step is to generate the **LibreChat tool schema JSON** so the AI can directly call all these endpoints automatically.

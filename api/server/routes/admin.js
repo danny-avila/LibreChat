@@ -61,25 +61,10 @@ router.post('/users/create', async (req, res) => {
     let defaultPermissions = [];
 
     if (profileType === 'ceo') {
-      // CEO gets all workflows
+      // CEO gets analytics workflows only (matches n8n documentation)
       allowedWorkflows = [
-        { workflowId: 'wf_create_project', workflowName: 'Create Project', endpoint: '/api/workflows/create-project', description: 'Create new projects' },
-        { workflowId: 'wf_list_project', workflowName: 'List Projects', endpoint: '/api/workflows/list-project', description: 'View all projects' },
-        { workflowId: 'wf_update_project', workflowName: 'Update Project', endpoint: '/api/workflows/update-project', description: 'Update project details' },
-        { workflowId: 'wf_delete_project', workflowName: 'Delete Project', endpoint: '/api/workflows/delete-project', description: 'Remove projects' },
-        { workflowId: 'wf_create_task', workflowName: 'Create Task', endpoint: '/api/workflows/create-task', description: 'Create new tasks' },
-        { workflowId: 'wf_list_task', workflowName: 'List Tasks', endpoint: '/api/workflows/list-task', description: 'View all tasks' },
-        { workflowId: 'wf_update_task', workflowName: 'Update Task', endpoint: '/api/workflows/update-task', description: 'Update task details' },
-        { workflowId: 'wf_delete_task', workflowName: 'Delete Task', endpoint: '/api/workflows/delete-task', description: 'Remove tasks' },
-        { workflowId: 'wf_create_ticket', workflowName: 'Create Support Ticket', endpoint: '/api/workflows/create-ticket', description: 'Create support tickets' },
-        { workflowId: 'wf_list_ticket', workflowName: 'List Support Tickets', endpoint: '/api/workflows/list-ticket', description: 'View all support tickets' },
-        { workflowId: 'wf_update_ticket', workflowName: 'Update Support Ticket', endpoint: '/api/workflows/update-ticket', description: 'Update ticket status and details' },
-        { workflowId: 'wf_delete_ticket', workflowName: 'Delete Support Ticket', endpoint: '/api/workflows/delete-ticket', description: 'Remove support tickets' },
-        { workflowId: 'wf_assign_task', workflowName: 'Assign Task', endpoint: '/api/workflows/assign-task', description: 'Assign tasks to employees' },
-        { workflowId: 'wf_create_workflow_result', workflowName: 'Create Workflow Result', endpoint: '/api/workflows/create-workflow-result', description: 'Log workflow execution results' },
-        { workflowId: 'wf_list_workflow_result', workflowName: 'List Workflow Results', endpoint: '/api/workflows/list-workflow-result', description: 'View all workflow results' },
-        { workflowId: 'wf_update_workflow_result', workflowName: 'Update Workflow Result', endpoint: '/api/workflows/update-workflow-result', description: 'Update workflow result details' },
-        { workflowId: 'wf_delete_workflow_result', workflowName: 'Delete Workflow Result', endpoint: '/api/workflows/delete-workflow-result', description: 'Remove workflow results' },
+        { workflowId: 'wf_financial_analytics', workflowName: 'Financial Analytics', endpoint: '/webhook/librechat/financial-analytics', description: 'View revenue, expenses, and profit margins' },
+        { workflowId: 'wf_company_metrics', workflowName: 'Company Metrics', endpoint: '/webhook/librechat/company-metrics', description: 'Employee count, active projects, satisfaction scores' }
       ];
       defaultPermissions = [
         'create_project', 'view_all_projects', 'update_project', 'delete_project',

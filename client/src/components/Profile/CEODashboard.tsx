@@ -37,15 +37,45 @@ export default function CEODashboard({ profile }: { profile: any }) {
 
   // --- STATE ---
   const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Workflow Execution State
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [activeReport, setActiveReport] = useState<AnalysisReport | null>(null);
+  const [showProjectModal, setShowProjectModal] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [showTicketModal, setShowTicketModal] = useState(false);
+  const [creating, setCreating] = useState(false);
+  
+  // Edit modals
+  const [editingTask, setEditingTask] = useState<any | null>(null);
+  const [editingProject, setEditingProject] = useState<any | null>(null);
+  const [editingTicket, setEditingTicket] = useState<any | null>(null);
+  
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'tasks' | 'tickets' | 'analytics' | 'users'>('overview');
+
+  // Form states
+  const [projectForm, setProjectForm] = useState({
+    name: '', description: '', status: 'active', progress: 0,
+    budget: 0, spent: 0, startDate: '', deadline: '', managerId: '',
+  });
+  const [taskForm, setTaskForm] = useState({
+    title: '', description: '', assignedTo: '', priority: 'medium',
+    status: 'pending', dueDate: '',
+  });
+  const [ticketForm, setTicketForm] = useState({
+    subject: '', description: '', priority: 'medium', userId: '',
+  });
+  
+  // Users list for dropdowns
+  const [users, setUsers] = useState<any[]>([]);
 
   // CONFIGURATION
-  // 1. URL N8N Hardcoded (Agar stabil & tidak 404)
-  const n8nBaseUrl = 'https://nadyaputriast-n8n.hf.space';
+  // 1. URL N8N from environment variable with fallback
+  const n8nBaseUrl = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://nadyaputriast-n8n.hf.space';
 
   // 2. OpenAI Key (Pastikan di .env namanya VITE_OPENAI_API_KEY)
   const openAiKey = import.meta.env.VITE_OPENAI_API_KEY;
@@ -134,7 +164,61 @@ export default function CEODashboard({ profile }: { profile: any }) {
   useEffect(() => {
     console.log('🔄 [CEODashboard] useEffect triggered - fetching dashboard data');
     fetchDashboardData();
+    fetchUsers(); // Load users for dropdowns
+    fetchTasks(); // Load tasks
+    fetchTickets(); // Load tickets
   }, []);
+
+  // Fetch users for dropdowns
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch('/api/admin/users', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(data.users || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch users:', error);
+    }
+  };
+
+  // Fetch tasks using the task-management endpoint
+  const fetchTasks = async () => {
+    try {
+      const response = await fetch(`${n8nBaseUrl}/webhook/librechat/task-management`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}), // Empty = all tasks
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTasks(data.tasks || []);
+      } else {
+        console.warn('Task management endpoint error:', response.status);
+        setTasks([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch tasks:', error);
+      setTasks([]);
+    }
+  };
+
+  // Fetch tickets
+  const fetchTickets = async () => {
+    try {
+      const response = await fetch(`${n8nBaseUrl}/webhook/librechat/support-ticket-list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'admin' }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTickets(data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch tickets:', error);
+    }
+  };
 
   // --- 2. FUNGSI DIRECT OPENAI (Client-Side) ---
   const generateAIAnalysis = async (dataContext: any, reportTitle: string) => {
@@ -191,12 +275,34 @@ export default function CEODashboard({ profile }: { profile: any }) {
     console.log('📋 [Workflow] Workflow ID:', wf.workflowId);
     console.log('📋 [Workflow] Workflow Name:', wf.workflowName);
     
+    const id = (wf.workflowId || '').toLowerCase();
+    const name = (wf.workflowName || '').toLowerCase();
+
+    // Check if this is a Create operation - open the appropriate modal
+    if (id.includes('create') || name.includes('create')) {
+      if (id.includes('project') || name.includes('project')) {
+        setShowProjectModal(true);
+        return;
+      } else if (id.includes('task') || name.includes('task')) {
+        setShowTaskModal(true);
+        return;
+      } else if (id.includes('ticket') || name.includes('ticket')) {
+        setShowTicketModal(true);
+        return;
+      }
+    }
+
+    // Check if this is Update/Delete operation (not implemented yet)
+    if (id.includes('update') || id.includes('delete') || 
+        name.includes('update') || name.includes('delete')) {
+      alert(`"${wf.workflowName}" is not yet implemented in the dashboard.`);
+      return;
+    }
+    
     setExecutingId(wf.workflowId);
 
     try {
       // A. MAPPING URL N8N
-      const id = (wf.workflowId || '').toLowerCase();
-      const name = (wf.workflowName || '').toLowerCase();
       let endpoint = '';
 
       if (
@@ -214,8 +320,22 @@ export default function CEODashboard({ profile }: { profile: any }) {
 
       console.log('📍 [Workflow] Endpoint URL:', endpoint);
 
-      // B. AMBIL DATA DARI N8N
-      const payload = { userId: profile?.userId, profileType: 'ceo', workflowId: wf.workflowId };
+      // B. AMBIL DATA DARI N8N - Match actual n8n API requirements
+      let payload;
+      if (id.includes('financ') || name.includes('financ')) {
+        // Financial Analytics expects specific format
+        payload = {
+          period: 'last_30_days',
+          _context: {
+            profile: {
+              profileType: 'ceo'
+            }
+          }
+        };
+      } else {
+        // Company Metrics expects simple format
+        payload = { profileType: 'ceo' };
+      }
       console.log('📤 [Workflow] Request payload:', payload);
       
       const n8nResult = await safeFetch(endpoint, {
@@ -272,6 +392,150 @@ export default function CEODashboard({ profile }: { profile: any }) {
     } finally {
       setExecutingId(null);
       console.log('🏁 [Workflow] Execution complete');
+    }
+  };
+
+  // --- CREATE HANDLERS ---
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreating(true);
+    try {
+      const response = await fetch(`${n8nBaseUrl}/webhook/librechat/project-create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...projectForm, profileType: profile?.profileType }),
+      });
+      if (!response.ok) throw new Error('Failed to create project');
+      const result = await response.json();
+      showToast({ message: `Project created: ${result.projectId}`, status: 'success' });
+      setShowProjectModal(false);
+      setProjectForm({ name: '', description: '', status: 'active', progress: 0, budget: 0, spent: 0, startDate: '', deadline: '', managerId: '' });
+      fetchDashboardData(); // Refresh projects
+    } catch (error: any) {
+      showToast({ message: error.message, status: 'error' });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreating(true);
+    try {
+      const response = await fetch(`${n8nBaseUrl}/webhook/librechat/task-create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskForm),
+      });
+      if (!response.ok) throw new Error('Failed to create task');
+      const result = await response.json();
+      showToast({ message: `Task created: ${result.taskId}`, status: 'success' });
+      setShowTaskModal(false);
+      setTaskForm({ title: '', description: '', assignedTo: '', priority: 'medium', status: 'pending', dueDate: '' });
+      fetchTasks(); // Refresh tasks list
+    } catch (error: any) {
+      showToast({ message: error.message, status: 'error' });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleCreateTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreating(true);
+    try {
+      const response = await fetch(`${n8nBaseUrl}/webhook/librechat/support-ticket-create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ticketForm),
+      });
+      if (!response.ok) throw new Error('Failed to create ticket');
+      const result = await response.json();
+      showToast({ message: `Ticket created: ${result.data.ticketId}`, status: 'success' });
+      setShowTicketModal(false);
+      setTicketForm({ subject: '', description: '', priority: 'medium', userId: '' });
+      fetchTickets(); // Refresh tickets list
+    } catch (error: any) {
+      showToast({ message: error.message, status: 'error' });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // --- UPDATE HANDLERS ---
+  const handleUpdateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProject) return;
+    setCreating(true);
+    try {
+      const response = await fetch(`${n8nBaseUrl}/webhook/librechat/project-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: editingProject.projectId,
+          ...projectForm,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to update project');
+      showToast({ message: 'Project updated successfully', status: 'success' });
+      setEditingProject(null);
+      setProjectForm({ name: '', description: '', status: 'active', progress: 0, budget: 0, spent: 0, startDate: '', deadline: '', managerId: '' });
+      fetchDashboardData(); // Refresh projects
+    } catch (error: any) {
+      showToast({ message: error.message, status: 'error' });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleUpdateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    setCreating(true);
+    try {
+      const response = await fetch(`${n8nBaseUrl}/webhook/librechat/task-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: editingTask._id,
+          ...taskForm,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to update task');
+      showToast({ message: 'Task updated successfully', status: 'success' });
+      setEditingTask(null);
+      setTaskForm({ title: '', description: '', assignedTo: '', priority: 'medium', status: 'pending', dueDate: '' });
+      fetchTasks(); // Refresh tasks
+    } catch (error: any) {
+      showToast({ message: error.message, status: 'error' });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleUpdateTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTicket) return;
+    setCreating(true);
+    try {
+      const response = await fetch(`${n8nBaseUrl}/webhook/librechat/support-ticket-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticketId: editingTicket.ticketId,
+          status: ticketForm.subject, // Using subject field as status
+          priority: ticketForm.priority,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to update ticket');
+      showToast({ message: 'Ticket updated successfully', status: 'success' });
+      setEditingTicket(null);
+      setTicketForm({ subject: '', description: '', priority: 'medium', userId: '' });
+      fetchTickets(); // Refresh tickets
+    } catch (error: any) {
+      showToast({ message: error.message, status: 'error' });
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -362,10 +626,19 @@ export default function CEODashboard({ profile }: { profile: any }) {
     return stats;
   }, [projects]);
 
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: '📊' },
+    { id: 'projects', label: 'Projects', icon: '🗂️', count: projects.length },
+    { id: 'tasks', label: 'Tasks', icon: '✅', count: tasks.length },
+    { id: 'tickets', label: 'Tickets', icon: '🎫', count: tickets.length },
+    { id: 'analytics', label: 'Analytics', icon: '📈' },
+    { id: 'users', label: 'Users', icon: '👥', count: users.length },
+  ];
+
   return (
-    <div className="w-full space-y-8 pb-20">
+    <div className="w-full space-y-6 pb-20">
       {/* HEADER */}
-      <div className="flex flex-col items-end justify-between border-b border-gray-200 pb-6 md:flex-row">
+      <div className="flex flex-col items-end justify-between border-b border-gray-200 pb-4 md:flex-row">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">
             Executive Command Center
@@ -379,7 +652,12 @@ export default function CEODashboard({ profile }: { profile: any }) {
             🟢 Live Data
           </span>
           <button
-            onClick={fetchDashboardData}
+            onClick={() => {
+              fetchDashboardData();
+              fetchTasks();
+              fetchTickets();
+              fetchUsers();
+            }}
             className="rounded-lg px-3 py-1 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50"
           >
             🔄 Refresh
@@ -387,35 +665,507 @@ export default function CEODashboard({ profile }: { profile: any }) {
         </div>
       </div>
 
-      {/* KPI CARDS */}
-      <CEOKpiStats kpiStats={kpiStats} />
-
-      {/* DYNAMIC REPORT SECTION */}
-      <CEOReportView
-        activeReport={activeReport}
-        onClose={() => setActiveReport(null)}
-        reportSectionRef={reportSectionRef}
-      />
-
-      {/* MAIN GRID: PROJECTS & TOOLS */}
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        {/* LEFT: ACTIVE PROJECTS */}
-        <div className="space-y-6 lg:col-span-2">
-          <CEOProjectsTable projects={projects} />
-        </div>
-        {/* RIGHT: STRATEGIC TOOLS */}
-        <div className="space-y-6">
-          <CEOStrategicTools
-            profile={profile}
-            executingId={executingId}
-            activeReport={activeReport}
-            handleExecuteWorkflow={handleExecuteWorkflow}
-          />
-        </div>
+      {/* TABS */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-2 overflow-x-auto">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+              }`}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+              {tab.count !== undefined && (
+                <span className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
+                  activeTab === tab.id ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
       </div>
 
-      {/* USER MANAGEMENT SECTION */}
-      <CEOUserManagement />
+      {/* TAB CONTENT */}
+      {activeTab === 'overview' && (
+        <>
+          <CEOKpiStats kpiStats={kpiStats} />
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+            <div className="space-y-6 lg:col-span-2">
+              <CEOProjectsTable projects={projects} />
+            </div>
+            <div className="space-y-6">
+              <CEOStrategicTools
+                profile={profile}
+                executingId={executingId}
+                activeReport={activeReport}
+                handleExecuteWorkflow={handleExecuteWorkflow}
+              />
+            </div>
+          </div>
+          <CEOReportView
+            activeReport={activeReport}
+            onClose={() => setActiveReport(null)}
+            reportSectionRef={reportSectionRef}
+          />
+        </>
+      )}
+
+      {activeTab === 'projects' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900">All Projects</h2>
+            <button
+              onClick={() => setShowProjectModal(true)}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            >
+              <span>+</span> New Project
+            </button>
+          </div>
+          <CEOProjectsTable projects={projects} />
+        </div>
+      )}
+
+      {activeTab === 'tasks' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900">All Tasks</h2>
+            <button
+              onClick={() => setShowTaskModal(true)}
+              className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700"
+            >
+              <span>+</span> New Task
+            </button>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            {loading ? (
+              <div className="flex h-64 items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-green-600 border-t-transparent"></div>
+              </div>
+            ) : tasks.length === 0 ? (
+              <div className="flex h-64 flex-col items-center justify-center text-gray-500">
+                <span className="mb-2 text-4xl">✅</span>
+                <p className="mb-2">No tasks found</p>
+                <button
+                  onClick={() => setShowTaskModal(true)}
+                  className="mt-4 text-sm text-blue-600 hover:underline"
+                >
+                  Create your first task
+                </button>
+              </div>
+            ) : (
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Task</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Assigned To</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Priority</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Due Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {tasks.map((task, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-medium text-gray-900">{task.title}</div>
+                        <div className="text-sm text-gray-500">{task.description}</div>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{task.assignedName || task.assignedTo}</td>
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <span className={`inline-flex rounded-full px-2 text-xs font-semibold ${
+                          task.priority === 'high' ? 'bg-red-100 text-red-800' :
+                          task.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {task.priority}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{task.status}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{task.dueDate || '-'}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm">
+                        <button
+                          onClick={() => {
+                            setEditingTask(task);
+                            setTaskForm({
+                              title: task.title,
+                              description: task.description,
+                              assignedTo: task.assignedTo,
+                              priority: task.priority,
+                              status: task.status,
+                              dueDate: task.dueDate || '',
+                            });
+                          }}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'tickets' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900">Support Tickets</h2>
+            <button
+              onClick={() => setShowTicketModal(true)}
+              className="flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700"
+            >
+              <span>+</span> New Ticket
+            </button>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            {loading ? (
+              <div className="flex h-64 items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-orange-600 border-t-transparent"></div>
+              </div>
+            ) : tickets.length === 0 ? (
+              <div className="flex h-64 flex-col items-center justify-center text-gray-500">
+                <span className="mb-2 text-4xl">🎫</span>
+                <p>No tickets found</p>
+                <button
+                  onClick={() => setShowTicketModal(true)}
+                  className="mt-4 text-sm text-blue-600 hover:underline"
+                >
+                  Create your first ticket
+                </button>
+              </div>
+            ) : (
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Ticket ID</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Subject</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">User</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Priority</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {tickets.map((ticket, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50">
+                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{ticket.ticketId}</td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-medium text-gray-900">{ticket.subject}</div>
+                        <div className="text-sm text-gray-500">{ticket.description}</div>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{ticket.userId}</td>
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <span className={`inline-flex rounded-full px-2 text-xs font-semibold ${
+                          ticket.priority === 'high' ? 'bg-red-100 text-red-800' :
+                          ticket.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {ticket.priority}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{ticket.status}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm">
+                        <button
+                          onClick={() => {
+                            setEditingTicket(ticket);
+                            setTicketForm({
+                              subject: ticket.status, // Store current status in subject field
+                              description: ticket.description,
+                              priority: ticket.priority,
+                              userId: ticket.userId,
+                            });
+                          }}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'analytics' && (
+        <div className="space-y-6">
+          <CEOReportView
+            activeReport={activeReport}
+            onClose={() => setActiveReport(null)}
+            reportSectionRef={reportSectionRef}
+          />
+          <div className="space-y-6">
+            <CEOStrategicTools
+              profile={profile}
+              executingId={executingId}
+              activeReport={activeReport}
+              handleExecuteWorkflow={handleExecuteWorkflow}
+            />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'users' && <CEOUserManagement />}
+
+      {/* CREATE PROJECT MODAL - Rendered from CEOQuickActions forms */}
+      {showProjectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="mb-4 text-xl font-bold text-gray-900">Create New Project</h3>
+            <form onSubmit={handleCreateProject} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Project Name *</label>
+                  <input type="text" value={projectForm.name} onChange={(e) => setProjectForm({ ...projectForm, name: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required />
+                </div>
+                <div className="col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
+                  <textarea value={projectForm.description} onChange={(e) => setProjectForm({ ...projectForm, description: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" rows={3} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
+                  <select value={projectForm.status} onChange={(e) => setProjectForm({ ...projectForm, status: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                    <option value="active">Active</option>
+                    <option value="pending">Pending</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Progress (%)</label>
+                  <input type="number" min="0" max="100" value={projectForm.progress} onChange={(e) => setProjectForm({ ...projectForm, progress: parseInt(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Budget</label>
+                  <input type="number" value={projectForm.budget} onChange={(e) => setProjectForm({ ...projectForm, budget: parseInt(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Spent</label>
+                  <input type="number" value={projectForm.spent} onChange={(e) => setProjectForm({ ...projectForm, spent: parseInt(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Start Date</label>
+                  <input type="date" value={projectForm.startDate} onChange={(e) => setProjectForm({ ...projectForm, startDate: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Deadline</label>
+                  <input type="date" value={projectForm.deadline} onChange={(e) => setProjectForm({ ...projectForm, deadline: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div className="col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Project Manager</label>
+                  <select value={projectForm.managerId} onChange={(e) => setProjectForm({ ...projectForm, managerId: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                    <option value="">No manager assigned</option>
+                    {users.filter(u => u.profileType !== 'customer').map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name} ({user.email}) - {user.profileType}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowProjectModal(false)} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={creating} className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50">{creating ? 'Creating...' : 'Create Project'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE TASK MODAL */}
+      {showTaskModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="mb-4 text-xl font-bold text-gray-900">Create New Task</h3>
+            <form onSubmit={handleCreateTask} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Title *</label>
+                <input type="text" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
+                <textarea value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" rows={3} />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Assigned To *</label>
+                <select value={taskForm.assignedTo} onChange={(e) => setTaskForm({ ...taskForm, assignedTo: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required>
+                  <option value="">Select a user...</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name} ({user.email}) - {user.profileType}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
+                <select value={taskForm.priority} onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Due Date</label>
+                <input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowTaskModal(false)} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={creating} className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50">{creating ? 'Creating...' : 'Create Task'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT TASK MODAL */}
+      {editingTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="mb-4 text-xl font-bold text-gray-900">Edit Task</h3>
+            <form onSubmit={handleUpdateTask} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Title *</label>
+                <input type="text" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
+                <textarea value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" rows={3} />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Assigned To *</label>
+                <select value={taskForm.assignedTo} onChange={(e) => setTaskForm({ ...taskForm, assignedTo: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required>
+                  <option value="">Select a user...</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name} ({user.email}) - {user.profileType}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
+                <select value={taskForm.priority} onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
+                <select value={taskForm.status} onChange={(e) => setTaskForm({ ...taskForm, status: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                  <option value="pending">Pending</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Due Date</label>
+                <input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => {
+                  setEditingTask(null);
+                  setTaskForm({ title: '', description: '', assignedTo: '', priority: 'medium', status: 'pending', dueDate: '' });
+                }} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={creating} className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50">{creating ? 'Updating...' : 'Update Task'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE TICKET MODAL */}
+      {showTicketModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="mb-4 text-xl font-bold text-gray-900">Create Support Ticket</h3>
+            <form onSubmit={handleCreateTicket} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Subject *</label>
+                <input type="text" value={ticketForm.subject} onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Description *</label>
+                <textarea value={ticketForm.description} onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" rows={4} required />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
+                <select value={ticketForm.priority} onChange={(e) => setTicketForm({ ...ticketForm, priority: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">User *</label>
+                <select value={ticketForm.userId} onChange={(e) => setTicketForm({ ...ticketForm, userId: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required>
+                  <option value="">Select a user...</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name} ({user.email}) - {user.profileType}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowTicketModal(false)} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={creating} className="flex-1 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-50">{creating ? 'Creating...' : 'Create Ticket'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT TICKET MODAL */}
+      {editingTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="mb-4 text-xl font-bold text-gray-900">Edit Support Ticket</h3>
+            <form onSubmit={handleUpdateTicket} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Ticket ID</label>
+                <input type="text" value={editingTicket.ticketId} disabled className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Status *</label>
+                <select value={ticketForm.subject} onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required>
+                  <option value="open">Open</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
+                <select value={ticketForm.priority} onChange={(e) => setTicketForm({ ...ticketForm, priority: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => {
+                  setEditingTicket(null);
+                  setTicketForm({ subject: '', description: '', priority: 'medium', userId: '' });
+                }} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={creating} className="flex-1 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-50">{creating ? 'Updating...' : 'Update Ticket'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
