@@ -772,6 +772,10 @@ describe('S3 CRUD Operations', () => {
       const url = 'https://amzn-s3-demo-bucket1.s3-us-west-2.amazonaws.com/puppy.png';
       const result = extractKeyFromS3Url(url);
       expect(result).toBe('puppy.png');
+
+      const testcase2 = 'https://amzn-s3-demo-bucket1.s3-us-west-2.amazonaws.com/cats/kitten.png';
+      const result2 = extractKeyFromS3Url(testcase2);
+      expect(result2).toBe('cats/kitten.png');
     });
 
     // Legacy global endpoint
