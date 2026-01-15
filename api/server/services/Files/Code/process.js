@@ -24,8 +24,62 @@ const { createFile, getFiles, updateFile } = require('~/models');
 const { determineFileType } = require('~/server/utils');
 
 /**
+ * Creates a fallback download URL response when file cannot be processed locally.
+ * Used when: file exceeds size limit, storage strategy unavailable, or download error occurs.
+ * @param {Object} params - The parameters.
+ * @param {string} params.name - The filename.
+ * @param {string} params.session_id - The code execution session ID.
+ * @param {string} params.id - The file ID from the code environment.
+ * @param {string} params.conversationId - The current conversation ID.
+ * @param {string} params.toolCallId - The tool call ID that generated the file.
+ * @param {string} params.messageId - The current message ID.
+ * @param {number} params.expiresAt - Expiration timestamp (24 hours from creation).
+ * @returns {Object} Fallback response with download URL.
+ */
+const createDownloadFallback = ({
+  id,
+  name,
+  messageId,
+  expiresAt,
+  session_id,
+  toolCallId,
+  conversationId,
+}) => {
+  const basePath = getBasePath();
+  return {
+    filename: name,
+    filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
+    expiresAt,
+    conversationId,
+    toolCallId,
+    messageId,
+  };
+};
+
+/**
  * Find an existing code-generated file by filename in the conversation.
  * Used to update existing files instead of creating duplicates.
+ *
+ * ## Deduplication Strategy
+ *
+ * Files are deduplicated by `(conversationId, filename)` - NOT including `messageId`.
+ * This is an intentional design decision to handle iterative code development patterns:
+ *
+ * **Rationale:**
+ * - When users iteratively refine code (e.g., "regenerate that chart with red bars"),
+ *   the same logical file (e.g., "chart.png") is produced multiple times
+ * - Without deduplication, each iteration would create a new file, leading to storage bloat
+ * - The latest version is what matters for re-upload to the code environment
+ *
+ * **Implications:**
+ * - Different messages producing files with the same name will update the same file record
+ * - The `messageId` field tracks which message last updated the file
+ * - The `usage` counter tracks how many times the file has been generated
+ *
+ * **Future Considerations:**
+ * - If file versioning is needed, consider adding a `versions` array or separate version collection
+ * - The current approach prioritizes storage efficiency over history preservation
+ *
  * @param {string} filename - The filename to search for.
  * @param {string} conversationId - The conversation ID.
  * @returns {Promise<MongoFile | null>} The existing file or null.
@@ -102,15 +156,15 @@ const processCodeOutput = async ({
       logger.warn(
         `[processCodeOutput] File "${name}" (${(buffer.length / megabyte).toFixed(2)} MB) exceeds size limit of ${(fileSizeLimit / megabyte).toFixed(2)} MB, falling back to download URL`,
       );
-      const basePath = getBasePath();
-      return {
-        filename: name,
-        filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
-        expiresAt: currentDate.getTime() + 86400000,
-        conversationId,
-        toolCallId,
+      return createDownloadFallback({
+        id,
+        name,
         messageId,
-      };
+        toolCallId,
+        session_id,
+        conversationId,
+        expiresAt: currentDate.getTime() + 86400000,
+      });
     }
 
     const fileIdentifier = `${session_id}/${id}`;
@@ -135,7 +189,7 @@ const processCodeOutput = async ({
         ..._file,
         file_id,
         messageId,
-        usage: isUpdate ? (existingFile.usage ?? 1) : 1,
+        usage: isUpdate ? (existingFile.usage ?? 0) + 1 : 1,
         filename: name,
         conversationId,
         user: req.user.id,
@@ -156,15 +210,15 @@ const processCodeOutput = async ({
       logger.warn(
         `[processCodeOutput] saveBuffer not available for strategy ${appConfig.fileStrategy}, falling back to download URL`,
       );
-      const basePath = getBasePath();
-      return {
-        filename: name,
-        filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
-        expiresAt: currentDate.getTime() + 86400000,
-        conversationId,
-        toolCallId,
+      return createDownloadFallback({
+        id,
+        name,
         messageId,
-      };
+        toolCallId,
+        session_id,
+        conversationId,
+        expiresAt: currentDate.getTime() + 86400000,
+      });
     }
 
     // Determine MIME type from buffer or extension
@@ -204,7 +258,7 @@ const processCodeOutput = async ({
       metadata: { fileIdentifier },
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
-      usage: isUpdate ? (existingFile.usage ?? 1) : 1,
+      usage: isUpdate ? (existingFile.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? existingFile.createdAt : formattedDate,
     };
 
@@ -217,15 +271,15 @@ const processCodeOutput = async ({
     });
 
     // Fallback for download errors - return download URL so user can still manually download
-    const basePath = getBasePath();
-    return {
-      filename: name,
-      filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
-      expiresAt: currentDate.getTime() + 86400000,
-      conversationId,
-      toolCallId,
+    return createDownloadFallback({
+      id,
+      name,
       messageId,
-    };
+      toolCallId,
+      session_id,
+      conversationId,
+      expiresAt: currentDate.getTime() + 86400000,
+    });
   }
 };
 
