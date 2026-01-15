@@ -95,17 +95,16 @@ mcpServers:
     type: streamable-http
   
   admin-server:
-    url: http://100.100.108.28:9011/mcp
     type: streamable-http
+    url: http://admin-mcp-server:9011/mcp
     headers:
-      X-User-Name: "{{LIBRECHAT_USER_NAME}}"
-      X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
-      X-User-Id: "{{LIBRECHAT_USER_ID}}"
-      X-User-Password: "{{ADMIN_PASSWORD}}"
+      X-Admin-Password: "{{M_KEY}}"
     customUserVars:
-      ADMIN_PASSWORD:
+      M_KEY:
         title: "Admin Password"
-        description: "Enter the admin password to authorize access to this MCP server."
+        description: "Enter the admin password to authorize access to this MCP server. Default password is 'admin123'."
+    startup: false
+    timeout: 60000
 
 
 
