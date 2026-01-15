@@ -6,8 +6,84 @@
 
 ## 2026-01-15 (周三)
 
+### � E2B Assistant 文件持久化功能
+**Git Commit**: (待提交) - feat(e2b): Add persistent file upload support for E2B Assistants
+
+### 主要工作
+1. **E2B Assistant 侧边栏文件上传功能** ⭐⭐⭐
+   - **需求**: 实现类似 Azure Assistants 的文件持久化功能
+   - **实现**:
+     - 修改后端文件上传路由（`files.js`）：检测 E2B assistant_id 并正确设置 endpoint
+     - 修改文件处理服务（`process.js`）：E2B 特定的文件关联逻辑
+     - 修改 E2B Agent（`index.js`）：从三个来源收集文件（消息附件、tool_resources、root file_ids）
+     - 修改前端上传逻辑（`useFileHandling.ts`）：移除错误的 endpoint 覆盖
+     - 添加文件元数据检索（`controller.js`）：populateCodeFiles 函数
+
+2. **Bug 修复过程** 🐛
+   - **问题 1**: 文件未同步到沙箱
+     - 原因: E2B Agent 只读取消息附件（this.files），未读取 assistant.tool_resources
+     - 修复: 修改 index.js 收集三个来源的文件并去重
+   
+   - **问题 2**: 文件 file_id 显示为 undefined
+     - 原因: 存储策略（Local/S3/Azure）不返回 'id' 字段（只有 OpenAI 返回）
+     - 解决方案: 在 process.js 中添加 E2B 特定的 fallback：`actualFileId = id || file_id`
+   
+   - **问题 3**: 文件在重新登录后消失
+     - 原因: 前端错误地覆盖了 endpoint 为 'default'
+     - 修复: 移除 useFileHandling.ts 中的 endpoint 覆盖逻辑
+
+3. **代码审查与安全验证** 🔒
+   - 分析所有修改的文件（5 个文件，~500 行）
+   - 确认所有 E2B 逻辑都有条件检查（`isE2BAssistant`, `metadata.e2b_assistant_id`）
+   - 验证互斥分支（if-else）保护原有逻辑
+   - 风险评估: 🟢 无风险到 🟡 低风险
+   - 结论: 修改已正确隔离，不影响其他 LibreChat 功能
+
+4. **文档创建** 📝
+   - 创建 `文件流逻辑.md`：详细记录两种上传模式的 16 步流程
+   - 包含侧边栏助手上传（持久化）vs 聊天消息附件（临时）的对比
+   - 记录 E2B Agent 文件同步机制（12 步）
+
+### 验证结果
+- ✅ 侧边栏文件上传：file_id 正确保存到数据库
+- ✅ 文件关联：tool_resources.code_interpreter.file_ids 正确更新
+- ✅ 文件同步：文件成功上传到沙箱 /home/user/
+- ✅ Context Manager：系统提示包含文件列表和路径
+- ✅ LLM 感知：AI 在执行代码前知道文件存在
+- ✅ 跨会话持久化：重新登录后文件仍然存在
+- ✅ 安全性：所有修改已正确隔离，不影响其他功能
+
+### 技术细节
+- **文件上传流程**:
+  1. 前端发送 formData（包含 e2b_assistant_id）
+  2. files.js 检测 E2B 并设置正确的 endpoint 和 metadata
+  3. process.js 处理文件上传（使用 Local/S3/Azure 存储）
+  4. process.js 使用 fallback 确保 file_id 存在：`actualFileId = id || file_id`
+  5. process.js 更新 assistant 的 tool_resources.code_interpreter.file_ids
+  6. controller.js 的 populateCodeFiles 检索文件元数据并返回前端
+
+- **E2B Agent 文件同步**:
+  1. 收集消息附件文件（this.files）
+  2. 收集 assistant.tool_resources.code_interpreter.file_ids
+  3. 收集 assistant.file_ids（V1 兼容）
+  4. 去重并查询数据库获取文件详情
+  5. 调用 syncFilesToSandbox 上传到沙箱
+
+- **安全隔离机制**:
+  1. Endpoint 级别检查：`endpoint === 'e2bAssistants'`
+  2. Metadata 级别检查：`metadata.e2b_assistant_id`
+  3. 互斥分支：`if (isE2BAssistant) {...} else if (...)`
+  4. Fallback 安全：其他端点的存储策略返回 'id'，不受影响
+
+### 工作时长
+约 6 小时（需求分析 + 实现 + Bug 修复 + 文档 + 安全验证）
+
+---
+
+## 2026-01-15 (周三) - 早上
+
 ### 🚀 Azure OpenAI 集成 + System Prompt 优化
-**Git Commit**: (待提交) - feat: Add Azure OpenAI support and optimize system prompt for gpt-5-mini
+**Git Commit**: 已完成 - feat: Add Azure OpenAI support and optimize system prompt for gpt-5-mini
 
 ### 主要工作
 1. **Azure OpenAI API 集成** ⭐⭐⭐

@@ -368,6 +368,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
 router.post('/', async (req, res) => {
   const metadata = req.body;
+  logger.info(`[Files POST] Incoming upload request. Body: ${JSON.stringify(metadata)}`);
   let cleanup = true;
 
   try {
@@ -376,7 +377,18 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    if (isAssistantsEndpoint(metadata.endpoint)) {
+    // Fix for E2B Assistant file uploads from frontend
+    // Frontend sends endpoint='default' and message_file='true' but provides e2b_assistant_id
+    if (metadata.e2b_assistant_id) {
+      logger.info(`[Files POST] Detected E2B upload via e2b_assistant_id. correcting metadata.`);
+      metadata.endpoint = EModelEndpoint.e2bAssistants;
+      metadata.assistant_id = metadata.e2b_assistant_id;
+      // Force message_file to false so it's treated as a persistent assistant file
+      metadata.message_file = false; 
+      delete metadata.message_file; // Delete key just to be safe if checking existence
+    }
+
+    if (isAssistantsEndpoint(metadata.endpoint) || metadata.endpoint === EModelEndpoint.e2bAssistants) {
       return await processFileUpload({ req, res, metadata });
     }
 

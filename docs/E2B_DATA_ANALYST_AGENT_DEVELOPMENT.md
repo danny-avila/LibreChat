@@ -424,6 +424,28 @@ LibreChat/
 
 ## 10. 最新更新 (2026-01-15)
 
+### E2B Assistant 文件持久化功能
+- ✅ 实现侧边栏文件上传功能（类似 Azure Assistants）
+- ✅ 文件关联到 assistant.tool_resources.code_interpreter.file_ids
+- ✅ E2B Agent 从三个来源读取文件（消息附件 + tool_resources + root file_ids）
+- ✅ 文件跨会话持久化（重新登录后仍然可用）
+- ✅ 支持多种存储后端（Local/S3/Azure/Firebase）
+- ✅ 文件元数据检索 API（populateCodeFiles）
+- ✅ 安全隔离：所有修改仅影响 E2B，不影响其他 LibreChat 功能
+
+**修改的文件**:
+- `api/server/routes/e2bAssistants/controller.js`: 添加 populateCodeFiles 函数
+- `api/server/routes/files/files.js`: E2B 检测和路由修正
+- `api/server/services/Agents/e2bAgent/index.js`: 三源文件收集和去重
+- `api/server/services/Files/process.js`: E2B 特定的文件关联逻辑和 fallback
+- `client/src/hooks/Files/useFileHandling.ts`: 移除错误的 endpoint 覆盖
+
+**文件上传流程**:
+1. **侧边栏上传**（持久化）：文件关联到 assistant，保存到 tool_resources
+2. **聊天附件**（临时）：文件仅用于当前消息，不保存到 assistant
+
+详细流程请参阅 [文件流逻辑.md](./help_docs/文件流逻辑.md)
+
 ### Azure OpenAI 集成
 - ✅ 支持 Azure OpenAI Service（优先于标准 OpenAI API）
 - ✅ 使用部署特定的 baseURL 格式
@@ -441,6 +463,7 @@ LibreChat/
 - ✅ 清理所有临时调试日志
 - ✅ Temperature 处理逻辑简化
 - ✅ Azure 检测机制稳定
+- ✅ 代码安全审查完成（确认不影响其他功能）
 
 ---
 

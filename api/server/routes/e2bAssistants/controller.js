@@ -10,7 +10,49 @@ const {
 } = require('~/models/E2BAssistant');
 const E2BDataAnalystAgent = require('~/server/services/Agents/e2bAgent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
-const { saveMessage, getConvo, getMessages } = require('~/models');
+const { saveMessage, getConvo, getMessages, getFiles } = require('~/models');
+
+/**
+ * Populates code_files in the assistant response.
+ * @param {Object} assistant - The assistant document.
+ * @param {Object} assistantResponse - The response object to populate.
+ */
+const populateCodeFiles = async (assistant, assistantResponse) => {
+  const fileIds = new Set();
+
+  // Collect IDs from tool_resources (V2 style)
+  if (assistant.tool_resources?.code_interpreter?.file_ids) {
+    assistant.tool_resources.code_interpreter.file_ids.forEach(id => fileIds.add(id));
+  }
+
+  // Collect IDs from file_ids (V1 style / Root level)
+  if (assistant.file_ids && Array.isArray(assistant.file_ids)) {
+    assistant.file_ids.forEach(id => fileIds.add(id));
+  }
+
+  if (fileIds.size > 0) {
+    try {
+      const uniqueIds = Array.from(fileIds);
+      const files = await getFiles({ file_id: { $in: uniqueIds } });
+      assistantResponse.code_files = files.map(file => [file.file_id, {
+        file_id: file.file_id,
+        filename: file.filename,
+        bytes: file.bytes,
+        type: file.type,
+        filepath: file.filepath,
+        _id: file._id,
+        user: file.user,
+        createdAt: file.createdAt,
+        updatedAt: file.updatedAt,
+      }]);
+    } catch (error) {
+      logger.error('[E2B Assistant] Error fetching files:', error);
+      assistantResponse.code_files = [];
+    }
+  } else {
+    assistantResponse.code_files = [];
+  }
+};
 
 /**
  * Creates an E2B Assistant.
@@ -100,6 +142,9 @@ const createAssistant = async (req, res) => {
     if (!responseData.tool_resources) {
       responseData.tool_resources = {};
     }
+    
+    // Populate code_files
+    await populateCodeFiles(assistant, responseData);
     
     let safeData;
     try {
@@ -215,6 +260,9 @@ const getAssistant = async (req, res) => {
       assistantResponse.tool_resources = {};
     }
     
+    // Populate code_files
+    await populateCodeFiles(assistant, assistantResponse);
+    
     res.json(assistantResponse);
   } catch (error) {
     logger.error('[E2B Assistant] Error getting assistant:', error);
@@ -229,6 +277,14 @@ const updateAssistant = async (req, res) => {
   try {
     const { assistant_id } = req.params;
     const updateData = { ...req.body };
+    
+    logger.debug(`[E2B Assistant] Updating assistant ${assistant_id}. Payload keys: ${Object.keys(updateData).join(', ')}`);
+    if (updateData.tool_resources) {
+      logger.debug(`[E2B Assistant] Updating tool_resources: ${JSON.stringify(updateData.tool_resources)}`);
+    }
+    if (updateData.file_ids) {
+      logger.debug(`[E2B Assistant] Updating file_ids: ${JSON.stringify(updateData.file_ids)}`);
+    }
     
     // Remove immutable fields
     delete updateData.id;
@@ -296,6 +352,9 @@ const updateAssistant = async (req, res) => {
     if (!assistantResponse.tool_resources) {
       assistantResponse.tool_resources = {};
     }
+    
+    // Populate code_files
+    await populateCodeFiles(assistant, assistantResponse);
     
     res.json(assistantResponse);
   } catch (error) {

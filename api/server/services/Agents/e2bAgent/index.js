@@ -113,16 +113,41 @@ class E2BDataAnalystAgent {
 
       // 2. 同步文件到沙箱
       let uploadedFiles = [];
+      
+      // Collect all file IDs to sync: both from message attachments AND assistant persistent files
+      const fileIdsToSync = [];
+      
+      // Add message attachment files
       if (this.files && this.files.length > 0) {
-        logger.info(`[E2BAgent] Syncing ${this.files.length} files to sandbox...`);
-        // Extract file IDs from the files array (LibreChat format)
-        const fileIds = this.files.map(f => f.file_id);
+        logger.info(`[E2BAgent] Found ${this.files.length} message attachment files`);
+        fileIdsToSync.push(...this.files.map(f => f.file_id));
+      }
+      
+      // Add assistant persistent files from tool_resources.code_interpreter.file_ids
+      if (this.assistant?.tool_resources?.code_interpreter?.file_ids) {
+        const assistantFileIds = this.assistant.tool_resources.code_interpreter.file_ids;
+        logger.info(`[E2BAgent] Found ${assistantFileIds.length} persistent files in assistant configuration (tool_resources)`);
+        fileIdsToSync.push(...assistantFileIds);
+      }
+
+      // Add assistant persistent files from file_ids (root level - V1 style)
+      if (this.assistant?.file_ids && Array.isArray(this.assistant.file_ids)) {
+        const rootFileIds = this.assistant.file_ids;
+        logger.info(`[E2BAgent] Found ${rootFileIds.length} persistent files in assistant configuration (root file_ids)`);
+        fileIdsToSync.push(...rootFileIds);
+      }
+      
+      // Remove duplicates
+      const uniqueFileIds = [...new Set(fileIdsToSync)];
+      
+      if (uniqueFileIds.length > 0) {
+        logger.info(`[E2BAgent] Syncing ${uniqueFileIds.length} total files to sandbox (${this.files?.length || 0} attachments + ${this.assistant?.tool_resources?.code_interpreter?.file_ids?.length || 0} persistent)`);
         
         uploadedFiles = await fileHandler.syncFilesToSandbox({
           req: this.req,
           userId: this.userId,
           conversationId: this.conversationId,
-          fileIds,
+          fileIds: uniqueFileIds,
           openai: this.openai, // For fetching files from OpenAI/Azure if needed
         });
         
@@ -134,6 +159,8 @@ class E2BDataAnalystAgent {
           this.contextManager.updateUploadedFiles(uploadedFiles);
           logger.info(`[E2BAgent] Context Manager updated. Current state:`, JSON.stringify(this.contextManager.getSummary()));
         }
+      } else {
+        logger.info(`[E2BAgent] No files to sync (neither attachments nor assistant persistent files)`);
       }
 
       // 3. 构建初始消息列表

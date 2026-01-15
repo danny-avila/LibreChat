@@ -152,6 +152,7 @@ const processDeleteRequest = async ({ req, files }) => {
   }
 
   const agentFiles = [];
+  let isE2BAssistant = false;
 
   for (const file of files) {
     const source = file.source ?? FileSources.local;
@@ -160,6 +161,15 @@ const processDeleteRequest = async ({ req, files }) => {
         tool_resource: req.body.tool_resource,
         file_id: file.file_id,
       });
+    }
+
+    // Check if this is an E2B Assistant file deletion
+    if (req.body.assistant_id && !isE2BAssistant) {
+      const { getE2BAssistantDocs } = require('~/models/E2BAssistant');
+      const assistants = await getE2BAssistantDocs({ id: req.body.assistant_id });
+      if (assistants && assistants.length > 0) {
+        isE2BAssistant = true;
+      }
     }
 
     if (source === FileSources.text) {
@@ -173,7 +183,34 @@ const processDeleteRequest = async ({ req, files }) => {
 
     const openai = client[source];
 
-    if (req.body.assistant_id && req.body.tool_resource) {
+    // Handle E2B Assistant file removal
+    if (isE2BAssistant && req.body.assistant_id) {
+      const { updateE2BAssistantDoc, getE2BAssistantDocs } = require('~/models/E2BAssistant');
+      promises.push((async () => {
+        const assistants = await getE2BAssistantDocs({ id: req.body.assistant_id });
+        if (assistants && assistants.length > 0) {
+          const assistant = assistants[0];
+          const tool_resource = req.body.tool_resource || EToolResources.code_interpreter;
+          
+          // Remove from tool_resources
+          if (assistant.tool_resources && assistant.tool_resources[tool_resource]) {
+            const file_ids = assistant.tool_resources[tool_resource].file_ids || [];
+            assistant.tool_resources[tool_resource].file_ids = file_ids.filter(id => id !== file.file_id);
+          }
+          
+          // Remove from top-level file_ids
+          if (assistant.file_ids) {
+            const file_ids = assistant.file_ids.filter(id => id !== file.file_id);
+            await updateE2BAssistantDoc(
+              { id: req.body.assistant_id },
+              { tool_resources: assistant.tool_resources, file_ids }
+            );
+          }
+          
+          logger.info(`[E2B File Delete] Removed file ${file.file_id} from assistant ${req.body.assistant_id}`);
+        }
+      })());
+    } else if (req.body.assistant_id && req.body.tool_resource) {
       promises.push(
         deleteResourceFileId({
           req,
@@ -378,11 +415,18 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  */
 const processFileUpload = async ({ req, res, metadata }) => {
   const appConfig = req.config;
+  // Debug log for E2B file upload troubleshooting
+  if (metadata.endpoint === EModelEndpoint.e2bAssistants) {
+    logger.debug(`[E2B File Upload] Processing upload. Metadata: ${JSON.stringify(metadata)}`);
+  }
+
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
+  const isE2BAssistant = metadata.endpoint === EModelEndpoint.e2bAssistants;
   const assistantSource =
     metadata.endpoint === EModelEndpoint.azureAssistants ? FileSources.azure : FileSources.openai;
   // Use the configured file strategy for regular file uploads (not vectordb)
-  const source = isAssistantUpload ? assistantSource : appConfig.fileStrategy;
+  // E2B uses default storage (local/S3/Azure), not OpenAI vector store
+  const source = (isAssistantUpload && !isE2BAssistant) ? assistantSource : appConfig.fileStrategy;
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id = null } = metadata;
 
@@ -409,7 +453,50 @@ const processFileUpload = async ({ req, res, metadata }) => {
     openai,
   });
 
-  if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
+  // For E2B: Local storage strategies don't return 'id', so use file_id as fallback
+  const actualFileId = id || file_id;
+
+  // Handle E2B Assistant file associations
+  if (isE2BAssistant && metadata.assistant_id && !metadata.message_file) {
+    logger.debug(`[E2B File Upload] Attempting to associate file ${actualFileId} with assistant ${metadata.assistant_id}`);
+    const { updateE2BAssistantDoc, getE2BAssistantDocs } = require('~/models/E2BAssistant');
+    const assistants = await getE2BAssistantDocs({ id: metadata.assistant_id });
+    
+    if (assistants && assistants.length > 0) {
+      const assistant = assistants[0];
+      const tool_resource = metadata.tool_resource || EToolResources.code_interpreter;
+      
+      // Initialize tool_resources if not exists
+      const tool_resources = assistant.tool_resources || {};
+      if (!tool_resources[tool_resource]) {
+        tool_resources[tool_resource] = { file_ids: [] };
+      }
+      if (!tool_resources[tool_resource].file_ids) {
+        tool_resources[tool_resource].file_ids = [];
+      }
+      
+      // Add file_id if not already present
+      if (!tool_resources[tool_resource].file_ids.includes(actualFileId)) {
+        tool_resources[tool_resource].file_ids.push(actualFileId);
+      }
+      
+      // Also add to top-level file_ids array for backwards compatibility
+      const file_ids = assistant.file_ids || [];
+      if (!file_ids.includes(actualFileId)) {
+        file_ids.push(actualFileId);
+      }
+      
+      // Update assistant document
+      await updateE2BAssistantDoc(
+        { id: metadata.assistant_id },
+        { tool_resources, file_ids }
+      );
+      
+      logger.info(`[E2B File Upload] Successfully added file ${actualFileId} to assistant ${metadata.assistant_id} (tool: ${tool_resource})`);
+    } else {
+      logger.warn(`[E2B File Upload] Assistant ${metadata.assistant_id} not found`);
+    }
+  } else if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
       file_id: id,
     });
@@ -423,7 +510,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
     });
   }
 
-  let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
+  let filepath = (isAssistantUpload && !isE2BAssistant) ? `${openai.baseURL}/files/${id}` : _filepath;
   if (isAssistantUpload && file.mimetype.startsWith('image')) {
     const result = await processImageFile({
       req,
@@ -437,7 +524,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
   const result = await createFile(
     {
       user: req.user.id,
-      file_id: id ?? file_id,
+      file_id: actualFileId,
       temp_file_id,
       bytes,
       filepath,
