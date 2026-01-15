@@ -1,7 +1,7 @@
 {
-  "name": "librechat-data-provider",
-  "version": "0.8.100",
-  "description": "data services for librechat apps",
+  "name": "jamot-data-provider",
+  "version": "0.41.0",
+  "description": "data services for Jamot apps",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
   "types": "./dist/types/index.d.ts",

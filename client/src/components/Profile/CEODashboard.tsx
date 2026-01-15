@@ -4,6 +4,7 @@ import CEOKpiStats from './CEO/CEOKpiStats';
 import CEOProjectsTable from './CEO/CEOProjectsTable';
 import CEOStrategicTools from './CEO/CEOStrategicTools';
 import CEOReportView from './CEO/CEOReportView';
+import CEOUserManagement from './CEO/CEOUserManagement';
 
 // --- TYPES ---
 interface Project {
@@ -26,6 +27,11 @@ interface AnalysisReport {
 }
 
 export default function CEODashboard({ profile }: { profile: any }) {
+  console.log('🎯 [CEODashboard] Component mounted/rendered');
+  console.log('👤 [CEODashboard] Profile data:', profile);
+  console.log('🔑 [CEODashboard] Profile type:', profile?.profileType);
+  console.log('📋 [CEODashboard] Allowed workflows:', profile?.allowedWorkflows);
+  
   const { showToast } = useToastContext();
   const reportSectionRef = useRef<HTMLDivElement>(null); // Ref untuk auto-scroll
 
@@ -47,45 +53,86 @@ export default function CEODashboard({ profile }: { profile: any }) {
   // --- HELPER: SAFE FETCH ---
   const safeFetch = async (url: string, options: any) => {
     try {
+      console.log('🌐 [safeFetch] Making request to:', url);
       const response = await fetch(url, options);
+      console.log('📡 [safeFetch] Response status:', response.status, response.statusText);
+      console.log('📡 [safeFetch] Response headers:', Object.fromEntries(response.headers.entries()));
+      
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`Server Error (${response.status}): ${errText.substring(0, 100)}`);
+        console.error('❌ [safeFetch] Error response body (full):', errText);
+        console.error('❌ [safeFetch] Status:', response.status);
+        throw new Error(`Server Error (${response.status}): ${errText.substring(0, 200)}`);
       }
+      
       const contentType = response.headers.get('content-type');
+      console.log('📄 [safeFetch] Content-Type:', contentType);
+      
       if (contentType && contentType.includes('application/json')) {
-        return await response.json();
+        const data = await response.json();
+        console.log('✅ [safeFetch] JSON parsed successfully');
+        return data;
       }
+      
+      const textResponse = await response.text();
+      console.error('❌ [safeFetch] Non-JSON response:', textResponse);
       throw new Error('Invalid response format (Not JSON)');
     } catch (error) {
+      console.error('❌ [safeFetch] Fetch error:', error);
       throw error;
     }
   };
 
   // --- 1. FETCH PROJECT DATA (INITIAL LOAD) ---
   const fetchDashboardData = async () => {
+    console.log('🔄 [CEODashboard] Fetching project data...');
+    console.log('📍 [CEODashboard] N8N URL:', `${n8nBaseUrl}/webhook/librechat/project-status`);
     setLoading(true);
     try {
+      const payload = { profileType: 'ceo', action: 'list' };
+      console.log('📤 [CEODashboard] Request payload:', payload);
+      
       const result = await safeFetch(`${n8nBaseUrl}/webhook/librechat/project-status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profileType: 'ceo', action: 'list' }),
+        body: JSON.stringify(payload),
       });
 
-      let data = [];
-      if (result?.data?.projects) data = result.data.projects;
-      else if (Array.isArray(result)) data = result;
-      else if (result?.data && Array.isArray(result.data)) data = result.data;
+      console.log('📥 [CEODashboard] Raw API response:', result);
+      console.log('📊 [CEODashboard] Response type:', typeof result);
+      console.log('📊 [CEODashboard] Is Array?:', Array.isArray(result));
 
+      let data = [];
+      if (result?.data?.projects) {
+        data = result.data.projects;
+        console.log('✅ [CEODashboard] Extracted from result.data.projects');
+      } else if (Array.isArray(result)) {
+        data = result;
+        console.log('✅ [CEODashboard] Used result directly (array)');
+      } else if (result?.data && Array.isArray(result.data)) {
+        data = result.data;
+        console.log('✅ [CEODashboard] Extracted from result.data');
+      } else {
+        console.warn('⚠️ [CEODashboard] Unknown response structure');
+      }
+
+      console.log('📊 [CEODashboard] Final projects data:', data);
+      console.log('📊 [CEODashboard] Projects count:', data.length);
       setProjects(data);
     } catch (error) {
-      console.error('Fetch failed', error);
+      console.error('❌ [CEODashboard] Fetch failed:', error);
+      console.error('❌ [CEODashboard] Error details:', {
+        message: error.message,
+        stack: error.stack,
+      });
     } finally {
       setLoading(false);
+      console.log('✅ [CEODashboard] Loading complete');
     }
   };
 
   useEffect(() => {
+    console.log('🔄 [CEODashboard] useEffect triggered - fetching dashboard data');
     fetchDashboardData();
   }, []);
 
@@ -140,10 +187,11 @@ export default function CEODashboard({ profile }: { profile: any }) {
 
   // --- 3. LOGIC UTAMA: EXEUCTE WORKFLOW ---
   const handleExecuteWorkflow = async (wf: any) => {
+    console.log('🚀 [Workflow] Executing workflow:', wf);
+    console.log('📋 [Workflow] Workflow ID:', wf.workflowId);
+    console.log('📋 [Workflow] Workflow Name:', wf.workflowName);
+    
     setExecutingId(wf.workflowId);
-
-    // Opsional: Reset report lama saat loading baru
-    // setActiveReport(null);
 
     try {
       // A. MAPPING URL N8N
@@ -158,29 +206,46 @@ export default function CEODashboard({ profile }: { profile: any }) {
         name.includes('budget')
       ) {
         endpoint = `${n8nBaseUrl}/webhook/librechat/financial-analytics`;
+        console.log('💰 [Workflow] Detected financial workflow');
       } else {
         endpoint = `${n8nBaseUrl}/webhook/librechat/company-metrics`;
+        console.log('📊 [Workflow] Detected company metrics workflow');
       }
 
-      console.log(`🚀 Fetching Data: ${endpoint}`);
+      console.log('📍 [Workflow] Endpoint URL:', endpoint);
 
       // B. AMBIL DATA DARI N8N
       const payload = { userId: profile?.userId, profileType: 'ceo', workflowId: wf.workflowId };
+      console.log('📤 [Workflow] Request payload:', payload);
+      
       const n8nResult = await safeFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
+      console.log('📥 [Workflow] Raw N8N response:', n8nResult);
+      console.log('📊 [Workflow] Response type:', typeof n8nResult);
+      console.log('📊 [Workflow] Is Array?:', Array.isArray(n8nResult));
+
       // Handle variasi struktur response N8N
       const rawData = Array.isArray(n8nResult) ? n8nResult[0] : n8nResult.data || n8nResult;
+      console.log('🔍 [Workflow] Raw data extracted:', rawData);
+      
       const metricsData = rawData.data || rawData.json || rawData;
+      console.log('📊 [Workflow] Final metrics data:', metricsData);
+      console.log('📊 [Workflow] Metrics keys:', metricsData ? Object.keys(metricsData) : 'null');
 
-      if (!metricsData) throw new Error('No data received from N8N');
+      if (!metricsData) {
+        console.error('❌ [Workflow] No metrics data received!');
+        throw new Error('No data received from N8N');
+      }
 
       // C. KIRIM DATA KE OPENAI (Untuk Narasi)
+      console.log('🤖 [Workflow] Sending to OpenAI for analysis...');
       showToast({ message: 'Generating AI Insights...', status: 'info' });
       const aiResult = await generateAIAnalysis(metricsData, wf.workflowName);
+      console.log('🤖 [Workflow] AI analysis result:', aiResult);
 
       // D. GABUNGKAN & TAMPILKAN
       const report: AnalysisReport = {
@@ -191,6 +256,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
         timestamp: new Date().toLocaleString(),
       };
 
+      console.log('✅ [Workflow] Report generated:', report);
       setActiveReport(report);
       showToast({ message: 'Report Ready', status: 'success' });
 
@@ -199,18 +265,29 @@ export default function CEODashboard({ profile }: { profile: any }) {
         reportSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 200);
     } catch (e: any) {
-      console.error(e);
+      console.error('❌ [Workflow] Execution failed:', e);
+      console.error('❌ [Workflow] Error message:', e.message);
+      console.error('❌ [Workflow] Error stack:', e.stack);
       showToast({ message: `Failed: ${e.message}`, status: 'error' });
     } finally {
       setExecutingId(null);
+      console.log('🏁 [Workflow] Execution complete');
     }
   };
 
   // --- 4. KPI STATS CALCULATION ---
   const kpiStats = useMemo(() => {
+    console.log('📊 [KPI] Calculating KPI stats...');
+    console.log('📊 [KPI] Projects data:', projects);
+    console.log('📊 [KPI] Number of projects:', projects.length);
+    
     const totalBudget = projects.reduce((acc, p) => acc + (p.budget || 0), 0);
     const totalSpent = projects.reduce((acc, p) => acc + (p.spent || 0), 0);
     const activeCount = projects.filter((p) => p.status === 'active').length;
+
+    console.log('💰 [KPI] Total Budget:', totalBudget);
+    console.log('💸 [KPI] Total Spent:', totalSpent);
+    console.log('🚀 [KPI] Active Projects:', activeCount);
 
     // Simulasi Margin (karena data project biasanya cuma cost)
     const estimatedRevenue = totalBudget * 1.2;
@@ -219,7 +296,10 @@ export default function CEODashboard({ profile }: { profile: any }) {
         ? (((estimatedRevenue - totalSpent) / estimatedRevenue) * 100).toFixed(1)
         : '0';
 
-    return [
+    console.log('📈 [KPI] Estimated Revenue:', estimatedRevenue);
+    console.log('📊 [KPI] Margin:', margin + '%');
+    
+    const stats = [
       {
         title: 'Total Budget',
         value: `$${(totalBudget / 1000).toFixed(1)}K`,
@@ -277,6 +357,9 @@ export default function CEODashboard({ profile }: { profile: any }) {
         bg: parseFloat(margin) > 20 ? 'bg-green-50' : 'bg-yellow-50',
       },
     ];
+    
+    console.log('✅ [KPI] Stats calculated:', stats);
+    return stats;
   }, [projects]);
 
   return (
@@ -330,6 +413,9 @@ export default function CEODashboard({ profile }: { profile: any }) {
           />
         </div>
       </div>
+
+      {/* USER MANAGEMENT SECTION */}
+      <CEOUserManagement />
     </div>
   );
 }

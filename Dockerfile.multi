@@ -1,5 +1,5 @@
 # Dockerfile.multi
-# v0.8.1-rc2
+# V0.41
 # Base for all builds
 FROM node:20-slim AS base-min
 # Install dependencies

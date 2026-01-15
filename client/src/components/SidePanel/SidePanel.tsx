@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getEndpointField } from 'librechat-data-provider';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import { ResizableHandleAlt, ResizablePanel, useMediaQuery } from '@librechat/client';
@@ -9,6 +10,8 @@ import { useLocalStorage, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import NavToggle from '~/components/Nav/NavToggle';
 import { useSidePanelContext } from '~/Providers';
+import { useSetRecoilState } from 'recoil';
+import { pdfBuilderState } from '~/store/pdfBuilder';
 import { cn } from '~/utils';
 import Nav from './Nav';
 
@@ -44,10 +47,12 @@ const SidePanel = ({
   interfaceConfig: TInterfaceConfig;
 }) => {
   const localize = useLocalize();
+  const navigate = useNavigate();
   const { endpoint } = useSidePanelContext();
   const [isHovering, setIsHovering] = useState(false);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const setPDFBuilderState = useSetRecoilState(pdfBuilderState);
 
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
@@ -81,6 +86,14 @@ const SidePanel = ({
     panelRef.current?.collapse();
   }, [panelRef, setMinSize, setIsCollapsed, setFullCollapse, setCollapsedSize]);
 
+  const openPDFBuilder = useCallback(() => {
+    setPDFBuilderState((prev) => ({ ...prev, isOpen: true }));
+  }, [setPDFBuilderState]);
+
+  const navigateToDashboard = useCallback(() => {
+    navigate('/profile');
+  }, [navigate]);
+
   const Links = useSideNavLinks({
     endpoint,
     hidePanel,
@@ -88,6 +101,8 @@ const SidePanel = ({
     endpointType,
     interfaceConfig,
     endpointsConfig,
+    openPDFBuilder,
+    navigateToDashboard,
   });
 
   const toggleNavVisible = useCallback(() => {

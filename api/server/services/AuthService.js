@@ -23,6 +23,7 @@ const {
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
 const { sendEmail } = require('~/server/utils');
+const Profile = require('~/server/models/Profile');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
@@ -222,6 +223,48 @@ const registerUser = async (user, additionalData = {}) => {
 
     const newUser = await createUser(newUserData, appConfig.balance, disableTTL, true);
     newUserId = newUser._id;
+    
+    // Auto-create customer profile for all new registrations
+    try {
+      const customerWorkflows = [
+        {
+          workflowId: 'wf_create_ticket',
+          workflowName: 'Create Support Ticket',
+          endpoint: '/webhook/librechat/ticket-create',
+          description: 'Create a new support ticket.',
+        },
+        {
+          workflowId: 'wf_list_ticket',
+          workflowName: 'List Support Tickets',
+          endpoint: '/webhook/librechat/ticket-list',
+          description: 'List your support tickets.',
+        },
+        {
+          workflowId: 'wf_update_ticket',
+          workflowName: 'Update Support Ticket',
+          endpoint: '/webhook/librechat/ticket-update',
+          description: 'Update ticket status or details.',
+        },
+      ];
+
+      await Profile.create({
+        userId: newUserId,
+        profileType: 'customer',
+        permissions: ['create_ticket', 'view_own_tickets', 'update_own_ticket'],
+        allowedWorkflows: customerWorkflows,
+        metadata: {
+          securityLevel: 1,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      logger.info(`[registerUser] Auto-created customer profile for user: ${email}`);
+    } catch (profileErr) {
+      logger.error(`[registerUser] Failed to create profile for user ${email}:`, profileErr);
+      // Don't fail registration if profile creation fails
+    }
+    
     if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({
         _id: newUserId,

@@ -1,9 +1,9 @@
 <p align="center">
-  <a href="https://librechat.ai">
-    <img src="client/public/assets/logo.svg" height="256">
+  <a href="https://jamot.pro">
+    <img src="client/public/assets/jamot-light.png" height="256">
   </a>
   <h1 align="center">
-    <a href="https://librechat.ai">LibreChat</a>
+    <a href="https://jamot.pro">Jamot</a>
   </h1>
 </p>
 
