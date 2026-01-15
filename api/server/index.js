@@ -277,6 +277,17 @@ const startServer = async () => {
     console.log('[SKIP] Profile routes (error loading)');
   }
 
+  // Admin route (CEO-only user management)
+  try {
+    const adminRoutes = require('./routes/admin');
+    app.use('/api/admin', adminRoutes);
+    console.log('[OK] Admin routes loaded');
+  } catch (e) {
+    console.log('[SKIP] Admin routes (error loading)');
+    console.error('[ERROR] Admin routes error:', e.message);
+    console.error('[ERROR] Stack:', e.stack);
+  }
+
   // Error Controller
   if (ErrorController) {
     app.use(ErrorController);

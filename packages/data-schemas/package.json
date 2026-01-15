@@ -1,7 +1,7 @@
 {
-  "name": "@librechat/data-schemas",
+  "name": "@jamot/data-schemas",
   "version": "0.0.30",
-  "description": "Mongoose schemas and models for LibreChat",
+  "description": "Mongoose schemas and models for Jamot",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.es.js",

@@ -1,8 +1,8 @@
 {
-  "name": "@librechat/api",
+  "name": "@jamot/api",
   "version": "1.6.0",
   "type": "commonjs",
-  "description": "MCP services for LibreChat",
+  "description": "MCP services for Jamot",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
   "types": "./dist/types/index.d.ts",

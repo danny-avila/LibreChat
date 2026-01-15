@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
-import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote, FileText } from 'lucide-react';
+import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote, FileText, LayoutDashboard } from 'lucide-react';
 import {
   Permissions,
   EModelEndpoint,
@@ -30,6 +30,7 @@ export default function useSideNavLinks({
   interfaceConfig,
   endpointsConfig,
   openPDFBuilder,
+  navigateToDashboard,
 }: {
   hidePanel: () => void;
   keyProvided: boolean;
@@ -38,6 +39,7 @@ export default function useSideNavLinks({
   interfaceConfig: Partial<TInterfaceConfig>;
   endpointsConfig: TEndpointsConfig;
   openPDFBuilder?: () => void;
+  navigateToDashboard?: () => void;
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -172,6 +174,16 @@ export default function useSideNavLinks({
       });
     }
 
+    if (navigateToDashboard) {
+      links.push({
+        title: 'com_sidepanel_dashboard',
+        label: '',
+        icon: LayoutDashboard,
+        onClick: navigateToDashboard,
+        id: 'dashboard',
+      });
+    }
+
     if (openPDFBuilder) {
       links.push({
         title: 'com_sidepanel_pdf_builder',
@@ -205,6 +217,7 @@ export default function useSideNavLinks({
     hasAccessToCreateAgents,
     hidePanel,
     openPDFBuilder,
+    navigateToDashboard,
     startupConfig,
   ]);
 

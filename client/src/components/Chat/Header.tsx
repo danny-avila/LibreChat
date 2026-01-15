@@ -58,9 +58,9 @@ export default function Header() {
 
           <div className={navVisible ? 'flex items-center gap-2' : 'ml-2 flex items-center gap-2'}>
             <ModelSelector startupConfig={startupConfig} />
-            {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
-            {hasAccessToBookmarks === true && <BookmarkMenu />}
-            {hasAccessToMultiConvo === true && <AddMultiConvo />}
+            {/* {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />} */}
+            {/* {hasAccessToBookmarks === true && <BookmarkMenu />} */}
+            {/* {hasAccessToMultiConvo === true && <AddMultiConvo />} */}
             {isSmallScreen && (
               <>
                 <ExportAndShareMenu

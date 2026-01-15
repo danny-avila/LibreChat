@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getEndpointField } from 'librechat-data-provider';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import { ResizableHandleAlt, ResizablePanel, useMediaQuery } from '@librechat/client';
@@ -46,6 +47,7 @@ const SidePanel = ({
   interfaceConfig: TInterfaceConfig;
 }) => {
   const localize = useLocalize();
+  const navigate = useNavigate();
   const { endpoint } = useSidePanelContext();
   const [isHovering, setIsHovering] = useState(false);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
@@ -88,6 +90,10 @@ const SidePanel = ({
     setPDFBuilderState((prev) => ({ ...prev, isOpen: true }));
   }, [setPDFBuilderState]);
 
+  const navigateToDashboard = useCallback(() => {
+    navigate('/profile');
+  }, [navigate]);
+
   const Links = useSideNavLinks({
     endpoint,
     hidePanel,
@@ -96,6 +102,7 @@ const SidePanel = ({
     interfaceConfig,
     endpointsConfig,
     openPDFBuilder,
+    navigateToDashboard,
   });
 
   const toggleNavVisible = useCallback(() => {
