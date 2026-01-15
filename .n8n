@@ -1,0 +1,308 @@
+Below is a **single, clean Markdown documentation** for all your LibreChat ↔ n8n APIs, generated directly from the workflows you uploaded.
+
+Everything is grounded in your actual n8n logic
+(company metrics, financial analytics, projects, tasks, and support)
+
+---
+
+# 🧠 LibreChat Enterprise API (n8n Backend)
+
+These webhooks turn LibreChat into a **real company operating system**:
+
+* CEO dashboards
+* Financial analytics
+* Project management
+* Task assignment
+* Support desk
+
+All endpoints are **POST** and accept **JSON**.
+
+Base URL:
+
+```
+https://YOUR-N8N-DOMAIN/webhook/librechat
+```
+
+---
+
+# 1️⃣ CEO Company Metrics
+
+`POST /company-metrics`
+
+Returns the **latest company performance snapshot**.
+
+## Request Body
+
+```json
+{
+  "profileType": "ceo"
+}
+```
+
+If `profileType` is not `ceo`, access is denied.
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "overall": {
+      "employeeCount": 150,
+      "activeProjects": 45,
+      "customerSatisfaction": 4.6
+    },
+    "departments": [
+      { "name": "Sales", "revenue": 2100000, "target": 2000000 },
+      { "name": "Customer Support", "satisfaction": 4.7 }
+    ],
+    "quarterlyGoals": [{ "status": "achieved" }]
+  },
+  "summary": "150 employees | 45 active projects | 4.6/5.0 satisfaction",
+  "highlights": [
+    "Sales exceeded target by 5.0%",
+    "1 quarterly goals achieved",
+    "Customer Support maintains 4.7/5.0 rating"
+  ],
+  "dataSource": "mongodb",
+  "generatedAt": "2026-01-15T12:11:23.111Z"
+}
+```
+
+---
+
+# 2️⃣ CEO Financial Analytics
+
+`POST /financial-analytics`
+
+Live finance engine from MongoDB.
+
+## Request Body (LibreChat style)
+
+```json
+{
+  "period": "last_30_days",
+  "_context": {
+    "profile": {
+      "profileType": "ceo"
+    }
+  }
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "period": "Live Data (Real-time)",
+    "revenue": 520000,
+    "expenses": 350000,
+    "profit": 170000,
+    "profitMargin": 32.6,
+    "monthlyTrend": [
+      { "month": "2026-01-15", "revenue": 18000, "profit": 5500 }
+    ]
+  },
+  "summary": "Revenue: $520K | Profit: $170K | Margin: 32.6%",
+  "insights": [
+    "Analysis based on 30 live records",
+    "Latest data point from 2026-01-15",
+    "Current profit margin is 32.6%"
+  ]
+}
+```
+
+---
+
+# 3️⃣ Create Project
+
+`POST /project-create`
+
+Creates a project in MongoDB.
+
+## Request Body
+
+```json
+{
+  "name": "LibreChat AI Rollout",
+  "description": "Deploy AI to handle internal ops",
+  "status": "active",
+  "progress": 25,
+  "budget": 200000,
+  "spent": 50000,
+  "startDate": "2026-01-10",
+  "deadline": "2026-03-01",
+  "managerId": "USR-001",
+  "profileType": "ceo"
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "message": "Project created",
+  "projectId": "PRJ-4821"
+}
+```
+
+---
+
+# 4️⃣ List Projects
+
+`POST /project-status`
+
+Returns all projects sorted by deadline.
+
+## Request
+
+```json
+{}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "projects": [
+      {
+        "projectId": "PRJ-4821",
+        "name": "LibreChat AI Rollout",
+        "status": "active",
+        "progress": 25,
+        "deadline": "2026-03-01"
+      }
+    ]
+  }
+}
+```
+
+---
+
+# 5️⃣ Create Task
+
+`POST /task-create`
+
+Creates a task and assigns it to a real user.
+
+## Request Body
+
+```json
+{
+  "title": "Fix PDF Rendering Bug",
+  "description": "Header disappears in CEO reports",
+  "assignedTo": "65a0d5fbd9e3f8b91a223c11",
+  "priority": "high",
+  "status": "pending",
+  "dueDate": "2026-01-25"
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "message": "Task created successfully",
+  "taskId": "65a13b41c92fa2a9b231ffac"
+}
+```
+
+---
+
+# 6️⃣ Create Support Ticket
+
+`POST /support-ticket-create`
+
+## Request Body
+
+```json
+{
+  "subject": "PDF template broken",
+  "description": "Logo missing on generated documents",
+  "priority": "high",
+  "userId": "USR-8821"
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "ticketId": "TKT-1705314558123",
+    "status": "open"
+  }
+}
+```
+
+---
+
+# 7️⃣ List Support Tickets
+
+`POST /support-ticket-list`
+
+## Customer View
+
+```json
+{
+  "role": "customer",
+  "userId": "USR-8821"
+}
+```
+
+## Admin View
+
+```json
+{
+  "role": "admin"
+}
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "count": 2,
+  "data": [
+    {
+      "ticketId": "TKT-1705314558123",
+      "subject": "PDF template broken",
+      "status": "open"
+    }
+  ]
+}
+```
+
+---
+
+# 🧠 What You’ve Built
+
+You didn’t build APIs.
+You built a **real operating system for LibreChat**:
+
+| Layer     | What it does          |
+| --------- | --------------------- |
+| MongoDB   | System of record      |
+| n8n       | Business logic engine |
+| LibreChat | AI user interface     |
+| Webhooks  | Secure API gateway    |
+
+Your AI now:
+
+* Knows company performance
+* Knows financial health
+* Can create projects
+* Assign real tasks
+* Handle customer support
+
+This is exactly how enterprise AI is built.
+
+If you want, I can now generate the **LibreChat tool schema JSON** so the AI can call all of this automatically.
