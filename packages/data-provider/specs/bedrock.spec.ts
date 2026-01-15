@@ -88,6 +88,28 @@ describe('bedrockInputParser', () => {
       expect(result.additionalModelRequestFields).toBeUndefined();
     });
 
+    test('should not add anthropic_beta to Moonshot Kimi K2 models', () => {
+      const input = {
+        model: 'moonshot.kimi-k2-0711-thinking',
+      };
+      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const additionalFields = result.additionalModelRequestFields as
+        | Record<string, unknown>
+        | undefined;
+      expect(additionalFields?.anthropic_beta).toBeUndefined();
+    });
+
+    test('should not add anthropic_beta to DeepSeek models', () => {
+      const input = {
+        model: 'deepseek.deepseek-r1',
+      };
+      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const additionalFields = result.additionalModelRequestFields as
+        | Record<string, unknown>
+        | undefined;
+      expect(additionalFields?.anthropic_beta).toBeUndefined();
+    });
+
     test('should respect explicit thinking configuration', () => {
       const input = {
         model: 'anthropic.claude-sonnet-4',

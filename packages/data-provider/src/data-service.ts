@@ -32,11 +32,11 @@ export type FavoriteItem = {
 };
 
 export function getFavorites(): Promise<FavoriteItem[]> {
-  return request.get('/api/user/settings/favorites');
+  return request.get(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`);
 }
 
 export function updateFavorites(favorites: FavoriteItem[]): Promise<FavoriteItem[]> {
-  return request.post('/api/user/settings/favorites', { favorites });
+  return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, { favorites });
 }
 
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {

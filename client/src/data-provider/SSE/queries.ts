@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { QueryKeys, request, dataService } from 'librechat-data-provider';
+import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import type { Agents, TConversation } from 'librechat-data-provider';
 import { updateConvoInAllQueries } from '~/utils';
@@ -16,7 +16,9 @@ export interface StreamStatusResponse {
 export const streamStatusQueryKey = (conversationId: string) => ['streamStatus', conversationId];
 
 export const fetchStreamStatus = async (conversationId: string): Promise<StreamStatusResponse> => {
-  return request.get<StreamStatusResponse>(`/api/agents/chat/status/${conversationId}`);
+  return request.get<StreamStatusResponse>(
+    `${apiBaseUrl()}/api/agents/chat/status/${conversationId}`,
+  );
 };
 
 export function useStreamStatus(conversationId: string | undefined, enabled = true) {

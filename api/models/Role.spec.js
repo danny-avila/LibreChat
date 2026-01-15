@@ -46,7 +46,7 @@ describe('updateAccessPermissions', () => {
         [PermissionTypes.PROMPTS]: {
           CREATE: true,
           USE: true,
-          SHARED_GLOBAL: false,
+          SHARE: false,
         },
       },
     }).save();
@@ -55,7 +55,7 @@ describe('updateAccessPermissions', () => {
       [PermissionTypes.PROMPTS]: {
         CREATE: true,
         USE: true,
-        SHARED_GLOBAL: true,
+        SHARE: true,
       },
     });
 
@@ -63,7 +63,7 @@ describe('updateAccessPermissions', () => {
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]).toEqual({
       CREATE: true,
       USE: true,
-      SHARED_GLOBAL: true,
+      SHARE: true,
     });
   });
 
@@ -74,7 +74,7 @@ describe('updateAccessPermissions', () => {
         [PermissionTypes.PROMPTS]: {
           CREATE: true,
           USE: true,
-          SHARED_GLOBAL: false,
+          SHARE: false,
         },
       },
     }).save();
@@ -83,7 +83,7 @@ describe('updateAccessPermissions', () => {
       [PermissionTypes.PROMPTS]: {
         CREATE: true,
         USE: true,
-        SHARED_GLOBAL: false,
+        SHARE: false,
       },
     });
 
@@ -91,7 +91,7 @@ describe('updateAccessPermissions', () => {
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]).toEqual({
       CREATE: true,
       USE: true,
-      SHARED_GLOBAL: false,
+      SHARE: false,
     });
   });
 
@@ -110,20 +110,20 @@ describe('updateAccessPermissions', () => {
         [PermissionTypes.PROMPTS]: {
           CREATE: true,
           USE: true,
-          SHARED_GLOBAL: false,
+          SHARE: false,
         },
       },
     }).save();
 
     await updateAccessPermissions(SystemRoles.USER, {
-      [PermissionTypes.PROMPTS]: { SHARED_GLOBAL: true },
+      [PermissionTypes.PROMPTS]: { SHARE: true },
     });
 
     const updatedRole = await getRoleByName(SystemRoles.USER);
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]).toEqual({
       CREATE: true,
       USE: true,
-      SHARED_GLOBAL: true,
+      SHARE: true,
     });
   });
 
@@ -134,7 +134,7 @@ describe('updateAccessPermissions', () => {
         [PermissionTypes.PROMPTS]: {
           CREATE: true,
           USE: true,
-          SHARED_GLOBAL: false,
+          SHARE: false,
         },
       },
     }).save();
@@ -147,7 +147,7 @@ describe('updateAccessPermissions', () => {
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]).toEqual({
       CREATE: true,
       USE: false,
-      SHARED_GLOBAL: false,
+      SHARE: false,
     });
   });
 
@@ -155,13 +155,13 @@ describe('updateAccessPermissions', () => {
     await new Role({
       name: SystemRoles.USER,
       permissions: {
-        [PermissionTypes.PROMPTS]: { CREATE: true, USE: true, SHARED_GLOBAL: false },
+        [PermissionTypes.PROMPTS]: { CREATE: true, USE: true, SHARE: false },
         [PermissionTypes.BOOKMARKS]: { USE: true },
       },
     }).save();
 
     await updateAccessPermissions(SystemRoles.USER, {
-      [PermissionTypes.PROMPTS]: { USE: false, SHARED_GLOBAL: true },
+      [PermissionTypes.PROMPTS]: { USE: false, SHARE: true },
       [PermissionTypes.BOOKMARKS]: { USE: false },
     });
 
@@ -169,7 +169,7 @@ describe('updateAccessPermissions', () => {
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]).toEqual({
       CREATE: true,
       USE: false,
-      SHARED_GLOBAL: true,
+      SHARE: true,
     });
     expect(updatedRole.permissions[PermissionTypes.BOOKMARKS]).toEqual({ USE: false });
   });
@@ -178,19 +178,19 @@ describe('updateAccessPermissions', () => {
     await new Role({
       name: SystemRoles.USER,
       permissions: {
-        [PermissionTypes.PROMPTS]: { CREATE: true, USE: true, SHARED_GLOBAL: false },
+        [PermissionTypes.PROMPTS]: { CREATE: true, USE: true, SHARE: false },
       },
     }).save();
 
     await updateAccessPermissions(SystemRoles.USER, {
-      [PermissionTypes.PROMPTS]: { USE: false, SHARED_GLOBAL: true },
+      [PermissionTypes.PROMPTS]: { USE: false, SHARE: true },
     });
 
     const updatedRole = await getRoleByName(SystemRoles.USER);
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]).toEqual({
       CREATE: true,
       USE: false,
-      SHARED_GLOBAL: true,
+      SHARE: true,
     });
   });
 
@@ -214,13 +214,13 @@ describe('updateAccessPermissions', () => {
     await new Role({
       name: SystemRoles.USER,
       permissions: {
-        [PermissionTypes.PROMPTS]: { CREATE: true, USE: true, SHARED_GLOBAL: false },
+        [PermissionTypes.PROMPTS]: { CREATE: true, USE: true, SHARE: false },
         [PermissionTypes.MULTI_CONVO]: { USE: false },
       },
     }).save();
 
     await updateAccessPermissions(SystemRoles.USER, {
-      [PermissionTypes.PROMPTS]: { SHARED_GLOBAL: true },
+      [PermissionTypes.PROMPTS]: { SHARE: true },
       [PermissionTypes.MULTI_CONVO]: { USE: true },
     });
 
@@ -228,7 +228,7 @@ describe('updateAccessPermissions', () => {
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]).toEqual({
       CREATE: true,
       USE: true,
-      SHARED_GLOBAL: true,
+      SHARE: true,
     });
     expect(updatedRole.permissions[PermissionTypes.MULTI_CONVO]).toEqual({ USE: true });
   });
@@ -271,7 +271,7 @@ describe('initializeRoles', () => {
     });
 
     // Example: Check default values for ADMIN role
-    expect(adminRole.permissions[PermissionTypes.PROMPTS].SHARED_GLOBAL).toBe(true);
+    expect(adminRole.permissions[PermissionTypes.PROMPTS].SHARE).toBe(true);
     expect(adminRole.permissions[PermissionTypes.BOOKMARKS].USE).toBe(true);
     expect(adminRole.permissions[PermissionTypes.AGENTS].CREATE).toBe(true);
   });
@@ -283,7 +283,7 @@ describe('initializeRoles', () => {
         [PermissionTypes.PROMPTS]: {
           [Permissions.USE]: false,
           [Permissions.CREATE]: true,
-          [Permissions.SHARED_GLOBAL]: true,
+          [Permissions.SHARE]: true,
         },
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       },
@@ -320,7 +320,7 @@ describe('initializeRoles', () => {
     expect(userRole.permissions[PermissionTypes.AGENTS]).toBeDefined();
     expect(userRole.permissions[PermissionTypes.AGENTS].CREATE).toBeDefined();
     expect(userRole.permissions[PermissionTypes.AGENTS].USE).toBeDefined();
-    expect(userRole.permissions[PermissionTypes.AGENTS].SHARED_GLOBAL).toBeDefined();
+    expect(userRole.permissions[PermissionTypes.AGENTS].SHARE).toBeDefined();
   });
 
   it('should handle multiple runs without duplicating or modifying data', async () => {
@@ -348,7 +348,7 @@ describe('initializeRoles', () => {
         [PermissionTypes.PROMPTS]: {
           [Permissions.USE]: false,
           [Permissions.CREATE]: false,
-          [Permissions.SHARED_GLOBAL]: false,
+          [Permissions.SHARE]: false,
         },
         [PermissionTypes.BOOKMARKS]:
           roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.BOOKMARKS],
@@ -365,7 +365,7 @@ describe('initializeRoles', () => {
     expect(adminRole.permissions[PermissionTypes.AGENTS]).toBeDefined();
     expect(adminRole.permissions[PermissionTypes.AGENTS].CREATE).toBeDefined();
     expect(adminRole.permissions[PermissionTypes.AGENTS].USE).toBeDefined();
-    expect(adminRole.permissions[PermissionTypes.AGENTS].SHARED_GLOBAL).toBeDefined();
+    expect(adminRole.permissions[PermissionTypes.AGENTS].SHARE).toBeDefined();
   });
 
   it('should include MULTI_CONVO permissions when creating default roles', async () => {

@@ -42,7 +42,7 @@ export default function AgentFooter({
   const agent_id = useWatch({ control, name: 'id' });
   const hasAccessToShareAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
-    permission: Permissions.SHARED_GLOBAL,
+    permission: Permissions.SHARE,
   });
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
     ResourceType.AGENT,

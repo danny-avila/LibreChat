@@ -65,7 +65,7 @@ const RightPanel = React.memo(
     const editorMode = useRecoilValue(store.promptsEditorMode);
     const hasShareAccess = useHasAccess({
       permissionType: PermissionTypes.PROMPTS,
-      permission: Permissions.SHARED_GLOBAL,
+      permission: Permissions.SHARE,
     });
 
     const updateGroupMutation = useUpdatePromptGroup({

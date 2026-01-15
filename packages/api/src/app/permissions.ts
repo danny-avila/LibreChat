@@ -141,12 +141,52 @@ export async function updateInterfacePermissions({
       }
     };
 
+    // Helper to extract value from boolean or object config
+    const getConfigUse = (
+      config: boolean | { use?: boolean; share?: boolean; public?: boolean } | undefined,
+    ) => (typeof config === 'boolean' ? config : config?.use);
+    const getConfigShare = (
+      config: boolean | { use?: boolean; share?: boolean; public?: boolean } | undefined,
+    ) => (typeof config === 'boolean' ? undefined : config?.share);
+    const getConfigPublic = (
+      config: boolean | { use?: boolean; share?: boolean; public?: boolean } | undefined,
+    ) => (typeof config === 'boolean' ? undefined : config?.public);
+
+    // Get default use values (for backward compat when config is boolean)
+    const promptsDefaultUse =
+      typeof defaults.prompts === 'boolean' ? defaults.prompts : defaults.prompts?.use;
+    const agentsDefaultUse =
+      typeof defaults.agents === 'boolean' ? defaults.agents : defaults.agents?.use;
+    const promptsDefaultShare =
+      typeof defaults.prompts === 'object' ? defaults.prompts?.share : undefined;
+    const agentsDefaultShare =
+      typeof defaults.agents === 'object' ? defaults.agents?.share : undefined;
+    const promptsDefaultPublic =
+      typeof defaults.prompts === 'object' ? defaults.prompts?.public : undefined;
+    const agentsDefaultPublic =
+      typeof defaults.agents === 'object' ? defaults.agents?.public : undefined;
+
     const allPermissions: Partial<Record<PermissionTypes, Record<string, boolean | undefined>>> = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: getPermissionValue(
-          loadedInterface.prompts,
+          getConfigUse(loadedInterface.prompts),
           defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.USE],
-          defaults.prompts,
+          promptsDefaultUse,
+        ),
+        [Permissions.CREATE]: getPermissionValue(
+          undefined,
+          defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.CREATE],
+          true,
+        ),
+        [Permissions.SHARE]: getPermissionValue(
+          getConfigShare(loadedInterface.prompts),
+          defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE],
+          promptsDefaultShare,
+        ),
+        [Permissions.SHARE_PUBLIC]: getPermissionValue(
+          getConfigPublic(loadedInterface.prompts),
+          defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE_PUBLIC],
+          promptsDefaultPublic,
         ),
       },
       [PermissionTypes.BOOKMARKS]: {
@@ -194,9 +234,24 @@ export async function updateInterfacePermissions({
       },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: getPermissionValue(
-          loadedInterface.agents,
+          getConfigUse(loadedInterface.agents),
           defaultPerms[PermissionTypes.AGENTS]?.[Permissions.USE],
-          defaults.agents,
+          agentsDefaultUse,
+        ),
+        [Permissions.CREATE]: getPermissionValue(
+          undefined,
+          defaultPerms[PermissionTypes.AGENTS]?.[Permissions.CREATE],
+          true,
+        ),
+        [Permissions.SHARE]: getPermissionValue(
+          getConfigShare(loadedInterface.agents),
+          defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE],
+          agentsDefaultShare,
+        ),
+        [Permissions.SHARE_PUBLIC]: getPermissionValue(
+          getConfigPublic(loadedInterface.agents),
+          defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE_PUBLIC],
+          agentsDefaultPublic,
         ),
       },
       [PermissionTypes.TEMPORARY_CHAT]: {
@@ -273,6 +328,11 @@ export async function updateInterfacePermissions({
           loadedInterface.mcpServers?.share,
           defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE],
           defaults.mcpServers?.share,
+        ),
+        [Permissions.SHARE_PUBLIC]: getPermissionValue(
+          loadedInterface.mcpServers?.public,
+          defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE_PUBLIC],
+          defaults.mcpServers?.public,
         ),
       },
     };

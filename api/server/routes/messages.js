@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
     const user = req.user.id ?? '';
     const {
       cursor = null,
-      sortBy = 'createdAt',
+      sortBy = 'updatedAt',
       sortDirection = 'desc',
       pageSize: pageSizeRaw,
       conversationId,
@@ -55,7 +55,12 @@ router.get('/', async (req, res) => {
         .sort({ [sortField]: sortOrder })
         .limit(pageSize + 1)
         .lean();
-      const nextCursor = messages.length > pageSize ? messages.pop()[sortField] : null;
+      let nextCursor = null;
+      if (messages.length > pageSize) {
+        messages.pop(); // Remove extra item used to detect next page
+        // Create cursor from the last RETURNED item (not the popped one)
+        nextCursor = messages[messages.length - 1][sortField];
+      }
       response = { messages, nextCursor };
     } else if (search) {
       const searchResults = await Message.meiliSearch(search, { filter: `user = "${user}"` }, true);
