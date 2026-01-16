@@ -79,7 +79,11 @@ export class InMemoryEventTransport implements IEventTransport {
 
   emitError(streamId: string, error: string): void {
     const state = this.streams.get(streamId);
-    state?.emitter.emit('error', error);
+    // Only emit if there are listeners - Node.js throws on unhandled 'error' events
+    // This is intentional for the race condition where error occurs before client connects
+    if (state?.emitter.listenerCount('error') ?? 0 > 0) {
+      state?.emitter.emit('error', error);
+    }
   }
 
   getSubscriberCount(streamId: string): number {
