@@ -4,6 +4,7 @@ import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
 import {
   AuthType,
   EModelEndpoint,
+  extractEnvVariable,
   bedrockInputParser,
   bedrockOutputParser,
   removeNullishValues,
@@ -13,6 +14,7 @@ import type {
   InitializeResultBase,
   BedrockCredentials,
   GuardrailConfiguration,
+  InferenceProfileConfig,
 } from '~/types';
 import { checkUserKeyExpiry } from '~/utils';
 
@@ -49,7 +51,10 @@ export async function initializeBedrock({
   void endpoint;
   const appConfig = req.config;
   const bedrockConfig = appConfig?.endpoints?.[EModelEndpoint.bedrock] as
-    | ({ guardrailConfig?: GuardrailConfiguration } & Record<string, unknown>)
+    | ({
+        guardrailConfig?: GuardrailConfiguration;
+        inferenceProfiles?: InferenceProfileConfig;
+      } & Record<string, unknown>)
     | undefined;
 
   const {
@@ -105,15 +110,23 @@ export async function initializeBedrock({
       }),
     ),
   ) as InitializeResultBase['llmConfig'] & {
+    model?: string;
     region?: string;
     client?: BedrockRuntimeClient;
     credentials?: BedrockCredentials;
     endpointHost?: string;
     guardrailConfig?: GuardrailConfiguration;
+    applicationInferenceProfile?: string;
   };
 
   if (bedrockConfig?.guardrailConfig) {
     llmConfig.guardrailConfig = bedrockConfig.guardrailConfig;
+  }
+
+  const model = model_parameters?.model as string | undefined;
+  if (model && bedrockConfig?.inferenceProfiles?.[model]) {
+    const applicationInferenceProfile = extractEnvVariable(bedrockConfig.inferenceProfiles[model]);
+    llmConfig.applicationInferenceProfile = applicationInferenceProfile;
   }
 
   /** Only include credentials if they're complete (accessKeyId and secretAccessKey are both set) */

@@ -611,6 +611,78 @@ describe('AppService', () => {
     );
   });
 
+  it('should correctly configure Bedrock endpoint with models and inferenceProfiles', async () => {
+    const config: Partial<TCustomConfig> = {
+      endpoints: {
+        [EModelEndpoint.bedrock]: {
+          models: [
+            'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+            'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+            'global.anthropic.claude-opus-4-5-20251101-v1:0',
+          ],
+          inferenceProfiles: {
+            'us.anthropic.claude-3-7-sonnet-20250219-v1:0':
+              'arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123',
+            'us.anthropic.claude-sonnet-4-5-20250929-v1:0': '${BEDROCK_SONNET_45_PROFILE}',
+          },
+          availableRegions: ['us-east-1', 'us-west-2'],
+          titleConvo: true,
+          titleModel: 'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+        },
+      },
+    };
+
+    const result = await AppService({ config });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.bedrock]: expect.objectContaining({
+            models: expect.arrayContaining([
+              'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+              'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+              'global.anthropic.claude-opus-4-5-20251101-v1:0',
+            ]),
+            inferenceProfiles: expect.objectContaining({
+              'us.anthropic.claude-3-7-sonnet-20250219-v1:0':
+                'arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123',
+              'us.anthropic.claude-sonnet-4-5-20250929-v1:0': '${BEDROCK_SONNET_45_PROFILE}',
+            }),
+            availableRegions: expect.arrayContaining(['us-east-1', 'us-west-2']),
+            titleConvo: true,
+            titleModel: 'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('should configure Bedrock endpoint with only inferenceProfiles (no models array)', async () => {
+    const config: Partial<TCustomConfig> = {
+      endpoints: {
+        [EModelEndpoint.bedrock]: {
+          inferenceProfiles: {
+            'us.anthropic.claude-3-7-sonnet-20250219-v1:0': '${BEDROCK_INFERENCE_PROFILE_ARN}',
+          },
+        },
+      },
+    };
+
+    const result = await AppService({ config });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        endpoints: expect.objectContaining({
+          [EModelEndpoint.bedrock]: expect.objectContaining({
+            inferenceProfiles: expect.objectContaining({
+              'us.anthropic.claude-3-7-sonnet-20250219-v1:0': '${BEDROCK_INFERENCE_PROFILE_ARN}',
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
   it('should correctly configure all endpoint when specified', async () => {
     const config: Partial<TCustomConfig> = {
       endpoints: {
