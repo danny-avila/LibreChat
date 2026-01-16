@@ -1,6 +1,6 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint, modelDisplayNames } from 'librechat-data-provider';
 import type {
   TModelSpec,
   TAgentsMap,
@@ -92,6 +92,9 @@ export function filterModels(
       const assistant = assistantsMap[endpoint.value][modelId];
       modelName =
         typeof assistant.name === 'string' && assistant.name ? (assistant.name as string) : modelId;
+    } else if (modelDisplayNames[modelId]) {
+      // Use custom display name if available (e.g., Jamot Fast, Jamot Pro)
+      modelName = modelDisplayNames[modelId];
     }
 
     return modelName.toLowerCase().includes(searchTermLower);
@@ -203,6 +206,11 @@ export const getDisplayValue = ({
       endpoint.assistantNames[selectedValues.model]
     ) {
       return endpoint.assistantNames[selectedValues.model];
+    }
+
+    // Check if model has a custom display name (e.g., Jamot Fast, Jamot Pro)
+    if (modelDisplayNames[selectedValues.model]) {
+      return modelDisplayNames[selectedValues.model];
     }
 
     return selectedValues.model;
