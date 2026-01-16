@@ -69,6 +69,29 @@ export default function useSideNavLinks({
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
+    
+    // PDF Builder - moved to top
+    if (openPDFBuilder) {
+      links.push({
+        title: 'com_sidepanel_pdf_builder',
+        label: '',
+        icon: FileText,
+        onClick: openPDFBuilder,
+        id: 'pdf-builder',
+      });
+    }
+
+    // Dashboard - moved to top
+    if (navigateToDashboard) {
+      links.push({
+        title: 'com_sidepanel_dashboard',
+        label: '',
+        icon: LayoutDashboard,
+        onClick: navigateToDashboard,
+        id: 'dashboard',
+      });
+    }
+
     if (
       isAssistantsEndpoint(endpoint) &&
       ((endpoint === EModelEndpoint.assistants &&
@@ -113,48 +136,52 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToMemories && hasAccessToReadMemories) {
-      links.push({
-        title: 'com_ui_memories',
-        label: '',
-        icon: Database,
-        id: 'memories',
-        Component: MemoryViewer,
-      });
-    }
+    // Memories - HIDDEN (commented out)
+    // if (hasAccessToMemories && hasAccessToReadMemories) {
+    //   links.push({
+    //     title: 'com_ui_memories',
+    //     label: '',
+    //     icon: Database,
+    //     id: 'memories',
+    //     Component: MemoryViewer,
+    //   });
+    // }
 
-    if (
-      interfaceConfig.parameters === true &&
-      isParamEndpoint(endpoint ?? '', endpointType ?? '') === true &&
-      !isAgentsEndpoint(endpoint) &&
-      keyProvided
-    ) {
-      links.push({
-        title: 'com_sidepanel_parameters',
-        label: '',
-        icon: Settings2,
-        id: 'parameters',
-        Component: Parameters,
-      });
-    }
+    // Parameters - HIDDEN (commented out)
+    // if (
+    //   interfaceConfig.parameters === true &&
+    //   isParamEndpoint(endpoint ?? '', endpointType ?? '') === true &&
+    //   !isAgentsEndpoint(endpoint) &&
+    //   keyProvided
+    // ) {
+    //   links.push({
+    //     title: 'com_sidepanel_parameters',
+    //     label: '',
+    //     icon: Settings2,
+    //     id: 'parameters',
+    //     Component: Parameters,
+    //   });
+    // }
 
-    links.push({
-      title: 'com_sidepanel_attach_files',
-      label: '',
-      icon: AttachmentIcon,
-      id: 'files',
-      Component: FilesPanel,
-    });
+    // Attach Files - HIDDEN (commented out)
+    // links.push({
+    //   title: 'com_sidepanel_attach_files',
+    //   label: '',
+    //   icon: AttachmentIcon,
+    //   id: 'files',
+    //   Component: FilesPanel,
+    // });
 
-    if (hasAccessToBookmarks) {
-      links.push({
-        title: 'com_sidepanel_conversation_tags',
-        label: '',
-        icon: Bookmark,
-        id: 'bookmarks',
-        Component: BookmarkPanel,
-      });
-    }
+    // Bookmarks - HIDDEN (commented out)
+    // if (hasAccessToBookmarks) {
+    //   links.push({
+    //     title: 'com_sidepanel_conversation_tags',
+    //     label: '',
+    //     icon: Bookmark,
+    //     id: 'bookmarks',
+    //     Component: BookmarkPanel,
+    //   });
+    // }
 
     if (
       startupConfig?.mcpServers &&
@@ -171,26 +198,6 @@ export default function useSideNavLinks({
         icon: MCPIcon,
         id: 'mcp-settings',
         Component: MCPPanel,
-      });
-    }
-
-    if (navigateToDashboard) {
-      links.push({
-        title: 'com_sidepanel_dashboard',
-        label: '',
-        icon: LayoutDashboard,
-        onClick: navigateToDashboard,
-        id: 'dashboard',
-      });
-    }
-
-    if (openPDFBuilder) {
-      links.push({
-        title: 'com_sidepanel_pdf_builder',
-        label: '',
-        icon: FileText,
-        onClick: openPDFBuilder,
-        id: 'pdf-builder',
       });
     }
 

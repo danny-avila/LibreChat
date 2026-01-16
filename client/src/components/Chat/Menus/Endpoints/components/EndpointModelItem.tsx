@@ -1,6 +1,6 @@
 import React from 'react';
 import { EarthIcon } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint, modelDisplayNames } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
@@ -30,6 +30,9 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
     endpoint.assistantNames?.[modelId]
   ) {
     modelName = endpoint.assistantNames[modelId];
+  } else if (modelId && modelDisplayNames[modelId]) {
+    // Use custom display name if available (e.g., Jamot Fast, Jamot Pro)
+    modelName = modelDisplayNames[modelId];
   }
 
   return (

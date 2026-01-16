@@ -945,7 +945,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
 ];
 
 export const alternateName = {
-  [EModelEndpoint.openAI]: 'OpenAI',
+  [EModelEndpoint.openAI]: 'Jamot',
   [EModelEndpoint.assistants]: 'Assistants',
   [EModelEndpoint.agents]: 'My Agents',
   [EModelEndpoint.azureAssistants]: 'Azure Assistants',
@@ -963,37 +963,16 @@ export const alternateName = {
   [KnownEndpoints.helicone]: 'Helicone',
 };
 
+// Model display name mapping - maps internal OpenAI model IDs to user-facing Jamot brand names
+export const modelDisplayNames: Record<string, string> = {
+  'gpt-4o-mini': 'Jamot Fast',
+  'gpt-4o': 'Jamot Pro',
+};
+
+// Only include Jamot Fast and Jamot Pro models - all other OpenAI models are filtered out
 const sharedOpenAIModels = [
-  'gpt-5.1',
-  'gpt-5.1-chat-latest',
-  'gpt-5.1-codex',
-  'gpt-5.1-codex-mini',
-  'gpt-5',
-  'gpt-5-mini',
-  'gpt-5-nano',
-  'gpt-5-chat-latest',
-  'gpt-4.1',
-  'gpt-4.1-mini',
-  'gpt-4.1-nano',
-  'gpt-4o-mini',
-  'gpt-4o',
-  'gpt-4.5-preview',
-  'gpt-4.5-preview-2025-02-27',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0125',
-  'gpt-4-turbo',
-  'gpt-4-turbo-2024-04-09',
-  'gpt-4-0125-preview',
-  'gpt-4-turbo-preview',
-  'gpt-4-1106-preview',
-  'gpt-3.5-turbo-1106',
-  'gpt-3.5-turbo-16k-0613',
-  'gpt-3.5-turbo-16k',
-  'gpt-4',
-  'gpt-4-0314',
-  'gpt-4-32k-0314',
-  'gpt-4-0613',
-  'gpt-3.5-turbo-0613',
+  'gpt-4o-mini', // Jamot Fast - fast and cost-effective
+  'gpt-4o',      // Jamot Pro - advanced capabilities
 ];
 
 const sharedAnthropicModels = [
@@ -1065,8 +1044,8 @@ export const bedrockModels = [
 
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
-  [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
-  [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
+  [EModelEndpoint.assistants]: sharedOpenAIModels,
+  [EModelEndpoint.agents]: sharedOpenAIModels,
   [EModelEndpoint.google]: [
     // Gemini 2.5 Models
     'gemini-2.5-pro',
@@ -1077,13 +1056,7 @@ export const defaultModels = {
     'gemini-2.0-flash-lite',
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
-  [EModelEndpoint.openAI]: [
-    ...sharedOpenAIModels,
-    'chatgpt-4o-latest',
-    'gpt-4-vision-preview',
-    'gpt-3.5-turbo-instruct-0914',
-    'gpt-3.5-turbo-instruct',
-  ],
+  [EModelEndpoint.openAI]: sharedOpenAIModels, // Only Jamot Fast and Jamot Pro
   [EModelEndpoint.bedrock]: bedrockModels,
 };
 
@@ -1094,10 +1067,10 @@ const fitlerAssistantModels = (str: string) => {
 const openAIModels = defaultModels[EModelEndpoint.openAI];
 
 export const initialModelsConfig: TModelsConfig = {
-  initial: [],
+  initial: ['gpt-4o-mini'], // Set Jamot Fast as the default initial model
   [EModelEndpoint.openAI]: openAIModels,
-  [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
-  [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
+  [EModelEndpoint.assistants]: openAIModels,
+  [EModelEndpoint.agents]: openAIModels,
   [EModelEndpoint.gptPlugins]: openAIModels,
   [EModelEndpoint.azureOpenAI]: openAIModels,
   [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
