@@ -136,7 +136,7 @@ describe('bedrockInputParser', () => {
       expect(additionalFields?.anthropic_beta).toBeUndefined();
     });
 
-    test('should respect explicit thinking configuration', () => {
+    test('should respect explicit thinking configuration but still add beta headers', () => {
       const input = {
         model: 'anthropic.claude-sonnet-4',
         thinking: false,
@@ -145,6 +145,10 @@ describe('bedrockInputParser', () => {
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toBeUndefined();
       expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.anthropic_beta).toEqual([
+        'output-128k-2025-02-19',
+        'context-1m-2025-08-07',
+      ]);
     });
 
     test('should respect custom thinking budget', () => {
