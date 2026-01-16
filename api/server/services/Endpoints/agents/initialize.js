@@ -130,6 +130,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const requestFiles = req.body.files ?? [];
   /** @type {string} */
   const conversationId = req.body.conversationId;
+  /** @type {string | undefined} */
+  const parentMessageId = req.body.parentMessageId;
 
   const primaryConfig = await initializeAgent(
     {
@@ -138,6 +140,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       loadTools,
       requestFiles,
       conversationId,
+      parentMessageId,
       agent: primaryAgent,
       endpointOption,
       allowedProviders,
@@ -147,9 +150,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getConvoFiles,
       getFiles: db.getFiles,
       getUserKey: db.getUserKey,
+      getMessages: db.getMessages,
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
+      getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
+      getCodeGeneratedFiles: db.getCodeGeneratedFiles,
     },
   );
 
@@ -189,6 +195,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         loadTools,
         requestFiles,
         conversationId,
+        parentMessageId,
         endpointOption,
         allowedProviders,
       },
@@ -196,9 +203,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
+        getMessages: db.getMessages,
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
+        getUserCodeFiles: db.getUserCodeFiles,
         getToolFilesByIds: db.getToolFilesByIds,
+        getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       },
     );
     if (userMCPAuthMap != null) {
@@ -253,17 +263,18 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const { userMCPAuthMap: updatedMCPAuthMap } = await processAddedConvo({
     req,
     res,
-    endpointOption,
-    modelsConfig,
-    logViolation,
     loadTools,
+    logViolation,
+    modelsConfig,
     requestFiles,
-    conversationId,
-    allowedProviders,
     agentConfigs,
-    primaryAgentId: primaryConfig.id,
     primaryAgent,
+    endpointOption,
     userMCPAuthMap,
+    conversationId,
+    parentMessageId,
+    allowedProviders,
+    primaryAgentId: primaryConfig.id,
   });
 
   if (updatedMCPAuthMap) {
