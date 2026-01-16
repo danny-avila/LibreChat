@@ -55,7 +55,6 @@
     "@rollup/plugin-replace": "^5.0.5",
     "@rollup/plugin-typescript": "^12.1.2",
     "@types/bun": "^1.2.15",
-    "@types/diff": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/express-session": "^1.18.2",
     "@types/jest": "^29.5.2",
@@ -94,7 +93,6 @@
     "@smithy/node-http-handler": "^4.4.5",
     "axios": "^1.12.1",
     "connect-redis": "^8.1.0",
-    "diff": "^7.0.0",
     "eventsource": "^3.0.2",
     "express": "^5.1.0",
     "express-session": "^1.18.2",
@@ -114,7 +112,7 @@
     "node-fetch": "2.7.0",
     "rate-limit-redis": "^4.2.0",
     "tiktoken": "^1.0.15",
-    "undici": "^7.10.0",
+    "undici": "^7.18.2",
     "zod": "^3.22.4"
   }
 }
