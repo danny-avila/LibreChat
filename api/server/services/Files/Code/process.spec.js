@@ -1,4 +1,35 @@
-const { FileContext, mergeFileConfig, getEndpointFileConfig } = require('librechat-data-provider');
+// Configurable file size limit for tests - use a getter so it can be changed per test
+const fileSizeLimitConfig = { value: 20 * 1024 * 1024 }; // Default 20MB
+
+// Mock librechat-data-provider with configurable file size limit
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    mergeFileConfig: jest.fn((config) => {
+      const merged = actual.mergeFileConfig(config);
+      // Override the serverFileSizeLimit with our test value
+      return {
+        ...merged,
+        get serverFileSizeLimit() {
+          return fileSizeLimitConfig.value;
+        },
+      };
+    }),
+    getEndpointFileConfig: jest.fn((options) => {
+      const config = actual.getEndpointFileConfig(options);
+      // Override fileSizeLimit with our test value
+      return {
+        ...config,
+        get fileSizeLimit() {
+          return fileSizeLimitConfig.value;
+        },
+      };
+    }),
+  };
+});
+
+const { FileContext } = require('librechat-data-provider');
 
 // Mock uuid
 jest.mock('uuid', () => ({
@@ -61,7 +92,6 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
-const { getBasePath } = require('@librechat/api');
 
 // Import after mocks
 const { processCodeOutput } = require('./process');
@@ -257,32 +287,22 @@ describe('Code Process', () => {
 
     describe('file size limit enforcement', () => {
       it('should fallback to download URL when file exceeds size limit', async () => {
-        // Use a custom config with small file size limit for testing
-        const smallLimitReq = {
-          ...mockReq,
-          config: {
-            ...mockReq.config,
-            fileConfig: {
-              serverFileSizeLimit: 1000, // 1KB limit
-              endpoints: {
-                agents: {
-                  fileSizeLimit: 1000,
-                },
-              },
-            },
-          },
-        };
+        // Set a small file size limit for this test
+        fileSizeLimitConfig.value = 1000; // 1KB limit
 
         const largeBuffer = Buffer.alloc(5000); // 5KB - exceeds 1KB limit
         axios.mockResolvedValue({ data: largeBuffer });
 
-        const result = await processCodeOutput({ ...baseParams, req: smallLimitReq });
+        const result = await processCodeOutput(baseParams);
 
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('exceeds size limit'));
         expect(result.filepath).toContain('/api/files/code/download/session-123/file-id-123');
         expect(result.expiresAt).toBeDefined();
         // Should not call createFile for oversized files (fallback path)
         expect(createFile).not.toHaveBeenCalled();
+
+        // Reset to default for other tests
+        fileSizeLimitConfig.value = 20 * 1024 * 1024;
       });
     });
 
