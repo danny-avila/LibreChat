@@ -113,7 +113,7 @@
     "node-fetch": "2.7.0",
     "rate-limit-redis": "^4.2.0",
     "tiktoken": "^1.0.15",
-    "undici": "^7.10.0",
+    "undici": "^7.18.2",
     "zod": "^3.22.4"
   }
 }
