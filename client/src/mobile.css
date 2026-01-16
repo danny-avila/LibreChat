@@ -9,7 +9,7 @@
 
 .nav {
   position: fixed;
-  z-index: 64;
+  z-index: 110;
   top: 0;
 
   /* max-width: 260px; */
