@@ -533,6 +533,7 @@
   "com_nav_log_out": "Izrakstīties",
   "com_nav_long_audio_warning": "Garāku tekstu apstrāde prasīs ilgāku laiku.",
   "com_nav_maximize_chat_space": "Maksimāli izmantot sarunu telpas izmērus",
+  "com_nav_mcp_access_revoked": "MCP servera piekļuve veiksmīgi atsaukta.",
   "com_nav_mcp_configure_server": "Konfigurēt {{0}}",
   "com_nav_mcp_connect": "Savienot",
   "com_nav_mcp_connect_server": "Savienot {{0}}",
