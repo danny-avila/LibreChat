@@ -87,6 +87,7 @@
     "@google/genai": "^1.19.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.80",
+    "@librechat/agents": "^3.0.80",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@smithy/node-http-handler": "^4.4.5",
@@ -113,8 +114,5 @@
     "tiktoken": "^1.0.15",
     "undici": "^7.18.2",
     "zod": "^3.22.4"
-  },
-  "dependencies": {
-    "@librechat/agents": "^3.0.79"
   }
 }
