@@ -447,4 +447,182 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(progress.isComplete).toBe(true);
     });
   });
+
+  describe('Error handling in processSyncBatch', () => {
+    test('syncWithMeili fails when processSyncBatch encounters addDocumentsInBatches error', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      // Insert a document to sync
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test Conversation',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      // Mock addDocumentsInBatches to fail
+      mockAddDocumentsInBatches.mockRejectedValueOnce(new Error('MeiliSearch connection error'));
+
+      // Sync should throw the error
+      await expect(conversationModel.syncWithMeili()).rejects.toThrow(
+        'MeiliSearch connection error',
+      );
+
+      // Verify the error was logged
+      expect(mockAddDocumentsInBatches).toHaveBeenCalled();
+
+      // Document should NOT be marked as indexed since sync failed
+      // Note: direct collection.insertOne doesn't set default values, so _meiliIndex may be undefined
+      const doc = await conversationModel.findOne({});
+      expect(doc?._meiliIndex).not.toBe(true);
+    });
+
+    test('syncWithMeili fails when processSyncBatch encounters updateMany error', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      // Insert a document
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test Conversation',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      // Mock addDocumentsInBatches to succeed but simulate updateMany failure
+      mockAddDocumentsInBatches.mockResolvedValueOnce({});
+
+      // Spy on updateMany and make it fail
+      const updateManySpy = jest
+        .spyOn(conversationModel, 'updateMany')
+        .mockRejectedValueOnce(new Error('Database connection error'));
+
+      // Sync should throw the error
+      await expect(conversationModel.syncWithMeili()).rejects.toThrow('Database connection error');
+
+      expect(updateManySpy).toHaveBeenCalled();
+
+      // Restore original implementation
+      updateManySpy.mockRestore();
+    });
+
+    test('processSyncBatch logs error and throws when addDocumentsInBatches fails', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+
+      mockAddDocumentsInBatches.mockRejectedValueOnce(new Error('Network timeout'));
+
+      await messageModel.collection.insertOne({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: true,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      const indexMock = mockIndex();
+      const documents = await messageModel.find({ _meiliIndex: false }).lean();
+
+      // Should throw the error
+      await expect(messageModel.processSyncBatch(indexMock, documents)).rejects.toThrow(
+        'Network timeout',
+      );
+
+      expect(mockAddDocumentsInBatches).toHaveBeenCalled();
+    });
+
+    test('processSyncBatch handles empty document array gracefully', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      const indexMock = mockIndex();
+
+      // Should not throw with empty array
+      await expect(conversationModel.processSyncBatch(indexMock, [])).resolves.not.toThrow();
+
+      // Should not call addDocumentsInBatches
+      expect(mockAddDocumentsInBatches).not.toHaveBeenCalled();
+    });
+
+    test('syncWithMeili stops processing when batch fails and does not process remaining documents', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      // Create multiple documents
+      for (let i = 0; i < 5; i++) {
+        await conversationModel.collection.insertOne({
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          title: `Test Conversation ${i}`,
+          endpoint: EModelEndpoint.openAI,
+          _meiliIndex: false,
+          expiredAt: null,
+        });
+      }
+
+      // Mock addDocumentsInBatches to fail on first call
+      mockAddDocumentsInBatches.mockRejectedValueOnce(new Error('First batch failed'));
+
+      // Sync should fail on the first batch
+      await expect(conversationModel.syncWithMeili()).rejects.toThrow('First batch failed');
+
+      // Should have attempted only once before failing
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledTimes(1);
+
+      // No documents should be indexed since sync failed
+      const indexedCount = await conversationModel.countDocuments({ _meiliIndex: true });
+      expect(indexedCount).toBe(0);
+    });
+
+    test('error in processSyncBatch is properly logged before being thrown', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+
+      const testError = new Error('Test error for logging');
+      mockAddDocumentsInBatches.mockRejectedValueOnce(testError);
+
+      await messageModel.collection.insertOne({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: true,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      const indexMock = mockIndex();
+      const documents = await messageModel.find({ _meiliIndex: false }).lean();
+
+      // Should throw the same error that was passed to it
+      await expect(messageModel.processSyncBatch(indexMock, documents)).rejects.toThrow(testError);
+    });
+
+    test('syncWithMeili properly propagates processSyncBatch errors', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      const customError = new Error('Custom sync error');
+      mockAddDocumentsInBatches.mockRejectedValueOnce(customError);
+
+      // The error should propagate all the way up
+      await expect(conversationModel.syncWithMeili()).rejects.toThrow('Custom sync error');
+    });
+  });
 });

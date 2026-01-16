@@ -50,7 +50,7 @@ interface _DocumentWithMeiliIndex extends Document {
 export type DocumentWithMeiliIndex = _DocumentWithMeiliIndex & IConversation & Partial<IMessage>;
 
 export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
-  syncWithMeili(options?: { resumeFromId?: string }): Promise<void>;
+  syncWithMeili(): Promise<void>;
   getSyncProgress(): Promise<SyncProgress>;
   processSyncBatch(
     index: Index<MeiliIndexable>,
@@ -161,8 +161,10 @@ const createMeiliMongooseModel = ({
     }
 
     /**
-     * Synchronizes the data between the MongoDB collection and the MeiliSearch index.
-     */
+     * Synchronizes data between the MongoDB collection and the MeiliSearch index by
+     * incrementally indexing only documents where `expiredAt` is `null` and `_meiliIndex` is `false`
+     * (i.e., non-expired documents that have not yet been indexed).
+     * */
     static async syncWithMeili(this: SchemaWithMeiliMethods): Promise<void> {
       const startTime = Date.now();
       const { batchSize, delayMs } = syncConfig;
@@ -192,7 +194,6 @@ const createMeiliMongooseModel = ({
       let hasMore = true;
 
       while (hasMore) {
-        
         const query: FilterQuery<unknown> = {
           expiredAt: null,
           _meiliIndex: false,
@@ -261,7 +262,7 @@ const createMeiliMongooseModel = ({
         await this.updateMany({ _id: { $in: docsIds } }, { $set: { _meiliIndex: true } });
       } catch (error) {
         logger.error('[processSyncBatch] Error processing batch:', error);
-        // Don't throw - allow sync to continue with other documents
+        throw error;
       }
     }
 
