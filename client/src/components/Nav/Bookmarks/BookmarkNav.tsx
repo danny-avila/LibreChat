@@ -89,6 +89,7 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
       unmountOnHide={true}
       setIsOpen={setIsMenuOpen}
       keyPrefix="bookmark-nav-"
+      className="z-[125]"
       trigger={
         <TooltipAnchor
           description={label}
