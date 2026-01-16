@@ -262,7 +262,7 @@ const Nav = memo(
           <div
             data-testid="nav"
             className={cn(
-              'nav fixed left-0 top-0 z-[70] h-full bg-surface-primary-alt',
+              'nav fixed left-0 top-0 z-[110] h-full bg-surface-primary-alt',
               navVisible && 'active',
             )}
             style={{
