@@ -33,6 +33,7 @@ export interface GenerationJobManagerOptions {
  * @property readyPromise - Resolves immediately (legacy, kept for API compatibility)
  * @property resolveReady - Function to resolve readyPromise
  * @property finalEvent - Cached final event for late subscribers
+ * @property errorEvent - Cached error event for late subscribers (errors before client connects)
  * @property syncSent - Whether sync event was sent (reset when all subscribers leave)
  * @property earlyEventBuffer - Buffer for events emitted before first subscriber connects
  * @property hasSubscriber - Whether at least one subscriber has connected
@@ -47,6 +48,7 @@ interface RuntimeJobState {
   readyPromise: Promise<void>;
   resolveReady: () => void;
   finalEvent?: t.ServerSentEvent;
+  errorEvent?: string;
   syncSent: boolean;
   earlyEventBuffer: t.ServerSentEvent[];
   hasSubscriber: boolean;
@@ -421,6 +423,7 @@ class GenerationJobManagerClass {
       earlyEventBuffer: [],
       hasSubscriber: false,
       finalEvent,
+      errorEvent: jobData.error,
     };
 
     this.runtimeState.set(streamId, runtime);
@@ -510,6 +513,8 @@ class GenerationJobManagerClass {
   /**
    * Mark job as complete.
    * If cleanupOnComplete is true (default), immediately cleans up job resources.
+   * Exception: Jobs with errors are NOT immediately deleted to allow late-connecting
+   * clients to receive the error (race condition where error occurs before client connects).
    * Note: eventTransport is NOT cleaned up here to allow the final event to be
    * fully transmitted. It will be cleaned up when subscribers disconnect or
    * by the periodic cleanup job.
@@ -527,7 +532,23 @@ class GenerationJobManagerClass {
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
 
-    // Immediate cleanup if configured (default: true)
+    // For error jobs, DON'T delete immediately - keep around so late-connecting
+    // clients can receive the error. This handles the race condition where error
+    // occurs before client connects to SSE stream.
+    if (error) {
+      await this.jobStore.updateJob(streamId, {
+        status: 'error',
+        completedAt: Date.now(),
+        error,
+      });
+      // Keep runtime state so subscribe() can access errorEvent
+      logger.debug(
+        `[GenerationJobManager] Job completed with error (keeping for late subscribers): ${streamId}`,
+      );
+      return;
+    }
+
+    // Immediate cleanup if configured (default: true) - only for successful completions
     if (this._cleanupOnComplete) {
       this.runtimeState.delete(streamId);
       // Don't cleanup eventTransport here - let the done event fully transmit first.
@@ -536,9 +557,8 @@ class GenerationJobManagerClass {
     } else {
       // Only update status if keeping the job around
       await this.jobStore.updateJob(streamId, {
-        status: error ? 'error' : 'complete',
+        status: 'complete',
         completedAt: Date.now(),
-        error,
       });
     }
 
@@ -678,14 +698,19 @@ class GenerationJobManagerClass {
 
     const jobData = await this.jobStore.getJob(streamId);
 
-    // If job already complete, send final event
+    // If job already complete/error, send final event or error
     setImmediate(() => {
-      if (
-        runtime.finalEvent &&
-        jobData &&
-        ['complete', 'error', 'aborted'].includes(jobData.status)
-      ) {
-        onDone?.(runtime.finalEvent);
+      if (jobData && ['complete', 'error', 'aborted'].includes(jobData.status)) {
+        if (runtime.finalEvent) {
+          onDone?.(runtime.finalEvent);
+        } else if (runtime.errorEvent || jobData.error) {
+          // Error occurred before client connected - send stored error
+          const errorToSend = runtime.errorEvent || jobData.error;
+          logger.debug(
+            `[GenerationJobManager] Sending stored error to late subscriber: ${streamId}`,
+          );
+          onError?.(errorToSend!);
+        }
       }
     });
 
@@ -986,8 +1011,18 @@ class GenerationJobManagerClass {
 
   /**
    * Emit an error event.
+   * Stores the error for late-connecting subscribers (race condition where error
+   * occurs before client connects to SSE stream).
    */
   emitError(streamId: string, error: string): void {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime) {
+      runtime.errorEvent = error;
+    }
+    // Persist error to job store for cross-replica consistency
+    this.jobStore.updateJob(streamId, { error }).catch((err) => {
+      logger.error(`[GenerationJobManager] Failed to persist error:`, err);
+    });
     this.eventTransport.emitError(streamId, error);
   }
 
