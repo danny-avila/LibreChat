@@ -535,6 +535,12 @@ class GenerationJobManagerClass {
     // For error jobs, DON'T delete immediately - keep around so late-connecting
     // clients can receive the error. This handles the race condition where error
     // occurs before client connects to SSE stream.
+    //
+    // Cleanup strategy: Error jobs are cleaned up by periodic cleanup (every 60s)
+    // via jobStore.cleanup() which checks for jobs with status 'error' and
+    // completedAt set. The TTL is configurable via jobStore options (default: 0,
+    // meaning cleanup on next interval). This gives clients ~60s to connect and
+    // receive the error before the job is removed.
     if (error) {
       await this.jobStore.updateJob(streamId, {
         status: 'error',
@@ -699,17 +705,20 @@ class GenerationJobManagerClass {
     const jobData = await this.jobStore.getJob(streamId);
 
     // If job already complete/error, send final event or error
+    // Error status takes precedence to ensure errors aren't misreported as successes
     setImmediate(() => {
       if (jobData && ['complete', 'error', 'aborted'].includes(jobData.status)) {
-        if (runtime.finalEvent) {
+        // Check for error status FIRST and prioritize error handling
+        if (jobData.status === 'error' && (runtime.errorEvent || jobData.error)) {
+          const errorToSend = runtime.errorEvent ?? jobData.error;
+          if (errorToSend) {
+            logger.debug(
+              `[GenerationJobManager] Sending stored error to late subscriber: ${streamId}`,
+            );
+            onError?.(errorToSend);
+          }
+        } else if (runtime.finalEvent) {
           onDone?.(runtime.finalEvent);
-        } else if (runtime.errorEvent || jobData.error) {
-          // Error occurred before client connected - send stored error
-          const errorToSend = runtime.errorEvent || jobData.error;
-          logger.debug(
-            `[GenerationJobManager] Sending stored error to late subscriber: ${streamId}`,
-          );
-          onError?.(errorToSend!);
         }
       }
     });
