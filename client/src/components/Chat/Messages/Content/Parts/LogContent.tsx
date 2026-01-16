@@ -65,6 +65,7 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       return `${filename} ${localize('com_download_expired')}`;
     }
 
+    const fileData = file as TFile & TAttachmentMetadata;
     const filepath = file.filepath || '';
 
     // const expirationText = expiresAt
@@ -72,7 +73,13 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
     //   : ` ${localize('com_click_to_download')}`;
 
     return (
-      <LogLink href={filepath} filename={filename}>
+      <LogLink
+        href={filepath}
+        filename={filename}
+        file_id={fileData.file_id}
+        user={fileData.user}
+        source={fileData.source}
+      >
         {'- '}
         {filename} {localize('com_click_to_download')}
       </LogLink>
