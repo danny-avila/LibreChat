@@ -6,10 +6,20 @@ import { createMessageModel } from '~/models/message';
 import { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 
 const mockAddDocuments = jest.fn();
+const mockAddDocumentsInBatches = jest.fn();
+const mockUpdateDocuments = jest.fn();
+const mockDeleteDocument = jest.fn();
+const mockDeleteDocuments = jest.fn();
+const mockGetDocument = jest.fn();
 const mockIndex = jest.fn().mockReturnValue({
   getRawInfo: jest.fn(),
   updateSettings: jest.fn(),
   addDocuments: mockAddDocuments,
+  addDocumentsInBatches: mockAddDocumentsInBatches,
+  updateDocuments: mockUpdateDocuments,
+  deleteDocument: mockDeleteDocument,
+  deleteDocuments: mockDeleteDocuments,
+  getDocument: mockGetDocument,
   getDocuments: jest.fn().mockReturnValue({ results: [] }),
 });
 jest.mock('meilisearch', () => {
@@ -42,6 +52,11 @@ describe('Meilisearch Mongoose plugin', () => {
 
   beforeEach(() => {
     mockAddDocuments.mockClear();
+    mockAddDocumentsInBatches.mockClear();
+    mockUpdateDocuments.mockClear();
+    mockDeleteDocument.mockClear();
+    mockDeleteDocuments.mockClear();
+    mockGetDocument.mockClear();
   });
 
   afterAll(async () => {
@@ -262,6 +277,174 @@ describe('Meilisearch Mongoose plugin', () => {
       // Verify that only 2 documents were indexed (the syncable ones)
       const indexedCount = await messageModel.countDocuments({ _meiliIndex: true });
       expect(indexedCount).toBe(2);
+    });
+  });
+
+  describe('New batch processing and retry functionality', () => {
+    test('processSyncBatch uses addDocumentsInBatches', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+      mockAddDocuments.mockClear();
+
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test Conversation',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      // Run sync which should call processSyncBatch internally
+      await conversationModel.syncWithMeili();
+
+      // Verify addDocumentsInBatches was called (new batch method)
+      expect(mockAddDocumentsInBatches).toHaveBeenCalled();
+    });
+
+    test('addObjectToMeili retries on failure', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+
+      // Mock addDocuments to fail twice then succeed
+      mockAddDocuments
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockResolvedValueOnce({});
+
+      // Create a document which triggers addObjectToMeili
+      await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Test Retry',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify addDocuments was called multiple times due to retries
+      expect(mockAddDocuments).toHaveBeenCalledTimes(3);
+    });
+
+    test('getSyncProgress returns accurate progress information', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+
+      // Insert documents directly to control the _meiliIndex flag
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Indexed',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: true,
+        expiredAt: null,
+      });
+
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Not Indexed',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      const progress = await conversationModel.getSyncProgress();
+
+      expect(progress.totalDocuments).toBe(2);
+      expect(progress.totalProcessed).toBe(1);
+      expect(progress.isComplete).toBe(false);
+    });
+
+    test('getSyncProgress excludes TTL documents from counts', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+
+      // Insert syncable documents (expiredAt: null)
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Syncable Indexed',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: true,
+        expiredAt: null,
+      });
+
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Syncable Not Indexed',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      // Insert TTL documents (expiredAt set) - these should NOT be counted
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'TTL Document 1',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: true,
+        expiredAt: new Date(),
+      });
+
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'TTL Document 2',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: new Date(),
+      });
+
+      const progress = await conversationModel.getSyncProgress();
+
+      // Only syncable documents should be counted (2 total, 1 indexed)
+      expect(progress.totalDocuments).toBe(2);
+      expect(progress.totalProcessed).toBe(1);
+      expect(progress.isComplete).toBe(false);
+    });
+
+    test('getSyncProgress shows completion when all syncable documents are indexed', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+
+      // All syncable documents are indexed
+      await messageModel.collection.insertOne({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: true,
+        _meiliIndex: true,
+        expiredAt: null,
+      });
+
+      await messageModel.collection.insertOne({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: false,
+        _meiliIndex: true,
+        expiredAt: null,
+      });
+
+      // Add TTL document - should not affect completion status
+      await messageModel.collection.insertOne({
+        messageId: new mongoose.Types.ObjectId(),
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        isCreatedByUser: true,
+        _meiliIndex: false,
+        expiredAt: new Date(),
+      });
+
+      const progress = await messageModel.getSyncProgress();
+
+      expect(progress.totalDocuments).toBe(2);
+      expect(progress.totalProcessed).toBe(2);
+      expect(progress.isComplete).toBe(true);
     });
   });
 });
