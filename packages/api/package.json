@@ -55,7 +55,6 @@
     "@rollup/plugin-replace": "^5.0.5",
     "@rollup/plugin-typescript": "^12.1.2",
     "@types/bun": "^1.2.15",
-    "@types/diff": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/express-session": "^1.18.2",
     "@types/jest": "^29.5.2",
