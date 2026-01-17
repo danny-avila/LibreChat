@@ -43,7 +43,7 @@ const createGraphClient = async (accessToken, sub) => {
 
     const fetchOptions = {};
     // Add proxy support if configured
-    if (process.env.PROXY) {
+    if (process.env.PROXY && process.env.PROXY.trim()) {
       fetchOptions.dispatcher = new ProxyAgent(process.env.PROXY);
     }
     const graphClient = Client.init({
@@ -85,7 +85,7 @@ const exchangeTokenForGraphAccess = async (config, accessToken, sub) => {
       .join(' ');
 
     const clientOptions = {};
-    if (process.env.PROXY) {
+    if (process.env.PROXY && process.env.PROXY.trim()) {
       const httpsAgent = new HttpsProxyAgent(process.env.PROXY);
       clientOptions[Symbol.for('openid-client.custom.fetch')] = (url, options = {}) => {
           return nodeFetch(url, { ...options, agent: httpsAgent });
