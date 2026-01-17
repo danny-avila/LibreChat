@@ -218,6 +218,7 @@ export const FloatingThinkingBar = memo(
               }
             />
             <MessageAudio
+              index={0}
               messageId={messageId ?? `thinking-${content?.slice(0, 32)}`}
               content={content}
               className={cn(
