@@ -41,7 +41,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   const [isExpanded, setIsExpanded] = useState(showThinking);
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { isSubmitting, isLatestMessage, nextType } = useMessageContext();
+  const { messageId, isSubmitting, isLatestMessage, nextType } = useMessageContext();
 
   // Strip <think> tags from the reasoning content (modern format)
   const reasoningText = useMemo(() => {
@@ -122,6 +122,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
               isExpanded={isExpanded}
               onClick={handleClick}
               content={reasoningText}
+              messageId={`${messageId}-thinking`}
             />
           </div>
         </div>

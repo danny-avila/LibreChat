@@ -1,10 +1,11 @@
 import { useState, useMemo, memo, useCallback, useRef, type MouseEvent } from 'react';
 import { useAtomValue } from 'jotai';
 import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
-import { Lightbulb, ChevronDown, ChevronUp, Volume2, VolumeX } from 'lucide-react';
+import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
 import type { FocusEvent, FC } from 'react';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
+import MessageAudio from '~/components/Chat/Messages/MessageAudio';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -132,15 +133,16 @@ export const FloatingThinkingBar = memo(
     isExpanded,
     onClick,
     content,
+    messageId,
   }: {
     isVisible: boolean;
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
     content?: string;
+    messageId?: string;
   }) => {
     const localize = useLocalize();
     const [isCopied, setIsCopied] = useState(false);
-    const [isSpeaking, setIsSpeaking] = useState(false);
 
     const handleCopy = useCallback(
       (e: MouseEvent<HTMLButtonElement>) => {
@@ -154,28 +156,6 @@ export const FloatingThinkingBar = memo(
       [content],
     );
 
-    const handleSpeak = useCallback(
-      (e: MouseEvent<HTMLButtonElement>) => {
-        e.stopPropagation();
-        if (!content) {
-          return;
-        }
-
-        if (isSpeaking) {
-          window.speechSynthesis.cancel();
-          setIsSpeaking(false);
-          return;
-        }
-
-        const utterance = new SpeechSynthesisUtterance(content);
-        utterance.onend = () => setIsSpeaking(false);
-        utterance.onerror = () => setIsSpeaking(false);
-        window.speechSynthesis.speak(utterance);
-        setIsSpeaking(true);
-      },
-      [content, isSpeaking],
-    );
-
     const collapseTooltip = isExpanded
       ? localize('com_ui_collapse_thoughts')
       : localize('com_ui_expand_thoughts');
@@ -183,8 +163,6 @@ export const FloatingThinkingBar = memo(
     const copyTooltip = isCopied
       ? localize('com_ui_copied_to_clipboard')
       : localize('com_ui_copy_thoughts_to_clipboard');
-
-    const speakTooltip = isSpeaking ? localize('com_ui_stop') : localize('com_ui_read_aloud');
 
     return (
       <div
@@ -238,27 +216,14 @@ export const FloatingThinkingBar = memo(
               </button>
             }
           />
-          <TooltipAnchor
-            description={speakTooltip}
-            render={
-              <button
-                type="button"
-                tabIndex={isVisible ? 0 : -1}
-                onClick={handleSpeak}
-                aria-label={speakTooltip}
-                className={cn(
-                  'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
-                  'hover:bg-surface-hover hover:text-text-primary',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-                )}
-              >
-                {isSpeaking ? (
-                  <VolumeX className="h-[18px] w-[18px]" aria-hidden="true" />
-                ) : (
-                  <Volume2 className="h-[18px] w-[18px]" aria-hidden="true" />
-                )}
-              </button>
-            }
+          <MessageAudio
+            messageId={messageId ?? `thinking-${content?.slice(0, 32)}`}
+            content={content}
+            className={cn(
+              'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
+              'hover:bg-surface-hover hover:text-text-primary',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+            )}
           />
         )}
       </div>
