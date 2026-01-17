@@ -27,6 +27,7 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const [voice, setVoice] = useRecoilState(store.voice);
   const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
+  const includeThinkinginTTS = useRecoilValue(store.includeThinkinginTTS);
 
   const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
   const {
@@ -62,7 +63,9 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
       if (isMouseDownRef.current) {
         const messageContent = content ?? '';
         const parsedMessage =
-          typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
+          typeof messageContent === 'string'
+            ? messageContent
+            : parseTextParts(messageContent, !includeThinkinginTTS);
         generateSpeech(parsedMessage, false);
       }
     }, 1000);
@@ -82,7 +85,9 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
     } else {
       const messageContent = content ?? '';
       const parsedMessage =
-        typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
+        typeof messageContent === 'string'
+          ? messageContent
+          : parseTextParts(messageContent, !includeThinkinginTTS);
       generateSpeech(parsedMessage, false);
     }
   };

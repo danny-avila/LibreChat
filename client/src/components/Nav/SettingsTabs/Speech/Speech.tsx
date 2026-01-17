@@ -7,6 +7,7 @@ import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-que
 import {
   CloudBrowserVoicesSwitch,
   AutomaticPlaybackSwitch,
+  IncludeThinkingSwitch,
   TextToSpeechSwitch,
   EngineTTSDropdown,
   CacheTTSSwitch,
@@ -234,6 +235,7 @@ function Speech() {
             <PlaybackRate />
           </div>
           <CacheTTSSwitch />
+          <IncludeThinkingSwitch />
         </div>
       </Tabs.Content>
     </Tabs.Root>
