@@ -503,7 +503,7 @@ export type TMessageAudio = {
   isLast?: boolean;
   index: number;
   messageId: string;
-  content: string;
+  content: t.TMessageContentParts[] | string;
   className?: string;
   renderButton?: (props: {
     onClick: (e?: React.MouseEvent<HTMLButtonElement>) => void;
