@@ -1,0 +1,103 @@
+name: Build and Deploy to AWS ECS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Version tag for the image (leave empty for commit SHA)'
+        required: false
+        default: ''
+
+env:
+  AWS_REGION: eu-north-1
+  ECR_REGISTRY: 291515987508.dkr.ecr.eu-north-1.amazonaws.com
+  ECR_REPOSITORY: librechat/librechat
+  ECS_CLUSTER: LibreChatCluster
+  PLATFORM: linux/arm64
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.version_tag }}" ]; then
+            echo "tag=${{ inputs.version_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare environment
+        run: cp .env.example .env
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ env.PLATFORM }}
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Get ECS Service Name
+        id: ecs
+        run: |
+          SERVICE=$(aws cloudformation describe-stacks --stack-name LibreChatCdkStack \
+            --query "Stacks[0].Outputs[?OutputKey=='LibreChatServiceName'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+          if [ -z "$SERVICE" ]; then
+            echo "Warning: Could not find ECS service name from CloudFormation"
+            echo "service_name=" >> $GITHUB_OUTPUT
+          else
+            echo "service_name=$SERVICE" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update ECS Service
+        if: steps.ecs.outputs.service_name != ''
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ steps.ecs.outputs.service_name }} \
+            --force-new-deployment
+
+      - name: Wait for service stable
+        if: steps.ecs.outputs.service_name != ''
+        run: |
+          echo "Waiting for ECS service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ steps.ecs.outputs.service_name }}
+
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **ECS Service**: ${{ steps.ecs.outputs.service_name || 'Not deployed yet' }}" >> $GITHUB_STEP_SUMMARY
