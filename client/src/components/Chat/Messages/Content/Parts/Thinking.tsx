@@ -194,37 +194,39 @@ export const FloatingThinkingBar = memo(
           }
         />
         {content && (
-          <TooltipAnchor
-            description={copyTooltip}
-            render={
-              <button
-                type="button"
-                tabIndex={isVisible ? 0 : -1}
-                onClick={handleCopy}
-                aria-label={copyTooltip}
-                className={cn(
-                  'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
-                  'hover:bg-surface-hover hover:text-text-primary',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-                )}
-              >
-                {isCopied ? (
-                  <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
-                ) : (
-                  <Clipboard size="18" aria-hidden="true" />
-                )}
-              </button>
-            }
-          />
-          <MessageAudio
-            messageId={messageId ?? `thinking-${content?.slice(0, 32)}`}
-            content={content}
-            className={cn(
-              'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
-              'hover:bg-surface-hover hover:text-text-primary',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-            )}
-          />
+          <>
+            <TooltipAnchor
+              description={copyTooltip}
+              render={
+                <button
+                  type="button"
+                  tabIndex={isVisible ? 0 : -1}
+                  onClick={handleCopy}
+                  aria-label={copyTooltip}
+                  className={cn(
+                    'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
+                    'hover:bg-surface-hover hover:text-text-primary',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+                  )}
+                >
+                  {isCopied ? (
+                    <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+                  ) : (
+                    <Clipboard size="18" aria-hidden="true" />
+                  )}
+                </button>
+              }
+            />
+            <MessageAudio
+              messageId={messageId ?? `thinking-${content?.slice(0, 32)}`}
+              content={content}
+              className={cn(
+                'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
+                'hover:bg-surface-hover hover:text-text-primary',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+              )}
+            />
+          </>
         )}
       </div>
     );
