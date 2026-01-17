@@ -321,7 +321,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     findUser,
     email: email,
     openidId: claims.sub || userinfo.sub,
-    idOnTheSource: claims.oid || userinfo.oid,
+    idOnTheSource: claims.oid || claims.sub, // Use sub as fallback for non-Microsoft OIDC providers
     strategyName: 'openidStrategy',
   });
   let user = result.user;
@@ -391,7 +391,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       email: email || '',
       emailVerified: userinfo.email_verified || false,
       name: fullName,
-      idOnTheSource: userinfo.oid,
+      idOnTheSource: userinfo.oid || userinfo.sub, // Use sub as fallback for non-Microsoft OIDC providers
     };
 
     const balanceConfig = getBalanceConfig(appConfig);
@@ -401,7 +401,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     user.openidId = userinfo.sub;
     user.username = username;
     user.name = fullName;
-    user.idOnTheSource = userinfo.oid;
+    user.idOnTheSource = userinfo.oid || userinfo.sub; // Use sub as fallback for non-Microsoft OIDC providers
     if (email && email !== user.email) {
       user.email = email;
       user.emailVerified = userinfo.email_verified || false;
