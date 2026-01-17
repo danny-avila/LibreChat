@@ -195,6 +195,31 @@ export const FloatingThinkingBar = memo(
         />
         {content && (
           <>
+            <MessageAudio
+              index={0}
+              messageId={messageId ?? `thinking-${content?.slice(0, 32)}`}
+              content={content}
+              renderButton={(props) => (
+                <TooltipAnchor
+                  description={props.title}
+                  render={
+                    <button
+                      type="button"
+                      tabIndex={isVisible ? 0 : -1}
+                      onClick={props.onClick}
+                      aria-label={props.title}
+                      className={cn(
+                        'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
+                        'hover:bg-surface-hover hover:text-text-primary',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+                      )}
+                    >
+                      {props.icon}
+                    </button>
+                  }
+                />
+              )}
+            />
             <TooltipAnchor
               description={copyTooltip}
               render={
@@ -216,16 +241,6 @@ export const FloatingThinkingBar = memo(
                   )}
                 </button>
               }
-            />
-            <MessageAudio
-              index={0}
-              messageId={messageId ?? `thinking-${content?.slice(0, 32)}`}
-              content={content}
-              className={cn(
-                'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
-                'hover:bg-surface-hover hover:text-text-primary',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-              )}
             />
           </>
         )}
