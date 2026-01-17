@@ -1,6 +1,11 @@
 import { MCPInterceptor, MCPToolCallContext } from './types';
 // @ts-ignore
-import { getMessages } from '~/models/Message';
+let getMessages: any;
+try {
+  getMessages = require('~/models/Message').getMessages;
+} catch (e) {
+  getMessages = () => Promise.resolve([]);
+}
 
 export class ConversationContextInterceptor implements MCPInterceptor {
   name = 'conversation-context';

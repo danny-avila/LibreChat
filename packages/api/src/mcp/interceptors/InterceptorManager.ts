@@ -1,4 +1,3 @@
-import { logger } from '@librechat/data-schemas';
 import { MCPInterceptor, MCPToolCallContext, InterceptorConfig } from './types';
 import { ConversationContextInterceptor } from './ConversationContextInterceptor';
 
@@ -41,7 +40,7 @@ export class InterceptorManager {
         try {
           return await interceptor.intercept(context, next);
         } catch (error) {
-          logger.error(`[Interceptor:${interceptor.name}] Error:`, error);
+          console.error(`[Interceptor:${interceptor.name}] Error:`, error);
           return next();
         }
       }
