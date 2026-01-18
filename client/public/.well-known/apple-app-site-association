@@ -1,0 +1,16 @@
+{
+  "webcredentials": {
+    "apps": [
+      "D3EV6B5WZE.com.librechat.ios"
+    ]
+  },
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "D3EV6B5WZE.com.librechat.ios",
+        "paths": ["*"]
+      }
+    ]
+  }
+}
