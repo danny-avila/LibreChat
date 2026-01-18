@@ -57,6 +57,10 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                       aria-describedby={`${authField}-error`}
                       aria-label={config.label}
                       aria-required="true"
+                      /* autoFocus is generally disabled due to the fact that it can disorient users,
+                       * but in this case, the required field must be navigated to anyways, and the component's functionality
+                       * emulates that of a new modal opening, where users would expect focus to be shifted to the new content */
+                      // eslint-disable-next-line jsx-a11y/no-autofocus
                       autoFocus={i === 0}
                       {...register(authField, {
                         required: `${config.label} is required.`,

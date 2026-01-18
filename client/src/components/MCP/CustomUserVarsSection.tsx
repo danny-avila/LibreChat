@@ -86,6 +86,10 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
           <Input
             id={name}
             type="text"
+            /* autoFocus is generally disabled due to the fact that it can disorient users,
+             * but in this case, the required field would logically be immediately navigated to anyways, and the component's
+             * functionality emulates that of a new modal opening, where users would expect focus to be shifted to the new content */
+            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus={autoFocus}
             {...field}
             placeholder={
@@ -163,6 +167,7 @@ export default function CustomUserVarsSection({
               hasValue={hasValue}
               control={control}
               errors={errors}
+              // eslint-disable-next-line jsx-a11y/no-autofocus -- See AuthField autoFocus comment for more details
               autoFocus={index === 0}
             />
           );
