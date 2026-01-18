@@ -36,7 +36,7 @@ env:
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm  # Native ARM64 runner - much faster than QEMU emulation
     # Use GitHub Environments for protection rules (configure in repo settings)
     environment: ${{ inputs.environment || 'staging' }}
     outputs:
@@ -72,9 +72,6 @@ jobs:
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -237,7 +234,7 @@ jobs:
   # Rollback job - runs only if build-and-deploy fails
   rollback:
     needs: [build-and-deploy]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     if: failure() && needs.build-and-deploy.outputs.previous_task_def != '' && needs.build-and-deploy.outputs.service_name != '' && needs.build-and-deploy.outputs.cluster_name != ''
     environment: ${{ inputs.environment || 'staging' }}
 
