@@ -23,9 +23,10 @@ interface AuthFieldProps {
   hasValue: boolean;
   control: any;
   errors: any;
+  autoFocus?: boolean;
 }
 
-function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) {
+function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthFieldProps) {
   const localize = useLocalize();
   const statusText = hasValue ? localize('com_ui_set') : localize('com_ui_unset');
 
@@ -85,6 +86,7 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
           <Input
             id={name}
             type="text"
+            autoFocus={autoFocus}
             {...field}
             placeholder={
               hasValue
@@ -150,7 +152,7 @@ export default function CustomUserVarsSection({
   return (
     <div className="flex-1 space-y-4">
       <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4">
-        {Object.entries(fields).map(([key, config]) => {
+        {Object.entries(fields).map(([key, config], index) => {
           const hasValue = authValuesData?.authValueFlags?.[key] || false;
 
           return (
@@ -161,6 +163,7 @@ export default function CustomUserVarsSection({
               hasValue={hasValue}
               control={control}
               errors={errors}
+              autoFocus={index === 0}
             />
           );
         })}
