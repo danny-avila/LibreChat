@@ -136,8 +136,8 @@ jobs:
             echo "Found cluster: $CLUSTER_NAME"
           fi
 
-          if [ -z "$SERVICE" ]; then
-            echo "::warning::Could not find ECS service name from CloudFormation"
+          if [ -z "$SERVICE" ] || [ "$SERVICE" == "None" ]; then
+            echo "::warning::Could not find ECS service name from CloudFormation (stack may still be deploying)"
             echo "service_name=" >> $GITHUB_OUTPUT
           else
             echo "service_name=$SERVICE" >> $GITHUB_OUTPUT
