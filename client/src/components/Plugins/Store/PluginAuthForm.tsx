@@ -23,7 +23,6 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
 
   return (
     <div className="flex w-full flex-col items-center gap-2">
-
       <div className="grid w-full gap-6 sm:grid-cols-2">
         <form
           className="col-span-1 flex w-full flex-col items-start justify-start gap-2"
