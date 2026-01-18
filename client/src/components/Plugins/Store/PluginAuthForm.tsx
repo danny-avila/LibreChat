@@ -23,6 +23,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
 
   return (
     <div className="flex w-full flex-col items-center gap-2">
+
       <div className="grid w-full gap-6 sm:grid-cols-2">
         <form
           className="col-span-1 flex w-full flex-col items-start justify-start gap-2"
@@ -56,6 +57,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                       aria-describedby={`${authField}-error`}
                       aria-label={config.label}
                       aria-required="true"
+                      autoFocus={i === 0}
                       {...register(authField, {
                         required: `${config.label} is required.`,
                         minLength: {
@@ -70,7 +72,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                 </HoverCard>
                 {errors[authField] && (
                   <span role="alert" className="mt-1 text-sm text-red-400">
-                    {errors?.[authField]?.message ?? ''}
+                    {String(errors?.[authField]?.message ?? '')}
                   </span>
                 )}
               </div>
