@@ -10,17 +10,42 @@ on:
         description: 'Version tag for the image (leave empty for commit SHA)'
         required: false
         default: ''
+      environment:
+        description: 'Deployment environment'
+        type: choice
+        options:
+          - staging
+          - production
+        default: 'staging'
+
+# Prevent parallel deployments causing race conditions
+concurrency:
+  group: deploy-${{ github.ref }}-${{ inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+# Required for OIDC authentication with AWS
+permissions:
+  id-token: write
+  contents: read
 
 env:
   AWS_REGION: eu-north-1
   ECR_REGISTRY: 291515987508.dkr.ecr.eu-north-1.amazonaws.com
   ECR_REPOSITORY: librechat/librechat
-  ECS_CLUSTER: LibreChatCluster
   PLATFORM: linux/arm64
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # Use GitHub Environments for protection rules (configure in repo settings)
+    environment: ${{ inputs.environment || 'staging' }}
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+      cluster_name: ${{ steps.ecs.outputs.cluster_name }}
+      service_name: ${{ steps.ecs.outputs.service_name }}
+      previous_task_def: ${{ steps.current-state.outputs.previous_task_def }}
+      deployment_status: ${{ steps.deploy.outcome }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,12 +59,16 @@ jobs:
             echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # Use OIDC for short-lived, auto-rotating credentials
+          # Fallback to static keys if OIDC role not configured yet
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          # Fallback for backward compatibility during migration
+          aws-access-key-id: ${{ secrets.AWS_DEPLOY_ROLE_ARN == '' && secrets.AWS_ACCESS_KEY_ID || '' }}
+          aws-secret-access-key: ${{ secrets.AWS_DEPLOY_ROLE_ARN == '' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
@@ -53,51 +82,206 @@ jobs:
       - name: Prepare environment
         run: cp .env.example .env
 
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.tag.outputs.tag }}
+            type=sha,prefix=sha-
+          labels: |
+            org.opencontainers.image.title=LibreChat
+            org.opencontainers.image.description=AI chat application
+            org.opencontainers.image.vendor=Vest.AI
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           platforms: ${{ env.PLATFORM }}
           push: true
-          tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.tag }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Add provenance and SBOM for supply chain security
+          provenance: true
+          sbom: true
 
-      - name: Get ECS Service Name
+      - name: Get ECS Cluster and Service Names
         id: ecs
         run: |
+          # Get service name from CloudFormation outputs
           SERVICE=$(aws cloudformation describe-stacks --stack-name LibreChatCdkStack \
             --query "Stacks[0].Outputs[?OutputKey=='LibreChatServiceName'].OutputValue" \
             --output text 2>/dev/null || echo "")
+
+          # Get cluster ARN by finding cluster that matches our stack pattern
+          CLUSTER_ARN=$(aws ecs list-clusters \
+            --query "clusterArns[?contains(@, 'LibreChatCdkStack-LibreChat')]" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$CLUSTER_ARN" ]; then
+            echo "::warning::Could not find ECS cluster matching LibreChatCdkStack pattern"
+            echo "cluster_name=" >> $GITHUB_OUTPUT
+          else
+            # Extract cluster name from ARN
+            CLUSTER_NAME=$(echo "$CLUSTER_ARN" | sed 's/.*cluster\///')
+            echo "cluster_name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
+            echo "Found cluster: $CLUSTER_NAME"
+          fi
+
           if [ -z "$SERVICE" ]; then
-            echo "Warning: Could not find ECS service name from CloudFormation"
+            echo "::warning::Could not find ECS service name from CloudFormation"
             echo "service_name=" >> $GITHUB_OUTPUT
           else
             echo "service_name=$SERVICE" >> $GITHUB_OUTPUT
+            echo "Found service: $SERVICE"
           fi
 
-      - name: Update ECS Service
-        if: steps.ecs.outputs.service_name != ''
+      - name: Store current deployment state
+        id: current-state
+        if: steps.ecs.outputs.service_name != '' && steps.ecs.outputs.cluster_name != ''
         run: |
+          # Store current task definition for potential rollback
+          CURRENT_TASK_DEF=$(aws ecs describe-services \
+            --cluster ${{ steps.ecs.outputs.cluster_name }} \
+            --services ${{ steps.ecs.outputs.service_name }} \
+            --query 'services[0].taskDefinition' \
+            --output text 2>/dev/null || echo "")
+          echo "previous_task_def=$CURRENT_TASK_DEF" >> $GITHUB_OUTPUT
+          echo "Stored previous task definition: $CURRENT_TASK_DEF"
+
+      - name: Update ECS Service
+        id: deploy
+        if: steps.ecs.outputs.service_name != '' && steps.ecs.outputs.cluster_name != ''
+        run: |
+          echo "Deploying to ECS service: ${{ steps.ecs.outputs.service_name }}"
+          echo "In cluster: ${{ steps.ecs.outputs.cluster_name }}"
           aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
+            --cluster ${{ steps.ecs.outputs.cluster_name }} \
             --service ${{ steps.ecs.outputs.service_name }} \
             --force-new-deployment
 
       - name: Wait for service stable
-        if: steps.ecs.outputs.service_name != ''
+        if: steps.ecs.outputs.service_name != '' && steps.ecs.outputs.cluster_name != ''
+        timeout-minutes: 15
         run: |
           echo "Waiting for ECS service to stabilize..."
           aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
+            --cluster ${{ steps.ecs.outputs.cluster_name }} \
             --services ${{ steps.ecs.outputs.service_name }}
 
-      - name: Deployment Summary
+      - name: Verify deployment health
+        id: health-check
+        if: steps.ecs.outputs.service_name != '' && steps.ecs.outputs.cluster_name != ''
         run: |
-          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image**: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **ECS Service**: ${{ steps.ecs.outputs.service_name || 'Not deployed yet' }}" >> $GITHUB_STEP_SUMMARY
+          echo "Verifying deployment health..."
+
+          # Get service details
+          SERVICE_INFO=$(aws ecs describe-services \
+            --cluster ${{ steps.ecs.outputs.cluster_name }} \
+            --services ${{ steps.ecs.outputs.service_name }} \
+            --query 'services[0]' \
+            --output json)
+
+          RUNNING_COUNT=$(echo "$SERVICE_INFO" | jq -r '.runningCount')
+          DESIRED_COUNT=$(echo "$SERVICE_INFO" | jq -r '.desiredCount')
+          PENDING_COUNT=$(echo "$SERVICE_INFO" | jq -r '.pendingCount')
+
+          echo "Running: $RUNNING_COUNT, Desired: $DESIRED_COUNT, Pending: $PENDING_COUNT"
+
+          if [ "$RUNNING_COUNT" -lt "$DESIRED_COUNT" ]; then
+            echo "::error::Deployment health check failed: Running count ($RUNNING_COUNT) is less than desired count ($DESIRED_COUNT)"
+            exit 1
+          fi
+
+          if [ "$PENDING_COUNT" -gt 0 ]; then
+            echo "::warning::There are still $PENDING_COUNT tasks pending"
+          fi
+
+          echo "✅ Deployment health check passed"
+          echo "healthy=true" >> $GITHUB_OUTPUT
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🚀 Deployment Summary
+
+          | Property | Value |
+          |----------|-------|
+          | **Environment** | ${{ inputs.environment || 'staging' }} |
+          | **Image** | `${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.tag }}` |
+          | **Commit** | [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |
+          | **ECS Cluster** | ${{ steps.ecs.outputs.cluster_name || 'Not found' }} |
+          | **ECS Service** | ${{ steps.ecs.outputs.service_name || 'Not deployed yet' }} |
+          | **Triggered By** | @${{ github.actor }} |
+          | **Workflow Run** | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+
+          EOF
+
+          if [ "${{ steps.health-check.outputs.healthy }}" == "true" ]; then
+            echo "### ✅ Deployment Status: **Success**" >> $GITHUB_STEP_SUMMARY
+          elif [ -z "${{ steps.ecs.outputs.service_name }}" ]; then
+            echo "### ⚠️ Deployment Status: **Image pushed only** (ECS service not found)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Deployment Status: **Failed**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Rollback job - runs only if build-and-deploy fails
+  rollback:
+    needs: [build-and-deploy]
+    runs-on: ubuntu-latest
+    if: failure() && needs.build-and-deploy.outputs.previous_task_def != '' && needs.build-and-deploy.outputs.service_name != '' && needs.build-and-deploy.outputs.cluster_name != ''
+    environment: ${{ inputs.environment || 'staging' }}
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_DEPLOY_ROLE_ARN == '' && secrets.AWS_ACCESS_KEY_ID || '' }}
+          aws-secret-access-key: ${{ secrets.AWS_DEPLOY_ROLE_ARN == '' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+
+      - name: Rollback to previous deployment
+        run: |
+          echo "🔄 Rolling back to previous task definition..."
+          echo "Cluster: ${{ needs.build-and-deploy.outputs.cluster_name }}"
+          echo "Service: ${{ needs.build-and-deploy.outputs.service_name }}"
+          echo "Previous task definition: ${{ needs.build-and-deploy.outputs.previous_task_def }}"
+
+          aws ecs update-service \
+            --cluster ${{ needs.build-and-deploy.outputs.cluster_name }} \
+            --service ${{ needs.build-and-deploy.outputs.service_name }} \
+            --task-definition ${{ needs.build-and-deploy.outputs.previous_task_def }} \
+            --force-new-deployment
+
+      - name: Wait for rollback to stabilize
+        timeout-minutes: 15
+        run: |
+          echo "Waiting for rollback to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ needs.build-and-deploy.outputs.cluster_name }} \
+            --services ${{ needs.build-and-deploy.outputs.service_name }}
+
+      - name: Rollback Summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## ⚠️ Automatic Rollback Executed
+
+          | Property | Value |
+          |----------|-------|
+          | **Rolled back to** | `${{ needs.build-and-deploy.outputs.previous_task_def }}` |
+          | **ECS Service** | ${{ needs.build-and-deploy.outputs.service_name }} |
+          | **Reason** | Deployment health check failed |
+
+          > **Note**: Please investigate the failed deployment before retrying.
+          EOF
