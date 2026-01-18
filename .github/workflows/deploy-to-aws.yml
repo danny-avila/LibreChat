@@ -29,8 +29,8 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: eu-north-1
-  ECR_REGISTRY: 291515987508.dkr.ecr.eu-north-1.amazonaws.com
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 291515987508.dkr.ecr.us-east-1.amazonaws.com
   ECR_REPOSITORY: librechat/librechat
   PLATFORM: linux/arm64
 
