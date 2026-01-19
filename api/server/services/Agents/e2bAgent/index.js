@@ -356,11 +356,11 @@ class E2BDataAnalystAgent {
               shouldExitMainLoop = true; // LLM主动决定完成，立即停止
             }
 
-            // 如果没有工具调用，记录但继续迭代（让 LLM 在下一轮继续工作）
+            // 如果没有工具调用，跳过工具执行，继续下一次迭代
             if (!message.tool_calls || message.tool_calls.length === 0) {
               logger.info(`[E2BAgent] No tool calls in this iteration. LLM returned text only. Continuing to next iteration (${iteration}/${this.maxIterations})`);
-              // 不设置 shouldExitMainLoop，让循环继续
-              // 只有 complete_task 或达到 maxIterations 才能停止
+              // 跳过工具执行部分，直接进入下一次迭代
+              continue; // Skip to next iteration
             }
 
             // 5. 执行工具调用 (ReAct 模式)
@@ -495,10 +495,11 @@ class E2BDataAnalystAgent {
               shouldExitMainLoop = true;
             }
 
-            // 如果没有工具调用，记录但继续迭代
+            // 如果没有工具调用，跳过工具执行，继续下一次迭代
             if (!message.tool_calls || message.tool_calls.length === 0) {
               logger.info(`[E2BAgent] No tool calls in this iteration. LLM returned text only. Continuing to next iteration (${iteration}/${this.maxIterations})`);
-              // 不设置 shouldExitMainLoop，继续下一次迭代
+              // 跳过工具执行部分，直接进入下一次迭代
+              continue; // Skip to next iteration
             }
 
             // 5. 执行工具调用 (ReAct 模式)
