@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
@@ -12,6 +13,7 @@ import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { MCPServersRegistry } from './registry/MCPServersRegistry';
+import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
@@ -160,6 +162,10 @@ Please follow these instructions when using tools from the respective MCP server
    * Calls a tool on an MCP server, using either a user-specific connection
    * (if userId is provided) or an app-level connection. Updates the last activity timestamp
    * for user-specific connections upon successful call initiation.
+   *
+   * @param graphTokenResolver - Optional function to resolve Graph API tokens via OBO flow.
+   *   When provided and the server config contains `{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}` placeholders,
+   *   they will be resolved to actual Graph API tokens before the tool call.
    */
   async callTool({
     user,
@@ -174,6 +180,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthStart,
     oauthEnd,
     customUserVars,
+    graphTokenResolver,
   }: {
     user?: IUser;
     serverName: string;
@@ -187,6 +194,7 @@ Please follow these instructions when using tools from the respective MCP server
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
+    graphTokenResolver?: GraphTokenResolver;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
@@ -220,9 +228,16 @@ Please follow these instructions when using tools from the respective MCP server
         serverName,
         userId,
       )) as t.MCPOptions;
+
+      // Pre-process Graph token placeholders (async) before sync processMCPEnv
+      const graphProcessedConfig = await preProcessGraphTokens(rawConfig, {
+        user,
+        graphTokenResolver,
+        scopes: process.env.GRAPH_API_SCOPES,
+      });
       const currentOptions = processMCPEnv({
         user,
-        options: rawConfig,
+        options: graphProcessedConfig,
         customUserVars: customUserVars,
         body: requestBody,
       });
