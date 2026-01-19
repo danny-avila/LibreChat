@@ -464,6 +464,12 @@ class E2BDataAnalystAgent {
                 observation: result
               });
 
+              // 如果是 complete_task，将 summary 添加到最终输出
+              if (name === 'complete_task' && result.summary) {
+                logger.info(`[E2BAgent] Adding complete_task summary to final content (${result.summary.length} chars)`);
+                finalContent += '\n\n' + result.summary;
+              }
+
               // 将工具结果反馈给 LLM
               // If approaching max iterations, remind LLM to provide final answer
               let toolResponseContent = JSON.stringify(result);
@@ -531,6 +537,12 @@ class E2BDataAnalystAgent {
                 arguments: args,
                 observation: result
               });
+
+              // 如果是 complete_task，将 summary 添加到最终输出
+              if (name === 'complete_task' && result.summary) {
+                logger.info(`[E2BAgent] Adding complete_task summary to final content (${result.summary.length} chars)`);
+                finalContent += '\n\n' + result.summary;
+              }
 
               // 将工具结果反馈给 LLM
               // If approaching max iterations, remind LLM to provide final answer
