@@ -110,19 +110,33 @@ class CodeExecutor {
   validateCode(code) {
     const issues = [];
     
-    // 1. 检查危险函数 (Critical)
-    const critical = ['exec(', 'eval(', 'compile(', '__import__(', 'os.system(', 'subprocess.'];
-    for (const func of critical) {
-      if (code.includes(func)) {
-        issues.push({ type: 'security', level: 'critical', message: `Restricted function call: ${func}` });
+    // 1. 检查危险函数 (Critical) - 使用正则表达式精确匹配，避免误判方法调用
+    const criticalPatterns = [
+      { pattern: /\bexec\s*\(/g, name: 'exec()' },
+      { pattern: /\beval\s*\(/g, name: 'eval()' },  // 使用 \b 确保是独立的函数调用，不会匹配 model.eval()
+      { pattern: /\bcompile\s*\(/g, name: 'compile()' },
+      { pattern: /\b__import__\s*\(/g, name: '__import__()' },
+      { pattern: /os\.system\s*\(/g, name: 'os.system()' },
+      { pattern: /subprocess\./g, name: 'subprocess' }
+    ];
+    
+    for (const { pattern, name } of criticalPatterns) {
+      if (pattern.test(code)) {
+        issues.push({ type: 'security', level: 'critical', message: `Restricted function call: ${name}` });
       }
     }
     
-    // 2. 检查敏感导入 (Warning)
-    const warnings = ['import os', 'import sys', 'import shutil', 'import subprocess'];
-    for (const lib of warnings) {
-      if (code.includes(lib)) {
-        issues.push({ type: 'security', level: 'warning', message: `Sensitive library import: ${lib}` });
+    // 2. 检查敏感导入 (Warning) - 也使用正则表达式避免误判
+    const warningPatterns = [
+      { pattern: /^import\s+os\b/gm, name: 'os' },
+      { pattern: /^import\s+sys\b/gm, name: 'sys' },
+      { pattern: /^import\s+shutil\b/gm, name: 'shutil' },
+      { pattern: /^import\s+subprocess\b/gm, name: 'subprocess' }
+    ];
+    
+    for (const { pattern, name } of warningPatterns) {
+      if (pattern.test(code)) {
+        issues.push({ type: 'security', level: 'warning', message: `Sensitive library import: ${name}` });
       }
     }
 
