@@ -9,6 +9,7 @@ export const template = Template()
   .pipInstall(['matplotlib', 'seaborn', 'plotly', 'bokeh'])
   .pipInstall(['requests', 'beautifulsoup4', 'networkx', 'sympy', 'yfinance', 'faker'])
   .pipInstall(['scikit-learn', 'xgboost', 'lightgbm'])
+  .pipInstall(['torch', 'torchvision', 'torchaudio'])
   .pipInstall(['nltk', 'spacy', 'textblob', 'gensim'])
   .runCmd('python -c "import nltk; nltk.download(\'punkt\'); nltk.download(\'averaged_perceptron_tagger\'); nltk.download(\'stopwords\'); nltk.download(\'wordnet\')"')
   .runCmd('python -m spacy download en_core_web_sm');

@@ -4,6 +4,82 @@
 
 ---
 
+## 2026-01-19 (周日) - 下午
+
+### ⚡ E2B 资源配置优化与 PyTorch 支持
+**Git Commit**: feat(e2b): Optimize resource limits and add PyTorch support
+
+### 主要工作
+1. **E2B 资源限制拉满（Hobby Plan）** ⭐⭐⭐
+   - **需求**: 支持长时间运行的机器学习任务（模型训练、大数据处理）
+   - **实现**:
+     - 修改 `build.dev.ts`: 添加 `cpuCount: 8` 和 `memoryMB: 8192`
+     - 修改 `initialize.js`: 移除运行时无效的资源配置（maxMemoryMB/maxCpuPercent/maxDiskMB）
+     - 增加沙箱超时：从 5 分钟改为 **1 小时**（3600000ms）
+   - **E2B 配置原理**:
+     - CPU 和内存：在**构建模板时**设定（`Template.build()`）
+     - 超时时间：在**创建 Sandbox 时**设定（`Sandbox.create()`）
+     - 磁盘空间：E2B Hobby Plan 固定 10GB（无法配置）
+
+2. **PyTorch 支持** 🔥
+   - **需求**: 支持深度学习任务（模型训练、推理、model.eval()）
+   - **实现**:
+     - 修改 `template.ts`: 添加 `pipInstall(['torch', 'torchvision', 'torchaudio'])`
+     - 重新构建模板：`npm run e2b:build:dev`
+   - **安全验证兼容性**:
+     - 之前已修复 `codeExecutor.js` 的 eval 检测（使用 negative lookbehind）
+     - 确保 `model.eval()` 不会触发安全警告
+
+3. **配置架构清理** 🧹
+   - **问题**: defaultConfig 中定义了无法传递给 E2B SDK 的参数
+   - **解决**:
+     - 删除 `maxMemoryMB`, `maxCpuPercent`, `maxDiskMB`（运行时不支持）
+     - 添加注释说明：CPU/内存在构建时设定
+     - 简化日志输出：只显示 template 和 timeout
+
+4. **模板构建验证** ✅
+   - 模板 ID: `xed696qfsyzpaei3ulh5`（alias 固定，不会变化）
+   - Build ID: 每次构建生成新的（E2B 自动使用最新 Build）
+   - 构建包含：
+     - PyTorch 2.5+ (CPU 版本，~2GB)
+     - 原有所有包（pandas, numpy, scikit-learn, xgboost, nltk, spacy 等）
+     - 新资源限制：8 vCPUs, 8GB RAM, 1 小时超时
+
+### 验证结果
+- ✅ 模板构建成功（包含 PyTorch）
+- ✅ 资源配置生效（8 vCPUs, 8GB RAM）
+- ✅ 超时时间增加到 1 小时
+- ✅ 配置代码简化（移除无效参数）
+- ✅ API 服务重启完成
+
+### 技术细节
+**E2B 资源配置层级**:
+| 配置项 | 设定时机 | 配置位置 | 说明 |
+|--------|---------|---------|------|
+| CPU 核心数 | 模板构建时 | `build.dev.ts` | 8 vCPUs (Hobby Max) |
+| 内存大小 | 模板构建时 | `build.dev.ts` | 8GB (Hobby Max) |
+| 磁盘空间 | E2B 固定 | 无法配置 | 10GB (Hobby Plan) |
+| 超时时间 | Sandbox 创建时 | `initialize.js` | 1 小时 (3600000ms) |
+
+**文件修改**:
+1. `e2b_template/data-analyst/build.dev.ts` (+2 行)
+   - 添加 cpuCount 和 memoryMB 参数
+2. `e2b_template/data-analyst/template.ts` (+1 行)
+   - 添加 PyTorch 安装
+3. `api/server/services/Endpoints/e2bAssistants/initialize.js` (-4 行)
+   - 移除无效的资源配置，简化注释
+
+**模板构建命令**:
+```bash
+cd /home/airi/LibreChat/e2b_template/data-analyst
+npm run e2b:build:dev
+```
+
+### 工作时长
+约 1.5 小时（需求分析 + E2B 文档研究 + 配置修改 + 模板构建）
+
+---
+
 ## 2026-01-19 (周日)
 
 ### 🎯 智能任务完成机制

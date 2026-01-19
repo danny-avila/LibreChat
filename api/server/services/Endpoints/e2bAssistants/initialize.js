@@ -16,12 +16,11 @@ class E2BClientManager {
     this.sandboxes = new Map(); // key: `${userId}:${conversationId}`
     
     // 配置默认值
+    // 注意：CPU 和内存限制在构建模板时设定（build.dev.ts），不在运行时设定
     this.defaultConfig = {
       // 默认使用官方基础模板，避免 404
       template: process.env.E2B_SANDBOX_TEMPLATE || 'code-interpreter', 
-      timeoutMs: parseInt(process.env.E2B_DEFAULT_TIMEOUT_MS) || 300000, // 5分钟
-      maxMemoryMB: parseInt(process.env.E2B_DEFAULT_MAX_MEMORY_MB) || 2048,
-      maxCpuPercent: parseInt(process.env.E2B_DEFAULT_MAX_CPU_PERCENT) || 80,
+      timeoutMs: parseInt(process.env.E2B_DEFAULT_TIMEOUT_MS) || 3600000, // 1小时
     };
   }
 
@@ -49,11 +48,13 @@ class E2BClientManager {
       
       const sandboxOpts = {
         apiKey: this.apiKey,
-        timeoutMs: assistantConfig.timeout_ms || this.defaultConfig.timeoutMs,
+        timeoutMs: assistantConfig.timeout_ms || this.defaultConfig.timeoutMs, // 1小时
         // 兼容性设置：如果 API Key 开启了 Secure Access 但模板不支持，需要设为 false
         // 使用 V2 构建的模板通常不需要此设置，但为了稳健性保留
-        secure: false, 
+        secure: false,
       };
+      
+      logger.info(`[E2B] Sandbox configuration: template=${templateToUse}, timeout=${sandboxOpts.timeoutMs}ms (${sandboxOpts.timeoutMs/60000} min)`);
       
       const sandbox = await Sandbox.create(templateToUse, sandboxOpts);
       
