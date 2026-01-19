@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
@@ -12,10 +13,10 @@ import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { MCPServersRegistry } from './registry/MCPServersRegistry';
+import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
-import { preProcessGraphTokens, type GraphTokenResolver } from '~/utils/graph';
 
 /**
  * Centralized manager for MCP server connections and tool execution.
