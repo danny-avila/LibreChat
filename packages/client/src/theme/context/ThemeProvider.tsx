@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useCallback, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { IThemeRGB } from '../types';
 import applyTheme from '../utils/applyTheme';
 
@@ -43,6 +43,22 @@ export const isDark = (theme: string): boolean => {
 };
 
 /**
+ * Validate that a parsed value looks like an IThemeRGB object
+ */
+const isValidThemeColors = (value: unknown): value is IThemeRGB => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const val = (value as Record<string, unknown>)[key];
+    if (val !== undefined && typeof val !== 'string') {
+      return false;
+    }
+  }
+  return true;
+};
+
+/**
  * Get initial theme from localStorage or default to 'system'
  */
 const getInitialTheme = (): string => {
@@ -66,7 +82,10 @@ const getInitialThemeColors = (): IThemeRGB | undefined => {
   try {
     const stored = localStorage.getItem(THEME_COLORS_KEY);
     if (stored) {
-      return JSON.parse(stored);
+      const parsed = JSON.parse(stored);
+      if (isValidThemeColors(parsed)) {
+        return parsed;
+      }
     }
   } catch {
     // localStorage not available or invalid JSON
@@ -102,10 +121,11 @@ export function ThemeProvider({
   const [themeName, setThemeNameState] = useState<string | undefined>(getInitialThemeName);
 
   // Track if props have been initialized
-  const [initialized, setInitialized] = useState(false);
+  const initialized = useRef(false);
 
   const setTheme = useCallback((newTheme: string) => {
     setThemeState(newTheme);
+    if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(THEME_KEY, newTheme);
     } catch {
@@ -115,6 +135,7 @@ export function ThemeProvider({
 
   const setThemeRGB = useCallback((colors?: IThemeRGB) => {
     setThemeRGBState(colors);
+    if (typeof window === 'undefined') return;
     try {
       if (colors) {
         localStorage.setItem(THEME_COLORS_KEY, JSON.stringify(colors));
@@ -128,6 +149,7 @@ export function ThemeProvider({
 
   const setThemeName = useCallback((name?: string) => {
     setThemeNameState(name);
+    if (typeof window === 'undefined') return;
     try {
       if (name) {
         localStorage.setItem(THEME_NAME_KEY, name);
@@ -141,25 +163,24 @@ export function ThemeProvider({
 
   // Initialize from props only once on mount
   useEffect(() => {
-    if (!initialized) {
-      setInitialized(true);
+    if (initialized.current) return;
+    initialized.current = true;
 
-      // Set initial theme if provided
-      if (initialTheme) {
-        setTheme(initialTheme);
-      }
-
-      // Set initial theme colors if provided
-      if (propThemeRGB) {
-        setThemeRGB(propThemeRGB);
-      }
-
-      // Set initial theme name if provided
-      if (propThemeName) {
-        setThemeName(propThemeName);
-      }
+    // Set initial theme if provided
+    if (initialTheme) {
+      setTheme(initialTheme);
     }
-  }, [initialized, initialTheme, propThemeRGB, propThemeName, setTheme, setThemeRGB, setThemeName]);
+
+    // Set initial theme colors if provided
+    if (propThemeRGB) {
+      setThemeRGB(propThemeRGB);
+    }
+
+    // Set initial theme name if provided
+    if (propThemeName) {
+      setThemeName(propThemeName);
+    }
+  }, [initialTheme, propThemeRGB, propThemeName, setTheme, setThemeRGB, setThemeName]);
 
   // Apply class-based dark mode
   const applyThemeMode = useCallback((currentTheme: string) => {
@@ -170,12 +191,12 @@ export function ThemeProvider({
     root.classList.add(darkMode ? 'dark' : 'light');
   }, []);
 
-  // Apply theme mode whenever Browser / System theme changes 
+  // Apply theme mode whenever theme changes
   useEffect(() => {
     applyThemeMode(theme);
   }, [theme, applyThemeMode]);
 
-  // Listen for Browser / System theme changes when theme is 'system'
+  // Listen for system theme changes when theme is 'system'
   useEffect(() => {
     if (theme !== 'system') return;
 
