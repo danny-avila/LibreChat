@@ -228,7 +228,9 @@ class E2BDataAnalystAgent {
       
       logger.debug(`[E2BAgent] Context Manager state: ${JSON.stringify(this.contextManager.getSummary())}`);
       logger.info(`[E2BAgent] Dynamic context length: ${dynamicContext.length} chars`);
-      logger.info(`[E2BAgent] System prompt preview (last 500 chars): ...${systemPrompt.slice(-500)}`);
+      logger.info(`[E2BAgent] ===== FULL SYSTEM PROMPT START =====`);
+      logger.info(systemPrompt);
+      logger.info(`[E2BAgent] ===== FULL SYSTEM PROMPT END (${systemPrompt.length} chars) =====`);
 
       const messages = [
         { role: 'system', content: systemPrompt },
@@ -345,6 +347,13 @@ class E2BDataAnalystAgent {
             // Accumulate all assistant content (build complete response across iterations)
             if (message.content) {
               finalContent += message.content;
+            }
+
+            // 检查是否调用了complete_task工具（智能停止）
+            const hasCompleteTask = message.tool_calls?.some(tc => tc.function.name === 'complete_task');
+            if (hasCompleteTask) {
+              logger.info(`[E2BAgent] LLM called complete_task - task finished by LLM decision`);
+              shouldExitMainLoop = true; // LLM主动决定完成，立即停止
             }
 
             // 如果没有工具调用，说明已得到最终答案
@@ -482,6 +491,13 @@ class E2BDataAnalystAgent {
             // Accumulate all assistant content
             if (message.content) {
               finalContent += message.content;
+            }
+
+            // 检查是否调用了complete_task工具（智能停止）
+            const hasCompleteTask = message.tool_calls?.some(tc => tc.function.name === 'complete_task');
+            if (hasCompleteTask) {
+              logger.info(`[E2BAgent] LLM called complete_task - task finished by LLM decision`);
+              shouldExitMainLoop = true;
             }
 
             // 如果没有工具调用，说明已得到最终答案

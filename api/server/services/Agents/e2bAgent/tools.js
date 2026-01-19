@@ -283,6 +283,22 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
         return { success: false, error: error.message };
       }
     },
+
+    /**
+     * 完成任务并提供最终总结。
+     * LLM应在完成所有计划步骤后调用此工具。
+     */
+    complete_task: async ({ summary }) => {
+      logger.info(`[E2BAgent Tools] Task completion requested`);
+      logger.info(`[E2BAgent Tools] Summary: ${summary?.substring(0, 100)}...`);
+      
+      return {
+        success: true,
+        completed: true,
+        message: 'Task completed successfully',
+        summary: summary || 'All planned steps have been executed.'
+      };
+    },
   };
 };
 
