@@ -464,10 +464,17 @@ class E2BDataAnalystAgent {
                 observation: result
               });
 
-              // 如果是 complete_task，将 summary 添加到最终输出
+              // 如果是 complete_task，将 summary 添加到最终输出并通过 streaming 发送
               if (name === 'complete_task' && result.summary) {
                 logger.info(`[E2BAgent] Adding complete_task summary to final content (${result.summary.length} chars)`);
-                finalContent += '\n\n' + result.summary;
+                const summaryText = '\n\n' + result.summary;
+                finalContent += summaryText;
+                
+                // 在 streaming 模式下，通过 onToken 发送 summary
+                if (onToken) {
+                  logger.info(`[E2BAgent] Streaming complete_task summary to client`);
+                  onToken(summaryText);
+                }
               }
 
               // 将工具结果反馈给 LLM
@@ -541,7 +548,9 @@ class E2BDataAnalystAgent {
               // 如果是 complete_task，将 summary 添加到最终输出
               if (name === 'complete_task' && result.summary) {
                 logger.info(`[E2BAgent] Adding complete_task summary to final content (${result.summary.length} chars)`);
-                finalContent += '\n\n' + result.summary;
+                const summaryText = '\n\n' + result.summary;
+                finalContent += summaryText;
+                // Non-streaming mode: summary will be included in final response
               }
 
               // 将工具结果反馈给 LLM
