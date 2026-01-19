@@ -285,6 +285,32 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
     },
 
     /**
+     * 列出沙箱中的文件。
+     */
+    list_files: async ({ path = '/home/user' }) => {
+      try {
+        logger.info(`[E2BAgent Tools] Listing files in ${path}`);
+        const files = await codeExecutor.listFiles(userId, conversationId, path);
+        
+        return {
+          success: true,
+          path: path,
+          files: files,
+          count: files.length,
+          message: `Found ${files.length} files in ${path}`
+        };
+      } catch (error) {
+        logger.error(`[E2BAgent Tools] Error in list_files:`, error);
+        return { 
+          success: false, 
+          error: error.message,
+          files: [],
+          count: 0
+        };
+      }
+    },
+
+    /**
      * 完成任务并提供最终总结。
      * LLM应在完成所有计划步骤后调用此工具。
      */

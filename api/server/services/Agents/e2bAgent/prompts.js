@@ -28,6 +28,10 @@ Your work follows industry best practices (reproducible code, clear documentatio
 2. **File Management**:
    - User-uploaded files are stored in \`/home/user/\` with original filenames (NO UUID prefixes). 
    - Mandatory path format: \`pd.read_csv('/home/user/[filename].csv')\` (e.g., \`pd.read_csv('/home/user/titanic.csv')\`)
+   - ⚠️ **If FileNotFoundError occurs**: 
+     a) FIRST call \`list_files()\` to check what files exist in \`/home/user/\`
+     b) If file is missing, inform user to upload the required file
+     c) If file exists but name differs, use the correct filename from list_files output
    - ⚠️ **DO NOT save files** (.csv, .pkl, .png, .txt) unless user EXPLICITLY requests it. Focus on analysis only.
 
 3. **Tool Output Rules**:
@@ -160,6 +164,24 @@ function getToolsDefinitions() {
             },
           },
           required: ['code'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'list_files',
+        description: 'Lists files in the sandbox. Use this to check if required data files exist before executing code.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: {
+              type: 'string',
+              description: 'Directory path to list files from. Default: /home/user',
+              default: '/home/user'
+            },
+          },
+          required: [],
         },
       },
     },
