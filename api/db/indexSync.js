@@ -266,7 +266,9 @@ async function performSync(flowManager, flowId, flowType) {
         await Conversation.syncWithMeili();
         convosSync = true;
       } else if (unindexedConvos > 0) {
-        logger.info(`[indexSync] ${unindexedConvos} convos unindexed (below threshold: ${syncThreshold}, skipping)`);
+        logger.info(
+          `[indexSync] ${unindexedConvos} convos unindexed (below threshold: ${syncThreshold}, skipping)`,
+        );
       }
     } else {
       logger.info(
