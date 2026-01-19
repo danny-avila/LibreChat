@@ -1,12 +1,12 @@
 import { MCPInterceptor, MCPToolCallContext } from './types';
-// @ts-ignore
-let getMessages: any;
-try {
-  getMessages = require('~/models/Message').getMessages;
-} catch (e) {
-  getMessages = () => Promise.resolve([]);
-}
+import { logger } from '@librechat/data-schemas';
 
+/**
+ * ConversationContextInterceptor injects conversation history into MCP tool calls
+ * 
+ * Note: This interceptor currently provides a placeholder implementation.
+ * Full database integration requires proper Message model setup.
+ */
 export class ConversationContextInterceptor implements MCPInterceptor {
   name = 'conversation-context';
   priority = 10;
@@ -26,30 +26,30 @@ export class ConversationContextInterceptor implements MCPInterceptor {
     }
 
     if (!context.conversationId) {
+      logger.debug('[ConversationContextInterceptor] No conversationId provided, skipping context injection');
       return next();
     }
 
-    // Fetch conversation history from MongoDB
-    const messages = await getMessages({
-      conversationId: context.conversationId
-    });
-
-    // Format messages for MCP tool
-    const conversationHistory = messages.slice(-(this.options.maxMessages || 50)).map((msg: any) => ({
-      role: msg.isCreatedByUser ? 'user' : 'assistant',
-      content: msg.text,
-      timestamp: msg.createdAt
-    }));
-
-    // Inject into tool arguments
-    context.originalArgs = {
-      ...context.originalArgs,
-      _conversation_history: conversationHistory,
-      _conversation_metadata: {
+    try {
+      // TODO: Implement proper message retrieval from Message model
+      // This requires database connection and Message model setup
+      // For now, we inject metadata without full conversation history
+      const conversationMetadata = {
         conversationId: context.conversationId,
-        messageCount: messages.length,
-      }
-    };
+        injectedAt: new Date().toISOString(),
+        _note: 'Full conversation history requires Message model integration'
+      };
+
+      // Inject metadata into tool arguments
+      context.originalArgs = {
+        ...context.originalArgs,
+        _conversation_metadata: conversationMetadata,
+      };
+
+      logger.debug(`[ConversationContextInterceptor] Injected metadata for conversation ${context.conversationId}`);
+    } catch (error) {
+      logger.error('[ConversationContextInterceptor] Error injecting context:', error);
+    }
 
     return next();
   }
