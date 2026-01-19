@@ -48,6 +48,30 @@ class ContextManager {
   }
 
   /**
+   * Add a single uploaded file (used by upload_file tool)
+   * Appends to existing files instead of replacing
+   * 
+   * @param {Object} file - File object with filename, file_id, remotePath
+   */
+  addUploadedFile(file) {
+    const existingIndex = this.sessionState.uploadedFiles.findIndex(f => f.file_id === file.file_id);
+    
+    if (existingIndex >= 0) {
+      // Update existing file entry
+      this.sessionState.uploadedFiles[existingIndex] = {
+        ...this.sessionState.uploadedFiles[existingIndex],
+        ...file
+      };
+      logger.info(`[ContextManager] Updated existing file: ${file.filename}`);
+    } else {
+      // Add new file
+      this.sessionState.uploadedFiles.push(file);
+      logger.info(`[ContextManager] Added new file: ${file.filename} at ${file.remotePath}`);
+    }
+    logger.info(`[ContextManager] Total files now: ${this.sessionState.uploadedFiles.length}`);
+  }
+
+  /**
    * Track generated artifacts (images, data files, models)
    * 
    * @param {Object} artifact - Artifact metadata

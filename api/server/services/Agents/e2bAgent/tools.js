@@ -271,6 +271,15 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
         });
 
         if (synced.length > 0) {
+          // 记录到 Context Manager 以便沙箱恢复时重新上传
+          contextManager.addUploadedFile({
+            file_id: file_id,
+            filename: synced[0].filename,
+            remotePath: synced[0].remotePath,
+            uploadedAt: new Date().toISOString()
+          });
+          logger.info(`[E2BAgent Tools] File ${synced[0].filename} tracked in Context Manager`);
+          
           return {
             success: true,
             message: `File ${synced[0].filename} uploaded to sandbox at ${synced[0].remotePath}`,
