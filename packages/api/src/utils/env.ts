@@ -71,7 +71,7 @@ const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messageId'] a
  * @param user - The user object
  * @returns The processed string with placeholders replaced
  */
-function processUserPlaceholders(value: string, user?: IUser): string {
+function processUserPlaceholders(value: string, user?: Partial<IUser>): string {
   if (!user || typeof value !== 'string') {
     return value;
   }
@@ -147,7 +147,7 @@ function processSingleValue({
 }: {
   originalValue: string;
   customUserVars?: Record<string, string>;
-  user?: IUser;
+  user?: Partial<IUser>;
   body?: RequestBody;
 }): string {
   // Type guard: ensure we're working with a string
@@ -193,7 +193,7 @@ function processSingleValue({
  */
 export function processMCPEnv(params: {
   options: Readonly<MCPOptions>;
-  user?: IUser;
+  user?: Partial<IUser>;
   customUserVars?: Record<string, string>;
   body?: RequestBody;
 }): MCPOptions {

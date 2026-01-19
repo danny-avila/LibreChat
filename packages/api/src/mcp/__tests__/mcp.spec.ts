@@ -9,7 +9,7 @@ import { processMCPEnv } from '~/utils/env';
 // Helper function to create test user objects
 function createTestUser(
   overrides: Partial<TUser> & Record<string, unknown> = {},
-): TUser & Record<string, unknown> {
+): Omit<TUser, 'createdAt' | 'updatedAt'> | undefined {
   return {
     id: 'test-user-id',
     username: 'testuser',
@@ -18,8 +18,6 @@ function createTestUser(
     avatar: 'https://example.com/avatar.png',
     provider: 'email',
     role: 'user',
-    createdAt: new Date('2021-01-01').toISOString(),
-    updatedAt: new Date('2021-01-01').toISOString(),
     ...overrides,
   };
 }

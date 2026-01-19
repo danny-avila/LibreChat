@@ -47,7 +47,9 @@ export const GRAPH_TOKEN_PLACEHOLDER = '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
  */
 export const DEFAULT_GRAPH_SCOPES = 'https://graph.microsoft.com/.default';
 
-export function extractOpenIDTokenInfo(user: IUser | null | undefined): OpenIDTokenInfo | null {
+export function extractOpenIDTokenInfo(
+  user: Partial<IUser> | null | undefined,
+): OpenIDTokenInfo | null {
   if (!user) {
     return null;
   }
