@@ -106,18 +106,22 @@ Adjust your workflow based on user's explicit need. Support all Python data task
 - **Objective reporting**: Present quantitative results and verifiable observations only
 
 ## ⚠️ Advanced Error Handling
-When \`execute_code\` returns stderr (errors), handle by scenario:
+When \`execute_code\` returns stderr (errors), **immediately fix and re-execute in the same turn**:
 
-### 1. Common Errors
-- **Path Errors (FileNotFoundError)**: Fix with \`/home/user/[filename]\`; ask user to confirm filename.
-- **Syntax Errors**: Check indentation, variable definitions, and closed quotes.
+### Error Resolution Protocol
+1. **Identify**: Analyze traceback to locate the issue
+2. **Fix**: Correct the code (typos, paths, logic errors)
+3. **Re-execute**: Call \`execute_code\` again with fixed code **immediately**
+4. **Explain**: Briefly describe the fix
 
-### 2. Scenario-Specific Errors
-- **Crawler (403/Timeout)**: Add user-agent/\`time.sleep(2)\`; explain the fix.
-- **API (InvalidAPIKeyError)**: Remind user to replace key; explain: "Need valid API key to proceed".
-- **ML (ValueError: Feature count mismatch)**: Align train/test features; explain the fix.
+### Common Error Patterns
+- **Path Errors (FileNotFoundError)**: Add \`/home/user/\` prefix; confirm filename with user if needed
+- **Syntax Errors**: Check indentation, quotes, brackets, variable names
+- **Crawler (403/Timeout)**: Add user-agent header or \`time.sleep(2)\`
+- **API (InvalidAPIKeyError)**: Notify user to provide valid API key
+- **ML (Feature mismatch)**: Ensure train/test feature alignment
 
-After fixing, re-call \`execute_code\` with the corrected code; explain the fix to the user (e.g., "Fixed path error: added '/home/user/' to the filename").
+**Critical**: Do NOT explain the error and wait for next turn. Fix → Re-execute → Continue (all in current turn).
 
 ## 📊 Output Format Standards
 1. **Code & Output**: 

@@ -349,23 +349,18 @@ class E2BDataAnalystAgent {
               finalContent += message.content;
             }
 
-            // 检查是否调用了complete_task工具（智能停止）
+            // 检查是否调用了complete_task工具（唯一的主动停止条件）
             const hasCompleteTask = message.tool_calls?.some(tc => tc.function.name === 'complete_task');
             if (hasCompleteTask) {
               logger.info(`[E2BAgent] LLM called complete_task - task finished by LLM decision`);
               shouldExitMainLoop = true; // LLM主动决定完成，立即停止
             }
 
-            // 如果没有工具调用，说明已得到最终答案
+            // 如果没有工具调用，记录但继续迭代（让 LLM 在下一轮继续工作）
             if (!message.tool_calls || message.tool_calls.length === 0) {
-              logger.info(`[E2BAgent] Final answer received. Total accumulated content: ${finalContent.length} chars`);
-              
-              // Clean up error descriptions from accumulated content
-              finalContent = this._cleanErrorDescriptions(finalContent);
-              logger.info(`[E2BAgent] After cleanup: ${finalContent.length} chars`);
-              
-              shouldExitMainLoop = true; // Exit both loops
-              break; // Exit retry loop
+              logger.info(`[E2BAgent] No tool calls in this iteration. LLM returned text only. Continuing to next iteration (${iteration}/${this.maxIterations})`);
+              // 不设置 shouldExitMainLoop，让循环继续
+              // 只有 complete_task 或达到 maxIterations 才能停止
             }
 
             // 5. 执行工具调用 (ReAct 模式)
@@ -493,23 +488,17 @@ class E2BDataAnalystAgent {
               finalContent += message.content;
             }
 
-            // 检查是否调用了complete_task工具（智能停止）
+            // 检查是否调用了complete_task工具（唯一的主动停止条件）
             const hasCompleteTask = message.tool_calls?.some(tc => tc.function.name === 'complete_task');
             if (hasCompleteTask) {
               logger.info(`[E2BAgent] LLM called complete_task - task finished by LLM decision`);
               shouldExitMainLoop = true;
             }
 
-            // 如果没有工具调用，说明已得到最终答案
+            // 如果没有工具调用，记录但继续迭代
             if (!message.tool_calls || message.tool_calls.length === 0) {
-              logger.info(`[E2BAgent] Final answer received. Total accumulated content: ${finalContent.length} chars`);
-              
-              // Clean up error descriptions from accumulated content
-              finalContent = this._cleanErrorDescriptions(finalContent);
-              logger.info(`[E2BAgent] After cleanup: ${finalContent.length} chars`);
-              
-              shouldExitMainLoop = true; // Exit both loops
-              break; // Exit retry loop
+              logger.info(`[E2BAgent] No tool calls in this iteration. LLM returned text only. Continuing to next iteration (${iteration}/${this.maxIterations})`);
+              // 不设置 shouldExitMainLoop，继续下一次迭代
             }
 
             // 5. 执行工具调用 (ReAct 模式)
@@ -584,6 +573,10 @@ class E2BDataAnalystAgent {
 
       // Log the raw final content for debugging
       logger.info(`[E2BAgent] Raw final content length: ${finalContent?.length} chars`);
+      
+      // Clean up error descriptions from accumulated content
+      finalContent = this._cleanErrorDescriptions(finalContent);
+      logger.info(`[E2BAgent] After cleanup: ${finalContent.length} chars`);
       
       // Ensure we have content
       if (!finalContent) {
