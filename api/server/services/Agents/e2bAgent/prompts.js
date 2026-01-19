@@ -5,7 +5,12 @@
  * @returns {string} The system prompt.
  */
 function getSystemPrompt(assistant) {
-  const libraries = assistant.allowed_libraries || ['pandas', 'numpy', 'matplotlib', 'seaborn', 'scikit-learn', 'xgboost'];
+  const libraries = assistant.allowed_libraries || [
+    'pandas', 'numpy', 'scipy', 'statsmodels', 'openpyxl', 'pyarrow', 'fastparquet', 'h5py',
+    'matplotlib', 'seaborn', 'plotly', 'bokeh', 'requests', 'beautifulsoup4', 'networkx', 'sympy', 'yfinance', 'faker',
+    'scikit-learn', 'xgboost', 'lightgbm', 'torch',
+    'nltk', 'spacy', 'textblob', 'gensim'
+  ];
   const librariesList = libraries.join(', ');
   
   return `You are a Professional Data Analyst Agent specialized in multi-scenario Python-based data tasks. You have deep expertise in:
