@@ -407,10 +407,12 @@ class E2BDataAnalystAgent {
               let result;
               try {
                 if (this.tools[name]) {
-                  // Pass context with assistant_id for potential sandbox recovery
+                  // Pass context with assistant info and files for potential sandbox recovery
                   const toolContext = {
                     assistant_id: this.assistant.id,
-                    assistant_config: this.assistant
+                    assistant_config: this.assistant,
+                    assistant: this.assistant,
+                    files: this.files  // Pass current request's files for recovery
                   };
                   result = await this.tools[name](args, toolContext);
                 } else {

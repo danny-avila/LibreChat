@@ -143,6 +143,8 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
             
             // 从传入的context获取assistant配置
             const assistantConfig = context.assistant_config || {};
+            const assistant = context.assistant;
+            const currentFiles = context.files || [];
             
             // 重新创建sandbox
             logger.info(`[E2BAgent Tools] Recreating sandbox for conversation ${conversationId}`);
@@ -153,27 +155,45 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
               assistantConfig
             );
             
-            // 恢复文件状态（从Context Manager获取文件列表）
-            const uploadedFiles = contextManager.sessionState.uploadedFiles;
-            if (uploadedFiles && uploadedFiles.length > 0) {
-              logger.info(`[E2BAgent Tools] Restoring ${uploadedFiles.length} files to new sandbox`);
-              
-              // 提取file_ids
-              const fileIdsToRestore = uploadedFiles
-                .map(f => f.file_id)
-                .filter(id => id); // 过滤掉undefined
-              
-              if (fileIdsToRestore.length > 0) {
-                // 重新同步文件到sandbox
-                const resyncedFiles = await fileHandler.syncFilesToSandbox({
-                  req,
-                  userId,
-                  conversationId,
-                  fileIds: fileIdsToRestore
-                });
-                
-                logger.info(`[E2BAgent Tools] Successfully restored ${resyncedFiles.length} files`);
+            // 恢复文件状态 - 优先使用当前请求的文件列表
+            let fileIdsToRestore = [];
+            
+            // 1. 从当前请求的 files 参数获取（最准确）
+            if (currentFiles && currentFiles.length > 0) {
+              fileIdsToRestore = currentFiles.map(f => f.file_id || f.fileId).filter(id => id);
+              logger.info(`[E2BAgent Tools] Found ${fileIdsToRestore.length} files from current request`);
+            }
+            
+            // 2. 从 assistant.tool_resources 获取持久文件
+            if (assistant?.tool_resources?.file_search?.vector_store_ids?.length > 0) {
+              // Vector store files - 这些是持久关联的文件
+              logger.info(`[E2BAgent Tools] Assistant has ${assistant.tool_resources.file_search.vector_store_ids.length} vector stores`);
+              // Note: 需要额外查询来获取 vector store 中的文件，先跳过
+            }
+            
+            // 3. 降级方案：从 Context Manager 获取（可能为空）
+            if (fileIdsToRestore.length === 0) {
+              const uploadedFiles = contextManager.sessionState.uploadedFiles;
+              if (uploadedFiles && uploadedFiles.length > 0) {
+                fileIdsToRestore = uploadedFiles.map(f => f.file_id).filter(id => id);
+                logger.info(`[E2BAgent Tools] Found ${fileIdsToRestore.length} files from Context Manager`);
               }
+            }
+            
+            // 恢复文件
+            if (fileIdsToRestore.length > 0) {
+              logger.info(`[E2BAgent Tools] Restoring ${fileIdsToRestore.length} files to new sandbox`);
+              
+              const resyncedFiles = await fileHandler.syncFilesToSandbox({
+                req,
+                userId,
+                conversationId,
+                fileIds: fileIdsToRestore
+              });
+              
+              logger.info(`[E2BAgent Tools] Successfully restored ${resyncedFiles.length} files`);
+            } else {
+              logger.warn(`[E2BAgent Tools] No files found to restore after sandbox recovery`);
             }
             
             // 重新执行代码
