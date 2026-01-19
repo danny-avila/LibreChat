@@ -1,10 +1,13 @@
 import { logger } from '@librechat/data-schemas';
+import type { IUser } from '@librechat/data-schemas';
+import type { GraphTokenResolver } from '~/utils/graph';
 import type * as t from '~/mcp/types';
-import { MCPManager } from '~/mcp/MCPManager';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
-import { MCPConnection } from '../connection';
+import { MCPConnection } from '~/mcp/connection';
+import { MCPManager } from '~/mcp/MCPManager';
+import * as graphUtils from '~/utils/graph';
 
 // Mock external dependencies
 jest.mock('@librechat/data-schemas', () => ({
@@ -14,6 +17,15 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     debug: jest.fn(),
   },
+}));
+
+jest.mock('~/utils/graph', () => ({
+  ...jest.requireActual('~/utils/graph'),
+  preProcessGraphTokens: jest.fn(),
+}));
+
+jest.mock('~/utils/env', () => ({
+  processMCPEnv: jest.fn((params) => params.options),
 }));
 
 const mockRegistryInstance = {
@@ -386,6 +398,392 @@ describe('MCPManager', () => {
       expect(mockLogger.warn).toHaveBeenCalledWith(
         `[getServerToolFunctions] Error getting tool functions for server ${specificServerName}`,
         expect.any(Error),
+      );
+    });
+  });
+
+  describe('callTool - Graph Token Integration', () => {
+    const mockUser: Partial<IUser> = {
+      id: 'user-123',
+      provider: 'openid',
+      openidId: 'oidc-sub-456',
+    };
+
+    const mockFlowManager = {
+      getState: jest.fn(),
+      setState: jest.fn(),
+      clearState: jest.fn(),
+    };
+
+    const mockConnection = {
+      isConnected: jest.fn().mockResolvedValue(true),
+      setRequestHeaders: jest.fn(),
+      timeout: 30000,
+      client: {
+        request: jest.fn().mockResolvedValue({
+          content: [{ type: 'text', text: 'Tool result' }],
+          isError: false,
+        }),
+      },
+    } as unknown as MCPConnection;
+
+    const mockGraphTokenResolver: GraphTokenResolver = jest.fn().mockResolvedValue({
+      access_token: 'resolved-graph-token',
+      token_type: 'Bearer',
+      expires_in: 3600,
+      scope: 'https://graph.microsoft.com/.default',
+    });
+
+    function createServerConfigWithGraphPlaceholder(): t.SSEOptions {
+      return {
+        type: 'sse',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+          'Content-Type': 'application/json',
+        },
+      };
+    }
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      // Mock preProcessGraphTokens to simulate token resolution
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+        async (options, graphOptions) => {
+          if (
+            options.headers?.Authorization?.includes('{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}') &&
+            graphOptions.graphTokenResolver
+          ) {
+            return {
+              ...options,
+              headers: {
+                ...options.headers,
+                Authorization: 'Bearer resolved-graph-token',
+              },
+            };
+          }
+          return options;
+        },
+      );
+    });
+
+    it('should call preProcessGraphTokens with graphTokenResolver when provided', async () => {
+      const serverConfig = createServerConfigWithGraphPlaceholder();
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
+        serverConfig,
+        expect.objectContaining({
+          user: mockUser,
+          graphTokenResolver: mockGraphTokenResolver,
+        }),
+      );
+    });
+
+    it('should resolve graph token placeholders in headers before tool call', async () => {
+      const serverConfig = createServerConfigWithGraphPlaceholder();
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      // Verify the connection received the resolved headers
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Authorization: 'Bearer resolved-graph-token',
+        }),
+      );
+    });
+
+    it('should pass options unchanged when no graphTokenResolver is provided', async () => {
+      const serverConfig: t.SSEOptions = {
+        type: 'sse',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer static-token',
+        },
+      };
+
+      // Reset mock to return options unchanged
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+        async (options) => options,
+      );
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        // No graphTokenResolver provided
+      });
+
+      // Verify preProcessGraphTokens was still called (to check for placeholders)
+      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
+        serverConfig,
+        expect.objectContaining({
+          user: mockUser,
+          graphTokenResolver: undefined,
+        }),
+      );
+    });
+
+    it('should handle graph token resolution failure gracefully', async () => {
+      const serverConfig = createServerConfigWithGraphPlaceholder();
+
+      // Simulate resolution failure - returns original value unchanged
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+        async (options) => options,
+      );
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      // Should not throw, even when token resolution fails
+      await expect(
+        manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          graphTokenResolver: mockGraphTokenResolver,
+        }),
+      ).resolves.toBeDefined();
+
+      // Headers should contain the unresolved placeholder
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        }),
+      );
+    });
+
+    it('should resolve graph tokens in env variables', async () => {
+      const serverConfig: t.StdioOptions = {
+        type: 'stdio',
+        command: 'node',
+        args: ['server.js'],
+        env: {
+          GRAPH_TOKEN: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+          OTHER_VAR: 'static-value',
+        },
+      };
+
+      // Mock resolution for env variables
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(async (options) => {
+        if (options.env?.GRAPH_TOKEN?.includes('{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}')) {
+          return {
+            ...options,
+            env: {
+              ...options.env,
+              GRAPH_TOKEN: 'resolved-graph-token',
+            },
+          };
+        }
+        return options;
+      });
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
+        serverConfig,
+        expect.objectContaining({
+          graphTokenResolver: mockGraphTokenResolver,
+        }),
+      );
+    });
+
+    it('should resolve graph tokens in URL', async () => {
+      const serverConfig: t.SSEOptions = {
+        type: 'sse',
+        url: 'https://api.example.com?token={{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+      };
+
+      // Mock resolution for URL
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(async (options) => {
+        if (options.url?.includes('{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}')) {
+          return {
+            ...options,
+            url: 'https://api.example.com?token=resolved-graph-token',
+          };
+        }
+        return options;
+      });
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
+        serverConfig,
+        expect.objectContaining({
+          graphTokenResolver: mockGraphTokenResolver,
+        }),
+      );
+    });
+
+    it('should pass scopes from environment variable to preProcessGraphTokens', async () => {
+      const originalEnv = process.env.GRAPH_API_SCOPES;
+      process.env.GRAPH_API_SCOPES = 'custom.scope.read custom.scope.write';
+
+      const serverConfig = createServerConfigWithGraphPlaceholder();
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
+        serverConfig,
+        expect.objectContaining({
+          scopes: 'custom.scope.read custom.scope.write',
+        }),
+      );
+
+      // Restore environment
+      if (originalEnv !== undefined) {
+        process.env.GRAPH_API_SCOPES = originalEnv;
+      } else {
+        delete process.env.GRAPH_API_SCOPES;
+      }
+    });
+
+    it('should work correctly when config has no graph token placeholders', async () => {
+      const serverConfig: t.SSEOptions = {
+        type: 'sse',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer static-token',
+        },
+      };
+
+      // Mock to return unchanged options when no placeholders
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+        async (options) => options,
+      );
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      const result = await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      expect(result).toBeDefined();
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Authorization: 'Bearer static-token',
+        }),
       );
     });
   });
