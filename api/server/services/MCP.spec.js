@@ -120,6 +120,10 @@ jest.mock('./Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
 }));
 
+jest.mock('./GraphTokenService', () => ({
+  getGraphApiToken: jest.fn(),
+}));
+
 describe('tests for the new helper functions used by the MCP connection status endpoints', () => {
   let mockGetMCPManager;
   let mockGetFlowStateManager;
