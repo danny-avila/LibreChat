@@ -1,6 +1,6 @@
 import { PromptTemplate } from '@langchain/core/prompts';
 import { BaseMessage, getBufferString } from '@langchain/core/messages';
-import type { GraphEdge } from '@librechat/agents';
+import type { GraphEdge } from '@vestai/agents';
 
 const DEFAULT_PROMPT_TEMPLATE = `Based on the following conversation and analysis from previous agents, please provide your insights:\n\n{convo}\n\nPlease add your specific expertise and perspective to this discussion.`;
 

@@ -1,5 +1,5 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
-import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provider';
+import { ViolationTypes, ErrorTypes, alternateName } from 'vestai-data-provider';
 import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import { useLocalize } from '~/hooks';

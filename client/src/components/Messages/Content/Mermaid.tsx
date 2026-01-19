@@ -10,7 +10,7 @@ import {
   OGDialogClose,
   OGDialogTitle,
   OGDialogContent,
-} from '@librechat/client';
+} from '@vestai/client';
 import { useLocalize, useDebouncedMermaid } from '~/hooks';
 import MermaidHeader from './MermaidHeader';
 import cn from '~/utils/cn';

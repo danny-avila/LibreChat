@@ -7,7 +7,7 @@
  * add MCP servers via the UI without requiring explicit configuration.
  *
  * Bug fixed: Previously, MCPManager was only initialized when mcpServers existed
- * in librechat.yaml, causing "MCPManager has not been initialized" errors when
+ * in vestai.yaml, causing "MCPManager has not been initialized" errors when
  * users tried to create MCP servers via the UI.
  */
 
@@ -16,7 +16,7 @@ jest.mock('mongoose', () => ({
   connection: { readyState: 1 },
 }));
 
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@vestai/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
     error: jest.fn(),
@@ -54,7 +54,7 @@ jest.mock('~/config', () => ({
   },
 }));
 
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const initializeMCPs = require('./initializeMCPs');
 
 describe('initializeMCPs', () => {
@@ -261,7 +261,7 @@ describe('initializeMCPs', () => {
      * MCP servers via the UI.
      */
     it('should support UI-based server creation without explicit configuration', async () => {
-      // Scenario: User has no MCP servers in librechat.yaml but wants to
+      // Scenario: User has no MCP servers in vestai.yaml but wants to
       // add servers via the UI
       mockGetAppConfig.mockResolvedValue({
         mcpConfig: null,

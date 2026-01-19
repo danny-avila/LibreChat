@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
-import { Button } from '@librechat/client';
+import { Button } from '@vestai/client';
 import { useLocalize, useCustomLink } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';

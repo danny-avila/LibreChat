@@ -13,9 +13,9 @@ jest.mock('~/server/services/Config', () => ({
 
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { agentSchema } = require('@librechat/data-schemas');
+const { agentSchema } = require('@vestai/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
+const { AccessRoleIds, ResourceType, PrincipalType } = require('vestai-data-provider');
 const {
   getAgent,
   loadAgent,
@@ -35,7 +35,7 @@ const { getCachedTools, getMCPServerTools } = require('~/server/services/Config'
 const { AclEntry } = require('~/db/models');
 
 /**
- * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
+ * @type {import('mongoose').Model<import('@vestai/data-schemas').IAgent>}
  */
 let Agent;
 
@@ -665,7 +665,7 @@ describe('models/Agent', () => {
       const agentId = 'ephemeral_test';
       const endpoint = 'openai';
 
-      const originalModule = jest.requireActual('librechat-data-provider');
+      const originalModule = jest.requireActual('vestai-data-provider');
 
       const mockDataProvider = {
         ...originalModule,
@@ -675,12 +675,12 @@ describe('models/Agent', () => {
         },
       };
 
-      jest.doMock('librechat-data-provider', () => mockDataProvider);
+      jest.doMock('vestai-data-provider', () => mockDataProvider);
 
       expect(agentId).toBeDefined();
       expect(endpoint).toBeDefined();
 
-      jest.dontMock('librechat-data-provider');
+      jest.dontMock('vestai-data-provider');
     });
 
     test('should handle loadAgent functionality and errors', async () => {
@@ -1965,7 +1965,7 @@ describe('models/Agent', () => {
     });
 
     test('should test ephemeral agent loading logic', async () => {
-      const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
+      const { EPHEMERAL_AGENT_ID } = require('vestai-data-provider').Constants;
 
       getCachedTools.mockResolvedValue({
         tool1_mcp_server1: {},
@@ -2088,7 +2088,7 @@ describe('models/Agent', () => {
     });
 
     test('should handle ephemeral agent with no MCP servers', async () => {
-      const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
+      const { EPHEMERAL_AGENT_ID } = require('vestai-data-provider').Constants;
 
       getCachedTools.mockResolvedValue({});
 
@@ -2120,7 +2120,7 @@ describe('models/Agent', () => {
     });
 
     test('should handle ephemeral agent with undefined ephemeralAgent in body', async () => {
-      const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
+      const { EPHEMERAL_AGENT_ID } = require('vestai-data-provider').Constants;
 
       getCachedTools.mockResolvedValue({});
 
@@ -2158,7 +2158,7 @@ describe('models/Agent', () => {
       });
 
       test('should handle ephemeral agent with extremely large tool list', async () => {
-        const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
+        const { EPHEMERAL_AGENT_ID } = require('vestai-data-provider').Constants;
 
         const largeToolList = Array.from({ length: 100 }, (_, i) => `tool_${i}_mcp_server1`);
         const availableTools = largeToolList.reduce((acc, tool) => {
@@ -2708,7 +2708,7 @@ describe('models/Agent', () => {
     });
 
     test('should handle loadEphemeralAgent with malformed MCP tool names', async () => {
-      const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
+      const { EPHEMERAL_AGENT_ID } = require('vestai-data-provider').Constants;
 
       getCachedTools.mockResolvedValue({
         malformed_tool_name: {}, // No mcp delimiter

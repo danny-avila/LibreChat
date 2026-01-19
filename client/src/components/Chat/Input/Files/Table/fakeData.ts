@@ -1,5 +1,5 @@
-import { FileSources } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
+import { FileSources } from 'vestai-data-provider';
+import type { TFile } from 'vestai-data-provider';
 
 export const files: TFile[] = [
   {

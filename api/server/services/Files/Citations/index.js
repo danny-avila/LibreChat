@@ -1,13 +1,13 @@
 const { nanoid } = require('nanoid');
-const { checkAccess } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { checkAccess } = require('@vestai/api');
+const { logger } = require('@vestai/data-schemas');
 const {
   Tools,
   Permissions,
   FileSources,
   EModelEndpoint,
   PermissionTypes,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const { getRoleByName } = require('~/models/Role');
 const { Files } = require('~/models');
 

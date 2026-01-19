@@ -2,7 +2,7 @@ const path = require('path');
 const mongoose = require('mongoose');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { silentExit } = require('./helpers');
-const { User, Conversation, Message } = require('@librechat/data-schemas').createModels(mongoose);
+const { User, Conversation, Message } = require('@vestai/data-schemas').createModels(mongoose);
 const connect = require('./connect');
 
 (async () => {

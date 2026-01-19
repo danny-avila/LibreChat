@@ -1,4 +1,4 @@
-import { LocalStorageKeys } from 'librechat-data-provider';
+import { LocalStorageKeys } from 'vestai-data-provider';
 
 /** Suffix for timestamp entries */
 const TIMESTAMP_SUFFIX = '_TIMESTAMP';

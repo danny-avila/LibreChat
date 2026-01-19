@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AgentCard from '../AgentCard';
-import type t from 'librechat-data-provider';
+import type t from 'vestai-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Mock useLocalize hook
@@ -72,12 +72,12 @@ jest.mock('~/Providers', () => ({
   })),
 }));
 
-// Mock @librechat/client with proper Dialog behavior
-jest.mock('@librechat/client', () => {
+// Mock @vestai/client with proper Dialog behavior
+jest.mock('@vestai/client', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require('react');
   return {
-    ...jest.requireActual('@librechat/client'),
+    ...jest.requireActual('@vestai/client'),
     useToastContext: jest.fn(() => ({
       showToast: jest.fn(),
     })),

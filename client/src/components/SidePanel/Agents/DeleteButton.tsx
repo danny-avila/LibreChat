@@ -7,8 +7,8 @@ import {
   useToastContext,
   OGDialogTrigger,
   OGDialogTemplate,
-} from '@librechat/client';
-import type { Agent, AgentCreateParams } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { Agent, AgentCreateParams } from 'vestai-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { logger, getDefaultAgentFormValues } from '~/utils';
 import { useLocalize, useSetIndexOptions } from '~/hooks';

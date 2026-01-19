@@ -1,8 +1,8 @@
 const sharp = require('sharp');
 const fs = require('fs').promises;
 const fetch = require('node-fetch');
-const { logger } = require('@librechat/data-schemas');
-const { EImageOutputType } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { EImageOutputType } = require('vestai-data-provider');
 const { resizeAndConvert } = require('./resize');
 
 /**

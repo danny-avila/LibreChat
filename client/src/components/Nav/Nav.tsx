@@ -11,10 +11,10 @@ import {
 } from 'react';
 import { useRecoilValue } from 'recoil';
 import { motion } from 'framer-motion';
-import { Skeleton, useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { Skeleton, useMediaQuery } from '@vestai/client';
+import { PermissionTypes, Permissions } from 'vestai-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
-import type { ConversationListResponse } from 'librechat-data-provider';
+import type { ConversationListResponse } from 'vestai-data-provider';
 import type { List } from 'react-virtualized';
 import {
   useLocalize,

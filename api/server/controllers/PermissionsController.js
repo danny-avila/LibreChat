@@ -1,10 +1,10 @@
 /**
- * @import { TUpdateResourcePermissionsRequest, TUpdateResourcePermissionsResponse } from 'librechat-data-provider'
+ * @import { TUpdateResourcePermissionsRequest, TUpdateResourcePermissionsResponse } from 'vestai-data-provider'
  */
 
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
-const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { ResourceType, PrincipalType, PermissionBits } = require('vestai-data-provider');
 const {
   bulkUpdateResourcePermissions,
   ensureGroupPrincipalExists,

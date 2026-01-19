@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { encrypt, decrypt } = require('@librechat/api');
+const { logger } = require('@vestai/data-schemas');
+const { encrypt, decrypt } = require('@vestai/api');
 const { findOnePluginAuth, updatePluginAuth, deletePluginAuth } = require('~/models');
 
 /**

@@ -1,6 +1,6 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import type { GoogleAIToolType } from '@langchain/google-common';
-import type { ClientOptions } from '@librechat/agents';
+import type { ClientOptions } from '@vestai/agents';
 import type * as t from '~/types';
 import { knownOpenAIParams } from './llm';
 

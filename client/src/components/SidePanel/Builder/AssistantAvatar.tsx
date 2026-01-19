@@ -1,25 +1,25 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as Popover from '@radix-ui/react-popover';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@vestai/client';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   fileConfig as defaultFileConfig,
   QueryKeys,
   defaultOrderQuery,
   mergeFileConfig,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type {
   Metadata,
   Assistant,
   AssistantsEndpoint,
   AssistantCreateParams,
   AssistantListResponse,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { useUploadAssistantAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { AssistantAvatar, NoImage, AvatarMenu } from './Images';
 import { useAssistantsMapContext } from '~/Providers';
-// import { Spinner } from '@librechat/client';
+// import { Spinner } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 import { formatBytes } from '~/utils';
 

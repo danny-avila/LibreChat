@@ -2,7 +2,7 @@ import { memo, useState, useRef, useMemo, useCallback, KeyboardEvent } from 'rea
 import { Trans } from 'react-i18next';
 import { EarthIcon, Pen } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { PermissionBits, ResourceType, type TPromptGroup } from 'librechat-data-provider';
+import { PermissionBits, ResourceType, type TPromptGroup } from 'vestai-data-provider';
 import {
   Input,
   Label,
@@ -10,7 +10,7 @@ import {
   OGDialogTrigger,
   OGDialogTemplate,
   TrashIcon,
-} from '@librechat/client';
+} from '@vestai/client';
 import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { useLocalize, useResourcePermissions } from '~/hooks';

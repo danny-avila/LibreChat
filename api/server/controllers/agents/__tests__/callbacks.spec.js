@@ -1,21 +1,21 @@
-const { Tools } = require('librechat-data-provider');
+const { Tools } = require('vestai-data-provider');
 
 // Mock all dependencies before requiring the module
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-id'),
 }));
 
-jest.mock('@librechat/api', () => ({
+jest.mock('@vestai/api', () => ({
   sendEvent: jest.fn(),
 }));
 
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@vestai/data-schemas', () => ({
   logger: {
     error: jest.fn(),
   },
 }));
 
-jest.mock('@librechat/agents', () => ({
+jest.mock('@vestai/agents', () => ({
   EnvVar: { CODE_API_KEY: 'CODE_API_KEY' },
   Providers: { GOOGLE: 'google' },
   GraphEvents: {},
@@ -49,7 +49,7 @@ describe('createToolEndCallback', () => {
     jest.clearAllMocks();
 
     // Get the mocked logger
-    logger = require('@librechat/data-schemas').logger;
+    logger = require('@vestai/data-schemas').logger;
 
     // Now require the module after all mocks are set up
     const callbacks = require('../callbacks');

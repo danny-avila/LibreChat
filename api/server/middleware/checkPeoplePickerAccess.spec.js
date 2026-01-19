@@ -1,11 +1,11 @@
-const { logger } = require('@librechat/data-schemas');
-const { PrincipalType, PermissionTypes, Permissions } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { PrincipalType, PermissionTypes, Permissions } = require('vestai-data-provider');
 const { checkPeoplePickerAccess } = require('./checkPeoplePickerAccess');
 const { getRoleByName } = require('~/models/Role');
 
 jest.mock('~/models/Role');
-jest.mock('@librechat/data-schemas', () => ({
-  ...jest.requireActual('@librechat/data-schemas'),
+jest.mock('@vestai/data-schemas', () => ({
+  ...jest.requireActual('@vestai/data-schemas'),
   logger: {
     error: jest.fn(),
   },

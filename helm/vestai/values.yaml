@@ -1,4 +1,4 @@
-# Default values for librechat.
+# Default values for vestai.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
@@ -7,7 +7,7 @@ replicaCount: 1
 
 
 global:
-   # default Secret for envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+   # default Secret for envs/ only Passwords. Can be locally generated with: kubectl create secret generic vestai-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
    # Required Values:
    # - CREDS_KEY
@@ -15,11 +15,11 @@ global:
    # - JWT_SECRET
    # - JWT_REFRESH_SECRET
    # - MEILI_MASTER_KEY
-  librechat:
-    existingSecretName: "librechat-credentials-env"
+  vestai:
+    existingSecretName: "vestai-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
     existingSecretApiKey: OPENAI_API_KEY
-    # Optionally add extra globally accessible environment variables here. These can be referenced under ConfigEnv to make them accessible inside LibreChat
+    # Optionally add extra globally accessible environment variables here. These can be referenced under ConfigEnv to make them accessible inside VestAI
     # env:
     #  - name: API_KEY
     #    valueFrom:
@@ -32,9 +32,9 @@ global:
     #        name: credentials
     #        key: client_id
 
-librechat:
+vestai:
   configEnv:
-    # IMPORTANT -- GENERATE your own: openssl rand -hex 32 and openssl rand -hex 16 for CREDS_IV. Best Practise: Put into Secret. See global.librechat.existingSecretName
+    # IMPORTANT -- GENERATE your own: openssl rand -hex 32 and openssl rand -hex 16 for CREDS_IV. Best Practise: Put into Secret. See global.vestai.existingSecretName
     CREDS_KEY: 9e95d9894da7e68dd69c0046caf5343c8b1e80c89609b5a1e40e6568b5b23ce6
     CREDS_IV: ac028c86ba23f4cd48165e0ca9f2c683
     JWT_SECRET: 16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
@@ -42,13 +42,13 @@ librechat:
     # Set Config Params here
     # ENV_NAME: env-value
 
-    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+    # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic vestai-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
     # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
     # Required Values:
     # - MEILI_MASTER_KEY
-  existingSecretName: "librechat-credentials-env"
+  existingSecretName: "vestai-credentials-env"
   
-  # For adding a custom config yaml-file you can set the contents in this var. See https://www.librechat.ai/docs/configuration/librechat_yaml/example
+  # For adding a custom config yaml-file you can set the contents in this var. See /docs/configuration/vestai_yaml/example
   configYamlContent: ""
   # configYamlContent: |
   #   version: 1.0.8
@@ -58,12 +58,12 @@ librechat:
   #   interface:
   #     # Privacy policy settings
   #     privacyPolicy:
-  #       externalUrl: 'https://librechat.ai/privacy-policy'
+  #       externalUrl: '//privacy-policy'
   #       openNewTab: true
 
   #     # Terms of service
   #     termsOfService:
-  #       externalUrl: 'https://librechat.ai/tos'
+  #       externalUrl: '//tos'
   #       openNewTab: true
 
   #   registration:
@@ -100,7 +100,7 @@ librechat:
   #         forcePrompt: false
   #         modelDisplayLabel: "OpenRouter"
 
-  # name of existing Yaml configmap, key must be librechat.yaml
+  # name of existing Yaml configmap, key must be vestai.yaml
   existingConfigYaml: ""
 
   # Volume used to store image Files uploaded to the Web UI
@@ -111,14 +111,14 @@ librechat:
     # storageClassName: 
 
 # only lite RAG is supported
-librechat-rag-api:
+vestai-rag-api:
   enabled: false
   # can be azure, openai, huggingface or huggingfacetei
   embeddingsProvider: openai
 
 
 image:
-  repository: danny-avila/librechat
+  repository: doktransfers/vestai
   registry: ghcr.io
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
@@ -142,7 +142,7 @@ serviceAccount:
   name: ""
 
 lifecycle: {}
-# # base for adding a custom banner // see https://github.com/danny-avila/LibreChat/pull/3952 for an example
+# # base for adding a custom banner // see https://github.com/Doktransfers/vest-ai/pull/3952 for an example
 #   postStart:
 #     exec:
 #       command: ["/bin/sh", "-c", "npm run update-banner <displayFrom(Format: yyyy-mm-ddTHH:MM:SSZ)> <displayTo(Format: yyyy-mm-ddTHH:MM:SSZ)> <message> <isPublic(true/false)>"]
@@ -270,7 +270,7 @@ dnsConfig: {}
 #     - name: timeout
 #       value: "1"
 
-# Strategy for LibreChat deployment updates
+# Strategy for VestAI deployment updates
 updateStrategy:
   type: RollingUpdate
 
@@ -304,4 +304,4 @@ meilisearch:
     tag: "v1.7.3"
   auth:
     # Use an existing Kubernetes secret for the MEILI_MASTER_KEY
-    existingMasterKeySecret: "librechat-credentials-env"
+    existingMasterKeySecret: "vestai-credentials-env"

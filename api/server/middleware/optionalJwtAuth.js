@@ -1,6 +1,6 @@
 const cookies = require('cookie');
 const passport = require('passport');
-const { isEnabled } = require('@librechat/api');
+const { isEnabled } = require('@vestai/api');
 
 // This middleware does not require authentication,
 // but if the user is authenticated, it will set the user object.

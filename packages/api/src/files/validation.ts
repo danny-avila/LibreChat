@@ -1,5 +1,5 @@
-import { Providers } from '@librechat/agents';
-import { mbToBytes, isOpenAILikeProvider } from 'librechat-data-provider';
+import { Providers } from '@vestai/agents';
+import { mbToBytes, isOpenAILikeProvider } from 'vestai-data-provider';
 
 export interface PDFValidationResult {
   isValid: boolean;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
+import { AccessRoleIds, ResourceType } from 'vestai-data-provider';
 import { Share2Icon, Users, Link, CopyCheck, UserX, UserCheck } from 'lucide-react';
 import {
   Label,
@@ -12,8 +12,8 @@ import {
   OGDialogContent,
   OGDialogTrigger,
   useToastContext,
-} from '@librechat/client';
-import type { TPrincipal } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TPrincipal } from 'vestai-data-provider';
 import {
   usePeoplePickerPermissions,
   useResourcePermissionState,

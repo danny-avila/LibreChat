@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import type { TPrincipal, PrincipalType, PrincipalSearchParams } from 'librechat-data-provider';
-import { useSearchPrincipalsQuery } from 'librechat-data-provider/react-query';
+import type { TPrincipal, PrincipalType, PrincipalSearchParams } from 'vestai-data-provider';
+import { useSearchPrincipalsQuery } from 'vestai-data-provider/react-query';
 import PeoplePickerSearchItem from './PeoplePickerSearchItem';
 import { SearchPicker } from './SearchPicker';
 import { useLocalize } from '~/hooks';

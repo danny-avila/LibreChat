@@ -1,5 +1,5 @@
 import { Keyv } from 'keyv';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
@@ -10,7 +10,7 @@ import { cacheConfig } from '~/cache/cacheConfig';
 
 /**
  * Central registry for managing MCP server configurations.
- * Authoritative source of truth for all MCP servers provided by LibreChat.
+ * Authoritative source of truth for all MCP servers provided by VestAI.
  *
  * Uses a two-repository architecture:
  * - Cache Repository: Stores YAML-defined configs loaded at startup (in-memory or Redis-backed)

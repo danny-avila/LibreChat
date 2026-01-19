@@ -8,7 +8,7 @@ import {
   TooltipAnchor,
   OGDialogTemplate,
   useToastContext,
-} from '@librechat/client';
+} from '@vestai/client';
 import type { FC } from 'react';
 import { useDeleteConversationTagMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';

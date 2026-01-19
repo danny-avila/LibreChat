@@ -1,5 +1,5 @@
 import React from 'react';
-import { Label } from '@librechat/client';
+import { Label } from '@vestai/client';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { useLocalize } from '~/hooks';
 

@@ -14,7 +14,7 @@ import type {
   VisibilityState,
   ColumnFiltersState,
 } from '@tanstack/react-table';
-import { FileContext } from 'librechat-data-provider';
+import { FileContext } from 'vestai-data-provider';
 import {
   Table,
   Button,
@@ -27,8 +27,8 @@ import {
   FilterInput,
   TableHeader,
   useMediaQuery,
-} from '@librechat/client';
-import type { TFile } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TFile } from 'vestai-data-provider';
 import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
 import { useLocalize, TranslationKeys } from '~/hooks';

@@ -1,7 +1,7 @@
 import { useState, memo, useRef } from 'react';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
-import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
+import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@vestai/client';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';

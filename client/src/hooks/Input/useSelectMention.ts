@@ -1,13 +1,13 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'vestai-data-provider';
 import type {
   TPreset,
   TModelSpec,
   TConversation,
   TAssistantsMap,
   TEndpointsConfig,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { MentionOption, ConvoGenerator } from '~/common';
 import {
   clearModelForNonEphemeralAgent,

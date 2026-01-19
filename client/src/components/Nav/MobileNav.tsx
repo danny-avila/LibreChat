@@ -1,6 +1,6 @@
 import React from 'react';
 import { useRecoilValue } from 'recoil';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'vestai-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Dispatch, SetStateAction } from 'react';
 import { useLocalize, useNewConvo } from '~/hooks';

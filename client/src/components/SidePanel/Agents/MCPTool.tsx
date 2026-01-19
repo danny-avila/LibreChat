@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { Constants } from 'librechat-data-provider';
+import { Constants } from 'vestai-data-provider';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import {
   Label,
@@ -15,7 +15,7 @@ import {
   OGDialogTrigger,
   AccordionContent,
   OGDialogTemplate,
-} from '@librechat/client';
+} from '@vestai/client';
 import type { AgentForm, MCPServerInfo } from '~/common';
 import { useLocalize, useMCPServerManager, useRemoveMCPTool } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';

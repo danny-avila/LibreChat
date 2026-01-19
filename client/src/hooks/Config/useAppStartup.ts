@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import TagManager from 'react-gtm-module';
-import { LocalStorageKeys } from 'librechat-data-provider';
-import type { TStartupConfig, TUser } from 'librechat-data-provider';
+import { LocalStorageKeys } from 'vestai-data-provider';
+import type { TStartupConfig, TUser } from 'vestai-data-provider';
 import { cleanupTimestampedStorage } from '~/utils/timestamps';
 import useSpeechSettingsInit from './useSpeechSettingsInit';
 import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';

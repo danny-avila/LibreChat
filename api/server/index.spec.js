@@ -44,7 +44,7 @@ describe('Server Configuration', () => {
   beforeAll(() => {
     fs.readFileSync = function (filepath, options) {
       if (filepath.includes('index.html')) {
-        return '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>';
+        return '<!DOCTYPE html><html><head><title>VestAI</title></head><body><div id="root"></div></body></html>';
       }
       return originalReadFileSync(filepath, options);
     };
@@ -69,7 +69,7 @@ describe('Server Configuration', () => {
 
     fs.writeFileSync(
       path.join('/tmp/dist', 'index.html'),
-      '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>',
+      '<!DOCTYPE html><html><head><title>VestAI</title></head><body><div id="root"></div></body></html>',
     );
 
     mongoServer = await MongoMemoryServer.create();

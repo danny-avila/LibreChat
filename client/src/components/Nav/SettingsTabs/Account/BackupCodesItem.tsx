@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TBackupCode, TRegenerateBackupCodesResponse, type TUser } from 'librechat-data-provider';
+import { TBackupCode, TRegenerateBackupCodesResponse, type TUser } from 'vestai-data-provider';
 import {
   OGDialog,
   OGDialogContent,
@@ -12,7 +12,7 @@ import {
   Spinner,
   TooltipAnchor,
   useToastContext,
-} from '@librechat/client';
+} from '@vestai/client';
 import { useRegenerateBackupCodesMutation } from '~/data-provider';
 import { useAuthContext, useLocalize } from '~/hooks';
 import { useSetRecoilState } from 'recoil';

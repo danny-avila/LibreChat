@@ -4,7 +4,7 @@ jest.mock('fs');
 jest.mock('path');
 jest.mock('node-fetch');
 jest.mock('@node-saml/passport-saml');
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@vestai/data-schemas', () => ({
   logger: {
     info: jest.fn(),
     debug: jest.fn(),
@@ -25,7 +25,7 @@ jest.mock('~/server/services/Config', () => ({
   },
   getAppConfig: jest.fn().mockResolvedValue({}),
 }));
-jest.mock('@librechat/api', () => ({
+jest.mock('@vestai/api', () => ({
   isEmailDomainAllowed: jest.fn(() => true),
   getBalanceConfig: jest.fn(() => ({
     tokenCredits: 1000,
@@ -421,7 +421,7 @@ u7wlOSk+oFzDIO/UILIA
     const result = await validate(profile);
 
     expect(result.user).toBe(false);
-    expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
+    expect(result.details.message).toBe(require('vestai-data-provider').ErrorTypes.AUTH_FAILED);
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {

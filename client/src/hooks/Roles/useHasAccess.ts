@@ -1,5 +1,5 @@
 import { useMemo, useCallback, useContext } from 'react';
-import type { TUser, PermissionTypes, Permissions } from 'librechat-data-provider';
+import type { TUser, PermissionTypes, Permissions } from 'vestai-data-provider';
 import { AuthContext } from '~/hooks/AuthContext';
 
 const useHasAccess = ({

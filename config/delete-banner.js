@@ -1,6 +1,6 @@
 const path = require('path');
 const mongoose = require('mongoose');
-const { Banner } = require('@librechat/data-schemas').createModels(mongoose);
+const { Banner } = require('@vestai/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');

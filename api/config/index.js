@@ -1,11 +1,11 @@
 const { EventSource } = require('eventsource');
-const { Time } = require('librechat-data-provider');
+const { Time } = require('vestai-data-provider');
 const {
   MCPManager,
   FlowStateManager,
   MCPServersRegistry,
   OAuthReconnectionManager,
-} = require('@librechat/api');
+} = require('@vestai/api');
 const logger = require('./winston');
 
 global.EventSource = EventSource;

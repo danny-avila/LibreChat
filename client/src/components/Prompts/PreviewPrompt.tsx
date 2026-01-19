@@ -1,5 +1,5 @@
-import { OGDialogContent, OGDialog } from '@librechat/client';
-import type { TPromptGroup } from 'librechat-data-provider';
+import { OGDialogContent, OGDialog } from '@vestai/client';
+import type { TPromptGroup } from 'vestai-data-provider';
 import PromptDetails from './PromptDetails';
 
 const PreviewPrompt = ({

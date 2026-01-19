@@ -11,8 +11,8 @@ import {
   useSetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import { LocalStorageKeys, isEphemeralAgentId, Constants } from 'librechat-data-provider';
-import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
+import { LocalStorageKeys, isEphemeralAgentId, Constants } from 'vestai-data-provider';
+import type { TMessage, TPreset, TConversation, TSubmission } from 'vestai-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import {
   clearModelForNonEphemeralAgent,

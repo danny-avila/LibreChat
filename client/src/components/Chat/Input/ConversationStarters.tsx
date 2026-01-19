@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from 'react';
-import { EModelEndpoint, Constants } from 'librechat-data-provider';
+import { EModelEndpoint, Constants } from 'vestai-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetAssistantDocsQuery, useGetEndpointsQuery } from '~/data-provider';
 import { getIconEndpoint, getEntity } from '~/utils';

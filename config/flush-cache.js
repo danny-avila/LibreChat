@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * LibreChat Cache Flush Utility
+ * VestAI Cache Flush Utility
  *
- * This script flushes the cache store used by LibreChat, whether it's
+ * This script flushes the cache store used by VestAI, whether it's
  * Redis (if configured) or file-based cache.
  *
  * Usage:
@@ -52,10 +52,10 @@ const getRedisCA = () => {
 
 async function showHelp() {
   console.log(`
-LibreChat Cache Flush Utility
+VestAI Cache Flush Utility
 
 DESCRIPTION:
-  Flushes the cache store used by LibreChat. Automatically detects
+  Flushes the cache store used by VestAI. Automatically detects
   whether Redis or file-based cache is being used and flushes accordingly.
 
 USAGE:
@@ -280,7 +280,7 @@ async function flushFileCache(dryRun = false, verbose = false) {
 async function restartRecommendation() {
   console.log('\n💡 RECOMMENDATION:');
   console.log('   For complete cache clearing, especially for in-memory caches,');
-  console.log('   consider restarting the LibreChat backend:');
+  console.log('   consider restarting the VestAI backend:');
   console.log('');
   console.log('     npm run backend:stop');
   console.log('     npm run backend:dev');
@@ -298,7 +298,7 @@ async function main() {
     return;
   }
 
-  console.log('🧹 LibreChat Cache Flush Utility');
+  console.log('🧹 VestAI Cache Flush Utility');
   console.log('================================');
 
   if (dryRun) {

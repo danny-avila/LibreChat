@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { initializeAgent, validateAgentModel } = require('@librechat/api');
+const { logger } = require('@vestai/data-schemas');
+const { initializeAgent, validateAgentModel } = require('@vestai/api');
 const { loadAddedAgent, setGetAgent, ADDED_AGENT_ID } = require('~/models/loadAddedAgent');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent } = require('~/models/Agent');

@@ -1,4 +1,4 @@
-const { Constants } = require('librechat-data-provider');
+const { Constants } = require('vestai-data-provider');
 const { initializeFakeClient } = require('./FakeClient');
 
 jest.mock('~/db/connect');
@@ -40,8 +40,8 @@ jest.mock('~/models', () => ({
 
 const { getConvo, saveConvo } = require('~/models');
 
-jest.mock('@librechat/agents', () => {
-  const { Providers } = jest.requireActual('@librechat/agents');
+jest.mock('@vestai/agents', () => {
+  const { Providers } = jest.requireActual('@vestai/agents');
   return {
     Providers,
     ChatOpenAI: jest.fn().mockImplementation(() => {

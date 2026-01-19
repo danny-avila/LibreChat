@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import {
   useGetResourcePermissionsQuery,
   useUpdateResourcePermissionsMutation,
-} from 'librechat-data-provider/react-query';
-import type { TPrincipal, ResourceType, AccessRoleIds } from 'librechat-data-provider';
+} from 'vestai-data-provider/react-query';
+import type { TPrincipal, ResourceType, AccessRoleIds } from 'vestai-data-provider';
 import { getResourceConfig } from '~/utils';
 
 /**

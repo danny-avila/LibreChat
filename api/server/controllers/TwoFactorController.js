@@ -1,4 +1,4 @@
-const { encryptV3, logger } = require('@librechat/data-schemas');
+const { encryptV3, logger } = require('@vestai/data-schemas');
 const {
   generateBackupCodes,
   generateTOTPSecret,
@@ -8,7 +8,7 @@ const {
 } = require('~/server/services/twoFactorService');
 const { getUserById, updateUser } = require('~/models');
 
-const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
+const safeAppTitle = (process.env.APP_TITLE || 'VestAI').replace(/\s+/g, '');
 
 /**
  * Enable 2FA for the user by generating a new TOTP secret and backup codes.

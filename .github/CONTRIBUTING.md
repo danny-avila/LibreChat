@@ -4,11 +4,11 @@ Thank you to all the contributors who have helped make this project possible! We
 
 ## Contributing Guidelines
 
-If the feature you would like to contribute has not already received prior approval from the project maintainers (i.e., the feature is currently on the [roadmap](https://github.com/users/danny-avila/projects/2)), please submit a request in the [Feature Requests & Suggestions category](https://github.com/danny-avila/LibreChat/discussions/new?category=feature-requests-suggestions) of the discussions board before beginning work on it. The requests should include specific implementation details, including areas of the application that will be affected by the change (including designs if applicable), and any other relevant information that might be required for a speedy review. However, proposals are not required for small changes, bug fixes, or documentation improvements. Small changes and bug fixes should be tied to an [issue](https://github.com/danny-avila/LibreChat/issues) and included in the corresponding pull request for tracking purposes.
+If the feature you would like to contribute has not already received prior approval from the project maintainers (i.e., the feature is currently on the [roadmap](https://github.com/users/danny-avila/projects/2)), please submit a request in the [Feature Requests & Suggestions category](https://github.com/Doktransfers/vest-ai/discussions/new?category=feature-requests-suggestions) of the discussions board before beginning work on it. The requests should include specific implementation details, including areas of the application that will be affected by the change (including designs if applicable), and any other relevant information that might be required for a speedy review. However, proposals are not required for small changes, bug fixes, or documentation improvements. Small changes and bug fixes should be tied to an [issue](https://github.com/Doktransfers/vest-ai/issues) and included in the corresponding pull request for tracking purposes.
 
 Please note that a pull request involving a feature that has not been reviewed and approved by the project maintainers may be rejected. We appreciate your understanding and cooperation.
 
-If you would like to discuss the changes you wish to make, join our [Discord community](https://discord.librechat.ai), where you can engage with other contributors and seek guidance from the community.
+If you would like to discuss the changes you wish to make, join our [Discord community](#), where you can engage with other contributors and seek guidance from the community.
 
 ## Our Standards
 
@@ -42,7 +42,7 @@ Project maintainers have the right and responsibility to remove, edit, or reject
     - Install [MongoDB Community Edition](https://www.mongodb.com/docs/manual/administration/install-community/), ensure that `mongosh` connects to your local instance.
     - Run: `npx install playwright`, then `npx playwright install`.
     - Copy `config.local`: `cp e2e/config.local.example.ts e2e/config.local.ts`.
-    - Copy `librechat.yaml`: `cp librechat.example.yaml librechat.yaml`.
+    - Copy `vestai.yaml`: `cp vestai.example.yaml vestai.yaml`.
     - Run: `npm run e2e`.
 
 ## 2. Development Notes

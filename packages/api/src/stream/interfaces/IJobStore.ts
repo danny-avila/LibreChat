@@ -1,5 +1,5 @@
-import type { Agents } from 'librechat-data-provider';
-import type { StandardGraph } from '@librechat/agents';
+import type { Agents } from 'vestai-data-provider';
+import type { StandardGraph } from '@vestai/agents';
 
 /**
  * Job status enum

@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 
 /** WeakMap to hold temporary data associated with requests */
 const requestDataMap = new WeakMap();

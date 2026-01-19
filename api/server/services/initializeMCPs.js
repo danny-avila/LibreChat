@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const { mergeAppTools, getAppConfig } = require('./Config');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import type { TModelSpec } from 'librechat-data-provider';
+import type { TModelSpec } from 'vestai-data-provider';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';

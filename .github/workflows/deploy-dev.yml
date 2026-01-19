@@ -11,7 +11,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     if: |
-      github.repository == 'danny-avila/LibreChat' &&
+      github.repository == 'Doktransfers/vest-ai' &&
       (github.event_name == 'workflow_dispatch' || 
        (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'dev'))
     steps:
@@ -31,10 +31,10 @@ jobs:
       run: |
         ssh -o StrictHostKeyChecking=no ${DO_USER}@${DO_HOST} << EOF
         sudo -i -u danny bash << 'EEOF'
-        cd ~/LibreChat && \
+        cd ~/VestAI && \
         git fetch origin main && \
         sudo npm run stop:deployed && \
-        sudo docker images --format "{{.Repository}}:{{.ID}}" | grep -E "lc-dev|librechat" | cut -d: -f2 | xargs -r sudo docker rmi -f || true && \
+        sudo docker images --format "{{.Repository}}:{{.ID}}" | grep -E "lc-dev|vestai" | cut -d: -f2 | xargs -r sudo docker rmi -f || true && \
         sudo npm run update:deployed && \
         git checkout dev && \
         git pull origin dev && \

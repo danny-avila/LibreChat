@@ -2,8 +2,8 @@ import { Keyv } from 'keyv';
 import { FlowStateManager } from './manager';
 import { FlowState } from './types';
 
-jest.mock('@librechat/data-schemas', () => ({
-  ...jest.requireActual('@librechat/data-schemas'),
+jest.mock('@vestai/data-schemas', () => ({
+  ...jest.requireActual('@vestai/data-schemas'),
   logger: {
     info: jest.fn(),
     warn: jest.fn(),

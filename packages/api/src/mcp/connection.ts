@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import { fetch as undiciFetch, Agent } from 'undici';
 import {
   StdioClientTransport,
@@ -272,7 +272,7 @@ export class MCPConnection extends EventEmitter {
     }
     this.client = new Client(
       {
-        name: '@librechat/api-client',
+        name: '@vestai/api-client',
         version: '1.2.3',
       },
       {

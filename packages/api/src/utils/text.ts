@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 
 /** Token count function that can be sync or async */
 export type TokenCountFn = (text: string) => number | Promise<number>;

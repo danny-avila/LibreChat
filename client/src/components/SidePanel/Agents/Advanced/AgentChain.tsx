@@ -1,5 +1,5 @@
 import { X, Link2, PlusCircle } from 'lucide-react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   ControlCombobox,
@@ -8,9 +8,9 @@ import {
   HoverCardContent,
   HoverCardTrigger,
   CircleHelpIcon,
-} from '@librechat/client';
+} from '@vestai/client';
 import type { ControllerRenderProps } from 'react-hook-form';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 import type { AgentForm, OptionWithIcon } from '~/common';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { UIResource } from 'librechat-data-provider';
+import type { UIResource } from 'vestai-data-provider';
 import UIResourceCarousel from '~/components/Chat/Messages/Content/UIResourceCarousel';
 import { handleUIAction } from '~/utils';
 

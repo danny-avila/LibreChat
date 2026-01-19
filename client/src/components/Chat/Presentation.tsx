@@ -1,6 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { useEffect, useMemo } from 'react';
-import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
+import { FileSources, LocalStorageKeys } from 'vestai-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';

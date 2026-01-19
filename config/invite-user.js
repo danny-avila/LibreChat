@@ -1,7 +1,7 @@
 const path = require('path');
 const mongoose = require('mongoose');
-const { checkEmailConfig } = require('@librechat/api');
-const { User } = require('@librechat/data-schemas').createModels(mongoose);
+const { checkEmailConfig } = require('@vestai/api');
+const { User } = require('@vestai/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const { createInvite } = require('~/models/inviteUser');
@@ -51,7 +51,7 @@ const connect = require('./connect');
   const token = await createInvite(email);
   const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${token}`;
 
-  const appName = process.env.APP_TITLE || 'LibreChat';
+  const appName = process.env.APP_TITLE || 'VestAI';
 
   if (!checkEmailConfig()) {
     console.green('Send this link to the user:', inviteLink);

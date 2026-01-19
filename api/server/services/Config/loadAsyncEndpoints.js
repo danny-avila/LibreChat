@@ -1,6 +1,6 @@
 const path = require('path');
-const { logger } = require('@librechat/data-schemas');
-const { loadServiceKey, isUserProvided } = require('@librechat/api');
+const { logger } = require('@vestai/data-schemas');
+const { loadServiceKey, isUserProvided } = require('@vestai/api');
 const { config } = require('./EndpointService');
 
 async function loadAsyncEndpoints() {

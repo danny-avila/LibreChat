@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import type { TUser } from 'librechat-data-provider';
+import type { TUser } from 'vestai-data-provider';
 import { Skeleton } from './Skeleton';
 import { useAvatar } from '~/hooks';
 import { UserIcon } from '~/svgs';

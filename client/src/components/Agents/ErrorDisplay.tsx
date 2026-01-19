@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from '@librechat/client';
+import { Button } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

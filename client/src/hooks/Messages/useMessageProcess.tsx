@@ -1,7 +1,7 @@
 import throttle from 'lodash/throttle';
-import { Constants } from 'librechat-data-provider';
+import { Constants } from 'vestai-data-provider';
 import { useEffect, useRef, useCallback, useMemo } from 'react';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 import { getTextKey, TEXT_KEY_DIVIDER, logger } from '~/utils';
 import { useMessagesViewContext } from '~/Providers';
 

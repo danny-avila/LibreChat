@@ -1,8 +1,8 @@
 const { Keyv } = require('keyv');
 const uap = require('ua-parser-js');
-const { logger } = require('@librechat/data-schemas');
-const { isEnabled, keyvMongo } = require('@librechat/api');
-const { ViolationTypes } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { isEnabled, keyvMongo } = require('@vestai/api');
+const { ViolationTypes } = require('vestai-data-provider');
 const { removePorts } = require('~/server/utils');
 const denyRequest = require('./denyRequest');
 const { getLogStores } = require('~/cache');

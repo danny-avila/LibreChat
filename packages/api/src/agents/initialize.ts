@@ -1,4 +1,4 @@
-import { Providers } from '@librechat/agents';
+import { Providers } from '@vestai/agents';
 import {
   ErrorTypes,
   EModelEndpoint,
@@ -7,19 +7,19 @@ import {
   isAgentsEndpoint,
   replaceSpecialVars,
   providerEndpointMap,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type {
   AgentToolResources,
   TEndpointOption,
   TFile,
   Agent,
   TUser,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { Response as ServerResponse } from 'express';
-import type { IMongoFile } from '@librechat/data-schemas';
-import type { GenericTool } from '@librechat/agents';
+import type { IMongoFile } from '@vestai/data-schemas';
+import type { GenericTool } from '@vestai/agents';
 import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
-import { getModelMaxTokens, extractLibreChatParams, optionalChainWithEmptyCheck } from '~/utils';
+import { getModelMaxTokens, extractVestAIParams, optionalChainWithEmptyCheck } from '~/utils';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
@@ -95,7 +95,7 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
  * Initializes an agent for use in requests.
  * Handles file processing, tool loading, provider configuration, and context token calculations.
  *
- * This function is exported from @librechat/api and replaces the CJS version from
+ * This function is exported from @vestai/api and replaces the CJS version from
  * api/server/services/Endpoints/agents/agent.js
  *
  * @param params - Initialization parameters
@@ -143,7 +143,7 @@ export async function initializeAgent(
     ),
   );
 
-  const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(
+  const { resendFiles, maxContextTokens, modelOptions } = extractVestAIParams(
     _modelOptions as Record<string, unknown>,
   );
 

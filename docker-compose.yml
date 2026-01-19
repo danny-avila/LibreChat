@@ -3,13 +3,13 @@
 
 services:
   api:
-    container_name: LibreChat
+    container_name: VestAI
     ports:
       - "${PORT}:${PORT}"
     depends_on:
       - mongodb
       - rag_api
-    image: ghcr.io/danny-avila/librechat-dev:latest
+    image: ghcr.io/doktransfers/vestai-dev:latest
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
@@ -58,7 +58,7 @@ services:
       - pgdata2:/var/lib/postgresql/data
   rag_api:
     container_name: rag_api
-    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+    image: ghcr.io/doktransfers/vestai-rag-api-dev-lite:latest
     environment:
       - DB_HOST=vectordb
       - RAG_PORT=${RAG_PORT:-8000}

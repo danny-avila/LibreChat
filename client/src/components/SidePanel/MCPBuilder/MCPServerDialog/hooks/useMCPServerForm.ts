@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import type { MCPServerCreateParams } from 'librechat-data-provider';
+import type { MCPServerCreateParams } from 'vestai-data-provider';
 import {
   useCreateMCPServerMutation,
   useUpdateMCPServerMutation,
   useDeleteMCPServerMutation,
 } from '~/data-provider/MCP';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 import { extractServerNameFromUrl, isValidUrl, normalizeUrl } from '../utils/urlUtils';
 import type { MCPServerDefinition } from '~/hooks';

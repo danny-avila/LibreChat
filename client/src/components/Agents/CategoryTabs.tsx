@@ -1,6 +1,6 @@
 import React from 'react';
-import { useMediaQuery } from '@librechat/client';
-import type t from 'librechat-data-provider';
+import { useMediaQuery } from '@vestai/client';
+import type t from 'vestai-data-provider';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { SmartLoader } from './SmartLoader';
 import { cn } from '~/utils';

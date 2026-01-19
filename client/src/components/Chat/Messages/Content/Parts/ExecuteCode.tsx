@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment } from 'vestai-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import { useProgress, useLocalize } from '~/hooks';

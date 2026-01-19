@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Constants } from 'librechat-data-provider';
+import { Constants } from 'vestai-data-provider';
 
 /**
  * Schema for validating prompt group update payloads.

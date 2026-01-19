@@ -1,5 +1,5 @@
-import { logger } from '@librechat/data-schemas';
-import type { IUser } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
+import type { IUser } from '@vestai/data-schemas';
 
 export interface OpenIDTokenInfo {
   accessToken?: string;
@@ -119,7 +119,7 @@ export function processOpenIDPlaceholders(
   let processedValue = value;
 
   for (const field of OPENID_TOKEN_FIELDS) {
-    const placeholder = `{{LIBRECHAT_OPENID_${field}}}`;
+    const placeholder = `{{VESTAI_OPENID_${field}}}`;
     if (!processedValue.includes(placeholder)) {
       continue;
     }
@@ -150,7 +150,7 @@ export function processOpenIDPlaceholders(
     processedValue = processedValue.replace(new RegExp(placeholder, 'g'), replacementValue);
   }
 
-  const genericPlaceholder = '{{LIBRECHAT_OPENID_TOKEN}}';
+  const genericPlaceholder = '{{VESTAI_OPENID_TOKEN}}';
   if (processedValue.includes(genericPlaceholder)) {
     const replacementValue = tokenInfo.accessToken || '';
     processedValue = processedValue.replace(new RegExp(genericPlaceholder, 'g'), replacementValue);

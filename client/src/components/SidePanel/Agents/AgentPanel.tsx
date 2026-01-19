@@ -1,8 +1,8 @@
 import { Plus } from 'lucide-react';
 import React, { useMemo, useCallback, useRef, useState } from 'react';
-import { Button, useToastContext } from '@librechat/client';
+import { Button, useToastContext } from '@vestai/client';
 import { useWatch, useForm, FormProvider, type FieldNamesMarkedBoolean } from 'react-hook-form';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useGetModelsQuery } from 'vestai-data-provider/react-query';
 import {
   Tools,
   SystemRoles,
@@ -10,9 +10,9 @@ import {
   EModelEndpoint,
   PermissionBits,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { AgentForm, StringOption } from '~/common';
-import type { Agent } from 'librechat-data-provider';
+import type { Agent } from 'vestai-data-provider';
 import {
   useCreateAgentMutation,
   useUpdateAgentMutation,

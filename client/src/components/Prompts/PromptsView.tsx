@@ -1,12 +1,12 @@
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { Outlet, useParams, useNavigate } from 'react-router-dom';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, Permissions } from 'vestai-data-provider';
 import FilterPrompts from '~/components/Prompts/Groups/FilterPrompts';
 import DashBreadcrumb from '~/routes/Layouts/DashBreadcrumb';
 import GroupSidePanel from './Groups/GroupSidePanel';
 import { useHasAccess, useLocalize } from '~/hooks';
 import { PromptGroupsProvider } from '~/Providers';
-import { useMediaQuery } from '@librechat/client';
+import { useMediaQuery } from '@vestai/client';
 import { cn } from '~/utils';
 
 export default function PromptsView() {

@@ -1,7 +1,7 @@
 import { registryStatusCache as statusCache } from './cache/RegistryStatusCache';
 import { isLeader } from '~/cluster';
 import { withTimeout } from '~/utils';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import { ParsedServerConfig } from '~/mcp/types';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 import type * as t from '~/mcp/types';

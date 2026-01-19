@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { EarthIcon, Pin, PinOff } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'vestai-data-provider';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useFavorites, useLocalize } from '~/hooks';

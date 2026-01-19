@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TMessageAudio } from '~/common';
-import { VolumeIcon, VolumeMuteIcon, Spinner } from '@librechat/client';
+import { VolumeIcon, VolumeMuteIcon, Spinner } from '@vestai/client';
 import { useLocalize, useTTSBrowser, useTTSExternal } from '~/hooks';
 import { logger } from '~/utils';
 import store from '~/store';

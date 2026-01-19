@@ -1,5 +1,5 @@
-import { AuthType, EToolResources } from 'librechat-data-provider';
-import type { TPlugin } from 'librechat-data-provider';
+import { AuthType, EToolResources } from 'vestai-data-provider';
+import type { TPlugin } from 'vestai-data-provider';
 import { filterUniquePlugins, checkPluginAuth, getToolkitKey } from './format';
 
 describe('format.ts helper functions', () => {

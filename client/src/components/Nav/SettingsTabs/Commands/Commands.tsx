@@ -1,6 +1,6 @@
 import { memo } from 'react';
-import { InfoHoverCard, ESide } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { InfoHoverCard, ESide } from '@vestai/client';
+import { PermissionTypes, Permissions } from 'vestai-data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
 import ToggleSwitch from '../ToggleSwitch';
 import store from '~/store';

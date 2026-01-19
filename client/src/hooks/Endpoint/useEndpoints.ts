@@ -1,19 +1,19 @@
 import React, { useMemo, useCallback } from 'react';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useGetModelsQuery } from 'vestai-data-provider/react-query';
 import {
   Permissions,
   alternateName,
   EModelEndpoint,
   PermissionTypes,
   getEndpointField,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type {
   TEndpointsConfig,
   TAssistantsMap,
   TStartupConfig,
   Assistant,
   Agent,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { Endpoint } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { mapEndpoints, getIconKey } from '~/utils';

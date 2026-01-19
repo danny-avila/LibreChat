@@ -5,7 +5,7 @@ import {
   isAgentsEndpoint,
   defaultOrderQuery,
   defaultAssistantsVersion,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   UseInfiniteQueryOptions,
@@ -13,7 +13,7 @@ import type {
   UseQueryOptions,
   InfiniteData,
 } from '@tanstack/react-query';
-import type t from 'librechat-data-provider';
+import type t from 'vestai-data-provider';
 import type {
   Action,
   TPreset,
@@ -29,7 +29,7 @@ import type {
   TCheckUserKeyResponse,
   SharedLinksListParams,
   SharedLinksResponse,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
 import { findConversationInInfinite } from '~/utils';
 
@@ -178,7 +178,7 @@ export const useConversationTagsQuery = (
  */
 
 /**
- * Hook for getting available LibreChat tools (excludes MCP tools)
+ * Hook for getting available VestAI tools (excludes MCP tools)
  * For MCP tools, use `useMCPToolsQuery` from mcp-queries.ts
  */
 export const useAvailableToolsQuery = <TData = t.TPlugin[]>(

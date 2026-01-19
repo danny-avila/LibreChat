@@ -1,6 +1,6 @@
-import { FileSources, FileContext } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
-import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '@librechat/client';
+import { FileSources, FileContext } from 'vestai-data-provider';
+import type { TFile } from 'vestai-data-provider';
+import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '@vestai/client';
 import { useGetFiles } from '~/data-provider';
 import { DataTable, columns } from './Table';
 import { useLocalize } from '~/hooks';

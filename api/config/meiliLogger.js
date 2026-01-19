@@ -6,13 +6,13 @@ require('winston-daily-rotate-file');
 /**
  * Determine the log directory.
  * Priority:
- * 1. LIBRECHAT_LOG_DIR environment variable (allows user override)
+ * 1. VESTAI_LOG_DIR environment variable (allows user override)
  * 2. /app/logs if running in Docker (bind-mounted with correct permissions)
  * 3. api/logs relative to this file (local development)
  */
 const getLogDir = () => {
-  if (process.env.LIBRECHAT_LOG_DIR) {
-    return process.env.LIBRECHAT_LOG_DIR;
+  if (process.env.VESTAI_LOG_DIR) {
+    return process.env.VESTAI_LOG_DIR;
   }
 
   // Check if running in Docker container (cwd is /app)

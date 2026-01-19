@@ -1,6 +1,6 @@
-import { Providers } from '@librechat/agents';
-import { mbToBytes } from 'librechat-data-provider';
-import type { AppConfig, IMongoFile } from '@librechat/data-schemas';
+import { Providers } from '@vestai/agents';
+import { mbToBytes } from 'vestai-data-provider';
+import type { AppConfig, IMongoFile } from '@vestai/data-schemas';
 import type { ServerRequest } from '~/types';
 import { encodeAndFormatDocuments } from './document';
 

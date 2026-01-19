@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Code, Play, RefreshCw, X } from 'lucide-react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
-import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
+import { Button, Spinner, useMediaQuery, Radio } from '@vestai/client';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';

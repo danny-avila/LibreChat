@@ -1,17 +1,17 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const {
   EnvVar,
   Calculator,
   createSearchTool,
   createCodeExecutionTool,
-} = require('@librechat/agents');
+} = require('@vestai/agents');
 const {
   checkAccess,
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
   buildImageToolContext,
-} = require('@librechat/api');
+} = require('@vestai/api');
 const { getMCPServersRegistry } = require('~/config');
 const {
   Tools,
@@ -20,7 +20,7 @@ const {
   EToolResources,
   PermissionTypes,
   replaceSpecialVars,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const {
   availableTools,
   manifestToolMap,

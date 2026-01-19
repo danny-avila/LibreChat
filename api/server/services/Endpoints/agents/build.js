@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { isAgentsEndpoint, removeNullishValues, Constants } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { isAgentsEndpoint, removeNullishValues, Constants } = require('vestai-data-provider');
 const { loadAgent } = require('~/models/Agent');
 
 const buildOptions = (req, endpoint, parsedBody, endpointType) => {
@@ -15,7 +15,7 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
     return undefined;
   });
 
-  /** @type {import('librechat-data-provider').TConversation | undefined} */
+  /** @type {import('vestai-data-provider').TConversation | undefined} */
   const addedConvo = req.body?.addedConvo;
 
   return removeNullishValues({

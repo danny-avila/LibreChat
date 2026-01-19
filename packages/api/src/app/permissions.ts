@@ -1,12 +1,12 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import {
   SystemRoles,
   Permissions,
   roleDefaults,
   PermissionTypes,
   getConfigDefaults,
-} from 'librechat-data-provider';
-import type { IRole, AppConfig } from '@librechat/data-schemas';
+} from 'vestai-data-provider';
+import type { IRole, AppConfig } from '@vestai/data-schemas';
 import { isMemoryEnabled } from '~/memory/config';
 
 /**
@@ -94,7 +94,7 @@ export async function updateInterfacePermissions({
   const defaults = getConfigDefaults().interface;
 
   // Permission precedence order:
-  // 1. Explicit user configuration (from librechat.yaml)
+  // 1. Explicit user configuration (from vestai.yaml)
   // 2. Role-specific defaults (from roleDefaults)
   // 3. Interface schema defaults (from interfaceSchema.default())
   for (const roleName of [SystemRoles.USER, SystemRoles.ADMIN]) {

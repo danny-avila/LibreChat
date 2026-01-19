@@ -1,8 +1,8 @@
 import { Link } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'vestai-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import type { TMessage, TConversation } from 'librechat-data-provider';
+import type { TMessage, TConversation } from 'vestai-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { ConversationCursorData } from '~/utils';
 import { useLocalize, useNavigateToConvo } from '~/hooks';

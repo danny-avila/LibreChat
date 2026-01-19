@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { messageSchema } = require('@librechat/data-schemas');
+const { messageSchema } = require('@vestai/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const {
@@ -16,7 +16,7 @@ const {
 jest.mock('~/server/services/Config/app');
 
 /**
- * @type {import('mongoose').Model<import('@librechat/data-schemas').IMessage>}
+ * @type {import('mongoose').Model<import('@vestai/data-schemas').IMessage>}
  */
 let Message;
 

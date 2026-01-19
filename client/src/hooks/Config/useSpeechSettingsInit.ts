@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
-import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
+import { useGetCustomConfigSpeechQuery } from 'vestai-data-provider/react-query';
 import { logger } from '~/utils';
 import store from '~/store';
 

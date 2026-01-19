@@ -1,7 +1,7 @@
 import React, { memo, useState, useCallback, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { Expand, ChevronUp, ChevronDown } from 'lucide-react';
-import { Button, Clipboard, CheckMark } from '@librechat/client';
+import { Button, Clipboard, CheckMark } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 import cn from '~/utils/cn';
 

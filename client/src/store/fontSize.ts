@@ -1,4 +1,4 @@
-import { applyFontSize } from '@librechat/client';
+import { applyFontSize } from '@vestai/client';
 import { createStorageAtomWithEffect, initializeFromStorage } from './jotai-utils';
 
 const DEFAULT_FONT_SIZE = 'text-base';

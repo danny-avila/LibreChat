@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Label, OGDialog, TrashIcon, OGDialogTrigger, OGDialogTemplate } from '@librechat/client';
+import { Label, OGDialog, TrashIcon, OGDialogTrigger, OGDialogTemplate } from '@vestai/client';
 import type { MCPServerInfo } from '~/common';
 import { useLocalize, useMCPServerManager, useRemoveMCPTool } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 
 export type ContentMetadataResult = {
   /** Whether the message has parallel content (content with groupId) */

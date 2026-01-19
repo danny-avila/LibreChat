@@ -5,8 +5,8 @@ import {
   QueryKeys,
   EModelEndpoint,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
-import type { TConversation, TPreset, Agent } from 'librechat-data-provider';
+} from 'vestai-data-provider';
+import type { TConversation, TPreset, Agent } from 'vestai-data-provider';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import { useChatContext } from '~/Providers/ChatContext';

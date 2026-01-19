@@ -1,4 +1,4 @@
-import type { TConversationTag } from 'librechat-data-provider';
+import type { TConversationTag } from 'vestai-data-provider';
 import BookmarkEmptyState from './BookmarkEmptyState';
 import BookmarkCard from './BookmarkCard';
 import { useLocalize } from '~/hooks';

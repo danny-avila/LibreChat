@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import MemoryInfo from '../MemoryInfo';
-import type { MemoryArtifact } from 'librechat-data-provider';
+import type { MemoryArtifact } from 'vestai-data-provider';
 
 // Mock the localize hook
 jest.mock('~/hooks', () => ({

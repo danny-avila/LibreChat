@@ -2,13 +2,13 @@ import { useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, Constants, dataService, getEndpointField } from 'librechat-data-provider';
+import { QueryKeys, Constants, dataService, getEndpointField } from 'vestai-data-provider';
 import type {
   TEndpointsConfig,
   TStartupConfig,
   TModelsConfig,
   TConversation,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import {
   clearModelForNonEphemeralAgent,
   getDefaultEndpoint,

@@ -1,12 +1,12 @@
 import mongoose, { Types, Model } from 'mongoose';
-import { createModels, createMethods, RoleBits } from '@librechat/data-schemas';
+import { createModels, createMethods, RoleBits } from '@vestai/data-schemas';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
+import { ResourceType, AccessRoleIds, PrincipalType } from 'vestai-data-provider';
 import { AccessControlService } from './accessControlService';
 
 // Mock the logger
-jest.mock('@librechat/data-schemas', () => ({
-  ...jest.requireActual('@librechat/data-schemas'),
+jest.mock('@vestai/data-schemas', () => ({
+  ...jest.requireActual('@vestai/data-schemas'),
   logger: {
     error: jest.fn(),
     warn: jest.fn(),

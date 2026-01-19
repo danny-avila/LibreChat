@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 import { useChatContext } from './ChatContext';
 import { getLatestText } from '~/utils';
 

@@ -15,7 +15,7 @@ import type {
   VisibilityState,
   ColumnFiltersState,
 } from '@tanstack/react-table';
-import { FileContext } from 'librechat-data-provider';
+import { FileContext } from 'vestai-data-provider';
 import {
   Input,
   Table,
@@ -31,8 +31,8 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
   DropdownMenuCheckboxItem,
-} from '@librechat/client';
-import type { TFile } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TFile } from 'vestai-data-provider';
 import type { AugmentedColumnDef } from '~/common';
 import ActionButton from '~/components/Files/ActionButton';
 import { useDeleteFilesFromTable } from '~/hooks/Files';

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Feather } from 'lucide-react';
-import { Skeleton } from '@librechat/client';
-import type t from 'librechat-data-provider';
+import { Skeleton } from '@vestai/client';
+import type t from 'vestai-data-provider';
 
 /**
  * Extracts the avatar URL from an agent's avatar property

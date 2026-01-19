@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { TStartupConfig, TSubmission } from 'librechat-data-provider';
+import type { TStartupConfig, TSubmission } from 'vestai-data-provider';
 import { useUpdateEphemeralAgent, useApplyNewAgentTemplate } from '~/store/agents';
 import { getModelSpec, applyModelSpecEphemeralAgent } from '~/utils';
 

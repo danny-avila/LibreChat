@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
-import { Tools } from 'librechat-data-provider';
+import { Tools } from 'vestai-data-provider';
 import ToolCall from '../ToolCall';
 
 // Mock dependencies

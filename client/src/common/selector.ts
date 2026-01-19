@@ -1,5 +1,5 @@
 import React from 'react';
-import { TStartupConfig } from 'librechat-data-provider';
+import { TStartupConfig } from 'vestai-data-provider';
 
 export interface Endpoint {
   value: string;

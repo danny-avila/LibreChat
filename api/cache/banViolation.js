@@ -1,6 +1,6 @@
-const { logger } = require('@librechat/data-schemas');
-const { isEnabled, math } = require('@librechat/api');
-const { ViolationTypes } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { isEnabled, math } = require('@vestai/api');
+const { ViolationTypes } = require('vestai-data-provider');
 const { deleteAllUserSessions } = require('~/models');
 const { removePorts } = require('~/server/utils');
 const getLogStores = require('./getLogStores');

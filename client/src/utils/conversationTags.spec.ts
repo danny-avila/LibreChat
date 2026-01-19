@@ -1,4 +1,4 @@
-import type { TConversationTagsResponse } from 'librechat-data-provider';
+import type { TConversationTagsResponse } from 'vestai-data-provider';
 import { updateConversationTag } from './conversationTags';
 
 describe('ConversationTag Utilities', () => {

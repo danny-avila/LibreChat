@@ -2,7 +2,7 @@ const OpenAI = require('openai');
 const createOpenAIImageTools = require('~/app/clients/tools/structured/OpenAIImageTools');
 
 jest.mock('openai');
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@vestai/data-schemas', () => ({
   logger: {
     warn: jest.fn(),
     error: jest.fn(),
@@ -10,7 +10,7 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-jest.mock('@librechat/api', () => ({
+jest.mock('@vestai/api', () => ({
   logAxiosError: jest.fn(),
   oaiToolkit: {
     image_gen_oai: {

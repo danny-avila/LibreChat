@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { Constants, ViolationTypes } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { Constants, ViolationTypes } = require('vestai-data-provider');
 const {
   sendEvent,
   getViolationInfo,
@@ -8,7 +8,7 @@ const {
   sanitizeFileForTransmit,
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
-} = require('@librechat/api');
+} = require('@vestai/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');

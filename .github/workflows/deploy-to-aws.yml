@@ -31,7 +31,7 @@ permissions:
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: 291515987508.dkr.ecr.us-east-1.amazonaws.com
-  ECR_REPOSITORY: librechat/librechat
+  ECR_REPOSITORY: vestai/vestai
   PLATFORM: linux/arm64
 
 jobs:
@@ -89,7 +89,7 @@ jobs:
             type=raw,value=${{ steps.tag.outputs.tag }}
             type=sha,prefix=sha-
           labels: |
-            org.opencontainers.image.title=LibreChat
+            org.opencontainers.image.title=VestAI
             org.opencontainers.image.description=AI chat application
             org.opencontainers.image.vendor=Vest.AI
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -114,17 +114,17 @@ jobs:
         id: ecs
         run: |
           # Get service name from CloudFormation outputs
-          SERVICE=$(aws cloudformation describe-stacks --stack-name LibreChatCdkStack \
-            --query "Stacks[0].Outputs[?OutputKey=='LibreChatServiceName'].OutputValue" \
+          SERVICE=$(aws cloudformation describe-stacks --stack-name VestAICdkStack \
+            --query "Stacks[0].Outputs[?OutputKey=='VestAIServiceName'].OutputValue" \
             --output text 2>/dev/null || echo "")
 
           # Get cluster ARN by finding cluster that matches our stack pattern
           CLUSTER_ARN=$(aws ecs list-clusters \
-            --query "clusterArns[?contains(@, 'LibreChatCdkStack-LibreChat')]" \
+            --query "clusterArns[?contains(@, 'VestAICdkStack-VestAI')]" \
             --output text 2>/dev/null || echo "")
 
           if [ -z "$CLUSTER_ARN" ]; then
-            echo "::warning::Could not find ECS cluster matching LibreChatCdkStack pattern"
+            echo "::warning::Could not find ECS cluster matching VestAICdkStack pattern"
             echo "cluster_name=" >> $GITHUB_OUTPUT
           else
             # Extract cluster name from ARN

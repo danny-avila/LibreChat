@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import type { EModelEndpoint, TConversation } from 'librechat-data-provider';
+import type { EModelEndpoint, TConversation } from 'vestai-data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
 
 interface ModelSelectorChatContextValue {

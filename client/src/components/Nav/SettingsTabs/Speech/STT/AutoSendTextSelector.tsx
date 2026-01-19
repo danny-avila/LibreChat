@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { Slider, InputNumber, Switch } from '@librechat/client';
+import { Slider, InputNumber, Switch } from '@vestai/client';
 import { cn, defaultTextProps, optionText } from '~/utils/';
 import { useLocalize } from '~/hooks';
 import store from '~/store';

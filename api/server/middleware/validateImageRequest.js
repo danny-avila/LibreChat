@@ -1,7 +1,7 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { logger } = require('@librechat/data-schemas');
-const { isEnabled, getBasePath } = require('@librechat/api');
+const { logger } = require('@vestai/data-schemas');
+const { isEnabled, getBasePath } = require('@vestai/api');
 
 const OBJECT_ID_LENGTH = 24;
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
@@ -22,7 +22,7 @@ function isValidObjectId(id) {
 }
 
 /**
- * Validates a LibreChat refresh token
+ * Validates a VestAI refresh token
  * @param {string} refreshToken - The refresh token to validate
  * @returns {{valid: boolean, userId?: string, error?: string}} - Validation result
  */
@@ -56,7 +56,7 @@ function createValidateImageRequest(secureImageLinks) {
   }
   /**
    * Middleware to validate image request.
-   * Supports both LibreChat refresh tokens and OpenID JWT tokens.
+   * Supports both VestAI refresh tokens and OpenID JWT tokens.
    * Must be set by `secureImageLinks` via custom config file.
    */
   return async function validateImageRequest(req, res, next) {

@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const { getPresets, savePreset, deletePresets } = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 

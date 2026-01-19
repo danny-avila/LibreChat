@@ -1,6 +1,6 @@
-import { Providers } from '@librechat/agents';
-import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
+import { Providers } from '@vestai/agents';
+import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'vestai-data-provider';
+import type { IMongoFile } from '@vestai/data-schemas';
 import type {
   AnthropicDocumentBlock,
   StrategyFunctions,

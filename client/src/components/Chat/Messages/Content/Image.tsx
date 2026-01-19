@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Skeleton } from '@librechat/client';
+import { Skeleton } from '@vestai/client';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
-import { apiBaseUrl } from 'librechat-data-provider';
+import { apiBaseUrl } from 'vestai-data-provider';
 import { cn, scaleImage } from '~/utils';
 import DialogImage from './DialogImage';
 

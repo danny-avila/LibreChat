@@ -1,7 +1,7 @@
 import { useSetRecoilState } from 'recoil';
 import type { QueryClient } from '@tanstack/react-query';
-import { QueryKeys, Tools } from 'librechat-data-provider';
-import type { TAttachment, EventSubmission, MemoriesResponse } from 'librechat-data-provider';
+import { QueryKeys, Tools } from 'vestai-data-provider';
+import type { TAttachment, EventSubmission, MemoriesResponse } from 'vestai-data-provider';
 import { handleMemoryArtifact } from '~/utils/memory';
 import store from '~/store';
 

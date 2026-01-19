@@ -1,13 +1,13 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { createModels, createMethods } = require('@librechat/data-schemas');
+const { createModels, createMethods } = require('@vestai/data-schemas');
 const {
   SystemRoles,
   ResourceType,
   AccessRoleIds,
   PrincipalType,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const { grantPermission } = require('~/server/services/PermissionService');
 const { createAgent } = require('./Agent');
 

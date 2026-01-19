@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
-import { logger } from '@librechat/data-schemas';
-import { GraphEvents, sleep } from '@librechat/agents';
+import { logger } from '@vestai/data-schemas';
+import { GraphEvents, sleep } from '@vestai/agents';
 import type { Response as ServerResponse } from 'express';
 import type { ServerSentEvent } from '~/types';
 import { sendEvent } from './events';

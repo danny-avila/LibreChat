@@ -1,7 +1,7 @@
 import { useRecoilState } from 'recoil';
 import { useEffect, useCallback } from 'react';
-import { isAssistantsEndpoint } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import { isAssistantsEndpoint } from 'vestai-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageContent from '~/components/Messages/MessageContent';
 import MessageParts from './MessageParts';

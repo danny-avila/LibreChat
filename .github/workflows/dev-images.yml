@@ -18,10 +18,10 @@ jobs:
         include:
           - target: api-build
             file: Dockerfile.multi
-            image_name: librechat-dev-api
+            image_name: vestai-dev-api
           - target: node
             file: Dockerfile
-            image_name: librechat-dev
+            image_name: vestai-dev
 
     steps:
       # Check out the repository

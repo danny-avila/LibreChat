@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { getEndpointField, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
-import type { TEndpointsConfig, EModelEndpoint, TConversation } from 'librechat-data-provider';
+import { useGetModelsQuery } from 'vestai-data-provider/react-query';
+import { getEndpointField, LocalStorageKeys, isAssistantsEndpoint } from 'vestai-data-provider';
+import type { TEndpointsConfig, EModelEndpoint, TConversation } from 'vestai-data-provider';
 import type { AssistantListItem, NewConversationParams } from '~/common';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';

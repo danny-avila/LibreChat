@@ -1,4 +1,4 @@
-import type { MemoriesResponse, TUserMemory, MemoryArtifact } from 'librechat-data-provider';
+import type { MemoriesResponse, TUserMemory, MemoryArtifact } from 'vestai-data-provider';
 
 type HandleMemoryArtifactParams = {
   memoryArtifact: MemoryArtifact;

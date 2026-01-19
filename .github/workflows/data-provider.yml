@@ -1,4 +1,4 @@
-name: Publish `librechat-data-provider` to NPM
+name: Publish `vestai-data-provider` to NPM
 
 on:
   push:

@@ -2,11 +2,11 @@ import {
   Constants,
   defaultAssistantsVersion,
   ConversationListResponse,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
+import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'vestai-data-provider';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
-import type * as t from 'librechat-data-provider';
+import type * as t from 'vestai-data-provider';
 import {
   logger,
   /* Conversations */

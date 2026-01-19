@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
-import type { TConversationTag } from 'librechat-data-provider';
+import type { TConversationTag } from 'vestai-data-provider';
 import {
   Button,
   OGDialog,
@@ -8,7 +8,7 @@ import {
   OGDialogTemplate,
   TooltipAnchor,
   useToastContext,
-} from '@librechat/client';
+} from '@vestai/client';
 import { useDeleteConversationTagMutation } from '~/data-provider';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { NotificationSeverity } from '~/common';

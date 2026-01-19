@@ -2,9 +2,9 @@
 const express = require('express');
 const passport = require('passport');
 const { randomState } = require('openid-client');
-const { logger } = require('@librechat/data-schemas');
-const { ErrorTypes } = require('librechat-data-provider');
-const { isEnabled, createSetBalanceConfig } = require('@librechat/api');
+const { logger } = require('@vestai/data-schemas');
+const { ErrorTypes } = require('vestai-data-provider');
+const { isEnabled, createSetBalanceConfig } = require('@vestai/api');
 const { checkDomainAllowed, loginLimiter, logHeaders, checkBan } = require('~/server/middleware');
 const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');

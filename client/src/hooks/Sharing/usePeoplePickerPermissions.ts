@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { PermissionTypes, PrincipalType, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, PrincipalType, Permissions } from 'vestai-data-provider';
 import { useHasAccess } from '~/hooks';
 
 /**

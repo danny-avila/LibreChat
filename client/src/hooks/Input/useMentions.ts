@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useGetModelsQuery } from 'vestai-data-provider/react-query';
 import {
   Permissions,
   alternateName,
@@ -9,8 +9,8 @@ import {
   isAgentsEndpoint,
   getConfigDefaults,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
-import type { TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
+} from 'vestai-data-provider';
+import type { TAssistantsMap, TEndpointsConfig } from 'vestai-data-provider';
 import type { MentionOption } from '~/common';
 import {
   useGetPresetsQuery,

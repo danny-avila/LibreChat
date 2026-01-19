@@ -14,15 +14,15 @@ import {
   EModelEndpoint,
   defaultAgentCapabilities,
   isDocumentSupportedProvider,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import {
   FileUpload,
   TooltipAnchor,
   DropdownPopup,
   AttachmentIcon,
   SharePointIcon,
-} from '@librechat/client';
-import type { EndpointFileConfig } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { EndpointFileConfig } from 'vestai-data-provider';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,

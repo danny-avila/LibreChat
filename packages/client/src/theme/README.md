@@ -1,4 +1,4 @@
-# Dynamic Theme System for @librechat/client
+# Dynamic Theme System for @vestai/client
 
 This theme system allows you to dynamically change colors in your React application using CSS variables and Tailwind CSS. It combines dark/light mode switching with dynamic color theming capabilities.
 
@@ -47,13 +47,13 @@ The theme system operates in three layers:
 ### 1. Install the Component Library
 
 ```bash
-npm install @librechat/client
+npm install @vestai/client
 ```
 
 ### 2. Wrap Your App with ThemeProvider
 
 ```tsx
-import { ThemeProvider } from '@librechat/client';
+import { ThemeProvider } from '@vestai/client';
 
 function App() {
   return (
@@ -99,7 +99,7 @@ module.exports = {
   content: [
     './src/**/*.{js,jsx,ts,tsx}',
     // Include component library files
-    './node_modules/@librechat/client/dist/**/*.js',
+    './node_modules/@vestai/client/dist/**/*.js',
   ],
   darkMode: ['class'],
   theme: {
@@ -165,7 +165,7 @@ function MyComponent() {
 ### 1. Define Your Theme
 
 ```tsx
-import { IThemeRGB } from '@librechat/client';
+import { IThemeRGB } from '@vestai/client';
 
 export const customTheme: IThemeRGB = {
   'rgb-text-primary': '0 0 0',        // Black
@@ -180,7 +180,7 @@ export const customTheme: IThemeRGB = {
 ### 2. Use Your Custom Theme
 
 ```tsx
-import { ThemeProvider } from '@librechat/client';
+import { ThemeProvider } from '@vestai/client';
 import { customTheme } from './themes/custom';
 
 function App() {
@@ -246,7 +246,7 @@ The ThemeProvider handles dark/light mode automatically:
 ### Using the Theme Hook
 
 ```tsx
-import { useTheme } from '@librechat/client';
+import { useTheme } from '@vestai/client';
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -277,7 +277,7 @@ import { ThemeContext, ThemeProvider } from '~/hooks/ThemeContext';
 
 **After:**
 ```tsx
-import { ThemeContext, ThemeProvider } from '@librechat/client';
+import { ThemeContext, ThemeProvider } from '@vestai/client';
 ```
 
 ### 2. Update ThemeProvider Usage
@@ -360,7 +360,7 @@ This format allows Tailwind to apply opacity modifiers like `bg-surface-primary/
 - **Issue**: Type errors when defining themes
 - **Solution**: Import and use the `IThemeRGB` interface:
 ```tsx
-import { IThemeRGB } from '@librechat/client';
+import { IThemeRGB } from '@vestai/client';
 ```
 
 ### Debugging Tips
@@ -375,7 +375,7 @@ import { IThemeRGB } from '@librechat/client';
 ### Dynamic Theme Switching
 
 ```tsx
-import { ThemeProvider, defaultTheme, darkTheme } from '@librechat/client';
+import { ThemeProvider, defaultTheme, darkTheme } from '@vestai/client';
 import { useState } from 'react';
 
 function App() {
@@ -437,7 +437,7 @@ function App() {
 When using the ThemeProvider in your main application with localStorage persistence:
 
 ```tsx
-import { ThemeProvider } from '@librechat/client';
+import { ThemeProvider } from '@vestai/client';
 import { getThemeFromEnv } from './utils';
 
 function App() {
@@ -470,4 +470,4 @@ When adding new theme colors:
 
 ## License
 
-This theme system is part of the @librechat/client package. 
+This theme system is part of the @vestai/client package. 

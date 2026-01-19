@@ -1,5 +1,5 @@
 const dedent = require('dedent');
-const { EModelEndpoint, ArtifactModes } = require('librechat-data-provider');
+const { EModelEndpoint, ArtifactModes } = require('vestai-data-provider');
 const { generateShadcnPrompt } = require('~/app/clients/prompts/shadcn-docs/generate');
 const { components } = require('~/app/clients/prompts/shadcn-docs/components');
 

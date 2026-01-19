@@ -10,7 +10,7 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
@@ -18,7 +18,7 @@ const {
   performStartupChecks,
   handleJsonParseError,
   initializeFileStorage,
-} = require('@librechat/api');
+} = require('@vestai/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
@@ -421,7 +421,7 @@ process.on('uncaughtException', (err) => {
     return;
   }
 
-  if (err.stack && err.stack.includes('@librechat/agents')) {
+  if (err.stack && err.stack.includes('@vestai/agents')) {
     logger.error(
       '\n\nAn error occurred in the agents system. The error has been logged and the app will continue running.',
       {

@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
-import { LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
+import { LocalStorageKeys, QueryKeys } from 'vestai-data-provider';
 import {
   format,
   isToday,
@@ -10,7 +10,7 @@ import {
   startOfYear,
   isWithinInterval,
 } from 'date-fns';
-import type { TConversation, GroupedConversations } from 'librechat-data-provider';
+import type { TConversation, GroupedConversations } from 'vestai-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 
 // Date group helpers

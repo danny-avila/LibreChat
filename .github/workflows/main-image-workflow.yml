@@ -11,10 +11,10 @@ jobs:
         include:
           - target: api-build
             file: Dockerfile.multi
-            image_name: librechat-api
+            image_name: vestai-api
           - target: node
             file: Dockerfile
-            image_name: librechat
+            image_name: vestai
 
     steps:
       - name: Checkout

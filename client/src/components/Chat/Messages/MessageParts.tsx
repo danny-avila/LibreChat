@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessageContentParts } from 'vestai-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';

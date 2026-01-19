@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { PrincipalType } from 'librechat-data-provider';
+import { PrincipalType } from 'vestai-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
 import { createUserGroupMethods } from './userGroup';

@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { matchSorter } from 'match-sorter';
-import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { SystemRoles, PermissionTypes, Permissions } from 'vestai-data-provider';
 import {
   Button,
   Switch,
@@ -10,8 +10,8 @@ import {
   TooltipAnchor,
   OGDialogTrigger,
   useToastContext,
-} from '@librechat/client';
-import type { TUserMemory } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TUserMemory } from 'vestai-data-provider';
 import {
   useUpdateMemoryPreferencesMutation,
   useMemoriesQuery,

@@ -1,7 +1,7 @@
-import { dataService, QueryKeys, Tools } from 'librechat-data-provider';
+import { dataService, QueryKeys, Tools } from 'vestai-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
-import type * as t from 'librechat-data-provider';
+import type * as t from 'vestai-data-provider';
 
 export const useToolCallMutation = <T extends t.ToolId>(
   toolId: T,

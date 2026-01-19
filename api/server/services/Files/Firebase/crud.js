@@ -2,8 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const fetch = require('node-fetch');
-const { logger } = require('@librechat/data-schemas');
-const { getFirebaseStorage } = require('@librechat/api');
+const { logger } = require('@vestai/data-schemas');
+const { getFirebaseStorage } = require('@vestai/api');
 const { ref, uploadBytes, getDownloadURL, deleteObject } = require('firebase/storage');
 const { getBufferMetadata } = require('~/server/utils');
 

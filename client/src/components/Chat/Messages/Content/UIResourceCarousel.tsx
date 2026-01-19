@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UIResourceRenderer } from '@mcp-ui/client';
-import type { UIResource } from 'librechat-data-provider';
+import type { UIResource } from 'vestai-data-provider';
 import { useMessagesOperations } from '~/Providers';
 import { handleUIAction } from '~/utils';
 

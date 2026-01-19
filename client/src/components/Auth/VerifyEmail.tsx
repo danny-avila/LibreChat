@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Spinner, ThemeSelector } from '@librechat/client';
+import { Spinner, ThemeSelector } from '@vestai/client';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useVerifyEmailMutation, useResendVerificationEmail } from '~/data-provider';
 import { useLocalize } from '~/hooks';

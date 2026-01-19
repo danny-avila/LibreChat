@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { FileUpload, TooltipAnchor, AttachmentIcon } from '@librechat/client';
+import { FileUpload, TooltipAnchor, AttachmentIcon } from '@vestai/client';
 import { useLocalize, useFileHandling } from '~/hooks';
 import { cn } from '~/utils';
 

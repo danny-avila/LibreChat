@@ -1,4 +1,4 @@
-const { SystemRoles } = require('librechat-data-provider');
+const { SystemRoles } = require('vestai-data-provider');
 const { getAssistant } = require('~/models/Assistant');
 
 /**

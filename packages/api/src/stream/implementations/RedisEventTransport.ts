@@ -1,5 +1,5 @@
 import type { Redis, Cluster } from 'ioredis';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import type { IEventTransport } from '~/stream/interfaces/IJobStore';
 
 /**

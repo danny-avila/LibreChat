@@ -1,0 +1,10 @@
+{{- if .Values.vestai.configYamlContent }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vestai.fullname" $ }}-config
+data:
+  vestai.yaml: |
+{{ .Values.vestai.configYamlContent | toYaml | indent 4 }}
+
+{{- end }}

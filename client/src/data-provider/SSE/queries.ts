@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
+import { apiBaseUrl, QueryKeys, request, dataService } from 'vestai-data-provider';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
-import type { Agents, TConversation } from 'librechat-data-provider';
+import type { Agents, TConversation } from 'vestai-data-provider';
 import { updateConvoInAllQueries } from '~/utils';
 
 export interface StreamStatusResponse {

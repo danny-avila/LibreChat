@@ -1,7 +1,7 @@
 import { Wrench } from 'lucide-react';
-import { useMultiSearch } from '@librechat/client';
+import { useMultiSearch } from '@vestai/client';
 import { Root, Trigger, Content, Portal } from '@radix-ui/react-popover';
-import type { TPlugin } from 'librechat-data-provider';
+import type { TPlugin } from 'vestai-data-provider';
 import MenuItem from '~/components/Chat/Menus/UI/MenuItem';
 import { cn } from '~/utils/';
 

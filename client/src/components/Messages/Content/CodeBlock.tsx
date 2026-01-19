@@ -1,8 +1,8 @@
 import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import copy from 'copy-to-clipboard';
 import { InfoIcon } from 'lucide-react';
-import { Tools } from 'librechat-data-provider';
-import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
+import { Tools } from 'vestai-data-provider';
+import { Clipboard, CheckMark, TooltipAnchor } from '@vestai/client';
 import type { CodeBarProps } from '~/common';
 import ResultSwitcher from '~/components/Messages/Content/ResultSwitcher';
 import { useToolCallsMapContext, useMessageContext } from '~/Providers';

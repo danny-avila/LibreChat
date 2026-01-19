@@ -1,7 +1,7 @@
 import { PlusCircle } from 'lucide-react';
-import { TooltipAnchor } from '@librechat/client';
-import { isAssistantsEndpoint } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import { TooltipAnchor } from '@vestai/client';
+import { isAssistantsEndpoint } from 'vestai-data-provider';
+import type { TConversation } from 'vestai-data-provider';
 import { useChatContext, useAddedChatContext } from '~/Providers';
 import { mainTextareaId } from '~/common';
 import { useLocalize } from '~/hooks';

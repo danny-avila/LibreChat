@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { Trash2 } from 'lucide-react';
 import { useDeletePrompt } from '~/data-provider';
-import { Button, OGDialog, OGDialogTrigger, Label, OGDialogTemplate } from '@librechat/client';
+import { Button, OGDialog, OGDialogTrigger, Label, OGDialogTemplate } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 
 const DeleteConfirmDialog = ({

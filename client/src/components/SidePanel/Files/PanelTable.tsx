@@ -10,7 +10,7 @@ import {
   FilterInput,
   TableHeader,
   useToastContext,
-} from '@librechat/client';
+} from '@vestai/client';
 import {
   flexRender,
   getCoreRowModel,
@@ -31,7 +31,7 @@ import {
   isAssistantsEndpoint,
   getEndpointFileConfig,
   type TFile,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';

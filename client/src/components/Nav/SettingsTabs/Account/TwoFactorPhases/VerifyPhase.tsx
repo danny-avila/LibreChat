@@ -6,7 +6,7 @@ import {
   InputOTPGroup,
   InputOTPSeparator,
   InputOTPSlot,
-} from '@librechat/client';
+} from '@vestai/client';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import { useLocalize } from '~/hooks';
 

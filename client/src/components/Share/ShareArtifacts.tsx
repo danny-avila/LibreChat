@@ -5,8 +5,8 @@ import {
   ResizablePanel,
   ResizableHandleAlt,
   ResizablePanelGroup,
-} from '@librechat/client';
-import type { TMessage } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TMessage } from 'vestai-data-provider';
 import type { ArtifactsContextValue } from '~/Providers';
 import { ArtifactsProvider, EditorProvider } from '~/Providers';
 import Artifacts from '~/components/Artifacts/Artifacts';

@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { Save } from 'lucide-react';
 import { Portal, Content } from '@radix-ui/react-popover';
-import { Button, CrossIcon, useOnClickOutside } from '@librechat/client';
+import { Button, CrossIcon, useOnClickOutside } from '@vestai/client';
 import type { ReactNode } from 'react';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';

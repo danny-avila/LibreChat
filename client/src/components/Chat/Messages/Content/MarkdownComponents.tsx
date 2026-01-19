@@ -1,7 +1,7 @@
 import React, { memo, useMemo, useRef, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useToastContext } from '@librechat/client';
-import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
+import { useToastContext } from '@vestai/client';
+import { PermissionTypes, Permissions, apiBaseUrl } from 'vestai-data-provider';
 import MermaidErrorBoundary from '~/components/Messages/Content/MermaidErrorBoundary';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import Mermaid from '~/components/Messages/Content/Mermaid';

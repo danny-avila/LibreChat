@@ -4,7 +4,7 @@ import {
   PermissionBits,
   PrincipalType,
   ResourceType,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import {
   AllMethods,
   MCPServerDocument,
@@ -12,7 +12,7 @@ import {
   logger,
   encryptV2,
   decryptV2,
-} from '@librechat/data-schemas';
+} from '@vestai/data-schemas';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import { AccessControlService } from '~/acl/accessControlService';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';

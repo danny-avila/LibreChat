@@ -1,4 +1,4 @@
-const { isEnabled } = require('@librechat/api');
+const { isEnabled } = require('@vestai/api');
 
 /** @returns {TStartupConfig['ldap'] | undefined} */
 const getLdapConfig = () => {

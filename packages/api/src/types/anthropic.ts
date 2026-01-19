@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Dispatcher } from 'undici';
-import { AuthKeys, anthropicSchema, TVertexAISchema } from 'librechat-data-provider';
-import type { AnthropicClientOptions } from '@librechat/agents';
+import { AuthKeys, anthropicSchema, TVertexAISchema } from 'vestai-data-provider';
+import type { AnthropicClientOptions } from '@vestai/agents';
 import type { LLMConfigResult } from './openai';
 import type { GoogleServiceKey } from '../utils/key';
 

@@ -1,4 +1,4 @@
-import type { GraphEdge } from 'librechat-data-provider';
+import type { GraphEdge } from 'vestai-data-provider';
 import { getEdgeKey, getEdgeParticipants, filterOrphanedEdges, createEdgeCollector } from './edges';
 
 describe('edges utilities', () => {

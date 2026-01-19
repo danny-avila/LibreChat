@@ -1,5 +1,5 @@
 {
-  "name": "@librechat/frontend",
+  "name": "@vestai/frontend",
   "version": "v0.8.2-rc3",
   "description": "",
   "type": "module",
@@ -19,15 +19,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/LibreChat.git"
+    "url": "git+https://github.com/Doktransfers/vest-ai.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/LibreChat/issues"
+    "url": "https://github.com/Doktransfers/vest-ai/issues"
   },
-  "homepage": "https://librechat.ai",
+  "homepage": "/",
   "dependencies": {
     "@ariakit/react": "^0.4.15",
     "@ariakit/react-core": "^0.4.17",
@@ -35,7 +35,7 @@
     "@dicebear/collection": "^9.2.2",
     "@dicebear/core": "^9.2.2",
     "@headlessui/react": "^2.1.2",
-    "@librechat/client": "*",
+    "@vestai/client": "*",
     "@marsidev/react-turnstile": "^1.1.0",
     "@mcp-ui/client": "^5.7.0",
     "@radix-ui/react-accordion": "^1.1.2",
@@ -76,7 +76,7 @@
     "input-otp": "^1.4.2",
     "jotai": "^2.12.5",
     "js-cookie": "^3.0.5",
-    "librechat-data-provider": "*",
+    "vestai-data-provider": "*",
     "lodash": "^4.17.21",
     "lucide-react": "^0.394.0",
     "match-sorter": "^8.1.0",

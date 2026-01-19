@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { TConversation } from 'librechat-data-provider';
+import type { TConversation } from 'vestai-data-provider';
 import { useChatContext } from '~/Providers';
 import { useFileHandling } from '~/hooks';
 import FileRow from './FileRow';

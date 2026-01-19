@@ -1,7 +1,7 @@
 import { Dispatcher, ProxyAgent } from 'undici';
-import { logger } from '@librechat/data-schemas';
-import { AnthropicClientOptions } from '@librechat/agents';
-import { anthropicSettings, removeNullishValues, AuthKeys } from 'librechat-data-provider';
+import { logger } from '@vestai/data-schemas';
+import { AnthropicClientOptions } from '@vestai/agents';
+import { anthropicSettings, removeNullishValues, AuthKeys } from 'vestai-data-provider';
 import type {
   AnthropicLLMConfigResult,
   AnthropicConfigOptions,

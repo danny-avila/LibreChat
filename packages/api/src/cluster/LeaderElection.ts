@@ -1,7 +1,7 @@
 import { keyvRedisClient } from '~/cache/redisClients';
 import { cacheConfig as cache } from '~/cache/cacheConfig';
 import { clusterConfig as cluster } from './config';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 
 /**
  * Distributed leader election implementation using Redis for coordination across multiple server instances.

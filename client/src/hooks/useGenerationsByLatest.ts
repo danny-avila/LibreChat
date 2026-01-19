@@ -1,4 +1,4 @@
-import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint } from 'vestai-data-provider';
 
 type TUseGenerations = {
   error?: boolean;

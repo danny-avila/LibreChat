@@ -2,14 +2,14 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { createMethods } = require('@librechat/data-schemas');
+const { createMethods } = require('@vestai/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   SystemRoles,
   AccessRoleIds,
   ResourceType,
   PrincipalType,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const { createAgent } = require('~/models/Agent');
 const { createFile } = require('~/models');
 
@@ -91,7 +91,7 @@ describe('File Routes - Agent Files Endpoint', () => {
     await mongoose.connect(mongoUri);
 
     // Initialize all models using createModels
-    const { createModels } = require('@librechat/data-schemas');
+    const { createModels } = require('@vestai/data-schemas');
     const models = createModels(mongoose);
 
     // Track which models we're adding

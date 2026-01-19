@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { getBasePath } = require('@librechat/api');
+const { getBasePath } = require('@vestai/api');
 
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
@@ -13,8 +13,8 @@ const mockRegistryInstance = {
   removeServer: jest.fn(),
 };
 
-jest.mock('@librechat/api', () => {
-  const actual = jest.requireActual('@librechat/api');
+jest.mock('@vestai/api', () => {
+  const actual = jest.requireActual('@vestai/api');
   return {
     ...actual,
     MCPOAuthHandler: {
@@ -34,7 +34,7 @@ jest.mock('@librechat/api', () => {
     MCPServersRegistry: {
       getInstance: () => mockRegistryInstance,
     },
-    // Error handling utilities (from @librechat/api mcp/errors)
+    // Error handling utilities (from @vestai/api mcp/errors)
     isMCPDomainNotAllowedError: (error) => error?.code === 'MCP_DOMAIN_NOT_ALLOWED',
     isMCPInspectionFailedError: (error) => error?.code === 'MCP_INSPECTION_FAILED',
     MCPErrorCodes: {
@@ -44,7 +44,7 @@ jest.mock('@librechat/api', () => {
   };
 });
 
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@vestai/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
     info: jest.fn(),
@@ -149,7 +149,7 @@ describe('MCP Routes', () => {
   });
 
   describe('GET /:serverName/oauth/initiate', () => {
-    const { MCPOAuthHandler } = require('@librechat/api');
+    const { MCPOAuthHandler } = require('@vestai/api');
     const { getLogStores } = require('~/cache');
 
     it('should initiate OAuth flow successfully', async () => {
@@ -274,7 +274,7 @@ describe('MCP Routes', () => {
   });
 
   describe('GET /:serverName/oauth/callback', () => {
-    const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+    const { MCPOAuthHandler, MCPTokenStorage } = require('@vestai/api');
     const { getLogStores } = require('~/cache');
 
     it('should redirect to error page when OAuth error is received', async () => {
@@ -362,7 +362,7 @@ describe('MCP Routes', () => {
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
-      const { Constants } = require('librechat-data-provider');
+      const { Constants } = require('vestai-data-provider');
       getCachedTools.mockResolvedValue({
         [`existing-tool${Constants.mcp_delimiter}test-server`]: { type: 'function' },
         [`other-tool${Constants.mcp_delimiter}other-server`]: { type: 'function' },
@@ -796,7 +796,7 @@ describe('MCP Routes', () => {
   });
 
   describe('POST /oauth/cancel/:serverName', () => {
-    const { MCPOAuthHandler } = require('@librechat/api');
+    const { MCPOAuthHandler } = require('@vestai/api');
     const { getLogStores } = require('~/cache');
 
     it('should cancel OAuth flow successfully', async () => {
@@ -1056,7 +1056,7 @@ describe('MCP Routes', () => {
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
       require('~/config').getFlowStateManager.mockReturnValue({});
       require('~/cache').getLogStores.mockReturnValue({});
-      require('@librechat/api').getUserMCPAuthMap.mockResolvedValue({
+      require('@vestai/api').getUserMCPAuthMap.mockResolvedValue({
         'mcp:test-server': {
           API_KEY: 'api-key-value',
         },
@@ -1083,7 +1083,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(require('@librechat/api').getUserMCPAuthMap).toHaveBeenCalledWith({
+      expect(require('@vestai/api').getUserMCPAuthMap).toHaveBeenCalledWith({
         userId: 'test-user-id',
         servers: ['test-server'],
         findPluginAuthsByKeys: require('~/models').findPluginAuthsByKeys,
@@ -1369,7 +1369,7 @@ describe('MCP Routes', () => {
 
   describe('GET /:serverName/oauth/callback - Edge Cases', () => {
     it('should handle OAuth callback without toolFlowId (falsy toolFlowId)', async () => {
-      const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+      const { MCPOAuthHandler, MCPTokenStorage } = require('@vestai/api');
       const mockTokens = {
         access_token: 'edge-access-token',
         refresh_token: 'edge-refresh-token',
@@ -1416,7 +1416,7 @@ describe('MCP Routes', () => {
     it('should handle null cached tools in OAuth callback (triggers || {} fallback)', async () => {
       const { getCachedTools } = require('~/server/services/Config');
       getCachedTools.mockResolvedValue(null);
-      const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+      const { MCPOAuthHandler, MCPTokenStorage } = require('@vestai/api');
       const mockTokens = {
         access_token: 'edge-access-token',
         refresh_token: 'edge-refresh-token',

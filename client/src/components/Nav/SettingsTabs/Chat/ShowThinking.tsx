@@ -1,5 +1,5 @@
 import { useAtom } from 'jotai';
-import { Switch, InfoHoverCard, ESide } from '@librechat/client';
+import { Switch, InfoHoverCard, ESide } from '@vestai/client';
 import { showThinkingAtom } from '~/store/showThinking';
 import { useLocalize } from '~/hooks';
 

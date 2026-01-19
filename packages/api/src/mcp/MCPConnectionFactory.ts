@@ -1,6 +1,6 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { TokenMethods } from '@librechat/data-schemas';
+import type { TokenMethods } from '@vestai/data-schemas';
 import type { MCPOAuthTokens, OAuthMetadata } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';

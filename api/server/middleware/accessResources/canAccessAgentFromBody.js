@@ -1,10 +1,10 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const {
   Constants,
   ResourceType,
   isAgentsEndpoint,
   isEphemeralAgentId,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const { canAccessResource } = require('./canAccessResource');
 const { getAgent } = require('~/models/Agent');
 

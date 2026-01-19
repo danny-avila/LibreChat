@@ -1,7 +1,7 @@
-import { StepTypes } from 'librechat-data-provider';
-import type { Agents } from 'librechat-data-provider';
+import { StepTypes } from 'vestai-data-provider';
+import type { Agents } from 'vestai-data-provider';
 import type { Redis, Cluster } from 'ioredis';
-import { StandardGraph } from '@librechat/agents';
+import { StandardGraph } from '@vestai/agents';
 
 /**
  * Integration tests for RedisJobStore.

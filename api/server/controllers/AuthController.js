@@ -1,8 +1,8 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
-const { logger } = require('@librechat/data-schemas');
-const { isEnabled, findOpenIDUser } = require('@librechat/api');
+const { logger } = require('@vestai/data-schemas');
+const { isEnabled, findOpenIDUser } = require('@vestai/api');
 const {
   requestPasswordReset,
   setOpenIDAuthTokens,

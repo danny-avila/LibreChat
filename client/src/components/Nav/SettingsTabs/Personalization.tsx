@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Switch, useToastContext } from '@librechat/client';
+import { Switch, useToastContext } from '@vestai/client';
 import { useGetUserQuery, useUpdateMemoryPreferencesMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 

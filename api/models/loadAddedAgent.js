@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { getCustomEndpointConfig } = require('@librechat/api');
+const { logger } = require('@vestai/data-schemas');
+const { getCustomEndpointConfig } = require('@vestai/api');
 const {
   Tools,
   Constants,
@@ -7,7 +7,7 @@ const {
   isEphemeralAgentId,
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const { getMCPServerTools } = require('~/server/services/Config');
 
 const { mcp_all, mcp_delimiter } = Constants;
@@ -21,7 +21,7 @@ const ADDED_AGENT_ID = 'added_agent';
  * Get an agent document based on the provided ID.
  * @param {Object} searchParameter - The search parameters to find the agent.
  * @param {string} searchParameter.id - The ID of the agent.
- * @returns {Promise<import('librechat-data-provider').Agent|null>}
+ * @returns {Promise<import('vestai-data-provider').Agent|null>}
  */
 let getAgent;
 
@@ -39,9 +39,9 @@ const setGetAgent = (fn) => {
  *
  * @param {Object} params
  * @param {import('express').Request} params.req
- * @param {import('librechat-data-provider').TConversation} params.conversation - The added conversation
- * @param {import('librechat-data-provider').Agent} [params.primaryAgent] - The primary agent (used to duplicate tools when both are ephemeral)
- * @returns {Promise<import('librechat-data-provider').Agent|null>} The agent config as a plain object, or null if invalid.
+ * @param {import('vestai-data-provider').TConversation} params.conversation - The added conversation
+ * @param {import('vestai-data-provider').Agent} [params.primaryAgent] - The primary agent (used to duplicate tools when both are ephemeral)
+ * @returns {Promise<import('vestai-data-provider').Agent|null>} The agent config as a plain object, or null if invalid.
  */
 const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
   if (!conversation) {

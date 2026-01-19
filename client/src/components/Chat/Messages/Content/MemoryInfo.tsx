@@ -1,4 +1,4 @@
-import type { MemoryArtifact } from 'librechat-data-provider';
+import type { MemoryArtifact } from 'vestai-data-provider';
 import { useMemo } from 'react';
 import { useLocalize } from '~/hooks';
 

@@ -1,5 +1,5 @@
-const { isEnabled } = require('@librechat/api');
-const { ViolationTypes } = require('librechat-data-provider');
+const { isEnabled } = require('@vestai/api');
+const { ViolationTypes } = require('vestai-data-provider');
 const getLogStores = require('./getLogStores');
 const banViolation = require('./banViolation');
 

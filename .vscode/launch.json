@@ -4,7 +4,7 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Launch LibreChat (debug)",
+      "name": "Launch VestAI (debug)",
       "skipFiles": ["<node_internals>/**"],
       "program": "${workspaceFolder}/api/server/index.js",
       "env": {

@@ -1,10 +1,10 @@
 # Pull Request Template
 
 ⚠️ Before Submitting a PR, Please Review:
-- Please ensure that you have thoroughly read and understood the [Contributing Docs](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md) before submitting your Pull Request.
+- Please ensure that you have thoroughly read and understood the [Contributing Docs](https://github.com/Doktransfers/vest-ai/blob/main/.github/CONTRIBUTING.md) before submitting your Pull Request.
 
 ⚠️ Documentation Updates Notice:
-- Kindly note that documentation updates are managed in this repository: [librechat.ai](https://github.com/LibreChat-AI/librechat.ai)
+- Kindly note that documentation updates are managed in this repository: [vest-ai](https://github.com/Doktransfers/vest-ai)
 
 ## Summary
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { TooltipAnchor } from '@librechat/client';
+import { TooltipAnchor } from '@vestai/client';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';

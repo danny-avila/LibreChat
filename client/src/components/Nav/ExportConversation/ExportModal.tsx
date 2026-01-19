@@ -8,8 +8,8 @@ import {
   Checkbox,
   Dropdown,
   OGDialogTemplate,
-} from '@librechat/client';
-import type { TConversation } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TConversation } from 'vestai-data-provider';
 import { useLocalize, useExportConversation } from '~/hooks';
 
 const TYPE_OPTIONS = [

@@ -1,9 +1,9 @@
 const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
-const { logger } = require('@librechat/data-schemas');
-const { FileSources } = require('librechat-data-provider');
-const { logAxiosError, generateShortLivedToken } = require('@librechat/api');
+const { logger } = require('@vestai/data-schemas');
+const { FileSources } = require('vestai-data-provider');
+const { logAxiosError, generateShortLivedToken } = require('@vestai/api');
 
 /**
  * Deletes a file from the vector database. This function takes a file object, constructs the full path, and

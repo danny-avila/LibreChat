@@ -1,4 +1,4 @@
-import { roleDefaults, SystemRoles } from 'librechat-data-provider';
+import { roleDefaults, SystemRoles } from 'vestai-data-provider';
 
 // Factory function that takes mongoose instance and returns the methods
 export function createRoleMethods(mongoose: typeof import('mongoose')) {

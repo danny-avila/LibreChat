@@ -1,5 +1,5 @@
-import { SafeSearchTypes, SearchProviders, ScraperProviders } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
+import { SafeSearchTypes, SearchProviders, ScraperProviders } from 'vestai-data-provider';
+import type { TCustomConfig } from 'vestai-data-provider';
 import { loadWebSearchConfig } from './web';
 
 describe('loadWebSearchConfig', () => {

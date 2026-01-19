@@ -1,6 +1,6 @@
-import { logger } from '@librechat/data-schemas';
-import { AnthropicClientOptions } from '@librechat/agents';
-import { EModelEndpoint, anthropicSettings } from 'librechat-data-provider';
+import { logger } from '@vestai/data-schemas';
+import { AnthropicClientOptions } from '@vestai/agents';
+import { EModelEndpoint, anthropicSettings } from 'vestai-data-provider';
 import { matchModelName } from '~/utils/tokens';
 
 /**

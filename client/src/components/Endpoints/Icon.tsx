@@ -1,6 +1,6 @@
 import React, { memo, useState } from 'react';
-import { UserIcon, useAvatar } from '@librechat/client';
-import type { TUser } from 'librechat-data-provider';
+import { UserIcon, useAvatar } from '@vestai/client';
+import type { TUser } from 'vestai-data-provider';
 import type { IconProps } from '~/common';
 import MessageEndpointIcon from './MessageEndpointIcon';
 import { useAuthContext } from '~/hooks/AuthContext';

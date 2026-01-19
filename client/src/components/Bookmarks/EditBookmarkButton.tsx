@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { TooltipAnchor, OGDialogTrigger, EditIcon, Button } from '@librechat/client';
-import type { TConversationTag } from 'librechat-data-provider';
+import { TooltipAnchor, OGDialogTrigger, EditIcon, Button } from '@vestai/client';
+import type { TConversationTag } from 'vestai-data-provider';
 import type { FC } from 'react';
 import BookmarkEditDialog from './BookmarkEditDialog';
 import { useLocalize } from '~/hooks';

@@ -1,6 +1,6 @@
-# LibreChat Data Schemas Package
+# VestAI Data Schemas Package
 
-This package provides the database schemas, models, types, and methods for LibreChat using Mongoose ODM.
+This package provides the database schemas, models, types, and methods for VestAI using Mongoose ODM.
 
 ## 📁 Package Structure
 

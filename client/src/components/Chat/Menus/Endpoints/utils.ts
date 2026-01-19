@@ -1,12 +1,12 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'vestai-data-provider';
 import type {
   TModelSpec,
   TAgentsMap,
   TAssistantsMap,
   TEndpointsConfig,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { useLocalize } from '~/hooks';
 import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
 import { Endpoint, SelectedValues } from '~/common';

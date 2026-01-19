@@ -1,7 +1,7 @@
-import { Providers } from '@librechat/agents';
-import { EModelEndpoint } from 'librechat-data-provider';
-import type { TEndpoint } from 'librechat-data-provider';
-import type { AppConfig } from '@librechat/data-schemas';
+import { Providers } from '@vestai/agents';
+import { EModelEndpoint } from 'vestai-data-provider';
+import type { TEndpoint } from 'vestai-data-provider';
+import type { AppConfig } from '@vestai/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase } from '~/types';
 import { initializeAnthropic } from './anthropic/initialize';
 import { initializeBedrock } from './bedrock/initialize';

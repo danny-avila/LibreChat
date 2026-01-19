@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import { getEndpointField, isAgentsEndpoint } from 'librechat-data-provider';
-import type { EModelEndpoint } from 'librechat-data-provider';
+import { getEndpointField, isAgentsEndpoint } from 'vestai-data-provider';
+import type { EModelEndpoint } from 'vestai-data-provider';
 import { useGetEndpointsQuery, useGetAgentByIdQuery } from '~/data-provider';
 import { useAgentsMapContext } from './AgentsMapContext';
 import { useChatContext } from './ChatContext';

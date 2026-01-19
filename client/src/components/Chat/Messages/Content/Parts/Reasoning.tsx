@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, useCallback, useRef } from 'react';
 import { useAtom } from 'jotai';
 import type { MouseEvent, FocusEvent } from 'react';
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes } from 'vestai-data-provider';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar } from './Thinking';
 import { showThinkingAtom } from '~/store/showThinking';
 import { useMessageContext } from '~/Providers';

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { defaultAssistantsVersion } from 'librechat-data-provider';
-import type { Action, TEndpointsConfig, AssistantsEndpoint } from 'librechat-data-provider';
+import { defaultAssistantsVersion } from 'vestai-data-provider';
+import type { Action, TEndpointsConfig, AssistantsEndpoint } from 'vestai-data-provider';
 import type { ActionsEndpoint } from '~/common';
 import {
   useGetActionsQuery,

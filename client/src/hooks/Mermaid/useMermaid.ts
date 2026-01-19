@@ -2,7 +2,7 @@ import { useContext, useMemo, useState } from 'react';
 import DOMPurify from 'dompurify';
 import useSWR from 'swr';
 import { Md5 } from 'ts-md5';
-import { ThemeContext, isDark } from '@librechat/client';
+import { ThemeContext, isDark } from '@vestai/client';
 import type { MermaidConfig } from 'mermaid';
 
 // Constants

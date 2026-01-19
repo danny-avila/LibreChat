@@ -2,7 +2,7 @@ import { useState, useId, useMemo } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { Column } from '@tanstack/react-table';
 import { ListFilter, FilterX } from 'lucide-react';
-import { DropdownPopup, TooltipAnchor } from '@librechat/client';
+import { DropdownPopup, TooltipAnchor } from '@vestai/client';
 import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon } from '@radix-ui/react-icons';
 import type { MenuItemProps } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';

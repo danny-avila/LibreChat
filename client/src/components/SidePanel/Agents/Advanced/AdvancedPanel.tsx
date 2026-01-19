@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { ChevronLeft } from 'lucide-react';
-import { AgentCapabilities } from 'librechat-data-provider';
+import { AgentCapabilities } from 'vestai-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import { useAgentPanelContext } from '~/Providers';

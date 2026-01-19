@@ -13,7 +13,7 @@ services:
       - "5433:5432"
 
   rag_api:
-    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+    image: ghcr.io/doktransfers/vestai-rag-api-dev:latest
     environment:
       - DB_HOST=vectordb
       - DB_PORT=5432

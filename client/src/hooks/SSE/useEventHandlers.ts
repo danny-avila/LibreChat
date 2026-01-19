@@ -12,13 +12,13 @@ import {
   tMessageSchema,
   tConvoUpdateSchema,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type {
   TMessage,
   TConversation,
   EventSubmission,
   TStartupConfig,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { SetterOrUpdater, Resetter } from 'recoil';

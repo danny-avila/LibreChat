@@ -1,11 +1,11 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
-import { TextareaAutosize } from '@librechat/client';
-import { ContentTypes } from 'librechat-data-provider';
+import { TextareaAutosize } from '@vestai/client';
+import { ContentTypes } from 'vestai-data-provider';
 import { Lightbulb, MessageSquare } from 'lucide-react';
-import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
-import type { Agents } from 'librechat-data-provider';
+import { useUpdateMessageContentMutation } from 'vestai-data-provider/react-query';
+import type { Agents } from 'vestai-data-provider';
 import type { TEditProps } from '~/common';
 import { useMessagesOperations, useMessagesConversation } from '~/Providers';
 import Container from '~/components/Chat/Messages/Content/Container';

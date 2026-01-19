@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ShieldEllipsis } from 'lucide-react';
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import { OGDialog, OGDialogTemplate, Button, useToastContext } from '@librechat/client';
+import { Permissions, PermissionTypes } from 'vestai-data-provider';
+import { OGDialog, OGDialogTemplate, Button, useToastContext } from '@vestai/client';
 import { AdminSettingsDialog } from '~/components/ui';
 import { useUpdatePromptPermissionsMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';

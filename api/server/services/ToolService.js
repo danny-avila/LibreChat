@@ -1,12 +1,12 @@
-const { sleep } = require('@librechat/agents');
-const { logger } = require('@librechat/data-schemas');
+const { sleep } = require('@vestai/agents');
+const { logger } = require('@vestai/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
   getToolkitKey,
   hasCustomUserVars,
   getUserMCPAuthMap,
   isActionDomainAllowed,
-} = require('@librechat/api');
+} = require('@vestai/api');
 const {
   Tools,
   ErrorTypes,
@@ -21,7 +21,7 @@ const {
   validateActionDomain,
   defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const {
   createActionTool,
   decryptMetadata,

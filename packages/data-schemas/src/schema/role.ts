@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, Permissions } from 'vestai-data-provider';
 import type { IRole } from '~/types';
 
 /**

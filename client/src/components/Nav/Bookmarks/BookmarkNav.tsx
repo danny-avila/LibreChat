@@ -1,7 +1,7 @@
 import { useState, useId, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { CrossCircledIcon } from '@radix-ui/react-icons';
-import { DropdownPopup, TooltipAnchor } from '@librechat/client';
+import { DropdownPopup, TooltipAnchor } from '@vestai/client';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import type * as t from '~/common';
 import type { FC } from 'react';

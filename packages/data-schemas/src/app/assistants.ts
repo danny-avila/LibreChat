@@ -4,8 +4,8 @@ import {
   EModelEndpoint,
   assistantEndpointSchema,
   defaultAssistantsVersion,
-} from 'librechat-data-provider';
-import type { TCustomConfig, TAssistantEndpoint } from 'librechat-data-provider';
+} from 'vestai-data-provider';
+import type { TCustomConfig, TAssistantEndpoint } from 'vestai-data-provider';
 
 /**
  * Sets up the minimum, default Assistants configuration if Azure OpenAI Assistants option is enabled.
@@ -22,7 +22,7 @@ export function azureAssistantsDefaults(): {
 }
 
 /**
- * Sets up the Assistants configuration from the config (`librechat.yaml`) file.
+ * Sets up the Assistants configuration from the config (`vestai.yaml`) file.
  * @param config - The loaded custom configuration.
  * @param assistantsEndpoint - The Assistants endpoint name.
  * - The previously loaded assistants configuration from Azure OpenAI Assistants option.

@@ -1,8 +1,8 @@
 // client/src/hooks/Audio/useTTSBrowser.ts
 import { useRef, useEffect, useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { parseTextParts } from 'librechat-data-provider';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import { parseTextParts } from 'vestai-data-provider';
+import type { TMessageContentParts } from 'vestai-data-provider';
 import useTextToSpeechBrowser from '~/hooks/Input/useTextToSpeechBrowser';
 import usePauseGlobalAudio from '~/hooks/Audio/usePauseGlobalAudio';
 import useAudioRef from '~/hooks/Audio/useAudioRef';

@@ -1,5 +1,5 @@
 import { startTransition } from 'react';
-import { TooltipAnchor, Button, Sidebar } from '@librechat/client';
+import { TooltipAnchor, Button, Sidebar } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

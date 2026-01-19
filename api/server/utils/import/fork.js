@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint, Constants, ForkOptions } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { EModelEndpoint, Constants, ForkOptions } = require('vestai-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getConvo } = require('~/models/Conversation');

@@ -1,11 +1,11 @@
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const {
   logAgentMigrationWarning,
   logPromptMigrationWarning,
   checkAgentPermissionsMigration,
   checkPromptPermissionsMigration,
-} = require('@librechat/api');
+} = require('@vestai/api');
 const { getProjectByName } = require('~/models/Project');
 const { Agent, PromptGroup } = require('~/db/models');
 const { findRoleByIdentifier } = require('~/models');

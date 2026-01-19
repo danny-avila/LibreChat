@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { JsonSchemaType, ConvertJsonSchemaToZodOptions } from '@librechat/data-schemas';
+import type { JsonSchemaType, ConvertJsonSchemaToZodOptions } from '@vestai/data-schemas';
 
 function isEmptyObjectSchema(jsonSchema?: JsonSchemaType): boolean {
   return (

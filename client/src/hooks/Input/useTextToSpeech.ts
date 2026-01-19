@@ -1,7 +1,7 @@
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { useRef, useMemo, useEffect, useState } from 'react';
-import { parseTextParts } from 'librechat-data-provider';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import { parseTextParts } from 'vestai-data-provider';
+import type { TMessageContentParts } from 'vestai-data-provider';
 import type { Option } from '~/common';
 import useTextToSpeechExternal from '~/hooks/Input/useTextToSpeechExternal';
 import useTextToSpeechBrowser from '~/hooks/Input/useTextToSpeechBrowser';

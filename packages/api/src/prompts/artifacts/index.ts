@@ -1,5 +1,5 @@
 import dedent from 'dedent';
-import { EModelEndpoint, ArtifactModes } from 'librechat-data-provider';
+import { EModelEndpoint, ArtifactModes } from 'vestai-data-provider';
 import { generateShadcnPrompt } from './generate';
 import { components } from './components';
 

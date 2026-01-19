@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
-const { isEnabled } = require('@librechat/api');
-const { getTransactionSupport, logger } = require('@librechat/data-schemas');
-const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
+const { isEnabled } = require('@vestai/api');
+const { getTransactionSupport, logger } = require('@vestai/data-schemas');
+const { ResourceType, PrincipalType, PrincipalModel } = require('vestai-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
   getUserOwnedEntraGroups,
@@ -42,7 +42,7 @@ const validateResourceType = (resourceType) => {
 };
 
 /**
- * @import { TPrincipal } from 'librechat-data-provider'
+ * @import { TPrincipal } from 'vestai-data-provider'
  */
 /**
  * Grant a permission to a principal for a resource using a role

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { Button, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
-import type { ConversationTagsResponse, TConversationTag } from 'librechat-data-provider';
+import { Button, FilterInput, OGDialogTrigger, TooltipAnchor } from '@vestai/client';
+import type { ConversationTagsResponse, TConversationTag } from 'vestai-data-provider';
 import { BookmarkContext, useBookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import BookmarkList from './BookmarkList';

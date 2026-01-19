@@ -1,8 +1,8 @@
 import { useMemo, useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
-import { Sidebar } from '@librechat/client';
+import { Sidebar } from '@vestai/client';
 import { useLocation } from 'react-router-dom';
-import { SystemRoles } from 'librechat-data-provider';
+import { SystemRoles } from 'vestai-data-provider';
 import { ArrowLeft, MessageSquareQuote } from 'lucide-react';
 import {
   Breadcrumb,
@@ -10,7 +10,7 @@ import {
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbSeparator,
-} from '@librechat/client';
+} from '@vestai/client';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
 import AdvancedSwitch from '~/components/Prompts/AdvancedSwitch';
 import AdminSettings from '~/components/Prompts/AdminSettings';

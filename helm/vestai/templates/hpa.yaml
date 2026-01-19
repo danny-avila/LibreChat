@@ -1,15 +1,15 @@
 {{- if .Values.autoscaling.enabled }}
-apiVersion: {{ include "librechat.hpa.apiVersion" $ }}
+apiVersion: {{ include "vestai.hpa.apiVersion" $ }}
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "librechat.fullname" $ }}
+  name: {{ include "vestai.fullname" $ }}
   labels:
-    {{- include "librechat.labels" . | nindent 4 }}
+    {{- include "vestai.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "librechat.fullname" $ }}
+    name: {{ include "vestai.fullname" $ }}
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:

@@ -1,9 +1,9 @@
-const { isUserProvided, fetchModels } = require('@librechat/api');
+const { isUserProvided, fetchModels } = require('@vestai/api');
 const {
   EModelEndpoint,
   extractEnvVariable,
   normalizeEndpointName,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const { getAppConfig } = require('./app');
 
 /**

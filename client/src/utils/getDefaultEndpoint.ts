@@ -3,7 +3,7 @@ import type {
   TConversation,
   EModelEndpoint,
   TEndpointsConfig,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import { getLocalStorageItems } from './localStorage';
 import { mapEndpoints } from './endpoints';
 

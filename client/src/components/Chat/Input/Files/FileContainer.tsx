@@ -1,4 +1,4 @@
-import type { TFile } from 'librechat-data-provider';
+import type { TFile } from 'vestai-data-provider';
 import type { ExtendedFile } from '~/common';
 import { getFileType, cn } from '~/utils';
 import FilePreview from './FilePreview';

@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
+import { PrincipalType, PrincipalModel } from 'vestai-data-provider';
 import type { Model, DeleteResult, ClientSession } from 'mongoose';
 import type { IAclEntry } from '~/types';
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { RefreshCw, Trash2 } from 'lucide-react';
-import { Button, Spinner } from '@librechat/client';
+import { Button, Spinner } from '@vestai/client';
 import { useLocalize, useMCPServerManager, useMCPConnectionStatus } from '~/hooks';
 
 interface ServerInitializationSectionProps {

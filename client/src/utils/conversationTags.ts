@@ -2,7 +2,7 @@ import {
   TConversationTagRequest,
   TConversationTagResponse,
   TConversationTagsResponse,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 
 export const updateConversationTag = (
   queryCache: TConversationTagsResponse,

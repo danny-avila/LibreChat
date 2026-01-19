@@ -5,7 +5,7 @@ import {
   AudioPaths,
   VideoPaths,
   SheetPaths,
-} from '@librechat/client';
+} from '@vestai/client';
 import {
   megabyte,
   QueryKeys,
@@ -13,8 +13,8 @@ import {
   excelMimeTypes,
   EToolResources,
   fileConfig as defaultFileConfig,
-} from 'librechat-data-provider';
-import type { TFile, EndpointFileConfig, FileConfig } from 'librechat-data-provider';
+} from 'vestai-data-provider';
+import type { TFile, EndpointFileConfig, FileConfig } from 'vestai-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ExtendedFile } from '~/common';
 

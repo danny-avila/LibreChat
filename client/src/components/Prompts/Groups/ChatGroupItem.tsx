@@ -1,6 +1,6 @@
 import { useState, useMemo, memo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { PermissionBits, ResourceType } from 'librechat-data-provider';
+import { PermissionBits, ResourceType } from 'vestai-data-provider';
 import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch } from 'lucide-react';
 import {
   DropdownMenu,
@@ -8,8 +8,8 @@ import {
   DropdownMenuGroup,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from '@librechat/client';
-import type { TPromptGroup } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TPromptGroup } from 'vestai-data-provider';
 import { useLocalize, useSubmitMessage, useResourcePermissions } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import PreviewPrompt from '~/components/Prompts/PreviewPrompt';

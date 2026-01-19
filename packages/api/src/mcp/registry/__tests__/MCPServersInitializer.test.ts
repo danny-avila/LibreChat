@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import * as t from '~/mcp/types';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
@@ -21,7 +21,7 @@ jest.mock('../../registry/MCPServerInspector');
 jest.mock('~/cluster', () => ({
   isLeader: jest.fn().mockResolvedValue(true),
 }));
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@vestai/data-schemas', () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),

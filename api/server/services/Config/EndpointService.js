@@ -1,5 +1,5 @@
-const { isUserProvided, isEnabled } = require('@librechat/api');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { isUserProvided, isEnabled } = require('@vestai/api');
+const { EModelEndpoint } = require('vestai-data-provider');
 const { generateConfig } = require('~/server/utils/handleText');
 
 const {

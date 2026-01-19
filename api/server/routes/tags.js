@@ -1,7 +1,7 @@
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
-const { generateCheckAccess } = require('@librechat/api');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { generateCheckAccess } = require('@vestai/api');
+const { PermissionTypes, Permissions } = require('vestai-data-provider');
 const {
   updateTagsForConversation,
   updateConversationTag,

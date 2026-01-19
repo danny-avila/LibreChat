@@ -1,7 +1,7 @@
 import React, { forwardRef } from 'react';
 import { useWatch } from 'react-hook-form';
 import type { Control } from 'react-hook-form';
-import { SendIcon, TooltipAnchor } from '@librechat/client';
+import { SendIcon, TooltipAnchor } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

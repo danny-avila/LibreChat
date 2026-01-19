@@ -1,7 +1,7 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const mongoose = require('mongoose');
-const { User } = require('@librechat/data-schemas').createModels(mongoose);
+const { User } = require('@vestai/data-schemas').createModels(mongoose);
 const connect = require('./connect');
 
 const listUsers = async () => {

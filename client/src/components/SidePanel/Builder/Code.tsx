@@ -1,4 +1,4 @@
-import { Capabilities } from 'librechat-data-provider';
+import { Capabilities } from 'vestai-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import {
   Checkbox,
@@ -7,7 +7,7 @@ import {
   HoverCardPortal,
   HoverCardTrigger,
   CircleHelpIcon,
-} from '@librechat/client';
+} from '@vestai/client';
 import type { AssistantForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';

@@ -1,6 +1,6 @@
 import _ from 'lodash';
 import { MeiliSearch } from 'meilisearch';
-import { parseTextParts } from 'librechat-data-provider';
+import { parseTextParts } from 'vestai-data-provider';
 import type { SearchResponse, SearchParams, Index } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,

@@ -62,7 +62,7 @@ jobs:
           commit-message: "🌍 i18n: Update translation.json with latest translations"
           base: main
           branch: i18n/locize-translation-update
-          reviewers: danny-avila
+          reviewers: Doktransfers
           title: "🌍 i18n: Update translation.json with latest translations"
           body: |
             **Description**:

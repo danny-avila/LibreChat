@@ -1,4 +1,4 @@
-const { Constants } = require('librechat-data-provider');
+const { Constants } = require('vestai-data-provider');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
 const { getImporter } = require('./importers');
 
@@ -22,9 +22,9 @@ describe('Import Timestamp Ordering', () => {
     mockedCacheGet.mockResolvedValue(null);
   });
 
-  describe('LibreChat Import - Timestamp Issues', () => {
+  describe('VestAI Import - Timestamp Issues', () => {
     test('should maintain proper timestamp order between parent and child messages', async () => {
-      // Create a LibreChat export with out-of-order timestamps
+      // Create a VestAI export with out-of-order timestamps
       const jsonData = {
         conversationId: 'test-convo-123',
         title: 'Test Conversation',
@@ -169,7 +169,7 @@ describe('Import Timestamp Ordering', () => {
     });
 
     test('recursive format should NOW have timestamp protection', async () => {
-      // Create a recursive LibreChat export with out-of-order timestamps
+      // Create a recursive VestAI export with out-of-order timestamps
       const jsonData = {
         conversationId: 'recursive-test-123',
         title: 'Recursive Test',

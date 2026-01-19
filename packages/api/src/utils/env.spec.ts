@@ -1,7 +1,7 @@
-import { TokenExchangeMethodEnum } from 'librechat-data-provider';
+import { TokenExchangeMethodEnum } from 'vestai-data-provider';
 import { resolveHeaders, resolveNestedObject, processMCPEnv } from './env';
-import type { MCPOptions } from 'librechat-data-provider';
-import type { IUser } from '@librechat/data-schemas';
+import type { MCPOptions } from 'vestai-data-provider';
+import type { IUser } from '@vestai/data-schemas';
 import { Types } from 'mongoose';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
@@ -79,7 +79,7 @@ describe('resolveHeaders', () => {
   it('should process user ID placeholder when user has id', () => {
     const user = { id: 'test-user-123' };
     const headers = {
-      'User-Id': '{{LIBRECHAT_USER_ID}}',
+      'User-Id': '{{VESTAI_USER_ID}}',
       'Content-Type': 'application/json',
     };
 
@@ -93,14 +93,14 @@ describe('resolveHeaders', () => {
 
   it('should not process user ID placeholder when user is undefined', () => {
     const headers = {
-      'User-Id': '{{LIBRECHAT_USER_ID}}',
+      'User-Id': '{{VESTAI_USER_ID}}',
       'Content-Type': 'application/json',
     };
 
     const result = resolveHeaders({ headers });
 
     expect(result).toEqual({
-      'User-Id': '{{LIBRECHAT_USER_ID}}',
+      'User-Id': '{{VESTAI_USER_ID}}',
       'Content-Type': 'application/json',
     });
   });
@@ -108,14 +108,14 @@ describe('resolveHeaders', () => {
   it('should not process user ID placeholder when user has no id', () => {
     const user = { id: '' };
     const headers = {
-      'User-Id': '{{LIBRECHAT_USER_ID}}',
+      'User-Id': '{{VESTAI_USER_ID}}',
       'Content-Type': 'application/json',
     };
 
     const result = resolveHeaders({ headers, user });
 
     expect(result).toEqual({
-      'User-Id': '{{LIBRECHAT_USER_ID}}',
+      'User-Id': '{{VESTAI_USER_ID}}',
       'Content-Type': 'application/json',
     });
   });
@@ -130,11 +130,11 @@ describe('resolveHeaders', () => {
     });
 
     const headers = {
-      'User-Email': '{{LIBRECHAT_USER_EMAIL}}',
-      'User-Name': '{{LIBRECHAT_USER_NAME}}',
-      'User-Username': '{{LIBRECHAT_USER_USERNAME}}',
-      'User-Role': '{{LIBRECHAT_USER_ROLE}}',
-      'User-Id': '{{LIBRECHAT_USER_ID}}',
+      'User-Email': '{{VESTAI_USER_EMAIL}}',
+      'User-Name': '{{VESTAI_USER_NAME}}',
+      'User-Username': '{{VESTAI_USER_USERNAME}}',
+      'User-Role': '{{VESTAI_USER_ROLE}}',
+      'User-Id': '{{VESTAI_USER_ID}}',
       'Content-Type': 'application/json',
     };
 
@@ -158,9 +158,9 @@ describe('resolveHeaders', () => {
     });
 
     const headers = {
-      'User-Email': '{{LIBRECHAT_USER_EMAIL}}',
-      'User-Username': '{{LIBRECHAT_USER_USERNAME}}',
-      'Non-Existent': '{{LIBRECHAT_USER_NONEXISTENT}}',
+      'User-Email': '{{VESTAI_USER_EMAIL}}',
+      'User-Username': '{{VESTAI_USER_USERNAME}}',
+      'Non-Existent': '{{VESTAI_USER_NONEXISTENT}}',
     };
 
     const result = resolveHeaders({ headers, user });
@@ -168,7 +168,7 @@ describe('resolveHeaders', () => {
     expect(result).toEqual({
       'User-Email': 'test@example.com',
       'User-Username': '',
-      'Non-Existent': '{{LIBRECHAT_USER_NONEXISTENT}}',
+      'Non-Existent': '{{VESTAI_USER_NONEXISTENT}}',
     });
   });
 
@@ -183,7 +183,7 @@ describe('resolveHeaders', () => {
       Authorization: 'Bearer {{CUSTOM_TOKEN}}',
       'X-Region': '{{REGION}}',
       'X-System-Key': '${TEST_API_KEY}',
-      'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+      'X-User-Id': '{{VESTAI_USER_ID}}',
     };
 
     const result = resolveHeaders({ headers, user, customUserVars });
@@ -202,11 +202,11 @@ describe('resolveHeaders', () => {
       email: 'user-email@example.com',
     });
     const customUserVars = {
-      LIBRECHAT_USER_EMAIL: 'custom-email@example.com',
+      VESTAI_USER_EMAIL: 'custom-email@example.com',
     };
 
     const headers = {
-      'Test-Email': '{{LIBRECHAT_USER_EMAIL}}',
+      'Test-Email': '{{VESTAI_USER_EMAIL}}',
     };
 
     const result = resolveHeaders({ headers, user, customUserVars });
@@ -224,8 +224,8 @@ describe('resolveHeaders', () => {
     });
 
     const headers = {
-      'User-Role': '{{LIBRECHAT_USER_ROLE}}',
-      'User-Id': '{{LIBRECHAT_USER_ID}}',
+      'User-Role': '{{VESTAI_USER_ROLE}}',
+      'User-Id': '{{VESTAI_USER_ID}}',
     };
 
     const result = resolveHeaders({ headers, user });
@@ -243,9 +243,9 @@ describe('resolveHeaders', () => {
     });
 
     const headers = {
-      'Primary-Email': '{{LIBRECHAT_USER_EMAIL}}',
-      'Secondary-Email': '{{LIBRECHAT_USER_EMAIL}}',
-      'Backup-Email': '{{LIBRECHAT_USER_EMAIL}}',
+      'Primary-Email': '{{VESTAI_USER_EMAIL}}',
+      'Secondary-Email': '{{VESTAI_USER_EMAIL}}',
+      'Backup-Email': '{{VESTAI_USER_EMAIL}}',
     };
 
     const result = resolveHeaders({ headers, user });
@@ -268,9 +268,9 @@ describe('resolveHeaders', () => {
 
     const headers = {
       Authorization: 'Bearer {{CUSTOM_TOKEN}}',
-      'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+      'X-User-Id': '{{VESTAI_USER_ID}}',
       'X-System-Key': '${TEST_API_KEY}',
-      'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+      'X-User-Email': '{{VESTAI_USER_EMAIL}}',
       'Content-Type': 'application/json',
     };
 
@@ -288,7 +288,7 @@ describe('resolveHeaders', () => {
   it('should not modify the original headers object', () => {
     const originalHeaders = {
       Authorization: '${TEST_API_KEY}',
-      'User-Id': '{{LIBRECHAT_USER_ID}}',
+      'User-Id': '{{VESTAI_USER_ID}}',
     };
     const user = { id: 'user-123' };
 
@@ -301,7 +301,7 @@ describe('resolveHeaders', () => {
 
     expect(originalHeaders).toEqual({
       Authorization: '${TEST_API_KEY}',
-      'User-Id': '{{LIBRECHAT_USER_ID}}',
+      'User-Id': '{{VESTAI_USER_ID}}',
     });
   });
 
@@ -350,23 +350,23 @@ describe('resolveHeaders', () => {
     };
 
     const headers = {
-      'X-User-ID': '{{LIBRECHAT_USER_ID}}',
-      'X-User-Name': '{{LIBRECHAT_USER_NAME}}',
-      'X-User-Username': '{{LIBRECHAT_USER_USERNAME}}',
-      'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
-      'X-User-Provider': '{{LIBRECHAT_USER_PROVIDER}}',
-      'X-User-Role': '{{LIBRECHAT_USER_ROLE}}',
-      'X-User-GoogleId': '{{LIBRECHAT_USER_GOOGLEID}}',
-      'X-User-FacebookId': '{{LIBRECHAT_USER_FACEBOOKID}}',
-      'X-User-OpenIdId': '{{LIBRECHAT_USER_OPENIDID}}',
-      'X-User-SamlId': '{{LIBRECHAT_USER_SAMLID}}',
-      'X-User-LdapId': '{{LIBRECHAT_USER_LDAPID}}',
-      'X-User-GithubId': '{{LIBRECHAT_USER_GITHUBID}}',
-      'X-User-DiscordId': '{{LIBRECHAT_USER_DISCORDID}}',
-      'X-User-AppleId': '{{LIBRECHAT_USER_APPLEID}}',
-      'X-User-EmailVerified': '{{LIBRECHAT_USER_EMAILVERIFIED}}',
-      'X-User-TwoFactorEnabled': '{{LIBRECHAT_USER_TWOFACTORENABLED}}',
-      'X-User-TermsAccepted': '{{LIBRECHAT_USER_TERMSACCEPTED}}',
+      'X-User-ID': '{{VESTAI_USER_ID}}',
+      'X-User-Name': '{{VESTAI_USER_NAME}}',
+      'X-User-Username': '{{VESTAI_USER_USERNAME}}',
+      'X-User-Email': '{{VESTAI_USER_EMAIL}}',
+      'X-User-Provider': '{{VESTAI_USER_PROVIDER}}',
+      'X-User-Role': '{{VESTAI_USER_ROLE}}',
+      'X-User-GoogleId': '{{VESTAI_USER_GOOGLEID}}',
+      'X-User-FacebookId': '{{VESTAI_USER_FACEBOOKID}}',
+      'X-User-OpenIdId': '{{VESTAI_USER_OPENIDID}}',
+      'X-User-SamlId': '{{VESTAI_USER_SAMLID}}',
+      'X-User-LdapId': '{{VESTAI_USER_LDAPID}}',
+      'X-User-GithubId': '{{VESTAI_USER_GITHUBID}}',
+      'X-User-DiscordId': '{{VESTAI_USER_DISCORDID}}',
+      'X-User-AppleId': '{{VESTAI_USER_APPLEID}}',
+      'X-User-EmailVerified': '{{VESTAI_USER_EMAILVERIFIED}}',
+      'X-User-TwoFactorEnabled': '{{VESTAI_USER_TWOFACTORENABLED}}',
+      'X-User-TermsAccepted': '{{VESTAI_USER_TERMSACCEPTED}}',
     };
 
     const result = resolveHeaders({ headers, user });
@@ -393,7 +393,7 @@ describe('resolveHeaders', () => {
   it('should handle multiple placeholders in one value', () => {
     const user = { id: 'abc', email: 'me@example.com' };
     const headers = {
-      'X-Multi': 'User: {{LIBRECHAT_USER_ID}}, Env: ${TEST_API_KEY}, Custom: {{MY_CUSTOM}}',
+      'X-Multi': 'User: {{VESTAI_USER_ID}}, Env: ${TEST_API_KEY}, Custom: {{MY_CUSTOM}}',
     };
     const customVars = { MY_CUSTOM: 'custom-value' };
     const result = resolveHeaders({ headers, user, customUserVars: customVars });
@@ -404,7 +404,7 @@ describe('resolveHeaders', () => {
     const user = { id: 'abc' };
     const headers = {
       'X-Unknown': '{{SOMETHING_NOT_RECOGNIZED}}',
-      'X-Known': '{{LIBRECHAT_USER_ID}}',
+      'X-Known': '{{VESTAI_USER_ID}}',
     };
     const result = resolveHeaders({ headers, user });
     expect(result['X-Unknown']).toBe('{{SOMETHING_NOT_RECOGNIZED}}');
@@ -419,13 +419,13 @@ describe('resolveHeaders', () => {
       twoFactorEnabled: false,
     };
     const headers = {
-      'X-User': '{{LIBRECHAT_USER_ID}}',
+      'X-User': '{{VESTAI_USER_ID}}',
       'X-Env': '${TEST_API_KEY}',
       'X-Custom': '{{MY_CUSTOM}}',
-      'X-Multi': 'ID: {{LIBRECHAT_USER_ID}}, ENV: ${TEST_API_KEY}, CUSTOM: {{MY_CUSTOM}}',
+      'X-Multi': 'ID: {{VESTAI_USER_ID}}, ENV: ${TEST_API_KEY}, CUSTOM: {{MY_CUSTOM}}',
       'X-Unknown': '{{NOT_A_REAL_PLACEHOLDER}}',
       'X-Empty': '',
-      'X-Boolean': '{{LIBRECHAT_USER_EMAILVERIFIED}}',
+      'X-Boolean': '{{VESTAI_USER_EMAILVERIFIED}}',
     };
     const customVars = { MY_CUSTOM: 'custom-value' };
     const result = resolveHeaders({ headers, user, customUserVars: customVars });
@@ -439,13 +439,13 @@ describe('resolveHeaders', () => {
     expect(result['X-Boolean']).toBe('true');
   });
 
-  it('should process LIBRECHAT_BODY placeholders', () => {
+  it('should process VESTAI_BODY placeholders', () => {
     const body = {
       conversationId: 'conv-123',
       parentMessageId: 'parent-456',
       messageId: 'msg-789',
     };
-    const headers = { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' };
+    const headers = { 'X-Conversation': '{{VESTAI_BODY_CONVERSATIONID}}' };
     const result = resolveHeaders({ headers, body });
     expect(result['X-Conversation']).toBe('conv-123');
   });
@@ -489,7 +489,7 @@ describe('resolveHeaders', () => {
       const user = { id: 'user-123' };
       const headers = {
         'X-Number': 42 as unknown as string,
-        'X-String-With-Placeholder': '{{LIBRECHAT_USER_ID}}',
+        'X-String-With-Placeholder': '{{VESTAI_USER_ID}}',
       };
       const result = resolveHeaders({ headers, user });
       expect(result['X-Number']).toBe('42');
@@ -536,7 +536,7 @@ describe('resolveHeaders', () => {
       };
       const headers = {
         'X-Number': 999 as unknown as string,
-        'X-Conv': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        'X-Conv': '{{VESTAI_BODY_CONVERSATIONID}}',
       };
       const result = resolveHeaders({ headers, body });
       expect(result['X-Number']).toBe('999');
@@ -549,7 +549,7 @@ describe('resolveHeaders', () => {
       const headers = {
         'X-Number': 42 as unknown as string,
         'X-Boolean': true as unknown as string,
-        'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        'X-User-Id': '{{VESTAI_USER_ID}}',
         'X-Custom': '{{CUSTOM_TOKEN}}',
         'X-String': 'normal',
       };
@@ -568,7 +568,7 @@ describe('resolveHeaders', () => {
         messageId: 'msg-789',
       };
       const headers = {
-        'X-Conv-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        'X-Conv-Id': '{{VESTAI_BODY_CONVERSATIONID}}',
         'X-Number': 999 as unknown as string,
       };
       expect(() => resolveHeaders({ headers, body })).not.toThrow();
@@ -619,7 +619,7 @@ describe('resolveNestedObject', () => {
       thinking: {
         type: 'enabled',
         budget_tokens: 2000,
-        user_context: '{{LIBRECHAT_USER_ID}}',
+        user_context: '{{VESTAI_USER_ID}}',
       },
       anthropic_beta: ['output-128k-2025-02-19'],
       api_key: '${TEST_API_KEY}',
@@ -643,9 +643,9 @@ describe('resolveNestedObject', () => {
   it('should process strings in arrays', () => {
     const user = { id: 'user-123' };
     const obj = {
-      headers: ['Authorization: Bearer ${TEST_API_KEY}', 'X-User-Id: {{LIBRECHAT_USER_ID}}'],
+      headers: ['Authorization: Bearer ${TEST_API_KEY}', 'X-User-Id: {{VESTAI_USER_ID}}'],
       values: [1, 2, 3],
-      mixed: ['string', 42, true, '{{LIBRECHAT_USER_ID}}'],
+      mixed: ['string', 42, true, '{{VESTAI_USER_ID}}'],
     };
 
     const result = resolveNestedObject({ obj, user });
@@ -663,7 +663,7 @@ describe('resolveNestedObject', () => {
       level1: {
         level2: {
           level3: {
-            user_id: '{{LIBRECHAT_USER_ID}}',
+            user_id: '{{VESTAI_USER_ID}}',
             settings: {
               api_key: '${TEST_API_KEY}',
               enabled: true,
@@ -728,8 +728,8 @@ describe('resolveNestedObject', () => {
     };
     const obj = {
       metadata: {
-        conversation: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
-        parent: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+        conversation: '{{VESTAI_BODY_CONVERSATIONID}}',
+        parent: '{{VESTAI_BODY_PARENTMESSAGEID}}',
         count: 5,
       },
     };
@@ -776,12 +776,12 @@ describe('resolveNestedObject', () => {
 
     const obj = {
       config: {
-        user_id: '{{LIBRECHAT_USER_ID}}',
+        user_id: '{{VESTAI_USER_ID}}',
         custom: '{{CUSTOM_VAR}}',
         api_key: '${TEST_API_KEY}',
-        conversation: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        conversation: '{{VESTAI_BODY_CONVERSATIONID}}',
         nested: {
-          email: '{{LIBRECHAT_USER_EMAIL}}',
+          email: '{{VESTAI_USER_EMAIL}}',
           port: 8080,
         },
       },
@@ -841,8 +841,8 @@ describe('resolveNestedObject', () => {
     const user = { id: 'user-123' };
     const obj = {
       items: [
-        { name: 'item1', user: '{{LIBRECHAT_USER_ID}}', count: 1 },
-        { name: 'item2', user: '{{LIBRECHAT_USER_ID}}', count: 2 },
+        { name: 'item1', user: '{{VESTAI_USER_ID}}', count: 1 },
+        { name: 'item2', user: '{{VESTAI_USER_ID}}', count: 2 },
       ],
     };
 
@@ -862,14 +862,14 @@ describe('resolveNestedObject', () => {
       thinking: {
         type: 'enabled',
         budget_tokens: 2000,
-        user_id: '{{LIBRECHAT_USER_ID}}',
+        user_id: '{{VESTAI_USER_ID}}',
       },
     };
 
     const result = resolveNestedObject({ obj: originalObj, user });
 
     expect(result.thinking.user_id).toBe('user-123');
-    expect(originalObj.thinking.user_id).toBe('{{LIBRECHAT_USER_ID}}');
+    expect(originalObj.thinking.user_id).toBe('{{VESTAI_USER_ID}}');
   });
 });
 
@@ -985,11 +985,11 @@ describe('processMCPEnv', () => {
       type: 'stdio',
       command: 'mcp-server',
       env: {
-        USER_ID: '{{LIBRECHAT_USER_ID}}',
-        USER_EMAIL: '{{LIBRECHAT_USER_EMAIL}}',
-        USER_ROLE: '{{LIBRECHAT_USER_ROLE}}',
+        USER_ID: '{{VESTAI_USER_ID}}',
+        USER_EMAIL: '{{VESTAI_USER_EMAIL}}',
+        USER_ROLE: '{{VESTAI_USER_ROLE}}',
       },
-      args: ['--user', '{{LIBRECHAT_USER_USERNAME}}', '--id', '{{LIBRECHAT_USER_ID}}'],
+      args: ['--user', '{{VESTAI_USER_USERNAME}}', '--id', '{{VESTAI_USER_ID}}'],
     };
 
     const result = processMCPEnv({ options, user });
@@ -1042,10 +1042,10 @@ describe('processMCPEnv', () => {
 
     const options: MCPOptions = {
       type: 'streamable-http',
-      url: 'https://api.example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      url: 'https://api.example.com/conversations/{{VESTAI_BODY_CONVERSATIONID}}',
       headers: {
-        'X-Parent-Message': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
-        'X-Message-Id': '{{LIBRECHAT_BODY_MESSAGEID}}',
+        'X-Parent-Message': '{{VESTAI_BODY_PARENTMESSAGEID}}',
+        'X-Message-Id': '{{VESTAI_BODY_MESSAGEID}}',
       },
     };
 
@@ -1081,8 +1081,8 @@ describe('processMCPEnv', () => {
         token_url: 'https://auth.example.com/{{TENANT_ID}}/token',
         client_id: '${OAUTH_CLIENT_ID}',
         client_secret: '${OAUTH_CLIENT_SECRET}',
-        scope: 'user:{{LIBRECHAT_USER_ID}} conversation:{{LIBRECHAT_BODY_CONVERSATIONID}}',
-        redirect_uri: 'http://localhost:3000/user/{{LIBRECHAT_USER_EMAIL}}/callback',
+        scope: 'user:{{VESTAI_USER_ID}} conversation:{{VESTAI_BODY_CONVERSATIONID}}',
+        redirect_uri: 'http://localhost:3000/user/{{VESTAI_USER_EMAIL}}/callback',
       },
     };
 
@@ -1186,7 +1186,7 @@ describe('processMCPEnv', () => {
       args: [],
       env: {
         COMPLEX_VALUE:
-          'User: {{LIBRECHAT_USER_ID}}, Custom: {{CUSTOM_VAR}}, Body: {{LIBRECHAT_BODY_CONVERSATIONID}}, Env: ${TEST_API_KEY}',
+          'User: {{VESTAI_USER_ID}}, Custom: {{CUSTOM_VAR}}, Body: {{VESTAI_BODY_CONVERSATIONID}}, Env: ${TEST_API_KEY}',
       },
     };
 
@@ -1318,7 +1318,7 @@ describe('processMCPEnv', () => {
         args: [],
         env: {
           PORT: 8080 as unknown as string,
-          USER_ID: '{{LIBRECHAT_USER_ID}}',
+          USER_ID: '{{VESTAI_USER_ID}}',
           API_KEY: '${TEST_API_KEY}',
         },
       };
@@ -1364,7 +1364,7 @@ describe('processMCPEnv', () => {
         command: 'mcp-server',
         args: [],
         env: {
-          CONV_ID: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+          CONV_ID: '{{VESTAI_BODY_CONVERSATIONID}}',
           PORT: 8080 as unknown as string,
         },
       };

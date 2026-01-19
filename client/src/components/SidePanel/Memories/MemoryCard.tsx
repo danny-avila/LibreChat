@@ -1,4 +1,4 @@
-import type { TUserMemory } from 'librechat-data-provider';
+import type { TUserMemory } from 'vestai-data-provider';
 import MemoryCardActions from './MemoryCardActions';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AuthType } from 'librechat-data-provider';
+import { AuthType } from 'vestai-data-provider';
 import SearchApiKeyDialog from '~/components/SidePanel/Agents/Search/ApiKeyDialog';
 import CodeApiKeyDialog from '~/components/SidePanel/Agents/Code/ApiKeyDialog';
 import { useBadgeRowContext } from '~/Providers';

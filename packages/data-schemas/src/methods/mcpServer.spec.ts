@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { MCPOptions } from 'librechat-data-provider';
+import type { MCPOptions } from 'vestai-data-provider';
 import type * as t from '~/types';
 import { createMCPServerMethods } from './mcpServer';
 import mcpServerSchema from '~/schema/mcpServer';

@@ -1,17 +1,17 @@
 /**
  * MCP Tools Controller
- * Handles MCP-specific tool endpoints, decoupled from regular LibreChat tools
+ * Handles MCP-specific tool endpoints, decoupled from regular VestAI tools
  *
- * @import { MCPServerRegistry } from '@librechat/api'
- * @import { MCPServerDocument } from 'librechat-data-provider'
+ * @import { MCPServerRegistry } from '@vestai/api'
+ * @import { MCPServerDocument } from 'vestai-data-provider'
  */
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const {
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
   MCPErrorCodes,
-} = require('@librechat/api');
-const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
+} = require('@vestai/api');
+const { Constants, MCPServerUserInputSchema } = require('vestai-data-provider');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 

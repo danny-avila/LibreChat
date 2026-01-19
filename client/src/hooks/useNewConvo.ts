@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useGetModelsQuery } from 'vestai-data-provider/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
   Constants,
@@ -14,14 +14,14 @@ import {
   LocalStorageKeys,
   isEphemeralAgentId,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type {
   TPreset,
   TSubmission,
   TModelsConfig,
   TConversation,
   TEndpointsConfig,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { AssistantListItem } from '~/common';
 import {
   updateLastSelectedModel,

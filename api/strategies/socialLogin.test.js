@@ -1,11 +1,11 @@
-const { logger } = require('@librechat/data-schemas');
-const { ErrorTypes } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { ErrorTypes } = require('vestai-data-provider');
 const { createSocialUser, handleExistingUser } = require('./process');
 const socialLogin = require('./socialLogin');
 const { findUser } = require('~/models');
 
-jest.mock('@librechat/data-schemas', () => {
-  const actualModule = jest.requireActual('@librechat/data-schemas');
+jest.mock('@vestai/data-schemas', () => {
+  const actualModule = jest.requireActual('@vestai/data-schemas');
   return {
     ...actualModule,
     logger: {
@@ -21,8 +21,8 @@ jest.mock('./process', () => ({
   handleExistingUser: jest.fn(),
 }));
 
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
+jest.mock('@vestai/api', () => ({
+  ...jest.requireActual('@vestai/api'),
   isEnabled: jest.fn().mockReturnValue(true),
   isEmailDomainAllowed: jest.fn().mockReturnValue(true),
 }));

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 import type { TMessageProps } from '~/common';
 
 import Message from './Message';

@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
-import { PrincipalType } from 'librechat-data-provider';
-import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
+import { PrincipalType } from 'vestai-data-provider';
+import type { TUser, TPrincipalSearchResult } from 'vestai-data-provider';
 import type { Model, ClientSession } from 'mongoose';
 import type { IGroup, IRole, IUser } from '~/types';
 

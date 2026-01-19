@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { Edit3, Check, X } from 'lucide-react';
-import { Button, Badge } from '@librechat/client';
+import { Button, Badge } from '@vestai/client';
 import type { LucideIcon } from 'lucide-react';
 import type { BadgeItem } from '~/common';
 import { useChatBadges, useLocalize } from '~/hooks';

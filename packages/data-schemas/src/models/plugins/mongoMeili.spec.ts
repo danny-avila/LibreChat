@@ -1,6 +1,6 @@
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import { createConversationModel } from '~/models/convo';
 import { createMessageModel } from '~/models/message';
 import { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';

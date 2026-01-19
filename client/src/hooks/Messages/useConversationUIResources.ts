@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Tools } from 'librechat-data-provider';
-import type { TAttachment, UIResource } from 'librechat-data-provider';
+import { Tools } from 'vestai-data-provider';
+import type { TAttachment, UIResource } from 'vestai-data-provider';
 import { useMessagesOperations } from '~/Providers';
 import store from '~/store';
 

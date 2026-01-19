@@ -1,6 +1,6 @@
 const rateLimit = require('express-rate-limit');
-const { limiterCache } = require('@librechat/api');
-const { ViolationTypes } = require('librechat-data-provider');
+const { limiterCache } = require('@vestai/api');
+const { ViolationTypes } = require('vestai-data-provider');
 const logViolation = require('~/cache/logViolation');
 
 const { TOOL_CALL_VIOLATION_SCORE: score } = process.env;

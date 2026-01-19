@@ -6,14 +6,14 @@ import {
   PrincipalType,
   PrincipalModel,
   ResourceType,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 
 // Types for dynamically imported modules
 type ServerConfigsDBType = import('../db/ServerConfigsDB').ServerConfigsDB;
-type CreateMethodsType = typeof import('@librechat/data-schemas').createMethods;
-type CreateModelsType = typeof import('@librechat/data-schemas').createModels;
-type RoleBitsType = typeof import('@librechat/data-schemas').RoleBits;
+type CreateMethodsType = typeof import('@vestai/data-schemas').createMethods;
+type CreateModelsType = typeof import('@vestai/data-schemas').createModels;
+type RoleBitsType = typeof import('@vestai/data-schemas').RoleBits;
 
 let mongoServer: MongoMemoryServer;
 let serverConfigsDB: ServerConfigsDBType;
@@ -46,7 +46,7 @@ beforeAll(async () => {
   jest.resetModules();
 
   // Dynamic imports after setting env vars
-  const dataSchemas = await import('@librechat/data-schemas');
+  const dataSchemas = await import('@vestai/data-schemas');
   createModels = dataSchemas.createModels;
   createMethods = dataSchemas.createMethods;
   RoleBits = dataSchemas.RoleBits;

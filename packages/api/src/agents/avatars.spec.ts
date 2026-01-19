@@ -1,5 +1,5 @@
-import { FileSources } from 'librechat-data-provider';
-import type { Agent, AgentAvatar, AgentModelParameters } from 'librechat-data-provider';
+import { FileSources } from 'vestai-data-provider';
+import type { Agent, AgentAvatar, AgentModelParameters } from 'vestai-data-provider';
 import type { RefreshS3UrlFn, UpdateAgentFn } from './avatars';
 import {
   MAX_AVATAR_REFRESH_AGENTS,

@@ -1,5 +1,5 @@
 const { ToolMessage } = require('@langchain/core/messages');
-const { ContentTypes } = require('librechat-data-provider');
+const { ContentTypes } = require('vestai-data-provider');
 const { HumanMessage, AIMessage, SystemMessage } = require('@langchain/core/messages');
 const { formatAgentMessages } = require('./formatMessages');
 

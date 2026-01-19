@@ -1,6 +1,6 @@
-const { sendEvent } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, RunStatus, isUUID } = require('librechat-data-provider');
+const { sendEvent } = require('@vestai/api');
+const { logger } = require('@vestai/data-schemas');
+const { CacheKeys, RunStatus, isUUID } = require('vestai-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { checkMessageGaps, recordUsage } = require('~/server/services/Threads');
 const { deleteMessages } = require('~/models/Message');

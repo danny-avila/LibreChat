@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 import MultiMessage from './MultiMessage';
 import { useLocalize } from '~/hooks';
 

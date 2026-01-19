@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'vestai-data-provider';
 import { Controller, useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
-import { Checkbox, Label, TextareaAutosize, Input, useToastContext } from '@librechat/client';
-import type { TConversationTag, TConversationTagRequest } from 'librechat-data-provider';
+import { Checkbox, Label, TextareaAutosize, Input, useToastContext } from '@vestai/client';
+import type { TConversationTag, TConversationTagRequest } from 'vestai-data-provider';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';

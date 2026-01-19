@@ -1,13 +1,13 @@
 import { render, getByTestId } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
-import type { TStartupConfig } from 'librechat-data-provider';
+import type { TStartupConfig } from 'vestai-data-provider';
 import * as endpointQueries from '~/data-provider/Endpoints/queries';
 import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as authMutations from '~/data-provider/Auth/mutations';
 import * as authQueries from '~/data-provider/Auth/queries';
 import Login from '../LoginForm';
 
-jest.mock('librechat-data-provider/react-query');
+jest.mock('vestai-data-provider/react-query');
 
 const mockLogin = jest.fn();
 

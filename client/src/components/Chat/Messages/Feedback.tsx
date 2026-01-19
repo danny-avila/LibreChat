@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { TFeedback, TFeedbackTag, getTagsForRating } from 'librechat-data-provider';
+import { TFeedback, TFeedbackTag, getTagsForRating } from 'vestai-data-provider';
 import {
   Button,
   OGDialog,
@@ -8,7 +8,7 @@ import {
   OGDialogTitle,
   ThumbUpIcon,
   ThumbDownIcon,
-} from '@librechat/client';
+} from '@vestai/client';
 import {
   AlertCircle,
   PenTool,

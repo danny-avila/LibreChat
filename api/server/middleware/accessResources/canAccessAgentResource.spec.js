@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
+const { ResourceType, PrincipalType, PrincipalModel } = require('vestai-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { canAccessAgentResource } = require('./canAccessAgentResource');
 const { User, Role, AclEntry } = require('~/db/models');

@@ -1,5 +1,5 @@
-import { Capabilities, EModelEndpoint } from 'librechat-data-provider';
-import type { Assistant, AssistantsEndpoint } from 'librechat-data-provider';
+import { Capabilities, EModelEndpoint } from 'vestai-data-provider';
+import type { Assistant, AssistantsEndpoint } from 'vestai-data-provider';
 import type { Option, ExtendedFile } from './types';
 
 export type ActionsEndpoint = AssistantsEndpoint | EModelEndpoint.agents;

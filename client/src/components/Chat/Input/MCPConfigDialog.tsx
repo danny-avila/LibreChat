@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
-import { Button, Input, Label, OGDialog, OGDialogTemplate } from '@librechat/client';
+import { Button, Input, Label, OGDialog, OGDialogTemplate } from '@vestai/client';
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize } from '~/hooks';
 

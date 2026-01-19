@@ -115,52 +115,52 @@ jobs:
           extract_deps_from_code "packages/client" packages_client_used_code.txt
           extract_deps_from_code "packages/api" packages_api_used_code.txt
 
-      - name: Get @librechat/client dependencies
-        id: get-librechat-client-deps
+      - name: Get @vestai/client dependencies
+        id: get-vestai-client-deps
         run: |
           if [[ -f "packages/client/package.json" ]]; then
-            # Get all dependencies from @librechat/client (dependencies, devDependencies, and peerDependencies)
+            # Get all dependencies from @vestai/client (dependencies, devDependencies, and peerDependencies)
             DEPS=$(jq -r '.dependencies // {} | keys[]' packages/client/package.json 2>/dev/null || echo "")
             DEV_DEPS=$(jq -r '.devDependencies // {} | keys[]' packages/client/package.json 2>/dev/null || echo "")
             PEER_DEPS=$(jq -r '.peerDependencies // {} | keys[]' packages/client/package.json 2>/dev/null || echo "")
             
             # Combine all dependencies
-            echo "$DEPS" > librechat_client_deps.txt
-            echo "$DEV_DEPS" >> librechat_client_deps.txt
-            echo "$PEER_DEPS" >> librechat_client_deps.txt
+            echo "$DEPS" > vestai_client_deps.txt
+            echo "$DEV_DEPS" >> vestai_client_deps.txt
+            echo "$PEER_DEPS" >> vestai_client_deps.txt
             
             # Also include dependencies that are imported in packages/client
-            cat packages_client_used_code.txt >> librechat_client_deps.txt
+            cat packages_client_used_code.txt >> vestai_client_deps.txt
             
             # Remove empty lines and sort
-            grep -v '^$' librechat_client_deps.txt | sort -u > temp_deps.txt
-            mv temp_deps.txt librechat_client_deps.txt
+            grep -v '^$' vestai_client_deps.txt | sort -u > temp_deps.txt
+            mv temp_deps.txt vestai_client_deps.txt
           else
-            touch librechat_client_deps.txt
+            touch vestai_client_deps.txt
           fi
 
-      - name: Get @librechat/api dependencies
-        id: get-librechat-api-deps
+      - name: Get @vestai/api dependencies
+        id: get-vestai-api-deps
         run: |
           if [[ -f "packages/api/package.json" ]]; then
-            # Get all dependencies from @librechat/api (dependencies, devDependencies, and peerDependencies)
+            # Get all dependencies from @vestai/api (dependencies, devDependencies, and peerDependencies)
             DEPS=$(jq -r '.dependencies // {} | keys[]' packages/api/package.json 2>/dev/null || echo "")
             DEV_DEPS=$(jq -r '.devDependencies // {} | keys[]' packages/api/package.json 2>/dev/null || echo "")
             PEER_DEPS=$(jq -r '.peerDependencies // {} | keys[]' packages/api/package.json 2>/dev/null || echo "")
             
             # Combine all dependencies
-            echo "$DEPS" > librechat_api_deps.txt
-            echo "$DEV_DEPS" >> librechat_api_deps.txt
-            echo "$PEER_DEPS" >> librechat_api_deps.txt
+            echo "$DEPS" > vestai_api_deps.txt
+            echo "$DEV_DEPS" >> vestai_api_deps.txt
+            echo "$PEER_DEPS" >> vestai_api_deps.txt
             
             # Also include dependencies that are imported in packages/api
-            cat packages_api_used_code.txt >> librechat_api_deps.txt
+            cat packages_api_used_code.txt >> vestai_api_deps.txt
             
             # Remove empty lines and sort
-            grep -v '^$' librechat_api_deps.txt | sort -u > temp_deps.txt
-            mv temp_deps.txt librechat_api_deps.txt
+            grep -v '^$' vestai_api_deps.txt | sort -u > temp_deps.txt
+            mv temp_deps.txt vestai_api_deps.txt
           else
-            touch librechat_api_deps.txt
+            touch vestai_api_deps.txt
           fi
 
       - name: Extract Workspace Dependencies
@@ -171,14 +171,14 @@ jobs:
             local package_json=$1
             local output_file=$2
             
-            # Get all workspace dependencies (starting with @librechat/)
+            # Get all workspace dependencies (starting with @vestai/)
             if [[ -f "$package_json" ]]; then
-              local workspace_deps=$(jq -r '.dependencies // {} | to_entries[] | select(.key | startswith("@librechat/")) | .key' "$package_json" 2>/dev/null || echo "")
+              local workspace_deps=$(jq -r '.dependencies // {} | to_entries[] | select(.key | startswith("@vestai/")) | .key' "$package_json" 2>/dev/null || echo "")
               
               # For each workspace dependency, get its dependencies
               for dep in $workspace_deps; do
-                # Convert @librechat/api to packages/api
-                local workspace_path=$(echo "$dep" | sed 's/@librechat\//packages\//')
+                # Convert @vestai/api to packages/api
+                local workspace_path=$(echo "$dep" | sed 's/@vestai\//packages\//')
                 local workspace_package_json="${workspace_path}/package.json"
                 
                 if [[ -f "$workspace_package_json" ]]; then
@@ -221,8 +221,8 @@ jobs:
             chmod -R 755 client
             cd client
             UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
-            # Exclude dependencies used in scripts, code, workspace packages, and @librechat/client imports
-            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../client_used_deps.txt ../client_used_code.txt ../client_workspace_deps.txt ../packages_client_used_code.txt ../librechat_client_deps.txt 2>/dev/null | sort -u) || echo "")
+            # Exclude dependencies used in scripts, code, workspace packages, and @vestai/client imports
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../client_used_deps.txt ../client_used_code.txt ../client_workspace_deps.txt ../packages_client_used_code.txt ../vestai_client_deps.txt 2>/dev/null | sort -u) || echo "")
             # Filter out false positives
             UNUSED=$(echo "$UNUSED" | grep -v "^micromark-extension-llm-math$" || echo "")
             echo "CLIENT_UNUSED<<EOF" >> $GITHUB_ENV
@@ -238,8 +238,8 @@ jobs:
             chmod -R 755 api
             cd api
             UNUSED=$(depcheck --json | jq -r '.dependencies | join("\n")' || echo "")
-            # Exclude dependencies used in scripts, code, workspace packages, and @librechat/api imports
-            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../api_used_deps.txt ../api_used_code.txt ../api_workspace_deps.txt ../packages_api_used_code.txt ../librechat_api_deps.txt 2>/dev/null | sort -u) || echo "")
+            # Exclude dependencies used in scripts, code, workspace packages, and @vestai/api imports
+            UNUSED=$(comm -23 <(echo "$UNUSED" | sort) <(cat ../api_used_deps.txt ../api_used_code.txt ../api_workspace_deps.txt ../packages_api_used_code.txt ../vestai_api_deps.txt 2>/dev/null | sort -u) || echo "")
             echo "API_UNUSED<<EOF" >> $GITHUB_ENV
             echo "$UNUSED" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV

@@ -1,8 +1,8 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('@librechat/data-schemas');
-const { ContentTypes } = require('librechat-data-provider');
-const { unescapeLaTeX, countTokens } = require('@librechat/api');
+const { logger } = require('@vestai/data-schemas');
+const { ContentTypes } = require('vestai-data-provider');
+const { unescapeLaTeX, countTokens } = require('@vestai/api');
 const {
   saveConvo,
   getMessage,
@@ -156,7 +156,7 @@ router.post('/branch', async (req, res) => {
         .json({ error: 'Message does not have parallel content with attributions' });
     }
 
-    /** @type {Array<import('librechat-data-provider').TMessageContentParts>} */
+    /** @type {Array<import('vestai-data-provider').TMessageContentParts>} */
     const filteredContent = [];
     for (const part of sourceMessage.content) {
       if (part?.agentId === agentId) {
@@ -170,7 +170,7 @@ router.post('/branch', async (req, res) => {
     }
 
     const newMessageId = uuidv4();
-    /** @type {import('librechat-data-provider').TMessage} */
+    /** @type {import('vestai-data-provider').TMessage} */
     const newMessage = {
       messageId: newMessageId,
       conversationId: sourceMessage.conversationId,

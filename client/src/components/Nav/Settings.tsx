@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { SettingsTabValues } from 'librechat-data-provider';
+import { SettingsTabValues } from 'vestai-data-provider';
 import { MessageSquare, Command, DollarSign } from 'lucide-react';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import {
@@ -10,7 +10,7 @@ import {
   SpeechIcon,
   useMediaQuery,
   PersonalizationIcon,
-} from '@librechat/client';
+} from '@vestai/client';
 import type { TDialogProps } from '~/common';
 import {
   General,

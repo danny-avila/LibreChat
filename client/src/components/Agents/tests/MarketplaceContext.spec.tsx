@@ -2,7 +2,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import { MarketplaceProvider } from '../MarketplaceContext';
 import { useChatContext } from '~/Providers';
 

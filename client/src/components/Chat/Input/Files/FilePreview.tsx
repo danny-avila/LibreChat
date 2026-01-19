@@ -1,5 +1,5 @@
-import { Spinner, FileIcon } from '@librechat/client';
-import type { TFile } from 'librechat-data-provider';
+import { Spinner, FileIcon } from '@vestai/client';
+import type { TFile } from 'vestai-data-provider';
 import type { ExtendedFile } from '~/common';
 import SourceIcon from './SourceIcon';
 import { cn } from '~/utils';

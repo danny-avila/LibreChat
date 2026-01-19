@@ -7,7 +7,7 @@ import { useRecoilValue } from 'recoil';
 import { EditIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
-import { SaveIcon, CrossIcon, TextareaAutosize } from '@librechat/client';
+import { SaveIcon, CrossIcon, TextareaAutosize } from '@vestai/client';
 import { Controller, useFormContext, useFormState } from 'react-hook-form';
 import type { PluggableList } from 'unified';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';

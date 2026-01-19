@@ -1,7 +1,7 @@
 {
-  "name": "librechat-data-provider",
+  "name": "vestai-data-provider",
   "version": "0.8.230",
-  "description": "data services for librechat apps",
+  "description": "data services for vestai apps",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
   "types": "./dist/types/index.d.ts",
@@ -30,14 +30,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/danny-avila/LibreChat"
+    "url": "https://github.com/Doktransfers/vest-ai"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/LibreChat/issues"
+    "url": "https://github.com/Doktransfers/vest-ai/issues"
   },
-  "homepage": "https://librechat.ai",
+  "homepage": "/",
   "dependencies": {
     "axios": "^1.12.1",
     "dayjs": "^1.11.13",

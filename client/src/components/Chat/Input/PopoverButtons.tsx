@@ -1,6 +1,6 @@
 import { useRecoilState } from 'recoil';
-import { EModelEndpoint, SettingsViews } from 'librechat-data-provider';
-import { Button, MessagesSquared, AssistantIcon, DataIcon } from '@librechat/client';
+import { EModelEndpoint, SettingsViews } from 'vestai-data-provider';
+import { Button, MessagesSquared, AssistantIcon, DataIcon } from '@vestai/client';
 import type { ReactNode } from 'react';
 import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';

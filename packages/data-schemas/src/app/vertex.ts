@@ -4,14 +4,14 @@ import {
   extractEnvVariable,
   envVarRegex,
   TVertexModelMap,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type {
   TCustomConfig,
   TVertexAISchema,
   TVertexAIConfig,
   TAnthropicEndpoint,
   TVertexModelConfig,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 
 /**
  * Default Vertex AI models available through Google Cloud
@@ -152,7 +152,7 @@ export function validateVertexConfig(
 }
 
 /**
- * Sets up the Vertex AI configuration from the config (`librechat.yaml`) file.
+ * Sets up the Vertex AI configuration from the config (`vestai.yaml`) file.
  * Similar to azureConfigSetup, this processes and validates the Vertex AI configuration.
  * @param config - The loaded custom configuration.
  * @returns The validated Vertex AI configuration or null if not configured.

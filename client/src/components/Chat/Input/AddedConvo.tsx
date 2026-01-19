@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { isAgentsEndpoint } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import { isAgentsEndpoint } from 'vestai-data-provider';
+import type { TConversation } from 'vestai-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { EndpointIcon } from '~/components/Endpoints';

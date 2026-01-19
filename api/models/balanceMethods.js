@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { ViolationTypes } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { ViolationTypes } = require('vestai-data-provider');
 const { createAutoRefillTransaction } = require('./Transaction');
 const { logViolation } = require('~/cache');
 const { getMultiplier } = require('./tx');
@@ -59,7 +59,7 @@ const checkBalanceRecord = async function ({
         addIntervalToDate(lastRefillDate, record.refillIntervalValue, record.refillIntervalUnit)
     ) {
       try {
-        /** @type {{ rate: number, user: string, balance: number, transaction: import('@librechat/data-schemas').ITransaction}} */
+        /** @type {{ rate: number, user: string, balance: number, transaction: import('@vestai/data-schemas').ITransaction}} */
         const result = await createAutoRefillTransaction({
           user: user,
           tokenType: 'credits',

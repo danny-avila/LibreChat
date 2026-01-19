@@ -1,6 +1,6 @@
 import React from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { Slider, InputNumber } from '@librechat/client';
+import { Slider, InputNumber } from '@vestai/client';
 import { cn, defaultTextProps, optionText } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';

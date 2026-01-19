@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import type { TModelSelectProps } from '~/common';
 import type { FC } from 'react';
 

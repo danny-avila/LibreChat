@@ -1,6 +1,6 @@
-import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
+import { EModelEndpoint, removeNullishValues } from 'vestai-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
-import type { SettingDefinition } from 'librechat-data-provider';
+import type { SettingDefinition } from 'vestai-data-provider';
 import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';

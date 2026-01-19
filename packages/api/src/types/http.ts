@@ -1,8 +1,8 @@
 import type { Request } from 'express';
-import type { IUser, AppConfig } from '@librechat/data-schemas';
+import type { IUser, AppConfig } from '@vestai/data-schemas';
 
 /**
- * LibreChat-specific request body type that extends Express Request body
+ * VestAI-specific request body type that extends Express Request body
  * (have to use type alias because you can't extend indexed access types like Request['body'])
  */
 export type RequestBody = {

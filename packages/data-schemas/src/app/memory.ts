@@ -1,5 +1,5 @@
-import { memorySchema } from 'librechat-data-provider';
-import type { TCustomConfig, TMemoryConfig } from 'librechat-data-provider';
+import { memorySchema } from 'vestai-data-provider';
+import type { TCustomConfig, TMemoryConfig } from 'vestai-data-provider';
 
 const hasValidAgent = (agent: TMemoryConfig['agent']) =>
   !!agent &&

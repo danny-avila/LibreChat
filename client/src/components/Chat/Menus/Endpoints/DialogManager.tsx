@@ -1,5 +1,5 @@
 import React from 'react';
-import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
+import { EModelEndpoint, getEndpointField } from 'vestai-data-provider';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 
 interface DialogManagerProps {

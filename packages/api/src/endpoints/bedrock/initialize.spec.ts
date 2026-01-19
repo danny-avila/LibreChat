@@ -1,4 +1,4 @@
-import { AuthType, EModelEndpoint } from 'librechat-data-provider';
+import { AuthType, EModelEndpoint } from 'vestai-data-provider';
 import { initializeBedrock } from './initialize';
 import type { BaseInitializeParams, BedrockLLMConfigResult } from '~/types';
 import { checkUserKeyExpiry } from '~/utils';

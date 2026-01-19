@@ -2,7 +2,7 @@ import React, { useMemo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
-import { Tools } from 'librechat-data-provider';
+import { Tools } from 'vestai-data-provider';
 import { X, Globe, Newspaper, Image, ChevronDown, File, Download } from 'lucide-react';
 import {
   OGDialog,
@@ -12,8 +12,8 @@ import {
   OGDialogContent,
   OGDialogTrigger,
   useToastContext,
-} from '@librechat/client';
-import type { ValidSource, ImageResult } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { ValidSource, ImageResult } from 'vestai-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import SourcesErrorBoundary from './SourcesErrorBoundary';
 import { useFileDownload } from '~/data-provider';

@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { KeyRoundIcon } from 'lucide-react';
-import { AuthType, AgentCapabilities } from 'librechat-data-provider';
+import { AuthType, AgentCapabilities } from 'vestai-data-provider';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import {
   Checkbox,
@@ -9,7 +9,7 @@ import {
   HoverCardContent,
   HoverCardPortal,
   HoverCardTrigger,
-} from '@librechat/client';
+} from '@vestai/client';
 import type { AgentForm } from '~/common';
 import { useLocalize, useCodeApiKeyForm } from '~/hooks';
 import ApiKeyDialog from './ApiKeyDialog';

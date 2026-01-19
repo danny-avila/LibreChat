@@ -1,6 +1,6 @@
 import React from 'react';
-import { ECallState } from 'librechat-data-provider';
-import { CircleIcon, CircleDotsIcon } from '@librechat/client';
+import { ECallState } from 'vestai-data-provider';
+import { CircleIcon, CircleDotsIcon } from '@vestai/client';
 
 const CircleRender = ({ rmsLevel, isCameraOn, state }) => {
   const getIconComponent = (state) => {

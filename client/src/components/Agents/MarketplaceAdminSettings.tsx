@@ -1,6 +1,6 @@
 import { ShieldEllipsis } from 'lucide-react';
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import { Button, useToastContext } from '@librechat/client';
+import { Permissions, PermissionTypes } from 'vestai-data-provider';
+import { Button, useToastContext } from '@vestai/client';
 import { AdminSettingsDialog } from '~/components/ui';
 import { useUpdateMarketplacePermissionsMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';

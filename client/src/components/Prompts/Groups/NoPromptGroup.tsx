@@ -1,4 +1,4 @@
-import { Button } from '@librechat/client';
+import { Button } from '@vestai/client';
 import { useNavigate } from 'react-router-dom';
 import { useLocalize } from '~/hooks';
 

@@ -1,4 +1,4 @@
-import { mergeFileConfig } from 'librechat-data-provider';
+import { mergeFileConfig } from 'vestai-data-provider';
 import { useCallback } from 'react';
 import { useGetFileConfig } from '~/data-provider';
 import {
@@ -11,7 +11,7 @@ import {
 
 /**
  * Hook for client-side image resizing functionality
- * Integrates with LibreChat's file configuration system
+ * Integrates with VestAI's file configuration system
  */
 export const useClientResize = () => {
   const { data: fileConfig = null } = useGetFileConfig({

@@ -1,7 +1,7 @@
 const fs = require('fs');
-const { sleep } = require('@librechat/agents');
-const { logger } = require('@librechat/data-schemas');
-const { FilePurpose } = require('librechat-data-provider');
+const { sleep } = require('@vestai/agents');
+const { logger } = require('@vestai/data-schemas');
+const { FilePurpose } = require('vestai-data-provider');
 
 /**
  * Uploads a file that can be used across various OpenAI services.

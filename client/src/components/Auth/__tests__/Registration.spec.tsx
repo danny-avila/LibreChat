@@ -1,8 +1,8 @@
 import reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { render, waitFor, screen } from 'test/layout-test-utils';
-import * as mockDataProvider from 'librechat-data-provider/react-query';
-import type { TStartupConfig } from 'librechat-data-provider';
+import * as mockDataProvider from 'vestai-data-provider/react-query';
+import type { TStartupConfig } from 'vestai-data-provider';
 import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as endpointQueries from '~/data-provider/Endpoints/queries';
 import * as authMutations from '~/data-provider/Auth/mutations';
@@ -10,7 +10,7 @@ import * as authQueries from '~/data-provider/Auth/queries';
 import Registration from '~/components/Auth/Registration';
 import AuthLayout from '~/components/Auth/AuthLayout';
 
-jest.mock('librechat-data-provider/react-query');
+jest.mock('vestai-data-provider/react-query');
 
 const mockStartupConfig = {
   isFetching: false,

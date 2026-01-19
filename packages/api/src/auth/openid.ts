@@ -1,6 +1,6 @@
-import { logger } from '@librechat/data-schemas';
-import { ErrorTypes } from 'librechat-data-provider';
-import type { IUser, UserMethods } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
+import { ErrorTypes } from 'vestai-data-provider';
+import type { IUser, UserMethods } from '@vestai/data-schemas';
 
 /**
  * Finds or migrates a user for OpenID authentication

@@ -1,8 +1,8 @@
 const axios = require('axios');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { genAzureEndpoint, logAxiosError } = require('@librechat/api');
-const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
+const { genAzureEndpoint, logAxiosError } = require('@vestai/api');
+const { extractEnvVariable, TTSProviders } = require('vestai-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -44,7 +44,7 @@ class TTSService {
     const ttsSchema = appConfig?.speech?.tts;
     if (!ttsSchema) {
       throw new Error(
-        'No TTS schema is set. Did you configure TTS in the custom config (librechat.yaml)?',
+        'No TTS schema is set. Did you configure TTS in the custom config (vestai.yaml)?',
       );
     }
     const providers = Object.entries(ttsSchema).filter(

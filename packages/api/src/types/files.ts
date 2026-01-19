@@ -1,4 +1,4 @@
-import type { IMongoFile } from '@librechat/data-schemas';
+import type { IMongoFile } from '@vestai/data-schemas';
 import type { ServerRequest } from './http';
 import type { Readable } from 'stream';
 export interface STTService {

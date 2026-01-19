@@ -1,5 +1,5 @@
-import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
+import type { AppConfig } from '@vestai/data-schemas';
 
 /**
  * Default retention period for temporary chats in hours

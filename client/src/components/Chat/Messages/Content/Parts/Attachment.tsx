@@ -1,6 +1,6 @@
 import { memo, useState, useEffect } from 'react';
-import { imageExtRegex, Tools } from 'librechat-data-provider';
-import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
+import { imageExtRegex, Tools } from 'vestai-data-provider';
+import type { TAttachment, TFile, TAttachmentMetadata } from 'vestai-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
 import { useAttachmentLink } from './LogLink';

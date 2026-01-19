@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys } from 'librechat-data-provider';
-import type { BatchFile, TFile } from 'librechat-data-provider';
+import { QueryKeys } from 'vestai-data-provider';
+import type { BatchFile, TFile } from 'vestai-data-provider';
 import { useDeleteFilesMutation } from '~/data-provider';
 import useFileDeletion from './useFileDeletion';
 

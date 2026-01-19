@@ -1,7 +1,7 @@
-import { logger } from '@librechat/data-schemas';
-import { AccessRoleIds, ResourceType, PrincipalType, Constants } from 'librechat-data-provider';
+import { logger } from '@vestai/data-schemas';
+import { AccessRoleIds, ResourceType, PrincipalType, Constants } from 'vestai-data-provider';
 import { ensureRequiredCollectionsExist } from '../db/utils';
-import type { AccessRoleMethods, IAgent } from '@librechat/data-schemas';
+import type { AccessRoleMethods, IAgent } from '@vestai/data-schemas';
 import type { Model, Mongoose } from 'mongoose';
 
 const { GLOBAL_PROJECT_NAME } = Constants;

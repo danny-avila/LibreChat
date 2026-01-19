@@ -2,9 +2,9 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { createMethods } = require('@librechat/data-schemas');
+const { createMethods } = require('@vestai/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { ResourceType, PermissionBits } = require('librechat-data-provider');
+const { ResourceType, PermissionBits } = require('vestai-data-provider');
 const { createAgent } = require('~/models/Agent');
 
 /**
@@ -56,7 +56,7 @@ describe('Access Permissions Routes - Security Tests (SBA-ADV-20251203-02)', () 
     await mongoose.connect(mongoUri);
 
     // Initialize models
-    const { createModels } = require('@librechat/data-schemas');
+    const { createModels } = require('@vestai/data-schemas');
     const models = createModels(mongoose);
     modelsToCleanup = Object.keys(models);
     Object.assign(mongoose.models, models);

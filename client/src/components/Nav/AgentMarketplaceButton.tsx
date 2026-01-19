@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { TooltipAnchor, Button } from '@librechat/client';
+import { TooltipAnchor, Button } from '@vestai/client';
 import { useLocalize, useShowMarketplace } from '~/hooks';
 
 interface AgentMarketplaceButtonProps {

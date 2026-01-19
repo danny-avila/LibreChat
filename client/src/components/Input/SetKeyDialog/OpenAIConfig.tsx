@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import InputWithLabel from './InputWithLabel';
 

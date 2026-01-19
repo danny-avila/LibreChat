@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const {
   agentCreateSchema,
   agentUpdateSchema,
@@ -9,7 +9,7 @@ const {
   mergeAgentOcrConversion,
   MAX_AVATAR_REFRESH_AGENTS,
   convertOcrToContextInPlace,
-} = require('@librechat/api');
+} = require('@vestai/api');
 const {
   Tools,
   Constants,
@@ -23,7 +23,7 @@ const {
   removeNullishValues,
   CacheKeys,
   Time,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const {
   getListAgentsByAccess,
   countPromotedAgents,

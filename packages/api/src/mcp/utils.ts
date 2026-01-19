@@ -1,4 +1,4 @@
-import { Constants } from 'librechat-data-provider';
+import { Constants } from 'vestai-data-provider';
 
 export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 /**

@@ -1,8 +1,8 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { useRecoilValue } from 'recoil';
-import { TextareaAutosize, TooltipAnchor } from '@librechat/client';
-import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
+import { TextareaAutosize, TooltipAnchor } from '@vestai/client';
+import { useUpdateMessageMutation } from 'vestai-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import { useMessagesOperations, useMessagesConversation } from '~/Providers';
 import { useGetAddedConvo } from '~/hooks/Chat';

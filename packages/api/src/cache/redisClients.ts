@@ -1,6 +1,6 @@
 import IoRedis from 'ioredis';
 import type { Redis, Cluster } from 'ioredis';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import { createClient, createCluster } from '@keyv/redis';
 import type { RedisClientType, RedisClusterType } from '@redis/client';
 import type { ScanCommandOptions } from '@redis/client/dist/lib/commands/SCAN';

@@ -11,7 +11,7 @@
   "com_agents_mcp_description_placeholder": "Anna muutaman sanan kuvaus sen toiminnasta",
   "com_agents_mcp_icon_size": "Minimikoko 128 x 128 px",
   "com_agents_mcp_name_placeholder": "Mukautettu työkalu",
-  "com_agents_mcp_trust_subtext": "LibreChat ei varmenna mukautettuja liittymiä.",
+  "com_agents_mcp_trust_subtext": "VestAI ei varmenna mukautettuja liittymiä.",
   "com_agents_missing_provider_model": "Valitse palvelun tuottaja ja malli ennen agentin luomista.",
   "com_agents_name_placeholder": "Valinnainen: Agentin nimi",
   "com_agents_no_access": "Sinulla ei ole lupaa muokata tätä agenttia.",

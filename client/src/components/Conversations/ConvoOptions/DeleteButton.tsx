@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { Trans } from 'react-i18next';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'vestai-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -12,8 +12,8 @@ import {
   OGDialogHeader,
   OGDialogContent,
   useToastContext,
-} from '@librechat/client';
-import type { TMessage } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TMessage } from 'vestai-data-provider';
 import { useDeleteConversationMutation } from '~/data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';

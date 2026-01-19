@@ -1,6 +1,6 @@
 import { memo, useState, useContext, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@vestai/client';
 import type { CitationProps } from './types';
 import { SourceHovercard, FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { CitationContext, useCitation, useCompositeCitations } from './Context';

@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
 import { useMessagesConversation } from '~/Providers';
 import UIResourceCarousel from '../Chat/Messages/Content/UIResourceCarousel';
-import type { UIResource } from 'librechat-data-provider';
+import type { UIResource } from 'vestai-data-provider';
 
 interface MCPUIResourceCarouselProps {
   node: {

@@ -1,13 +1,13 @@
 const client = require('openid-client');
-const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
+const { isEnabled } = require('@vestai/api');
+const { logger } = require('@vestai/data-schemas');
+const { CacheKeys } = require('vestai-data-provider');
 const { Client } = require('@microsoft/microsoft-graph-client');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const getLogStores = require('~/cache/getLogStores');
 
 /**
- * @import { TPrincipalSearchResult, TGraphPerson, TGraphUser, TGraphGroup, TGraphPeopleResponse, TGraphUsersResponse, TGraphGroupsResponse } from 'librechat-data-provider'
+ * @import { TPrincipalSearchResult, TGraphPerson, TGraphUser, TGraphGroup, TGraphPeopleResponse, TGraphUsersResponse, TGraphGroupsResponse } from 'vestai-data-provider'
  */
 
 /**

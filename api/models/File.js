@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { EToolResources, FileContext } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { EToolResources, FileContext } = require('vestai-data-provider');
 const { File } = require('~/db/models');
 
 /**

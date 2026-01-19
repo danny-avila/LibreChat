@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@vestai/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
+import { EModelEndpoint, getEndpointField } from 'vestai-data-provider';
 import type { AgentForm, IconComponentTypes } from '~/common';
 import {
   removeFocusOutlines,

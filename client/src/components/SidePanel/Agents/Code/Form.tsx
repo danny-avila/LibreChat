@@ -1,4 +1,4 @@
-import { Tools } from 'librechat-data-provider';
+import { Tools } from 'vestai-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useVerifyAgentToolAuth } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -24,7 +24,7 @@ export default function CodeForm({
               {localize('com_agents_code_interpreter_title')}
             </span>
             <span className="text-xs text-text-secondary">
-              {localize('com_agents_by_librechat')}
+              {localize('com_agents_by_vestai')}
             </span>
           </div>
         </div>

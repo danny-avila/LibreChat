@@ -9,8 +9,8 @@ import {
   OGDialogHeader,
   OGDialogTitle,
   Progress,
-} from '@librechat/client';
-import type { TUser, TVerify2FARequest } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TUser, TVerify2FARequest } from 'vestai-data-provider';
 import {
   useConfirmTwoFactorMutation,
   useDisableTwoFactorMutation,

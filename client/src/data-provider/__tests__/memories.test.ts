@@ -1,4 +1,4 @@
-import { dataService as _dataService } from 'librechat-data-provider';
+import { dataService as _dataService } from 'vestai-data-provider';
 import axios from 'axios';
 
 jest.mock('axios');

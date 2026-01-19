@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { getEndpointField } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
+import { getEndpointField } from 'vestai-data-provider';
+import type * as t from 'vestai-data-provider';
 import { getIconKey, getEntity, getIconEndpoint } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { icons } from '~/hooks/Endpoint/Icons';

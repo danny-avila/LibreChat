@@ -1,6 +1,6 @@
 import * as Ariakit from '@ariakit/react';
 import { Check } from 'lucide-react';
-import { MCPIcon } from '@librechat/client';
+import { MCPIcon } from '@vestai/client';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import type { MCPServerStatusIconProps } from './MCPServerStatusIcon';
 import MCPServerStatusIcon from './MCPServerStatusIcon';

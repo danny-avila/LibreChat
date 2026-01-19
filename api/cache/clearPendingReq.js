@@ -1,5 +1,5 @@
-const { isEnabled } = require('@librechat/api');
-const { Time, CacheKeys } = require('librechat-data-provider');
+const { isEnabled } = require('@vestai/api');
+const { Time, CacheKeys } = require('vestai-data-provider');
 const getLogStores = require('./getLogStores');
 
 const { USE_REDIS, LIMIT_CONCURRENT_MESSAGES } = process.env ?? {};

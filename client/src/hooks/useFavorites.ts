@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAtom } from 'jotai';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@vestai/client';
 import type { Favorite } from '~/store/favorites';
 import { useGetFavoritesQuery, useUpdateFavoritesMutation } from '~/data-provider';
 import { favoritesAtom } from '~/store';

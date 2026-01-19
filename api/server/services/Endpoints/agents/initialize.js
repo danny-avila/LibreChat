@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { createContentAggregator } = require('@librechat/agents');
+const { logger } = require('@vestai/data-schemas');
+const { createContentAggregator } = require('@vestai/agents');
 const {
   initializeAgent,
   validateAgentModel,
@@ -7,13 +7,13 @@ const {
   createSequentialChainEdges,
   createEdgeCollector,
   filterOrphanedEdges,
-} = require('@librechat/api');
+} = require('@vestai/api');
 const {
   EModelEndpoint,
   isAgentsEndpoint,
   getResponseSender,
   isEphemeralAgentId,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const {
   createToolEndCallback,
   getDefaultHandlers,

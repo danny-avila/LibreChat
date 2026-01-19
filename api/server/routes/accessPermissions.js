@@ -1,5 +1,5 @@
 const express = require('express');
-const { ResourceType, PermissionBits } = require('librechat-data-provider');
+const { ResourceType, PermissionBits } = require('vestai-data-provider');
 const {
   getUserEffectivePermissions,
   getAllEffectivePermissions,

@@ -1,5 +1,5 @@
 import type { Redis, Cluster } from 'ioredis';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import type { IJobStore, IEventTransport } from './interfaces/IJobStore';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';

@@ -1,5 +1,5 @@
 import React from 'react';
-import { TooltipAnchor } from '@librechat/client';
+import { TooltipAnchor } from '@vestai/client';
 import { MessageCircleDashed } from 'lucide-react';
 import { useRecoilState, useRecoilCallback } from 'recoil';
 import { useChatContext } from '~/Providers';

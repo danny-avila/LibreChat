@@ -1,7 +1,7 @@
 const { nanoid } = require('nanoid');
-const { sendEvent, GenerationJobManager } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
-const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
+const { sendEvent, GenerationJobManager } = require('@vestai/api');
+const { logger } = require('@vestai/data-schemas');
+const { Tools, StepTypes, FileContext, ErrorTypes } = require('vestai-data-provider');
 const {
   EnvVar,
   Providers,
@@ -10,7 +10,7 @@ const {
   ToolEndHandler,
   handleToolCalls,
   ChatModelStreamHandler,
-} = require('@librechat/agents');
+} = require('@vestai/agents');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');

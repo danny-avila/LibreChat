@@ -1,4 +1,4 @@
-import type { AuthType } from 'librechat-data-provider';
+import type { AuthType } from 'vestai-data-provider';
 
 export type ApiKeyFormData = {
   apiKey: string;

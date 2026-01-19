@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, TextareaAutosize, Input } from '@librechat/client';
+import { Button, TextareaAutosize, Input } from '@vestai/client';
 import { useForm, Controller, FormProvider } from 'react-hook-form';
-import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { LocalStorageKeys, PermissionTypes, Permissions } from 'vestai-data-provider';
 import CategorySelector from '~/components/Prompts/Groups/CategorySelector';
 import VariablesDropdown from '~/components/Prompts/VariablesDropdown';
 import PromptVariables from '~/components/Prompts/PromptVariables';

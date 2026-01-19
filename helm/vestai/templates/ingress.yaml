@@ -14,9 +14,9 @@ apiVersion: extensions/v1beta1
 {{- end }}
 kind: Ingress
 metadata:
-  name: {{ include "librechat.fullname" $ }}
+  name: {{ include "vestai.fullname" $ }}
   labels:
-    {{- include "librechat.labels" . | nindent 4 }}
+    {{- include "vestai.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -48,11 +48,11 @@ spec:
             backend:
               {{- if semverCompare ">=1.19-0" $.Capabilities.KubeVersion.GitVersion }}
               service:
-                name: {{ include "librechat.fullname" $ }}
+                name: {{ include "vestai.fullname" $ }}
                 port:
                   number: {{ $svcPort }}
               {{- else }}
-              serviceName: {{ include "librechat.fullname" $ }}
+              serviceName: {{ include "vestai.fullname" $ }}
               servicePort: {{ $svcPort }}
               {{- end }}
           {{- end }}

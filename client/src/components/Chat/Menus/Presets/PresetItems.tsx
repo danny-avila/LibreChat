@@ -1,7 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { Close } from '@radix-ui/react-popover';
 import { Flipper, Flipped } from 'react-flip-toolkit';
-import { getEndpointField } from 'librechat-data-provider';
+import { getEndpointField } from 'vestai-data-provider';
 import {
   Dialog,
   Label,
@@ -11,8 +11,8 @@ import {
   DialogTrigger,
   TooltipAnchor,
   DialogTemplate,
-} from '@librechat/client';
-import type { TPreset } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TPreset } from 'vestai-data-provider';
 import type { FC } from 'react';
 import FileUpload from '~/components/Chat/Input/Files/FileUpload';
 import { useGetEndpointsQuery } from '~/data-provider';

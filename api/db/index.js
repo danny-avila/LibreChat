@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { createModels } = require('@librechat/data-schemas');
+const { createModels } = require('@vestai/data-schemas');
 const { connectDb } = require('./connect');
 const indexSync = require('./indexSync');
 

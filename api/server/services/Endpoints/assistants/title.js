@@ -1,6 +1,6 @@
-const { isEnabled, sanitizeTitle } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
+const { isEnabled, sanitizeTitle } = require('@vestai/api');
+const { logger } = require('@vestai/data-schemas');
+const { CacheKeys } = require('vestai-data-provider');
 const { saveConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const initializeClient = require('./initalize');

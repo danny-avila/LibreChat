@@ -1,5 +1,5 @@
 import { useFormContext, Controller } from 'react-hook-form';
-import { Checkbox, Label } from '@librechat/client';
+import { Checkbox, Label } from '@vestai/client';
 import { useLocalize, useLocalizedConfig } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';

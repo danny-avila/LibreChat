@@ -1,5 +1,5 @@
-import { specialVariables } from 'librechat-data-provider';
-import type { TPromptGroup } from 'librechat-data-provider';
+import { specialVariables } from 'vestai-data-provider';
+import type { TPromptGroup } from 'vestai-data-provider';
 
 /**
  * Detects the presence of variables in the given text, excluding those found in `specialVariables`.

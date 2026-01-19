@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { MenuButton } from '@ariakit/react';
 import { History, Check } from 'lucide-react';
-import { DropdownPopup, TooltipAnchor, Button, useMediaQuery } from '@librechat/client';
+import { DropdownPopup, TooltipAnchor, Button, useMediaQuery } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 
 interface ArtifactVersionProps {

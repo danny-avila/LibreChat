@@ -1,5 +1,5 @@
 import { XCircle, PlusCircleIcon, Wrench } from 'lucide-react';
-import type { AgentToolType } from 'librechat-data-provider';
+import type { AgentToolType } from 'vestai-data-provider';
 import { useLocalize } from '~/hooks';
 
 type MCPToolItemProps = {

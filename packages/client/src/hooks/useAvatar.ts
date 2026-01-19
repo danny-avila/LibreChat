@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { createAvatar } from '@dicebear/core';
 import { initials } from '@dicebear/collection';
-import type { TUser } from 'librechat-data-provider';
+import type { TUser } from 'vestai-data-provider';
 
 const avatarCache: Record<string, string> = {};
 

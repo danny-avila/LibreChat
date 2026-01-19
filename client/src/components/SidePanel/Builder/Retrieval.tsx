@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
-import { Capabilities } from 'librechat-data-provider';
-import type { AssistantsEndpoint } from 'librechat-data-provider';
+import { Capabilities } from 'vestai-data-provider';
+import type { AssistantsEndpoint } from 'vestai-data-provider';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import {
   Checkbox,
@@ -9,7 +9,7 @@ import {
   HoverCardPortal,
   HoverCardTrigger,
   CircleHelpIcon,
-} from '@librechat/client';
+} from '@vestai/client';
 import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
 import type { AssistantForm } from '~/common';
 import { useLocalize } from '~/hooks';

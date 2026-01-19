@@ -5,7 +5,7 @@ import {
   TooltipAnchor,
   Accordion,
   Button,
-} from '@librechat/client';
+} from '@vestai/client';
 import type { NavLink, NavProps } from '~/common';
 import { ActivePanelProvider, useActivePanel } from '~/Providers';
 import { useLocalize } from '~/hooks';

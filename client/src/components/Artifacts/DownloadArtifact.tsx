@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Download, CircleCheckBig } from 'lucide-react';
 import type { Artifact } from '~/common';
-import { Button } from '@librechat/client';
+import { Button } from '@vestai/client';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useCodeState } from '~/Providers/EditorContext';
 import { useLocalize } from '~/hooks';

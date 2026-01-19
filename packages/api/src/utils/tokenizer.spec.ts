@@ -5,11 +5,11 @@
  * Make sure to install `tiktoken` and have it configured properly.
  */
 
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import type { Tiktoken } from 'tiktoken';
 import Tokenizer from './tokenizer';
 
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@vestai/data-schemas', () => ({
   logger: {
     error: jest.fn(),
   },

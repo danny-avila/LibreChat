@@ -1,7 +1,7 @@
 const path = require('path');
 const mongoose = require('mongoose');
-const { getBalanceConfig } = require('@librechat/api');
-const { User, Balance } = require('@librechat/data-schemas').createModels(mongoose);
+const { getBalanceConfig } = require('@vestai/api');
+const { User, Balance } = require('@vestai/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
@@ -33,7 +33,7 @@ const connect = require('./connect');
 
   const balanceConfig = getBalanceConfig();
   if (!balanceConfig?.enabled) {
-    console.red('Error: Balance is not enabled. Use librechat.yaml to enable it');
+    console.red('Error: Balance is not enabled. Use vestai.yaml to enable it');
     silentExit(1);
   }
 

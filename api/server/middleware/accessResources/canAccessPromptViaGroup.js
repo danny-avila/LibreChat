@@ -1,4 +1,4 @@
-const { ResourceType } = require('librechat-data-provider');
+const { ResourceType } = require('vestai-data-provider');
 const { canAccessResource } = require('./canAccessResource');
 const { getPrompt } = require('~/models/Prompt');
 

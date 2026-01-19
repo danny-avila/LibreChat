@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
-import { Spinner } from '@librechat/client';
+import { Spinner } from '@vestai/client';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import CancelledIcon from './CancelledIcon';
 import FinishedIcon from './FinishedIcon';

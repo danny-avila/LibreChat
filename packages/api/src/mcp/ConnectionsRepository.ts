@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from './connection';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';

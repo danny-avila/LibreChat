@@ -1,5 +1,5 @@
 import { CopyPlus } from 'lucide-react';
-import { useToastContext, Button } from '@librechat/client';
+import { useToastContext, Button } from '@vestai/client';
 import { useDuplicateAgentMutation } from '~/data-provider';
 import { isEphemeralAgent } from '~/common';
 import { useLocalize } from '~/hooks';

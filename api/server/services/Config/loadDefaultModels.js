@@ -1,11 +1,11 @@
-const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { EModelEndpoint } = require('vestai-data-provider');
 const {
   getAnthropicModels,
   getBedrockModels,
   getOpenAIModels,
   getGoogleModels,
-} = require('@librechat/api');
+} = require('@vestai/api');
 const { getAppConfig } = require('./app');
 
 /**

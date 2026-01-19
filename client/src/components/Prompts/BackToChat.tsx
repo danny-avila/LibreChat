@@ -1,6 +1,6 @@
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { buttonVariants } from '@librechat/client';
+import { buttonVariants } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

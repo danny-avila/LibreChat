@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import type { EModelEndpoint } from 'librechat-data-provider';
+import type { EModelEndpoint } from 'vestai-data-provider';
 import { useChatContext } from './ChatContext';
 
 interface SidePanelContextValue {

@@ -12,8 +12,8 @@ import {
   OGDialogHeader,
   useToastContext,
   OGDialogContent,
-} from '@librechat/client';
-import type { TSharedLinkGetResponse } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TSharedLinkGetResponse } from 'vestai-data-provider';
 import {
   useCreateSharedLinkMutation,
   useUpdateSharedLinkMutation,

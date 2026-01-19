@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { TConversation } from 'librechat-data-provider';
+import type { TConversation } from 'vestai-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { ConvoGenerator } from '~/common';
 

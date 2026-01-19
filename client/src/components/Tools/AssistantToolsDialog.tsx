@@ -2,14 +2,14 @@ import { useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useFormContext } from 'react-hook-form';
-import { isAgentsEndpoint } from 'librechat-data-provider';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { isAgentsEndpoint } from 'vestai-data-provider';
+import { useUpdateUserPluginsMutation } from 'vestai-data-provider/react-query';
 import type {
   AssistantsEndpoint,
   EModelEndpoint,
   TPluginAction,
   TError,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { ToolDialogProps } from '~/common/types';
 import { PluginPagination, PluginAuthForm } from '~/components/Plugins/Store';
 import { useLocalize, usePluginDialogHelpers } from '~/hooks';

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import { useLocalize } from '~/hooks';
 
 function HelpText({ endpoint }: { endpoint: string }) {

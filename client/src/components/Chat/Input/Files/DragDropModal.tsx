@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { OGDialog, OGDialogTemplate } from '@librechat/client';
+import { OGDialog, OGDialogTemplate } from '@vestai/client';
 import {
   Providers,
   inferMimeType,
@@ -8,7 +8,7 @@ import {
   EModelEndpoint,
   defaultAgentCapabilities,
   isDocumentSupportedProvider,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import {
   ImageUpIcon,
   FileSearch,

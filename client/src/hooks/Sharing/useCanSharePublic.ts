@@ -1,4 +1,4 @@
-import { ResourceType, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { ResourceType, PermissionTypes, Permissions } from 'vestai-data-provider';
 import { useHasAccess } from '~/hooks';
 
 const resourceToPermissionMap: Record<ResourceType, PermissionTypes> = {

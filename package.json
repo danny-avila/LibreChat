@@ -1,5 +1,5 @@
 {
-  "name": "LibreChat",
+  "name": "VestAI",
   "version": "v0.8.2-rc3",
   "description": "",
   "workspaces": [
@@ -93,14 +93,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/LibreChat.git"
+    "url": "git+https://github.com/Doktransfers/vest-ai.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/LibreChat/issues"
+    "url": "https://github.com/Doktransfers/vest-ai/issues"
   },
-  "homepage": "https://librechat.ai/",
+  "homepage": "//",
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",

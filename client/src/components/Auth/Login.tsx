@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ErrorTypes, registerPage } from 'librechat-data-provider';
-import { OpenIDIcon, useToastContext } from '@librechat/client';
+import { ErrorTypes, registerPage } from 'vestai-data-provider';
+import { OpenIDIcon, useToastContext } from '@vestai/client';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';

@@ -1,6 +1,6 @@
-import { Providers } from '@librechat/agents';
-import { googleSettings, AuthKeys, removeNullishValues } from 'librechat-data-provider';
-import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
+import { Providers } from '@vestai/agents';
+import { googleSettings, AuthKeys, removeNullishValues } from 'vestai-data-provider';
+import type { GoogleClientOptions, VertexAIClientOptions } from '@vestai/agents';
 import type { GoogleAIToolType } from '@langchain/google-common';
 import type * as t from '~/types';
 import { isEnabled } from '~/utils';

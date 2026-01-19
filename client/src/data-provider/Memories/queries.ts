@@ -1,12 +1,12 @@
 /* Memories */
-import { QueryKeys, MutationKeys, dataService } from 'librechat-data-provider';
+import { QueryKeys, MutationKeys, dataService } from 'vestai-data-provider';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import type {
   UseQueryOptions,
   UseMutationOptions,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import type { TUserMemory, MemoriesResponse } from 'librechat-data-provider';
+import type { TUserMemory, MemoriesResponse } from 'vestai-data-provider';
 
 export const useMemoriesQuery = (
   config?: UseQueryOptions<MemoriesResponse>,

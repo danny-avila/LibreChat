@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
-import { Constants } from 'librechat-data-provider';
-import { useToastContext, useMediaQuery } from '@librechat/client';
-import type { TConversation } from 'librechat-data-provider';
+import { Constants } from 'vestai-data-provider';
+import { useToastContext, useMediaQuery } from '@vestai/client';
+import type { TConversation } from 'vestai-data-provider';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';

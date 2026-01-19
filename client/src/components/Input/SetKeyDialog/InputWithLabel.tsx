@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { Input, Label } from '@librechat/client';
+import { Input, Label } from '@vestai/client';
 import type { ChangeEvent, FC, Ref } from 'react';
 import { cn, defaultTextPropsLabel, removeFocusOutlines, defaultTextProps } from '~/utils/';
 import { useLocalize } from '~/hooks';

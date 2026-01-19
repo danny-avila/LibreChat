@@ -1,5 +1,5 @@
 import { useLocalize } from '~/hooks';
-import { TStartupConfig } from 'librechat-data-provider';
+import { TStartupConfig } from 'vestai-data-provider';
 
 function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | undefined }) {
   const localize = useLocalize();

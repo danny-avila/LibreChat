@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { Label, HoverCard, SelectDropDown, HoverCardTrigger } from '@librechat/client';
-import type { Assistant, TPreset } from 'librechat-data-provider';
+import { Label, HoverCard, SelectDropDown, HoverCardTrigger } from '@vestai/client';
+import type { Assistant, TPreset } from 'vestai-data-provider';
 import type { TModelSelectProps, Option } from '~/common';
 import {
   cn,

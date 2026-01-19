@@ -4,7 +4,7 @@ import UnconfiguredMCPTool from './UnconfiguredMCPTool';
 import { useAgentPanelContext } from '~/Providers';
 import { useHasAccess, useLocalize } from '~/hooks';
 import MCPTool from './MCPTool';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, Permissions } from 'vestai-data-provider';
 
 export default function MCPTools({
   agentId,

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Label, OGDialog, OGDialogTrigger } from '@librechat/client';
-import type t from 'librechat-data-provider';
+import { Label, OGDialog, OGDialogTrigger } from '@vestai/client';
+import type t from 'vestai-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
 import AgentDetailContent from './AgentDetailContent';

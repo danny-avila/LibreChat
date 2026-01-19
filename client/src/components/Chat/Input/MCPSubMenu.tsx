@@ -1,7 +1,7 @@
 import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronRight } from 'lucide-react';
-import { MCPIcon, PinIcon } from '@librechat/client';
+import { MCPIcon, PinIcon } from '@vestai/client';
 import MCPServerMenuItem from '~/components/MCP/MCPServerMenuItem';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { useBadgeRowContext } from '~/Providers';

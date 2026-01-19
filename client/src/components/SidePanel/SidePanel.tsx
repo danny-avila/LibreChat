@@ -1,8 +1,8 @@
 import { useState, useCallback, useMemo, memo } from 'react';
-import { getEndpointField } from 'librechat-data-provider';
-import { useUserKeyQuery } from 'librechat-data-provider/react-query';
-import { ResizableHandleAlt, ResizablePanel, useMediaQuery } from '@librechat/client';
-import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
+import { getEndpointField } from 'vestai-data-provider';
+import { useUserKeyQuery } from 'vestai-data-provider/react-query';
+import { ResizableHandleAlt, ResizablePanel, useMediaQuery } from '@vestai/client';
+import type { TEndpointsConfig, TInterfaceConfig } from 'vestai-data-provider';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useLocalStorage, useLocalize } from '~/hooks';

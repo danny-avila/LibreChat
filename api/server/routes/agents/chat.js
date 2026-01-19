@@ -1,6 +1,6 @@
 const express = require('express');
-const { generateCheckAccess, skipAgentCheck } = require('@librechat/api');
-const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
+const { generateCheckAccess, skipAgentCheck } = require('@vestai/api');
+const { PermissionTypes, Permissions, PermissionBits } = require('vestai-data-provider');
 const {
   moderateText,
   // validateModel,

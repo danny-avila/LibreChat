@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
-import { useMediaQuery } from '@librechat/client';
+import { useMediaQuery } from '@vestai/client';
 import type { ContextType } from '~/common';
 import {
   useSearchEnabled,

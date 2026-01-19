@@ -2,7 +2,7 @@ import React, { createRef } from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import BookmarkForm from '../BookmarkForm';
-import type { TConversationTag } from 'librechat-data-provider';
+import type { TConversationTag } from 'vestai-data-provider';
 
 const mockMutate = jest.fn();
 const mockShowToast = jest.fn();
@@ -26,7 +26,7 @@ jest.mock('~/hooks', () => ({
   },
 }));
 
-jest.mock('@librechat/client', () => {
+jest.mock('@vestai/client', () => {
   const ActualReact = jest.requireActual<typeof import('react')>('react');
   return {
     Checkbox: ({

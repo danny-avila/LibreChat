@@ -7,7 +7,7 @@ import {
   bedrockInputParser,
   bedrockOutputParser,
   removeNullishValues,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type {
   BaseInitializeParams,
   InitializeResultBase,

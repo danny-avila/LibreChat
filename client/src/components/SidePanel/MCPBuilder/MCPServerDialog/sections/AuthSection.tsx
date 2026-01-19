@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { Label, Input, Checkbox, SecretInput, Radio, useToastContext } from '@librechat/client';
+import { Label, Input, Checkbox, SecretInput, Radio, useToastContext } from '@vestai/client';
 import { Copy, CopyCheck } from 'lucide-react';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
 import { cn } from '~/utils';

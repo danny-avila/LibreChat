@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { Capabilities } from 'librechat-data-provider';
+import { Capabilities } from 'vestai-data-provider';
 import { useFormContext, useWatch } from 'react-hook-form';
-import type { TConfig, AssistantsEndpoint } from 'librechat-data-provider';
+import type { TConfig, AssistantsEndpoint } from 'vestai-data-provider';
 import type { AssistantForm } from '~/common';
 import ImageVision from './ImageVision';
 import { useLocalize } from '~/hooks';

@@ -1,11 +1,11 @@
-const { logger, webSearchKeys } = require('@librechat/data-schemas');
-const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-provider');
+const { logger, webSearchKeys } = require('@vestai/data-schemas');
+const { Tools, CacheKeys, Constants, FileSources } = require('vestai-data-provider');
 const {
   MCPOAuthHandler,
   MCPTokenStorage,
   normalizeHttpError,
   extractWebSearchEnvVars,
-} = require('@librechat/api');
+} = require('@vestai/api');
 const {
   deleteAllUserSessions,
   deleteAllSharedLinks,

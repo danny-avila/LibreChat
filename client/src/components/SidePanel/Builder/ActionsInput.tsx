@@ -1,19 +1,19 @@
 import debounce from 'lodash/debounce';
 import { useState, useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
-import { Spinner, useToastContext } from '@librechat/client';
+import { Spinner, useToastContext } from '@vestai/client';
 import {
   validateAndParseOpenAPISpec,
   openapiToFunction,
   AuthTypeEnum,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type {
   Action,
   FunctionTool,
   ActionMetadata,
   ValidationResult,
   AssistantsEndpoint,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { ActionAuthForm, ActionWithNullableMetadata } from '~/common';
 import type { Spec } from './ActionsTable';
 import ActionCallback from '~/components/SidePanel/Builder/ActionCallback';

@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
-import { isAssistantsEndpoint } from 'librechat-data-provider';
-import type { AssistantsEndpoint, TConversation, TPreset } from 'librechat-data-provider';
+import { isAssistantsEndpoint } from 'vestai-data-provider';
+import type { AssistantsEndpoint, TConversation, TPreset } from 'vestai-data-provider';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useChatContext } from '~/Providers/ChatContext';
 import useAssistantListMap from './useAssistantListMap';

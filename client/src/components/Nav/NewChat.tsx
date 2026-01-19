@@ -1,8 +1,8 @@
 import React, { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'vestai-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@librechat/client';
+import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@vestai/client';
 import { CLOSE_SIDEBAR_ID, OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { clearMessagesCache } from '~/utils';

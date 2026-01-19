@@ -1,5 +1,5 @@
-import { Checkbox } from '@librechat/client';
-import { Capabilities } from 'librechat-data-provider';
+import { Checkbox } from '@vestai/client';
+import { Capabilities } from 'vestai-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';

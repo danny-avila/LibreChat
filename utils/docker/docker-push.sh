@@ -14,7 +14,7 @@ if [[ -z "${TAG}" ]]; then
   TAG=latest
 fi
 
-LOCAL_DOCKER_IMG=librechat:${TAG}
+LOCAL_DOCKER_IMG=vestai:${TAG}
 
 if [[ -z "${DOCKER_REMOTE_REGISTRY}" ]]; then
   echo "DOCKER_REMOTE_REGISTRY is not set" >&2

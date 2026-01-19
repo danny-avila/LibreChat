@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Spinner, useToastContext } from '@librechat/client';
+import { Spinner, useToastContext } from '@vestai/client';
 import MinimalMessagesWrapper from '~/components/Chat/Messages/MinimalMessages';
 import { useNavScrolling, useLocalize, useAuthContext } from '~/hooks';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';

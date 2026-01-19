@@ -1,11 +1,11 @@
-const { handleError } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { handleError } = require('@vestai/api');
+const { logger } = require('@vestai/data-schemas');
 const {
   EndpointURLs,
   EModelEndpoint,
   isAgentsEndpoint,
   parseCompactConvo,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
 const assistants = require('~/server/services/Endpoints/assistants');
 const agents = require('~/server/services/Endpoints/agents');

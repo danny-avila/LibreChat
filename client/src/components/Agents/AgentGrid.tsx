@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect } from 'react';
-import { Spinner } from '@librechat/client';
-import { PermissionBits } from 'librechat-data-provider';
-import type t from 'librechat-data-provider';
+import { Spinner } from '@vestai/client';
+import { PermissionBits } from 'vestai-data-provider';
+import type t from 'vestai-data-provider';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
 import { useAgentCategories, useLocalize } from '~/hooks';
 import { useInfiniteScroll } from '~/hooks/useInfiniteScroll';

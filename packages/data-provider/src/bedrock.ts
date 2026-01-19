@@ -47,7 +47,7 @@ function getBedrockAnthropicBetaHeaders(model: string): string[] {
 
 export const bedrockInputSchema = s.tConversationSchema
   .pick({
-    /* LibreChat params; optionType: 'conversation' */
+    /* VestAI params; optionType: 'conversation' */
     modelLabel: true,
     promptPrefix: true,
     resendFiles: true,
@@ -90,7 +90,7 @@ export type BedrockConverseInput = z.infer<typeof bedrockInputSchema>;
 
 export const bedrockInputParser = s.tConversationSchema
   .pick({
-    /* LibreChat params; optionType: 'conversation' */
+    /* VestAI params; optionType: 'conversation' */
     modelLabel: true,
     promptPrefix: true,
     resendFiles: true,

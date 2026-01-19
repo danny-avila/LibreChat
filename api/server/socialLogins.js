@@ -1,8 +1,8 @@
 const passport = require('passport');
 const session = require('express-session');
-const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
+const { isEnabled } = require('@vestai/api');
+const { logger } = require('@vestai/data-schemas');
+const { CacheKeys } = require('vestai-data-provider');
 const {
   openIdJwtLogin,
   facebookLogin,

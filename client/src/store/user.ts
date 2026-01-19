@@ -1,5 +1,5 @@
 import { atom } from 'recoil';
-import type { TUser, TPlugin } from 'librechat-data-provider';
+import type { TUser, TPlugin } from 'vestai-data-provider';
 
 const user = atom<TUser | undefined>({
   key: 'user',

@@ -1,6 +1,6 @@
-# DNS Configuration for LibreChat Helm Chart
+# DNS Configuration for VestAI Helm Chart
 
-This feature allows you to configure custom DNS settings for LibreChat pods, enabling traffic redirection to proxy servers or custom endpoints.
+This feature allows you to configure custom DNS settings for VestAI pods, enabling traffic redirection to proxy servers or custom endpoints.
 
 ## Use Cases
 
@@ -57,7 +57,7 @@ dnsConfig:
 
 Deploy:
 ```bash
-helm upgrade --install librechat ./helm/librechat -f values.yaml
+helm upgrade --install vestai ./helm/vestai -f values.yaml
 ```
 
 ### Corporate DNS Configuration
@@ -80,7 +80,7 @@ dnsConfig:
 
 1. Deploy with custom DNS settings:
 ```bash
-helm install librechat ./helm/librechat \
+helm install vestai ./helm/vestai \
   --set dnsPolicy="None" \
   --set dnsConfig.nameservers[0]="10.0.0.10"
 ```
@@ -109,7 +109,7 @@ The feature has been tested with the following scenarios:
 - Failover happens when primary is unavailable
 
 ✅ **Integration Test**
-- Works with existing LibreChat configuration
+- Works with existing VestAI configuration
 - No conflicts with cluster DNS when using ClusterFirst policy
 - Compatible with all pod security contexts
 
@@ -181,6 +181,6 @@ dnsConfig:         # Top level, not under any section
 ## Compatibility
 
 - Kubernetes 1.19+
-- Compatible with all LibreChat deployment modes
+- Compatible with all VestAI deployment modes
 - Works with both MongoDB and Meilisearch enabled/disabled
 - No additional permissions required

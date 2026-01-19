@@ -3,7 +3,7 @@ import {
   EModelEndpoint,
   ReasoningEffort,
   ReasoningSummary,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import type { RequestInit } from 'undici';
 import type { OpenAIParameters, AzureOptions } from '~/types';
 import { getOpenAIConfig } from './config';
@@ -195,8 +195,8 @@ describe('getOpenAIConfig', () => {
 
     expect(result.configOptions?.baseURL).toBe(reverseProxyUrl);
     expect(result.configOptions?.defaultHeaders).toMatchObject({
-      'HTTP-Referer': 'https://librechat.ai',
-      'X-Title': 'LibreChat',
+      'HTTP-Referer': '/',
+      'X-Title': 'VestAI',
     });
     expect(result.llmConfig.include_reasoning).toBe(true);
     expect(result.provider).toBe('openrouter');
@@ -891,8 +891,8 @@ describe('getOpenAIConfig', () => {
       });
 
       expect(result.configOptions?.defaultHeaders).toEqual({
-        'HTTP-Referer': 'https://librechat.ai',
-        'X-Title': 'LibreChat',
+        'HTTP-Referer': '/',
+        'X-Title': 'VestAI',
         'X-Custom-Header': 'custom-value',
         Authorization: 'Bearer custom-token',
       });
@@ -1385,8 +1385,8 @@ describe('getOpenAIConfig', () => {
           apiKey: 'user_provided',
           baseURL: baseURL,
           headers: {
-            'X-Custom-Provider': 'LibreChat',
-            'User-Agent': 'LibreChat/1.0',
+            'X-Custom-Provider': 'VestAI',
+            'User-Agent': 'VestAI/1.0',
           },
           addParams: {
             custom_parameter: 'custom_value',
@@ -1458,8 +1458,8 @@ describe('getOpenAIConfig', () => {
         const clientOptions = {
           reverseProxyUrl: baseURL,
           headers: {
-            'HTTP-Referer': 'https://librechat.ai',
-            'X-Title': 'LibreChat',
+            'HTTP-Referer': '/',
+            'X-Title': 'VestAI',
             Authorization: `Bearer ${apiKey}`,
           },
           addParams: {
@@ -1495,8 +1495,8 @@ describe('getOpenAIConfig', () => {
           repetition_penalty: 1.1,
         });
         expect(result.configOptions?.defaultHeaders).toMatchObject({
-          'HTTP-Referer': 'https://librechat.ai',
-          'X-Title': 'LibreChat',
+          'HTTP-Referer': '/',
+          'X-Title': 'VestAI',
           Authorization: `Bearer ${apiKey}`,
         });
         expect(result.provider).toBe('openrouter');

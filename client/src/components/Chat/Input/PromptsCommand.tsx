@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
-import { Spinner, useCombobox } from '@librechat/client';
+import { Spinner, useCombobox } from '@vestai/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import type { TPromptGroup } from 'librechat-data-provider';
+import type { TPromptGroup } from 'vestai-data-provider';
 import type { PromptOption } from '~/common';
 import { removeCharIfLast, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';

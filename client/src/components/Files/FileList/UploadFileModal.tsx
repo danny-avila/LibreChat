@@ -1,5 +1,5 @@
 import React, { useState, ChangeEvent } from 'react';
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input } from '@librechat/client';
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

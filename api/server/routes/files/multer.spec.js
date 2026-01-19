@@ -241,12 +241,12 @@ describe('Multer Configuration', () => {
 
   describe('File Filter with Real defaultFileConfig', () => {
     it('should use real fileConfig.checkType for validation', async () => {
-      // Test with actual librechat-data-provider functions
+      // Test with actual vestai-data-provider functions
       const {
         fileConfig,
         imageMimeTypes,
         applicationMimeTypes,
-      } = require('librechat-data-provider');
+      } = require('vestai-data-provider');
 
       // Test that the real checkType function works with regex patterns
       expect(fileConfig.checkType('image/jpeg', [imageMimeTypes])).toBe(true);
@@ -265,9 +265,9 @@ describe('Multer Configuration', () => {
 
     it('should reject unsupported file types using real config', async () => {
       // Mock defaultFileConfig for this specific test
-      const originalCheckType = require('librechat-data-provider').fileConfig.checkType;
+      const originalCheckType = require('vestai-data-provider').fileConfig.checkType;
       const mockCheckType = jest.fn().mockReturnValue(false);
-      require('librechat-data-provider').fileConfig.checkType = mockCheckType;
+      require('vestai-data-provider').fileConfig.checkType = mockCheckType;
 
       try {
         const multerInstance = await createMulterInstance();
@@ -277,12 +277,12 @@ describe('Multer Configuration', () => {
         expect(mockCheckType).toBeDefined();
       } finally {
         // Restore original function
-        require('librechat-data-provider').fileConfig.checkType = originalCheckType;
+        require('vestai-data-provider').fileConfig.checkType = originalCheckType;
       }
     });
 
     it('should use real mergeFileConfig function', async () => {
-      const { mergeFileConfig, mbToBytes } = require('librechat-data-provider');
+      const { mergeFileConfig, mbToBytes } = require('vestai-data-provider');
 
       // Test with actual merge function - note that it converts MB to bytes
       const testConfig = {

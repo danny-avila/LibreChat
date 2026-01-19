@@ -1,7 +1,7 @@
-import { OptionTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
+import { OptionTypes } from 'vestai-data-provider';
+import type { DynamicSettingProps } from 'vestai-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
-import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '@librechat/client';
+import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '@vestai/client';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';

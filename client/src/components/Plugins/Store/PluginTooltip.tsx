@@ -1,4 +1,4 @@
-import { HoverCardPortal, HoverCardContent } from '@librechat/client';
+import { HoverCardPortal, HoverCardContent } from '@vestai/client';
 
 type TPluginTooltipProps = {
   content: string;

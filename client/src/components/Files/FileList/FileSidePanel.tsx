@@ -1,7 +1,7 @@
 import React from 'react';
 import FileList from './FileList';
-import { Button, Input } from '@librechat/client';
-import { TFile } from 'librechat-data-provider/dist/types';
+import { Button, Input } from '@vestai/client';
+import { TFile } from 'vestai-data-provider/dist/types';
 import UploadFileButton from './UploadFileButton';
 import { ListFilter } from 'lucide-react';
 import { useLocalize } from '~/hooks';

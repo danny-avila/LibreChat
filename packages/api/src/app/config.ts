@@ -1,11 +1,11 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import {
   EModelEndpoint,
   removeNullishValues,
   normalizeEndpointName,
-} from 'librechat-data-provider';
-import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'librechat-data-provider';
-import type { AppConfig } from '@librechat/data-schemas';
+} from 'vestai-data-provider';
+import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'vestai-data-provider';
+import type { AppConfig } from '@vestai/data-schemas';
 import { isEnabled } from '~/utils';
 
 /**

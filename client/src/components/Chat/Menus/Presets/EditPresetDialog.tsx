@@ -1,7 +1,7 @@
 import { useRecoilState } from 'recoil';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, isAgentsEndpoint } from 'librechat-data-provider';
+import { QueryKeys, isAgentsEndpoint } from 'vestai-data-provider';
 import {
   Input,
   Label,
@@ -9,8 +9,8 @@ import {
   OGDialogTitle,
   SelectDropDown,
   OGDialogContent,
-} from '@librechat/client';
-import type { TModelsConfig, TEndpointsConfig } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TModelsConfig, TEndpointsConfig } from 'vestai-data-provider';
 import {
   cn,
   defaultTextProps,

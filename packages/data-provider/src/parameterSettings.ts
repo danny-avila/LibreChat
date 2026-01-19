@@ -90,7 +90,7 @@ const createDefinition = (
   return { ...base, ...overrides } as SettingDefinition;
 };
 
-export const librechat = {
+export const vestai = {
   modelLabel: {
     key: 'modelLabel',
     label: 'com_endpoint_custom_name',
@@ -155,10 +155,10 @@ export const librechat = {
 
 const openAIParams: Record<string, SettingDefinition> = {
   chatGptLabel: {
-    ...librechat.modelLabel,
+    ...vestai.modelLabel,
     key: 'chatGptLabel',
   },
-  promptPrefix: librechat.promptPrefix,
+  promptPrefix: vestai.promptPrefix,
   temperature: createDefinition(baseDefinitions.temperature, {
     default: openAISettings.temperature.default,
     range: {
@@ -643,50 +643,50 @@ const google: Record<string, SettingDefinition> = {
 };
 
 const googleConfig: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  vestai.modelLabel,
+  vestai.promptPrefix,
+  vestai.maxContextTokens,
   google.maxOutputTokens,
   google.temperature,
   google.topP,
   google.topK,
-  librechat.resendFiles,
+  vestai.resendFiles,
   google.thinking,
   google.thinkingBudget,
   google.web_search,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const googleCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  vestai.modelLabel,
+  vestai.promptPrefix,
 ];
 
 const googleCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  vestai.maxContextTokens,
   google.maxOutputTokens,
   google.temperature,
   google.topP,
   google.topK,
-  librechat.resendFiles,
+  vestai.resendFiles,
   google.thinking,
   google.thinkingBudget,
   google.web_search,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const openAI: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  vestai.modelLabel,
+  vestai.promptPrefix,
+  vestai.maxContextTokens,
   openAIParams.max_tokens,
   openAIParams.temperature,
   openAIParams.top_p,
   openAIParams.frequency_penalty,
   openAIParams.presence_penalty,
   baseDefinitions.stop,
-  librechat.resendFiles,
+  vestai.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.web_search,
   openAIParams.reasoning_effort,
@@ -694,24 +694,24 @@ const openAI: SettingsConfiguration = [
   openAIParams.reasoning_summary,
   openAIParams.verbosity,
   openAIParams.disableStreaming,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const openAICol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  vestai.modelLabel,
+  vestai.promptPrefix,
 ];
 
 const openAICol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  vestai.maxContextTokens,
   openAIParams.max_tokens,
   openAIParams.temperature,
   openAIParams.top_p,
   openAIParams.frequency_penalty,
   openAIParams.presence_penalty,
   baseDefinitions.stop,
-  librechat.resendFiles,
+  vestai.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
   openAIParams.reasoning_summary,
@@ -719,199 +719,199 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.useResponsesApi,
   openAIParams.web_search,
   openAIParams.disableStreaming,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const anthropicConfig: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  vestai.modelLabel,
+  vestai.promptPrefix,
+  vestai.maxContextTokens,
   anthropic.maxOutputTokens,
   anthropic.temperature,
   anthropic.topP,
   anthropic.topK,
-  librechat.resendFiles,
+  vestai.resendFiles,
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.web_search,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const anthropicCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  vestai.modelLabel,
+  vestai.promptPrefix,
 ];
 
 const anthropicCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  vestai.maxContextTokens,
   anthropic.maxOutputTokens,
   anthropic.temperature,
   anthropic.topP,
   anthropic.topK,
-  librechat.resendFiles,
+  vestai.resendFiles,
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.web_search,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const bedrockAnthropic: SettingsConfiguration = [
-  librechat.modelLabel,
+  vestai.modelLabel,
   bedrock.system,
-  librechat.maxContextTokens,
+  vestai.maxContextTokens,
   bedrock.maxTokens,
   bedrock.temperature,
   bedrock.topP,
   bedrock.topK,
   baseDefinitions.stop,
-  librechat.resendFiles,
+  vestai.resendFiles,
   bedrock.region,
   bedrock.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const bedrockMistral: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  vestai.modelLabel,
+  vestai.promptPrefix,
+  vestai.maxContextTokens,
   bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
-  librechat.resendFiles,
+  vestai.resendFiles,
   bedrock.region,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const bedrockCohere: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  vestai.modelLabel,
+  vestai.promptPrefix,
+  vestai.maxContextTokens,
   bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
-  librechat.resendFiles,
+  vestai.resendFiles,
   bedrock.region,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const bedrockGeneral: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  vestai.modelLabel,
+  vestai.promptPrefix,
+  vestai.maxContextTokens,
   meta.temperature,
   meta.topP,
-  librechat.resendFiles,
+  vestai.resendFiles,
   bedrock.region,
   bedrock.promptCache,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const bedrockAnthropicCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
+  vestai.modelLabel,
   bedrock.system,
   baseDefinitions.stop,
 ];
 
 const bedrockAnthropicCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  vestai.maxContextTokens,
   bedrock.maxTokens,
   bedrock.temperature,
   bedrock.topP,
   bedrock.topK,
-  librechat.resendFiles,
+  vestai.resendFiles,
   bedrock.region,
   bedrock.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const bedrockMistralCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  vestai.modelLabel,
+  vestai.promptPrefix,
 ];
 
 const bedrockMistralCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  vestai.maxContextTokens,
   bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
-  librechat.resendFiles,
+  vestai.resendFiles,
   bedrock.region,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const bedrockCohereCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  vestai.modelLabel,
+  vestai.promptPrefix,
 ];
 
 const bedrockCohereCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  vestai.maxContextTokens,
   bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
-  librechat.resendFiles,
+  vestai.resendFiles,
   bedrock.region,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const bedrockGeneralCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  vestai.modelLabel,
+  vestai.promptPrefix,
 ];
 
 const bedrockGeneralCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  vestai.maxContextTokens,
   meta.temperature,
   meta.topP,
-  librechat.resendFiles,
+  vestai.resendFiles,
   bedrock.region,
   bedrock.promptCache,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const bedrockMoonshot: SettingsConfiguration = [
-  librechat.modelLabel,
+  vestai.modelLabel,
   bedrock.system,
-  librechat.maxContextTokens,
+  vestai.maxContextTokens,
   createDefinition(bedrock.maxTokens, {
     default: 16384,
   }),
   bedrock.temperature,
   bedrock.topP,
   baseDefinitions.stop,
-  librechat.resendFiles,
+  vestai.resendFiles,
   bedrock.region,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 const bedrockMoonshotCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
+  vestai.modelLabel,
   bedrock.system,
   baseDefinitions.stop,
 ];
 
 const bedrockMoonshotCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  vestai.maxContextTokens,
   createDefinition(bedrock.maxTokens, {
     default: 16384,
   }),
   bedrock.temperature,
   bedrock.topP,
-  librechat.resendFiles,
+  vestai.resendFiles,
   bedrock.region,
-  librechat.fileTokenLimit,
+  vestai.fileTokenLimit,
 ];
 
 export const paramSettings: Record<string, SettingsConfiguration | undefined> = {

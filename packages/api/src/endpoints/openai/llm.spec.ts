@@ -3,7 +3,7 @@ import {
   EModelEndpoint,
   ReasoningEffort,
   ReasoningSummary,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import { getOpenAILLMConfig, extractDefaultParams, applyDefaultParams } from './llm';
 import type * as t from '~/types';
 

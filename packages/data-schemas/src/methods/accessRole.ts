@@ -1,4 +1,4 @@
-import { AccessRoleIds, ResourceType, PermissionBits } from 'librechat-data-provider';
+import { AccessRoleIds, ResourceType, PermissionBits } from 'vestai-data-provider';
 import type { Model, Types, DeleteResult } from 'mongoose';
 import type { IAccessRole } from '~/types';
 import { RoleBits } from '~/common';

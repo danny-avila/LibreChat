@@ -6,7 +6,7 @@ export function Toast() {
   const { toast, onOpenChange } = useToast();
   const severityClassName = {
     /* Going up by 100 units in terms of darkness (eg bg-green-500 to bg-green-600) for
-     * bg colors produces colors that are too visually dissimilar to LibreChat's standard color palette.
+     * bg colors produces colors that are too visually dissimilar to VestAI's standard color palette.
      * These colors were derived by adjusting the values in the HSV color space using CCA
      * until the 4.5:1 contrast ratio threshold was met against white text while maintaining
      * a relatively recognizable color scheme for toasts without compromising accessibility.

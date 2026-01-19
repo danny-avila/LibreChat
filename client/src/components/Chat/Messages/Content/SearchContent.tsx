@@ -1,14 +1,14 @@
 import { Suspense, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { DelayedRender } from '@librechat/client';
-import { ContentTypes } from 'librechat-data-provider';
+import { DelayedRender } from '@vestai/client';
+import { ContentTypes } from 'vestai-data-provider';
 import type {
   Agents,
   TMessage,
   TAttachment,
   SearchResultData,
   TMessageContentParts,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import { UnfinishedMessage } from './MessageContent';
 import Sources from '~/components/Web/Sources';
 import { cn, mapAttachments } from '~/utils';

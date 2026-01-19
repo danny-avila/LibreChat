@@ -1,15 +1,15 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useAtom } from 'jotai';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@vestai/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { Constants, QueryKeys, MCPOptions, ResourceType } from 'librechat-data-provider';
+import { Constants, QueryKeys, MCPOptions, ResourceType } from 'vestai-data-provider';
 import {
   useCancelMCPOAuthMutation,
   useUpdateUserPluginsMutation,
   useReinitializeMCPServerMutation,
   useGetAllEffectivePermissionsQuery,
-} from 'librechat-data-provider/react-query';
-import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-data-provider';
+} from 'vestai-data-provider/react-query';
+import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'vestai-data-provider';
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';

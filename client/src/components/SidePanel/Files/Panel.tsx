@@ -1,4 +1,4 @@
-import type { TFile } from 'librechat-data-provider';
+import type { TFile } from 'vestai-data-provider';
 import { useGetFiles } from '~/data-provider';
 import { columns } from './PanelColumns';
 import DataTable from './PanelTable';

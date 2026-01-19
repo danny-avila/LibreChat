@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
+const { EModelEndpoint, Constants, openAISettings } = require('vestai-data-provider');
 const { bulkSaveConvos: _bulkSaveConvos } = require('~/models/Conversation');
 const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
@@ -755,9 +755,9 @@ describe('importChatGptConvo', () => {
   });
 });
 
-describe('importLibreChatConvo', () => {
+describe('importVestAIConvo', () => {
   const jsonDataNonRecursiveBranches = JSON.parse(
-    fs.readFileSync(path.join(__dirname, '__data__', 'librechat-opts-nonr-branches.json'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, '__data__', 'vestai-opts-nonr-branches.json'), 'utf8'),
   );
 
   it('should import conversation correctly', async () => {
@@ -766,7 +766,7 @@ describe('importLibreChatConvo', () => {
     });
     const expectedNumberOfMessages = 6;
     const jsonData = JSON.parse(
-      fs.readFileSync(path.join(__dirname, '__data__', 'librechat-export.json'), 'utf8'),
+      fs.readFileSync(path.join(__dirname, '__data__', 'vestai-export.json'), 'utf8'),
     );
     const requestUserId = 'user-123';
     const importBatchBuilder = new ImportBatchBuilder(requestUserId);
@@ -792,7 +792,7 @@ describe('importLibreChatConvo', () => {
     });
 
     const jsonData = JSON.parse(
-      fs.readFileSync(path.join(__dirname, '__data__', 'librechat-linear.json'), 'utf8'),
+      fs.readFileSync(path.join(__dirname, '__data__', 'vestai-linear.json'), 'utf8'),
     );
     const requestUserId = 'user-123';
     const importBatchBuilder = new ImportBatchBuilder(requestUserId);
@@ -822,7 +822,7 @@ describe('importLibreChatConvo', () => {
 
   it('should maintain correct message hierarchy (tree parent/children relationship)', async () => {
     const jsonData = JSON.parse(
-      fs.readFileSync(path.join(__dirname, '__data__', 'librechat-tree.json'), 'utf8'),
+      fs.readFileSync(path.join(__dirname, '__data__', 'vestai-tree.json'), 'utf8'),
     );
     const requestUserId = 'user-123';
     const importBatchBuilder = new ImportBatchBuilder(requestUserId);

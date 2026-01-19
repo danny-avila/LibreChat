@@ -1,6 +1,6 @@
 import { WritableAtom, useAtom } from 'jotai';
 import { RecoilState, useRecoilState } from 'recoil';
-import { Switch, InfoHoverCard, ESide } from '@librechat/client';
+import { Switch, InfoHoverCard, ESide } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 
 type LocalizeFn = ReturnType<typeof useLocalize>;

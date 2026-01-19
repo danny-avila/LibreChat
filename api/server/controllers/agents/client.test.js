@@ -1,17 +1,17 @@
-const { Providers } = require('@librechat/agents');
-const { Constants, EModelEndpoint } = require('librechat-data-provider');
+const { Providers } = require('@vestai/agents');
+const { Constants, EModelEndpoint } = require('vestai-data-provider');
 const AgentClient = require('./client');
 
-jest.mock('@librechat/agents', () => ({
-  ...jest.requireActual('@librechat/agents'),
+jest.mock('@vestai/agents', () => ({
+  ...jest.requireActual('@vestai/agents'),
   createMetadataAggregator: () => ({
     handleLLMEnd: jest.fn(),
     collected: [],
   }),
 }));
 
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
+jest.mock('@vestai/api', () => ({
+  ...jest.requireActual('@vestai/api'),
 }));
 
 // Mock getMCPManager
@@ -1532,7 +1532,7 @@ describe('AgentClient - titleConvo', () => {
 
     it('should handle mixed content types correctly', async () => {
       const { HumanMessage } = require('@langchain/core/messages');
-      const { ContentTypes } = require('librechat-data-provider');
+      const { ContentTypes } = require('vestai-data-provider');
 
       const messages = [
         new HumanMessage({

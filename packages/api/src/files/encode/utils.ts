@@ -1,7 +1,7 @@
 import getStream from 'get-stream';
-import { Providers } from '@librechat/agents';
-import { FileSources, mergeFileConfig, getEndpointFileConfig } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
+import { Providers } from '@vestai/agents';
+import { FileSources, mergeFileConfig, getEndpointFileConfig } from 'vestai-data-provider';
+import type { IMongoFile } from '@vestai/data-schemas';
 import type { ServerRequest, StrategyFunctions, ProcessedFile } from '~/types';
 
 /**

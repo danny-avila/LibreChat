@@ -1,5 +1,5 @@
 {
-  "name": "@librechat/backend",
+  "name": "@vestai/backend",
   "version": "v0.8.2-rc3",
   "description": "",
   "scripts": {
@@ -18,7 +18,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/LibreChat.git"
+    "url": "git+https://github.com/Doktransfers/vest-ai.git"
   },
   "keywords": [],
   "author": "",
@@ -30,9 +30,9 @@
     "~/*": "./*"
   },
   "bugs": {
-    "url": "https://github.com/danny-avila/LibreChat/issues"
+    "url": "https://github.com/Doktransfers/vest-ai/issues"
   },
-  "homepage": "https://librechat.ai",
+  "homepage": "/",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
     "@anthropic-ai/vertex-sdk": "^0.14.0",
@@ -45,9 +45,9 @@
     "@google/genai": "^1.19.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.80",
-    "@librechat/agents": "^3.0.774",
-    "@librechat/api": "*",
-    "@librechat/data-schemas": "*",
+    "@vestai/agents": "^3.0.774",
+    "@vestai/api": "*",
+    "@vestai/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@node-saml/passport-saml": "^5.1.0",
@@ -79,7 +79,7 @@
     "keyv": "^5.3.2",
     "keyv-file": "^5.1.2",
     "klona": "^2.0.6",
-    "librechat-data-provider": "*",
+    "vestai-data-provider": "*",
     "lodash": "^4.17.21",
     "mathjs": "^15.1.0",
     "meilisearch": "^0.38.0",

@@ -1,6 +1,6 @@
 # Security Policy
 
-At LibreChat, we prioritize the security of our project and value the contributions of security researchers in helping us improve the security of our codebase. If you discover a security vulnerability within our project, we appreciate your responsible disclosure. Please follow the guidelines below to report any vulnerabilities to us:
+At VestAI, we prioritize the security of our project and value the contributions of security researchers in helping us improve the security of our codebase. If you discover a security vulnerability within our project, we appreciate your responsible disclosure. Please follow the guidelines below to report any vulnerabilities to us:
 
 **Note: Only report sensitive vulnerability details via the appropriate private communication channels mentioned below. Public channels, such as GitHub issues and Discord, should be used for initiating contact and establishing private communication channels.**
 
@@ -12,7 +12,7 @@ When reporting a security vulnerability, you have the following options to reach
 
 - **Option 2: GitHub Issues**: You can initiate first contact via GitHub Issues. However, please note that initial contact through GitHub Issues should not include any sensitive details.
 
-- **Option 3: Discord Server**: You can join our [Discord community](https://discord.librechat.ai) and initiate first contact in the `#issues` channel. However, please ensure that initial contact through Discord does not include any sensitive details.
+- **Option 3: Discord Server**: You can join our [Discord community](#) and initiate first contact in the `#issues` channel. However, please ensure that initial contact through Discord does not include any sensitive details.
 
 _After the initial contact, we will establish a private communication channel for further discussion._
 
@@ -26,7 +26,7 @@ We strive to acknowledge vulnerability reports within 72 hours and will keep you
 
 ## Security Updates and Patching
 
-We are committed to maintaining the security of our open-source project, LibreChat, and promptly addressing any identified vulnerabilities. To ensure the security of our project, we adhere to the following practices:
+We are committed to maintaining the security of our open-source project, VestAI, and promptly addressing any identified vulnerabilities. To ensure the security of our project, we adhere to the following practices:
 
 - We prioritize security updates for the current major release of our software.
 - We actively monitor the GitHub Security Advisory system and the `#issues` channel on Discord for any vulnerability reports.
@@ -39,11 +39,11 @@ Please note that as a security-conscious community, we may not always disclose d
 
 This security policy applies to the following GitHub repository:
 
-- Repository: [LibreChat](https://github.librechat.ai)
+- Repository: [VestAI](https://github.com/Doktransfers/vest-ai)
 
 ## Contact
 
-If you have any questions or concerns regarding the security of our project, please join our [Discord community](https://discord.librechat.ai) and report them in the appropriate channel. You can also reach out to us by [opening an issue](https://github.com/danny-avila/LibreChat/issues/new) on GitHub. Please note that the response time may vary depending on the nature and severity of the inquiry.
+If you have any questions or concerns regarding the security of our project, please join our [Discord community](#) and report them in the appropriate channel. You can also reach out to us by [opening an issue](https://github.com/Doktransfers/vest-ai/issues/new) on GitHub. Please note that the response time may vary depending on the nature and severity of the inquiry.
 
 ## Acknowledgments
 

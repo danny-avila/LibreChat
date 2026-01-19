@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { RecoilRoot } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import AttachFileMenu from '../AttachFileMenu';
 
 // Mock all the hooks
@@ -28,7 +28,7 @@ jest.mock('~/components/SharePoint', () => ({
   SharePointPickerDialog: jest.fn(() => null),
 }));
 
-jest.mock('@librechat/client', () => {
+jest.mock('@vestai/client', () => {
   const React = jest.requireActual('react');
   return {
     FileUpload: React.forwardRef(({ children, handleFileChange }: any, ref: any) => (

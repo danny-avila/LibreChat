@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment } from 'vestai-data-provider';
 
 export interface IToolCallData extends Document {
   conversationId: string;

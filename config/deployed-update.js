@@ -40,8 +40,8 @@ const shouldRebase = process.argv.includes('--rebase');
   console.orange(downCommand);
   execSync(downCommand, { stdio: 'inherit' });
 
-  console.purple('Removing all tags for LibreChat `deployed` images...');
-  const repositories = ['ghcr.io/danny-avila/librechat-dev-api', 'librechat-client'];
+  console.purple('Removing all tags for VestAI `deployed` images...');
+  const repositories = ['ghcr.io/doktransfers/vestai-dev-api', 'vestai-client'];
   repositories.forEach((repo) => {
     const tags = execSync(`sudo docker images ${repo} -q`, { encoding: 'utf8' })
       .split('\n')
@@ -53,16 +53,16 @@ const shouldRebase = process.argv.includes('--rebase');
     });
   });
 
-  console.purple('Pulling latest LibreChat images...');
+  console.purple('Pulling latest VestAI images...');
   const pullCommand = 'sudo docker compose -f ./deploy-compose.yml pull api';
   console.orange(pullCommand);
   execSync(pullCommand, { stdio: 'inherit' });
 
   let startCommand = 'sudo docker compose -f ./deploy-compose.yml up -d';
-  console.green('Your LibreChat app is now up to date! Start the app with the following command:');
+  console.green('Your VestAI app is now up to date! Start the app with the following command:');
   console.purple(startCommand);
   console.orange(
-    "Note: it's also recommended to clear your browser cookies and localStorage for LibreChat to assure a fully clean installation.",
+    "Note: it's also recommended to clear your browser cookies and localStorage for VestAI to assure a fully clean installation.",
   );
   console.orange("Also: Don't worry, your data is safe :)");
 })();

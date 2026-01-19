@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { jest } from '@jest/globals';
 import VirtualizedAgentGrid from '../VirtualizedAgentGrid';
-import type * as t from 'librechat-data-provider';
+import type * as t from 'vestai-data-provider';
 
 // Mock react-virtualized for performance testing
 const mockRowRenderer = jest.fn();

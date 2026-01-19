@@ -1,4 +1,4 @@
-import type { TPreset } from 'librechat-data-provider';
+import type { TPreset } from 'vestai-data-provider';
 import type { TSetOptionsPayload, TSetExample, TSetOption, TSetOptions } from '~/common';
 import { useChatContext } from '~/Providers/ChatContext';
 import { cleanupPreset } from '~/utils';

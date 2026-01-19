@@ -31,7 +31,7 @@ function TestComponent() {
 
 /**
  * Creates a test router with optional basename to verify navigation works correctly
- * with subdirectory deployments (e.g., /librechat)
+ * with subdirectory deployments (e.g., /vestai)
  */
 const createTestRouter = (basename = '/') => {
   // When using basename, initialEntries must include the basename
@@ -118,18 +118,18 @@ describe('useAuthRedirect', () => {
       isAuthenticated: false,
     });
 
-    // Test with basename="/librechat" (simulates subdirectory deployment)
-    const router = createTestRouter('/librechat');
+    // Test with basename="/vestai" (simulates subdirectory deployment)
+    const router = createTestRouter('/vestai');
     const { getByTestId } = render(<RouterProvider router={router} />);
 
     // Full pathname includes basename
-    expect(router.state.location.pathname).toBe('/librechat/');
+    expect(router.state.location.pathname).toBe('/vestai/');
 
     // Wait for the redirect - router handles basename internally
     await waitFor(
       () => {
         // Router state pathname includes the full path with basename
-        expect(router.state.location.pathname).toBe('/librechat/login');
+        expect(router.state.location.pathname).toBe('/vestai/login');
         expect(getByTestId('login-page')).toBeInTheDocument();
       },
       { timeout: 1000 },
@@ -146,12 +146,12 @@ describe('useAuthRedirect', () => {
       isAuthenticated: false,
     });
 
-    const router = createTestRouter('/librechat');
+    const router = createTestRouter('/vestai');
     const { getByTestId } = render(<RouterProvider router={router} />);
 
     await waitFor(
       () => {
-        expect(router.state.location.pathname).toBe('/librechat/login');
+        expect(router.state.location.pathname).toBe('/vestai/login');
         expect(getByTestId('login-page')).toBeInTheDocument();
       },
       { timeout: 1000 },
@@ -160,7 +160,7 @@ describe('useAuthRedirect', () => {
     // The fact that navigation worked within the router proves we're using
     // navigate() and not window.location.href (which would cause a full reload
     // and break the test entirely). This maintains the SPA experience.
-    expect(router.state.location.pathname).toBe('/librechat/login');
+    expect(router.state.location.pathname).toBe('/vestai/login');
   });
 
   it('should clear timeout on unmount', async () => {

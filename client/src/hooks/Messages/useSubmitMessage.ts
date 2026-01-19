@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { replaceSpecialVars } from 'librechat-data-provider';
+import { replaceSpecialVars } from 'vestai-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';

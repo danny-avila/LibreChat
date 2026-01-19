@@ -1,4 +1,4 @@
-import type { MCPServerStatus } from 'librechat-data-provider';
+import type { MCPServerStatus } from 'vestai-data-provider';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import type { MCPServerStatusIconProps } from './MCPServerStatusIcon';
 

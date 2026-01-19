@@ -1,11 +1,11 @@
 import { renderHook, act } from '@testing-library/react';
 import copy from 'copy-to-clipboard';
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes } from 'vestai-data-provider';
 import type {
   SearchResultData,
   ProcessedOrganic,
   TMessageContentParts,
-} from 'librechat-data-provider';
+} from 'vestai-data-provider';
 import useCopyToClipboard from '~/hooks/Messages/useCopyToClipboard';
 
 // Mock the copy-to-clipboard module

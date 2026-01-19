@@ -1,7 +1,7 @@
 const { v4 } = require('uuid');
-const { sleep } = require('@librechat/agents');
-const { logger } = require('@librechat/data-schemas');
-const { sendEvent, getBalanceConfig, getModelMaxTokens, countTokens } = require('@librechat/api');
+const { sleep } = require('@vestai/agents');
+const { logger } = require('@vestai/data-schemas');
+const { sendEvent, getBalanceConfig, getModelMaxTokens, countTokens } = require('@vestai/api');
 const {
   Time,
   Constants,
@@ -14,7 +14,7 @@ const {
   ImageVisionTool,
   checkOpenAIStorage,
   AssistantStreamEvents,
-} = require('librechat-data-provider');
+} = require('vestai-data-provider');
 const {
   initThread,
   recordUsage,
@@ -76,7 +76,7 @@ const chatV1 = async (req, res) => {
   let parentMessageId = _parentId;
   /** @type {TMessage[]} */
   let previousMessages = [];
-  /** @type {import('librechat-data-provider').TConversation | null} */
+  /** @type {import('vestai-data-provider').TConversation | null} */
   let conversation = null;
   /** @type {string[]} */
   let file_ids = [];

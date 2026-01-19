@@ -1,6 +1,6 @@
-import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
-import type { Agent, AgentAvatar } from 'librechat-data-provider';
+import { logger } from '@vestai/data-schemas';
+import { FileSources } from 'vestai-data-provider';
+import type { Agent, AgentAvatar } from 'vestai-data-provider';
 
 const MAX_AVATAR_REFRESH_AGENTS = 1000;
 const AVATAR_REFRESH_BATCH_SIZE = 20;

@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import { describe, it, expect, jest } from '@jest/globals';
-import { Constants, type Agent } from 'librechat-data-provider';
+import { Constants, type Agent } from 'vestai-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import {

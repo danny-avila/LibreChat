@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react';
-import { Tools, EToolResources } from 'librechat-data-provider';
+import { Tools, EToolResources } from 'vestai-data-provider';
 import useAgentToolPermissions from '../useAgentToolPermissions';
 
 // Mock the dependencies

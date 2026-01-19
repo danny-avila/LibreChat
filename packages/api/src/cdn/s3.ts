@@ -1,5 +1,5 @@
 import { S3Client } from '@aws-sdk/client-s3';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 
 let s3: S3Client | null = null;
 

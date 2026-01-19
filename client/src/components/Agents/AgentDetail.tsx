@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { Link, Pin, PinOff } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { OGDialog, OGDialogContent, Button, useToastContext } from '@librechat/client';
+import { OGDialog, OGDialogContent, Button, useToastContext } from '@vestai/client';
 import {
   QueryKeys,
   Constants,
@@ -9,8 +9,8 @@ import {
   PermissionBits,
   LocalStorageKeys,
   AgentListResponse,
-} from 'librechat-data-provider';
-import type t from 'librechat-data-provider';
+} from 'vestai-data-provider';
+import type t from 'vestai-data-provider';
 import { useLocalize, useDefaultConvo, useFavorites } from '~/hooks';
 import { renderAgentAvatar, clearMessagesCache } from '~/utils';
 import { useChatContext } from '~/Providers';

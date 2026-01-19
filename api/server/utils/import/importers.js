@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint, Constants, openAISettings, CacheKeys } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { EModelEndpoint, Constants, openAISettings, CacheKeys } = require('vestai-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const { cloneMessagesWithTimestamps } = require('./fork');
 const getLogStores = require('~/cache/getLogStores');
@@ -31,10 +31,10 @@ function getImporter(jsonData) {
     return importChatBotUiConvo;
   }
 
-  // For LibreChat
+  // For VestAI
   if (jsonData.conversationId && (jsonData.messagesTree || jsonData.messages)) {
-    logger.info('Importing LibreChat conversation');
-    return importLibreChatConvo;
+    logger.info('Importing VestAI conversation');
+    return importVestAIConvo;
   }
 
   throw new Error('Unsupported import type');
@@ -183,14 +183,14 @@ async function importClaudeConvo(
 }
 
 /**
- * Imports a LibreChat conversation from JSON.
+ * Imports a VestAI conversation from JSON.
  *
  * @param {Object} jsonData - The JSON data representing the conversation.
  * @param {string} requestUserId - The ID of the user making the import request.
  * @param {Function} [builderFactory=createImportBatchBuilder] - The factory function to create an import batch builder.
  * @returns {Promise<void>} - A promise that resolves when the import is complete.
  */
-async function importLibreChatConvo(
+async function importVestAIConvo(
   jsonData,
   requestUserId,
   builderFactory = createImportBatchBuilder,
@@ -262,7 +262,7 @@ async function importLibreChatConvo(
         }
       }
     } else {
-      throw new Error('Invalid LibreChat file format');
+      throw new Error('Invalid VestAI file format');
     }
 
     if (firstMessageDate === 'Invalid Date') {
@@ -273,7 +273,7 @@ async function importLibreChatConvo(
     await importBatchBuilder.saveBatch();
     logger.debug(`user: ${requestUserId} | Conversation "${jsonData.title}" imported`);
   } catch (error) {
-    logger.error(`user: ${requestUserId} | Error creating conversation from LibreChat file`, error);
+    logger.error(`user: ${requestUserId} | Error creating conversation from VestAI file`, error);
   }
 }
 

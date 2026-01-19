@@ -1,5 +1,5 @@
-import { ContentTypes } from 'librechat-data-provider';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import { ContentTypes } from 'vestai-data-provider';
+import type { TMessageContentParts } from 'vestai-data-provider';
 
 /**
  * Filters out malformed tool call content parts that don't have the required tool_call property.

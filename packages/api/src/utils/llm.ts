@@ -1,10 +1,10 @@
-import { librechat } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
+import { vestai } from 'vestai-data-provider';
+import type { DynamicSettingProps } from 'vestai-data-provider';
 
-type LibreChatKeys = keyof typeof librechat;
+type VestAIKeys = keyof typeof vestai;
 
-type LibreChatParams = {
-  modelOptions: Omit<NonNullable<DynamicSettingProps['conversation']>, LibreChatKeys>;
+type VestAIParams = {
+  modelOptions: Omit<NonNullable<DynamicSettingProps['conversation']>, VestAIKeys>;
   resendFiles: boolean;
   promptPrefix?: string | null;
   maxContextTokens?: number;
@@ -13,16 +13,16 @@ type LibreChatParams = {
 };
 
 /**
- * Separates LibreChat-specific parameters from model options
+ * Separates VestAI-specific parameters from model options
  * @param options - The combined options object
  */
-export function extractLibreChatParams(
+export function extractVestAIParams(
   options?: DynamicSettingProps['conversation'],
-): LibreChatParams {
+): VestAIParams {
   if (!options) {
     return {
-      modelOptions: {} as Omit<NonNullable<DynamicSettingProps['conversation']>, LibreChatKeys>,
-      resendFiles: librechat.resendFiles.default as boolean,
+      modelOptions: {} as Omit<NonNullable<DynamicSettingProps['conversation']>, VestAIKeys>,
+      resendFiles: vestai.resendFiles.default as boolean,
     };
   }
 
@@ -30,7 +30,7 @@ export function extractLibreChatParams(
 
   const resendFiles =
     (delete modelOptions.resendFiles, options.resendFiles) ??
-    (librechat.resendFiles.default as boolean);
+    (vestai.resendFiles.default as boolean);
   const promptPrefix = (delete modelOptions.promptPrefix, options.promptPrefix);
   const maxContextTokens = (delete modelOptions.maxContextTokens, options.maxContextTokens);
   const fileTokenLimit = (delete modelOptions.fileTokenLimit, options.fileTokenLimit);
@@ -39,7 +39,7 @@ export function extractLibreChatParams(
   return {
     modelOptions: modelOptions as Omit<
       NonNullable<DynamicSettingProps['conversation']>,
-      LibreChatKeys
+      VestAIKeys
     >,
     maxContextTokens,
     fileTokenLimit,

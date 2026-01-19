@@ -1,5 +1,5 @@
 import { atom } from 'recoil';
-import { SettingsViews, LocalStorageKeys } from 'librechat-data-provider';
+import { SettingsViews, LocalStorageKeys } from 'vestai-data-provider';
 import { atomWithLocalStorage } from '~/store/utils';
 import type { TOptionSettings } from '~/common';
 

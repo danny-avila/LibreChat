@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CircleX } from 'lucide-react';
-import { Label, OGDialog, TrashIcon, OGDialogTrigger, OGDialogTemplate } from '@librechat/client';
+import { Label, OGDialog, TrashIcon, OGDialogTrigger, OGDialogTemplate } from '@vestai/client';
 import { useLocalize, useRemoveMCPTool } from '~/hooks';
 import { cn } from '~/utils';
 

@@ -1,4 +1,4 @@
-# DNS Configuration Examples for LibreChat Helm Chart
+# DNS Configuration Examples for VestAI Helm Chart
 # This file demonstrates how to configure custom DNS settings for traffic redirection
 
 # Example 1: Redirect AWS Bedrock traffic to a proxy server

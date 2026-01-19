@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import { X, Waypoints, PlusCircle, ChevronDown } from 'lucide-react';
 import {
   Label,
@@ -11,8 +11,8 @@ import {
   ControlCombobox,
   HoverCardContent,
   HoverCardTrigger,
-} from '@librechat/client';
-import type { TMessage, GraphEdge } from 'librechat-data-provider';
+} from '@vestai/client';
+import type { TMessage, GraphEdge } from 'vestai-data-provider';
 import type { ControllerRenderProps } from 'react-hook-form';
 import type { AgentForm, OptionWithIcon } from '~/common';
 import MessageIcon from '~/components/Share/MessageIcon';

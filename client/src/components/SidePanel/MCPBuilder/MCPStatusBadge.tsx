@@ -1,6 +1,6 @@
 import { Check, PlugZap } from 'lucide-react';
-import { Spinner } from '@librechat/client';
-import type { MCPServerStatus } from 'librechat-data-provider';
+import { Spinner } from '@vestai/client';
+import type { MCPServerStatus } from 'vestai-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

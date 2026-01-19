@@ -1,5 +1,5 @@
 import path from 'path';
-import { EModelEndpoint, AuthKeys } from 'librechat-data-provider';
+import { EModelEndpoint, AuthKeys } from 'vestai-data-provider';
 import type {
   BaseInitializeParams,
   InitializeResultBase,

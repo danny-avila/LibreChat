@@ -390,7 +390,7 @@ describe('batchResetMeiliFlags', () => {
 
     beforeEach(() => {
       // Mock logger.warn to track warning calls
-      const { logger } = require('@librechat/data-schemas');
+      const { logger } = require('@vestai/data-schemas');
       warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
     });
 

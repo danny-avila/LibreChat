@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { Constants } from 'librechat-data-provider';
+import { Constants } from 'vestai-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';

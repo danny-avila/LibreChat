@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 import { MessagesViewContext } from '~/Providers/MessagesViewContext';
 import type { MessagesViewContextValue } from '~/Providers/MessagesViewContext';
 

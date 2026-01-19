@@ -1,5 +1,5 @@
 import { Feather } from 'lucide-react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import {
   GPTIcon,
   Sparkles,
@@ -9,7 +9,7 @@ import {
   AzureMinimalIcon,
   GoogleMinimalIcon,
   CustomMinimalIcon,
-} from '@librechat/client';
+} from '@vestai/client';
 import type { IconMapProps, AgentIconMapProps, IconsRecord } from '~/common';
 import UnknownIcon from './UnknownIcon';
 import { cn } from '~/utils';

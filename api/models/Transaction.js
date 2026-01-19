@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@vestai/data-schemas');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { Transaction, Balance } = require('~/db/models');
 
@@ -12,7 +12,7 @@ const cancelRate = 1.15;
  * @param {Object} params - The function parameters.
  * @param {string|mongoose.Types.ObjectId} params.user - The user ID.
  * @param {number} params.incrementValue - The value to increment the balance by (can be negative).
- * @param {import('mongoose').UpdateQuery<import('@librechat/data-schemas').IBalance>['$set']} [params.setValues] - Optional additional fields to set.
+ * @param {import('mongoose').UpdateQuery<import('@vestai/data-schemas').IBalance>['$set']} [params.setValues] - Optional additional fields to set.
  * @returns {Promise<Object>} Returns the updated balance document (lean).
  * @throws {Error} Throws an error if the update fails after multiple retries.
  */

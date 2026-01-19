@@ -1,4 +1,4 @@
-# Please consult our docs for more info: https://www.librechat.ai/docs/configuration/docker_override
+# Please consult our docs for more info: /docs/configuration/docker_override
 
 # TO USE THIS FILE, FIRST UNCOMMENT THE LINE ('services:')
 
@@ -15,9 +15,9 @@
 #   api:
 #     volumes:
 #     - type: bind
-#       source: ./librechat.yaml
-#       target: /app/librechat.yaml
-#     image: ghcr.io/danny-avila/librechat:latest
+#       source: ./vestai.yaml
+#       target: /app/vestai.yaml
+#     image: ghcr.io/doktransfers/vestai:latest
 
 # ---------------------------------------------------
 
@@ -27,31 +27,31 @@
 #   api:
 #     volumes:
 #     - type: bind
-#       source: ./librechat.yaml
-#       target: /app/librechat.yaml
+#       source: ./vestai.yaml
+#       target: /app/vestai.yaml
 
 # # LOCAL BUILD
 #   api:
-#     image: librechat
+#     image: vestai
 #     build:
 #       context: .
 #       target: node
 
 # # BUILD FROM LATEST IMAGE
 #   api:
-#     image: ghcr.io/danny-avila/librechat-dev:latest
+#     image: ghcr.io/doktransfers/vestai-dev:latest
 
 # # BUILD FROM LATEST IMAGE (NUMBERED RELEASE)
 #   api:
-#     image: ghcr.io/danny-avila/librechat:latest
+#     image: ghcr.io/doktransfers/vestai:latest
 
 # # BUILD FROM LATEST API IMAGE
 #   api:
-#     image: ghcr.io/danny-avila/librechat-dev-api:latest
+#     image: ghcr.io/doktransfers/vestai-dev-api:latest
 
 # # BUILD FROM LATEST API IMAGE (NUMBERED RELEASE)
 #   api:
-#     image: ghcr.io/danny-avila/librechat-api:latest
+#     image: ghcr.io/doktransfers/vestai-api:latest
 
 # # ADD SAML CERT FILE
 #   api:
@@ -104,7 +104,7 @@
 
 # # USE RAG API IMAGE WITH LOCAL EMBEDDINGS SUPPORT
 #  rag_api:
-#    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+#    image: ghcr.io/doktransfers/vestai-rag-api-dev:latest
 # # For Linux user:
 #    extra_hosts:
 #      - "host.docker.internal:host-gateway"

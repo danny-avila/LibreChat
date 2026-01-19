@@ -1,5 +1,5 @@
 const express = require('express');
-const { createSetBalanceConfig } = require('@librechat/api');
+const { createSetBalanceConfig } = require('@vestai/api');
 const {
   resetPasswordRequestController,
   resetPasswordController,

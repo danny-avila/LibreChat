@@ -1,12 +1,12 @@
 import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'vestai-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
+import { DropdownPopup, Spinner, useToastContext } from '@vestai/client';
 import { Ellipsis, Share2, CopyPlus, Archive, Pen, Trash } from 'lucide-react';
 import type { MouseEvent } from 'react';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 import {
   useDuplicateConversationMutation,
   useDeleteConversationMutation,

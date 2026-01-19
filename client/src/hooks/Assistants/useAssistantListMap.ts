@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
-import type { AssistantListResponse, AssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
+import type { AssistantListResponse, AssistantsEndpoint } from 'vestai-data-provider';
 import type { AssistantListItem } from '~/common';
 import { useListAssistantsQuery } from '~/data-provider';
 

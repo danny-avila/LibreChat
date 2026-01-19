@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from 'react';
-import type { DynamicSettingProps } from 'librechat-data-provider';
-import { Label, HoverCard, HoverCardTrigger, ControlCombobox } from '@librechat/client';
+import type { DynamicSettingProps } from 'vestai-data-provider';
+import { Label, HoverCard, HoverCardTrigger, ControlCombobox } from '@vestai/client';
 import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';

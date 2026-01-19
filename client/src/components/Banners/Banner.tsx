@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
-import { Button, cn } from '@librechat/client';
+import { Button, cn } from '@vestai/client';
 import { useGetBannerQuery } from '~/data-provider';
 import store from '~/store';
 

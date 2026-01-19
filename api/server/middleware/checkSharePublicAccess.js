@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { ResourceType, PermissionTypes, Permissions } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { ResourceType, PermissionTypes, Permissions } = require('vestai-data-provider');
 const { getRoleByName } = require('~/models/Role');
 
 /**

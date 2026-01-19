@@ -1,6 +1,6 @@
 const fs = require('fs').promises;
-const { logger } = require('@librechat/data-schemas');
-const { FileContext } = require('librechat-data-provider');
+const { logger } = require('@vestai/data-schemas');
+const { FileContext } = require('vestai-data-provider');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');

@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { ListFilter, User, Share2 } from 'lucide-react';
-import { SystemCategories } from 'librechat-data-provider';
-import { Dropdown, FilterInput } from '@librechat/client';
+import { SystemCategories } from 'vestai-data-provider';
+import { Dropdown, FilterInput } from '@vestai/client';
 import type { Option } from '~/common';
 import { useLocalize, useCategories, useDebounce } from '~/hooks';
 import { usePromptGroupsContext } from '~/Providers';

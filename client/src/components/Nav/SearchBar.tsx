@@ -2,7 +2,7 @@ import React, { forwardRef, useState, useCallback, useMemo, useEffect, useRef } 
 import debounce from 'lodash/debounce';
 import { useRecoilState } from 'recoil';
 import { Search, X } from 'lucide-react';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'vestai-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLocalize, useNewConvo } from '~/hooks';

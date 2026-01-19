@@ -1,6 +1,6 @@
 require('dotenv').config();
-const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { isEnabled } = require('@vestai/api');
+const { logger } = require('@vestai/data-schemas');
 
 const mongoose = require('mongoose');
 const MONGO_URI = process.env.MONGO_URI;

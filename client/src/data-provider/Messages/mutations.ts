@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService, QueryKeys, Constants } from 'librechat-data-provider';
+import { dataService, QueryKeys, Constants } from 'vestai-data-provider';
 import type { UseMutationResult, UseMutationOptions } from '@tanstack/react-query';
-import type * as t from 'librechat-data-provider';
+import type * as t from 'vestai-data-provider';
 
 type EditArtifactContext = {
   previousMessages: Record<string, t.TMessage[] | undefined>;

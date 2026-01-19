@@ -1,8 +1,8 @@
 /* eslint-disable react-hooks/rules-of-hooks */
 import { ArrowUpDown } from 'lucide-react';
-import { Button } from '@librechat/client';
+import { Button } from '@vestai/client';
 import type { ColumnDef } from '@tanstack/react-table';
-import type { TFile } from 'librechat-data-provider';
+import type { TFile } from 'vestai-data-provider';
 import PanelFileCell from './PanelFileCell';
 import { useLocalize } from '~/hooks';
 import { formatDate } from '~/utils';

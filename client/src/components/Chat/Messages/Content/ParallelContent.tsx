@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import type { TMessageContentParts, SearchResultData, TAttachment } from 'librechat-data-provider';
+import type { TMessageContentParts, SearchResultData, TAttachment } from 'vestai-data-provider';
 import { SearchContext } from '~/Providers';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';

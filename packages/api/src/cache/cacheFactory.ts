@@ -9,8 +9,8 @@ const KeyvRedis = require('@keyv/redis').default as typeof import('@keyv/redis')
 import { Keyv } from 'keyv';
 import createMemoryStore from 'memorystore';
 import { RedisStore } from 'rate-limit-redis';
-import { Time } from 'librechat-data-provider';
-import { logger } from '@librechat/data-schemas';
+import { Time } from 'vestai-data-provider';
+import { logger } from '@vestai/data-schemas';
 import session, { MemoryStore } from 'express-session';
 import { RedisStore as ConnectRedis } from 'connect-redis';
 import type { SendCommandFn } from 'rate-limit-redis';
@@ -40,7 +40,7 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
 
       // Override clear() to handle namespace-aware deletion
       // The default Keyv clear() doesn't respect namespace due to the workaround above
-      // Workaround for issue #10487 https://github.com/danny-avila/LibreChat/issues/10487
+      // Workaround for issue #10487 https://github.com/Doktransfers/vest-ai/issues/10487
       cache.clear = async () => {
         // Type-safe check for Redis client with scanIterator support
         if (!keyvRedisClient || !('scanIterator' in keyvRedisClient)) {

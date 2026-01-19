@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { CSSTransition } from 'react-transition-group';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { MessagesViewProvider } from '~/Providers';

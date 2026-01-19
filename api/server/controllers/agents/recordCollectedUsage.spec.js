@@ -8,7 +8,7 @@
  * - Cache token handling (OpenAI and Anthropic formats)
  */
 
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint } = require('vestai-data-provider');
 
 // Mock dependencies before requiring the module
 const mockSpendTokens = jest.fn().mockResolvedValue();
@@ -31,8 +31,8 @@ jest.mock('~/config', () => ({
   })),
 }));
 
-jest.mock('@librechat/agents', () => ({
-  ...jest.requireActual('@librechat/agents'),
+jest.mock('@vestai/agents', () => ({
+  ...jest.requireActual('@vestai/agents'),
   createMetadataAggregator: () => ({
     handleLLMEnd: jest.fn(),
     collected: [],

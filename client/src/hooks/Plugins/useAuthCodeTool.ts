@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AuthType, Tools, QueryKeys } from 'librechat-data-provider';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { AuthType, Tools, QueryKeys } from 'vestai-data-provider';
+import { useUpdateUserPluginsMutation } from 'vestai-data-provider/react-query';
 
 const useAuthCodeTool = (options?: { isEntityTool: boolean }) => {
   const queryClient = useQueryClient();
@@ -26,7 +26,7 @@ const useAuthCodeTool = (options?: { isEntityTool: boolean }) => {
       updateUserPlugins.mutate({
         pluginKey: Tools.execute_code,
         action: 'install',
-        auth: { LIBRECHAT_CODE_API_KEY: apiKey },
+        auth: { VESTAI_CODE_API_KEY: apiKey },
         isEntityTool,
       });
     },
@@ -37,7 +37,7 @@ const useAuthCodeTool = (options?: { isEntityTool: boolean }) => {
     updateUserPlugins.mutate({
       pluginKey: Tools.execute_code,
       action: 'uninstall',
-      auth: { LIBRECHAT_CODE_API_KEY: null },
+      auth: { VESTAI_CODE_API_KEY: null },
       isEntityTool,
     });
   }, [updateUserPlugins, isEntityTool]);

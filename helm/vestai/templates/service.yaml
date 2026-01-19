@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "librechat.fullname" . }}
+  name: {{ include "vestai.fullname" . }}
   labels:
-    {{- include "librechat.labels" . | nindent 4 }}
+    {{- include "vestai.labels" . | nindent 4 }}
   annotations:
   {{- toYaml .Values.service.annotations | nindent 4 }}
 spec:
@@ -14,4 +14,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "librechat.selectorLabels" . | nindent 4 }}
+    {{- include "vestai.selectorLabels" . | nindent 4 }}

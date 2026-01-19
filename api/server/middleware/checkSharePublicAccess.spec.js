@@ -1,4 +1,4 @@
-const { ResourceType, PermissionTypes, Permissions } = require('librechat-data-provider');
+const { ResourceType, PermissionTypes, Permissions } = require('vestai-data-provider');
 const { checkSharePublicAccess } = require('./checkSharePublicAccess');
 const { getRoleByName } = require('~/models/Role');
 

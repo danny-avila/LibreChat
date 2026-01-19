@@ -1,0 +1,16 @@
+{{- if .Values.vestai.imageVolume.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vestai.fullname" $ }}-images
+spec:
+  accessModes:
+    - {{ .Values.vestai.imageVolume.accessModes }}
+{{- if .Values.vestai.imageVolume.storageClassName }}
+  storageClassName: {{ .Values.vestai.imageVolume.storageClassName }}
+{{- end }}          
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: {{ .Values.vestai.imageVolume.size }}
+{{- end }}

@@ -1,5 +1,5 @@
-import { EModelEndpoint, extractEnvVariable, normalizeEndpointName } from 'librechat-data-provider';
-import type { TCustomEndpoints, TEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, extractEnvVariable, normalizeEndpointName } from 'vestai-data-provider';
+import type { TCustomEndpoints, TEndpoint } from 'vestai-data-provider';
 import type { TCustomEndpointsConfig } from '~/types/endpoints';
 import { isUserProvided } from '~/utils';
 

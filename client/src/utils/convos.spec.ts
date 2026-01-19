@@ -1,5 +1,5 @@
 import { QueryClient, InfiniteData } from '@tanstack/react-query';
-import type { TConversation } from 'librechat-data-provider';
+import type { TConversation } from 'vestai-data-provider';
 import {
   dateKeys,
   storeEndpointSettings,

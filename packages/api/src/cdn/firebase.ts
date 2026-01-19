@@ -1,6 +1,6 @@
 import firebase from 'firebase/app';
 import { getStorage } from 'firebase/storage';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import type { FirebaseStorage } from 'firebase/storage';
 import type { FirebaseApp } from 'firebase/app';
 

@@ -5,14 +5,14 @@ import { useRecoilValue } from 'recoil';
 import { Menu, Rocket } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Button, Skeleton, useToastContext } from '@librechat/client';
+import { Button, Skeleton, useToastContext } from '@vestai/client';
 import {
   Permissions,
   ResourceType,
   PermissionBits,
   PermissionTypes,
-} from 'librechat-data-provider';
-import type { TCreatePrompt, TPrompt, TPromptGroup } from 'librechat-data-provider';
+} from 'vestai-data-provider';
+import type { TCreatePrompt, TPrompt, TPromptGroup } from 'vestai-data-provider';
 import {
   useGetPrompts,
   useGetPromptGroup,

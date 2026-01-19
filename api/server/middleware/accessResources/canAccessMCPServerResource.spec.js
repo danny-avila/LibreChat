@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
+const { ResourceType, PrincipalType, PrincipalModel } = require('vestai-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { canAccessMCPServerResource } = require('./canAccessMCPServerResource');
 const { User, Role, AclEntry } = require('~/db/models');
@@ -512,7 +512,7 @@ describe('canAccessMCPServerResource middleware', () => {
     });
 
     test('should allow admin users to bypass permission checks', async () => {
-      const { SystemRoles } = require('librechat-data-provider');
+      const { SystemRoles } = require('vestai-data-provider');
 
       // Create an MCP server owned by another user
       const otherUser = await User.create({

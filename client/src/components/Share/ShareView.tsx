@@ -2,9 +2,9 @@ import { memo, useState, useCallback, useContext } from 'react';
 import Cookies from 'js-cookie';
 import { useRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
-import { buildTree } from 'librechat-data-provider';
+import { buildTree } from 'vestai-data-provider';
 import { CalendarDays, Settings } from 'lucide-react';
-import { useGetSharedMessages } from 'librechat-data-provider/react-query';
+import { useGetSharedMessages } from 'vestai-data-provider/react-query';
 import {
   Spinner,
   Button,
@@ -15,7 +15,7 @@ import {
   OGDialogHeader,
   OGDialogContent,
   OGDialogTrigger,
-} from '@librechat/client';
+} from '@vestai/client';
 import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/General';
 import { ShareArtifactsContainer } from './ShareArtifacts';
 import { useLocalize, useDocumentTitle } from '~/hooks';

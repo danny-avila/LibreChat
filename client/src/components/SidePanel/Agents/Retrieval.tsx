@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Capabilities } from 'librechat-data-provider';
+import { Capabilities } from 'vestai-data-provider';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import {
   Checkbox,
@@ -8,7 +8,7 @@ import {
   HoverCardContent,
   HoverCardPortal,
   HoverCardTrigger,
-} from '@librechat/client';
+} from '@vestai/client';
 import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
 import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';

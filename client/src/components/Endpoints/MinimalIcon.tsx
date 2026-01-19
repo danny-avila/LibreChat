@@ -1,5 +1,5 @@
 import { Feather } from 'lucide-react';
-import { EModelEndpoint, alternateName } from 'librechat-data-provider';
+import { EModelEndpoint, alternateName } from 'vestai-data-provider';
 import {
   Sparkles,
   BedrockIcon,
@@ -8,7 +8,7 @@ import {
   OpenAIMinimalIcon,
   GoogleMinimalIcon,
   CustomMinimalIcon,
-} from '@librechat/client';
+} from '@vestai/client';
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';

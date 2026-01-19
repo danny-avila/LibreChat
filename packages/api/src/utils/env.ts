@@ -1,6 +1,6 @@
-import { extractEnvVariable } from 'librechat-data-provider';
-import type { MCPOptions } from 'librechat-data-provider';
-import type { IUser } from '@librechat/data-schemas';
+import { extractEnvVariable } from 'vestai-data-provider';
+import type { MCPOptions } from 'vestai-data-provider';
+import type { IUser } from '@vestai/data-schemas';
 import type { RequestBody } from '~/types';
 import { extractOpenIDTokenInfo, processOpenIDPlaceholders, isOpenIDTokenValid } from './oidc';
 
@@ -77,7 +77,7 @@ function processUserPlaceholders(value: string, user?: IUser): string {
   }
 
   for (const field of ALLOWED_USER_FIELDS) {
-    const placeholder = `{{LIBRECHAT_USER_${field.toUpperCase()}}}`;
+    const placeholder = `{{VESTAI_USER_${field.toUpperCase()}}}`;
 
     if (typeof value !== 'string' || !value.includes(placeholder)) {
       continue;
@@ -104,7 +104,7 @@ function processUserPlaceholders(value: string, user?: IUser): string {
 
 /**
  * Replaces request body field placeholders within a string.
- * Recognized placeholders: `{{LIBRECHAT_BODY_<FIELD>}}` where `<FIELD>` ∈ ALLOWED_BODY_FIELDS.
+ * Recognized placeholders: `{{VESTAI_BODY_<FIELD>}}` where `<FIELD>` ∈ ALLOWED_BODY_FIELDS.
  * If a body field is absent or null/undefined, it is replaced with an empty string.
  *
  * @param value - The string value to process
@@ -118,7 +118,7 @@ function processBodyPlaceholders(value: string, body: RequestBody): string {
   }
 
   for (const field of ALLOWED_BODY_FIELDS) {
-    const placeholder = `{{LIBRECHAT_BODY_${field.toUpperCase()}}}`;
+    const placeholder = `{{VESTAI_BODY_${field.toUpperCase()}}}`;
     if (!value.includes(placeholder)) {
       continue;
     }

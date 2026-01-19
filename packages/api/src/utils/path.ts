@@ -1,9 +1,9 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 
 /**
  * Gets the base path from the DOMAIN_CLIENT environment variable.
- * This is useful for constructing URLs when LibreChat is served from a subdirectory.
- * @returns {string} The base path (e.g., '/librechat' or '')
+ * This is useful for constructing URLs when VestAI is served from a subdirectory.
+ * @returns {string} The base path (e.g., '/vestai' or '')
  */
 export function getBasePath(): string {
   if (!process.env.DOMAIN_CLIENT) {

@@ -1,4 +1,4 @@
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'vestai-data-provider';
 
 export default function resetConvo(messages: TMessage[], sender: string) {
   if (messages.length === 0) {

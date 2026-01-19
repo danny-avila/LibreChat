@@ -4,8 +4,8 @@ import {
   LocalStorageKeys,
   isEphemeralAgentId,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
+} from 'vestai-data-provider';
+import type * as t from 'vestai-data-provider';
 import type { SelectedValues } from '~/common';
 import useSetIndexOptions from '~/hooks/Conversations/useSetIndexOptions';
 

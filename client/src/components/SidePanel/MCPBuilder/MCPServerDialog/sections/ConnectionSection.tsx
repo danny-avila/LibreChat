@@ -1,5 +1,5 @@
 import { useFormContext } from 'react-hook-form';
-import { Input, Label } from '@librechat/client';
+import { Input, Label } from '@vestai/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import { isValidUrl, normalizeUrl } from '../utils/urlUtils';

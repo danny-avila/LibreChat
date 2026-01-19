@@ -1,6 +1,6 @@
 import React, { forwardRef } from 'react';
-import { PrincipalType } from 'librechat-data-provider';
-import type { TPrincipal } from 'librechat-data-provider';
+import { PrincipalType } from 'vestai-data-provider';
+import type { TPrincipal } from 'vestai-data-provider';
 import PrincipalAvatar from '~/components/Sharing/PrincipalAvatar';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';

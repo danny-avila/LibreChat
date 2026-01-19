@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useForm, Controller } from 'react-hook-form';
-import { Input, Label, Button } from '@librechat/client';
+import { Input, Label, Button } from '@vestai/client';
 import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
 import { useLocalize } from '~/hooks';
 

@@ -1,8 +1,8 @@
 import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { LocalStorageKeys, Constants } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
+import { LocalStorageKeys, Constants } from 'vestai-data-provider';
+import type { TFile } from 'vestai-data-provider';
 import type { ExtendedFile } from '~/common';
 import { clearDraft, getDraft, setDraft } from '~/utils';
 import { useChatFormContext } from '~/Providers';

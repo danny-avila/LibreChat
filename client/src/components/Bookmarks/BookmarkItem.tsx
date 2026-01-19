@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Spinner } from '@librechat/client';
+import { Spinner } from '@vestai/client';
 import { MenuItem } from '@headlessui/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import type { FC } from 'react';

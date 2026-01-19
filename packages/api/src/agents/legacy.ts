@@ -1,5 +1,5 @@
-import { EToolResources } from 'librechat-data-provider';
-import type { AgentToolResources, TFile } from 'librechat-data-provider';
+import { EToolResources } from 'vestai-data-provider';
+import type { AgentToolResources, TFile } from 'vestai-data-provider';
 
 /**
  * Converts OCR tool resource to context tool resource in place.

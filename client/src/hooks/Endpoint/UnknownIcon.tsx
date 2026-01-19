@@ -1,6 +1,6 @@
 import { memo } from 'react';
-import { CustomMinimalIcon, XAIcon } from '@librechat/client';
-import { EModelEndpoint, KnownEndpoints } from 'librechat-data-provider';
+import { CustomMinimalIcon, XAIcon } from '@vestai/client';
+import { EModelEndpoint, KnownEndpoints } from 'vestai-data-provider';
 import { IconContext } from '~/common';
 import { cn } from '~/utils';
 

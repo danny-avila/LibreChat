@@ -1,6 +1,6 @@
 const express = require('express');
-const { generateCheckAccess } = require('@librechat/api');
-const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
+const { generateCheckAccess } = require('@vestai/api');
+const { PermissionTypes, Permissions, PermissionBits } = require('vestai-data-provider');
 const { requireJwtAuth, configMiddleware, canAccessAgentResource } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
 const { getRoleByName } = require('~/models/Role');

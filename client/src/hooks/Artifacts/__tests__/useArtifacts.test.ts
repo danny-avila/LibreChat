@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { Constants } from 'librechat-data-provider';
+import { Constants } from 'vestai-data-provider';
 import type { Artifact } from '~/common';
 
 /** Mock dependencies */

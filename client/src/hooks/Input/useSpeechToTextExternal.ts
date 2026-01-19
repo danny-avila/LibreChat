@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@vestai/client';
 import { useSpeechToTextMutation } from '~/data-provider';
 import useGetAudioSettings from './useGetAudioSettings';
 import store from '~/store';

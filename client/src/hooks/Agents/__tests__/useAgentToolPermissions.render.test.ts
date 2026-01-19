@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
-import { Tools, Constants, EToolResources } from 'librechat-data-provider';
-import type { TEphemeralAgent } from 'librechat-data-provider';
+import { Tools, Constants, EToolResources } from 'vestai-data-provider';
+import type { TEphemeralAgent } from 'vestai-data-provider';
 import useAgentToolPermissions from '../useAgentToolPermissions';
 
 // Mock dependencies

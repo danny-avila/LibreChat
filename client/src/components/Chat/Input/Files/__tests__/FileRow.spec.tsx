@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { FileSources } from 'librechat-data-provider';
+import { FileSources } from 'vestai-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileRow from '../FileRow';
 

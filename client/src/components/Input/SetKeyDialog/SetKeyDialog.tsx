@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
-import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'vestai-data-provider';
 import {
   useRevokeUserKeyMutation,
   useRevokeAllUserKeysMutation,
-} from 'librechat-data-provider/react-query';
+} from 'vestai-data-provider/react-query';
 import {
   Label,
   Button,
@@ -17,7 +17,7 @@ import {
   OGDialogContent,
   useToastContext,
   OGDialogTrigger,
-} from '@librechat/client';
+} from '@vestai/client';
 import type { TDialogProps } from '~/common';
 import { useUserKey, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';

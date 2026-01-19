@@ -5,8 +5,8 @@ const {
   resolveHeaders,
   constructAzureURL,
   checkUserKeyExpiry,
-} = require('@librechat/api');
-const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
+} = require('@vestai/api');
+const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('vestai-data-provider');
 const { getUserKeyValues, getUserKeyExpiry } = require('~/models');
 
 class Files {

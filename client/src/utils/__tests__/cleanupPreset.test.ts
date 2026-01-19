@@ -1,10 +1,10 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'vestai-data-provider';
 import cleanupPreset from '../cleanupPreset';
-import type { TPreset } from 'librechat-data-provider';
+import type { TPreset } from 'vestai-data-provider';
 
 // Mock parseConvo since we're focusing on testing the chatGptLabel migration logic
-jest.mock('librechat-data-provider', () => ({
-  ...jest.requireActual('librechat-data-provider'),
+jest.mock('vestai-data-provider', () => ({
+  ...jest.requireActual('vestai-data-provider'),
   parseConvo: jest.fn((input) => {
     // Return a simplified mock that passes through most properties
     const { conversation } = input;

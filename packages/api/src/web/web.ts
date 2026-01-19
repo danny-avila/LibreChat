@@ -3,16 +3,16 @@ import {
   SafeSearchTypes,
   SearchCategories,
   extractVariableName,
-} from 'librechat-data-provider';
-import { webSearchAuth } from '@librechat/data-schemas';
+} from 'vestai-data-provider';
+import { webSearchAuth } from '@vestai/data-schemas';
 import type {
   RerankerTypes,
   TCustomConfig,
   SearchProviders,
   ScraperProviders,
   TWebSearchConfig,
-} from 'librechat-data-provider';
-import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
+} from 'vestai-data-provider';
+import type { TWebSearchKeys, TWebSearchCategories } from '@vestai/data-schemas';
 
 export function extractWebSearchEnvVars({
   keys,

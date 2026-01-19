@@ -2,7 +2,7 @@ import { useMemo, useEffect, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
+import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'vestai-data-provider';
 import {
   OGDialog,
   OGDialogTitle,
@@ -11,7 +11,7 @@ import {
   Button,
   Switch,
   DropdownPopup,
-} from '@librechat/client';
+} from '@vestai/client';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import { useLocalize, useAuthContext } from '~/hooks';
@@ -240,7 +240,7 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
                             <span>{localize('com_ui_admin_access_warning')}</span>
                             {'\n'}
                             <a
-                              href="https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/interface"
+                              href="/docs/configuration/vestai_yaml/object_structure/interface"
                               target="_blank"
                               rel="noreferrer"
                               className="text-blue-500 underline"

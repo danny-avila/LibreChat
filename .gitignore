@@ -67,8 +67,8 @@ bower_components/
 .flooignore
 
 #config file
-librechat.yaml
-librechat.yml
+vestai.yaml
+vestai.yml
 
 # Environment
 .npmrc
@@ -120,7 +120,7 @@ uploads/
 release/
 
 # Helm
-helm/librechat/Chart.lock
+helm/vestai/Chart.lock
 helm/**/charts/
 helm/**/.values.yaml
 

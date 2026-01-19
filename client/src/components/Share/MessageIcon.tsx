@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { UserIcon } from '@librechat/client';
-import type { TMessage, Assistant, Agent } from 'librechat-data-provider';
+import { UserIcon } from '@vestai/client';
+import type { TMessage, Assistant, Agent } from 'vestai-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageEndpointIcon from '../Endpoints/MessageEndpointIcon';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';

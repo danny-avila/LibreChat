@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useMultiSearch } from '@librechat/client';
+import { useMultiSearch } from '@vestai/client';
 import { Root, Trigger, Content, Portal } from '@radix-ui/react-popover';
 import type { Option } from '~/common';
 import MenuItem from '~/components/Chat/Menus/UI/MenuItem';

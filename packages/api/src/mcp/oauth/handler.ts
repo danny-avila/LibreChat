@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@vestai/data-schemas';
 import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
@@ -9,7 +9,7 @@ import {
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
-import { TokenExchangeMethodEnum, type MCPOptions } from 'librechat-data-provider';
+import { TokenExchangeMethodEnum, type MCPOptions } from 'vestai-data-provider';
 import type { FlowStateManager } from '~/flow/manager';
 import type {
   OAuthClientInformation,
@@ -273,7 +273,7 @@ export class MCPOAuthHandler {
 
     /** Client metadata based on what the server supports */
     const clientMetadata = {
-      client_name: 'LibreChat MCP Client',
+      client_name: 'VestAI MCP Client',
       redirect_uris: [redirectUri || this.getDefaultRedirectUri()],
       grant_types: ['authorization_code'] as string[],
       response_types: ['code'] as string[],

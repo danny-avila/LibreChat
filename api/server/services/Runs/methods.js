@@ -1,6 +1,6 @@
 const axios = require('axios');
-const { logAxiosError } = require('@librechat/api');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { logAxiosError } = require('@vestai/api');
+const { EModelEndpoint } = require('vestai-data-provider');
 
 /**
  * @typedef {Object} RetrieveOptions

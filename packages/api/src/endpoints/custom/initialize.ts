@@ -4,9 +4,9 @@ import {
   envVarRegex,
   FetchTokenConfig,
   extractEnvVariable,
-} from 'librechat-data-provider';
-import type { TEndpoint } from 'librechat-data-provider';
-import type { AppConfig } from '@librechat/data-schemas';
+} from 'vestai-data-provider';
+import type { TEndpoint } from 'vestai-data-provider';
+import type { AppConfig } from '@vestai/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
@@ -52,7 +52,7 @@ function buildCustomOptions(
 
 /**
  * Initializes a custom endpoint client configuration.
- * This function handles custom endpoints defined in librechat.yaml, including
+ * This function handles custom endpoints defined in vestai.yaml, including
  * user-provided API keys and URLs.
  *
  * @param params - Configuration parameters

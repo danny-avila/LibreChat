@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { EToolResources, FileContext } from 'librechat-data-provider';
+import { EToolResources, FileContext } from 'vestai-data-provider';
 import { createFileMethods } from './file';
 import { createModels } from '~/models';
 
