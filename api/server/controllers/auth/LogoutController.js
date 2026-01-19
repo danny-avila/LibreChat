@@ -24,6 +24,9 @@ const logoutController = async (req, res) => {
     res.clearCookie('openid_access_token');
     res.clearCookie('openid_user_id');
     res.clearCookie('token_provider');
+    if (isEnabled(process.env.OPENID_EXPOSE_SUB_COOKIE)) {
+      res.clearCookie('openid_sub');
+    }
     const response = { message };
     if (
       isOpenIdUser &&

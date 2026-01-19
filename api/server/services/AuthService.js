@@ -496,6 +496,27 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         sameSite: 'strict',
       });
     }
+
+    if (isEnabled(process.env.OPENID_EXPOSE_SUB_COOKIE)) {
+      if (!process.env.JWT_REFRESH_SECRET) {
+        logger.error(
+          '[setOpenIDAuthTokens] JWT_REFRESH_SECRET not configured for openid_sub cookie',
+        );
+        return tokenset.access_token;
+      }
+      const { sub } = extractSubFromAccessToken(tokenset.access_token);
+      if (sub) {
+        const signedSub = jwt.sign({ sub }, process.env.JWT_REFRESH_SECRET, {
+          expiresIn: expiryInMilliseconds / 1000,
+        });
+        res.cookie('openid_sub', signedSub, {
+          expires: expirationDate,
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: 'lax',
+        });
+      }
+    }
     return tokenset.access_token;
   } catch (error) {
     logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);
