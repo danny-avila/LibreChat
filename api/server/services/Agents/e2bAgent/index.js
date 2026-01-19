@@ -372,38 +372,7 @@ class E2BDataAnalystAgent {
               logger.info(`[E2BAgent] Calling tool: ${name}`);
               logger.debug(`[E2BAgent] Tool arguments:`, JSON.stringify(args, null, 2));
               
-              // 🔧 发送 TOOL_CALL 开始事件（progress=0.1）
-              let toolCallIndex = -1;
-              if (onToken && name === 'execute_code') {
-                toolCallIndex = this.getContentIndex();
-                // ✨ 传递完整的 args 对象（包含 lang 和 code）
-                const argsString = JSON.stringify(args);
-                logger.info(`[E2BAgent] TOOL_CALL args: ${argsString.substring(0, 150)}...`);
-                
-                const toolCallPart = {
-                  type: ContentTypes.TOOL_CALL,
-                  [ContentTypes.TOOL_CALL]: {
-                    id: id,
-                    name: name,
-                    args: argsString,  // ✨ JSON 字符串，包含 {lang, code}
-                    input: args.code || argsString,  // 备用：纯代码字符串
-                    progress: 0.1,
-                  },
-                };
-                
-                // Add to content array
-                this.contentParts[toolCallIndex] = toolCallPart;
-                
-                const toolCallEvent = {
-                  ...toolCallPart,
-                  index: toolCallIndex,
-                  messageId: this.responseMessageId,
-                  conversationId: this.conversationId,
-                };
-                sendEvent(this.res, toolCallEvent);
-                logger.info(`[E2BAgent] Sent TOOL_CALL start event (index=${toolCallIndex})`);
-              }
-              
+              // 先执行工具，判断是否成功
               let result;
               try {
                 if (this.tools[name]) {
@@ -425,38 +394,47 @@ class E2BDataAnalystAgent {
 
               logger.debug(`[E2BAgent] Tool result:`, JSON.stringify(result, null, 2));
               
-              // 🔧 发送 TOOL_CALL 完成事件（progress=1.0 + output）
-              if (onToken && name === 'execute_code' && toolCallIndex !== -1) {
-                let output = '';
-                if (result.success) {
-                  // result 是 observation 对象，已包含 stdout/stderr
-                  output = result.stdout || result.stderr || '';
-                } else {
-                  output = result.error || 'Execution failed';
-                }
+              // 🔧 只在执行成功时发送 TOOL_CALL 事件到前端
+              let toolCallIndex = -1;
+              if (onToken && name === 'execute_code' && result.success) {
+                toolCallIndex = this.getContentIndex();
+                const argsString = JSON.stringify(args);
+                logger.info(`[E2BAgent] TOOL_CALL args: ${argsString.substring(0, 150)}...`);
                 
-                // 添加调试日志
-                logger.info(`[E2BAgent] Preparing TOOL_CALL output: "${output.substring(0, 100)}..." (${output.length} chars)`);
+                // result 是 observation 对象，已包含 stdout/stderr
+                const output = result.stdout || result.stderr || '';
                 
-                // Update content array
-                this.contentParts[toolCallIndex][ContentTypes.TOOL_CALL].output = output;
-                this.contentParts[toolCallIndex][ContentTypes.TOOL_CALL].progress = 1.0;
+                const toolCallPart = {
+                  type: ContentTypes.TOOL_CALL,
+                  [ContentTypes.TOOL_CALL]: {
+                    id: id,
+                    name: name,
+                    args: argsString,
+                    input: args.code || argsString,
+                    output: output,
+                    progress: 1.0,
+                  },
+                };
+                
+                this.contentParts[toolCallIndex] = toolCallPart;
                 
                 const toolCallEvent = {
-                  type: ContentTypes.TOOL_CALL,
+                  ...toolCallPart,
                   index: toolCallIndex,
-                  [ContentTypes.TOOL_CALL]: this.contentParts[toolCallIndex][ContentTypes.TOOL_CALL],
                   messageId: this.responseMessageId,
                   conversationId: this.conversationId,
                 };
+                
                 sendEvent(this.res, toolCallEvent);
-                logger.info(`[E2BAgent] Sent TOOL_CALL complete event (index=${toolCallIndex}, output=${output.length} chars)`);
+                logger.info(`[E2BAgent] Sent TOOL_CALL event (index=${toolCallIndex}, output=${output.length} chars) - SUCCESS ONLY`);
 
                 // ✨ 通知 controller 切断当前 TEXT part，为后续文本创建新 part
                 if (this.startNewTextPart) {
                   logger.info(`[E2BAgent] Triggering new TEXT part after tool execution: ${name}`);
                   this.startNewTextPart();
                 }
+              } else if (name === 'execute_code' && !result.success) {
+                logger.info(`[E2BAgent] Code execution FAILED - NOT sending to frontend, LLM will retry`);
               }
 
               // 记录中间步骤

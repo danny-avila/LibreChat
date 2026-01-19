@@ -153,13 +153,40 @@ class CodeExecutor {
 
   /**
    * 格式化输出：将 E2B 的日志对象/数组转为字符串
+   * 过滤常见的 Python warning 以提升用户体验
    */
   _formatOutput(output) {
     if (!output) return '';
+    
+    let text = '';
     if (Array.isArray(output)) {
-      return output.map(item => (typeof item === 'object' ? item.line || item.message : item)).join('\n');
+      text = output.map(item => (typeof item === 'object' ? item.line || item.message : item)).join('\n');
+    } else {
+      text = String(output);
     }
-    return String(output);
+    
+    // 过滤常见的 warning 信息
+    const warningPatterns = [
+      /.*FutureWarning.*chained assignment.*inplace.*/,
+      /.*UserWarning.*use_label_encoder.*not used.*/,
+      /.*UserWarning.*Pydantic serializer warnings.*/,
+      /.*PydanticSerializationUnexpectedValue.*/,
+      /.*DeprecationWarning.*/,
+      /.*FutureWarning.*fillna.*/,
+      /\/usr\/local\/lib\/python.*\/site-packages\/.*/,  // 过滤库路径
+      /\/tmp\/ipykernel.*\.py:\d+:/,  // 过滤 Jupyter 临时文件路径
+      /\/workspace\/src\/.*/,  // 过滤 XGBoost 编译警告
+    ];
+    
+    const lines = text.split('\n');
+    const filteredLines = lines.filter(line => {
+      // 保留空行
+      if (!line.trim()) return true;
+      // 检查是否匹配任何 warning 模式
+      return !warningPatterns.some(pattern => pattern.test(line));
+    });
+    
+    return filteredLines.join('\n').trim();
   }
 
   // --- 转发方法 (直接调用管理器) ---
