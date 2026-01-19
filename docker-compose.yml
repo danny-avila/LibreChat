@@ -25,6 +25,9 @@ services:
       - type: bind
         source: ./.env
         target: /app/.env
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/logs
@@ -68,6 +71,29 @@ services:
       - vectordb
     env_file:
       - .env
+
+  mcp-server:
+    container_name: mongodb-mcp-server
+    image: mongodb-mcp-server:2.0.2
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    links:
+      - "mongodb:host.docker.internal"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - MONGODB_URI=mongodb://host.docker.internal:27017/LibreChat
+      - MONGODB_DB=${MONGODB_DB:-LibreChat}
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   pgdata2:
