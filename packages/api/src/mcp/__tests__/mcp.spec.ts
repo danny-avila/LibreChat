@@ -5,8 +5,9 @@ import {
 } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
+import type { GraphTokenResolver } from '~/utils/graph';
+import { preProcessGraphTokens } from '~/utils/graph';
 import { processMCPEnv } from '~/utils/env';
-import { preProcessGraphTokens, type GraphTokenResolver } from '~/utils/graph';
 import * as oidcUtils from '~/utils/oidc';
 
 // Mock oidc utilities for graph token tests
