@@ -164,14 +164,7 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
               logger.info(`[E2BAgent Tools] Found ${fileIdsToRestore.length} files from current request`);
             }
             
-            // 2. 从 assistant.tool_resources 获取持久文件
-            if (assistant?.tool_resources?.file_search?.vector_store_ids?.length > 0) {
-              // Vector store files - 这些是持久关联的文件
-              logger.info(`[E2BAgent Tools] Assistant has ${assistant.tool_resources.file_search.vector_store_ids.length} vector stores`);
-              // Note: 需要额外查询来获取 vector store 中的文件，先跳过
-            }
-            
-            // 3. 降级方案：从 Context Manager 获取（可能为空）
+            // 2. 降级方案：从 Context Manager 获取（可能为空）
             if (fileIdsToRestore.length === 0) {
               const uploadedFiles = contextManager.sessionState.uploadedFiles;
               if (uploadedFiles && uploadedFiles.length > 0) {
@@ -291,15 +284,6 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
         });
 
         if (synced.length > 0) {
-          // 记录到 Context Manager 以便沙箱恢复时重新上传
-          contextManager.addUploadedFile({
-            file_id: file_id,
-            filename: synced[0].filename,
-            remotePath: synced[0].remotePath,
-            uploadedAt: new Date().toISOString()
-          });
-          logger.info(`[E2BAgent Tools] File ${synced[0].filename} tracked in Context Manager`);
-          
           return {
             success: true,
             message: `File ${synced[0].filename} uploaded to sandbox at ${synced[0].remotePath}`,

@@ -24,11 +24,9 @@ class ContextManager {
     this.sessionState = {
       uploadedFiles: [],
       generatedArtifacts: [],
-      executedAnalyses: [],
-      sandboxInfo: null,
     };
     logger.info(`[ContextManager] NEW INSTANCE created for conversation ${conversationId}, userId ${userId}`);
-    logger.info(`[ContextManager] Initial state: files=0, artifacts=0, analyses=0`);
+    logger.info(`[ContextManager] Initial state: files=0, artifacts=0`);
   }
 
   /**
@@ -45,30 +43,6 @@ class ContextManager {
       file_id: f.file_id, // Store for sandbox recovery, but NEVER expose to LLM
     }));
     logger.info(`[ContextManager] Updated files: ${files.map(f => f.filename).join(', ')}`);
-  }
-
-  /**
-   * Add a single uploaded file (used by upload_file tool)
-   * Appends to existing files instead of replacing
-   * 
-   * @param {Object} file - File object with filename, file_id, remotePath
-   */
-  addUploadedFile(file) {
-    const existingIndex = this.sessionState.uploadedFiles.findIndex(f => f.file_id === file.file_id);
-    
-    if (existingIndex >= 0) {
-      // Update existing file entry
-      this.sessionState.uploadedFiles[existingIndex] = {
-        ...this.sessionState.uploadedFiles[existingIndex],
-        ...file
-      };
-      logger.info(`[ContextManager] Updated existing file: ${file.filename}`);
-    } else {
-      // Add new file
-      this.sessionState.uploadedFiles.push(file);
-      logger.info(`[ContextManager] Added new file: ${file.filename} at ${file.remotePath}`);
-    }
-    logger.info(`[ContextManager] Total files now: ${this.sessionState.uploadedFiles.length}`);
   }
 
   /**
@@ -90,29 +64,6 @@ class ContextManager {
   }
 
   /**
-   * Record completed analysis for continuity
-   * 
-   * @param {Object} analysis - Analysis metadata
-   */
-  recordAnalysis(analysis) {
-    this.sessionState.executedAnalyses.push({
-      type: analysis.type, // 'eda', 'visualization', 'correlation', 'model_training'
-      summary: analysis.summary,
-      timestamp: Date.now(),
-    });
-    logger.debug(`[ContextManager] Recorded analysis: ${analysis.type}`);
-  }
-
-  /**
-   * Update sandbox environment information
-   * 
-   * @param {Object} info - Sandbox info (pythonVersion, memory, etc.)
-   */
-  updateSandboxInfo(info) {
-    this.sessionState.sandboxInfo = info;
-  }
-
-  /**
    * Generate structured context for system prompt injection
    * This is THE source of truth for LLM about current state
    * 
@@ -120,7 +71,7 @@ class ContextManager {
    */
   generateSystemContext() {
     logger.info(`[ContextManager] Generating system context for conversation ${this.conversationId}`);
-    logger.info(`[ContextManager] Current state: files=${this.sessionState.uploadedFiles.length}, artifacts=${this.sessionState.generatedArtifacts.length}, analyses=${this.sessionState.executedAnalyses.length}`);
+    logger.info(`[ContextManager] Current state: files=${this.sessionState.uploadedFiles.length}, artifacts=${this.sessionState.generatedArtifacts.length}`);
     
     if (this.sessionState.generatedArtifacts.length > 0) {
       logger.info(`[ContextManager] Artifacts in this conversation:`);
@@ -136,19 +87,9 @@ class ContextManager {
       sections.push(this._generateFilesContext());
     }
 
-    // 2. ARTIFACTS CONTEXT
+    // 2. ARTIFACTS CONTEXT (images generated in this session)
     if (this.sessionState.generatedArtifacts.length > 0) {
       sections.push(this._generateArtifactsContext());
-    }
-
-    // 3. ANALYSIS HISTORY
-    if (this.sessionState.executedAnalyses.length > 0) {
-      sections.push(this._generateHistoryContext());
-    }
-
-    // 4. SANDBOX STATE
-    if (this.sessionState.sandboxInfo) {
-      sections.push(this._generateSandboxContext());
     }
 
     return sections.length > 0 
@@ -205,41 +146,6 @@ ${filesList}
 ${recentArtifacts}
 
 Note: These are available for reference but may have been from previous analyses.`;
-  }
-
-  /**
-   * Provide context about completed analyses
-   * 
-   * @private
-   * @returns {string} Analysis history section
-   */
-  _generateHistoryContext() {
-    const recentAnalyses = this.sessionState.executedAnalyses
-      .slice(-3) // Last 3 analyses
-      .map(a => `  • ${a.type}: ${a.summary}`)
-      .join('\n');
-
-    return `## 📝 ANALYSIS HISTORY (This Session)
-
-${recentAnalyses}
-
-Use this context to avoid repeating work and build upon previous findings.`;
-  }
-
-  /**
-   * Sandbox environment state
-   * 
-   * @private
-   * @returns {string} Sandbox context section
-   */
-  _generateSandboxContext() {
-    return `## 🔧 SANDBOX ENVIRONMENT
-
-Working Directory: /home/user/
-Python Version: ${this.sessionState.sandboxInfo.pythonVersion || '3.12'}
-Available Memory: ${this.sessionState.sandboxInfo.memory || 'Standard'}
-
-All file operations should use /home/user/ as base directory.`;
   }
 
   /**
@@ -390,7 +296,6 @@ Analyze the error message and traceback to determine the root cause, then fix ac
     return {
       files: this.sessionState.uploadedFiles.length,
       artifacts: this.sessionState.generatedArtifacts.length,
-      analyses: this.sessionState.executedAnalyses.length,
     };
   }
 
@@ -401,8 +306,6 @@ Analyze the error message and traceback to determine the root cause, then fix ac
     this.sessionState = {
       uploadedFiles: [],
       generatedArtifacts: [],
-      executedAnalyses: [],
-      sandboxInfo: null,
     };
     logger.info(`[ContextManager] Session state reset for conversation ${this.conversationId}`);
   }
