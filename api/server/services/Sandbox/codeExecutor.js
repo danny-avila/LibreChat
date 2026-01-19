@@ -110,12 +110,12 @@ class CodeExecutor {
   validateCode(code) {
     const issues = [];
     
-    // 1. 检查危险函数 (Critical) - 使用正则表达式精确匹配，避免误判方法调用
+    // 1. 检查危险函数 (Critical) - 使用负向后查找避免误判对象方法
     const criticalPatterns = [
-      { pattern: /\bexec\s*\(/g, name: 'exec()' },
-      { pattern: /\beval\s*\(/g, name: 'eval()' },  // 使用 \b 确保是独立的函数调用，不会匹配 model.eval()
-      { pattern: /\bcompile\s*\(/g, name: 'compile()' },
-      { pattern: /\b__import__\s*\(/g, name: '__import__()' },
+      { pattern: /(?<![.\w])exec\s*\(/g, name: 'exec()' },
+      { pattern: /(?<![.\w])eval\s*\(/g, name: 'eval()' },  // 负向后查找确保前面不是 . 或字母，不会匹配 model.eval()
+      { pattern: /(?<![.\w])compile\s*\(/g, name: 'compile()' },
+      { pattern: /(?<![.\w])__import__\s*\(/g, name: '__import__()' },
       { pattern: /os\.system\s*\(/g, name: 'os.system()' },
       { pattern: /subprocess\./g, name: 'subprocess' }
     ];
