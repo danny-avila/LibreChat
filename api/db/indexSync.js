@@ -13,8 +13,10 @@ const searchEnabled = isEnabled(process.env.SEARCH);
 const indexingDisabled = isEnabled(process.env.MEILI_NO_SYNC);
 let currentTimeout = null;
 
-const defaultSyncThreshold = '1000';
-const syncThreshold = parseInt(process.env.MEILI_SYNC_THRESHOLD || defaultSyncThreshold, 10);
+const defaultSyncThreshold = 1000;
+const syncThreshold = process.env.MEILI_SYNC_THRESHOLD
+  ? parseInt(process.env.MEILI_SYNC_THRESHOLD, 10)
+  : defaultSyncThreshold;
 
 class MeiliSearchClient {
   static instance = null;
@@ -235,7 +237,7 @@ async function performSync(flowManager, flowId, flowType) {
       const messagesIndexed = messageProgress.totalProcessed;
       const unindexedMessages = messageCount - messagesIndexed;
 
-      if (unindexedMessages > syncThreshold) {
+      if (settingsUpdated || unindexedMessages > syncThreshold) {
         logger.info(`[indexSync] Starting message sync (${unindexedMessages} unindexed)`);
         await Message.syncWithMeili();
         messagesSync = true;
@@ -261,7 +263,7 @@ async function performSync(flowManager, flowId, flowType) {
       const convosIndexed = convoProgress.totalProcessed;
 
       const unindexedConvos = convoCount - convosIndexed;
-      if (unindexedConvos > syncThreshold) {
+      if (settingsUpdated || unindexedConvos > syncThreshold) {
         logger.info(`[indexSync] Starting convos sync (${unindexedConvos} unindexed)`);
         await Conversation.syncWithMeili();
         convosSync = true;

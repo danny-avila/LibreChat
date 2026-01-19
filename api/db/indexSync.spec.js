@@ -20,6 +20,17 @@ const mockBatchResetMeiliFlags = jest.fn();
 const mockIsEnabled = jest.fn();
 const mockGetLogStores = jest.fn();
 
+// Create mock models that will be reused
+const createMockModel = (collectionName) => ({
+  collection: { name: collectionName },
+  getSyncProgress: jest.fn(),
+  syncWithMeili: jest.fn(),
+  countDocuments: jest.fn(),
+});
+
+const originalMessageModel = mongoose.models.Message;
+const originalConversationModel = mongoose.models.Conversation;
+
 // Mock external modules
 jest.mock('@librechat/data-schemas', () => ({
   logger: mockLogger,
@@ -49,6 +60,7 @@ jest.mock('~/cache', () => ({
 process.env.MEILI_HOST = 'http://localhost:7700';
 process.env.MEILI_MASTER_KEY = 'test-key';
 process.env.SEARCH = 'true';
+process.env.MEILI_SYNC_THRESHOLD = '1000'; // Set threshold before module loads
 
 describe('performSync() - syncThreshold logic', () => {
   const ORIGINAL_ENV = process.env;
@@ -56,28 +68,18 @@ describe('performSync() - syncThreshold logic', () => {
   let Conversation;
 
   beforeAll(() => {
-    // Create model instances once
-    Message = {
-      collection: { name: 'messages' },
-      getSyncProgress: jest.fn(),
-      syncWithMeili: jest.fn(),
-      countDocuments: jest.fn(),
-    };
-
-    Conversation = {
-      collection: { name: 'conversations' },
-      getSyncProgress: jest.fn(),
-      syncWithMeili: jest.fn(),
-      countDocuments: jest.fn(),
-    };
+    Message = createMockModel('messages');
+    Conversation = createMockModel('conversations');
 
     mongoose.models.Message = Message;
     mongoose.models.Conversation = Conversation;
   });
 
   beforeEach(() => {
-    // Reset all mocks but keep the model instances
+    // Reset all mocks
     jest.clearAllMocks();
+    // Reset modules to ensure fresh load of indexSync.js and its top-level consts (like syncThreshold)
+    jest.resetModules();
 
     // Set up environment
     process.env = { ...ORIGINAL_ENV };
@@ -85,6 +87,12 @@ describe('performSync() - syncThreshold logic', () => {
     process.env.MEILI_MASTER_KEY = 'test-key';
     process.env.SEARCH = 'true';
     delete process.env.MEILI_NO_SYNC;
+
+    // Re-ensure models are available in mongoose after resetModules
+    // We must require mongoose again to get the fresh instance that indexSync will use
+    const mongoose = require('mongoose');
+    mongoose.models.Message = Message;
+    mongoose.models.Conversation = Conversation;
 
     // Mock isEnabled
     mockIsEnabled.mockImplementation((val) => val === 'true' || val === true);
@@ -104,7 +112,15 @@ describe('performSync() - syncThreshold logic', () => {
     process.env = ORIGINAL_ENV;
   });
 
+  afterAll(() => {
+    mongoose.models.Message = originalMessageModel;
+    mongoose.models.Conversation = originalConversationModel;
+  });
+
   test('triggers sync when unindexed messages exceed syncThreshold', async () => {
+    // Arrange: Set threshold before module load
+    process.env.MEILI_SYNC_THRESHOLD = '1000';
+
     // Arrange: 1050 unindexed messages > 1000 threshold
     Message.getSyncProgress.mockResolvedValue({
       totalProcessed: 100,
@@ -119,8 +135,6 @@ describe('performSync() - syncThreshold logic', () => {
     });
 
     Message.syncWithMeili.mockResolvedValue(undefined);
-
-    process.env.MEILI_SYNC_THRESHOLD = '1000';
 
     // Act
     const indexSync = require('./indexSync');
@@ -316,5 +330,136 @@ describe('performSync() - syncThreshold logic', () => {
     expect(mockLogger.info).toHaveBeenCalledWith(
       '[indexSync] Conversations are fully synced: 50/50',
     );
+  });
+
+  test('triggers message sync when settingsUpdated even if below syncThreshold', async () => {
+    // Arrange: Only 50 unindexed messages (< 1000 threshold), but settings were updated
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 150, // 50 unindexed
+      isComplete: false,
+    });
+
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      isComplete: true,
+    });
+
+    Message.syncWithMeili.mockResolvedValue(undefined);
+
+    // Mock settings update scenario
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }), // No user field
+      updateSettings: jest.fn().mockResolvedValue({}),
+      search: jest.fn().mockResolvedValue({ hits: [] }),
+    });
+
+    process.env.MEILI_SYNC_THRESHOLD = '1000';
+
+    // Act
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    // Assert: Flags were reset due to settings update
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Message.collection);
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Conversation.collection);
+
+    // Assert: Message sync triggered despite being below threshold (50 < 1000)
+    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] Settings updated. Forcing full re-sync to reindex with new configuration...',
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] Starting message sync (50 unindexed)',
+    );
+  });
+
+  test('triggers conversation sync when settingsUpdated even if below syncThreshold', async () => {
+    // Arrange: Messages complete, conversations have 50 unindexed (< 1000 threshold), but settings were updated
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 100,
+      isComplete: true,
+    });
+
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 100, // 50 unindexed
+      isComplete: false,
+    });
+
+    Conversation.syncWithMeili.mockResolvedValue(undefined);
+
+    // Mock settings update scenario
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }), // No user field
+      updateSettings: jest.fn().mockResolvedValue({}),
+      search: jest.fn().mockResolvedValue({ hits: [] }),
+    });
+
+    process.env.MEILI_SYNC_THRESHOLD = '1000';
+
+    // Act
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    // Assert: Flags were reset due to settings update
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Message.collection);
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Conversation.collection);
+
+    // Assert: Conversation sync triggered despite being below threshold (50 < 1000)
+    expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] Settings updated. Forcing full re-sync to reindex with new configuration...',
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith('[indexSync] Starting convos sync (50 unindexed)');
+  });
+
+  test('triggers both message and conversation sync when settingsUpdated even if both below syncThreshold', async () => {
+    // Arrange: Set threshold before module load
+    process.env.MEILI_SYNC_THRESHOLD = '1000';
+
+    // Arrange: Both have documents below threshold (50 each), but settings were updated
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 150, // 50 unindexed
+      isComplete: false,
+    });
+
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 100, // 50 unindexed
+      isComplete: false,
+    });
+
+    Message.syncWithMeili.mockResolvedValue(undefined);
+    Conversation.syncWithMeili.mockResolvedValue(undefined);
+
+    // Mock settings update scenario
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }), // No user field
+      updateSettings: jest.fn().mockResolvedValue({}),
+      search: jest.fn().mockResolvedValue({ hits: [] }),
+    });
+
+    // Act
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    // Assert: Flags were reset due to settings update
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Message.collection);
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Conversation.collection);
+
+    // Assert: Both syncs triggered despite both being below threshold
+    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] Settings updated. Forcing full re-sync to reindex with new configuration...',
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] Starting message sync (50 unindexed)',
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith('[indexSync] Starting convos sync (50 unindexed)');
   });
 });
