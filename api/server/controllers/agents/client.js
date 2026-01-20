@@ -533,7 +533,14 @@ class AgentClient extends BaseClient {
       this.options.agent.instructions = systemContent;
     }
 
-    /** Pass memory context to parallel agents (addedConvo) so they have the same user context */
+    /**
+     * Pass memory context to parallel agents (addedConvo) so they have the same user context.
+     *
+     * NOTE: This intentionally mutates the agentConfig objects in place. The agentConfigs Map
+     * holds references to config objects that will be passed to the graph runtime. Mutating
+     * them here ensures all parallel agents receive the memory context before execution starts.
+     * Creating new objects would not work because the Map references would still point to the old objects.
+     */
     if (memoryContext && this.agentConfigs?.size > 0) {
       for (const [agentId, agentConfig] of this.agentConfigs.entries()) {
         if (agentConfig.instructions) {
