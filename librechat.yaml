@@ -103,7 +103,7 @@ mcpServers:
       M_KEY:
         title: "Admin Password"
         description: "Enter the admin password to authorize access to this MCP server. Default password is 'admin123'."
-    startup: false
+    startup: true
     timeout: 60000
 
 
