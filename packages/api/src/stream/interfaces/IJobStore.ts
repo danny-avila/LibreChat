@@ -45,6 +45,19 @@ export interface SerializableJobData {
   promptTokens?: number;
 }
 
+/** Usage metadata for token spending */
+export interface UsageMetadata {
+  input_tokens?: number;
+  output_tokens?: number;
+  model?: string;
+  input_token_details?: {
+    cache_creation?: number;
+    cache_read?: number;
+  };
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
 /**
  * Result returned from aborting a job - contains all data needed
  * for token spending and message saving without storing callbacks
@@ -58,6 +71,10 @@ export interface AbortResult {
   content: Agents.MessageContentComplex[];
   /** Final event to send to client */
   finalEvent: unknown;
+  /** Concatenated text from all content parts for token counting fallback */
+  text: string;
+  /** Collected usage metadata from all models for token spending */
+  collectedUsage: UsageMetadata[];
 }
 
 /**
@@ -210,6 +227,23 @@ export interface IJobStore {
    * @param runSteps - Run steps to save
    */
   saveRunSteps?(streamId: string, runSteps: Agents.RunStep[]): Promise<void>;
+
+  /**
+   * Set collected usage reference for a job.
+   * This array accumulates token usage from all models during generation.
+   *
+   * @param streamId - The stream identifier
+   * @param collectedUsage - Array of usage metadata from all models
+   */
+  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void;
+
+  /**
+   * Get collected usage for a job.
+   *
+   * @param streamId - The stream identifier
+   * @returns Array of usage metadata or empty array
+   */
+  getCollectedUsage(streamId: string): UsageMetadata[];
 }
 
 /**

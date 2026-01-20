@@ -1084,11 +1084,20 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        await this.recordCollectedUsage({
-          context: 'message',
-          balance: balanceConfig,
-          transactions: transactionsConfig,
-        });
+        /** Skip token spending if aborted - the abort handler (abortMiddleware.js) handles it
+        This prevents double-spending when user aborts via `/api/agents/chat/abort` */
+        const wasAborted = abortController?.signal?.aborted;
+        if (!wasAborted) {
+          await this.recordCollectedUsage({
+            context: 'message',
+            balance: balanceConfig,
+            transactions: transactionsConfig,
+          });
+        } else {
+          logger.debug(
+            '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
+          );
+        }
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
