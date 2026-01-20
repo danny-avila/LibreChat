@@ -41,6 +41,8 @@ export * from './web';
 export * from './cache';
 /* Stream */
 export * from './stream';
+/* Compaction */
+export * from './compaction';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';

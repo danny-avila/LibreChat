@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { openAISchema } from 'librechat-data-provider';
-import type { TConfig } from 'librechat-data-provider';
+import type { TConfig, TCompactionConfig } from 'librechat-data-provider';
 import type { OpenAIClientOptions, Providers } from '@librechat/agents';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { AzureOptions } from './azure';
@@ -24,6 +24,8 @@ export interface OpenAIConfigOptions {
   addParams?: Record<string, unknown>;
   dropParams?: string[];
   customParams?: Partial<TConfig['customParams']>;
+  /** Context compaction configuration for OpenAI Responses API */
+  compactionConfig?: TCompactionConfig;
 }
 
 export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
@@ -31,6 +33,10 @@ export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
 export type OAIClientOptions = OpenAIClientOptions & {
   include_reasoning?: boolean;
   _lc_stream_delay?: number;
+  /** Truncation mode for Responses API context compaction */
+  truncation?: 'auto' | 'disabled';
+  /** Previous response ID for continuation/compaction */
+  previous_response_id?: string;
 };
 
 /**

@@ -7,12 +7,88 @@ const {
   sanitizeMessageForTransmit,
 } = require('@librechat/api');
 const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
+const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
-const { spendTokens } = require('~/models/spendTokens');
 const { saveMessage, getConvo } = require('~/models');
 const { abortRun } = require('./abortRun');
+
+/**
+ * Spend tokens for all models from collected usage.
+ * This handles both sequential and parallel agent execution.
+ *
+ * IMPORTANT: After spending, this function clears the collectedUsage array
+ * to prevent double-spending. The array is shared with AgentClient.collectedUsage,
+ * so clearing it here prevents the finally block from also spending tokens.
+ *
+ * @param {Object} params
+ * @param {string} params.userId - User ID
+ * @param {string} params.conversationId - Conversation ID
+ * @param {Array<Object>} params.collectedUsage - Usage metadata from all models
+ * @param {string} [params.fallbackModel] - Fallback model name if not in usage
+ */
+async function spendCollectedUsage({ userId, conversationId, collectedUsage, fallbackModel }) {
+  if (!collectedUsage || collectedUsage.length === 0) {
+    return;
+  }
+
+  const spendPromises = [];
+
+  for (const usage of collectedUsage) {
+    if (!usage) {
+      continue;
+    }
+
+    // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
+    const cache_creation =
+      Number(usage.input_token_details?.cache_creation) ||
+      Number(usage.cache_creation_input_tokens) ||
+      0;
+    const cache_read =
+      Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
+
+    const txMetadata = {
+      context: 'abort',
+      conversationId,
+      user: userId,
+      model: usage.model ?? fallbackModel,
+    };
+
+    if (cache_creation > 0 || cache_read > 0) {
+      spendPromises.push(
+        spendStructuredTokens(txMetadata, {
+          promptTokens: {
+            input: usage.input_tokens,
+            write: cache_creation,
+            read: cache_read,
+          },
+          completionTokens: usage.output_tokens,
+        }).catch((err) => {
+          logger.error('[abortMiddleware] Error spending structured tokens for abort', err);
+        }),
+      );
+      continue;
+    }
+
+    spendPromises.push(
+      spendTokens(txMetadata, {
+        promptTokens: usage.input_tokens,
+        completionTokens: usage.output_tokens,
+      }).catch((err) => {
+        logger.error('[abortMiddleware] Error spending tokens for abort', err);
+      }),
+    );
+  }
+
+  // Wait for all token spending to complete
+  await Promise.all(spendPromises);
+
+  // Clear the array to prevent double-spending from the AgentClient finally block.
+  // The collectedUsage array is shared by reference with AgentClient.collectedUsage,
+  // so clearing it here ensures recordCollectedUsage() sees an empty array and returns early.
+  collectedUsage.length = 0;
+}
 
 /**
  * Abort an active message generation.
@@ -39,9 +115,8 @@ async function abortMessage(req, res) {
     return;
   }
 
-  const { jobData, content, text } = abortResult;
+  const { jobData, content, text, collectedUsage } = abortResult;
 
-  // Count tokens and spend them
   const completionTokens = await countTokens(text);
   const promptTokens = jobData?.promptTokens ?? 0;
 
@@ -62,10 +137,21 @@ async function abortMessage(req, res) {
     tokenCount: completionTokens,
   };
 
-  await spendTokens(
-    { ...responseMessage, context: 'incomplete', user: userId },
-    { promptTokens, completionTokens },
-  );
+  // Spend tokens for ALL models from collectedUsage (handles parallel agents/addedConvo)
+  if (collectedUsage && collectedUsage.length > 0) {
+    await spendCollectedUsage({
+      userId,
+      conversationId: jobData?.conversationId,
+      collectedUsage,
+      fallbackModel: jobData?.model,
+    });
+  } else {
+    // Fallback: no collected usage, use text-based token counting for primary model only
+    await spendTokens(
+      { ...responseMessage, context: 'incomplete', user: userId },
+      { promptTokens, completionTokens },
+    );
+  }
 
   await saveMessage(
     req,
