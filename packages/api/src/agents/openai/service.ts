@@ -319,7 +319,6 @@ export function buildNonStreamingResponse(
       },
     ],
     usage,
-    ...(context.conversationId && { conversation_id: context.conversationId }),
   };
 }
 
@@ -372,10 +371,9 @@ export async function createAgentChatCompletion(
 
   // Build response context
   const context: OpenAIResponseContext = {
+    created,
     requestId,
     model: agentId,
-    created,
-    conversationId,
   };
 
   // Create content aggregator

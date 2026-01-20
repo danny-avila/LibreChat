@@ -35,7 +35,6 @@ export function createChunk(
       },
     ],
     ...(usage && { usage }),
-    ...(context.conversationId && { conversation_id: context.conversationId }),
   };
 }
 

@@ -115,8 +115,6 @@ export interface ChatCompletionResponse {
   model: string;
   choices: ChatCompletionChoice[];
   usage?: CompletionUsage;
-  /** Conversation ID (LibreChat extension) */
-  conversation_id?: string;
 }
 
 /**
@@ -154,8 +152,6 @@ export interface ChatCompletionChunk {
   choices: ChatCompletionChunkChoice[];
   /** Final chunk may include usage */
   usage?: CompletionUsage;
-  /** Conversation ID (LibreChat extension) */
-  conversation_id?: string;
 }
 
 /**
@@ -175,8 +171,6 @@ export interface OpenAIResponseContext {
   model: string;
   /** Created timestamp */
   created: number;
-  /** Conversation ID */
-  conversationId?: string;
 }
 
 /**

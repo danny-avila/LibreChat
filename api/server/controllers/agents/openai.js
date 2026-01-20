@@ -150,12 +150,10 @@ const OpenAIChatCompletionController = async (req, res) => {
   const parentMessageId = request.parent_message_id ?? null;
   const created = Math.floor(Date.now() / 1000);
 
-  // Build response context for OpenAI format
   const context = {
+    created,
     requestId,
     model: agentId,
-    created,
-    conversationId,
   };
 
   // Create content aggregator for OpenAI format
