@@ -20,7 +20,11 @@
  * @see https://openresponses.org/specification
  */
 const express = require('express');
-const { createResponse, listModels } = require('~/server/controllers/agents/responses');
+const {
+  createResponse,
+  getResponse,
+  listModels,
+} = require('~/server/controllers/agents/responses');
 const { configMiddleware } = require('~/server/middleware');
 
 const router = express.Router();
@@ -86,7 +90,7 @@ router.use(configMiddleware);
 router.post('/', createResponse);
 
 /**
- * @route GET /v1/models
+ * @route GET /v1/responses/models
  * @desc List available agents as models
  * @access Private (JWT auth required)
  *
@@ -105,5 +109,23 @@ router.post('/', createResponse);
  * }
  */
 router.get('/models', listModels);
+
+/**
+ * @route GET /v1/responses/:id
+ * @desc Retrieve a stored response by ID
+ * @access Private (JWT auth required)
+ *
+ * Response:
+ * {
+ *   "id": "resp_xxx",
+ *   "object": "response",
+ *   "created_at": 1234567890,
+ *   "status": "completed",
+ *   "model": "agent_id",
+ *   "output": [...],
+ *   "usage": { ... }
+ * }
+ */
+router.get('/:id', getResponse);
 
 module.exports = router;

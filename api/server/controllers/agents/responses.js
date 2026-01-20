@@ -12,24 +12,25 @@ const {
   createSafeUser,
   initializeAgent,
   // Responses API
-  validateResponseRequest,
-  isValidationFailure,
-  convertInputToMessages,
-  sendResponsesErrorResponse,
-  generateResponseId,
-  createResponseContext,
-  setupStreamingResponse,
-  createResponseTracker,
-  createResponsesEventHandlers,
-  emitResponseInProgress,
   writeDone,
-  createResponseAggregator,
+  buildResponse,
+  generateResponseId,
+  isValidationFailure,
+  createResponseContext,
+  createResponseTracker,
+  setupStreamingResponse,
+  emitResponseInProgress,
+  convertInputToMessages,
+  validateResponseRequest,
   buildAggregatedResponse,
+  createResponseAggregator,
+  sendResponsesErrorResponse,
+  createResponsesEventHandlers,
   createAggregatorEventHandlers,
 } = require('@librechat/api');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools } = require('~/server/services/ToolService');
-const { getConvoFiles } = require('~/models/Conversation');
+const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
@@ -124,6 +125,127 @@ async function loadPreviousMessages(conversationId, userId) {
 }
 
 /**
+ * Save input messages to database
+ * @param {import('express').Request} req
+ * @param {string} conversationId
+ * @param {Array} inputMessages - Internal format messages
+ * @param {string} agentId
+ * @returns {Promise<void>}
+ */
+async function saveInputMessages(req, conversationId, inputMessages, agentId) {
+  for (const msg of inputMessages) {
+    if (msg.role === 'user') {
+      await db.saveMessage(
+        req,
+        {
+          messageId: msg.messageId || nanoid(),
+          conversationId,
+          parentMessageId: null,
+          isCreatedByUser: true,
+          text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+          sender: 'User',
+          endpoint: EModelEndpoint.agents,
+          model: agentId,
+        },
+        { context: 'Responses API - save user input' },
+      );
+    }
+  }
+}
+
+/**
+ * Save response output to database
+ * @param {import('express').Request} req
+ * @param {string} conversationId
+ * @param {string} responseId
+ * @param {import('@librechat/api').Response} response
+ * @param {string} agentId
+ * @returns {Promise<void>}
+ */
+async function saveResponseOutput(req, conversationId, responseId, response, agentId) {
+  // Extract text content from output items
+  let responseText = '';
+  for (const item of response.output) {
+    if (item.type === 'message' && item.content) {
+      for (const part of item.content) {
+        if (part.type === 'output_text' && part.text) {
+          responseText += part.text;
+        }
+      }
+    }
+  }
+
+  // Save the assistant message
+  await db.saveMessage(
+    req,
+    {
+      messageId: responseId,
+      conversationId,
+      parentMessageId: null,
+      isCreatedByUser: false,
+      text: responseText,
+      sender: 'Agent',
+      endpoint: EModelEndpoint.agents,
+      model: agentId,
+      finish_reason: response.status === 'completed' ? 'stop' : response.status,
+      tokenCount: response.usage?.output_tokens,
+    },
+    { context: 'Responses API - save assistant response' },
+  );
+}
+
+/**
+ * Save or update conversation
+ * @param {import('express').Request} req
+ * @param {string} conversationId
+ * @param {string} agentId
+ * @param {object} agent
+ * @returns {Promise<void>}
+ */
+async function saveConversation(req, conversationId, agentId, agent) {
+  await saveConvo(
+    req,
+    {
+      conversationId,
+      endpoint: EModelEndpoint.agents,
+      agentId,
+      title: agent?.name || 'Open Responses Conversation',
+      model: agent?.model,
+    },
+    { context: 'Responses API - save conversation' },
+  );
+}
+
+/**
+ * Convert stored messages to Open Responses output format
+ * @param {Array} messages - Stored messages
+ * @returns {Array} Output items
+ */
+function convertMessagesToOutputItems(messages) {
+  const output = [];
+
+  for (const msg of messages) {
+    if (!msg.isCreatedByUser) {
+      output.push({
+        type: 'message',
+        id: msg.messageId,
+        role: 'assistant',
+        status: 'completed',
+        content: [
+          {
+            type: 'output_text',
+            text: msg.text || '',
+            annotations: [],
+          },
+        ],
+      });
+    }
+  }
+
+  return output;
+}
+
+/**
  * Create Response - POST /v1/responses
  *
  * Creates a model response following the Open Responses API specification.
@@ -159,7 +281,6 @@ const createResponse = async (req, res) => {
   const responseId = generateResponseId();
   const conversationId = request.previous_response_id ?? nanoid();
   const parentMessageId = null;
-  const createdAt = Math.floor(Date.now() / 1000);
 
   // Create response context
   const context = createResponseContext(request, responseId);
@@ -341,6 +462,28 @@ const createResponse = async (req, res) => {
       finalizeStream();
       res.end();
 
+      // Save to database if store: true
+      if (request.store === true) {
+        try {
+          // Save conversation
+          await saveConversation(req, conversationId, agentId, agent);
+
+          // Save input messages
+          await saveInputMessages(req, conversationId, inputMessages, agentId);
+
+          // Build response for saving (use tracker with buildResponse for streaming)
+          const finalResponse = buildResponse(context, tracker, 'completed');
+          await saveResponseOutput(req, conversationId, responseId, finalResponse, agentId);
+
+          logger.debug(
+            `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
+          );
+        } catch (saveError) {
+          logger.error('[Responses API] Error saving response:', saveError);
+          // Don't fail the request if saving fails
+        }
+      }
+
       // Wait for artifact processing after response ends (non-blocking)
       if (artifactPromises.length > 0) {
         Promise.all(artifactPromises).catch((artifactError) => {
@@ -434,6 +577,28 @@ const createResponse = async (req, res) => {
 
       // Build and send the response
       const response = buildAggregatedResponse(context, aggregator);
+
+      // Save to database if store: true
+      if (request.store === true) {
+        try {
+          // Save conversation
+          await saveConversation(req, conversationId, agentId, agent);
+
+          // Save input messages
+          await saveInputMessages(req, conversationId, inputMessages, agentId);
+
+          // Save response output
+          await saveResponseOutput(req, conversationId, responseId, response, agentId);
+
+          logger.debug(
+            `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
+          );
+        } catch (saveError) {
+          logger.error('[Responses API] Error saving response:', saveError);
+          // Don't fail the request if saving fails
+        }
+      }
+
       res.json(response);
     }
   } catch (error) {
@@ -462,7 +627,7 @@ const createResponse = async (req, res) => {
 const listModels = async (req, res) => {
   try {
     // Get the user from request (for filtering by access)
-    const userId = req.user?.id;
+    const _userId = req.user?.id;
 
     // Fetch all agents (or filter by user access in future)
     const agents = await getAgents({});
@@ -494,8 +659,114 @@ const listModels = async (req, res) => {
   }
 };
 
+/**
+ * Get Response - GET /v1/responses/:id
+ *
+ * Retrieves a stored response by its ID.
+ * The response ID maps to a conversationId in LibreChat's storage.
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ */
+const getResponse = async (req, res) => {
+  try {
+    const responseId = req.params.id;
+    const userId = req.user?.id;
+
+    if (!responseId) {
+      return sendResponsesErrorResponse(res, 400, 'Response ID is required');
+    }
+
+    // The responseId could be either the response ID or the conversation ID
+    // Try to find a conversation with this ID
+    const conversation = await getConvo(userId, responseId);
+
+    if (!conversation) {
+      return sendResponsesErrorResponse(
+        res,
+        404,
+        `Response not found: ${responseId}`,
+        'not_found',
+        'response_not_found',
+      );
+    }
+
+    // Load messages for this conversation
+    const messages = await db.getMessages({ conversationId: responseId, user: userId });
+
+    if (!messages || messages.length === 0) {
+      return sendResponsesErrorResponse(
+        res,
+        404,
+        `No messages found for response: ${responseId}`,
+        'not_found',
+        'response_not_found',
+      );
+    }
+
+    // Convert messages to Open Responses output format
+    const output = convertMessagesToOutputItems(messages);
+
+    // Find the last assistant message for usage info
+    const lastAssistantMessage = messages.filter((m) => !m.isCreatedByUser).pop();
+
+    // Build the response object
+    const response = {
+      id: responseId,
+      object: 'response',
+      created_at: Math.floor(new Date(conversation.createdAt || Date.now()).getTime() / 1000),
+      completed_at: Math.floor(new Date(conversation.updatedAt || Date.now()).getTime() / 1000),
+      status: 'completed',
+      incomplete_details: null,
+      model: conversation.agentId || conversation.model || 'unknown',
+      previous_response_id: null,
+      instructions: null,
+      output,
+      error: null,
+      tools: [],
+      tool_choice: 'auto',
+      truncation: 'disabled',
+      parallel_tool_calls: true,
+      text: { format: { type: 'text' } },
+      temperature: 1,
+      top_p: 1,
+      presence_penalty: 0,
+      frequency_penalty: 0,
+      top_logprobs: null,
+      reasoning: null,
+      user: userId,
+      usage: lastAssistantMessage?.tokenCount
+        ? {
+            input_tokens: 0,
+            output_tokens: lastAssistantMessage.tokenCount,
+            total_tokens: lastAssistantMessage.tokenCount,
+          }
+        : null,
+      max_output_tokens: null,
+      max_tool_calls: null,
+      store: true,
+      background: false,
+      service_tier: 'default',
+      metadata: {},
+      safety_identifier: null,
+      prompt_cache_key: null,
+    };
+
+    res.json(response);
+  } catch (error) {
+    logger.error('[Responses API] Error getting response:', error);
+    sendResponsesErrorResponse(
+      res,
+      500,
+      error instanceof Error ? error.message : 'Failed to get response',
+      'server_error',
+    );
+  }
+};
+
 module.exports = {
   createResponse,
+  getResponse,
   listModels,
   setAppConfig,
 };
