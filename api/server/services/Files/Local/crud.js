@@ -185,6 +185,11 @@ const unlinkFile = async (filepath) => {
   try {
     await fs.promises.unlink(filepath);
   } catch (error) {
+    // Deleting a file that no longer exists is expected in some flows (races/cleanup).
+    if (error?.code === 'ENOENT') {
+      logger.debug('[unlinkFile] File already deleted');
+      return;
+    }
     logger.error('Error deleting file:', error);
   }
 };

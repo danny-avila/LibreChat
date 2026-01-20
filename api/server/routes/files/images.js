@@ -11,6 +11,9 @@ const {
 
 const router = express.Router();
 
+const FILE_SEARCH_IMAGE_UNSUPPORTED =
+  'Image uploads are not supported for file search tool resources';
+
 router.post('/', async (req, res) => {
   const metadata = req.body;
   const appConfig = req.config;
@@ -28,12 +31,21 @@ router.post('/', async (req, res) => {
     await processImageFile({ req, res, metadata });
   } catch (error) {
     // TODO: delete remote file if it exists
-    logger.error('[/files/images] Error processing file:', error);
+    /**
+     * Expected case: users may attempt to attach images for File Search tool resources,
+     * which is not supported. This should not be logged as an error.
+     */
+    if (error?.message?.includes(FILE_SEARCH_IMAGE_UNSUPPORTED)) {
+      logger.debug(`[/files/images] ${FILE_SEARCH_IMAGE_UNSUPPORTED}`);
+    } else {
+      logger.error('[/files/images] Error processing file:', error);
+    }
 
     let message = 'Error processing file';
 
     if (
       error.message?.includes('Invalid file format') ||
+      error.message?.includes(FILE_SEARCH_IMAGE_UNSUPPORTED) ||
       error.message?.includes('No OCR result') ||
       error.message?.includes('exceeds token limit')
     ) {
@@ -48,7 +60,11 @@ router.post('/', async (req, res) => {
       );
       await fs.unlink(filepath);
     } catch (error) {
-      logger.error('[/files/images] Error deleting file:', error);
+      if (error?.code === 'ENOENT') {
+        logger.debug('[/files/images] Output image file already deleted');
+      } else {
+        logger.error('[/files/images] Error deleting file:', error);
+      }
     }
     res.status(500).json({ message });
   } finally {

@@ -313,7 +313,26 @@ const handleAbortError = async (res, req, error, data) => {
       message: truncateText(error.message, 350),
     });
   } else {
-    logger.error('[handleAbortError] AI response error; aborting request:', error);
+    /**
+     * Expected case: abort/cleanup may attempt to open an image file that was never persisted
+     * (or already deleted), resulting in ENOENT. This is noisy and not actionable.
+     */
+    const isENOENT =
+      error?.code === 'ENOENT' ||
+      (typeof error?.message === 'string' && error.message.includes('ENOENT: no such file or directory'));
+    const errorPath = typeof error?.path === 'string' ? error.path : '';
+    const message = typeof error?.message === 'string' ? error.message : '';
+    const isImagePath =
+      errorPath.includes('/images/') ||
+      errorPath.includes('/public/images/') ||
+      message.includes('/images/') ||
+      message.includes('/public/images/');
+
+    if (isENOENT && isImagePath) {
+      logger.debug('[handleAbortError] ENOENT for image path during abort/cleanup (expected)');
+    } else {
+      logger.error('[handleAbortError] AI response error; aborting request:', error);
+    }
   }
   const { sender, conversationId, messageId, parentMessageId, userMessageId, partialText } = data;
 
