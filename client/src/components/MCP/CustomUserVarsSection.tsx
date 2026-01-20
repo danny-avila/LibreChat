@@ -23,9 +23,10 @@ interface AuthFieldProps {
   hasValue: boolean;
   control: any;
   errors: any;
+  autoFocus?: boolean;
 }
 
-function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) {
+function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthFieldProps) {
   const localize = useLocalize();
   const statusText = hasValue ? localize('com_ui_set') : localize('com_ui_unset');
 
@@ -85,6 +86,11 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
           <Input
             id={name}
             type="text"
+            /* autoFocus is generally disabled due to the fact that it can disorient users,
+             * but in this case, the required field would logically be immediately navigated to anyways, and the component's
+             * functionality emulates that of a new modal opening, where users would expect focus to be shifted to the new content */
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus={autoFocus}
             {...field}
             placeholder={
               hasValue
@@ -150,7 +156,7 @@ export default function CustomUserVarsSection({
   return (
     <div className="flex-1 space-y-4">
       <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4">
-        {Object.entries(fields).map(([key, config]) => {
+        {Object.entries(fields).map(([key, config], index) => {
           const hasValue = authValuesData?.authValueFlags?.[key] || false;
 
           return (
@@ -161,6 +167,8 @@ export default function CustomUserVarsSection({
               hasValue={hasValue}
               control={control}
               errors={errors}
+              // eslint-disable-next-line jsx-a11y/no-autofocus -- See AuthField autoFocus comment for more details
+              autoFocus={index === 0}
             />
           );
         })}
