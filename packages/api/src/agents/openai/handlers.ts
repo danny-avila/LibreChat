@@ -53,12 +53,13 @@ export function writeSSE(res: ServerResponse, data: ChatCompletionChunk | string
 /**
  * Content aggregator for OpenAI format.
  * Accumulates text content, reasoning, and tool calls from stream events.
+ * Uses arrays for O(n) text accumulation instead of O(n²) string concatenation.
  */
 export interface OpenAIContentAggregator {
-  /** Accumulated text content */
-  text: string;
-  /** Accumulated reasoning/thinking content */
-  reasoning: string;
+  /** Accumulated text chunks */
+  textChunks: string[];
+  /** Accumulated reasoning/thinking chunks */
+  reasoningChunks: string[];
   /** Accumulated tool calls by index */
   toolCalls: Map<number, ToolCall>;
   /** Accumulated usage metadata */
@@ -67,21 +68,36 @@ export interface OpenAIContentAggregator {
     completionTokens: number;
     reasoningTokens: number;
   };
+  /** Get accumulated text (joins chunks) */
+  getText: () => string;
+  /** Get accumulated reasoning (joins chunks) */
+  getReasoning: () => string;
+  /** Add text chunk */
+  addText: (text: string) => void;
+  /** Add reasoning chunk */
+  addReasoning: (text: string) => void;
 }
 
 /**
- * Create a new content aggregator
+ * Create a new content aggregator with efficient array-based accumulation
  */
 export function createOpenAIContentAggregator(): OpenAIContentAggregator {
+  const textChunks: string[] = [];
+  const reasoningChunks: string[] = [];
+
   return {
-    text: '',
-    reasoning: '',
+    textChunks,
+    reasoningChunks,
     toolCalls: new Map(),
     usage: {
       promptTokens: 0,
       completionTokens: 0,
       reasoningTokens: 0,
     },
+    getText: () => textChunks.join(''),
+    getReasoning: () => reasoningChunks.join(''),
+    addText: (text: string) => textChunks.push(text),
+    addReasoning: (text: string) => reasoningChunks.push(text),
   };
 }
 
@@ -185,7 +201,7 @@ export class OpenAIMessageDeltaHandler implements EventHandler {
 
     for (const part of content) {
       if (part.type === 'text' && part.text) {
-        this.config.aggregator.text += part.text;
+        this.config.aggregator.addText(part.text);
         const chunk = createChunk(this.config.context, { content: part.text });
         writeSSE(this.config.res, chunk);
       }
@@ -329,7 +345,7 @@ export class OpenAIReasoningDeltaHandler implements EventHandler {
     for (const part of content) {
       if (part.type === 'text' && part.text) {
         // Accumulate reasoning content
-        this.config.aggregator.reasoning += part.text;
+        this.config.aggregator.addReasoning(part.text);
 
         // Stream as delta.reasoning (OpenRouter convention)
         const chunk = createChunk(this.config.context, { reasoning: part.text });
@@ -368,7 +384,7 @@ export function sendFinalChunk(
 
   // Determine finish reason based on content
   let reason = finishReason;
-  if (aggregator.toolCalls.size > 0 && !aggregator.text) {
+  if (aggregator.toolCalls.size > 0 && aggregator.textChunks.length === 0) {
     reason = 'tool_calls';
   }
 

@@ -486,8 +486,8 @@ export async function createAgentChatCompletion(
       };
       const response = buildNonStreamingResponse(
         context,
-        aggregator.text,
-        aggregator.reasoning,
+        aggregator.getText(),
+        aggregator.getReasoning(),
         aggregator.toolCalls,
         usage,
       );

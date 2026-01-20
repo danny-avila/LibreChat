@@ -6,7 +6,6 @@ const {
   ToolEndHandler,
   formatAgentMessages,
   ChatModelStreamHandler,
-  createContentAggregator,
 } = require('@librechat/agents');
 const {
   writeSSE,
@@ -206,10 +205,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       aggregator,
     };
 
-    // For non-streaming, we need to capture content using the internal aggregator
-    const { contentParts: _contentParts, aggregateContent } = createContentAggregator();
-
-    // We need custom handlers that both aggregate content AND stream in OpenAI format
+    // We need custom handlers that stream in OpenAI format
     const collectedUsage = [];
     /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
     const artifactPromises = [];
@@ -269,11 +265,10 @@ const OpenAIChatCompletionController = async (req, res) => {
     );
 
     /**
-     * Create a handler that aggregates content and optionally processes it
+     * Create a simple handler that processes data
      */
     const createHandler = (processor) => ({
-      handle: (event, data) => {
-        aggregateContent({ event, data });
+      handle: (_event, data) => {
         if (processor) {
           processor(data);
         }
@@ -287,7 +282,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       if (!isStreaming || !text) {
         return;
       }
-      aggregator.text += text;
+      aggregator.addText(text);
       writeSSE(res, createChunk(context, { content: text }));
     };
 
@@ -298,7 +293,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       if (!isStreaming || !text) {
         return;
       }
-      aggregator.reasoning += text;
+      aggregator.addReasoning(text);
       writeSSE(res, createChunk(context, { reasoning: text }));
     };
 
@@ -477,20 +472,27 @@ const OpenAIChatCompletionController = async (req, res) => {
       },
     });
 
-    // Wait for any artifact processing to complete (images, file citations, etc.)
-    if (artifactPromises.length > 0) {
-      try {
-        await Promise.all(artifactPromises);
-      } catch (artifactError) {
-        logger.warn('[OpenAI API] Error processing artifacts:', artifactError);
-      }
-    }
-
     // Finalize response
     if (isStreaming) {
       sendFinalChunk(handlerConfig);
       res.end();
+
+      // Wait for artifact processing after response ends (non-blocking)
+      if (artifactPromises.length > 0) {
+        Promise.all(artifactPromises).catch((artifactError) => {
+          logger.warn('[OpenAI API] Error processing artifacts:', artifactError);
+        });
+      }
     } else {
+      // For non-streaming, wait for artifacts before sending response
+      if (artifactPromises.length > 0) {
+        try {
+          await Promise.all(artifactPromises);
+        } catch (artifactError) {
+          logger.warn('[OpenAI API] Error processing artifacts:', artifactError);
+        }
+      }
+
       // Build usage from aggregated data
       const usage = {
         prompt_tokens: aggregator.usage.promptTokens,
@@ -506,8 +508,8 @@ const OpenAIChatCompletionController = async (req, res) => {
 
       const response = buildNonStreamingResponse(
         context,
-        aggregator.text,
-        aggregator.reasoning,
+        aggregator.getText(),
+        aggregator.getReasoning(),
         aggregator.toolCalls,
         usage,
       );
