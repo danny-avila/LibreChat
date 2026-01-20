@@ -50,8 +50,54 @@ export function writeSSE(res: ServerResponse, data: ChatCompletionChunk | string
 }
 
 /**
- * Content aggregator for OpenAI format.
- * Accumulates text content, reasoning, and tool calls from stream events.
+ * Lightweight tracker for streaming responses.
+ * Only tracks what's needed for finish_reason and usage - doesn't store content.
+ */
+export interface OpenAIStreamTracker {
+  /** Whether any text content was emitted */
+  hasText: boolean;
+  /** Whether any reasoning content was emitted */
+  hasReasoning: boolean;
+  /** Accumulated tool calls by index */
+  toolCalls: Map<number, ToolCall>;
+  /** Accumulated usage metadata */
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    reasoningTokens: number;
+  };
+  /** Mark that text was emitted */
+  addText: () => void;
+  /** Mark that reasoning was emitted */
+  addReasoning: () => void;
+}
+
+/**
+ * Create a lightweight stream tracker (doesn't store content)
+ */
+export function createOpenAIStreamTracker(): OpenAIStreamTracker {
+  const tracker: OpenAIStreamTracker = {
+    hasText: false,
+    hasReasoning: false,
+    toolCalls: new Map(),
+    usage: {
+      promptTokens: 0,
+      completionTokens: 0,
+      reasoningTokens: 0,
+    },
+    addText: () => {
+      tracker.hasText = true;
+    },
+    addReasoning: () => {
+      tracker.hasReasoning = true;
+    },
+  };
+  return tracker;
+}
+
+/**
+ * Content aggregator for non-streaming responses.
+ * Accumulates full text content, reasoning, and tool calls.
  * Uses arrays for O(n) text accumulation instead of O(n²) string concatenation.
  */
 export interface OpenAIContentAggregator {
@@ -78,7 +124,7 @@ export interface OpenAIContentAggregator {
 }
 
 /**
- * Create a new content aggregator with efficient array-based accumulation
+ * Create a content aggregator for non-streaming responses
  */
 export function createOpenAIContentAggregator(): OpenAIContentAggregator {
   const textChunks: string[] = [];
@@ -106,8 +152,7 @@ export function createOpenAIContentAggregator(): OpenAIContentAggregator {
 export interface OpenAIStreamHandlerConfig {
   res: ServerResponse;
   context: OpenAIResponseContext;
-  aggregator: OpenAIContentAggregator;
-  onComplete?: (aggregator: OpenAIContentAggregator) => void;
+  tracker: OpenAIStreamTracker;
 }
 
 /**
@@ -200,7 +245,7 @@ export class OpenAIMessageDeltaHandler implements EventHandler {
 
     for (const part of content) {
       if (part.type === 'text' && part.text) {
-        this.config.aggregator.addText(part.text);
+        this.config.tracker.addText();
         const chunk = createChunk(this.config.context, { content: part.text });
         writeSSE(this.config.res, chunk);
       }
@@ -230,10 +275,10 @@ export class OpenAIRunStepDeltaHandler implements EventHandler {
         continue;
       }
 
-      // Initialize tool call in aggregator if needed
-      let aggregatedTc = this.config.aggregator.toolCalls.get(tc.index);
-      if (!aggregatedTc && tc.id) {
-        aggregatedTc = {
+      // Initialize tool call in tracker if needed
+      let trackedTc = this.config.tracker.toolCalls.get(tc.index);
+      if (!trackedTc && tc.id) {
+        trackedTc = {
           id: tc.id,
           type: 'function',
           function: {
@@ -241,7 +286,7 @@ export class OpenAIRunStepDeltaHandler implements EventHandler {
             arguments: '',
           },
         };
-        this.config.aggregator.toolCalls.set(tc.index, aggregatedTc);
+        this.config.tracker.toolCalls.set(tc.index, trackedTc);
       }
 
       // Build the streaming delta
@@ -261,13 +306,13 @@ export class OpenAIRunStepDeltaHandler implements EventHandler {
         ],
       };
 
-      // Update aggregated tool call
-      if (aggregatedTc) {
+      // Update tracked tool call
+      if (trackedTc) {
         if (tc.function?.name) {
-          aggregatedTc.function.name += tc.function.name;
+          trackedTc.function.name += tc.function.name;
         }
         if (tc.function?.arguments) {
-          aggregatedTc.function.arguments += tc.function.arguments;
+          trackedTc.function.arguments += tc.function.arguments;
         }
       }
 
@@ -304,8 +349,8 @@ export class OpenAIModelEndHandler implements EventHandler {
       return;
     }
 
-    this.config.aggregator.usage.promptTokens += usage.input_tokens ?? 0;
-    this.config.aggregator.usage.completionTokens += usage.output_tokens ?? 0;
+    this.config.tracker.usage.promptTokens += usage.input_tokens ?? 0;
+    this.config.tracker.usage.completionTokens += usage.output_tokens ?? 0;
   }
 }
 
@@ -343,8 +388,8 @@ export class OpenAIReasoningDeltaHandler implements EventHandler {
 
     for (const part of content) {
       if (part.type === 'text' && part.text) {
-        // Accumulate reasoning content
-        this.config.aggregator.addReasoning(part.text);
+        // Mark that reasoning was emitted
+        this.config.tracker.addReasoning();
 
         // Stream as delta.reasoning (OpenRouter convention)
         const chunk = createChunk(this.config.context, { reasoning: part.text });
@@ -379,25 +424,25 @@ export function sendFinalChunk(
   config: OpenAIStreamHandlerConfig,
   finishReason: ChatCompletionChunkChoice['finish_reason'] = 'stop',
 ): void {
-  const { res, context, aggregator } = config;
+  const { res, context, tracker } = config;
 
   // Determine finish reason based on content
   let reason = finishReason;
-  if (aggregator.toolCalls.size > 0 && aggregator.textChunks.length === 0) {
+  if (tracker.toolCalls.size > 0 && !tracker.hasText) {
     reason = 'tool_calls';
   }
 
   // Build usage object with reasoning token details (OpenRouter/OpenAI convention)
   const usage: CompletionUsage = {
-    prompt_tokens: aggregator.usage.promptTokens,
-    completion_tokens: aggregator.usage.completionTokens,
-    total_tokens: aggregator.usage.promptTokens + aggregator.usage.completionTokens,
+    prompt_tokens: tracker.usage.promptTokens,
+    completion_tokens: tracker.usage.completionTokens,
+    total_tokens: tracker.usage.promptTokens + tracker.usage.completionTokens,
   };
 
   // Add reasoning token breakdown if there are reasoning tokens
-  if (aggregator.usage.reasoningTokens > 0) {
+  if (tracker.usage.reasoningTokens > 0) {
     usage.completion_tokens_details = {
-      reasoning_tokens: aggregator.usage.reasoningTokens,
+      reasoning_tokens: tracker.usage.reasoningTokens,
     };
   }
 

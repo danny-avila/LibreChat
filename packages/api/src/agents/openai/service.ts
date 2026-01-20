@@ -32,6 +32,7 @@ import type {
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
 import {
   createOpenAIContentAggregator,
+  createOpenAIStreamTracker,
   createOpenAIHandlers,
   sendFinalChunk,
   createChunk,
@@ -349,7 +350,7 @@ export async function createAgentChatCompletion(
 
   const request = validation.request;
   const agentId = request.model;
-  const isStreaming = request.stream === true;
+  const requestedStreaming = request.stream === true;
 
   // Look up the agent
   const agent = await deps.getAgent({ id: agentId });
@@ -376,9 +377,6 @@ export async function createAgentChatCompletion(
     model: agentId,
   };
 
-  // Create content aggregator
-  const aggregator = createOpenAIContentAggregator();
-
   // Set up abort controller
   const abortController = new AbortController();
 
@@ -388,33 +386,10 @@ export async function createAgentChatCompletion(
   });
 
   try {
-    // Set up response headers for streaming
-    if (isStreaming) {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
-      res.flushHeaders();
-
-      // Send initial chunk with role
-      const initialChunk = createChunk(context, { role: 'assistant' });
-      writeSSE(res, initialChunk);
-    }
-
-    // Create handler config
-    const handlerConfig: OpenAIStreamHandlerConfig = {
-      res,
-      context,
-      aggregator,
-    };
-
-    // Create event handlers
-    const eventHandlers = isStreaming ? createOpenAIHandlers(handlerConfig) : {}; // For non-streaming, we'll collect content differently
-
     // Build allowed providers set (empty = all allowed)
     const allowedProviders = new Set<string>();
 
-    // Initialize the agent
+    // Initialize the agent first to check for disableStreaming
     const initializedAgent = await deps.initializeAgent({
       req,
       res,
@@ -429,6 +404,41 @@ export async function createAgentChatCompletion(
       allowedProviders,
       isInitialAgent: true,
     });
+
+    // Determine if streaming is enabled (check both request and agent config)
+    const streamingDisabled = !!(initializedAgent.model_parameters as Record<string, unknown>)
+      ?.disableStreaming;
+    const isStreaming = requestedStreaming && !streamingDisabled;
+
+    // Create tracker for streaming or aggregator for non-streaming
+    const tracker = isStreaming ? createOpenAIStreamTracker() : null;
+    const aggregator = isStreaming ? null : createOpenAIContentAggregator();
+
+    // Set up response headers for streaming
+    if (isStreaming) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders();
+
+      // Send initial chunk with role
+      const initialChunk = createChunk(context, { role: 'assistant' });
+      writeSSE(res, initialChunk);
+    }
+
+    // Create handler config (only used for streaming)
+    const handlerConfig: OpenAIStreamHandlerConfig | null =
+      isStreaming && tracker
+        ? {
+            res,
+            context,
+            tracker,
+          }
+        : null;
+
+    // Create event handlers
+    const eventHandlers = isStreaming && handlerConfig ? createOpenAIHandlers(handlerConfig) : {};
 
     // Convert messages to internal format
     const messages = convertMessages(request.messages);
@@ -469,10 +479,10 @@ export async function createAgentChatCompletion(
     }
 
     // Finalize response
-    if (isStreaming) {
+    if (isStreaming && handlerConfig) {
       sendFinalChunk(handlerConfig);
       res.end();
-    } else {
+    } else if (aggregator) {
       // Build and send non-streaming response
       const usage: CompletionUsage = {
         prompt_tokens: aggregator.usage.promptTokens,
@@ -494,17 +504,13 @@ export async function createAgentChatCompletion(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An error occurred';
 
-    if (isStreaming) {
-      // For streaming, send error as a chunk if possible
-      if (!res.headersSent) {
-        sendErrorResponse(res, 500, errorMessage, 'server_error');
-      } else {
-        // Headers already sent, try to send error in stream format
-        const errorChunk = createChunk(context, { content: `\n\nError: ${errorMessage}` }, 'stop');
-        writeSSE(res, errorChunk);
-        writeSSE(res, '[DONE]');
-        res.end();
-      }
+    // Check if we already started streaming (headers sent)
+    if (res.headersSent) {
+      // Headers already sent, try to send error in stream format
+      const errorChunk = createChunk(context, { content: `\n\nError: ${errorMessage}` }, 'stop');
+      writeSSE(res, errorChunk);
+      writeSSE(res, '[DONE]');
+      res.end();
     } else {
       sendErrorResponse(res, 500, errorMessage, 'server_error');
     }

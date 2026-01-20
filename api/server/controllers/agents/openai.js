@@ -17,6 +17,7 @@ const {
   initializeAgent,
   createErrorResponse,
   buildNonStreamingResponse,
+  createOpenAIStreamTracker,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
 } = require('@librechat/api');
@@ -130,7 +131,6 @@ const OpenAIChatCompletionController = async (req, res) => {
 
   const request = validation.request;
   const agentId = request.model;
-  const isStreaming = request.stream === true;
 
   // Look up the agent
   const agent = await getAgent({ id: agentId });
@@ -156,9 +156,6 @@ const OpenAIChatCompletionController = async (req, res) => {
     model: agentId,
   };
 
-  // Create content aggregator for OpenAI format
-  const aggregator = createOpenAIContentAggregator();
-
   // Set up abort controller
   const abortController = new AbortController();
 
@@ -171,47 +168,6 @@ const OpenAIChatCompletionController = async (req, res) => {
   });
 
   try {
-    // TODO: Add model validation back when auth is enabled
-    // const modelsConfig = await getModelsConfig(req);
-    // const validationResult = await validateAgentModel({
-    //   req,
-    //   res,
-    //   modelsConfig,
-    //   logViolation,
-    //   agent,
-    // });
-    // if (!validationResult.isValid) {
-    //   return sendErrorResponse(res, 403, validationResult.error?.message || 'Model access denied');
-    // }
-
-    // Set up response for streaming
-    if (isStreaming) {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
-      res.flushHeaders();
-
-      // Send initial chunk with role
-      const initialChunk = createChunk(context, { role: 'assistant' });
-      writeSSE(res, initialChunk);
-    }
-
-    // Create handler config for OpenAI streaming
-    const handlerConfig = {
-      res,
-      context,
-      aggregator,
-    };
-
-    // We need custom handlers that stream in OpenAI format
-    const collectedUsage = [];
-    /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
-    const artifactPromises = [];
-
-    // Create tool end callback for processing artifacts (images, file citations, code output)
-    const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
-
     // Build allowed providers set
     const allowedProviders = new Set(
       appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
@@ -220,7 +176,7 @@ const OpenAIChatCompletionController = async (req, res) => {
     // Create tool loader
     const loadTools = createToolLoader(abortController.signal);
 
-    // Initialize the agent
+    // Initialize the agent first to check for disableStreaming
     const endpointOption = {
       endpoint: agent.provider,
       model_parameters: agent.model_parameters ?? {},
@@ -252,6 +208,44 @@ const OpenAIChatCompletionController = async (req, res) => {
       },
     );
 
+    // Determine if streaming is enabled (check both request and agent config)
+    const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
+    const isStreaming = request.stream === true && !streamingDisabled;
+
+    // Create tracker for streaming or aggregator for non-streaming
+    const tracker = isStreaming ? createOpenAIStreamTracker() : null;
+    const aggregator = isStreaming ? null : createOpenAIContentAggregator();
+
+    // Set up response for streaming
+    if (isStreaming) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders();
+
+      // Send initial chunk with role
+      const initialChunk = createChunk(context, { role: 'assistant' });
+      writeSSE(res, initialChunk);
+    }
+
+    // Create handler config for OpenAI streaming (only used when streaming)
+    const handlerConfig = isStreaming
+      ? {
+          res,
+          context,
+          tracker,
+        }
+      : null;
+
+    // We need custom handlers that stream in OpenAI format
+    const collectedUsage = [];
+    /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
+    const artifactPromises = [];
+
+    // Create tool end callback for processing artifacts (images, file citations, code output)
+    const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
+
     // Convert messages to internal format
     const openaiMessages = convertMessages(request.messages);
 
@@ -278,22 +272,30 @@ const OpenAIChatCompletionController = async (req, res) => {
      * Stream text content in OpenAI format
      */
     const streamText = (text) => {
-      if (!isStreaming || !text) {
+      if (!text) {
         return;
       }
-      aggregator.addText(text);
-      writeSSE(res, createChunk(context, { content: text }));
+      if (isStreaming) {
+        tracker.addText();
+        writeSSE(res, createChunk(context, { content: text }));
+      } else {
+        aggregator.addText(text);
+      }
     };
 
     /**
      * Stream reasoning content in OpenAI format (OpenRouter convention)
      */
     const streamReasoning = (text) => {
-      if (!isStreaming || !text) {
+      if (!text) {
         return;
       }
-      aggregator.addReasoning(text);
-      writeSSE(res, createChunk(context, { reasoning: text }));
+      if (isStreaming) {
+        tracker.addReasoning();
+        writeSSE(res, createChunk(context, { reasoning: text }));
+      } else {
+        aggregator.addReasoning(text);
+      }
     };
 
     // Built-in handler for processing raw model stream chunks
@@ -338,36 +340,32 @@ const OpenAIChatCompletionController = async (req, res) => {
         const stepDetails = data?.stepDetails;
         if (stepDetails?.type === 'tool_calls' && stepDetails.tool_calls) {
           for (const tc of stepDetails.tool_calls) {
-            if (!isStreaming) {
-              continue;
-            }
             const toolIndex = data.index ?? 0;
             const toolId = tc.id ?? '';
             const toolName = tc.name ?? '';
+            const toolCall = {
+              id: toolId,
+              type: 'function',
+              function: { name: toolName, arguments: '' },
+            };
 
-            // Initialize in aggregator
-            if (!aggregator.toolCalls.has(toolIndex)) {
-              aggregator.toolCalls.set(toolIndex, {
-                id: toolId,
-                type: 'function',
-                function: { name: toolName, arguments: '' },
-              });
+            // Track tool call in tracker or aggregator
+            if (isStreaming) {
+              if (!tracker.toolCalls.has(toolIndex)) {
+                tracker.toolCalls.set(toolIndex, toolCall);
+              }
+              // Stream initial tool call chunk (like OpenAI does)
+              writeSSE(
+                res,
+                createChunk(context, {
+                  tool_calls: [{ index: toolIndex, ...toolCall }],
+                }),
+              );
+            } else {
+              if (!aggregator.toolCalls.has(toolIndex)) {
+                aggregator.toolCalls.set(toolIndex, toolCall);
+              }
             }
-
-            // Stream initial tool call chunk (like OpenAI does)
-            writeSSE(
-              res,
-              createChunk(context, {
-                tool_calls: [
-                  {
-                    index: toolIndex,
-                    id: toolId,
-                    type: 'function',
-                    function: { name: toolName, arguments: '' },
-                  },
-                ],
-              }),
-            );
           }
         }
       }),
@@ -377,32 +375,34 @@ const OpenAIChatCompletionController = async (req, res) => {
         const delta = data?.delta;
         if (delta?.type === 'tool_calls' && delta.tool_calls) {
           for (const tc of delta.tool_calls) {
-            // Only stream arguments, not id/name (those came from on_run_step)
             const args = tc.args ?? '';
-            if (!isStreaming || !args) {
+            if (!args) {
               continue;
             }
 
             const toolIndex = tc.index ?? 0;
 
-            // Update aggregator
-            const tracked = aggregator.toolCalls.get(toolIndex);
+            // Update tool call arguments
+            const targetMap = isStreaming ? tracker.toolCalls : aggregator.toolCalls;
+            const tracked = targetMap.get(toolIndex);
             if (tracked) {
               tracked.function.arguments += args;
             }
 
-            // Stream argument delta
-            writeSSE(
-              res,
-              createChunk(context, {
-                tool_calls: [
-                  {
-                    index: toolIndex,
-                    function: { arguments: args },
-                  },
-                ],
-              }),
-            );
+            // Stream argument delta (only for streaming)
+            if (isStreaming) {
+              writeSSE(
+                res,
+                createChunk(context, {
+                  tool_calls: [
+                    {
+                      index: toolIndex,
+                      function: { arguments: args },
+                    },
+                  ],
+                }),
+              );
+            }
           }
         }
       }),
@@ -412,8 +412,9 @@ const OpenAIChatCompletionController = async (req, res) => {
         const usage = data?.output?.usage_metadata;
         if (usage) {
           collectedUsage.push(usage);
-          aggregator.usage.promptTokens += usage.input_tokens ?? 0;
-          aggregator.usage.completionTokens += usage.output_tokens ?? 0;
+          const target = isStreaming ? tracker : aggregator;
+          target.usage.promptTokens += usage.input_tokens ?? 0;
+          target.usage.completionTokens += usage.output_tokens ?? 0;
         }
       }),
       on_run_step_completed: createHandler(),
@@ -518,16 +519,13 @@ const OpenAIChatCompletionController = async (req, res) => {
     const errorMessage = error instanceof Error ? error.message : 'An error occurred';
     logger.error('[OpenAI API] Error:', error);
 
-    if (isStreaming) {
-      if (!res.headersSent) {
-        sendErrorResponse(res, 500, errorMessage, 'server_error');
-      } else {
-        // Headers already sent, send error in stream
-        const errorChunk = createChunk(context, { content: `\n\nError: ${errorMessage}` }, 'stop');
-        writeSSE(res, errorChunk);
-        writeSSE(res, '[DONE]');
-        res.end();
-      }
+    // Check if we already started streaming (headers sent)
+    if (res.headersSent) {
+      // Headers already sent, send error in stream
+      const errorChunk = createChunk(context, { content: `\n\nError: ${errorMessage}` }, 'stop');
+      writeSSE(res, errorChunk);
+      writeSSE(res, '[DONE]');
+      res.end();
     } else {
       sendErrorResponse(res, 500, errorMessage, 'server_error');
     }
