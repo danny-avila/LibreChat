@@ -148,6 +148,7 @@ export const LangSelector = ({
 
 function General() {
   const { theme, setTheme } = useContext(ThemeContext);
+  
   const [langcode, setLangcode] = useRecoilState(store.lang);
 
   const changeTheme = useCallback(
