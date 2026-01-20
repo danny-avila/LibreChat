@@ -1849,4 +1849,224 @@ describe('AgentClient - titleConvo', () => {
       });
     });
   });
+
+  describe('buildMessages - memory context for parallel agents', () => {
+    let client;
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      mockAgent = {
+        id: 'primary-agent',
+        name: 'Primary Agent',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        instructions: 'Primary agent instructions',
+        model_parameters: {
+          model: 'gpt-4',
+        },
+        tools: [],
+      };
+
+      mockReq = {
+        user: {
+          id: 'user-123',
+          personalization: {
+            memories: true,
+          },
+        },
+        body: {
+          endpoint: EModelEndpoint.openAI,
+        },
+        config: {
+          memory: {
+            disabled: false,
+          },
+        },
+      };
+
+      mockRes = {};
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+        endpoint: EModelEndpoint.agents,
+      };
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+    });
+
+    it('should pass memory context to parallel agents (addedConvo)', async () => {
+      const memoryContent = 'User prefers dark mode. User is a software developer.';
+      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+
+      const parallelAgent1 = {
+        id: 'parallel-agent-1',
+        name: 'Parallel Agent 1',
+        instructions: 'Parallel agent 1 instructions',
+        provider: EModelEndpoint.openAI,
+      };
+
+      const parallelAgent2 = {
+        id: 'parallel-agent-2',
+        name: 'Parallel Agent 2',
+        instructions: 'Parallel agent 2 instructions',
+        provider: EModelEndpoint.anthropic,
+      };
+
+      client.agentConfigs = new Map([
+        ['parallel-agent-1', parallelAgent1],
+        ['parallel-agent-2', parallelAgent2],
+      ]);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: 'Base instructions',
+        additional_instructions: null,
+      });
+
+      expect(client.useMemory).toHaveBeenCalled();
+
+      expect(client.options.agent.instructions).toContain('Base instructions');
+      expect(client.options.agent.instructions).toContain(memoryContent);
+
+      expect(parallelAgent1.instructions).toContain('Parallel agent 1 instructions');
+      expect(parallelAgent1.instructions).toContain(memoryContent);
+
+      expect(parallelAgent2.instructions).toContain('Parallel agent 2 instructions');
+      expect(parallelAgent2.instructions).toContain(memoryContent);
+    });
+
+    it('should not modify parallel agents when no memory context is available', async () => {
+      client.useMemory = jest.fn().mockResolvedValue(undefined);
+
+      const parallelAgent = {
+        id: 'parallel-agent-1',
+        name: 'Parallel Agent 1',
+        instructions: 'Original parallel instructions',
+        provider: EModelEndpoint.openAI,
+      };
+
+      client.agentConfigs = new Map([['parallel-agent-1', parallelAgent]]);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: 'Base instructions',
+        additional_instructions: null,
+      });
+
+      expect(parallelAgent.instructions).toBe('Original parallel instructions');
+    });
+
+    it('should handle parallel agents without existing instructions', async () => {
+      const memoryContent = 'User is a data scientist.';
+      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+
+      const parallelAgentNoInstructions = {
+        id: 'parallel-agent-no-instructions',
+        name: 'Parallel Agent No Instructions',
+        provider: EModelEndpoint.openAI,
+      };
+
+      client.agentConfigs = new Map([
+        ['parallel-agent-no-instructions', parallelAgentNoInstructions],
+      ]);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: null,
+        additional_instructions: null,
+      });
+
+      expect(parallelAgentNoInstructions.instructions).toContain(memoryContent);
+    });
+
+    it('should not modify agentConfigs when none exist', async () => {
+      const memoryContent = 'User prefers concise responses.';
+      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+
+      client.agentConfigs = null;
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await expect(
+        client.buildMessages(messages, null, {
+          instructions: 'Base instructions',
+          additional_instructions: null,
+        }),
+      ).resolves.not.toThrow();
+
+      expect(client.options.agent.instructions).toContain(memoryContent);
+    });
+
+    it('should handle empty agentConfigs map', async () => {
+      const memoryContent = 'User likes detailed explanations.';
+      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+
+      client.agentConfigs = new Map();
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await expect(
+        client.buildMessages(messages, null, {
+          instructions: 'Base instructions',
+          additional_instructions: null,
+        }),
+      ).resolves.not.toThrow();
+
+      expect(client.options.agent.instructions).toContain(memoryContent);
+    });
+  });
 });
