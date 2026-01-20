@@ -29,9 +29,6 @@
 <a href="https://zeabur.com/templates/0X2ZY8">
   <img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="30"/>
 </a>
-<a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
-  <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
-</a>
 </p>
 
 <p align="center">

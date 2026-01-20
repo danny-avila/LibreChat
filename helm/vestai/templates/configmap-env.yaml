@@ -10,7 +10,7 @@ data:
   MEILI_HOST: http://{{ include "meilisearch.fullname" .Subcharts.meilisearch }}.{{ .Release.Namespace | lower }}.svc.cluster.local:7700
   {{- end }}
   {{- if and (not (dig "configEnv" "MONGO_URI" "" .Values.vestai)) .Values.mongodb.enabled }}
-  MONGO_URI: mongodb://{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ .Release.Namespace | lower }}.svc.cluster.local:27017/LibreChat
+  MONGO_URI: mongodb://{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ .Release.Namespace | lower }}.svc.cluster.local:27017/VestAI
   {{- end }}
   {{- if .Values.vestai.configEnv }}
   {{- toYaml .Values.vestai.configEnv | nindent 2 }}

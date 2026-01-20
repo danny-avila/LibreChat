@@ -19,7 +19,7 @@ services:
       # - /var/run/docker.sock:/var/run/docker.sock 
     environment:
       - HOST=0.0.0.0
-      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MONGO_URI=mongodb://mongodb:27017/VestAI
       # - OPENAI_REVERSE_PROXY=http://host.docker.internal:8070/v1
       - MEILI_HOST=http://meilisearch:7700
 
