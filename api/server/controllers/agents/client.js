@@ -18,6 +18,8 @@ const {
   getTransactionsConfig,
   createMemoryProcessor,
   filterMalformedContentParts,
+  createCompactionService,
+  supportsCompactionModel,
 } = require('@librechat/api');
 const {
   Callback,
@@ -979,6 +981,46 @@ class AgentClient extends BaseClient {
         this.indexTokenCountMap,
         toolSet,
       );
+
+      // Check for context compaction
+      const compactionConfig = appConfig?.compaction;
+      const modelName = this.options.agent?.model_parameters?.model;
+      if (
+        compactionConfig?.enabled &&
+        modelName &&
+        supportsCompactionModel(modelName)
+      ) {
+        try {
+          const apiKey = this.options.agent?.model_parameters?.apiKey ||
+                         process.env.OPENAI_API_KEY;
+          const baseURL = this.options.agent?.model_parameters?.configuration?.baseURL ||
+                          'https://api.openai.com/v1';
+
+          if (apiKey) {
+            const compactionService = createCompactionService({
+              apiKey,
+              baseURL,
+              model: modelName,
+              config: compactionConfig,
+            });
+
+            const result = await compactionService.compact(
+              initialMessages,
+              this.options.agent?.instructions,
+            );
+
+            if (result.compacted && result.compactedInput) {
+              logger.debug(
+                `[AgentClient] Compacted conversation: ${result.originalTokens} -> ${result.compactedTokens} tokens`,
+              );
+              // Note: The compacted input would need to be used directly with the Responses API
+              // For now, we just log the compaction - full integration requires @librechat/agents changes
+            }
+          }
+        } catch (compactionError) {
+          logger.warn('[AgentClient] Compaction check failed, continuing without compaction:', compactionError);
+        }
+      }
 
       /**
        * @param {BaseMessage[]} messages
