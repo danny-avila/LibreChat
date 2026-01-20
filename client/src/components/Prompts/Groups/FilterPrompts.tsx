@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { ListFilter, User, Share2 } from 'lucide-react';
-import { SystemCategories } from 'librechat-data-provider';
 import { Dropdown, FilterInput } from '@librechat/client';
+import { SystemCategories } from 'librechat-data-provider';
 import type { Option } from '~/common';
+import { CreatePromptButton } from '~/components/Prompts/components';
 import { useLocalize, useCategories, useDebounce } from '~/hooks';
 import { usePromptGroupsContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -113,6 +114,7 @@ export default function FilterPrompts({
         onChange={handleSearchChange}
         containerClassName="flex-1"
       />
+      <CreatePromptButton />
     </div>
   );
 }
