@@ -64,12 +64,12 @@ function AuthLayout({
           <img
             src="assets/jamot-light.png"
             className="h-full w-full object-contain dark:hidden"
-            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'Jamot' })}
+            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'App Scaffad' })}
           />
           <img
             src="assets/jamot-dark.png"
             className="hidden h-full w-full object-contain dark:block"
-            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'Jamot' })}
+            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'App Scaffad' })}
           />
         </div>
       </BlinkAnimation>

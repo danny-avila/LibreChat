@@ -38,7 +38,7 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   }, [isAuthenticated, navigate, data]);
 
   useEffect(() => {
-    document.title = startupConfig?.appTitle || 'Jamot';
+    document.title = startupConfig?.appTitle || 'App Scaffad';
   }, [startupConfig?.appTitle]);
 
   useEffect(() => {
