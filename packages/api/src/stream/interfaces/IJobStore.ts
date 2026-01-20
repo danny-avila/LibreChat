@@ -45,16 +45,51 @@ export interface SerializableJobData {
   promptTokens?: number;
 }
 
-/** Usage metadata for token spending */
+/**
+ * Usage metadata for token spending across different LLM providers.
+ *
+ * This interface supports two mutually exclusive cache token formats:
+ *
+ * **OpenAI format** (GPT-4, o1, etc.):
+ * - Uses `input_token_details.cache_creation` and `input_token_details.cache_read`
+ * - Cache tokens are nested under the `input_token_details` object
+ *
+ * **Anthropic format** (Claude models):
+ * - Uses `cache_creation_input_tokens` and `cache_read_input_tokens`
+ * - Cache tokens are top-level properties
+ *
+ * When processing usage data, check both formats:
+ * ```typescript
+ * const cacheCreation = usage.input_token_details?.cache_creation
+ *   || usage.cache_creation_input_tokens || 0;
+ * ```
+ */
 export interface UsageMetadata {
+  /** Total input tokens (prompt tokens) */
   input_tokens?: number;
+  /** Total output tokens (completion tokens) */
   output_tokens?: number;
+  /** Model identifier that generated this usage */
   model?: string;
+  /**
+   * OpenAI-style cache token details.
+   * Present for OpenAI models (GPT-4, o1, etc.)
+   */
   input_token_details?: {
+    /** Tokens written to cache */
     cache_creation?: number;
+    /** Tokens read from cache */
     cache_read?: number;
   };
+  /**
+   * Anthropic-style cache creation tokens.
+   * Present for Claude models. Mutually exclusive with input_token_details.
+   */
   cache_creation_input_tokens?: number;
+  /**
+   * Anthropic-style cache read tokens.
+   * Present for Claude models. Mutually exclusive with input_token_details.
+   */
   cache_read_input_tokens?: number;
 }
 
