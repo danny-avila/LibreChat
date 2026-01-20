@@ -78,13 +78,60 @@ function createOpenAIImageTools(fields = {}) {
   let apiKey = fields.IMAGE_GEN_OAI_API_KEY ?? getApiKey();
   const closureConfig = { apiKey };
 
-  const imageModel = process.env.IMAGE_GEN_OAI_MODEL || 'gpt-image-1';
+  const isPrivateHostname = (hostname) => {
+    if (!hostname) {
+      return false;
+    }
+    const h = String(hostname).toLowerCase();
+    if (h === 'localhost' || h === '127.0.0.1' || h === '::1') {
+      return true;
+    }
+    if (h.endsWith('.local')) {
+      return true;
+    }
+    // RFC1918 + loopback + link-local (best-effort)
+    if (/^10\./.test(h) || /^192\.168\./.test(h) || /^127\./.test(h) || /^169\.254\./.test(h)) {
+      return true;
+    }
+    const m = h.match(/^172\.(\d+)\./);
+    if (m) {
+      const second = Number(m[1]);
+      if (second >= 16 && second <= 31) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const isGatewayLikeBaseURL = (urlString) => {
+    try {
+      const url = new URL(urlString);
+      if (url.hostname === 'api.openai.com') {
+        return false;
+      }
+      return isPrivateHostname(url.hostname);
+    } catch (e) {
+      // If we can't parse, fall back to conservative behavior
+      return false;
+    }
+  };
 
   let baseURL = 'https://api.openai.com/v1/';
   if (!override && process.env.IMAGE_GEN_OAI_BASEURL) {
     baseURL = extractBaseURL(process.env.IMAGE_GEN_OAI_BASEURL);
     closureConfig.baseURL = baseURL;
   }
+
+  const isAzureConfig =
+    !override &&
+    !!process.env.IMAGE_GEN_OAI_AZURE_API_VERSION &&
+    !!process.env.IMAGE_GEN_OAI_BASEURL;
+
+  const imageModel =
+    process.env.IMAGE_GEN_OAI_MODEL ||
+    (!override && !isAzureConfig && process.env.IMAGE_GEN_OAI_BASEURL && isGatewayLikeBaseURL(baseURL)
+      ? 'auto'
+      : 'gpt-image-1');
 
   // Note: Azure may not yet support the latest image generation models
   if (

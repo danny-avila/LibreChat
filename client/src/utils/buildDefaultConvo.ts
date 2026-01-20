@@ -32,7 +32,15 @@ const buildDefaultConvo = ({
   }
 
   const availableModels = models;
-  const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint] ?? '';
+
+  const setupModel = lastConversationSetup?.model;
+  const storedModel = lastSelectedModel?.[endpoint];
+  const resolvedModel =
+    (typeof setupModel === 'string' && setupModel.trim().length > 0 ? setupModel : undefined) ??
+    (typeof storedModel === 'string' && storedModel.trim().length > 0 ? storedModel : undefined) ??
+    (availableModels.includes('auto') ? 'auto' : '');
+
+  const model = resolvedModel;
 
   let possibleModels: string[];
 
