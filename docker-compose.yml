@@ -36,6 +36,8 @@ services:
     image: mongo:8.2.3
     restart: always
     user: "${UID}:${GID}"
+    ports:
+      - "27018:27017"
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
@@ -71,7 +73,6 @@ services:
       - vectordb
     env_file:
       - .env
-
   mcp-server:
     container_name: mongodb-mcp-server
     image: mongodb-mcp-server:2.0.2
