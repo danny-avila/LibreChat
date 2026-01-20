@@ -796,6 +796,282 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
+  describe('Error Preservation for Late Subscribers', () => {
+    /**
+     * These tests verify the fix for the race condition where errors
+     * (like INPUT_LENGTH) occur before the SSE client connects.
+     *
+     * Problem: Error → emitError → completeJob → job deleted → client connects → 404
+     * Fix: Store error, don't delete job immediately, send error to late subscriber
+     */
+
+    test('should store error in emitError for late-connecting subscribers', async () => {
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+      GenerationJobManager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+
+      await GenerationJobManager.initialize();
+
+      const streamId = `error-store-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const errorMessage = '{ "type": "INPUT_LENGTH", "info": "234856 / 172627" }';
+
+      // Emit error (no subscribers yet - simulates race condition)
+      GenerationJobManager.emitError(streamId, errorMessage);
+
+      // Wait for async job store update
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Verify error is stored in job store
+      const job = await GenerationJobManager.getJob(streamId);
+      expect(job?.error).toBe(errorMessage);
+
+      await GenerationJobManager.destroy();
+    });
+
+    test('should NOT delete job immediately when completeJob is called with error', async () => {
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+      GenerationJobManager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: true, // Default behavior
+      });
+
+      await GenerationJobManager.initialize();
+
+      const streamId = `error-no-delete-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const errorMessage = 'Test error message';
+
+      // Complete with error
+      await GenerationJobManager.completeJob(streamId, errorMessage);
+
+      // Job should still exist (not deleted)
+      const hasJob = await GenerationJobManager.hasJob(streamId);
+      expect(hasJob).toBe(true);
+
+      // Job should have error status
+      const job = await GenerationJobManager.getJob(streamId);
+      expect(job?.status).toBe('error');
+      expect(job?.error).toBe(errorMessage);
+
+      await GenerationJobManager.destroy();
+    });
+
+    test('should send stored error to late-connecting subscriber', async () => {
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+      GenerationJobManager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: true,
+      });
+
+      await GenerationJobManager.initialize();
+
+      const streamId = `error-late-sub-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const errorMessage = '{ "type": "INPUT_LENGTH", "info": "234856 / 172627" }';
+
+      // Simulate race condition: error occurs before client connects
+      GenerationJobManager.emitError(streamId, errorMessage);
+      await GenerationJobManager.completeJob(streamId, errorMessage);
+
+      // Wait for async operations
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Now client connects (late subscriber)
+      let receivedError: string | undefined;
+      const subscription = await GenerationJobManager.subscribe(
+        streamId,
+        () => {}, // onChunk
+        () => {}, // onDone
+        (error) => {
+          receivedError = error;
+        }, // onError
+      );
+
+      expect(subscription).not.toBeNull();
+
+      // Wait for setImmediate in subscribe to fire
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Late subscriber should receive the stored error
+      expect(receivedError).toBe(errorMessage);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+    });
+
+    test('should prioritize error status over finalEvent in subscribe', async () => {
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+      GenerationJobManager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+
+      await GenerationJobManager.initialize();
+
+      const streamId = `error-priority-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const errorMessage = 'Error should take priority';
+
+      // Emit error and complete with error
+      GenerationJobManager.emitError(streamId, errorMessage);
+      await GenerationJobManager.completeJob(streamId, errorMessage);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Subscribe and verify error is received (not a done event)
+      let receivedError: string | undefined;
+      let receivedDone = false;
+
+      const subscription = await GenerationJobManager.subscribe(
+        streamId,
+        () => {},
+        () => {
+          receivedDone = true;
+        },
+        (error) => {
+          receivedError = error;
+        },
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Error should be received, not done
+      expect(receivedError).toBe(errorMessage);
+      expect(receivedDone).toBe(false);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+    });
+
+    test('should handle error preservation in Redis mode (cross-replica)', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { createStreamServices } = await import('../createStreamServices');
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+
+      // === Replica A: Creates job and emits error ===
+      const replicaAJobStore = new RedisJobStore(ioredisClient);
+      await replicaAJobStore.initialize();
+
+      const streamId = `redis-error-${Date.now()}`;
+      const errorMessage = '{ "type": "INPUT_LENGTH", "info": "234856 / 172627" }';
+
+      await replicaAJobStore.createJob(streamId, 'user-1');
+      await replicaAJobStore.updateJob(streamId, {
+        status: 'error',
+        error: errorMessage,
+        completedAt: Date.now(),
+      });
+
+      // === Replica B: Fresh manager receives client connection ===
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure({
+        ...services,
+        cleanupOnComplete: false,
+      });
+      await GenerationJobManager.initialize();
+
+      // Client connects to Replica B (job created on Replica A)
+      let receivedError: string | undefined;
+      const subscription = await GenerationJobManager.subscribe(
+        streamId,
+        () => {},
+        () => {},
+        (error) => {
+          receivedError = error;
+        },
+      );
+
+      expect(subscription).not.toBeNull();
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Error should be loaded from Redis and sent to subscriber
+      expect(receivedError).toBe(errorMessage);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+      await replicaAJobStore.destroy();
+    });
+
+    test('error jobs should be cleaned up by periodic cleanup after TTL', async () => {
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+      // Use a very short TTL for testing
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 100 });
+
+      GenerationJobManager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: true,
+      });
+
+      await GenerationJobManager.initialize();
+
+      const streamId = `error-cleanup-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      // Complete with error
+      await GenerationJobManager.completeJob(streamId, 'Test error');
+
+      // Job should exist immediately after error
+      let hasJob = await GenerationJobManager.hasJob(streamId);
+      expect(hasJob).toBe(true);
+
+      // Wait for TTL to expire
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Trigger cleanup
+      await jobStore.cleanup();
+
+      // Job should be cleaned up after TTL
+      hasJob = await GenerationJobManager.hasJob(streamId);
+      expect(hasJob).toBe(false);
+
+      await GenerationJobManager.destroy();
+    });
+  });
+
   describe('createStreamServices Auto-Detection', () => {
     test('should auto-detect Redis when USE_REDIS is true', async () => {
       if (!ioredisClient) {

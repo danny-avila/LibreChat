@@ -294,6 +294,7 @@ function ConvoOptions({
         portal={true}
         menuId={menuId}
         focusLoop={true}
+        className="z-[125]"
         unmountOnHide={true}
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
@@ -321,7 +322,6 @@ function ConvoOptions({
           </Ariakit.MenuButton>
         }
         items={dropdownItems}
-        className="z-30"
       />
       {showShareDialog && (
         <ShareButton

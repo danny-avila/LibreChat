@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
 import { Tools } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
+import { HumanMessage } from '@langchain/core/messages';
 import { Run, Providers, GraphEvents } from '@librechat/agents';
 import type {
   OpenAIClientOptions,
@@ -13,13 +14,12 @@ import type {
   ToolEndData,
   LLMConfig,
 } from '@librechat/agents';
-import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { ObjectId, MemoryMethods, IUser } from '@librechat/data-schemas';
+import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { BaseMessage, ToolMessage } from '@langchain/core/messages';
 import type { Response as ServerResponse } from 'express';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
-import { resolveHeaders, createSafeUser } from '~/utils/env';
-import { Tokenizer } from '~/utils';
+import { Tokenizer, resolveHeaders, createSafeUser } from '~/utils';
 
 type RequiredMemoryMethods = Pick<
   MemoryMethods,
@@ -369,6 +369,19 @@ ${memory ?? 'No existing memories'}`;
       }
     }
 
+    // Handle Bedrock with thinking enabled - temperature must be 1
+    const bedrockConfig = finalLLMConfig as {
+      additionalModelRequestFields?: { thinking?: unknown };
+      temperature?: number;
+    };
+    if (
+      llmConfig?.provider === Providers.BEDROCK &&
+      bedrockConfig.additionalModelRequestFields?.thinking != null &&
+      bedrockConfig.temperature != null
+    ) {
+      (finalLLMConfig as unknown as Record<string, unknown>).temperature = 1;
+    }
+
     const llmConfigWithHeaders = finalLLMConfig as OpenAIClientOptions;
     if (llmConfigWithHeaders?.configuration?.defaultHeaders != null) {
       llmConfigWithHeaders.configuration.defaultHeaders = resolveHeaders({
@@ -383,14 +396,51 @@ ${memory ?? 'No existing memories'}`;
       [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
     };
 
+    /**
+     * For Bedrock provider, include instructions in the user message instead of as a system prompt.
+     * Bedrock's Converse API requires conversations to start with a user message, not a system message.
+     * Other providers can use the standard system prompt approach.
+     */
+    const isBedrock = llmConfig?.provider === Providers.BEDROCK;
+
+    let graphInstructions: string | undefined = instructions;
+    let graphAdditionalInstructions: string | undefined = memoryStatus;
+    let processedMessages = messages;
+
+    if (isBedrock) {
+      const combinedInstructions = [instructions, memoryStatus].filter(Boolean).join('\n\n');
+
+      if (messages.length > 0) {
+        const firstMessage = messages[0];
+        const originalContent =
+          typeof firstMessage.content === 'string' ? firstMessage.content : '';
+
+        if (typeof firstMessage.content !== 'string') {
+          logger.warn(
+            'Bedrock memory processing: First message has non-string content, using empty string',
+          );
+        }
+
+        const bedrockUserMessage = new HumanMessage(
+          `${combinedInstructions}\n\n${originalContent}`,
+        );
+        processedMessages = [bedrockUserMessage, ...messages.slice(1)];
+      } else {
+        processedMessages = [new HumanMessage(combinedInstructions)];
+      }
+
+      graphInstructions = undefined;
+      graphAdditionalInstructions = undefined;
+    }
+
     const run = await Run.create({
       runId: messageId,
       graphConfig: {
         type: 'standard',
         llmConfig: finalLLMConfig,
         tools: [memoryTool, deleteMemoryTool],
-        instructions,
-        additional_instructions: memoryStatus,
+        instructions: graphInstructions,
+        additional_instructions: graphAdditionalInstructions,
         toolEnd: true,
       },
       customHandlers,
@@ -410,7 +460,7 @@ ${memory ?? 'No existing memories'}`;
     } as const;
 
     const inputs = {
-      messages,
+      messages: processedMessages,
     };
     const content = await run.processStream(inputs, config);
     if (content) {
