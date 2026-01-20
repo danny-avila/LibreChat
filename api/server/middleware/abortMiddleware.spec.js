@@ -81,6 +81,8 @@ describe('abortMiddleware - spendCollectedUsage', () => {
         return;
       }
 
+      const spendPromises = [];
+
       for (const usage of collectedUsage) {
         if (!usage) {
           continue;
@@ -103,22 +105,36 @@ describe('abortMiddleware - spendCollectedUsage', () => {
         };
 
         if (cache_creation > 0 || cache_read > 0) {
-          await mockSpendStructuredTokens(txMetadata, {
-            promptTokens: {
-              input: usage.input_tokens,
-              write: cache_creation,
-              read: cache_read,
-            },
-            completionTokens: usage.output_tokens,
-          });
+          spendPromises.push(
+            mockSpendStructuredTokens(txMetadata, {
+              promptTokens: {
+                input: usage.input_tokens,
+                write: cache_creation,
+                read: cache_read,
+              },
+              completionTokens: usage.output_tokens,
+            }).catch(() => {
+              // Log error but don't throw
+            }),
+          );
           continue;
         }
 
-        await mockSpendTokens(txMetadata, {
-          promptTokens: usage.input_tokens,
-          completionTokens: usage.output_tokens,
-        });
+        spendPromises.push(
+          mockSpendTokens(txMetadata, {
+            promptTokens: usage.input_tokens,
+            completionTokens: usage.output_tokens,
+          }).catch(() => {
+            // Log error but don't throw
+          }),
+        );
       }
+
+      // Wait for all token spending to complete
+      await Promise.all(spendPromises);
+
+      // Clear the array to prevent double-spending
+      collectedUsage.length = 0;
     };
 
     it('should return early if collectedUsage is empty', async () => {
@@ -355,6 +371,58 @@ describe('abortMiddleware - spendCollectedUsage', () => {
         expect.objectContaining({ model: 'gpt-5.2' }),
         { promptTokens: 28000, completionTokens: 120 },
       );
+    });
+
+    it('should clear collectedUsage array after spending to prevent double-spending', async () => {
+      // This tests the race condition fix: after abort middleware spends tokens,
+      // the collectedUsage array is cleared so AgentClient.recordCollectedUsage()
+      // (which shares the same array reference) sees an empty array and returns early.
+      const collectedUsage = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        { input_tokens: 80, output_tokens: 40, model: 'claude-3' },
+      ];
+
+      expect(collectedUsage.length).toBe(2);
+
+      await spendCollectedUsage({
+        userId: 'user-123',
+        conversationId: 'convo-123',
+        collectedUsage,
+        fallbackModel: 'gpt-4',
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+
+      // The array should be cleared after spending
+      expect(collectedUsage.length).toBe(0);
+    });
+
+    it('should await all token spending operations before clearing array', async () => {
+      // Ensure we don't clear the array before spending completes
+      let spendCallCount = 0;
+      mockSpendTokens.mockImplementation(async () => {
+        spendCallCount++;
+        // Simulate async delay
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      const collectedUsage = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        { input_tokens: 80, output_tokens: 40, model: 'claude-3' },
+      ];
+
+      await spendCollectedUsage({
+        userId: 'user-123',
+        conversationId: 'convo-123',
+        collectedUsage,
+        fallbackModel: 'gpt-4',
+      });
+
+      // Both spend calls should have completed
+      expect(spendCallCount).toBe(2);
+
+      // Array should be cleared after awaiting
+      expect(collectedUsage.length).toBe(0);
     });
   });
 });

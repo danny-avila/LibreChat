@@ -17,6 +17,11 @@ const { abortRun } = require('./abortRun');
 /**
  * Spend tokens for all models from collected usage.
  * This handles both sequential and parallel agent execution.
+ *
+ * IMPORTANT: After spending, this function clears the collectedUsage array
+ * to prevent double-spending. The array is shared with AgentClient.collectedUsage,
+ * so clearing it here prevents the finally block from also spending tokens.
+ *
  * @param {Object} params
  * @param {string} params.userId - User ID
  * @param {string} params.conversationId - Conversation ID
@@ -27,6 +32,8 @@ async function spendCollectedUsage({ userId, conversationId, collectedUsage, fal
   if (!collectedUsage || collectedUsage.length === 0) {
     return;
   }
+
+  const spendPromises = [];
 
   for (const usage of collectedUsage) {
     if (!usage) {
@@ -49,26 +56,38 @@ async function spendCollectedUsage({ userId, conversationId, collectedUsage, fal
     };
 
     if (cache_creation > 0 || cache_read > 0) {
-      spendStructuredTokens(txMetadata, {
-        promptTokens: {
-          input: usage.input_tokens,
-          write: cache_creation,
-          read: cache_read,
-        },
-        completionTokens: usage.output_tokens,
-      }).catch((err) => {
-        logger.error('[abortMiddleware] Error spending structured tokens for abort', err);
-      });
+      spendPromises.push(
+        spendStructuredTokens(txMetadata, {
+          promptTokens: {
+            input: usage.input_tokens,
+            write: cache_creation,
+            read: cache_read,
+          },
+          completionTokens: usage.output_tokens,
+        }).catch((err) => {
+          logger.error('[abortMiddleware] Error spending structured tokens for abort', err);
+        }),
+      );
       continue;
     }
 
-    spendTokens(txMetadata, {
-      promptTokens: usage.input_tokens,
-      completionTokens: usage.output_tokens,
-    }).catch((err) => {
-      logger.error('[abortMiddleware] Error spending tokens for abort', err);
-    });
+    spendPromises.push(
+      spendTokens(txMetadata, {
+        promptTokens: usage.input_tokens,
+        completionTokens: usage.output_tokens,
+      }).catch((err) => {
+        logger.error('[abortMiddleware] Error spending tokens for abort', err);
+      }),
+    );
   }
+
+  // Wait for all token spending to complete
+  await Promise.all(spendPromises);
+
+  // Clear the array to prevent double-spending from the AgentClient finally block.
+  // The collectedUsage array is shared by reference with AgentClient.collectedUsage,
+  // so clearing it here ensures recordCollectedUsage() sees an empty array and returns early.
+  collectedUsage.length = 0;
 }
 
 /**
