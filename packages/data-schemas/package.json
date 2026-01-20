@@ -17,12 +17,12 @@
     "dist"
   ],
   "scripts": {
-    "clean": "rimraf dist",
-    "build": "npm run clean && rollup -c --silent --bundleConfigAsCjs",
+    "clean": "npx rimraf dist",
+    "build": "pnpm run clean && rollup -c --silent --bundleConfigAsCjs",
     "build:watch": "rollup -c -w",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci",
-    "verify": "npm run test:ci",
+    "verify": "pnpm run test:ci",
     "b:clean": "bun run rimraf dist",
     "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs"
   },
@@ -60,7 +60,7 @@
   "peerDependencies": {
     "jsonwebtoken": "^9.0.2",
     "klona": "^2.0.6",
-    "vestai-data-provider": "*",
+    "vestai-data-provider": "workspace:*",
     "lodash": "^4.17.21",
     "meilisearch": "^0.38.0",
     "mongoose": "^8.12.1",

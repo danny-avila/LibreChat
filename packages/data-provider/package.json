@@ -18,13 +18,13 @@
     }
   },
   "scripts": {
-    "clean": "rimraf dist",
-    "build": "npm run clean && rollup -c --silent --bundleConfigAsCjs",
+    "clean": "npx rimraf dist",
+    "build": "pnpm run clean && rollup -c --silent --bundleConfigAsCjs",
     "build:watch": "rollup -c -w",
     "rollup:api": "npx rollup -c server-rollup.config.js --bundleConfigAsCjs",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci --logHeapUsage",
-    "verify": "npm run test:ci",
+    "verify": "pnpm run test:ci",
     "b:clean": "bun run rimraf dist",
     "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs"
   },
@@ -42,6 +42,8 @@
     "axios": "^1.12.1",
     "dayjs": "^1.11.13",
     "js-yaml": "^4.1.1",
+    "tslib": "^2.8.1",
+    "winston": "^3.17.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {

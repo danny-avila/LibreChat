@@ -20,10 +20,10 @@
     "dist"
   ],
   "scripts": {
-    "clean": "rimraf dist",
+    "clean": "npx rimraf dist",
     "b:clean": "bun run rimraf dist",
-    "build": "npm run clean && rollup -c --bundleConfigAsCjs",
-    "build:dev": "npm run clean && NODE_ENV=development rollup -c --bundleConfigAsCjs",
+    "build": "pnpm run clean && rollup -c --bundleConfigAsCjs",
+    "build:dev": "pnpm run clean && NODE_ENV=development rollup -c --bundleConfigAsCjs",
     "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs",
     "build:watch": "rollup -c -w --bundleConfigAsCjs",
     "dev": "rollup -c -w --bundleConfigAsCjs"
@@ -76,6 +76,7 @@
     "tailwind-merge": "^1.9.1"
   },
   "devDependencies": {
+    "@rc-component/mini-decimal": "^1.1.0",
     "@babel/core": "^7.28.5",
     "@babel/preset-env": "^7.28.5",
     "@babel/preset-react": "^7.28.5",
@@ -103,6 +104,7 @@
     "lucide-react": "^0.525.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "rc-input-number": "^7.4.2",
     "react-i18next": "^15.4.0",
     "rimraf": "^6.1.2",
     "rollup": "^4.0.0",
