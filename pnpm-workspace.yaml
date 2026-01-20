@@ -2,3 +2,6 @@ packages:
   - 'api'
   - 'client'
   - 'packages/*'
+
+onlyBuiltDependencies:
+  - "@vestai/agents"
