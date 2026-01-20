@@ -522,12 +522,27 @@ class AgentClient extends BaseClient {
     }
 
     const withoutKeys = await this.useMemory();
-    if (withoutKeys) {
-      systemContent += `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
+    const memoryContext = withoutKeys
+      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
+      : '';
+    if (memoryContext) {
+      systemContent += memoryContext;
     }
 
     if (systemContent) {
       this.options.agent.instructions = systemContent;
+    }
+
+    /** Pass memory context to parallel agents (addedConvo) so they have the same user context */
+    if (memoryContext && this.agentConfigs?.size > 0) {
+      for (const [agentId, agentConfig] of this.agentConfigs.entries()) {
+        if (agentConfig.instructions) {
+          agentConfig.instructions = agentConfig.instructions + '\n\n' + memoryContext;
+        } else {
+          agentConfig.instructions = memoryContext;
+        }
+        logger.debug(`[AgentClient] Added memory context to parallel agent: ${agentId}`);
+      }
     }
 
     return result;
