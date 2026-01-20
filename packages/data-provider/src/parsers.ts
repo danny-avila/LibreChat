@@ -18,7 +18,7 @@ import {
   compactAssistantSchema,
 } from './schemas';
 import { bedrockInputSchema } from './bedrock';
-import { alternateName } from './config';
+import { alternateName, modelDisplayNames } from './config';
 
 type EndpointSchema =
   | typeof openAISchema
@@ -237,6 +237,9 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return chatGptLabel;
     } else if (modelLabel) {
       return modelLabel;
+    } else if (model && modelDisplayNames[model]) {
+      // Check custom model display names first (e.g., "Jamot Fast", "Jamot Pro")
+      return modelDisplayNames[model];
     } else if (model && extractOmniVersion(model)) {
       return extractOmniVersion(model);
     } else if (model && (model.includes('mistral') || model.includes('codestral'))) {
@@ -273,6 +276,9 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return modelLabel;
     } else if (chatGptLabel) {
       return chatGptLabel;
+    } else if (model && modelDisplayNames[model]) {
+      // Check custom model display names first (e.g., "Jamot Fast", "Jamot Pro")
+      return modelDisplayNames[model];
     } else if (model && extractOmniVersion(model)) {
       return extractOmniVersion(model);
     } else if (model && (model.includes('mistral') || model.includes('codestral'))) {
