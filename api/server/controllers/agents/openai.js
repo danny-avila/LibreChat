@@ -12,6 +12,7 @@ const {
   createRun,
   createChunk,
   sendFinalChunk,
+  createSafeUser,
   validateRequest,
   initializeAgent,
   createErrorResponse,
@@ -456,8 +457,8 @@ const OpenAIChatCompletionController = async (req, res) => {
       configurable: {
         thread_id: conversationId,
         user_id: userId,
-        // Pass MCP auth map for tool connections
-        ...(userMCPAuthMap && { userMCPAuthMap }),
+        user: createSafeUser(req.user),
+        ...(userMCPAuthMap != null && { userMCPAuthMap }),
       },
       signal: abortController.signal,
       streamMode: 'values',
