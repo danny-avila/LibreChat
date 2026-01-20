@@ -33,7 +33,7 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = process.env.NODE_ENV === 'production' && process.env.ALLOW_INSECURE_COOKIES !== 'true';
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 
 /**

@@ -16,6 +16,8 @@ import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
 import dashboardRoutes from './Dashboard';
+import PrivacyPolicy from './PrivacyPolicy';
+import TermsOfService from './TermsOfService';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
@@ -33,6 +35,16 @@ const baseHref = baseEl?.getAttribute('href') || '/';
 
 export const router = createBrowserRouter(
   [
+    {
+      path: 'privacy',
+      element: <PrivacyPolicy />,
+      errorElement: <RouteErrorBoundary />,
+    },
+    {
+      path: 'tos',
+      element: <TermsOfService />,
+      errorElement: <RouteErrorBoundary />,
+    },
     {
       path: 'share/:shareId',
       element: <ShareRoute />,
