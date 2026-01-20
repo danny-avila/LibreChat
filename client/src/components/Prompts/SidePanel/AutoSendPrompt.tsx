@@ -1,15 +1,12 @@
 import { useRecoilState } from 'recoil';
-import { Switch } from '@librechat/client';
+import { Button, Checkbox } from '@librechat/client';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import store from '~/store';
 
 export default function AutoSendPrompt({
   onCheckedChange,
-  className = '',
 }: {
   onCheckedChange?: (value: boolean) => void;
-  className?: string;
 }) {
   const [autoSendPrompts, setAutoSendPrompts] = useRecoilState<boolean>(store.autoSendPrompts);
   const localize = useLocalize();
@@ -22,20 +19,22 @@ export default function AutoSendPrompt({
   };
 
   return (
-    <div
-      className={cn(
-        'flex select-none items-center justify-end gap-2 text-right text-sm',
-        className,
-      )}
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={() => handleCheckedChange(!autoSendPrompts)}
+      aria-label={localize('com_nav_auto_send_prompts')}
+      aria-pressed={autoSendPrompts}
+      className={autoSendPrompts ? 'hover:bg-suface-hover bg-surface-hover' : ''}
     >
-      <div> {localize('com_nav_auto_send_prompts')} </div>
-      <Switch
-        aria-label={localize('com_nav_auto_send_prompts')}
-        id="autoSendPrompts"
+      <Checkbox
         checked={autoSendPrompts}
-        onCheckedChange={handleCheckedChange}
-        data-testid="autoSendPrompts"
+        tabIndex={-1}
+        aria-hidden="true"
+        aria-label={localize('com_nav_auto_send_prompts')}
+        className="pointer-events-none mr-2"
       />
-    </div>
+      {localize('com_nav_auto_send_prompts')}
+    </Button>
   );
 }
