@@ -6,6 +6,7 @@ import type {
   UserKeyValues,
 } from '~/types';
 import { getAzureCredentials, resolveHeaders, isUserProvided, checkUserKeyExpiry } from '~/utils';
+import { supportsCompaction } from '~/compaction';
 import { getOpenAIConfig } from './config';
 
 /**
@@ -158,6 +159,21 @@ export async function initializeOpenAI({
 
   if (streamRate) {
     options.llmConfig._lc_stream_delay = streamRate;
+  }
+
+  /**
+   * Apply compaction configuration for OpenAI Responses API
+   * When enabled and the model supports compaction, add truncation parameter
+   */
+  const compactionConfig = appConfig?.compaction;
+  if (
+    compactionConfig?.enabled &&
+    options.llmConfig.useResponsesApi &&
+    modelName &&
+    supportsCompaction(modelName)
+  ) {
+    // Enable automatic truncation for context compaction
+    options.llmConfig.truncation = 'auto';
   }
 
   return options;

@@ -925,6 +925,25 @@ export const memorySchema = z.object({
 
 export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
 
+/**
+ * Schema for OpenAI Responses API context compaction configuration.
+ * Enables automatic conversation compaction when approaching context limits.
+ */
+export const compactionSchema = z.object({
+  /** Enable or disable automatic context compaction. Defaults to false. */
+  enabled: z.boolean().optional().default(false),
+  /** Threshold percentage of context window to trigger compaction (0.0-1.0). Defaults to 0.85 (85%). */
+  thresholdPercent: z.number().min(0).max(1).optional().default(0.85),
+  /** Minimum tokens before compaction can be triggered. Defaults to 10000. */
+  minTokensBeforeCompaction: z.number().optional().default(10000),
+  /** Preserve system instructions during compaction. Defaults to true. */
+  preserveInstructions: z.boolean().optional().default(true),
+  /** Custom compaction prompt to guide how the conversation should be summarized. */
+  compactionPrompt: z.string().optional(),
+});
+
+export type TCompactionConfig = DeepPartial<z.infer<typeof compactionSchema>>;
+
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
 export const configSchema = z.object({
@@ -933,6 +952,7 @@ export const configSchema = z.object({
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
+  compaction: compactionSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
