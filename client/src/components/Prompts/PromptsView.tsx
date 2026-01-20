@@ -3,7 +3,7 @@ import { Outlet, useParams, useNavigate } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import FilterPrompts from '~/components/Prompts/Groups/FilterPrompts';
 import DashBreadcrumb from '~/routes/Layouts/DashBreadcrumb';
-import GroupSidePanel from './Groups/GroupSidePanel';
+import GroupSidePanel from './SidePanel/GroupSidePanel';
 import { useHasAccess, useLocalize } from '~/hooks';
 import { PromptGroupsProvider } from '~/Providers';
 import { useMediaQuery } from '@librechat/client';

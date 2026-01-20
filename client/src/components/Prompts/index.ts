@@ -6,5 +6,5 @@ export { default as PreviewLabels } from './PreviewLabels';
 export { default as PromptGroupsList } from './Groups/List';
 export { default as DashGroupItem } from './Groups/DashGroupItem';
 export { default as EmptyPromptPreview } from './EmptyPromptPreview';
-export { default as PromptSidePanel } from './Groups/GroupSidePanel';
+export { default as PromptSidePanel } from './SidePanel/GroupSidePanel';
 export { default as CreatePromptForm } from './Groups/CreatePromptForm';
