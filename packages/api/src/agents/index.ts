@@ -8,5 +8,6 @@ export * from './memory';
 export * from './migration';
 export * from './openai';
 export * from './resources';
+export * from './responses';
 export * from './run';
 export * from './validation';
