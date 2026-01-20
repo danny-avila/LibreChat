@@ -10,12 +10,26 @@ const {
   messageUserLimiter,
 } = require('~/server/middleware');
 const { saveMessage } = require('~/models');
+const openai = require('./openai');
 const { v1 } = require('./v1');
 const chat = require('./chat');
 
 const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
 const router = express.Router();
+
+/**
+ * OpenAI-compatible API routes - mounted BEFORE auth middleware for testing
+ * TODO: Add API key authentication for production use
+ *
+ * Mounted at /agents/v1 (full path: /api/agents/v1/chat/completions)
+ *
+ * Available endpoints:
+ *   POST /v1/chat/completions - Chat with an agent (streaming/non-streaming)
+ *   GET /v1/models - List available agents
+ *   GET /v1/models/:model - Get agent details
+ */
+router.use('/v1', openai);
 
 router.use(requireJwtAuth);
 router.use(checkBan);
