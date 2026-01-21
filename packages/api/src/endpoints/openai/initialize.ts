@@ -163,12 +163,16 @@ export async function initializeOpenAI({
 
   /**
    * Apply compaction configuration for OpenAI Responses API
-   * When enabled and the model supports compaction, enable Responses API and truncation
+   * When enabled and the model supports compaction, add truncation parameter
    */
   const compactionConfig = appConfig?.compaction;
-  if (compactionConfig?.enabled && modelName && supportsCompaction(modelName)) {
-    // Enable Responses API and automatic truncation for context compaction
-    options.llmConfig.useResponsesApi = true;
+  if (
+    compactionConfig?.enabled &&
+    options.llmConfig.useResponsesApi &&
+    modelName &&
+    supportsCompaction(modelName)
+  ) {
+    // Enable automatic truncation for context compaction
     options.llmConfig.truncation = 'auto';
   }
 
