@@ -74,6 +74,7 @@ export type {
   Response,
   // Streaming events
   BaseEvent,
+  ResponseCreatedEvent,
   ResponseInProgressEvent,
   ResponseCompletedEvent,
   ResponseFailedEvent,
@@ -118,6 +119,7 @@ export {
   // Stream config
   type StreamHandlerConfig,
   // Response events
+  emitResponseCreated,
   emitResponseInProgress,
   emitResponseCompleted,
   emitResponseFailed,

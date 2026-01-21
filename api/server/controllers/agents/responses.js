@@ -16,6 +16,7 @@ const {
   buildResponse,
   generateResponseId,
   isValidationFailure,
+  emitResponseCreated,
   createResponseContext,
   createResponseTracker,
   setupStreamingResponse,
@@ -379,7 +380,8 @@ const createResponse = async (req, res) => {
         tracker,
       };
 
-      // Emit response.in_progress
+      // Emit response.created then response.in_progress per Open Responses spec
+      emitResponseCreated(handlerConfig);
       emitResponseInProgress(handlerConfig);
 
       // Create event handlers

@@ -546,7 +546,13 @@ export interface BaseEvent {
   sequence_number: number;
 }
 
-/** Response created/in_progress event */
+/** Response created event (first event in stream) */
+export interface ResponseCreatedEvent extends BaseEvent {
+  type: 'response.created';
+  response: Response;
+}
+
+/** Response in_progress event */
 export interface ResponseInProgressEvent extends BaseEvent {
   type: 'response.in_progress';
   response: Response;
@@ -684,6 +690,7 @@ export interface ErrorEvent extends BaseEvent {
 
 /** Union of all streaming events */
 export type ResponseEvent =
+  | ResponseCreatedEvent
   | ResponseInProgressEvent
   | ResponseCompletedEvent
   | ResponseFailedEvent

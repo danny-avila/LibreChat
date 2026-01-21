@@ -279,6 +279,20 @@ export interface StreamHandlerConfig {
 }
 
 /**
+ * Emit response.created event
+ * This is the first event emitted per the Open Responses spec
+ */
+export function emitResponseCreated(config: StreamHandlerConfig): void {
+  const { res, context, tracker } = config;
+  const response = buildResponse(context, tracker, 'in_progress');
+  writeEvent(res, {
+    type: 'response.created',
+    sequence_number: tracker.nextSequence(),
+    response,
+  });
+}
+
+/**
  * Emit response.in_progress event
  */
 export function emitResponseInProgress(config: StreamHandlerConfig): void {

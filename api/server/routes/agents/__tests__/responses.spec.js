@@ -492,8 +492,16 @@ describe('Open Responses API Integration Tests', () => {
         // Validate streaming event types
         const eventTypes = events.map((e) => e.event);
 
+        // Should have response.created first (per Open Responses spec)
+        expect(eventTypes).toContain('response.created');
+
         // Should have response.in_progress
         expect(eventTypes).toContain('response.in_progress');
+
+        // response.created should come before response.in_progress
+        const createdIdx = eventTypes.indexOf('response.created');
+        const inProgressIdx = eventTypes.indexOf('response.in_progress');
+        expect(createdIdx).toBeLessThan(inProgressIdx);
 
         // Should have response.completed or response.failed
         expect(eventTypes.some((t) => t === 'response.completed' || t === 'response.failed')).toBe(
