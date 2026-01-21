@@ -798,6 +798,82 @@ export function emitError(
 }
 
 /* =============================================================================
+ * LIBRECHAT EXTENSION EVENTS
+ * Custom events prefixed with 'librechat:' per Open Responses spec
+ * @see https://openresponses.org/specification#extending-streaming-events
+ * ============================================================================= */
+
+/**
+ * Attachment data for librechat:attachment events
+ */
+export interface AttachmentData {
+  /** File ID in LibreChat storage */
+  file_id?: string;
+  /** Original filename */
+  filename?: string;
+  /** MIME type */
+  type?: string;
+  /** URL to access the file */
+  url?: string;
+  /** Base64-encoded image data (for inline images) */
+  image_url?: string;
+  /** Width for images */
+  width?: number;
+  /** Height for images */
+  height?: number;
+  /** Associated tool call ID */
+  tool_call_id?: string;
+  /** Additional metadata */
+  [key: string]: unknown;
+}
+
+/**
+ * Emit librechat:attachment event for file/image attachments
+ * This is a LibreChat extension to the Open Responses streaming protocol.
+ * External clients can safely ignore these events.
+ */
+export function emitAttachment(
+  config: StreamHandlerConfig,
+  attachment: AttachmentData,
+  options?: {
+    messageId?: string;
+    conversationId?: string;
+  },
+): void {
+  const { res, tracker } = config;
+
+  writeEvent(res, {
+    type: 'librechat:attachment',
+    sequence_number: tracker.nextSequence(),
+    attachment,
+    message_id: options?.messageId,
+    conversation_id: options?.conversationId,
+  });
+}
+
+/**
+ * Write attachment event directly to response (for use outside streaming context)
+ * Useful when attachment processing happens asynchronously
+ */
+export function writeAttachmentEvent(
+  res: ServerResponse,
+  sequenceNumber: number,
+  attachment: AttachmentData,
+  options?: {
+    messageId?: string;
+    conversationId?: string;
+  },
+): void {
+  writeEvent(res, {
+    type: 'librechat:attachment',
+    sequence_number: sequenceNumber,
+    attachment,
+    message_id: options?.messageId,
+    conversation_id: options?.conversationId,
+  });
+}
+
+/* =============================================================================
  * NON-STREAMING RESPONSE BUILDER
  * ============================================================================= */
 

@@ -688,7 +688,49 @@ export interface ErrorEvent extends BaseEvent {
   error: ResponseError;
 }
 
-/** Union of all streaming events */
+/* =============================================================================
+ * LIBRECHAT EXTENSION TYPES
+ * Per Open Responses spec, custom types MUST be prefixed with implementor slug
+ * @see https://openresponses.org/specification#extending-streaming-events
+ * ============================================================================= */
+
+/** Attachment content types for LibreChat extensions */
+export interface LibreChatAttachmentContent {
+  /** File ID in LibreChat storage */
+  file_id?: string;
+  /** Original filename */
+  filename?: string;
+  /** MIME type */
+  type?: string;
+  /** URL to access the file */
+  url?: string;
+  /** Base64-encoded image data (for inline images) */
+  image_url?: string;
+  /** Width for images */
+  width?: number;
+  /** Height for images */
+  height?: number;
+  /** Associated tool call ID */
+  tool_call_id?: string;
+  /** Additional metadata */
+  [key: string]: unknown;
+}
+
+/**
+ * LibreChat attachment event - custom streaming event for file/image attachments
+ * Follows Open Responses extension pattern with librechat: prefix
+ */
+export interface LibreChatAttachmentEvent extends BaseEvent {
+  type: 'librechat:attachment';
+  /** The attachment data */
+  attachment: LibreChatAttachmentContent;
+  /** Associated message ID */
+  message_id?: string;
+  /** Associated conversation ID */
+  conversation_id?: string;
+}
+
+/** Union of all streaming events (including LibreChat extensions) */
 export type ResponseEvent =
   | ResponseCreatedEvent
   | ResponseInProgressEvent
@@ -707,7 +749,9 @@ export type ResponseEvent =
   | FunctionCallArgumentsDoneEvent
   | ReasoningDeltaEvent
   | ReasoningDoneEvent
-  | ErrorEvent;
+  | ErrorEvent
+  // LibreChat extensions (prefixed per Open Responses spec)
+  | LibreChatAttachmentEvent;
 
 /* =============================================================================
  * INTERNAL TYPES

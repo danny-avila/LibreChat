@@ -111,6 +111,7 @@ function parseSSEEvents(text) {
  * @see https://github.com/openresponses/openresponses/blob/main/src/lib/sse-parser.ts
  */
 const VALID_STREAMING_EVENT_TYPES = new Set([
+  // Standard Open Responses events
   'response.created',
   'response.queued',
   'response.in_progress',
@@ -135,6 +136,9 @@ const VALID_STREAMING_EVENT_TYPES = new Set([
   'response.reasoning_summary_text.done',
   'response.output_text.annotation.added',
   'error',
+  // LibreChat extension events (prefixed per Open Responses spec)
+  // @see https://openresponses.org/specification#extending-streaming-events
+  'librechat:attachment',
 ]);
 
 /**

@@ -29,7 +29,10 @@ const {
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
 } = require('@librechat/api');
-const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
+const {
+  createResponsesToolEndCallback,
+  createToolEndCallback,
+} = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
@@ -394,7 +397,13 @@ const createResponse = async (req, res) => {
       // Artifact promises for processing tool outputs
       /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
       const artifactPromises = [];
-      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
+      // Use Responses API-specific callback that emits librechat:attachment events
+      const toolEndCallback = createResponsesToolEndCallback({
+        req,
+        res,
+        tracker,
+        artifactPromises,
+      });
 
       // Combine handlers
       const handlers = {
