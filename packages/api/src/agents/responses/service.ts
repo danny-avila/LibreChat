@@ -29,8 +29,8 @@ import {
   emitFunctionCallOutputItem,
   emitReasoningItemAdded,
   emitReasoningContentPartAdded,
-  emitReasoningTextDelta,
-  emitReasoningTextDone,
+  emitReasoningDelta,
+  emitReasoningDone,
   emitReasoningContentPartDone,
   emitReasoningItemDone,
   updateTrackerUsage,
@@ -389,7 +389,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
 
     // Close reasoning content if open
     if (state.reasoningContentStarted) {
-      emitReasoningTextDone(config);
+      emitReasoningDone(config);
       emitReasoningContentPartDone(config);
       state.reasoningContentStarted = false;
     }
@@ -436,7 +436,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
             const text = part.think || part.text;
             if (text) {
               ensureReasoningContentStarted();
-              emitReasoningTextDelta(config, text);
+              emitReasoningDelta(config, text);
             }
           }
         }

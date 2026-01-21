@@ -417,6 +417,7 @@ export function emitOutputTextDelta(config: StreamHandlerConfig, delta: string):
     output_index: outputIndex,
     content_index: tracker.currentContentIndex,
     delta,
+    logprobs: [],
   });
 }
 
@@ -445,6 +446,7 @@ export function emitOutputTextDone(config: StreamHandlerConfig): void {
     output_index: outputIndex,
     content_index: contentIndex,
     text: tracker.accumulatedText,
+    logprobs: [],
   });
 }
 
@@ -659,9 +661,9 @@ export function emitReasoningContentPartAdded(config: StreamHandlerConfig): void
 }
 
 /**
- * Emit response.reasoning_text.delta event
+ * Emit response.reasoning.delta event
  */
-export function emitReasoningTextDelta(config: StreamHandlerConfig, delta: string): void {
+export function emitReasoningDelta(config: StreamHandlerConfig, delta: string): void {
   const { res, tracker } = config;
   if (!tracker.currentReasoning) {
     return;
@@ -671,7 +673,7 @@ export function emitReasoningTextDelta(config: StreamHandlerConfig, delta: strin
   const outputIndex = tracker.items.indexOf(tracker.currentReasoning);
 
   writeEvent(res, {
-    type: 'response.reasoning_text.delta',
+    type: 'response.reasoning.delta',
     sequence_number: tracker.nextSequence(),
     item_id: tracker.currentReasoning.id,
     output_index: outputIndex,
@@ -681,9 +683,9 @@ export function emitReasoningTextDelta(config: StreamHandlerConfig, delta: strin
 }
 
 /**
- * Emit response.reasoning_text.done event
+ * Emit response.reasoning.done event
  */
-export function emitReasoningTextDone(config: StreamHandlerConfig): void {
+export function emitReasoningDone(config: StreamHandlerConfig): void {
   const { res, tracker } = config;
   if (!tracker.currentReasoning || !tracker.currentReasoning.content) {
     return;
@@ -699,7 +701,7 @@ export function emitReasoningTextDone(config: StreamHandlerConfig): void {
   }
 
   writeEvent(res, {
-    type: 'response.reasoning_text.done',
+    type: 'response.reasoning.done',
     sequence_number: tracker.nextSequence(),
     item_id: tracker.currentReasoning.id,
     output_index: outputIndex,

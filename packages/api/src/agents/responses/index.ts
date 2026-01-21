@@ -88,8 +88,8 @@ export type {
   RefusalDoneEvent,
   FunctionCallArgumentsDeltaEvent,
   FunctionCallArgumentsDoneEvent,
-  ReasoningTextDeltaEvent,
-  ReasoningTextDoneEvent,
+  ReasoningDeltaEvent,
+  ReasoningDoneEvent,
   ErrorEvent,
   ResponseEvent,
   // Internal
@@ -137,8 +137,8 @@ export {
   // Reasoning events
   emitReasoningItemAdded,
   emitReasoningContentPartAdded,
-  emitReasoningTextDelta,
-  emitReasoningTextDone,
+  emitReasoningDelta,
+  emitReasoningDone,
   emitReasoningContentPartDone,
   emitReasoningItemDone,
   // Error events

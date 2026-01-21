@@ -609,6 +609,7 @@ export interface OutputTextDeltaEvent extends BaseEvent {
   output_index: number;
   content_index: number;
   delta: string;
+  logprobs: LogProb[];
 }
 
 /** Output text done event */
@@ -618,6 +619,7 @@ export interface OutputTextDoneEvent extends BaseEvent {
   output_index: number;
   content_index: number;
   text: string;
+  logprobs: LogProb[];
 }
 
 /** Refusal delta event */
@@ -656,18 +658,18 @@ export interface FunctionCallArgumentsDoneEvent extends BaseEvent {
   arguments: string;
 }
 
-/** Reasoning text delta event */
-export interface ReasoningTextDeltaEvent extends BaseEvent {
-  type: 'response.reasoning_text.delta';
+/** Reasoning delta event */
+export interface ReasoningDeltaEvent extends BaseEvent {
+  type: 'response.reasoning.delta';
   item_id: string;
   output_index: number;
   content_index: number;
   delta: string;
 }
 
-/** Reasoning text done event */
-export interface ReasoningTextDoneEvent extends BaseEvent {
-  type: 'response.reasoning_text.done';
+/** Reasoning done event */
+export interface ReasoningDoneEvent extends BaseEvent {
+  type: 'response.reasoning.done';
   item_id: string;
   output_index: number;
   content_index: number;
@@ -696,8 +698,8 @@ export type ResponseEvent =
   | RefusalDoneEvent
   | FunctionCallArgumentsDeltaEvent
   | FunctionCallArgumentsDoneEvent
-  | ReasoningTextDeltaEvent
-  | ReasoningTextDoneEvent
+  | ReasoningDeltaEvent
+  | ReasoningDoneEvent
   | ErrorEvent;
 
 /* =============================================================================
