@@ -117,6 +117,18 @@ const Part = memo(
             attachments={attachments}
           />
         );
+      } else if (isToolCall && toolCall.name === 'heartmula_generate') {
+        // Minimal music generation renderer: show progress and embedded audio player when available
+        const MusicGen = require('./MusicGen/MusicGen').default;
+        return (
+          <MusicGen
+            initialProgress={toolCall.progress ?? 0.1}
+            isSubmitting={isSubmitting}
+            toolName={toolCall.name}
+            args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+            output={toolCall.output ?? ''}
+          />
+        );
       } else if (isToolCall && toolCall.name === Tools.web_search) {
         return (
           <WebSearch
