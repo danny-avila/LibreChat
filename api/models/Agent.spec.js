@@ -22,7 +22,6 @@ const {
   createAgent,
   updateAgent,
   deleteAgent,
-  getListAgents,
   deleteUserAgents,
   revertAgentVersion,
   updateAgentProjects,
@@ -1061,45 +1060,6 @@ describe('models/Agent', () => {
       expect(userAfter.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
     });
 
-    test('should list agents by author', async () => {
-      const authorId = new mongoose.Types.ObjectId();
-      const otherAuthorId = new mongoose.Types.ObjectId();
-
-      const agentIds = [];
-      for (let i = 0; i < 5; i++) {
-        const id = `agent_${uuidv4()}`;
-        agentIds.push(id);
-        await createAgent({
-          id,
-          name: `Agent ${i}`,
-          provider: 'test',
-          model: 'test-model',
-          author: authorId,
-        });
-      }
-
-      for (let i = 0; i < 3; i++) {
-        await createAgent({
-          id: `other_agent_${uuidv4()}`,
-          name: `Other Agent ${i}`,
-          provider: 'test',
-          model: 'test-model',
-          author: otherAuthorId,
-        });
-      }
-
-      const result = await getListAgents({ author: authorId.toString() });
-
-      expect(result).toBeDefined();
-      expect(result.data).toBeDefined();
-      expect(result.data).toHaveLength(5);
-      expect(result.has_more).toBe(true);
-
-      for (const agent of result.data) {
-        expect(agent.author).toBe(authorId.toString());
-      }
-    });
-
     test('should update agent projects', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
@@ -1217,26 +1177,6 @@ describe('models/Agent', () => {
       ])('$name should return null', async ({ fn, expected }) => {
         const result = await fn();
         expect(result).toBe(expected);
-      });
-
-      test('should handle getListAgents with invalid author format', async () => {
-        try {
-          const result = await getListAgents({ author: 'invalid-object-id' });
-          expect(result.data).toEqual([]);
-        } catch (error) {
-          expect(error).toBeDefined();
-        }
-      });
-
-      test('should handle getListAgents with no agents', async () => {
-        const authorId = new mongoose.Types.ObjectId();
-        const result = await getListAgents({ author: authorId.toString() });
-
-        expect(result).toBeDefined();
-        expect(result.data).toEqual([]);
-        expect(result.has_more).toBe(false);
-        expect(result.first_id).toBeNull();
-        expect(result.last_id).toBeNull();
       });
 
       test('should handle updateAgentProjects with non-existent agent', async () => {
@@ -2850,17 +2790,6 @@ describe('models/Agent', () => {
       const result = await deleteAgent({ id: nonExistentId });
 
       expect(result).toBeNull();
-    });
-
-    test('should handle getListAgents with no agents', async () => {
-      const authorId = new mongoose.Types.ObjectId();
-      const result = await getListAgents({ author: authorId.toString() });
-
-      expect(result).toBeDefined();
-      expect(result.data).toEqual([]);
-      expect(result.has_more).toBe(false);
-      expect(result.first_id).toBeNull();
-      expect(result.last_id).toBeNull();
     });
 
     test('should handle updateAgent with MongoDB operators mixed with direct updates', async () => {
