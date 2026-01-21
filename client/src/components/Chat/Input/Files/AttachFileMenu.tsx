@@ -36,6 +36,44 @@ import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
+/**
+ * File types supported by OpenAI File Search API
+ * https://platform.openai.com/docs/assistants/tools/file-search/supported-files
+ */
+const OPENAI_SUPPORTED_EXTENSIONS = [
+  // Images
+  'image/*',
+  // Documents
+  '.pdf',
+  'application/pdf',
+  // Microsoft Office (modern)
+  '.docx',
+  '.pptx',
+  '.xlsx',
+  // Microsoft Office (legacy)
+  '.doc',
+  '.ppt',
+  '.xls',
+  // Text and code files
+  '.txt',
+  '.md',
+  '.json',
+  '.html',
+  '.css',
+  '.js',
+  '.ts',
+  '.py',
+  '.c',
+  '.cpp',
+  '.cs',
+  '.go',
+  '.java',
+  '.php',
+  '.rb',
+  '.sh',
+  '.tex',
+].join(',');
+
 interface AttachFileMenuProps {
   agentId?: string | null;
   endpoint?: string | null;
@@ -95,9 +133,10 @@ const AttachFileMenu = ({
     } else if (fileType === 'document') {
       inputRef.current.accept = '.pdf,application/pdf';
     } else if (fileType === 'multimodal') {
-      inputRef.current.accept = 'image/*,.pdf,application/pdf';
+      // Use expanded list of OpenAI-supported file types
+      inputRef.current.accept = OPENAI_SUPPORTED_EXTENSIONS;
     } else if (fileType === 'google_multimodal') {
-      inputRef.current.accept = 'image/*,.pdf,application/pdf,video/*,audio/*';
+      inputRef.current.accept = OPENAI_SUPPORTED_EXTENSIONS + ',video/*,audio/*';
     } else {
       inputRef.current.accept = '';
     }
