@@ -56,6 +56,7 @@ export interface ResponseTracker {
     inputTokens: number;
     outputTokens: number;
     reasoningTokens: number;
+    cachedTokens: number;
   };
   /** Response status */
   status: ResponseStatus;
@@ -83,6 +84,7 @@ export function createResponseTracker(): ResponseTracker {
       inputTokens: 0,
       outputTokens: 0,
       reasoningTokens: 0,
+      cachedTokens: 0,
     },
     status: 'in_progress',
     nextSequence: () => tracker.sequenceNumber++,
@@ -147,7 +149,7 @@ export function buildResponse(
     top_p: 1,
     presence_penalty: 0,
     frequency_penalty: 0,
-    top_logprobs: null,
+    top_logprobs: 0,
     reasoning: null,
     user: null,
     usage: isCompleted
@@ -155,10 +157,8 @@ export function buildResponse(
           input_tokens: tracker.usage.inputTokens,
           output_tokens: tracker.usage.outputTokens,
           total_tokens: tracker.usage.inputTokens + tracker.usage.outputTokens,
-          output_tokens_details:
-            tracker.usage.reasoningTokens > 0
-              ? { reasoning_tokens: tracker.usage.reasoningTokens }
-              : undefined,
+          input_tokens_details: { cached_tokens: tracker.usage.cachedTokens },
+          output_tokens_details: { reasoning_tokens: tracker.usage.reasoningTokens },
         }
       : null,
     max_output_tokens: null,
@@ -242,6 +242,7 @@ export function createReasoningItem(status: ItemStatus = 'in_progress'): Reasoni
     id: generateItemId('reason'),
     status,
     content: [],
+    summary: [],
   };
 }
 
@@ -253,6 +254,7 @@ export function createOutputTextContent(text: string = ''): OutputTextContent {
     type: 'output_text',
     text,
     annotations: [],
+    logprobs: [],
   };
 }
 
@@ -798,7 +800,12 @@ export function buildResponsesNonStreamingResponse(
  */
 export function updateTrackerUsage(
   tracker: ResponseTracker,
-  usage: { promptTokens?: number; completionTokens?: number; reasoningTokens?: number },
+  usage: {
+    promptTokens?: number;
+    completionTokens?: number;
+    reasoningTokens?: number;
+    cachedTokens?: number;
+  },
 ): void {
   if (usage.promptTokens != null) {
     tracker.usage.inputTokens = usage.promptTokens;
@@ -808,5 +815,8 @@ export function updateTrackerUsage(
   }
   if (usage.reasoningTokens != null) {
     tracker.usage.reasoningTokens = usage.reasoningTokens;
+  }
+  if (usage.cachedTokens != null) {
+    tracker.usage.cachedTokens = usage.cachedTokens;
   }
 }

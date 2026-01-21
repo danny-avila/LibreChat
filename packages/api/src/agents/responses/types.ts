@@ -69,11 +69,27 @@ export type InputContent = InputTextContent | InputImageContent | InputFileConte
  * OUTPUT CONTENT TYPES
  * ============================================================================= */
 
+/** Log probability for a token */
+export interface LogProb {
+  token: string;
+  logprob: number;
+  bytes?: number[];
+  top_logprobs?: TopLogProb[];
+}
+
+/** Top log probability entry */
+export interface TopLogProb {
+  token: string;
+  logprob: number;
+  bytes?: number[];
+}
+
 /** Text output content */
 export interface OutputTextContent {
   type: 'output_text';
   text: string;
   annotations: Annotation[];
+  logprobs: LogProb[];
 }
 
 /** Refusal content */
@@ -241,10 +257,11 @@ export interface FunctionCallOutputItem {
 export interface ReasoningItem {
   type: 'reasoning';
   id: string;
-  status: ItemStatus;
+  status?: ItemStatus;
   content?: ReasoningContent[];
   encrypted_content?: string;
-  summary?: SummaryTextContent[];
+  /** Required per Open Responses spec - summary content parts */
+  summary: SummaryTextContent[];
 }
 
 /** Union of all output item types */
@@ -382,12 +399,12 @@ export interface ResponseRequest {
 
 /** Token usage details */
 export interface InputTokensDetails {
-  cached_tokens?: number;
+  cached_tokens: number;
 }
 
 /** Output tokens details */
 export interface OutputTokensDetails {
-  reasoning_tokens?: number;
+  reasoning_tokens: number;
 }
 
 /** Token usage statistics */
@@ -395,8 +412,8 @@ export interface Usage {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
-  input_tokens_details?: InputTokensDetails;
-  output_tokens_details?: OutputTokensDetails;
+  input_tokens_details: InputTokensDetails;
+  output_tokens_details: OutputTokensDetails;
 }
 
 /** Incomplete details */
@@ -482,8 +499,8 @@ export interface Response {
   /** Frequency penalty used */
   frequency_penalty: number;
 
-  /** Top logprobs */
-  top_logprobs: number | null;
+  /** Top logprobs - number of most likely tokens to return */
+  top_logprobs: number;
 
   /** Reasoning configuration - null if none */
   reasoning: ReasoningConfig | null;

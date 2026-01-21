@@ -22,6 +22,8 @@ export type {
   InputFileContent,
   InputContent,
   // Output content
+  LogProb,
+  TopLogProb,
   OutputTextContent,
   RefusalContent,
   ModelContent,

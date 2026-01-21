@@ -531,15 +531,28 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
             usage_metadata?: {
               input_tokens?: number;
               output_tokens?: number;
+              // OpenAI format
+              input_token_details?: {
+                cache_creation?: number;
+                cache_read?: number;
+              };
+              // Anthropic format
+              cache_creation_input_tokens?: number;
+              cache_read_input_tokens?: number;
             };
           };
         };
 
         const usage = endData?.output?.usage_metadata;
         if (usage) {
+          // Extract cached tokens from either OpenAI or Anthropic format
+          const cachedTokens =
+            (usage.input_token_details?.cache_read ?? 0) + (usage.cache_read_input_tokens ?? 0);
+
           updateTrackerUsage(config.tracker, {
             promptTokens: usage.input_tokens,
             completionTokens: usage.output_tokens,
+            cachedTokens,
           });
         }
       },
@@ -581,6 +594,7 @@ export interface ResponseAggregator {
     inputTokens: number;
     outputTokens: number;
     reasoningTokens: number;
+    cachedTokens: number;
   };
   addText: (text: string) => void;
   addReasoning: (text: string) => void;
@@ -601,6 +615,7 @@ export function createResponseAggregator(): ResponseAggregator {
       inputTokens: 0,
       outputTokens: 0,
       reasoningTokens: 0,
+      cachedTokens: 0,
     },
     addText: (text: string) => {
       aggregator.textChunks.push(text);
@@ -632,6 +647,7 @@ export function buildAggregatedResponse(
       id: `reason_${Date.now().toString(36)}`,
       status: 'completed',
       content: [{ type: 'reasoning_text', text: reasoningText }],
+      summary: [],
     });
   }
 
@@ -666,7 +682,7 @@ export function buildAggregatedResponse(
       id: `msg_${Date.now().toString(36)}`,
       role: 'assistant',
       status: 'completed',
-      content: text ? [{ type: 'output_text', text, annotations: [] }] : [],
+      content: text ? [{ type: 'output_text', text, annotations: [], logprobs: [] }] : [],
     });
   }
 
@@ -692,17 +708,15 @@ export function buildAggregatedResponse(
     top_p: 1,
     presence_penalty: 0,
     frequency_penalty: 0,
-    top_logprobs: null,
+    top_logprobs: 0,
     reasoning: null,
     user: null,
     usage: {
       input_tokens: aggregator.usage.inputTokens,
       output_tokens: aggregator.usage.outputTokens,
       total_tokens: aggregator.usage.inputTokens + aggregator.usage.outputTokens,
-      output_tokens_details:
-        aggregator.usage.reasoningTokens > 0
-          ? { reasoning_tokens: aggregator.usage.reasoningTokens }
-          : undefined,
+      input_tokens_details: { cached_tokens: aggregator.usage.cachedTokens },
+      output_tokens_details: { reasoning_tokens: aggregator.usage.reasoningTokens },
     },
     max_output_tokens: null,
     max_tool_calls: null,
@@ -828,6 +842,14 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
             usage_metadata?: {
               input_tokens?: number;
               output_tokens?: number;
+              // OpenAI format
+              input_token_details?: {
+                cache_creation?: number;
+                cache_read?: number;
+              };
+              // Anthropic format
+              cache_creation_input_tokens?: number;
+              cache_read_input_tokens?: number;
             };
           };
         };
@@ -836,6 +858,10 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
         if (usage) {
           aggregator.usage.inputTokens = usage.input_tokens ?? 0;
           aggregator.usage.outputTokens = usage.output_tokens ?? 0;
+
+          // Extract cached tokens from either OpenAI or Anthropic format
+          aggregator.usage.cachedTokens =
+            (usage.input_token_details?.cache_read ?? 0) + (usage.cache_read_input_tokens ?? 0);
         }
       },
     },

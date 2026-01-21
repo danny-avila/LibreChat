@@ -551,10 +551,24 @@ describe('Open Responses API Integration Tests', () => {
       expect(body).toHaveProperty('top_p');
       expect(body).toHaveProperty('presence_penalty');
       expect(body).toHaveProperty('frequency_penalty');
+      expect(body).toHaveProperty('top_logprobs');
       expect(body).toHaveProperty('store');
       expect(body).toHaveProperty('background');
       expect(body).toHaveProperty('service_tier');
       expect(body).toHaveProperty('metadata');
+
+      // top_logprobs must be a number (not null)
+      expect(typeof body.top_logprobs).toBe('number');
+
+      // Usage must have required detail fields
+      expect(body).toHaveProperty('usage');
+      expect(body.usage).toHaveProperty('input_tokens');
+      expect(body.usage).toHaveProperty('output_tokens');
+      expect(body.usage).toHaveProperty('total_tokens');
+      expect(body.usage).toHaveProperty('input_tokens_details');
+      expect(body.usage).toHaveProperty('output_tokens_details');
+      expect(body.usage.input_tokens_details).toHaveProperty('cached_tokens');
+      expect(body.usage.output_tokens_details).toHaveProperty('reasoning_tokens');
     });
 
     it('should have valid message item structure', async () => {
@@ -576,14 +590,26 @@ describe('Open Responses API Integration Tests', () => {
       expect(messageItem).toHaveProperty('content');
       expect(Array.isArray(messageItem.content)).toBe(true);
 
-      // Content part structure
+      // Content part structure - verify all required fields
       if (messageItem.content.length > 0) {
         const textContent = messageItem.content.find((c) => c.type === 'output_text');
         if (textContent) {
           expect(textContent).toHaveProperty('type', 'output_text');
           expect(textContent).toHaveProperty('text');
           expect(textContent).toHaveProperty('annotations');
+          expect(textContent).toHaveProperty('logprobs');
+          expect(Array.isArray(textContent.annotations)).toBe(true);
+          expect(Array.isArray(textContent.logprobs)).toBe(true);
         }
+      }
+
+      // Verify reasoning item has required summary field
+      const reasoningItem = response.body.output.find((item) => item.type === 'reasoning');
+      if (reasoningItem) {
+        expect(reasoningItem).toHaveProperty('type', 'reasoning');
+        expect(reasoningItem).toHaveProperty('id');
+        expect(reasoningItem).toHaveProperty('summary');
+        expect(Array.isArray(reasoningItem.summary)).toBe(true);
       }
     });
   });
