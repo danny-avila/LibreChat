@@ -88,7 +88,10 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
               {selectedSpec === spec.name && (
                 <>
                   <CheckCircle2
-                    className={cn('size-4 shrink-0 text-text-primary', spec.description ? 'mt-1' : '')}
+                    className={cn(
+                      'size-4 shrink-0 text-text-primary',
+                      spec.description ? 'mt-1' : '',
+                    )}
                     aria-hidden="true"
                   />
                   <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
@@ -182,7 +185,10 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                       )}
                       {isModelSelected && (
                         <>
-                          <CheckCircle2 className="size-4 shrink-0 text-text-primary" aria-hidden="true" />
+                          <CheckCircle2
+                            className="size-4 shrink-0 text-text-primary"
+                            aria-hidden="true"
+                          />
                           <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
                         </>
                       )}
@@ -214,7 +220,10 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                 </div>
                 {isEndpointSelected && (
                   <>
-                    <CheckCircle2 className="size-4 shrink-0 text-text-primary" aria-hidden="true" />
+                    <CheckCircle2
+                      className="size-4 shrink-0 text-text-primary"
+                      aria-hidden="true"
+                    />
                     <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
                   </>
                 )}

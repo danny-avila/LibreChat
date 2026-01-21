@@ -46,7 +46,10 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
       </div>
       {isSelected && (
         <>
-          <CheckCircle2 className="size-4 shrink-0 self-center text-text-primary" aria-hidden="true" />
+          <CheckCircle2
+            className="size-4 shrink-0 self-center text-text-primary"
+            aria-hidden="true"
+          />
           <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
         </>
       )}

@@ -162,10 +162,7 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
               )}
               {isEndpointSelected && (
                 <>
-                  <CheckCircle2
-                    className="size-4 shrink-0 text-text-primary"
-                    aria-hidden="true"
-                  />
+                  <CheckCircle2 className="size-4 shrink-0 text-text-primary" aria-hidden="true" />
                   <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
                 </>
               )}
