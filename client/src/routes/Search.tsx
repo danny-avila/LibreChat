@@ -88,7 +88,7 @@ export default function Search() {
 
   return (
     <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
-      <div className="sr-only" role="alert" aria-live="polite" aria-atomic="true">
+      <div className="sr-only" role="alert" aria-atomic="true">
         {resultsAnnouncement}
       </div>
       {(messages && messages.length === 0) || messages == null ? (
