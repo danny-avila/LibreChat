@@ -184,7 +184,7 @@ export async function initializeCustom({
   const compactionConfig = appConfig?.compaction;
   const modelName = model_parameters?.model as string | undefined;
   if (compactionConfig?.enabled && modelName && supportsCompaction(modelName)) {
-    // Force Responses API and enable automatic truncation for compaction
+    // Enable Responses API and automatic truncation for compaction
     (options.llmConfig as Record<string, unknown>).useResponsesApi = true;
     (options.llmConfig as Record<string, unknown>).truncation = 'auto';
   }
