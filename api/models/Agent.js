@@ -21,7 +21,7 @@ const {
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { getMCPServerTools } = require('~/server/services/Config');
-const { Agent, AclEntry } = require('~/db/models');
+const { Agent, AclEntry, User } = require('~/db/models');
 const { getActions } = require('./Action');
 
 /**
@@ -600,6 +600,14 @@ const deleteAgent = async (searchParameter) => {
     } catch (error) {
       logger.error('[deleteAgent] Error removing agent from handoff edges', error);
     }
+    try {
+      await User.updateMany(
+        { 'favorites.agentId': agent.id },
+        { $pull: { favorites: { agentId: agent.id } } },
+      );
+    } catch (error) {
+      logger.error('[deleteAgent] Error removing agent from user favorites', error);
+    }
   }
   return agent;
 };
@@ -628,6 +636,15 @@ const deleteUserAgents = async (userId) => {
       resourceType: ResourceType.AGENT,
       resourceId: { $in: agentObjectIds },
     });
+
+    try {
+      await User.updateMany(
+        { 'favorites.agentId': { $in: agentIds } },
+        { $pull: { favorites: { agentId: { $in: agentIds } } } },
+      );
+    } catch (error) {
+      logger.error('[deleteUserAgents] Error removing agents from user favorites', error);
+    }
 
     await Agent.deleteMany({ author: userId });
   } catch (error) {

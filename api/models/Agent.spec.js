@@ -32,7 +32,7 @@ const {
 } = require('./Agent');
 const permissionService = require('~/server/services/PermissionService');
 const { getCachedTools, getMCPServerTools } = require('~/server/services/Config');
-const { AclEntry } = require('~/db/models');
+const { AclEntry, User } = require('~/db/models');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -59,6 +59,7 @@ describe('models/Agent', () => {
 
     beforeEach(async () => {
       await Agent.deleteMany({});
+      await User.deleteMany({});
     });
 
     test('should add tool_resource to tools if missing', async () => {
@@ -573,6 +574,259 @@ describe('models/Agent', () => {
       // Verify the edge is removed from source agent
       const sourceAgentAfter = await getAgent({ id: sourceAgentId });
       expect(sourceAgentAfter.edges).toHaveLength(0);
+    });
+
+    test('should remove agent from user favorites when agent is deleted', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const userId = new mongoose.Types.ObjectId();
+
+      // Create agent
+      await createAgent({
+        id: agentId,
+        name: 'Agent To Delete',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      // Create user with the agent in favorites
+      await User.create({
+        _id: userId,
+        name: 'Test User',
+        email: `test-${uuidv4()}@example.com`,
+        provider: 'local',
+        favorites: [{ agentId: agentId }, { model: 'gpt-4', endpoint: 'openAI' }],
+      });
+
+      // Verify user has agent in favorites
+      const userBefore = await User.findById(userId);
+      expect(userBefore.favorites).toHaveLength(2);
+      expect(userBefore.favorites.some((f) => f.agentId === agentId)).toBe(true);
+
+      // Delete the agent
+      await deleteAgent({ id: agentId });
+
+      // Verify agent is deleted
+      const agentAfterDelete = await getAgent({ id: agentId });
+      expect(agentAfterDelete).toBeNull();
+
+      // Verify agent is removed from user favorites
+      const userAfter = await User.findById(userId);
+      expect(userAfter.favorites).toHaveLength(1);
+      expect(userAfter.favorites.some((f) => f.agentId === agentId)).toBe(false);
+      expect(userAfter.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
+    });
+
+    test('should remove agent from multiple users favorites when agent is deleted', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const user1Id = new mongoose.Types.ObjectId();
+      const user2Id = new mongoose.Types.ObjectId();
+
+      // Create agent
+      await createAgent({
+        id: agentId,
+        name: 'Agent To Delete',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      // Create two users with the agent in favorites
+      await User.create({
+        _id: user1Id,
+        name: 'Test User 1',
+        email: `test1-${uuidv4()}@example.com`,
+        provider: 'local',
+        favorites: [{ agentId: agentId }],
+      });
+
+      await User.create({
+        _id: user2Id,
+        name: 'Test User 2',
+        email: `test2-${uuidv4()}@example.com`,
+        provider: 'local',
+        favorites: [{ agentId: agentId }, { agentId: `agent_${uuidv4()}` }],
+      });
+
+      // Delete the agent
+      await deleteAgent({ id: agentId });
+
+      // Verify agent is removed from both users' favorites
+      const user1After = await User.findById(user1Id);
+      const user2After = await User.findById(user2Id);
+
+      expect(user1After.favorites).toHaveLength(0);
+      expect(user2After.favorites).toHaveLength(1);
+      expect(user2After.favorites.some((f) => f.agentId === agentId)).toBe(false);
+    });
+
+    test('should preserve other agents in database when one agent is deleted', async () => {
+      const agentToDeleteId = `agent_${uuidv4()}`;
+      const agentToKeep1Id = `agent_${uuidv4()}`;
+      const agentToKeep2Id = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      // Create multiple agents
+      await createAgent({
+        id: agentToDeleteId,
+        name: 'Agent To Delete',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      await createAgent({
+        id: agentToKeep1Id,
+        name: 'Agent To Keep 1',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      await createAgent({
+        id: agentToKeep2Id,
+        name: 'Agent To Keep 2',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      // Verify all agents exist
+      expect(await getAgent({ id: agentToDeleteId })).not.toBeNull();
+      expect(await getAgent({ id: agentToKeep1Id })).not.toBeNull();
+      expect(await getAgent({ id: agentToKeep2Id })).not.toBeNull();
+
+      // Delete one agent
+      await deleteAgent({ id: agentToDeleteId });
+
+      // Verify only the deleted agent is removed, others remain intact
+      expect(await getAgent({ id: agentToDeleteId })).toBeNull();
+      const keptAgent1 = await getAgent({ id: agentToKeep1Id });
+      const keptAgent2 = await getAgent({ id: agentToKeep2Id });
+      expect(keptAgent1).not.toBeNull();
+      expect(keptAgent1.name).toBe('Agent To Keep 1');
+      expect(keptAgent2).not.toBeNull();
+      expect(keptAgent2.name).toBe('Agent To Keep 2');
+    });
+
+    test('should preserve other agents in user favorites when one agent is deleted', async () => {
+      const agentToDeleteId = `agent_${uuidv4()}`;
+      const agentToKeep1Id = `agent_${uuidv4()}`;
+      const agentToKeep2Id = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const userId = new mongoose.Types.ObjectId();
+
+      // Create multiple agents
+      await createAgent({
+        id: agentToDeleteId,
+        name: 'Agent To Delete',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      await createAgent({
+        id: agentToKeep1Id,
+        name: 'Agent To Keep 1',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      await createAgent({
+        id: agentToKeep2Id,
+        name: 'Agent To Keep 2',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      // Create user with all three agents in favorites
+      await User.create({
+        _id: userId,
+        name: 'Test User',
+        email: `test-${uuidv4()}@example.com`,
+        provider: 'local',
+        favorites: [
+          { agentId: agentToDeleteId },
+          { agentId: agentToKeep1Id },
+          { agentId: agentToKeep2Id },
+        ],
+      });
+
+      // Verify user has all three agents in favorites
+      const userBefore = await User.findById(userId);
+      expect(userBefore.favorites).toHaveLength(3);
+
+      // Delete one agent
+      await deleteAgent({ id: agentToDeleteId });
+
+      // Verify only the deleted agent is removed from favorites
+      const userAfter = await User.findById(userId);
+      expect(userAfter.favorites).toHaveLength(2);
+      expect(userAfter.favorites.some((f) => f.agentId === agentToDeleteId)).toBe(false);
+      expect(userAfter.favorites.some((f) => f.agentId === agentToKeep1Id)).toBe(true);
+      expect(userAfter.favorites.some((f) => f.agentId === agentToKeep2Id)).toBe(true);
+    });
+
+    test('should not affect users who do not have deleted agent in favorites', async () => {
+      const agentToDeleteId = `agent_${uuidv4()}`;
+      const otherAgentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const userWithDeletedAgentId = new mongoose.Types.ObjectId();
+      const userWithoutDeletedAgentId = new mongoose.Types.ObjectId();
+
+      // Create agents
+      await createAgent({
+        id: agentToDeleteId,
+        name: 'Agent To Delete',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      await createAgent({
+        id: otherAgentId,
+        name: 'Other Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      // Create user with the agent to be deleted
+      await User.create({
+        _id: userWithDeletedAgentId,
+        name: 'User With Deleted Agent',
+        email: `user1-${uuidv4()}@example.com`,
+        provider: 'local',
+        favorites: [{ agentId: agentToDeleteId }, { model: 'gpt-4', endpoint: 'openAI' }],
+      });
+
+      // Create user without the agent to be deleted
+      await User.create({
+        _id: userWithoutDeletedAgentId,
+        name: 'User Without Deleted Agent',
+        email: `user2-${uuidv4()}@example.com`,
+        provider: 'local',
+        favorites: [{ agentId: otherAgentId }, { model: 'claude-3', endpoint: 'anthropic' }],
+      });
+
+      // Delete the agent
+      await deleteAgent({ id: agentToDeleteId });
+
+      // Verify user with deleted agent has it removed
+      const userWithDeleted = await User.findById(userWithDeletedAgentId);
+      expect(userWithDeleted.favorites).toHaveLength(1);
+      expect(userWithDeleted.favorites.some((f) => f.agentId === agentToDeleteId)).toBe(false);
+      expect(userWithDeleted.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
+
+      // Verify user without deleted agent is completely unaffected
+      const userWithoutDeleted = await User.findById(userWithoutDeletedAgentId);
+      expect(userWithoutDeleted.favorites).toHaveLength(2);
+      expect(userWithoutDeleted.favorites.some((f) => f.agentId === otherAgentId)).toBe(true);
+      expect(userWithoutDeleted.favorites.some((f) => f.model === 'claude-3')).toBe(true);
     });
 
     test('should list agents by author', async () => {
