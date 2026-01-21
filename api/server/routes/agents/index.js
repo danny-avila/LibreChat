@@ -242,10 +242,6 @@ router.post('/chat/abort', async (req, res) => {
       }
     }
 
-    // TODO: Token spending for aborted requests should be added here
-    // Similar to abortMiddleware.js, using abortResult.collectedUsage
-    // This is tracked as a follow-up improvement
-
     return res.json({ success: true, aborted: jobStreamId });
   }
 
