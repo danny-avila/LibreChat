@@ -12,6 +12,8 @@ import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import AdminDashboard from '~/components/Admin/Dashboard/AdminDashboard';
+import ProtectedAdminRoute from './ProtectedAdminRoute';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
@@ -110,6 +112,14 @@ export const router = createBrowserRouter(
             {
               path: 'search',
               element: <Search />,
+            },
+            {
+              path: 'admin/dashboard',
+              element: (
+                <ProtectedAdminRoute>
+                  <AdminDashboard />
+                </ProtectedAdminRoute>
+              ),
             },
             {
               path: 'agents',
