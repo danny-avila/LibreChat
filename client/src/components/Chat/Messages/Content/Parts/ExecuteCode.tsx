@@ -50,12 +50,16 @@ export default function ExecuteCode({
   args,
   output = '',
   attachments,
+  startTime,
+  elapsedTime,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
   args?: string;
   output?: string;
   attachments?: TAttachment[];
+  startTime?: number;
+  elapsedTime?: number;
 }) {
   const localize = useLocalize();
   const hasOutput = output.length > 0;
@@ -65,10 +69,40 @@ export default function ExecuteCode({
   const showAnalysisCode = useRecoilValue(store.showCode);
   const [showCode, setShowCode] = useState(showAnalysisCode);
   const [contentHeight, setContentHeight] = useState<number | undefined>(0);
+  const [currentTime, setCurrentTime] = useState(elapsedTime || 0);
 
   const prevShowCodeRef = useRef<boolean>(showCode);
   const { lang, code } = useParseArgs(args) ?? ({} as ParsedArgs);
   const progress = useProgress(initialProgress);
+
+  // 🐛 调试：检查是否收到计时数据
+  useEffect(() => {
+    console.log('[ExecuteCode] Timer data:', { startTime, elapsedTime, currentTime });
+  }, [startTime, elapsedTime, currentTime]);
+
+  // ✨ 实时计时器（仅在执行中更新）
+  useEffect(() => {
+    if (!startTime || elapsedTime) {
+      // 已完成，使用固定的 elapsedTime
+      if (elapsedTime) {
+        setCurrentTime(elapsedTime);
+      }
+      return;
+    }
+
+    // 执行中，每 100ms 更新一次
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now() - startTime);
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [startTime, elapsedTime]);
+
+  const formatTime = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    const seconds = (ms / 1000).toFixed(1);
+    return `${seconds}s`;
+  };
 
   useEffect(() => {
     if (output !== outputRef.current) {
@@ -220,6 +254,12 @@ export default function ExecuteCode({
         </div>
       </div>
       {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+      {/* ✨ E2B 执行时间显示 */}
+      {(startTime || elapsedTime) && (
+        <div className="mt-0.5 mb-3 flex items-center gap-1.5 text-xs text-text-secondary">
+          <span className="font-mono">⏱️ {formatTime(currentTime)}</span>
+        </div>
+      )}
     </>
   );
 }

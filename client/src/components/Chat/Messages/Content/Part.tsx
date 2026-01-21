@@ -92,6 +92,13 @@ const Part = memo(
       const isToolCall =
         'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
       if (isToolCall && toolCall.name === Tools.execute_code) {
+        console.log('[Part.tsx] toolCall object:', { 
+          name: toolCall.name, 
+          startTime: toolCall.startTime, 
+          elapsedTime: toolCall.elapsedTime,
+          hasStartTime: 'startTime' in toolCall,
+          hasElapsedTime: 'elapsedTime' in toolCall
+        });
         return (
           <ExecuteCode
             attachments={attachments}
@@ -99,6 +106,8 @@ const Part = memo(
             output={toolCall.output ?? ''}
             initialProgress={toolCall.progress ?? 0.1}
             args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+            startTime={toolCall.startTime}
+            elapsedTime={toolCall.elapsedTime}
           />
         );
       } else if (

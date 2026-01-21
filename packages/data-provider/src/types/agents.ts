@@ -66,6 +66,10 @@ export namespace Agents {
     auth?: string;
     /** Expiration time */
     expires_at?: number;
+    /** E2B only: Start time (Unix timestamp in ms) for execution timer */
+    startTime?: number;
+    /** E2B only: Elapsed time (ms) after execution completes */
+    elapsedTime?: number;
   };
 
   export type ToolEndEvent = {

@@ -372,6 +372,9 @@ class E2BDataAnalystAgent {
               logger.info(`[E2BAgent] Calling tool: ${name}`);
               logger.debug(`[E2BAgent] Tool arguments:`, JSON.stringify(args, null, 2));
               
+              // 记录开始时间（用于前端计时器）
+              const startTime = Date.now();
+              
               // 先执行工具，判断是否成功
               let result;
               try {
@@ -391,6 +394,9 @@ class E2BDataAnalystAgent {
                 logger.error(`[E2BAgent] Error executing tool ${name}:`, err);
                 result = { success: false, error: err.message };
               }
+              
+              // 计算执行时间
+              const elapsedTime = Date.now() - startTime;
 
               logger.debug(`[E2BAgent] Tool result:`, JSON.stringify(result, null, 2));
               
@@ -413,6 +419,8 @@ class E2BDataAnalystAgent {
                     input: args.code || argsString,
                     output: output,
                     progress: 1.0,
+                    startTime: startTime,       // ✨ 前端计时器
+                    elapsedTime: elapsedTime,   // ✨ 实际执行时间（毫秒）
                   },
                 };
                 
@@ -425,8 +433,13 @@ class E2BDataAnalystAgent {
                   conversationId: this.conversationId,
                 };
                 
+                // 🐛 调试：打印完整的事件对象
+                logger.info(`[E2BAgent] 📤 toolCallEvent.tool_call has startTime: ${toolCallEvent.tool_call.startTime}`);
+                logger.info(`[E2BAgent] 📤 toolCallEvent.tool_call has elapsedTime: ${toolCallEvent.tool_call.elapsedTime}`);
+                
                 sendEvent(this.res, toolCallEvent);
                 logger.info(`[E2BAgent] Sent TOOL_CALL event (index=${toolCallIndex}, output=${output.length} chars) - SUCCESS ONLY`);
+                logger.info(`[E2BAgent] 🕒 Timer data sent: startTime=${startTime}, elapsedTime=${elapsedTime}ms`);
 
                 // ✨ 通知 controller 切断当前 TEXT part，为后续文本创建新 part
                 if (this.startNewTextPart) {

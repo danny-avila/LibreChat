@@ -469,6 +469,30 @@ LibreChat/
 
 ## 11. 版本历史与修复记录
 
+### 最新更新 (2026-01-21)
+
+#### ⏱️ 执行时间显示功能
+- ✅ 在 E2B 代码执行时显示执行时间
+- ✅ 后端捕获 startTime 和 elapsedTime 并通过 SSE 发送
+- ✅ 前端实时显示计时器（执行中每 100ms 更新）
+- ✅ 完成后显示总执行时间（格式化为 "XXms" 或 "X.Xs"）
+- ✅ TypeScript 类型定义扩展（ToolCall 和 PartMetadata）
+- ✅ 计时器位置优化（避免与其他 UI 元素重叠）
+- ✅ 完全隔离，不影响 Azure Assistants 等其他模块
+
+**修改的文件**:
+- `api/server/services/Agents/e2bAgent/index.js`: 添加计时逻辑
+- `packages/data-provider/src/types/agents.ts`: 扩展 ToolCall 类型
+- `packages/data-provider/src/types/assistants.ts`: 扩展 PartMetadata 类型
+- `client/src/components/Chat/Messages/Content/Parts/ExecuteCode.tsx`: 添加计时器 UI
+- `client/src/components/Chat/Messages/Content/Part.tsx`: 传递计时数据
+
+**技术细节**:
+- 计时精度：毫秒级（Date.now()）
+- 实时更新：执行中每 100ms 刷新一次
+- 格式化：< 1s 显示 "XXms"，≥ 1s 显示 "X.Xs"
+- 位置：显示在代码块和输出下方，独立行
+
 为了保持本文档的简洁性，详细的架构优化记录、Bug 修复详情和历史变更已移动到以下专门文档：
 
 - **问题解决与修复详情**: 请参阅 [E2B_AGENT_FIXES.md](./E2B_AGENT_FIXES.md)
