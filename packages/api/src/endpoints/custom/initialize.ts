@@ -12,7 +12,6 @@ import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
 import { isUserProvided, checkUserKeyExpiry } from '~/utils';
-import { supportsCompaction } from '~/compaction';
 import { standardCache } from '~/cache';
 
 const { PROXY } = process.env;
@@ -175,18 +174,6 @@ export async function initializeCustom({
   const streamRate = clientOptions.streamRate as number | undefined;
   if (streamRate) {
     (options.llmConfig as Record<string, unknown>)._lc_stream_delay = streamRate;
-  }
-
-  /**
-   * Apply compaction configuration for OpenAI Responses API
-   * When enabled and the model supports compaction, enable truncation and Responses API
-   */
-  const compactionConfig = appConfig?.compaction;
-  const modelName = model_parameters?.model as string | undefined;
-  if (compactionConfig?.enabled && modelName && supportsCompaction(modelName)) {
-    // Enable Responses API and automatic truncation for compaction
-    (options.llmConfig as Record<string, unknown>).useResponsesApi = true;
-    (options.llmConfig as Record<string, unknown>).truncation = 'auto';
   }
 
   return options;
