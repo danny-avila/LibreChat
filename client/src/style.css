@@ -2666,6 +2666,7 @@ html {
 .select-item[data-active-item] {
   background-color: var(--surface-hover);
   color: var(--text-primary);
+  box-shadow: 0 0 0 2px hsl(var(--ring));
 }
 
 .popover-ui[data-enter] {
