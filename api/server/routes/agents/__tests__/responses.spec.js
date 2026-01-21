@@ -107,6 +107,174 @@ function parseSSEEvents(text) {
 }
 
 /**
+ * Valid streaming event types per Open Responses specification
+ * @see https://github.com/openresponses/openresponses/blob/main/src/lib/sse-parser.ts
+ */
+const VALID_STREAMING_EVENT_TYPES = new Set([
+  'response.created',
+  'response.queued',
+  'response.in_progress',
+  'response.completed',
+  'response.failed',
+  'response.incomplete',
+  'response.output_item.added',
+  'response.output_item.done',
+  'response.content_part.added',
+  'response.content_part.done',
+  'response.output_text.delta',
+  'response.output_text.done',
+  'response.refusal.delta',
+  'response.refusal.done',
+  'response.function_call_arguments.delta',
+  'response.function_call_arguments.done',
+  'response.reasoning_summary_part.added',
+  'response.reasoning_summary_part.done',
+  'response.reasoning.delta',
+  'response.reasoning.done',
+  'response.reasoning_summary_text.delta',
+  'response.reasoning_summary_text.done',
+  'response.output_text.annotation.added',
+  'error',
+]);
+
+/**
+ * Validate a streaming event against Open Responses spec
+ * @param {Object} event - Parsed event with data
+ * @returns {string[]} Array of validation errors
+ */
+function validateStreamingEvent(event) {
+  const errors = [];
+  const data = event.data;
+
+  if (!data || typeof data !== 'object') {
+    return errors; // Skip non-object data (e.g., [DONE])
+  }
+
+  const eventType = data.type;
+
+  // Check event type is valid
+  if (!VALID_STREAMING_EVENT_TYPES.has(eventType)) {
+    errors.push(`Invalid event type: ${eventType}`);
+    return errors;
+  }
+
+  // Validate required fields based on event type
+  switch (eventType) {
+    case 'response.output_text.delta':
+      if (typeof data.sequence_number !== 'number') {
+        errors.push('response.output_text.delta: missing sequence_number');
+      }
+      if (typeof data.item_id !== 'string') {
+        errors.push('response.output_text.delta: missing item_id');
+      }
+      if (typeof data.output_index !== 'number') {
+        errors.push('response.output_text.delta: missing output_index');
+      }
+      if (typeof data.content_index !== 'number') {
+        errors.push('response.output_text.delta: missing content_index');
+      }
+      if (typeof data.delta !== 'string') {
+        errors.push('response.output_text.delta: missing delta');
+      }
+      if (!Array.isArray(data.logprobs)) {
+        errors.push('response.output_text.delta: missing logprobs array');
+      }
+      break;
+
+    case 'response.output_text.done':
+      if (typeof data.sequence_number !== 'number') {
+        errors.push('response.output_text.done: missing sequence_number');
+      }
+      if (typeof data.item_id !== 'string') {
+        errors.push('response.output_text.done: missing item_id');
+      }
+      if (typeof data.output_index !== 'number') {
+        errors.push('response.output_text.done: missing output_index');
+      }
+      if (typeof data.content_index !== 'number') {
+        errors.push('response.output_text.done: missing content_index');
+      }
+      if (typeof data.text !== 'string') {
+        errors.push('response.output_text.done: missing text');
+      }
+      if (!Array.isArray(data.logprobs)) {
+        errors.push('response.output_text.done: missing logprobs array');
+      }
+      break;
+
+    case 'response.reasoning.delta':
+      if (typeof data.sequence_number !== 'number') {
+        errors.push('response.reasoning.delta: missing sequence_number');
+      }
+      if (typeof data.item_id !== 'string') {
+        errors.push('response.reasoning.delta: missing item_id');
+      }
+      if (typeof data.output_index !== 'number') {
+        errors.push('response.reasoning.delta: missing output_index');
+      }
+      if (typeof data.content_index !== 'number') {
+        errors.push('response.reasoning.delta: missing content_index');
+      }
+      if (typeof data.delta !== 'string') {
+        errors.push('response.reasoning.delta: missing delta');
+      }
+      break;
+
+    case 'response.reasoning.done':
+      if (typeof data.sequence_number !== 'number') {
+        errors.push('response.reasoning.done: missing sequence_number');
+      }
+      if (typeof data.item_id !== 'string') {
+        errors.push('response.reasoning.done: missing item_id');
+      }
+      if (typeof data.output_index !== 'number') {
+        errors.push('response.reasoning.done: missing output_index');
+      }
+      if (typeof data.content_index !== 'number') {
+        errors.push('response.reasoning.done: missing content_index');
+      }
+      if (typeof data.text !== 'string') {
+        errors.push('response.reasoning.done: missing text');
+      }
+      break;
+
+    case 'response.in_progress':
+    case 'response.completed':
+    case 'response.failed':
+      if (!data.response || typeof data.response !== 'object') {
+        errors.push(`${eventType}: missing response object`);
+      }
+      break;
+
+    case 'response.output_item.added':
+    case 'response.output_item.done':
+      if (typeof data.output_index !== 'number') {
+        errors.push(`${eventType}: missing output_index`);
+      }
+      if (!data.item || typeof data.item !== 'object') {
+        errors.push(`${eventType}: missing item object`);
+      }
+      break;
+  }
+
+  return errors;
+}
+
+/**
+ * Validate all streaming events and return errors
+ * @param {Array} events - Array of parsed events
+ * @returns {string[]} Array of all validation errors
+ */
+function validateAllStreamingEvents(events) {
+  const allErrors = [];
+  for (const event of events) {
+    const errors = validateStreamingEvent(event);
+    allErrors.push(...errors);
+  }
+  return allErrors;
+}
+
+/**
  * Create a test agent with Anthropic provider
  * @param {Object} overrides
  * @returns {Promise<Object>}
@@ -311,6 +479,16 @@ describe('Open Responses API Integration Tests', () => {
         const events = parseSSEEvents(response.body);
         expect(events.length).toBeGreaterThan(0);
 
+        // Validate all streaming events against Open Responses spec
+        // This catches issues like:
+        // - Invalid event types (e.g., response.reasoning_text.delta instead of response.reasoning.delta)
+        // - Missing required fields (e.g., logprobs on output_text events)
+        const validationErrors = validateAllStreamingEvents(events);
+        if (validationErrors.length > 0) {
+          console.error('Streaming event validation errors:', validationErrors);
+        }
+        expect(validationErrors).toEqual([]);
+
         // Validate streaming event types
         const eventTypes = events.map((e) => e.event);
 
@@ -331,6 +509,94 @@ describe('Open Responses API Integration Tests', () => {
           expect(completedEvent.data.response).toBeDefined();
           expect(completedEvent.data.response.status).toBe('completed');
           expect(completedEvent.data.response.output.length).toBeGreaterThan(0);
+        }
+      });
+
+      it('should emit valid event types per Open Responses spec', async () => {
+        const response = await request(app)
+          .post('/api/agents/v1/responses')
+          .send({
+            model: testAgent.id,
+            input: [
+              {
+                type: 'message',
+                role: 'user',
+                content: 'Say hi.',
+              },
+            ],
+            stream: true,
+          })
+          .buffer(true)
+          .parse((res, callback) => {
+            let data = '';
+            res.on('data', (chunk) => {
+              data += chunk.toString();
+            });
+            res.on('end', () => {
+              callback(null, data);
+            });
+          });
+
+        expect(response.status).toBe(200);
+
+        const events = parseSSEEvents(response.body);
+
+        // Check all event types are valid
+        for (const event of events) {
+          if (event.data && typeof event.data === 'object' && event.data.type) {
+            expect(VALID_STREAMING_EVENT_TYPES.has(event.data.type)).toBe(true);
+          }
+        }
+      });
+
+      it('should include logprobs array in output_text events', async () => {
+        const response = await request(app)
+          .post('/api/agents/v1/responses')
+          .send({
+            model: testAgent.id,
+            input: [
+              {
+                type: 'message',
+                role: 'user',
+                content: 'Say one word.',
+              },
+            ],
+            stream: true,
+          })
+          .buffer(true)
+          .parse((res, callback) => {
+            let data = '';
+            res.on('data', (chunk) => {
+              data += chunk.toString();
+            });
+            res.on('end', () => {
+              callback(null, data);
+            });
+          });
+
+        expect(response.status).toBe(200);
+
+        const events = parseSSEEvents(response.body);
+
+        // Find output_text delta/done events and verify logprobs
+        const textDeltaEvents = events.filter(
+          (e) => e.data && e.data.type === 'response.output_text.delta',
+        );
+        const textDoneEvents = events.filter(
+          (e) => e.data && e.data.type === 'response.output_text.done',
+        );
+
+        // Should have at least one output_text event
+        expect(textDeltaEvents.length + textDoneEvents.length).toBeGreaterThan(0);
+
+        // All output_text.delta events must have logprobs array
+        for (const event of textDeltaEvents) {
+          expect(Array.isArray(event.data.logprobs)).toBe(true);
+        }
+
+        // All output_text.done events must have logprobs array
+        for (const event of textDoneEvents) {
+          expect(Array.isArray(event.data.logprobs)).toBe(true);
         }
       });
     });
@@ -445,16 +711,18 @@ describe('Open Responses API Integration Tests', () => {
 
       // Check for reasoning item in output
       const reasoningItem = response.body.output.find((item) => item.type === 'reasoning');
-      // If reasoning is present, validate its structure
+      // If reasoning is present, validate its structure per Open Responses spec
+      // Note: reasoning items do NOT have a 'status' field per the spec
+      // @see https://github.com/openresponses/openresponses/blob/main/src/generated/kubb/zod/reasoningBodySchema.ts
       if (reasoningItem) {
         expect(reasoningItem).toHaveProperty('id');
         expect(reasoningItem).toHaveProperty('type', 'reasoning');
-        expect(reasoningItem).toHaveProperty('status');
-        expect(reasoningItem).toHaveProperty('content');
-        expect(Array.isArray(reasoningItem.content)).toBe(true);
+        // Note: 'status' is NOT a field on reasoning items per the spec
+        expect(reasoningItem).toHaveProperty('summary');
+        expect(Array.isArray(reasoningItem.summary)).toBe(true);
 
         // Validate content items
-        if (reasoningItem.content.length > 0) {
+        if (reasoningItem.content && reasoningItem.content.length > 0) {
           const reasoningContent = reasoningItem.content[0];
           expect(reasoningContent).toHaveProperty('type', 'reasoning_text');
           expect(reasoningContent).toHaveProperty('text');
@@ -494,23 +762,39 @@ describe('Open Responses API Integration Tests', () => {
 
       const events = parseSSEEvents(response.body);
 
-      // Check for reasoning-related events (may or may not be present)
+      // Validate all events against Open Responses spec
+      const validationErrors = validateAllStreamingEvents(events);
+      if (validationErrors.length > 0) {
+        console.error('Reasoning streaming event validation errors:', validationErrors);
+      }
+      expect(validationErrors).toEqual([]);
+
+      // Check for reasoning-related events using correct event types per Open Responses spec
+      // Note: The spec uses response.reasoning.delta NOT response.reasoning_text.delta
       const reasoningDeltaEvents = events.filter(
-        (e) => e.event === 'response.reasoning_text.delta',
+        (e) => e.data && e.data.type === 'response.reasoning.delta',
       );
-      const reasoningDoneEvents = events.filter((e) => e.event === 'response.reasoning_text.done');
+      const reasoningDoneEvents = events.filter(
+        (e) => e.data && e.data.type === 'response.reasoning.done',
+      );
 
       // If reasoning events are present, validate their structure
       if (reasoningDeltaEvents.length > 0) {
         const deltaEvent = reasoningDeltaEvents[0];
         expect(deltaEvent.data).toHaveProperty('item_id');
         expect(deltaEvent.data).toHaveProperty('delta');
+        expect(deltaEvent.data).toHaveProperty('output_index');
+        expect(deltaEvent.data).toHaveProperty('content_index');
+        expect(deltaEvent.data).toHaveProperty('sequence_number');
       }
 
       if (reasoningDoneEvents.length > 0) {
         const doneEvent = reasoningDoneEvents[0];
         expect(doneEvent.data).toHaveProperty('item_id');
         expect(doneEvent.data).toHaveProperty('text');
+        expect(doneEvent.data).toHaveProperty('output_index');
+        expect(doneEvent.data).toHaveProperty('content_index');
+        expect(doneEvent.data).toHaveProperty('sequence_number');
       }
 
       // Verify stream completed properly
