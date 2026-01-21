@@ -1398,7 +1398,7 @@
   "com_ui_upload_image_input": "Augšupielādēt failu kā attēlu",
   "com_ui_upload_invalid": "Nederīgs augšupielādējamais fails. Attēlam jābūt tādam, kas nepārsniedz ierobežojumu.",
   "com_ui_upload_invalid_var": "Nederīgs augšupielādējams fails. Attēlam jābūt ne lielākam par {{0}} MB",
-  "com_ui_upload_ocr_text": "Augšupielādēt failu kā tekstu",
+  "com_ui_upload_ocr_text": "Augšupielādēt failu kā kontekstu",
   "com_ui_upload_provider": "Augšupielādēt pakalpojumu sniedzējam",
   "com_ui_upload_success": "Fails veiksmīgi augšupielādēts",
   "com_ui_upload_type": "Izvēlieties augšupielādes veidu",
