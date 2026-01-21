@@ -78,8 +78,19 @@ export default function Search() {
     return null;
   }
 
+  const resultsCount = messages?.length ?? 0;
+  const resultsAnnouncement =
+    resultsCount === 0
+      ? localize('com_ui_nothing_found')
+      : resultsCount === 1
+        ? localize('com_ui_result_found', { count: resultsCount })
+        : localize('com_ui_results_found', { count: resultsCount });
+
   return (
     <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
+      <div className="sr-only" role="alert" aria-live="polite" aria-atomic="true">
+        {resultsAnnouncement}
+      </div>
       {(messages && messages.length === 0) || messages == null ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="rounded-lg bg-white p-6 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
