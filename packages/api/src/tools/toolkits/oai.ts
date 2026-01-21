@@ -72,7 +72,7 @@ export const oaiToolkit = {
     name: 'image_gen_oai' as const,
     description: getImageGenDescription(),
     schema: z.object({
-      prompt: z.string().max(32000).describe(getImageGenPromptDescription()),
+      prompt: z.string().max(4000).describe(getImageGenPromptDescription()),
       background: z
         .enum(['transparent', 'opaque', 'auto'])
         .optional()
@@ -125,7 +125,7 @@ Guidelines:
 - If no earlier image is relevant, omit the field entirely.
 `.trim(),
         ),
-      prompt: z.string().max(32000).describe(getImageEditPromptDescription()),
+      prompt: z.string().max(4000).describe(getImageEditPromptDescription()),
       /*
         n: z
           .number()
