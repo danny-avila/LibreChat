@@ -36,6 +36,9 @@
 <a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
   <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
 </a>
+<a href="https://northflank.com/stacks/deploy-librechat">
+  <img src="https://assets.northflank.com/deploy_to_northflank_smm_36700fb050.svg" alt="Deploy on Northflank" height="30">
+</a>
 </p>
 
 <p align="center">
