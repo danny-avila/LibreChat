@@ -272,6 +272,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
         }
 
+        // CRITICAL: Save response message BEFORE emitting final event.
+        // This prevents race conditions where the client sends a follow-up message
+        // before the response is saved to the database, causing orphaned parentMessageIds.
+        if (client.savedMessageIds && !client.savedMessageIds.has(messageId)) {
+          await saveMessage(
+            req,
+            { ...response, user: userId, unfinished: wasAbortedBeforeComplete },
+            { context: 'api/server/controllers/agents/request.js - resumable response end' },
+          );
+        }
+
         if (!wasAbortedBeforeComplete) {
           const finalEvent = {
             final: true,
@@ -284,22 +295,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId);
           await decrementPendingRequest(userId);
-
-          if (client.savedMessageIds && !client.savedMessageIds.has(messageId)) {
-            await saveMessage(
-              req,
-              { ...response, user: userId },
-              { context: 'api/server/controllers/agents/request.js - resumable response end' },
-            );
-          }
         } else {
           const finalEvent = {
             final: true,
             conversation,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
-            responseMessage: { ...response, error: true },
-            error: { message: 'Request was aborted' },
+            responseMessage: { ...response, unfinished: true },
           };
           GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId, 'Request aborted');

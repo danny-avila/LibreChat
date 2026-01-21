@@ -9,6 +9,7 @@ const {
   configMiddleware,
   messageUserLimiter,
 } = require('~/server/middleware');
+const { saveMessage } = require('~/models');
 const { v1 } = require('./v1');
 const chat = require('./chat');
 
@@ -195,8 +196,37 @@ router.post('/chat/abort', async (req, res) => {
 
   if (job && jobStreamId) {
     logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
-    await GenerationJobManager.abortJob(jobStreamId);
+    const abortResult = await GenerationJobManager.abortJob(jobStreamId);
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`);
+
+    // CRITICAL: Save partial response BEFORE returning to prevent race condition.
+    // If user sends a follow-up immediately after abort, the parentMessageId must exist in DB.
+    if (abortResult.success && abortResult.jobData?.userMessage?.messageId) {
+      const { jobData, content } = abortResult;
+      const responseMessage = {
+        messageId: jobData.responseMessageId,
+        parentMessageId: jobData.userMessage.messageId,
+        conversationId: jobData.conversationId,
+        content: content || [],
+        sender: jobData.sender || 'AI',
+        endpoint: jobData.endpoint,
+        model: jobData.model,
+        unfinished: true,
+        error: false,
+        isCreatedByUser: false,
+        user: userId,
+      };
+
+      try {
+        await saveMessage(req, responseMessage, {
+          context: 'api/server/routes/agents/index.js - abort endpoint',
+        });
+        logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
+      } catch (saveError) {
+        logger.error(`[AgentStream] Failed to save partial response: ${saveError.message}`);
+      }
+    }
+
     return res.json({ success: true, aborted: jobStreamId });
   }
 
