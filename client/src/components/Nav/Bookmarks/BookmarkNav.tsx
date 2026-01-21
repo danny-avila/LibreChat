@@ -25,6 +25,13 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
     [tags, localize],
   );
 
+  const buttonAriaLabel = useMemo(() => {
+    if (tags.length === 0) {
+      return localize('com_ui_bookmarks');
+    }
+    return localize('com_ui_bookmarks_count_selected', { count: tags.length });
+  }, [tags.length, localize]);
+
   const bookmarks = useMemo(() => data?.filter((tag) => tag.count > 0) ?? [], [data]);
 
   const handleTagClick = useCallback(
@@ -73,6 +80,7 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
             <BookmarkIcon className="size-4" />
           ),
           onClick: () => handleTagClick(bookmark.tag),
+          ariaChecked: isSelected,
         });
       }
     }
@@ -96,7 +104,8 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
           render={
             <Ariakit.MenuButton
               id="bookmark-nav-menu-button"
-              aria-label={localize('com_ui_bookmarks')}
+              aria-label={buttonAriaLabel}
+              aria-pressed={tags.length > 0}
               className={cn(
                 'flex items-center justify-center',
                 'size-10 border-none text-text-primary hover:bg-accent hover:text-accent-foreground',
