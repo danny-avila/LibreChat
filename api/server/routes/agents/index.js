@@ -197,7 +197,11 @@ router.post('/chat/abort', async (req, res) => {
   if (job && jobStreamId) {
     logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
     const abortResult = await GenerationJobManager.abortJob(jobStreamId);
-    logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`);
+    logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
+      abortResultSuccess: abortResult.success,
+      abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
+      abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
+    });
 
     // CRITICAL: Save partial response BEFORE returning to prevent race condition.
     // If user sends a follow-up immediately after abort, the parentMessageId must exist in DB.

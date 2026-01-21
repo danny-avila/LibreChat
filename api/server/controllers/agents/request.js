@@ -67,7 +67,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   let client = null;
 
   try {
+    logger.debug(`[ResumableAgentController] Creating job`, {
+      streamId,
+      conversationId,
+      reqConversationId,
+      userId,
+    });
+
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
+    const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
 
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
@@ -283,6 +291,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           );
         }
 
+        // Check if our job was replaced by a new request before emitting
+        // This prevents stale requests from emitting events to newer jobs
+        const currentJob = await GenerationJobManager.getJob(streamId);
+        const jobWasReplaced = !currentJob || currentJob.createdAt !== jobCreatedAt;
+
+        if (jobWasReplaced) {
+          logger.debug(`[ResumableAgentController] Skipping FINAL emit - job was replaced`, {
+            streamId,
+            originalCreatedAt: jobCreatedAt,
+            currentCreatedAt: currentJob?.createdAt,
+          });
+          // Still decrement pending request since we incremented at start
+          await decrementPendingRequest(userId);
+          return;
+        }
+
         if (!wasAbortedBeforeComplete) {
           const finalEvent = {
             final: true,
@@ -291,6 +315,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response },
           };
+
+          logger.debug(`[ResumableAgentController] Emitting FINAL event`, {
+            streamId,
+            wasAbortedBeforeComplete,
+            userMessageId: userMessage?.messageId,
+            responseMessageId: response?.messageId,
+            conversationId: conversation?.conversationId,
+          });
 
           GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId);
@@ -303,6 +335,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response, unfinished: true },
           };
+
+          logger.debug(`[ResumableAgentController] Emitting ABORTED FINAL event`, {
+            streamId,
+            wasAbortedBeforeComplete,
+            userMessageId: userMessage?.messageId,
+            responseMessageId: response?.messageId,
+            conversationId: conversation?.conversationId,
+          });
+
           GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId, 'Request aborted');
           await decrementPendingRequest(userId);
