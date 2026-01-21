@@ -114,19 +114,19 @@ const BookmarkMenu: FC = () => {
 
     if (data) {
       for (const tag of data) {
-        const isSelected = tags?.includes(tag.tag);
+        const isSelected = tags?.includes(tag.tag) === true;
         items.push({
           id: tag.tag,
           label: tag.tag,
           hideOnClick: false,
-          icon:
-            isSelected === true ? (
-              <BookmarkFilledIcon className="size-4" />
-            ) : (
-              <BookmarkIcon className="size-4" />
-            ),
+          icon: isSelected ? (
+            <BookmarkFilledIcon className="size-4" />
+          ) : (
+            <BookmarkIcon className="size-4" />
+          ),
           onClick: () => handleSubmit(tag.tag),
           disabled: mutation.isLoading,
+          ariaChecked: isSelected,
         });
       }
     }
@@ -142,14 +142,24 @@ const BookmarkMenu: FC = () => {
     return null;
   }
 
+  const tagsCount = tags?.length ?? 0;
+  const hasBookmarks = tagsCount > 0;
+
+  const buttonAriaLabel = useMemo(() => {
+    if (hasBookmarks) {
+      return localize('com_ui_bookmarks_count_selected', { count: tagsCount });
+    }
+    return localize('com_ui_bookmarks_add');
+  }, [hasBookmarks, tagsCount, localize]);
+
   const renderButtonContent = () => {
     if (mutation.isLoading) {
       return <Spinner aria-label="Spinner" />;
     }
-    if ((tags?.length ?? 0) > 0) {
-      return <BookmarkFilledIcon className="icon-lg" aria-label="Filled Bookmark" />;
+    if (hasBookmarks) {
+      return <BookmarkFilledIcon className="icon-lg" aria-hidden="true" />;
     }
-    return <BookmarkIcon className="icon-lg" aria-label="Bookmark" />;
+    return <BookmarkIcon className="icon-lg" aria-hidden="true" />;
   };
 
   return (
@@ -168,7 +178,8 @@ const BookmarkMenu: FC = () => {
             render={
               <Ariakit.MenuButton
                 id="bookmark-menu-button"
-                aria-label={localize('com_ui_bookmarks_add')}
+                aria-label={buttonAriaLabel}
+                aria-pressed={hasBookmarks}
                 className={cn(
                   'mt-text-sm flex size-10 flex-shrink-0 items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation text-sm transition-colors duration-200 hover:bg-surface-hover',
                   isMenuOpen ? 'bg-surface-hover' : '',
