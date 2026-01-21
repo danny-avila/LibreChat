@@ -73,9 +73,22 @@ function PromptsCommand({
   const prompts = useMemo(() => data?.promptGroups, [data]);
   const promptsMap = useMemo(() => data?.promptsMap, [data]);
 
+  // Add a small static entry for music generation that inserts a concise template into the composer
+  const promptsWithMusic = useMemo(() => {
+    const base = (prompts ?? []) as any[];
+    const musicEntry = {
+      id: 'music_gen',
+      label: 'Generate Music',
+      description: 'Create a music generation prompt (opens composer with a music template)',
+      icon: 'music',
+    } as any;
+    // Prepend music entry so it's easy to find
+    return [musicEntry, ...base];
+  }, [prompts]);
+
   const { open, setOpen, searchValue, setSearchValue, matches } = useCombobox({
     value: '',
-    options: prompts ?? [],
+    options: promptsWithMusic ?? [],
   });
 
   const handleSelect = useCallback(
@@ -90,6 +103,22 @@ function PromptsCommand({
 
       if (textAreaRef.current) {
         removeCharIfLast(textAreaRef.current, commandChar);
+      }
+
+      // Special-case our static music prompt entry
+      if (mention.id === 'music_gen') {
+        // Insert a short editable music prompt template into the composer
+        const template = `Generate music: upbeat electronic music for a dance party\nDuration: 30\nTags: electronic,dance`;
+        submitPrompt(template);
+        setSearchValue('');
+        setOpen(false);
+        setShowPromptsPopover(false);
+        if (textAreaRef.current) {
+          removeCharIfLast(textAreaRef.current, commandChar);
+          // Focus the textarea so the user can edit the inserted template
+          requestAnimationFrame(() => textAreaRef.current?.focus());
+        }
+        return;
       }
 
       const group = promptsMap?.[mention.id];
