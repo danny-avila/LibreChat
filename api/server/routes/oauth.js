@@ -5,10 +5,17 @@ const { randomState } = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
 const { isEnabled, createSetBalanceConfig } = require('@librechat/api');
-const { checkDomainAllowed, loginLimiter, logHeaders, checkBan } = require('~/server/middleware');
+const {
+  checkBan,
+  logHeaders,
+  loginLimiter,
+  checkDomainAllowed,
+  verifyGoogleGroupMembership,
+} = require('~/server/middleware');
 const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const { getAppConfig } = require('~/server/services/Config');
+const { getGoogleScopes } = require('~/strategies/googleStrategy');
 const { Balance } = require('~/db/models');
 
 const setBalanceConfig = createSetBalanceConfig({
@@ -62,14 +69,13 @@ router.get('/error', (req, res) => {
 
   res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
 });
-
 /**
  * Google Routes
  */
 router.get(
   '/google',
   passport.authenticate('google', {
-    scope: ['openid', 'profile', 'email'],
+    scope: getGoogleScopes(),
     session: false,
   }),
 );
@@ -80,8 +86,9 @@ router.get(
     failureRedirect: `${domains.client}/oauth/error`,
     failureMessage: true,
     session: false,
-    scope: ['openid', 'profile', 'email'],
+    scope: getGoogleScopes(),
   }),
+  verifyGoogleGroupMembership,
   setBalanceConfig,
   checkDomainAllowed,
   oauthHandler,
