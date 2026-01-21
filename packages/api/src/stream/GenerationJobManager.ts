@@ -1,9 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import type { StandardGraph } from '@librechat/agents';
-import type { Agents } from 'librechat-data-provider';
+import { parseTextParts } from 'librechat-data-provider';
+import type { Agents, TMessageContentParts } from 'librechat-data-provider';
 import type {
   SerializableJobData,
   IEventTransport,
+  UsageMetadata,
   AbortResult,
   IJobStore,
 } from './interfaces/IJobStore';
@@ -585,7 +587,14 @@ class GenerationJobManagerClass {
 
     if (!jobData) {
       logger.warn(`[GenerationJobManager] Cannot abort - job not found: ${streamId}`);
-      return { success: false, jobData: null, content: [], finalEvent: null };
+      return {
+        text: '',
+        content: [],
+        jobData: null,
+        success: false,
+        finalEvent: null,
+        collectedUsage: [],
+      };
     }
 
     // Emit abort signal for cross-replica support (Redis mode)
@@ -599,15 +608,21 @@ class GenerationJobManagerClass {
       runtime.abortController.abort();
     }
 
-    // Get content before clearing state
+    /** Content before clearing state */
     const result = await this.jobStore.getContentParts(streamId);
     const content = result?.content ?? [];
 
-    // Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
-    // In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation
+    /** Collected usage for all models */
+    const collectedUsage = this.jobStore.getCollectedUsage(streamId);
+
+    /** Text from content parts for fallback token counting */
+    const text = parseTextParts(content as TMessageContentParts[]);
+
+    /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
+    In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
     const isEarlyAbort = content.length === 0 && !jobData.responseMessageId;
 
-    // Create final event for abort
+    /** Final event for abort */
     const userMessageId = jobData.userMessage?.messageId;
 
     const abortFinalEvent: t.ServerSentEvent = {
@@ -669,6 +684,8 @@ class GenerationJobManagerClass {
       jobData,
       content,
       finalEvent: abortFinalEvent,
+      text,
+      collectedUsage,
     };
   }
 
@@ -931,6 +948,18 @@ class GenerationJobManagerClass {
       return;
     }
     this.jobStore.setContentParts(streamId, contentParts);
+  }
+
+  /**
+   * Set reference to the collectedUsage array.
+   * This array accumulates token usage from all models during generation.
+   */
+  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void {
+    // Use runtime state check for performance (sync check)
+    if (!this.runtimeState.has(streamId)) {
+      return;
+    }
+    this.jobStore.setCollectedUsage(streamId, collectedUsage);
   }
 
   /**
