@@ -99,6 +99,16 @@ const BookmarkMenu: FC = () => {
 
   const newBookmarkRef = useRef<HTMLButtonElement>(null);
 
+  const tagsCount = tags?.length ?? 0;
+  const hasBookmarks = tagsCount > 0;
+
+  const buttonAriaLabel = useMemo(() => {
+    if (tagsCount > 0) {
+      return localize('com_ui_bookmarks_count_selected', { count: tagsCount });
+    }
+    return localize('com_ui_bookmarks_add');
+  }, [tagsCount, localize]);
+
   const dropdownItems: t.MenuItemProps[] = useMemo(() => {
     const items: t.MenuItemProps[] = [
       {
@@ -141,16 +151,6 @@ const BookmarkMenu: FC = () => {
   if (isTemporary) {
     return null;
   }
-
-  const tagsCount = tags?.length ?? 0;
-  const hasBookmarks = tagsCount > 0;
-
-  const buttonAriaLabel = useMemo(() => {
-    if (hasBookmarks) {
-      return localize('com_ui_bookmarks_count_selected', { count: tagsCount });
-    }
-    return localize('com_ui_bookmarks_add');
-  }, [hasBookmarks, tagsCount, localize]);
 
   const renderButtonContent = () => {
     if (mutation.isLoading) {
