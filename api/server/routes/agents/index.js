@@ -195,6 +195,11 @@ router.post('/chat/abort', async (req, res) => {
   logger.debug(`[AgentStream] Computed jobStreamId: ${jobStreamId}`);
 
   if (job && jobStreamId) {
+    if (job.metadata?.userId && job.metadata.userId !== userId) {
+      logger.warn(`[AgentStream] Unauthorized abort attempt for ${jobStreamId} by user ${userId}`);
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
     logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
     const abortResult = await GenerationJobManager.abortJob(jobStreamId);
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
@@ -205,13 +210,19 @@ router.post('/chat/abort', async (req, res) => {
 
     // CRITICAL: Save partial response BEFORE returning to prevent race condition.
     // If user sends a follow-up immediately after abort, the parentMessageId must exist in DB.
-    if (abortResult.success && abortResult.jobData?.userMessage?.messageId) {
-      const { jobData, content } = abortResult;
+    // Only save if we have a valid responseMessageId (skip early aborts before generation started)
+    if (
+      abortResult.success &&
+      abortResult.jobData?.userMessage?.messageId &&
+      abortResult.jobData?.responseMessageId
+    ) {
+      const { jobData, content, text } = abortResult;
       const responseMessage = {
         messageId: jobData.responseMessageId,
         parentMessageId: jobData.userMessage.messageId,
         conversationId: jobData.conversationId,
         content: content || [],
+        text: text || '',
         sender: jobData.sender || 'AI',
         endpoint: jobData.endpoint,
         model: jobData.model,
@@ -230,6 +241,10 @@ router.post('/chat/abort', async (req, res) => {
         logger.error(`[AgentStream] Failed to save partial response: ${saveError.message}`);
       }
     }
+
+    // TODO: Token spending for aborted requests should be added here
+    // Similar to abortMiddleware.js, using abortResult.collectedUsage
+    // This is tracked as a follow-up improvement
 
     return res.json({ success: true, aborted: jobStreamId });
   }
