@@ -1,7 +1,7 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
 const { DynamicStructuredTool } = require('@langchain/core/tools');
-const { getBufferString, HumanMessage } = require('@langchain/core/messages');
+const { getBufferString, HumanMessage, AIMessage, SystemMessage } = require('@langchain/core/messages');
 const {
   createRun,
   Tokenizer,
@@ -52,6 +52,28 @@ const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
+
+/**
+ * Convert compacted Responses API format messages back to LangChain BaseMessage format
+ * @param {Array<{role: string, content: string | Array}>} compactedInput - Compacted messages from /responses/compact
+ * @returns {import('@langchain/core/messages').BaseMessage[]} LangChain messages
+ */
+function convertCompactedToLangChainMessages(compactedInput) {
+  return compactedInput.map((msg) => {
+    const content = msg.content;
+    switch (msg.role) {
+      case 'user':
+        return new HumanMessage({ content });
+      case 'assistant':
+        return new AIMessage({ content });
+      case 'system':
+        return new SystemMessage({ content });
+      default:
+        // Fallback to HumanMessage for unknown roles
+        return new HumanMessage({ content });
+    }
+  });
+}
 
 const omitTitleOptions = new Set([
   'stream',
@@ -1013,8 +1035,14 @@ class AgentClient extends BaseClient {
               logger.debug(
                 `[AgentClient] Compacted conversation: ${result.originalTokens} -> ${result.compactedTokens} tokens`,
               );
-              // Note: The compacted input would need to be used directly with the Responses API
-              // For now, we just log the compaction - full integration requires @librechat/agents changes
+              // Convert compacted input back to LangChain messages and use them
+              const compactedMessages = convertCompactedToLangChainMessages(result.compactedInput);
+              initialMessages = compactedMessages;
+              // Reset token count map since messages have been compacted
+              indexTokenCountMap = {};
+              logger.debug(
+                `[AgentClient] Using ${compactedMessages.length} compacted messages instead of original`,
+              );
             }
           }
         } catch (compactionError) {
