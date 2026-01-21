@@ -101,6 +101,7 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
                 'flex items-center justify-center',
                 'size-10 border-none text-text-primary hover:bg-accent hover:text-accent-foreground',
                 'rounded-full border-none p-2 hover:bg-surface-active-alt md:rounded-xl',
+                'outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white',
                 isMenuOpen ? 'bg-surface-hover' : '',
               )}
               data-testid="bookmark-menu"
