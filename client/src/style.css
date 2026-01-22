@@ -2666,6 +2666,9 @@ html {
 .select-item[data-active-item] {
   background-color: var(--surface-hover);
   color: var(--text-primary);
+}
+
+.account-settings-popover .select-item[data-active-item] {
   box-shadow: 0 0 0 2px hsl(var(--ring));
 }
 
