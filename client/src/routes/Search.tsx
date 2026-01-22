@@ -64,6 +64,17 @@ export default function Search() {
     }
   }, [isError, searchQuery, showToast]);
 
+  const resultsCount = messages?.length ?? 0;
+  const resultsAnnouncement = useMemo(() => {
+    if (resultsCount === 0) {
+      return localize('com_ui_nothing_found');
+    }
+    if (resultsCount === 1) {
+      return localize('com_ui_result_found', { count: resultsCount });
+    }
+    return localize('com_ui_results_found', { count: resultsCount });
+  }, [resultsCount, localize]);
+
   const isSearchLoading = search.isTyping || isLoading || isFetchingNextPage;
 
   if (isSearchLoading) {
@@ -77,17 +88,6 @@ export default function Search() {
   if (!searchQuery) {
     return null;
   }
-
-  const resultsCount = messages?.length ?? 0;
-  const resultsAnnouncement = (() => {
-    if (resultsCount === 0) {
-      return localize('com_ui_nothing_found');
-    }
-    if (resultsCount === 1) {
-      return localize('com_ui_result_found', { count: resultsCount });
-    }
-    return localize('com_ui_results_found', { count: resultsCount });
-  })();
 
   return (
     <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
