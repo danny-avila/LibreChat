@@ -10,7 +10,6 @@ import {
   startTransition,
 } from 'react';
 import { useRecoilValue } from 'recoil';
-import { motion } from 'framer-motion';
 import { Skeleton, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
@@ -278,24 +277,17 @@ const Nav = memo(
       );
     }
 
-    // Desktop: Inline sidebar with width transition
+    // Desktop: Rendered inside ResizablePanel in Root.tsx
     return (
       <div
-        className="flex-shrink-0 overflow-hidden"
-        style={{ width: navVisible ? sidebarWidth : 0, transition: 'width 0.2s ease-out' }}
+        data-testid="nav"
+        className={cn(
+          'nav h-full bg-surface-primary-alt',
+          navVisible && 'active',
+          !navVisible && 'hidden',
+        )}
       >
-        <motion.div
-          data-testid="nav"
-          className={cn('nav h-full bg-surface-primary-alt', navVisible && 'active')}
-          style={{ width: sidebarWidth }}
-          initial={false}
-          animate={{
-            x: navVisible ? 0 : -sidebarWidth,
-          }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-        >
-          {sidebarContent}
-        </motion.div>
+        {sidebarContent}
       </div>
     );
   },
