@@ -292,9 +292,11 @@ class E2BDataAnalystAgent {
               message = { role: 'assistant', content: '' };
               // Don't initialize tool_calls as empty array - only add it if needed
               let tokenCount = 0;
+              let finishReason = null; // Capture finish_reason
               
               for await (const chunk of response) {
                 const delta = chunk.choices[0]?.delta;
+                const choice = chunk.choices[0];
               
               if (delta?.content) {
                 message.content += delta.content;
@@ -336,11 +338,19 @@ class E2BDataAnalystAgent {
                   }
                 }
               }
+              
+              // Capture finish_reason from the last chunk
+              if (choice?.finish_reason) {
+                finishReason = choice.finish_reason;
+              }
             }
             
             if (tokenCount > 0) {
-              logger.info(`[E2BAgent] ✓ Streamed ${tokenCount} tokens, total content: ${message.content.length} chars`);
+              logger.info(`[E2BAgent] ✓ Streamed ${tokenCount} tokens, total content: ${message.content.length} chars, finish_reason: ${finishReason}`);
             }
+            
+            // Store finish_reason on message for later use
+            message.finish_reason = finishReason;
             
             messages.push(message);
             
@@ -356,11 +366,18 @@ class E2BDataAnalystAgent {
               shouldExitMainLoop = true; // LLM主动决定完成，立即停止
             }
 
-            // 如果没有工具调用，跳过工具执行，继续下一次迭代
+            // 如果没有工具调用，检查 finish_reason 决定是否停止
             if (!message.tool_calls || message.tool_calls.length === 0) {
-              logger.info(`[E2BAgent] No tool calls in this iteration. LLM returned text only. Continuing to next iteration (${iteration}/${this.maxIterations})`);
-              // 跳过工具执行部分，直接进入下一次迭代
-              continue; // Skip to next iteration
+              // finish_reason 为 'stop' 表示 LLM 认为对话已完成（例如简单问答）
+              if (message.finish_reason === 'stop') {
+                logger.info(`[E2BAgent] No tool calls and finish_reason is 'stop' - LLM completed the response. Exiting loop.`);
+                shouldExitMainLoop = true;
+                break; // Exit immediately
+              } else {
+                // 其他情况（如 finish_reason 为 'length' 或其他），继续迭代
+                logger.info(`[E2BAgent] No tool calls in this iteration (finish_reason: ${message.finish_reason}). Continuing to next iteration (${iteration}/${this.maxIterations})`);
+                continue; // Skip to next iteration
+              }
             }
 
             // 5. 执行工具调用 (ReAct 模式)
