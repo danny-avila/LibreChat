@@ -702,6 +702,13 @@ class BaseClient {
       this.abortController.requestCompleted = true;
     }
 
+    logger.info('[BaseClient.sendMessage] Received completion with metadata', {
+      hasMetadata: !!metadata,
+      metadataKeys: metadata ? Object.keys(metadata) : [],
+      probLog: metadata?.prob_log,
+      existingMetadata: this.metadata,
+    });
+
     /** @type {TMessage} */
     const responseMessage = {
       messageId: responseMessageId,
@@ -715,8 +722,17 @@ class BaseClient {
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
-      metadata: Object.keys(metadata ?? {}).length > 0 ? metadata : undefined,
+      metadata:
+        Object.keys(metadata ?? {}).length > 0
+          ? { ...(this.metadata?.metadata ?? {}), ...metadata }
+          : this.metadata?.metadata,
     };
+
+    logger.info('[BaseClient.sendMessage] Final responseMessage metadata', {
+      hasMetadata: !!responseMessage.metadata,
+      metadataKeys: responseMessage.metadata ? Object.keys(responseMessage.metadata) : [],
+      probLog: responseMessage.metadata?.prob_log,
+    });
 
     if (typeof completion === 'string') {
       responseMessage.text = completion;

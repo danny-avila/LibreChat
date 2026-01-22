@@ -79,6 +79,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const collectedUsage = [];
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
+  /** @type {{ tokenProbability: number | null }} - Reference object to store token probability */
+  const tokenProbabilityRef = { tokenProbability: null };
   const { contentParts, aggregateContent } = createContentAggregator();
   const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
   const eventHandlers = getDefaultHandlers({
@@ -87,6 +89,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolEndCallback,
     collectedUsage,
     streamId,
+    tokenProbabilityRef,
   });
 
   if (!endpointOption.agent) {
@@ -305,6 +308,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     collectedUsage,
     aggregateContent,
     artifactPromises,
+    tokenProbabilityRef,
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,

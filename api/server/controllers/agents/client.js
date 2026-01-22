@@ -249,6 +249,7 @@ class AgentClient extends BaseClient {
       contentParts,
       collectedUsage,
       artifactPromises,
+      tokenProbabilityRef,
       maxContextTokens,
       ...clientOptions
     } = options;
@@ -261,6 +262,10 @@ class AgentClient extends BaseClient {
     this.collectedUsage = collectedUsage;
     /** @type {ArtifactPromises} */
     this.artifactPromises = artifactPromises;
+    /** @type {{ tokenProbability: number | null }} - Reference object to store token probability */
+    this.tokenProbabilityRef = tokenProbabilityRef || { tokenProbability: null };
+    /** @type {number | null} - Token probability (0-100) extracted from logprobs */
+    this.tokenProbability = null;
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
@@ -785,7 +790,15 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
-    return { completion };
+    // Get token probability from reference object (set by ModelEndHandler)
+    const probLog = this.tokenProbabilityRef?.tokenProbability ?? null;
+    logger.info('[AgentClient.sendCompletion] Returning completion with metadata', {
+      hasProbLog: probLog != null,
+      probLog,
+      tokenProbabilityRef: this.tokenProbabilityRef,
+    });
+    const metadata = probLog != null ? { prob_log: probLog } : {};
+    return { completion, metadata };
   }
 
   /**

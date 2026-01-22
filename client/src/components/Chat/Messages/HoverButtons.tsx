@@ -6,6 +6,7 @@ import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
+import TokenProbabilityIndicator from './TokenProbabilityIndicator';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -184,90 +185,127 @@ const HoverButtons = ({
 
   const handleCopy = () => copyToClipboard(setIsCopied);
 
+  // Extract token probability from message metadata
+  const probLog = useMemo(() => {
+    if (message.metadata && typeof message.metadata === 'object' && 'prob_log' in message.metadata) {
+      const value = message.metadata.prob_log;
+      if (typeof value === 'number') {
+        // If value is between 0 and 1, convert to percentage (0-100)
+        // Otherwise assume it's already a percentage
+        return value <= 1 ? value * 100 : value;
+      }
+      // Handle case where it might be stored as a string
+      if (typeof value === 'string') {
+        const parsed = parseFloat(value);
+        if (isNaN(parsed)) {
+          return null;
+        }
+        // If parsed value is between 0 and 1, convert to percentage
+        return parsed <= 1 ? parsed * 100 : parsed;
+      }
+    }
+    return null;
+  }, [message.metadata]);
+
   return (
-    <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
-      {/* Text to Speech */}
-      {TextToSpeech && (
-        <MessageAudio
-          index={index}
+    <div className="flex w-full items-center justify-between gap-3">
+      {/* Button Group - Left Side */}
+      <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
+        {/* Text to Speech */}
+        {TextToSpeech && (
+          <MessageAudio
+            index={index}
+            isLast={isLast}
+            messageId={message.messageId}
+            content={extractMessageContent(message)}
+            renderButton={(props) => (
+              <HoverButton
+                onClick={props.onClick}
+                title={props.title}
+                icon={props.icon}
+                isActive={props.isActive}
+                isLast={isLast}
+              />
+            )}
+          />
+        )}
+
+        {/* Copy Button */}
+        <HoverButton
+          onClick={handleCopy}
+          title={
+            isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
+          }
+          icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
           isLast={isLast}
-          messageId={message.messageId}
-          content={extractMessageContent(message)}
-          renderButton={(props) => (
-            <HoverButton
-              onClick={props.onClick}
-              title={props.title}
-              icon={props.icon}
-              isActive={props.isActive}
-              isLast={isLast}
-            />
+          className={cn(
+            'ml-0 flex items-center gap-1.5 text-xs',
+            isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
           )}
         />
-      )}
 
-      {/* Copy Button */}
-      <HoverButton
-        onClick={handleCopy}
-        title={
-          isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
-        }
-        icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
-        isLast={isLast}
-        className={cn(
-          'ml-0 flex items-center gap-1.5 text-xs',
-          isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
+        {/* Edit Button */}
+        {isEditableEndpoint && (
+          <HoverButton
+            id={`edit-${message.messageId}`}
+            onClick={onEdit}
+            title={localize('com_ui_edit')}
+            icon={<EditIcon size="19" />}
+            isActive={isEditing}
+            isVisible={!hideEditButton}
+            isDisabled={hideEditButton}
+            isLast={isLast}
+            className={isCreatedByUser ? '' : 'active'}
+          />
         )}
-      />
 
-      {/* Edit Button */}
-      {isEditableEndpoint && (
-        <HoverButton
-          id={`edit-${message.messageId}`}
-          onClick={onEdit}
-          title={localize('com_ui_edit')}
-          icon={<EditIcon size="19" />}
-          isActive={isEditing}
-          isVisible={!hideEditButton}
-          isDisabled={hideEditButton}
+        {/* Fork Button */}
+        <Fork
+          messageId={message.messageId}
+          conversationId={conversation.conversationId}
+          forkingSupported={forkingSupported}
+          latestMessageId={latestMessage?.messageId}
           isLast={isLast}
-          className={isCreatedByUser ? '' : 'active'}
         />
-      )}
 
-      {/* Fork Button */}
-      <Fork
-        messageId={message.messageId}
-        conversationId={conversation.conversationId}
-        forkingSupported={forkingSupported}
-        latestMessageId={latestMessage?.messageId}
-        isLast={isLast}
-      />
+        {/* Feedback Buttons */}
+        {!isCreatedByUser && handleFeedback != null && (
+          <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
+        )}
 
-      {/* Feedback Buttons */}
-      {!isCreatedByUser && handleFeedback != null && (
-        <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
-      )}
+        {/* Regenerate Button */}
+        {regenerateEnabled && (
+          <HoverButton
+            onClick={regenerate}
+            title={localize('com_ui_regenerate')}
+            icon={<RegenerateIcon size="19" />}
+            isLast={isLast}
+            className="active"
+          />
+        )}
 
-      {/* Regenerate Button */}
-      {regenerateEnabled && (
-        <HoverButton
-          onClick={regenerate}
-          title={localize('com_ui_regenerate')}
-          icon={<RegenerateIcon size="19" />}
-          isLast={isLast}
-          className="active"
-        />
-      )}
+        {/* Continue Button */}
+        {continueSupported && (
+          <HoverButton
+            onClick={(e) => e && handleContinue(e)}
+            title={localize('com_ui_continue')}
+            icon={<ContinueIcon className="w-19 h-19 -rotate-180" />}
+            isLast={isLast}
+            className="active"
+          />
+        )}
+      </div>
 
-      {/* Continue Button */}
-      {continueSupported && (
-        <HoverButton
-          onClick={(e) => e && handleContinue(e)}
-          title={localize('com_ui_continue')}
-          icon={<ContinueIcon className="w-19 h-19 -rotate-180" />}
-          isLast={isLast}
-          className="active"
-        />
+      {/* Token Probability Indicator - Right Side, Only show for AI responses */}
+      {!isCreatedByUser && probLog != null && (
+        <div
+          className={cn(
+            'flex items-center justify-center',
+            !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
+          )}
+        >
+          <TokenProbabilityIndicator value={probLog} size={12} />
+        </div>
       )}
     </div>
   );

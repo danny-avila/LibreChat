@@ -1,5 +1,6 @@
 import { Run, Providers } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
 import type {
   MultiAgentGraphConfig,
   OpenAIClientOptions,
@@ -99,6 +100,41 @@ export async function createRun({
       },
       agent.model_parameters,
     );
+
+    // Enable logprobs for OpenAI and Google models that support it
+    // This allows us to extract token probabilities for confidence indicators
+    // Note: Reasoning models (o1, o3, gpt-5) don't support logprobs
+    const modelName = (llmConfig.model as string) || '';
+    const isReasoningModel = /\b(o[13]|gpt-5)(?!\.|-chat)(?:-|$)/.test(modelName);
+    const isSearchModel = /gpt-4o.*search/.test(modelName);
+
+    if (
+      (provider === Providers.OPENAI || provider === Providers.AZURE || provider === Providers.GOOGLE) &&
+      llmConfig.logprobs === undefined &&
+      !isReasoningModel &&
+      !isSearchModel
+    ) {
+      // Enable logprobs with top_logprobs=1 to get the probability of the chosen token
+      llmConfig.logprobs = true;
+      if (llmConfig.topLogprobs === undefined) {
+        llmConfig.topLogprobs = 1;
+      }
+      logger.info('[createRun] Enabled logprobs for model', {
+        provider,
+        model: modelName,
+        logprobs: llmConfig.logprobs,
+        topLogprobs: llmConfig.topLogprobs,
+      });
+    } else {
+      logger.info('[createRun] Logprobs configuration', {
+        provider,
+        model: modelName,
+        logprobs: llmConfig.logprobs,
+        isReasoningModel,
+        isSearchModel,
+        willEnable: false,
+      });
+    }
 
     const systemMessage = Object.values(agent.toolContextMap ?? {})
       .join('\n')

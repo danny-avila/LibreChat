@@ -15,16 +15,19 @@ const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { saveBase64Image } = require('~/server/services/Files/process');
+const { extractTokenProbability } = require('~/server/utils/extractLogprobs');
 
 class ModelEndHandler {
   /**
    * @param {Array<UsageMetadata>} collectedUsage
+   * @param {{ tokenProbability: number | null }} tokenProbabilityRef - Reference object to store token probability
    */
-  constructor(collectedUsage) {
+  constructor(collectedUsage, tokenProbabilityRef = null) {
     if (!Array.isArray(collectedUsage)) {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
+    this.tokenProbabilityRef = tokenProbabilityRef;
   }
 
   finalize(errorMessage) {
@@ -53,6 +56,15 @@ class ModelEndHandler {
       const agentContext = graph.getAgentContext(metadata);
       const isGoogle = agentContext.provider === Providers.GOOGLE;
       const streamingDisabled = !!agentContext.clientOptions?.disableStreaming;
+      
+      logger.info('[ModelEndHandler] Event received:', {
+        event,
+        provider: agentContext.provider,
+        hasOutput: !!data?.output,
+        hasTokenProbabilityRef: !!this.tokenProbabilityRef,
+        outputKeys: data?.output ? Object.keys(data.output) : [],
+      });
+
       if (data?.output?.additional_kwargs?.stop_reason === 'refusal') {
         const info = { ...data.output.additional_kwargs };
         errorMessage = JSON.stringify({
@@ -80,6 +92,51 @@ class ModelEndHandler {
       }
       if (isGoogle || streamingDisabled || hasUnprocessedToolCalls) {
         await handleToolCalls(toolCalls, metadata, graph);
+      }
+
+      // Extract token probability from response if logprobs are available
+      if (this.tokenProbabilityRef && data?.output) {
+        logger.info('[ModelEndHandler] Attempting to extract token probability', {
+          hasResponseMetadata: !!data.output.response_metadata,
+          hasAdditionalKwargs: !!data.output.additional_kwargs,
+          responseMetadataKeys: data.output.response_metadata ? Object.keys(data.output.response_metadata) : [],
+          additionalKwargsKeys: data.output.additional_kwargs ? Object.keys(data.output.additional_kwargs) : [],
+          outputKeys: Object.keys(data.output),
+        });
+        
+        // Log the full output structure for debugging
+        try {
+          const outputStr = JSON.stringify(data.output, null, 2);
+          console.log('[ModelEndHandler] Full output structure (first 5000 chars):', outputStr.substring(0, 5000));
+          logger.info('[ModelEndHandler] Full output structure length:', outputStr.length);
+          if (outputStr.length > 5000) {
+            console.log('[ModelEndHandler] Full output structure (remaining):', outputStr.substring(5000, 10000));
+          }
+        } catch (e) {
+          logger.error('[ModelEndHandler] Error stringifying output:', e);
+          console.log('[ModelEndHandler] Output keys:', Object.keys(data.output || {}));
+          console.log('[ModelEndHandler] Output sample:', {
+            content: data.output?.content,
+            response_metadata: data.output?.response_metadata,
+            additional_kwargs: data.output?.additional_kwargs,
+          });
+        }
+        
+        const probLog = extractTokenProbability(data.output);
+        if (probLog != null) {
+          this.tokenProbabilityRef.tokenProbability = probLog;
+          logger.info('[ModelEndHandler] Successfully extracted token probability:', probLog);
+        } else {
+          logger.warn('[ModelEndHandler] No token probability found in response', {
+            responseMetadata: data.output.response_metadata,
+            additionalKwargs: data.output.additional_kwargs,
+          });
+        }
+      } else {
+        logger.warn('[ModelEndHandler] Cannot extract token probability', {
+          hasTokenProbabilityRef: !!this.tokenProbabilityRef,
+          hasOutput: !!data?.output,
+        });
       }
 
       const usage = data?.output?.usage_metadata;
@@ -166,6 +223,7 @@ function emitEvent(res, streamId, eventData) {
  * @param {ToolEndCallback} options.toolEndCallback - Callback to use when tool ends.
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
+ * @param {{ tokenProbability: number | null }} [options.tokenProbabilityRef] - Reference object to store token probability.
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
  */
@@ -175,6 +233,7 @@ function getDefaultHandlers({
   toolEndCallback,
   collectedUsage,
   streamId = null,
+  tokenProbabilityRef = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -182,7 +241,7 @@ function getDefaultHandlers({
     );
   }
   const handlers = {
-    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
+    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage, tokenProbabilityRef),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.CHAT_MODEL_STREAM]: new ChatModelStreamHandler(),
     [GraphEvents.ON_RUN_STEP]: {
