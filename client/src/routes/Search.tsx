@@ -79,12 +79,15 @@ export default function Search() {
   }
 
   const resultsCount = messages?.length ?? 0;
-  const resultsAnnouncement =
-    resultsCount === 0
-      ? localize('com_ui_nothing_found')
-      : resultsCount === 1
-        ? localize('com_ui_result_found', { count: resultsCount })
-        : localize('com_ui_results_found', { count: resultsCount });
+  const resultsAnnouncement = (() => {
+    if (resultsCount === 0) {
+      return localize('com_ui_nothing_found');
+    }
+    if (resultsCount === 1) {
+      return localize('com_ui_result_found', { count: resultsCount });
+    }
+    return localize('com_ui_results_found', { count: resultsCount });
+  })();
 
   return (
     <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
