@@ -533,6 +533,7 @@
   "com_nav_log_out": "Log out",
   "com_nav_long_audio_warning": "Longer texts will take longer to process.",
   "com_nav_maximize_chat_space": "Maximize chat space",
+  "com_nav_mcp_access_revoked": "MCP server access revoked successfully.",
   "com_nav_mcp_configure_server": "Configure {{0}}",
   "com_nav_mcp_connect": "Connect",
   "com_nav_mcp_connect_server": "Connect {{0}}",

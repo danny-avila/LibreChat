@@ -584,8 +584,7 @@ describe('GenerationJobManager Integration Tests', () => {
       };
       GenerationJobManager.emitDone(streamId, finalEventData as never);
 
-      // Wait for async Redis update
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Verify finalEvent is in Redis
       const jobStore = services.jobStore;

@@ -43,10 +43,9 @@
     "@azure/search-documents": "^12.0.0",
     "@azure/storage-blob": "^12.27.0",
     "@google/genai": "^1.19.0",
-    "@googleapis/youtube": "^20.0.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.80",
-    "@librechat/agents": "^3.0.66",
+    "@librechat/agents": "^3.0.77",
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",
@@ -112,7 +111,6 @@
     "undici": "^7.10.0",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "youtube-transcript": "^1.2.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
