@@ -1,7 +1,6 @@
 import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
-import { CodeBlock } from '@clickhouse/click-ui';
 import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress } from '~/hooks';
@@ -101,23 +100,6 @@ export default function ToolCall({
 
   const progress = useProgress(initialProgress);
   const cancelled = (!isSubmitting && progress < 1) || error === true;
-
-  const isClickHouseQuery = useMemo(
-    () => domain?.toLowerCase().includes('clickhouse') && function_name === 'run_select_query',
-    [domain, function_name],
-  );
-
-  const parsedQuery = useMemo(() => {
-    if (!isClickHouseQuery || !args) {
-      return null;
-    }
-    try {
-      const parsed = JSON.parse(args);
-      return parsed.query && typeof parsed.query === 'string' ? parsed.query : null;
-    } catch {
-      return null;
-    }
-  }, [isClickHouseQuery, args]);
 
   const getFinishedText = () => {
     if (cancelled) {
@@ -229,11 +211,6 @@ export default function ToolCall({
           <div ref={contentRef}>
             {showInfo && hasInfo && (
               <>
-                {parsedQuery && (
-                  <div className="clickhouse-codeblock m-2">
-                    <CodeBlock language="sql">{parsedQuery}</CodeBlock>
-                  </div>
-                )}
                 <ToolCallInfo
                   key="tool-call-info"
                   input={args ?? ''}

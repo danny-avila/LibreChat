@@ -1,9 +1,10 @@
-import React from 'react';
-import { useLocalize } from '~/hooks';
+import { useMemo } from 'react';
 import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import UIResourceCarousel from './UIResourceCarousel';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
+import { useLocalize } from '~/hooks';
+import InputTabs from './InputTabs';
 
 function OptimizedCodeBlock({ text, maxHeight = 320 }: { text: string; maxHeight?: number }) {
   return (
@@ -46,6 +47,23 @@ export default function ToolCallInfo({
     }
   };
 
+  const isClickHouseQuery = useMemo(
+    () => domain?.toLowerCase().includes('clickhouse') && function_name === 'run_select_query',
+    [domain, function_name],
+  );
+
+  const parsedQuery = useMemo(() => {
+    if (!isClickHouseQuery || !input) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(input);
+      return parsed.query && typeof parsed.query === 'string' ? parsed.query : null;
+    } catch {
+      return null;
+    }
+  }, [isClickHouseQuery, input]);
+
   let title =
     domain != null && domain
       ? localize('com_assistants_domain_info', { 0: domain })
@@ -69,7 +87,11 @@ export default function ToolCallInfo({
       <div style={{ opacity: 1 }}>
         <div className="mb-2 text-sm font-medium text-text-primary">{title}</div>
         <div>
-          <OptimizedCodeBlock text={formatText(input)} maxHeight={250} />
+          {isClickHouseQuery && parsedQuery ? (
+            <InputTabs input={formatText(input)} query={parsedQuery} maxHeight={250} />
+          ) : (
+            <OptimizedCodeBlock text={formatText(input)} maxHeight={250} />
+          )}
         </div>
         {output && (
           <>
