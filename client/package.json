@@ -111,7 +111,6 @@
     "remark-math": "^6.0.0",
     "remark-supersub": "^1.0.0",
     "sse.js": "^2.5.0",
-    "styled-components": "^6.1.13",
     "swr": "^2.3.8",
     "tailwind-merge": "^1.9.1",
     "tailwindcss-animate": "^1.0.5",
