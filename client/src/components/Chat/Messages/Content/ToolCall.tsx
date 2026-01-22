@@ -210,17 +210,15 @@ export default function ToolCall({
         >
           <div ref={contentRef}>
             {showInfo && hasInfo && (
-              <>
-                <ToolCallInfo
-                  key="tool-call-info"
-                  input={args ?? ''}
-                  output={output}
-                  domain={authDomain || (domain ?? '')}
-                  function_name={function_name}
-                  pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
-                  attachments={attachments}
-                />
-              </>
+              <ToolCallInfo
+                key="tool-call-info"
+                input={args ?? ''}
+                output={output}
+                domain={authDomain || (domain ?? '')}
+                function_name={function_name}
+                pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
+                attachments={attachments}
+              />
             )}
           </div>
         </div>
