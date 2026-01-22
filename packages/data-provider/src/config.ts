@@ -1020,6 +1020,7 @@ export type TProviderSchema =
   | undefined;
 
 export enum KnownEndpoints {
+  'ai-gateway' = 'ai-gateway',
   anyscale = 'anyscale',
   apipie = 'apipie',
   cohere = 'cohere',
@@ -1067,6 +1068,7 @@ export const alternateName = {
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
   [EModelEndpoint.bedrock]: 'AWS Bedrock',
+  [KnownEndpoints['ai-gateway']]: 'Vercel AI Gateway',
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.xai]: 'xAI',
@@ -1856,6 +1858,7 @@ export const providerEndpointMap = {
   [EModelEndpoint.bedrock]: EModelEndpoint.bedrock,
   [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
   [EModelEndpoint.azureOpenAI]: EModelEndpoint.azureOpenAI,
+  [KnownEndpoints['ai-gateway']]: EModelEndpoint.openAI,
 };
 
 export const specialVariables = {

@@ -124,6 +124,7 @@ export function getOpenAILLMConfig({
   dropParams,
   defaultParams,
   useOpenRouter,
+  useAIGateway,
   modelOptions: _modelOptions,
 }: {
   apiKey: string;
@@ -135,6 +136,7 @@ export function getOpenAILLMConfig({
   dropParams?: string[];
   defaultParams?: Record<string, unknown>;
   useOpenRouter?: boolean;
+  useAIGateway?: boolean;
   azure?: false | t.AzureOptions;
 }): Pick<t.LLMConfigResult, 'llmConfig' | 'tools'> & {
   azure?: t.AzureOptions;
@@ -226,7 +228,16 @@ export function getOpenAILLMConfig({
     llmConfig.include_reasoning = true;
   }
 
-  if (
+  if (useAIGateway && hasReasoningParams({ reasoning_effort })) {
+    /** AI Gateway uses reasoning.enabled and reasoning.effort format */
+    llmConfig.reasoning = removeNullishValues(
+      {
+        enabled: true,
+        effort: reasoning_effort,
+      },
+      true,
+    ) as OpenAI.Reasoning;
+  } else if (
     hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
     (llmConfig.useResponsesApi === true ||
       (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))

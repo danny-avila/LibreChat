@@ -47,11 +47,11 @@ export function getOpenAIConfig(
     !isGoogle &&
     ((baseURL && baseURL.includes(KnownEndpoints.openrouter)) ||
       (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.openrouter)));
-  const isVercel =
+  const isAIGateway =
     !isAnthropic &&
     !isGoogle &&
     ((baseURL && baseURL.includes('ai-gateway.vercel.sh')) ||
-      (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.vercel)));
+      (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints['ai-gateway'])));
 
   let azure = options.azure;
   let headers = options.headers;
@@ -112,6 +112,7 @@ export function getOpenAIConfig(
       defaultParams,
       modelOptions,
       useOpenRouter,
+      useAIGateway: isAIGateway,
     });
     llmConfig = openaiResult.llmConfig;
     azure = openaiResult.azure;
@@ -122,7 +123,7 @@ export function getOpenAIConfig(
   if (baseURL) {
     configOptions.baseURL = baseURL;
   }
-  if (useOpenRouter || isVercel) {
+  if (useOpenRouter || isAIGateway) {
     configOptions.defaultHeaders = Object.assign(
       {
         'HTTP-Referer': 'https://librechat.ai',
@@ -189,6 +190,8 @@ export function getOpenAIConfig(
   };
   if (useOpenRouter) {
     result.provider = Providers.OPENROUTER;
+  } else if (isAIGateway) {
+    result.provider = 'ai-gateway';
   }
   return result;
 }

@@ -408,6 +408,18 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # Vercel AI Gateway Example
+    - name: 'ai-gateway'
+      apiKey: '${AI_GATEWAY_API_KEY}'
+      baseURL: 'https://ai-gateway.vercel.sh/v1'
+      models:
+        default: ['gpt-5.2', 'claude-sonnet-4-5']
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-5.2'
+      dropParams: ['stop']
+      modelDisplayLabel: 'Vercel AI Gateway'
+
     # Helicone Example
     - name: 'Helicone'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.

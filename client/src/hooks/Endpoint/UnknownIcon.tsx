@@ -5,6 +5,7 @@ import { IconContext } from '~/common';
 import { cn } from '~/utils';
 
 const knownEndpointAssets = {
+  [KnownEndpoints['ai-gateway']]: 'assets/ai-gateway.png',
   [KnownEndpoints.anyscale]: 'assets/anyscale.png',
   [KnownEndpoints.apipie]: 'assets/apipie.png',
   [KnownEndpoints.cohere]: 'assets/cohere.png',

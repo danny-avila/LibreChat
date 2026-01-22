@@ -12,7 +12,7 @@ const initGoogle = require('~/server/services/Endpoints/google/initialize');
  * @returns {boolean} - True if the provider is a known custom provider, false otherwise
  */
 function isKnownCustomProvider(provider) {
-  return [Providers.XAI, Providers.DEEPSEEK, Providers.OPENROUTER].includes(
+  return [Providers.XAI, Providers.DEEPSEEK, Providers.OPENROUTER, 'ai-gateway'].includes(
     provider?.toLowerCase() || '',
   );
 }
@@ -21,6 +21,7 @@ const providerConfigMap = {
   [Providers.XAI]: initCustom,
   [Providers.DEEPSEEK]: initCustom,
   [Providers.OPENROUTER]: initCustom,
+  'ai-gateway': initCustom,
   [EModelEndpoint.openAI]: initOpenAI,
   [EModelEndpoint.google]: initGoogle,
   [EModelEndpoint.azureOpenAI]: initOpenAI,

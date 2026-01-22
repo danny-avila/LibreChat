@@ -35,6 +35,7 @@ export function extractBaseURL(url: string): string | null | undefined {
 
   const openai = 'openai';
   const suffixes = [
+    'ai-gateway',
     'azure-openai',
     openai,
     'aws-bedrock',
