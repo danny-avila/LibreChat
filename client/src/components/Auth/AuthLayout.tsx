@@ -56,17 +56,17 @@ function AuthLayout({
     }
     return null;
   };
-  const logo_url = startupConfig?.interface?.loginImageUrl;
-  const logo_text = startupConfig?.interface?.loginText;
+  const logoUrl = startupConfig?.interface?.loginImageUrl;
+  const logoText = startupConfig?.interface?.loginText;
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        {logo_url ? (
+        {logoUrl ? (
           <div className="mt-6 flex w-full justify-center">
             <img
-              src={logo_url}
+              src={logoUrl}
               className="max-h-64 w-auto object-contain"
               alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
             />
@@ -101,13 +101,15 @@ function AuthLayout({
       )}
       
       {/* ——— WELCOME SECTIONS ——— */}
-      <main className="mx-auto w-full max-w-2xl space-y-8 p-6 text-black dark:text-white">
-        <section>
-          <div className="prose dark:prose-invert w-full max-w-none !text-text-primary">
-            <MarkdownLite content={logo_text} />
+      {logoText && (
+        <section className="mx-auto w-full max-w-2xl space-y-8 p-6 text-black dark:text-white">
+          <div>
+            <div className="prose dark:prose-invert w-full max-w-none !text-text-primary">
+              <MarkdownLite content={logoText} />
+            </div>
           </div>
         </section>
-      </main>
+      )}
       {/* — end welcome sections — */}
       <DisplayError />
       <div className="absolute bottom-0 left-0 md:m-4">

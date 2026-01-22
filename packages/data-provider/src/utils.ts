@@ -60,3 +60,17 @@ export function extractEnvVariable(value: string) {
 export function normalizeEndpointName(name = ''): string {
   return name.toLowerCase() === 'ollama' ? 'ollama' : name;
 }
+
+/**
+ * Validates that a URL uses only safe protocols (http or https)
+ * @param url - The URL string to validate
+ * @returns true if the URL is safe, false otherwise
+ */
+export const isSafeImageUrl = (url: string): boolean => {
+  try {
+    const parsedUrl = new URL(url);
+    return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
