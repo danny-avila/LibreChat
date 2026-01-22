@@ -81,10 +81,18 @@ const openIdJwtLogin = (openIdConfig) => {
             await updateUser(user.id, updateData);
           }
 
-          const cookieHeader = req.headers.cookie;
-          const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
-          const accessToken = parsedCookies.openid_access_token;
-          const refreshToken = parsedCookies.refreshToken;
+          /** Read tokens from session (server-side) to avoid large cookie issues */
+          const sessionTokens = req.session?.openidTokens;
+          let accessToken = sessionTokens?.accessToken;
+          let refreshToken = sessionTokens?.refreshToken;
+
+          /** Fallback to cookies for backward compatibility */
+          if (!accessToken || !refreshToken) {
+            const cookieHeader = req.headers.cookie;
+            const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
+            accessToken = accessToken || parsedCookies.openid_access_token;
+            refreshToken = refreshToken || parsedCookies.refreshToken;
+          }
 
           user.federatedTokens = {
             access_token: accessToken || rawToken,

@@ -408,7 +408,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
         const { url } = part.image_url;
         artifactPromises.push(
           (async () => {
-            const filename = `${output.name}_${output.tool_call_id}_img_${nanoid()}`;
+            const filename = `${output.name}_img_${nanoid()}`;
             const file_id = output.artifact.file_ids?.[i];
             const file = await saveBase64Image(url, {
               req,

@@ -31,11 +31,11 @@ export default function BasicInfoSection() {
   return (
     <div className="space-y-3">
       {/* Icon + Name row */}
-      <div className="flex items-start gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <div className="flex-shrink-0">
           <MCPIcon icon={iconValue} onIconChange={handleIconChange} />
         </div>
-        <div className="flex-1 space-y-1.5">
+        <div className="w-full space-y-1.5 sm:flex-1">
           <Label htmlFor="title" className="text-sm font-medium">
             {localize('com_ui_name')} <span className="text-text-secondary">*</span>
           </Label>

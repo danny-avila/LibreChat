@@ -522,12 +522,34 @@ class AgentClient extends BaseClient {
     }
 
     const withoutKeys = await this.useMemory();
-    if (withoutKeys) {
-      systemContent += `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
+    const memoryContext = withoutKeys
+      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
+      : '';
+    if (memoryContext) {
+      systemContent += memoryContext;
     }
 
     if (systemContent) {
       this.options.agent.instructions = systemContent;
+    }
+
+    /**
+     * Pass memory context to parallel agents (addedConvo) so they have the same user context.
+     *
+     * NOTE: This intentionally mutates the agentConfig objects in place. The agentConfigs Map
+     * holds references to config objects that will be passed to the graph runtime. Mutating
+     * them here ensures all parallel agents receive the memory context before execution starts.
+     * Creating new objects would not work because the Map references would still point to the old objects.
+     */
+    if (memoryContext && this.agentConfigs?.size > 0) {
+      for (const [agentId, agentConfig] of this.agentConfigs.entries()) {
+        if (agentConfig.instructions) {
+          agentConfig.instructions = agentConfig.instructions + '\n\n' + memoryContext;
+        } else {
+          agentConfig.instructions = memoryContext;
+        }
+        logger.debug(`[AgentClient] Added memory context to parallel agent: ${agentId}`);
+      }
     }
 
     return result;
@@ -676,6 +698,7 @@ class AgentClient extends BaseClient {
         getFormattedMemories: db.getFormattedMemories,
       },
       res: this.options.res,
+      user: createSafeUser(this.options.req.user),
     });
 
     this.processMemory = processMemory;
@@ -783,6 +806,7 @@ class AgentClient extends BaseClient {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
+    // Use first entry's input_tokens as the base input (represents initial user message context)
     // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
     const firstUsage = collectedUsage[0];
     const input_tokens =
@@ -794,10 +818,11 @@ class AgentClient extends BaseClient {
         Number(firstUsage?.cache_read_input_tokens) ||
         0);
 
-    let output_tokens = 0;
-    let previousTokens = input_tokens; // Start with original input
-    for (let i = 0; i < collectedUsage.length; i++) {
-      const usage = collectedUsage[i];
+    // Sum output_tokens directly from all entries - works for both sequential and parallel execution
+    // This avoids the incremental calculation that produced negative values for parallel agents
+    let total_output_tokens = 0;
+
+    for (const usage of collectedUsage) {
       if (!usage) {
         continue;
       }
@@ -810,6 +835,9 @@ class AgentClient extends BaseClient {
       const cache_read =
         Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
 
+      // Accumulate output tokens for the usage summary
+      total_output_tokens += Number(usage.output_tokens) || 0;
+
       const txMetadata = {
         context,
         balance,
@@ -819,18 +847,6 @@ class AgentClient extends BaseClient {
         endpointTokenConfig: this.options.endpointTokenConfig,
         model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
       };
-
-      if (i > 0) {
-        // Count new tokens generated (input_tokens minus previous accumulated tokens)
-        output_tokens +=
-          (Number(usage.input_tokens) || 0) + cache_creation + cache_read - previousTokens;
-      }
-
-      // Add this message's output tokens
-      output_tokens += Number(usage.output_tokens) || 0;
-
-      // Update previousTokens to include this message's output
-      previousTokens += Number(usage.output_tokens) || 0;
 
       if (cache_creation > 0 || cache_read > 0) {
         spendStructuredTokens(txMetadata, {
@@ -861,7 +877,7 @@ class AgentClient extends BaseClient {
 
     this.usage = {
       input_tokens,
-      output_tokens,
+      output_tokens: total_output_tokens,
     };
   }
 
@@ -1090,11 +1106,20 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        await this.recordCollectedUsage({
-          context: 'message',
-          balance: balanceConfig,
-          transactions: transactionsConfig,
-        });
+        /** Skip token spending if aborted - the abort handler (abortMiddleware.js) handles it
+        This prevents double-spending when user aborts via `/api/agents/chat/abort` */
+        const wasAborted = abortController?.signal?.aborted;
+        if (!wasAborted) {
+          await this.recordCollectedUsage({
+            context: 'message',
+            balance: balanceConfig,
+            transactions: transactionsConfig,
+          });
+        } else {
+          logger.debug(
+            '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
+          );
+        }
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
@@ -1119,6 +1144,14 @@ class AgentClient extends BaseClient {
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, agent } = this.options;
+
+    if (req?.body?.isTemporary) {
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] Skipping title generation for temporary conversation`,
+      );
+      return;
+    }
+
     const appConfig = req.config;
     let endpoint = agent.endpoint;
 

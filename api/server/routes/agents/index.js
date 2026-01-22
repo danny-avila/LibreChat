@@ -9,6 +9,7 @@ const {
   configMiddleware,
   messageUserLimiter,
 } = require('~/server/middleware');
+const { saveMessage } = require('~/models');
 const { v1 } = require('./v1');
 const chat = require('./chat');
 
@@ -194,9 +195,53 @@ router.post('/chat/abort', async (req, res) => {
   logger.debug(`[AgentStream] Computed jobStreamId: ${jobStreamId}`);
 
   if (job && jobStreamId) {
+    if (job.metadata?.userId && job.metadata.userId !== userId) {
+      logger.warn(`[AgentStream] Unauthorized abort attempt for ${jobStreamId} by user ${userId}`);
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
     logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
-    await GenerationJobManager.abortJob(jobStreamId);
-    logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`);
+    const abortResult = await GenerationJobManager.abortJob(jobStreamId);
+    logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
+      abortResultSuccess: abortResult.success,
+      abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
+      abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
+    });
+
+    // CRITICAL: Save partial response BEFORE returning to prevent race condition.
+    // If user sends a follow-up immediately after abort, the parentMessageId must exist in DB.
+    // Only save if we have a valid responseMessageId (skip early aborts before generation started)
+    if (
+      abortResult.success &&
+      abortResult.jobData?.userMessage?.messageId &&
+      abortResult.jobData?.responseMessageId
+    ) {
+      const { jobData, content, text } = abortResult;
+      const responseMessage = {
+        messageId: jobData.responseMessageId,
+        parentMessageId: jobData.userMessage.messageId,
+        conversationId: jobData.conversationId,
+        content: content || [],
+        text: text || '',
+        sender: jobData.sender || 'AI',
+        endpoint: jobData.endpoint,
+        model: jobData.model,
+        unfinished: true,
+        error: false,
+        isCreatedByUser: false,
+        user: userId,
+      };
+
+      try {
+        await saveMessage(req, responseMessage, {
+          context: 'api/server/routes/agents/index.js - abort endpoint',
+        });
+        logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
+      } catch (saveError) {
+        logger.error(`[AgentStream] Failed to save partial response: ${saveError.message}`);
+      }
+    }
+
     return res.json({ success: true, aborted: jobStreamId });
   }
 

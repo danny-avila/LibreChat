@@ -10,7 +10,8 @@ const {
 } = require('~/server/controllers/PermissionsController');
 const { requireJwtAuth, checkBan, uaParser, canAccessResource } = require('~/server/middleware');
 const { checkPeoplePickerAccess } = require('~/server/middleware/checkPeoplePickerAccess');
-const { findMCPServerById } = require('~/models');
+const { checkSharePublicAccess } = require('~/server/middleware/checkSharePublicAccess');
+const { findMCPServerByObjectId } = require('~/models');
 
 const router = express.Router();
 
@@ -63,7 +64,7 @@ const checkResourcePermissionAccess = (requiredPermission) => (req, res, next) =
       resourceType: ResourceType.MCPSERVER,
       requiredPermission,
       resourceIdParam: 'resourceId',
-      idResolver: findMCPServerById,
+      idResolver: findMCPServerByObjectId,
     });
   } else {
     return res.status(400).json({
@@ -91,10 +92,12 @@ router.get(
  * PUT /api/permissions/{resourceType}/{resourceId}
  * Bulk update permissions for a specific resource
  * SECURITY: Requires SHARE permission to modify resource permissions
+ * SECURITY: Requires SHARE_PUBLIC permission to enable public sharing
  */
 router.put(
   '/:resourceType/:resourceId',
   checkResourcePermissionAccess(PermissionBits.SHARE),
+  checkSharePublicAccess,
   updateResourcePermissions,
 );
 

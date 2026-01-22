@@ -698,9 +698,9 @@ export function validateActionDomain(
     if (clientHasProtocol) {
       normalizedClientDomain = extractDomainFromUrl(clientProvidedDomain);
     } else {
-      // IP addresses inherit protocol from spec, domains default to https
+      // No protocol specified by client
       if (isIPAddress) {
-        // IPv6 addresses need brackets in URLs
+        // IPs inherit protocol from spec (for legitimate internal services)
         const ipVersion = isIP(normalizedClientHostname);
         const hostname =
           ipVersion === 6 && !clientHostname.startsWith('[')
@@ -708,6 +708,7 @@ export function validateActionDomain(
             : clientHostname;
         normalizedClientDomain = `${specUrl.protocol}//${hostname}`;
       } else {
+        // Domain names default to HTTPS for security (forces explicit protocol)
         normalizedClientDomain = `https://${clientHostname}`;
       }
     }

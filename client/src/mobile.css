@@ -9,7 +9,7 @@
 
 .nav {
   position: fixed;
-  z-index: 64;
+  z-index: 110;
   top: 0;
 
   /* max-width: 260px; */
@@ -36,7 +36,7 @@
   }
   .nav-mask {
     position: fixed;
-    z-index: 63;
+    z-index: 105;
     left: 0;
     right: 0;
     top: 0;
@@ -153,7 +153,7 @@
     right: 0;
     top: 0;
     bottom: 0;
-    background-color: rgba(86, 88, 105, 0.75);
+    background-color: rgba(7, 7, 7, 0.4);
     padding-left: 420px;
     padding-top: 12px;
     opacity: 0;

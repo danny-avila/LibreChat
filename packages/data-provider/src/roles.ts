@@ -43,10 +43,10 @@ const defaultRolesSchema = z.object({
     name: z.literal(SystemRoles.ADMIN),
     permissions: permissionsSchema.extend({
       [PermissionTypes.PROMPTS]: promptPermissionsSchema.extend({
-        [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
-        // [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
       [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
@@ -59,10 +59,10 @@ const defaultRolesSchema = z.object({
         [Permissions.OPT_OUT]: z.boolean().default(true),
       }),
       [PermissionTypes.AGENTS]: agentPermissionsSchema.extend({
-        [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
-        // [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
       [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
@@ -94,6 +94,7 @@ const defaultRolesSchema = z.object({
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
         [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
     }),
   }),
@@ -108,9 +109,10 @@ export const roleDefaults = defaultRolesSchema.parse({
     name: SystemRoles.ADMIN,
     permissions: {
       [PermissionTypes.PROMPTS]: {
-        [Permissions.SHARED_GLOBAL]: true,
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.BOOKMARKS]: {
         [Permissions.USE]: true,
@@ -123,9 +125,10 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.OPT_OUT]: true,
       },
       [PermissionTypes.AGENTS]: {
-        [Permissions.SHARED_GLOBAL]: true,
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.MULTI_CONVO]: {
         [Permissions.USE]: true,
@@ -157,6 +160,7 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
     },
   },
