@@ -8,15 +8,18 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vitejs.dev/config/
-const backendPort = process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT) || 3080;
-const backendURL = process.env.HOST ? `http://${process.env.HOST}:${backendPort}` : `http://localhost:${backendPort}`;
+const backendPort = (process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT)) || 3080;
+const backendURL = process.env.HOST
+  ? `http://${process.env.HOST}:${backendPort}`
+  : `http://localhost:${backendPort}`;
 
 export default defineConfig(({ command }) => ({
   base: '',
   server: {
-    allowedHosts: process.env.VITE_ALLOWED_HOSTS && process.env.VITE_ALLOWED_HOSTS.split(',') || [],
+    allowedHosts:
+      (process.env.VITE_ALLOWED_HOSTS && process.env.VITE_ALLOWED_HOSTS.split(',')) || [],
     host: process.env.HOST || 'localhost',
-    port: process.env.PORT && Number(process.env.PORT) || 3090,
+    port: (process.env.PORT && Number(process.env.PORT)) || 3090,
     strictPort: false,
     proxy: {
       '/api': {
@@ -126,6 +129,9 @@ export default defineConfig(({ command }) => ({
 
             if (normalizedId.includes('@codesandbox/sandpack')) {
               return 'sandpack';
+            }
+            if (normalizedId.includes('@clickhouse') || normalizedId.includes('clickhouse')) {
+              return 'clickhouse';
             }
             if (normalizedId.includes('react-virtualized')) {
               return 'virtualization';
