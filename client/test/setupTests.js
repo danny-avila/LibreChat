@@ -54,6 +54,15 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 });
 
+jest.mock('@clickhouse/click-ui', () => ({
+  CodeBlock: ({ children, language, showLineNumbers }) => (
+    <pre data-testid="mock-codeblock" data-language={language} data-line-numbers={showLineNumbers}>
+      {children}
+    </pre>
+  ),
+  ClickUIProvider: ({ children }) => <>{children}</>,
+}));
+
 jest.mock('react-i18next', () => {
   const actual = jest.requireActual('react-i18next');
   return {
