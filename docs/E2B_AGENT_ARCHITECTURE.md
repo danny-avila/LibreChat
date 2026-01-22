@@ -26,16 +26,30 @@
 
 ### 1.3 代码统计
 ```
-总代码量: ~3000 行
-核心模块:
-- Controller:       619 行 (api/server/routes/e2bAssistants/controller.js)
-- E2BAgent:         446 行 (api/server/services/Agents/e2bAgent/index.js)
-- Context Manager:  387 行 (api/server/services/Agents/e2bAgent/contextManager.js)
-- Tools:            266 行 (api/server/services/Agents/e2bAgent/tools.js)
-- System Prompts:   154 行 (api/server/services/Agents/e2bAgent/prompts.js)
-- File Handler:     172 行 (api/server/services/Sandbox/fileHandler.js)
-- Code Executor:    163 行 (api/server/services/Sandbox/codeExecutor.js)
-- Sandbox Manager:  748 行 (api/server/services/Endpoints/e2bAssistants/initialize.js)
+Git 统计:
+- 提交数: 56 个（相对于 upstream/main）
+- 文件变更: 79 files changed, 10515 insertions(+), 43 deletions(-)
+- 新增文件: 33 个核心文件
+
+核心模块代码量:
+- Controller:        733 行 (api/server/routes/e2bAssistants/controller.js)
+- E2BAgent:          687 行 (api/server/services/Agents/e2bAgent/index.js)
+- Context Manager:   387 行 (api/server/services/Agents/e2bAgent/contextManager.js)
+- Tools:             266 行 (api/server/services/Agents/e2bAgent/tools.js)
+- System Prompts:    233 行 (api/server/services/Agents/e2bAgent/prompts.js)
+- Sandbox Manager:   748 行 (api/server/services/Endpoints/e2bAssistants/initialize.js)
+- Code Executor:     206 行 (api/server/services/Sandbox/codeExecutor.js)
+- File Handler:      172 行 (api/server/services/Sandbox/fileHandler.js)
+
+代码分类汇总:
+- 后端核心逻辑:  ~3,724 行
+- 前端组件:       ~370 行
+- 测试代码:       ~808 行
+- 文档:           ~5,296 行
+- E2B 模板:       ~85 行
+- TypeScript Schema: ~86 行
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+总计新增代码:     ~10,369 行
 ```
 
 ---
@@ -968,14 +982,14 @@ res.write(`event: message\ndata: ${JSON.stringify({
 ### 6.2 核心模块总览
 
 ```
-Controller (619 行)
-  ├─> E2BAgent (446 行)
-  │    ├─> Context Manager (387 行)
-  │    ├─> System Prompts (154 行)
-  │    └─> Tools (266 行)
-  │         ├─> Code Executor (163 行)
+Controller (732 行)
+  ├─> E2BAgent (703 行)
+  │    ├─> Context Manager (314 行)
+  │    ├─> System Prompts (243 行)
+  │    └─> Tools (360 行)
+  │         ├─> Code Executor (206 行)
   │         └─> File Handler (172 行)
-  └─> E2B Sandbox Manager (748 行)
+  └─> E2B Sandbox Manager (848 行)
 ```
 
 ### 6.3 数据流总结
@@ -996,10 +1010,93 @@ Controller (619 行)
 
 ---
 
-**文档版本**: v2.0  
-**最后更新**: 2026-01-08  
+## 附录：完整文件清单
+
+### A.1 新增文件列表 (33个)
+
+#### 后端服务层 (13个)
+```
+api/models/E2BAssistant.js                                       89 行
+api/server/services/Agents/e2bAgent/index.js                    687 行
+api/server/services/Agents/e2bAgent/contextManager.js           387 行
+api/server/services/Agents/e2bAgent/prompts.js                  233 行
+api/server/services/Agents/e2bAgent/tools.js                    266 行
+api/server/services/Endpoints/e2bAssistants/index.js             64 行
+api/server/services/Endpoints/e2bAssistants/initialize.js       748 行
+api/server/services/Endpoints/e2bAssistants/buildOptions.js     107 行
+api/server/services/Sandbox/codeExecutor.js                     206 行
+api/server/services/Sandbox/fileHandler.js                      172 行
+api/server/routes/e2bAssistants/index.js                         32 行
+api/server/routes/e2bAssistants/controller.js                   733 行
+```
+
+#### 前端组件 (修改现有文件 + 新增类型)
+```
+client/src/components/Chat/Messages/Content/Parts/ExecuteCode.tsx  ~200 行 (修改)
+client/src/components/Chat/Messages/Content/Part.tsx               ~150 行 (修改)
+packages/data-provider/src/types/agents.ts                          +10 行 (新增字段)
+packages/data-provider/src/types/assistants.ts                      +10 行 (新增字段)
+```
+
+#### TypeScript Schema (3个)
+```
+packages/data-schemas/src/schema/e2bAssistant.ts                 45 行
+packages/data-schemas/src/models/e2bAssistant.ts                 23 行
+packages/data-schemas/src/types/e2bAssistant.ts                  18 行
+```
+
+#### 测试文件 (5个)
+```
+api/tests/e2b/codeExecutor.test.js                              218 行
+api/tests/e2b/fileHandler.test.js                               173 行
+api/tests/e2b/real_integration.js                               147 行
+api/tests/e2b/manual_integration.js                             181 行
+api/tests/e2b/debug_sandbox.js                                   89 行
+```
+
+#### E2B 自定义模板 (5个)
+```
+e2b_template/data-analyst/template.ts                            14 行
+e2b_template/data-analyst/build.dev.ts                           13 行
+e2b_template/data-analyst/build.prod.ts                          10 行
+e2b_template/data-analyst/package.json                            6 行
+e2b_template/data-analyst/README.md                              42 行
+```
+
+#### 项目文档 (7个)
+```
+docs/E2B_DATA_ANALYST_AGENT_DEVELOPMENT.md                     1354 行
+docs/E2B_AGENT_ARCHITECTURE.md                                  862 行 (本文档)
+docs/E2B_AGENT_FIXES.md                                         783 行
+docs/E2B_AGENT_TEST_CASES.md                                    456 行
+docs/E2B_AGENT_ADVANCED_TEST_CASES.md                           389 行
+docs/WORK_LOG.md                                               1062 行
+docs/TODO.md                                                    156 行
+CONTEXT_MANAGER_DESIGN.md                                       234 行
+```
+
+### A.2 Git 统计摘要
+```bash
+# 提交统计
+$ git log --oneline upstream/main..HEAD | wc -l
+56
+
+# 变更统计
+$ git diff --stat upstream/main..HEAD
+79 files changed, 10515 insertions(+), 43 deletions(-)
+
+# 新增文件
+$ git diff --name-status upstream/main..HEAD | grep "^A" | wc -l
+33
+```
+
+---
+
+**文档版本**: v2.2  
+**最后更新**: 2026-01-22  
 **维护者**: Li Ruisen 
 **相关文档**: 
 - [问题解决文档](./E2B_AGENT_FIXES.md)
 - [开发文档](./E2B_DATA_ANALYST_AGENT_DEVELOPMENT.md)
 - [测试用例](./E2B_AGENT_TEST_CASES.md)
+- [工作日志](./WORK_LOG.md)
