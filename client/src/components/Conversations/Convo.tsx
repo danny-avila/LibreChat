@@ -47,6 +47,7 @@ export default function Conversation({
   const [hasInteracted, setHasInteracted] = useState(false);
 
   const previousTitle = useRef(title);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (title !== previousTitle.current) {
@@ -115,10 +116,28 @@ export default function Conversation({
     }
   }, [isPopoverActive]);
 
+  const handleBlur = useCallback(
+    (e: React.FocusEvent<HTMLDivElement>) => {
+      // Don't reset if focus is moving to a child element within this container
+      if (e.currentTarget.contains(e.relatedTarget as Node)) {
+        return;
+      }
+      if (!isPopoverActive) {
+        setHasInteracted(false);
+      }
+    },
+    [isPopoverActive],
+  );
+
   const handlePopoverOpenChange = useCallback((open: boolean) => {
     setIsPopoverActive(open);
     if (!open) {
-      setHasInteracted(false);
+      requestAnimationFrame(() => {
+        const container = containerRef.current;
+        if (container && !container.contains(document.activeElement)) {
+          setHasInteracted(false);
+        }
+      });
     }
   }, []);
 
@@ -160,6 +179,7 @@ export default function Conversation({
 
   return (
     <div
+      ref={containerRef}
       className={cn(
         'group relative flex h-12 w-full items-center rounded-lg md:h-9',
         isActiveConvo || isPopoverActive
@@ -174,6 +194,7 @@ export default function Conversation({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onFocus={handleMouseEnter}
+      onBlur={handleBlur}
       onClick={(e) => {
         if (renaming) {
           return;
