@@ -239,7 +239,7 @@ function KeyItem({
 
 function ApiKeysContent({ isOpen }: { isOpen: boolean }) {
   const localize = useLocalize();
-  const { data, isLoading, error } = useGetAgentApiKeysQuery(undefined, { enabled: isOpen });
+  const { data, isLoading, error } = useGetAgentApiKeysQuery({ enabled: isOpen });
 
   if (error) {
     return <div className="text-sm text-red-500">{localize('com_ui_api_keys_load_error')}</div>;
