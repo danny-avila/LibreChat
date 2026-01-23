@@ -1,4 +1,5 @@
 export { default as ProfileDashboard } from './ProfileDashboard';
+export { ProfileDashboardModal } from './ProfileDashboardModal';
 export { default as WorkflowCard } from './WorkflowCard';
 export { default as ProfileStats } from './ProfileStats';
 export { default as CEODashboard } from './CEODashboard';

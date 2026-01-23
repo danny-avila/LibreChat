@@ -30,7 +30,7 @@ export default function useSideNavLinks({
   interfaceConfig,
   endpointsConfig,
   openPDFBuilder,
-  navigateToDashboard,
+  openDashboard,
 }: {
   hidePanel: () => void;
   keyProvided: boolean;
@@ -39,7 +39,7 @@ export default function useSideNavLinks({
   interfaceConfig: Partial<TInterfaceConfig>;
   endpointsConfig: TEndpointsConfig;
   openPDFBuilder?: () => void;
-  navigateToDashboard?: () => void;
+  openDashboard?: () => void;
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -82,12 +82,12 @@ export default function useSideNavLinks({
     }
 
     // Dashboard - moved to top
-    if (navigateToDashboard) {
+    if (openDashboard) {
       links.push({
         title: 'com_sidepanel_dashboard',
         label: '',
         icon: LayoutDashboard,
-        onClick: navigateToDashboard,
+        onClick: openDashboard,
         id: 'dashboard',
       });
     }
@@ -224,7 +224,7 @@ export default function useSideNavLinks({
     hasAccessToCreateAgents,
     hidePanel,
     openPDFBuilder,
-    navigateToDashboard,
+    openDashboard,
     startupConfig,
   ]);
 
