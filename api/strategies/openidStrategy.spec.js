@@ -453,6 +453,72 @@ describe('setupOpenId', () => {
     expect(user).toBeTruthy();
   });
 
+  it('should authenticate when roles are in LDAP DN format and required role is simple name', async () => {
+    // Arrange
+    process.env.OPENID_REQUIRED_ROLE = 'MY-APP-USERS';
+    await setupOpenId(); // Re-initialize the strategy
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+    jwtDecode.mockReturnValue({
+      roles: ['CN=MY-APP-USERS,OU=group,O=company,C=FR', 'CN=OTHER-GROUP,OU=group,O=company,C=FR'],
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert
+    expect(user).toBeTruthy();
+    expect(user.email).toBe(tokenset.claims().email);
+  });
+
+  it('should authenticate with multiple required roles when user has LDAP DN format roles', async () => {
+    // Arrange
+    process.env.OPENID_REQUIRED_ROLE = 'admin,MY-APP-USERS,guest';
+    await setupOpenId(); // Re-initialize the strategy
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+    jwtDecode.mockReturnValue({
+      roles: ['CN=MY-APP-USERS,OU=group,O=company,C=FR'],
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert
+    expect(user).toBeTruthy();
+  });
+
+  it('should reject login when LDAP DN roles do not match any required role', async () => {
+    // Arrange
+    process.env.OPENID_REQUIRED_ROLE = 'admin,superuser';
+    await setupOpenId(); // Re-initialize the strategy
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+    jwtDecode.mockReturnValue({
+      roles: ['CN=MY-APP-USERS,OU=group,O=company,C=FR', 'CN=READERS,OU=group,O=company,C=FR'],
+    });
+
+    // Act
+    const { user, details } = await validate(tokenset);
+
+    // Assert
+    expect(user).toBe(false);
+    expect(details.message).toBe('You must have one of: "admin", "superuser" role to log in.');
+  });
+
+  it('should authenticate with mixed simple and LDAP DN format roles', async () => {
+    // Arrange
+    process.env.OPENID_REQUIRED_ROLE = 'admin';
+    await setupOpenId(); // Re-initialize the strategy
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+    jwtDecode.mockReturnValue({
+      roles: ['simple-role', 'CN=admin,OU=group,O=company,C=FR'],
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert
+    expect(user).toBeTruthy();
+  });
+
   it('should default to usePKCE false when OPENID_USE_PKCE is not defined', async () => {
     const OpenIDStrategy = require('openid-client/passport').Strategy;
 

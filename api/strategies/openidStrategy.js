@@ -15,6 +15,8 @@ const {
   findOpenIDUser,
   getBalanceConfig,
   isEmailDomainAllowed,
+  extractCNFromDN,
+  normalizeRoles,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
@@ -361,7 +363,12 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       throw new Error(`You must have ${rolesList} role to log in.`);
     }
 
-    if (!requiredRoles.some((role) => roles.includes(role))) {
+    // Normalize roles by extracting CN from LDAP DNs
+    // This allows comparing simple role names like "MY-GROUP" with
+    // LDAP DN values like "CN=MY-GROUP,OU=groups,O=company,C=FR"
+    const normalizedRoles = normalizeRoles(roles);
+
+    if (!requiredRoles.some((role) => normalizedRoles.includes(role))) {
       const rolesList =
         requiredRoles.length === 1
           ? `"${requiredRoles[0]}"`
