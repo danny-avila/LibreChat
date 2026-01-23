@@ -77,7 +77,7 @@ export enum AccessRoleIds {
   MCPSERVER_EDITOR = 'mcpServer_editor',
   MCPSERVER_OWNER = 'mcpServer_owner',
   REMOTE_AGENT_VIEWER = 'remoteAgent_viewer',
-  REMOTE_AGENT_USER = 'remoteAgent_user',
+  REMOTE_AGENT_EDITOR = 'remoteAgent_editor',
   REMOTE_AGENT_OWNER = 'remoteAgent_owner',
 }
 
@@ -321,7 +321,7 @@ export function accessRoleToPermBits(accessRoleId: string): number {
     case AccessRoleIds.AGENT_EDITOR:
     case AccessRoleIds.PROMPTGROUP_EDITOR:
     case AccessRoleIds.MCPSERVER_EDITOR:
-    case AccessRoleIds.REMOTE_AGENT_USER:
+    case AccessRoleIds.REMOTE_AGENT_EDITOR:
       return PermissionBits.VIEW | PermissionBits.EDIT;
     case AccessRoleIds.AGENT_OWNER:
     case AccessRoleIds.PROMPTGROUP_OWNER:

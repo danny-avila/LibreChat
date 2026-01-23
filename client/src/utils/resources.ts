@@ -50,7 +50,7 @@ export const RESOURCE_CONFIGS: Record<ResourceType, ResourceConfig> = {
   [ResourceType.REMOTE_AGENT]: {
     resourceType: ResourceType.REMOTE_AGENT,
     defaultViewerRoleId: AccessRoleIds.REMOTE_AGENT_VIEWER,
-    defaultEditorRoleId: AccessRoleIds.REMOTE_AGENT_USER,
+    defaultEditorRoleId: AccessRoleIds.REMOTE_AGENT_EDITOR,
     defaultOwnerRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
     getResourceUrl: () => `${window.location.origin}/api/v1/responses`,
     getResourceName: (name?: string) => (name && name !== '' ? `"${name}"` : 'remote agent'),

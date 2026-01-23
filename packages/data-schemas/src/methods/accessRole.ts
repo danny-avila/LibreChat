@@ -175,9 +175,9 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
         permBits: RoleBits.VIEWER,
       },
       {
-        accessRoleId: AccessRoleIds.REMOTE_AGENT_USER,
-        name: 'com_ui_remote_agent_role_user',
-        description: 'com_ui_remote_agent_role_user_desc',
+        accessRoleId: AccessRoleIds.REMOTE_AGENT_EDITOR,
+        name: 'com_ui_remote_agent_role_editor',
+        description: 'com_ui_remote_agent_role_editor_desc',
         resourceType: ResourceType.REMOTE_AGENT,
         permBits: RoleBits.EDITOR,
       },
