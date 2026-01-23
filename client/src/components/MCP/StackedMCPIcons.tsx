@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { MCPIcon } from '@librechat/client';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import { getSelectedServerIcons } from './mcpServerUtils';
+import { renderMCPIcon } from './renderMCPIcon';
 import { cn } from '~/utils';
 
 interface StackedMCPIconsProps {
@@ -59,11 +60,12 @@ export default function StackedMCPIcons({
   const colors = variantConfig[variant];
 
   return (
-    <div className="flex items-center" aria-hidden="true">
+    <div className="flex items-center">
       {icons.map((icon, index) => (
         <div
           key={icon.key}
           title={icon.displayName}
+          aria-hidden="true"
           className={cn(
             'relative flex items-center justify-center rounded-full border',
             colors.border,
@@ -73,19 +75,17 @@ export default function StackedMCPIcons({
           )}
           style={{ zIndex: icons.length - index }}
         >
-          {icon.iconPath ? (
-            <img
-              src={icon.iconPath}
-              alt={icon.displayName}
-              className={cn('rounded-full object-cover', sizes.icon)}
-            />
-          ) : (
-            <MCPIcon className={cn('text-text-primary', sizes.icon)} />
-          )}
+          {renderMCPIcon({
+            iconPath: icon.iconPath,
+            serverName: icon.serverName,
+            displayName: icon.displayName,
+            className: cn('rounded-full object-cover', sizes.icon),
+          })}
         </div>
       ))}
       {overflowCount > 0 && (
         <div
+          aria-hidden="true"
           className={cn(
             'relative flex items-center justify-center rounded-full border border-surface-primary bg-surface-tertiary text-xs font-medium text-text-secondary',
             sizes.container,

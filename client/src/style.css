@@ -2922,3 +2922,11 @@ html {
 .sharepoint-picker-bg {
   background-color: #f5f5f5;
 }
+
+/* ClickHouse CodeBlock - Reset global hljs styles */
+.clickhouse-codeblock code.hljs,
+.clickhouse-codeblock code[class*='language-'],
+.clickhouse-codeblock pre[class*='language-'] {
+  color: unset;
+  background: unset;
+}

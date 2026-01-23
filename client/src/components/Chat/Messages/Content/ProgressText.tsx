@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { Spinner } from '@librechat/client';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import CancelledIcon from './CancelledIcon';
 import FinishedIcon from './FinishedIcon';
 import { cn } from '~/utils';
@@ -88,21 +88,30 @@ export default function ProgressText({
       <button
         type="button"
         className={cn(
-          'inline-flex w-full items-center gap-2',
+          'group/button inline-flex w-full items-center gap-2',
           hasInput ? '' : 'pointer-events-none',
         )}
         disabled={!hasInput}
         onClick={hasInput ? onClick : undefined}
         aria-expanded={hasInput ? isExpanded : undefined}
       >
-        {icon}
+        {hasInput ? (
+          <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center">
+            <span className="absolute opacity-100 transition-opacity group-hover/button:opacity-0">
+              {icon}
+            </span>
+            <ChevronDown
+              className={cn(
+                'absolute size-4 transform-gpu text-text-primary opacity-0 transition-all duration-300 group-hover/button:opacity-100',
+                isExpanded && 'rotate-180',
+              )}
+              aria-hidden="true"
+            />
+          </span>
+        ) : (
+          icon
+        )}
         <span className={showShimmer ? 'shimmer' : ''}>{text}</span>
-        {hasInput &&
-          (isExpanded ? (
-            <ChevronUp className="size-4 shrink-0 translate-y-[1px]" aria-hidden="true" />
-          ) : (
-            <ChevronDown className="size-4 shrink-0 translate-y-[1px]" aria-hidden="true" />
-          ))}
       </button>
     </Wrapper>
   );

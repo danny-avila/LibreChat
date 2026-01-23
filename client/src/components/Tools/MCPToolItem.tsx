@@ -1,5 +1,6 @@
 import { XCircle, PlusCircleIcon, Wrench } from 'lucide-react';
 import type { AgentToolType } from 'librechat-data-provider';
+import { renderMCPIcon } from '~/components/MCP/renderMCPIcon';
 import { useLocalize } from '~/hooks';
 
 type MCPToolItemProps = {
@@ -76,17 +77,18 @@ function MCPToolItem({
       <div className="flex gap-4">
         <div className="h-[70px] w-[70px] shrink-0">
           <div className="relative h-full w-full">
-            {icon ? (
-              <img
-                src={icon}
-                alt={localize('com_ui_logo', { 0: name })}
-                className="h-full w-full rounded-[5px] bg-white"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center rounded-[5px] border border-border-medium bg-transparent">
-                <Wrench className="h-8 w-8 text-text-secondary" />
-              </div>
-            )}
+            {renderMCPIcon({
+              iconPath: icon,
+              serverName: name,
+              displayName: name,
+              className: 'h-full w-full rounded-[5px] object-cover',
+              alt: localize('com_ui_logo', { 0: name }),
+              fallbackIcon: (
+                <div className="flex h-full w-full items-center justify-center rounded-[5px] border border-border-medium bg-transparent">
+                  <Wrench className="h-8 w-8 text-text-secondary" />
+                </div>
+              ),
+            })}
             <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-black/10"></div>
           </div>
         </div>
