@@ -20,7 +20,12 @@
  * @see https://openresponses.org/specification
  */
 const express = require('express');
-const { createRequireApiKeyAuth, createCheckRemoteAgentAccess } = require('@librechat/api');
+const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const {
+  generateCheckAccess,
+  createRequireApiKeyAuth,
+  createCheckRemoteAgentAccess,
+} = require('@librechat/api');
 const {
   createResponse,
   getResponse,
@@ -29,6 +34,7 @@ const {
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
 const { validateAgentApiKey, findUser } = require('~/models');
 const { configMiddleware } = require('~/server/middleware');
+const { getRoleByName } = require('~/models/Role');
 const { getAgent } = require('~/models/Agent');
 
 const router = express.Router();
@@ -38,13 +44,20 @@ const requireApiKeyAuth = createRequireApiKeyAuth({
   findUser,
 });
 
-const checkRemoteAgentAccess = createCheckRemoteAgentAccess({
+const checkRemoteAgentsFeature = generateCheckAccess({
+  permissionType: PermissionTypes.REMOTE_AGENTS,
+  permissions: [Permissions.USE],
+  getRoleByName,
+});
+
+const checkAgentPermission = createCheckRemoteAgentAccess({
   getAgent,
   getEffectivePermissions,
 });
 
 router.use(requireApiKeyAuth);
 router.use(configMiddleware);
+router.use(checkRemoteAgentsFeature);
 
 /**
  * @route POST /v1/responses
@@ -87,7 +100,7 @@ router.use(configMiddleware);
  *   "usage": { ... }
  * }
  */
-router.post('/', checkRemoteAgentAccess, createResponse);
+router.post('/', checkAgentPermission, createResponse);
 
 /**
  * @route GET /v1/responses/models

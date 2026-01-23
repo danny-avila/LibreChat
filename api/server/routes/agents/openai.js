@@ -17,7 +17,12 @@
  *   }
  */
 const express = require('express');
-const { createRequireApiKeyAuth, createCheckRemoteAgentAccess } = require('@librechat/api');
+const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const {
+  generateCheckAccess,
+  createRequireApiKeyAuth,
+  createCheckRemoteAgentAccess,
+} = require('@librechat/api');
 const {
   OpenAIChatCompletionController,
   ListModelsController,
@@ -26,6 +31,7 @@ const {
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
 const { validateAgentApiKey, findUser } = require('~/models');
 const { configMiddleware } = require('~/server/middleware');
+const { getRoleByName } = require('~/models/Role');
 const { getAgent } = require('~/models/Agent');
 
 const router = express.Router();
@@ -35,13 +41,20 @@ const requireApiKeyAuth = createRequireApiKeyAuth({
   findUser,
 });
 
-const checkRemoteAgentAccess = createCheckRemoteAgentAccess({
+const checkRemoteAgentsFeature = generateCheckAccess({
+  permissionType: PermissionTypes.REMOTE_AGENTS,
+  permissions: [Permissions.USE],
+  getRoleByName,
+});
+
+const checkAgentPermission = createCheckRemoteAgentAccess({
   getAgent,
   getEffectivePermissions,
 });
 
 router.use(requireApiKeyAuth);
 router.use(configMiddleware);
+router.use(checkRemoteAgentsFeature);
 
 /**
  * @route POST /v1/chat/completions
@@ -64,7 +77,7 @@ router.use(configMiddleware);
  * Response (non-streaming):
  * - Standard OpenAI chat.completion format
  */
-router.post('/chat/completions', checkRemoteAgentAccess, OpenAIChatCompletionController);
+router.post('/chat/completions', checkAgentPermission, OpenAIChatCompletionController);
 
 /**
  * @route GET /v1/models

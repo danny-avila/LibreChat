@@ -19,18 +19,24 @@ const handlers = createApiKeyHandlers({
   getAgentApiKeyById,
 });
 
-const checkApiKeyAccess = generateCheckAccess({
+const checkRemoteAgentsUse = generateCheckAccess({
   permissionType: PermissionTypes.REMOTE_AGENTS,
   permissions: [Permissions.USE],
   getRoleByName,
 });
 
-router.post('/', requireJwtAuth, checkApiKeyAccess, handlers.createApiKey);
+const checkRemoteAgentsCreate = generateCheckAccess({
+  permissionType: PermissionTypes.REMOTE_AGENTS,
+  permissions: [Permissions.CREATE],
+  getRoleByName,
+});
 
-router.get('/', requireJwtAuth, checkApiKeyAccess, handlers.listApiKeys);
+router.post('/', requireJwtAuth, checkRemoteAgentsCreate, handlers.createApiKey);
 
-router.get('/:id', requireJwtAuth, checkApiKeyAccess, handlers.getApiKey);
+router.get('/', requireJwtAuth, checkRemoteAgentsUse, handlers.listApiKeys);
 
-router.delete('/:id', requireJwtAuth, checkApiKeyAccess, handlers.deleteApiKey);
+router.get('/:id', requireJwtAuth, checkRemoteAgentsUse, handlers.getApiKey);
+
+router.delete('/:id', requireJwtAuth, checkRemoteAgentsUse, handlers.deleteApiKey);
 
 module.exports = router;
