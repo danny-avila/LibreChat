@@ -45,17 +45,20 @@ export default function AgentFooter({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.SHARE,
   });
-  const hasAccessToSharePublic = useHasAccess({
-    permissionType: PermissionTypes.AGENTS,
-    permission: Permissions.SHARE_PUBLIC,
+  const hasAccessToShareRemoteAgents = useHasAccess({
+    permissionType: PermissionTypes.REMOTE_AGENTS,
+    permission: Permissions.SHARE,
   });
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
     ResourceType.AGENT,
     agent?._id || '',
   );
+  const { hasPermission: hasRemoteAgentPermission, isLoading: remotePermissionsLoading } =
+    useResourcePermissions(ResourceType.REMOTE_AGENT, agent?._id || '');
 
   const canShareThisAgent = hasPermission(PermissionBits.SHARE);
   const canDeleteThisAgent = hasPermission(PermissionBits.DELETE);
+  const canShareRemoteAgent = hasRemoteAgentPermission(PermissionBits.SHARE);
   const isSaving = createMutation.isLoading || updateMutation.isLoading || isAvatarUploading;
   const renderSaveButton = () => {
     if (isSaving) {
@@ -96,9 +99,9 @@ export default function AgentFooter({
               resourceType={ResourceType.AGENT}
             />
           )}
-        {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
-          hasAccessToSharePublic &&
-          !permissionsLoading &&
+        {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN || canShareRemoteAgent) &&
+          hasAccessToShareRemoteAgents &&
+          !remotePermissionsLoading &&
           agent?._id && (
             <GenericGrantAccessDialog
               resourceDbId={agent?._id}
