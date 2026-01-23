@@ -113,10 +113,6 @@ export const router = createBrowserRouter(
               element: <Search />,
             },
             {
-              path: 'profile',
-              element: <ProfileRoute />,
-            },
-            {
               path: 'agents',
               element: (
                 <MarketplaceProvider>

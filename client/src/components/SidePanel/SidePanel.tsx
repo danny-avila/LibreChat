@@ -12,6 +12,7 @@ import NavToggle from '~/components/Nav/NavToggle';
 import { useSidePanelContext } from '~/Providers';
 import { useSetRecoilState } from 'recoil';
 import { pdfBuilderState } from '~/store/pdfBuilder';
+import { profileDashboardState } from '~/store/profileDashboard';
 import { cn } from '~/utils';
 import Nav from './Nav';
 
@@ -53,6 +54,7 @@ const SidePanel = ({
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const setPDFBuilderState = useSetRecoilState(pdfBuilderState);
+  const setProfileDashboardState = useSetRecoilState(profileDashboardState);
 
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
@@ -90,9 +92,9 @@ const SidePanel = ({
     setPDFBuilderState((prev) => ({ ...prev, isOpen: true }));
   }, [setPDFBuilderState]);
 
-  const navigateToDashboard = useCallback(() => {
-    navigate('/profile');
-  }, [navigate]);
+  const openDashboard = useCallback(() => {
+    setProfileDashboardState({ isOpen: true });
+  }, [setProfileDashboardState]);
 
   const Links = useSideNavLinks({
     endpoint,
@@ -102,7 +104,7 @@ const SidePanel = ({
     interfaceConfig,
     endpointsConfig,
     openPDFBuilder,
-    navigateToDashboard,
+    openDashboard,
   });
 
   const toggleNavVisible = useCallback(() => {
