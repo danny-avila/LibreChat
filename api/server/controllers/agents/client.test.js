@@ -1310,8 +1310,8 @@ describe('AgentClient - titleConvo', () => {
       expect(client.options.agent.instructions).toContain('# MCP Server Instructions');
       expect(client.options.agent.instructions).toContain('Use these tools carefully');
 
-      // Verify the base instructions are also included
-      expect(client.options.agent.instructions).toContain('Base instructions');
+      // Verify the base instructions are also included (from agent config, not buildOptions)
+      expect(client.options.agent.instructions).toContain('Base agent instructions');
     });
 
     it('should handle MCP instructions with ephemeral agent', async () => {
@@ -1373,8 +1373,8 @@ describe('AgentClient - titleConvo', () => {
         additional_instructions: null,
       });
 
-      // Verify the instructions still work without MCP content
-      expect(client.options.agent.instructions).toBe('Base instructions only');
+      // Verify the instructions still work without MCP content (from agent config, not buildOptions)
+      expect(client.options.agent.instructions).toBe('Base agent instructions');
       expect(client.options.agent.instructions).not.toContain('[object Promise]');
     });
 
@@ -1398,8 +1398,8 @@ describe('AgentClient - titleConvo', () => {
         additional_instructions: null,
       });
 
-      // Should still have base instructions without MCP content
-      expect(client.options.agent.instructions).toContain('Base instructions');
+      // Should still have base instructions without MCP content (from agent config, not buildOptions)
+      expect(client.options.agent.instructions).toContain('Base agent instructions');
       expect(client.options.agent.instructions).not.toContain('[object Promise]');
     });
   });
@@ -1945,7 +1945,8 @@ describe('AgentClient - titleConvo', () => {
 
       expect(client.useMemory).toHaveBeenCalled();
 
-      expect(client.options.agent.instructions).toContain('Base instructions');
+      // Verify primary agent has its configured instructions (not from buildOptions) and memory context
+      expect(client.options.agent.instructions).toContain('Primary agent instructions');
       expect(client.options.agent.instructions).toContain(memoryContent);
 
       expect(parallelAgent1.instructions).toContain('Parallel agent 1 instructions');

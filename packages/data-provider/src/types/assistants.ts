@@ -217,7 +217,7 @@ export type Agent = {
   description: string | null;
   created_at: number;
   avatar: AgentAvatar | null;
-  instructions: string | null;
+  instructions?: string | null;
   additional_instructions?: string | null;
   tools?: string[];
   projectIds?: string[];

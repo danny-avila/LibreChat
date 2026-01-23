@@ -77,7 +77,7 @@
     "jotai": "^2.12.5",
     "js-cookie": "^3.0.5",
     "librechat-data-provider": "*",
-    "lodash": "^4.17.21",
+    "lodash": "^4.17.23",
     "lucide-react": "^0.394.0",
     "match-sorter": "^8.1.0",
     "mermaid": "^11.12.2",

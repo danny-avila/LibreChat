@@ -80,7 +80,7 @@
     "keyv-file": "^5.1.2",
     "klona": "^2.0.6",
     "librechat-data-provider": "*",
-    "lodash": "^4.17.21",
+    "lodash": "^4.17.23",
     "mathjs": "^15.1.0",
     "meilisearch": "^0.38.0",
     "memorystore": "^1.6.7",
