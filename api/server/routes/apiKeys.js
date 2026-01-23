@@ -1,5 +1,5 @@
 const express = require('express');
-const { checkAccess, createApiKeyHandlers } = require('@librechat/api');
+const { generateCheckAccess, createApiKeyHandlers } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAgentApiKeyById,
@@ -8,6 +8,7 @@ const {
   listAgentApiKeys,
 } = require('~/models');
 const { requireJwtAuth } = require('~/server/middleware');
+const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 
@@ -18,32 +19,18 @@ const handlers = createApiKeyHandlers({
   getAgentApiKeyById,
 });
 
-router.post(
-  '/',
-  requireJwtAuth,
-  checkAccess([PermissionTypes.AGENTS, Permissions.SHARE_PUBLIC]),
-  handlers.createApiKey,
-);
+const checkApiKeyAccess = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.SHARE_PUBLIC],
+  getRoleByName,
+});
 
-router.get(
-  '/',
-  requireJwtAuth,
-  checkAccess([PermissionTypes.AGENTS, Permissions.SHARE_PUBLIC]),
-  handlers.listApiKeys,
-);
+router.post('/', requireJwtAuth, checkApiKeyAccess, handlers.createApiKey);
 
-router.get(
-  '/:id',
-  requireJwtAuth,
-  checkAccess([PermissionTypes.AGENTS, Permissions.SHARE_PUBLIC]),
-  handlers.getApiKey,
-);
+router.get('/', requireJwtAuth, checkApiKeyAccess, handlers.listApiKeys);
 
-router.delete(
-  '/:id',
-  requireJwtAuth,
-  checkAccess([PermissionTypes.AGENTS, Permissions.SHARE_PUBLIC]),
-  handlers.deleteApiKey,
-);
+router.get('/:id', requireJwtAuth, checkApiKeyAccess, handlers.getApiKey);
+
+router.delete('/:id', requireJwtAuth, checkApiKeyAccess, handlers.deleteApiKey);
 
 module.exports = router;
