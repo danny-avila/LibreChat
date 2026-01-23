@@ -17,36 +17,36 @@
  *   }
  */
 const express = require('express');
+const { createRequireApiKeyAuth, createCheckRemoteAgentAccess } = require('@librechat/api');
 const {
   OpenAIChatCompletionController,
   ListModelsController,
   GetModelController,
 } = require('~/server/controllers/agents/openai');
+const { getEffectivePermissions } = require('~/server/services/PermissionService');
+const { validateAgentApiKey, findUser } = require('~/models');
 const { configMiddleware } = require('~/server/middleware');
+const { getAgent } = require('~/models/Agent');
 
 const router = express.Router();
 
-// TODO: Add API key authentication for production use
-// For now, inject a test user for testing
-router.use((req, res, next) => {
-  req.user = {
-    _id: '682f49b90f07376815c38ef2',
-    id: '682f49b90f07376815c38ef2',
-    name: 'Test User',
-    username: 'test user',
-    email: 'test@gmail.com',
-    emailVerified: true,
-    provider: 'local',
-    role: 'ADMIN',
-  };
-  next();
+const requireApiKeyAuth = createRequireApiKeyAuth({
+  validateAgentApiKey,
+  findUser,
 });
+
+const checkRemoteAgentAccess = createCheckRemoteAgentAccess({
+  getAgent,
+  getEffectivePermissions,
+});
+
+router.use(requireApiKeyAuth);
 router.use(configMiddleware);
 
 /**
  * @route POST /v1/chat/completions
  * @desc OpenAI-compatible chat completions with agents
- * @access Private (JWT auth required)
+ * @access Private (API key auth required)
  *
  * Request body:
  * {
@@ -64,12 +64,12 @@ router.use(configMiddleware);
  * Response (non-streaming):
  * - Standard OpenAI chat.completion format
  */
-router.post('/chat/completions', OpenAIChatCompletionController);
+router.post('/chat/completions', checkRemoteAgentAccess, OpenAIChatCompletionController);
 
 /**
  * @route GET /v1/models
  * @desc List available agents as models
- * @access Private (JWT auth required)
+ * @access Private (API key auth required)
  *
  * Response:
  * {
@@ -90,7 +90,7 @@ router.get('/models', ListModelsController);
 /**
  * @route GET /v1/models/:model
  * @desc Get details for a specific agent/model
- * @access Private (JWT auth required)
+ * @access Private (API key auth required)
  */
 router.get('/models/:model', GetModelController);
 

@@ -81,6 +81,20 @@ export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
   return request.put(endpoints.keys(), payload);
 }
 
+export function getAgentApiKeys(): Promise<t.TAgentApiKeyListResponse> {
+  return request.get(endpoints.apiKeys());
+}
+
+export function createAgentApiKey(
+  payload: t.TAgentApiKeyCreateRequest,
+): Promise<t.TAgentApiKeyCreateResponse> {
+  return request.post(endpoints.apiKeys(), payload);
+}
+
+export function deleteAgentApiKey(id: string): Promise<void> {
+  return request.delete(endpoints.apiKeyById(id));
+}
+
 export function getPresets(): Promise<s.TPreset[]> {
   return request.get(endpoints.presets());
 }

@@ -20,36 +20,36 @@
  * @see https://openresponses.org/specification
  */
 const express = require('express');
+const { createRequireApiKeyAuth, createCheckRemoteAgentAccess } = require('@librechat/api');
 const {
   createResponse,
   getResponse,
   listModels,
 } = require('~/server/controllers/agents/responses');
+const { getEffectivePermissions } = require('~/server/services/PermissionService');
+const { validateAgentApiKey, findUser } = require('~/models');
 const { configMiddleware } = require('~/server/middleware');
+const { getAgent } = require('~/models/Agent');
 
 const router = express.Router();
 
-// TODO: Add API key authentication for production use
-// For now, inject a test user for testing
-router.use((req, res, next) => {
-  req.user = {
-    _id: '682f49b90f07376815c38ef2',
-    id: '682f49b90f07376815c38ef2',
-    name: 'Test User',
-    username: 'test user',
-    email: 'test@gmail.com',
-    emailVerified: true,
-    provider: 'local',
-    role: 'ADMIN',
-  };
-  next();
+const requireApiKeyAuth = createRequireApiKeyAuth({
+  validateAgentApiKey,
+  findUser,
 });
+
+const checkRemoteAgentAccess = createCheckRemoteAgentAccess({
+  getAgent,
+  getEffectivePermissions,
+});
+
+router.use(requireApiKeyAuth);
 router.use(configMiddleware);
 
 /**
  * @route POST /v1/responses
  * @desc Create a model response following Open Responses specification
- * @access Private (JWT auth required)
+ * @access Private (API key auth required)
  *
  * Request body:
  * {
@@ -87,12 +87,12 @@ router.use(configMiddleware);
  *   "usage": { ... }
  * }
  */
-router.post('/', createResponse);
+router.post('/', checkRemoteAgentAccess, createResponse);
 
 /**
  * @route GET /v1/responses/models
  * @desc List available agents as models
- * @access Private (JWT auth required)
+ * @access Private (API key auth required)
  *
  * Response:
  * {
@@ -113,7 +113,7 @@ router.get('/models', listModels);
 /**
  * @route GET /v1/responses/:id
  * @desc Retrieve a stored response by ID
- * @access Private (JWT auth required)
+ * @access Private (API key auth required)
  *
  * Response:
  * {

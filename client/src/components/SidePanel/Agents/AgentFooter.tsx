@@ -1,3 +1,4 @@
+import { Globe } from 'lucide-react';
 import { Spinner } from '@librechat/client';
 import { useWatch, useFormContext } from 'react-hook-form';
 import {
@@ -43,6 +44,10 @@ export default function AgentFooter({
   const hasAccessToShareAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.SHARE,
+  });
+  const hasAccessToSharePublic = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.SHARE_PUBLIC,
   });
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
     ResourceType.AGENT,
@@ -90,6 +95,25 @@ export default function AgentFooter({
               resourceName={agent?.name ?? ''}
               resourceType={ResourceType.AGENT}
             />
+          )}
+        {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) &&
+          hasAccessToSharePublic &&
+          !permissionsLoading &&
+          agent?._id && (
+            <GenericGrantAccessDialog
+              resourceDbId={agent?._id}
+              resourceId={agent_id}
+              resourceName={agent?.name ?? ''}
+              resourceType={ResourceType.REMOTE_AGENT}
+            >
+              <button
+                type="button"
+                className="btn btn-neutral border-token-border-light h-9 px-3"
+                title={localize('com_ui_remote_access')}
+              >
+                <Globe className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </GenericGrantAccessDialog>
           )}
         {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
         {/* Submit Button */}
