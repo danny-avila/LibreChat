@@ -14,8 +14,8 @@ function Data() {
   const [confirmClearConvos, setConfirmClearConvos] = useState(false);
   useOnClickOutside(dataTabRef, () => confirmClearConvos && setConfirmClearConvos(false), []);
   const hasAccessToApiKeys = useHasAccess({
-    permissionType: PermissionTypes.AGENTS,
-    permission: Permissions.SHARE_PUBLIC,
+    permissionType: PermissionTypes.REMOTE_AGENTS,
+    permission: Permissions.USE,
   });
 
   return (

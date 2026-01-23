@@ -1,27 +1,29 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Copy, CopyCheck, Key, Eye, EyeOff } from 'lucide-react';
 import {
   useGetAgentApiKeysQuery,
   useCreateAgentApiKeyMutation,
   useDeleteAgentApiKeyMutation,
 } from 'librechat-data-provider/react-query';
+import { Plus, Trash2, Copy, CopyCheck, Key, Eye, EyeOff } from 'lucide-react';
 import {
   Button,
   Input,
   Label,
+  Spinner,
   OGDialog,
   OGDialogClose,
-  OGDialogContent,
   OGDialogTitle,
+  OGDialogHeader,
+  OGDialogContent,
   OGDialogTrigger,
-  Spinner,
   useToastContext,
 } from '@librechat/client';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
 
-function CreateKeyDialog({ open, setOpen }: { open: boolean; setOpen: (open: boolean) => void }) {
+function CreateKeyDialog({ onKeyCreated }: { onKeyCreated?: () => void }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [newKey, setNewKey] = useState<string | null>(null);
   const [showKey, setShowKey] = useState(false);
@@ -39,6 +41,7 @@ function CreateKeyDialog({ open, setOpen }: { open: boolean; setOpen: (open: boo
       const result = await createMutation.mutateAsync({ name: name.trim() });
       setNewKey(result.key);
       showToast({ message: localize('com_ui_api_key_created'), status: 'success' });
+      onKeyCreated?.();
     } catch {
       showToast({ message: localize('com_ui_api_key_create_error'), status: 'error' });
     }
@@ -52,7 +55,9 @@ function CreateKeyDialog({ open, setOpen }: { open: boolean; setOpen: (open: boo
   };
 
   const handleCopy = () => {
-    if (isCopying) return;
+    if (isCopying) {
+      return;
+    }
     copyKey(setIsCopying);
     showToast({ message: localize('com_ui_api_key_copied'), status: 'success' });
   };
@@ -232,10 +237,9 @@ function KeyItem({
   );
 }
 
-export function AgentApiKeys() {
+function ApiKeysContent({ isOpen }: { isOpen: boolean }) {
   const localize = useLocalize();
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const { data, isLoading, error } = useGetAgentApiKeysQuery();
+  const { data, isLoading, error } = useGetAgentApiKeysQuery(undefined, { enabled: isOpen });
 
   if (error) {
     return <div className="text-sm text-red-500">{localize('com_ui_api_keys_load_error')}</div>;
@@ -243,17 +247,11 @@ export function AgentApiKeys() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <Label className="text-base font-medium">{localize('com_ui_agent_api_keys')}</Label>
-          <p className="text-sm text-text-secondary">
-            {localize('com_ui_agent_api_keys_description')}
-          </p>
-        </div>
-        <CreateKeyDialog open={createDialogOpen} setOpen={setCreateDialogOpen} />
+      <div className="flex items-center justify-end">
+        <CreateKeyDialog />
       </div>
 
-      <div className="space-y-2">
+      <div className="max-h-[400px] space-y-2 overflow-y-auto">
         {isLoading && (
           <div className="flex items-center justify-center py-8">
             <Spinner className="h-6 w-6" />
@@ -279,6 +277,38 @@ export function AgentApiKeys() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+export function AgentApiKeys() {
+  const localize = useLocalize();
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="flex items-center justify-between">
+      <Label id="api-keys-label">{localize('com_ui_agent_api_keys')}</Label>
+
+      <OGDialog open={isOpen} onOpenChange={setIsOpen}>
+        <OGDialogTrigger asChild>
+          <Button aria-labelledby="api-keys-label" variant="outline">
+            {localize('com_ui_manage')}
+          </Button>
+        </OGDialogTrigger>
+
+        <OGDialogContent
+          title={localize('com_ui_agent_api_keys')}
+          className="w-11/12 max-w-2xl bg-background text-text-primary shadow-2xl"
+        >
+          <OGDialogHeader>
+            <OGDialogTitle>{localize('com_ui_agent_api_keys')}</OGDialogTitle>
+            <p className="text-sm text-text-secondary">
+              {localize('com_ui_agent_api_keys_description')}
+            </p>
+          </OGDialogHeader>
+          <ApiKeysContent isOpen={isOpen} />
+        </OGDialogContent>
+      </OGDialog>
     </div>
   );
 }
