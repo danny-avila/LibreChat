@@ -47,6 +47,10 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     });
   }
 
+  if (job.metadata?.userId && job.metadata.userId !== req.user.id) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
   res.setHeader('Content-Encoding', 'identity');
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
