@@ -1,6 +1,6 @@
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { Constants } from 'librechat-data-provider';
-import type { Agent } from 'librechat-data-provider';
+import type { Agent, TEphemeralAgent } from 'librechat-data-provider';
 import type { Logger } from 'winston';
 import type { MCPManager } from '~/mcp/MCPManager';
 
@@ -105,7 +105,7 @@ export async function applyContextToAgent({
   agent: AgentWithTools;
   sharedRunContext: string;
   mcpManager: MCPManager;
-  ephemeralAgent?: { mcp?: string[] };
+  ephemeralAgent?: TEphemeralAgent;
   agentId?: string;
   logger?: Logger;
 }): Promise<void> {
