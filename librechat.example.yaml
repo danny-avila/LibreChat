@@ -128,6 +128,9 @@ interface:
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
+  # Display marketplace icon in the header
+  marketplaceIcon: false
+
 # Example Cloudflare turnstile (optional)
 #turnstile:
 #  siteKey: "your-site-key-here"
