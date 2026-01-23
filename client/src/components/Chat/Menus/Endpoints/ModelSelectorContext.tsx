@@ -1,5 +1,5 @@
 import debounce from 'lodash/debounce';
-import React, { createContext, useContext, useState, useMemo } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
@@ -95,6 +95,25 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     startupConfig,
     endpointsConfig,
   });
+
+  const getModelDisplayName = useCallback(
+    (endpoint: Endpoint, model: string): string => {
+      if (isAgentsEndpoint(endpoint.value)) {
+        if (endpoint.agentNames && endpoint.agentNames[model]) {
+          return endpoint.agentNames[model];
+        }
+        if (agentsMap?.[model]?.name) {
+          return agentsMap[model].name;
+        }
+      } else if (isAssistantsEndpoint(endpoint.value)) {
+        if (endpoint.assistantNames && endpoint.assistantNames[model]) {
+          return endpoint.assistantNames[model];
+        }
+      }
+      return model;
+    },
+    [agentsMap],
+  );
 
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,
@@ -211,18 +230,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
       modelSpec: '',
     });
 
-    let modelDisplayName = model;
-    if (isAgentsEndpoint(endpoint.value)) {
-      if (endpoint.agentNames && endpoint.agentNames[model]) {
-        modelDisplayName = endpoint.agentNames[model];
-      } else if (agentsMap?.[model]?.name) {
-        modelDisplayName = agentsMap[model].name;
-      }
-    } else if (isAssistantsEndpoint(endpoint.value)) {
-      if (endpoint.assistantNames && endpoint.assistantNames[model]) {
-        modelDisplayName = endpoint.assistantNames[model];
-      }
-    }
+    const modelDisplayName = getModelDisplayName(endpoint, model);
     const announcement = localize('com_ui_model_selected', { 0: modelDisplayName });
     announcePolite({ message: announcement, isStatus: true });
   };
