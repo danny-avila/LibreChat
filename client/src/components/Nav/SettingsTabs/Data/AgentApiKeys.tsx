@@ -5,7 +5,7 @@ import {
   useDeleteAgentApiKeyMutation,
 } from 'librechat-data-provider/react-query';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import { Plus, Trash2, Copy, CopyCheck, Key, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Copy, CopyCheck, Key, Eye, EyeOff, ShieldEllipsis } from 'lucide-react';
 import {
   Button,
   Input,
@@ -251,7 +251,8 @@ function ApiKeysContent({ isOpen }: { isOpen: boolean }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <RemoteAgentsAdminSettings />
         <CreateKeyDialog />
       </div>
 
@@ -305,6 +306,17 @@ function RemoteAgentsAdminSettings() {
     },
   });
 
+  const trigger = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-8 w-8"
+      aria-label={localize('com_ui_admin_settings')}
+    >
+      <ShieldEllipsis className="h-5 w-5" aria-hidden="true" />
+    </Button>
+  );
+
   return (
     <AdminSettingsDialog
       permissionType={PermissionTypes.REMOTE_AGENTS}
@@ -312,6 +324,7 @@ function RemoteAgentsAdminSettings() {
       permissions={remoteAgentsPermissions}
       menuId="remote-agents-role-dropdown"
       mutation={mutation}
+      trigger={trigger}
     />
   );
 }
@@ -336,10 +349,7 @@ export function AgentApiKeys() {
           className="w-11/12 max-w-2xl bg-background text-text-primary shadow-2xl"
         >
           <OGDialogHeader>
-            <div className="flex items-center justify-between">
-              <OGDialogTitle>{localize('com_ui_agent_api_keys')}</OGDialogTitle>
-              <RemoteAgentsAdminSettings />
-            </div>
+            <OGDialogTitle>{localize('com_ui_agent_api_keys')}</OGDialogTitle>
             <p className="text-sm text-text-secondary">
               {localize('com_ui_agent_api_keys_description')}
             </p>
