@@ -25,13 +25,7 @@ const checkRemoteAgentsUse = generateCheckAccess({
   getRoleByName,
 });
 
-const checkRemoteAgentsCreate = generateCheckAccess({
-  permissionType: PermissionTypes.REMOTE_AGENTS,
-  permissions: [Permissions.CREATE],
-  getRoleByName,
-});
-
-router.post('/', requireJwtAuth, checkRemoteAgentsCreate, handlers.createApiKey);
+router.post('/', requireJwtAuth, checkRemoteAgentsUse, handlers.createApiKey);
 
 router.get('/', requireJwtAuth, checkRemoteAgentsUse, handlers.listApiKeys);
 
