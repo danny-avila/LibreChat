@@ -335,6 +335,8 @@ export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;
 export const updateMCPServersPermissions = (roleName: string) => `${getRole(roleName)}/mcp-servers`;
+export const updateRemoteAgentsPermissions = (roleName: string) =>
+  `${getRole(roleName)}/remote-agents`;
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;

@@ -891,6 +891,15 @@ export function updateMCPServersPermissions(
   return request.put(endpoints.updateMCPServersPermissions(variables.roleName), variables.updates);
 }
 
+export function updateRemoteAgentsPermissions(
+  variables: m.UpdateRemoteAgentsPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(
+    endpoints.updateRemoteAgentsPermissions(variables.roleName),
+    variables.updates,
+  );
+}
+
 export function updateMarketplacePermissions(
   variables: m.UpdateMarketplacePermVars,
 ): Promise<m.UpdatePermResponse> {

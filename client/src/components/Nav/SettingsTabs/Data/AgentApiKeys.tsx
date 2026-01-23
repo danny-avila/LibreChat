@@ -4,6 +4,7 @@ import {
   useCreateAgentApiKeyMutation,
   useDeleteAgentApiKeyMutation,
 } from 'librechat-data-provider/react-query';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { Plus, Trash2, Copy, CopyCheck, Key, Eye, EyeOff } from 'lucide-react';
 import {
   Button,
@@ -18,7 +19,10 @@ import {
   OGDialogTrigger,
   useToastContext,
 } from '@librechat/client';
+import type { PermissionConfig } from '~/components/ui';
+import { useUpdateRemoteAgentsPermissionsMutation } from '~/data-provider';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
+import { AdminSettingsDialog } from '~/components/ui';
 
 function CreateKeyDialog({ onKeyCreated }: { onKeyCreated?: () => void }) {
   const localize = useLocalize();
@@ -281,6 +285,37 @@ function ApiKeysContent({ isOpen }: { isOpen: boolean }) {
   );
 }
 
+const remoteAgentsPermissions: PermissionConfig[] = [
+  { permission: Permissions.USE, labelKey: 'com_ui_remote_agents_allow_use' },
+  { permission: Permissions.CREATE, labelKey: 'com_ui_remote_agents_allow_create' },
+  { permission: Permissions.SHARE, labelKey: 'com_ui_remote_agents_allow_share' },
+  { permission: Permissions.SHARE_PUBLIC, labelKey: 'com_ui_remote_agents_allow_share_public' },
+];
+
+function RemoteAgentsAdminSettings() {
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
+
+  const mutation = useUpdateRemoteAgentsPermissionsMutation({
+    onSuccess: () => {
+      showToast({ status: 'success', message: localize('com_ui_saved') });
+    },
+    onError: () => {
+      showToast({ status: 'error', message: localize('com_ui_error_save_admin_settings') });
+    },
+  });
+
+  return (
+    <AdminSettingsDialog
+      permissionType={PermissionTypes.REMOTE_AGENTS}
+      sectionKey="com_ui_remote_agents"
+      permissions={remoteAgentsPermissions}
+      menuId="remote-agents-role-dropdown"
+      mutation={mutation}
+    />
+  );
+}
+
 export function AgentApiKeys() {
   const localize = useLocalize();
   const [isOpen, setIsOpen] = useState(false);
@@ -301,7 +336,10 @@ export function AgentApiKeys() {
           className="w-11/12 max-w-2xl bg-background text-text-primary shadow-2xl"
         >
           <OGDialogHeader>
-            <OGDialogTitle>{localize('com_ui_agent_api_keys')}</OGDialogTitle>
+            <div className="flex items-center justify-between">
+              <OGDialogTitle>{localize('com_ui_agent_api_keys')}</OGDialogTitle>
+              <RemoteAgentsAdminSettings />
+            </div>
             <p className="text-sm text-text-secondary">
               {localize('com_ui_agent_api_keys_description')}
             </p>
