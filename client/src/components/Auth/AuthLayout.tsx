@@ -81,8 +81,8 @@ function AuthLayout({
           </div>
         )}
       </BlinkAnimation>
-      
-      {/* Welcome back header and login buttons below logo */}
+
+      {/* Welcome back header and login buttons below logo */}}
       {!hasStartupConfigError && !isFetching && header && (
         <div className="mt-6 text-center">
           <h1
@@ -99,7 +99,7 @@ function AuthLayout({
             )}
         </div>
       )}
-      
+
       {/* ——— WELCOME SECTIONS ——— */}
       {logoText && (
         <section className="mx-auto w-full max-w-2xl space-y-8 p-6 text-black dark:text-white">
