@@ -7,9 +7,9 @@ const { getRoleByName } = require('~/models/Role');
  */
 const resourceToPermissionType = {
   [ResourceType.AGENT]: PermissionTypes.AGENTS,
-  [ResourceType.REMOTE_AGENT]: PermissionTypes.AGENTS,
   [ResourceType.PROMPTGROUP]: PermissionTypes.PROMPTS,
   [ResourceType.MCPSERVER]: PermissionTypes.MCP_SERVERS,
+  [ResourceType.REMOTE_AGENT]: PermissionTypes.REMOTE_AGENTS,
 };
 
 /**

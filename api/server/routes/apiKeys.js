@@ -20,8 +20,8 @@ const handlers = createApiKeyHandlers({
 });
 
 const checkApiKeyAccess = generateCheckAccess({
-  permissionType: PermissionTypes.AGENTS,
-  permissions: [Permissions.SHARE_PUBLIC],
+  permissionType: PermissionTypes.REMOTE_AGENTS,
+  permissions: [Permissions.USE],
   getRoleByName,
 });
 
