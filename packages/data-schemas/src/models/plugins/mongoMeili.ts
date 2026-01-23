@@ -304,8 +304,13 @@ const createMeiliMongooseModel = ({
             await index.deleteDocuments(toDelete.map(String));
             logger.debug(`[cleanupMeiliIndex] Deleted ${toDelete.length} orphaned documents`);
           }
+          // if fetch documents request returns less documents than limit, all documents are processed
+          if (batch.total < batchSize) {
+            moreDocuments = false;
+            break;
+          }
 
-          offset += batchSize;
+          offset += batchSize - toDelete.length;
 
           // Add delay between batches
           if (delayMs > 0) {
