@@ -8,8 +8,9 @@ import {
   useSelectorEffects,
   useKeyDialog,
   useEndpoints,
+  useLocalize,
 } from '~/hooks';
-import { useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
+import { useAgentsMapContext, useAssistantsMapContext, useLiveAnnouncer } from '~/Providers';
 import { useGetEndpointsQuery, useListAgentsQuery } from '~/data-provider';
 import { useModelSelectorChatContext } from './ModelSelectorChatContext';
 import useSelectMention from '~/hooks/Input/useSelectMention';
@@ -59,6 +60,8 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { endpoint, model, spec, agent_id, assistant_id, conversation, newConversation } =
     useModelSelectorChatContext();
+  const localize = useLocalize();
+  const { announcePolite } = useLiveAnnouncer();
   const modelSpecs = useMemo(() => {
     const specs = startupConfig?.modelSpecs?.list ?? [];
     if (!agentsMap) {
@@ -207,6 +210,21 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
       model,
       modelSpec: '',
     });
+
+    let modelDisplayName = model;
+    if (isAgentsEndpoint(endpoint.value)) {
+      if (endpoint.agentNames && endpoint.agentNames[model]) {
+        modelDisplayName = endpoint.agentNames[model];
+      } else if (agentsMap?.[model]?.name) {
+        modelDisplayName = agentsMap[model].name;
+      }
+    } else if (isAssistantsEndpoint(endpoint.value)) {
+      if (endpoint.assistantNames && endpoint.assistantNames[model]) {
+        modelDisplayName = endpoint.assistantNames[model];
+      }
+    }
+    const announcement = localize('com_ui_model_selected', { 0: modelDisplayName });
+    announcePolite({ message: announcement, isStatus: true });
   };
 
   const value = {
