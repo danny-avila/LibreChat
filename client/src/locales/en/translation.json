@@ -1334,6 +1334,7 @@
   "com_ui_special_var_current_user": "Current User",
   "com_ui_special_var_iso_datetime": "UTC ISO Datetime",
   "com_ui_special_variables": "Special variables:",
+  "com_ui_special_variable_added": "{{0}} special variable added.",
   "com_ui_special_variables_more_info": "You can select special variables from the dropdown: `{{current_date}}` (today's date and day of week), `{{current_datetime}}` (local date and time), `{{utc_iso_datetime}}` (UTC ISO datetime), and `{{current_user}}` (your account name).",
   "com_ui_speech_not_supported": "Your browser does not support speech recognition",
   "com_ui_speech_not_supported_use_external": "Your browser does not support speech recognition. Try switching to External STT in Settings > Speech.",
