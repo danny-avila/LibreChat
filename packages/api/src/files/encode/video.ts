@@ -79,7 +79,7 @@ export async function encodeAndFormatVideos(
         mimeType: file.type,
         data: content,
       });
-    } else if (provider === Providers.OPENROUTER) {
+    } else if (provider === Providers.OPENROUTER || provider === 'vercel') {
       result.videos.push({
         type: 'video_url',
         video_url: {

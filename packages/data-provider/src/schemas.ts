@@ -40,6 +40,7 @@ export enum Providers {
   DEEPSEEK = 'deepseek',
   OPENROUTER = 'openrouter',
   XAI = 'xai',
+  VERCEL = 'vercel',
 }
 
 /**
@@ -58,6 +59,7 @@ export const documentSupportedProviders = new Set<string>([
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
   Providers.XAI,
+  Providers.VERCEL,
 ]);
 
 const openAILikeProviders = new Set<string>([
@@ -69,6 +71,7 @@ const openAILikeProviders = new Set<string>([
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
   Providers.XAI,
+  Providers.VERCEL,
 ]);
 
 export const isOpenAILikeProvider = (provider?: string | null): boolean => {

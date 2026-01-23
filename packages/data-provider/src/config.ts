@@ -1856,6 +1856,7 @@ export const providerEndpointMap = {
   [EModelEndpoint.bedrock]: EModelEndpoint.bedrock,
   [EModelEndpoint.anthropic]: EModelEndpoint.anthropic,
   [EModelEndpoint.azureOpenAI]: EModelEndpoint.azureOpenAI,
+  [KnownEndpoints.vercel]: EModelEndpoint.openAI,
 };
 
 export const specialVariables = {

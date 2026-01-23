@@ -117,6 +117,8 @@ const AttachFileMenu = ({
       // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
       if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
         currentProvider = Providers.OPENROUTER;
+      } else if (currentProvider?.toLowerCase() === Providers.VERCEL) {
+        currentProvider = Providers.VERCEL;
       }
 
       const isAzureWithResponsesApi =
@@ -132,7 +134,11 @@ const AttachFileMenu = ({
           onClick: () => {
             setToolResource(undefined);
             let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
-            if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
+            if (
+              currentProvider === Providers.GOOGLE ||
+              currentProvider === Providers.OPENROUTER ||
+              currentProvider === Providers.VERCEL
+            ) {
               fileType = 'image_document_video_audio';
             }
             onAction(fileType);

@@ -19,6 +19,7 @@ const customProviders = new Set([
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
   KnownEndpoints.ollama,
+  KnownEndpoints.vercel,
 ]);
 
 export function getReasoningKey(

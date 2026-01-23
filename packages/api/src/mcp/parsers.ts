@@ -13,6 +13,7 @@ const RECOGNIZED_PROVIDERS = new Set([
   'openai',
   'azureopenai',
   'openrouter',
+  'vercel',
   'xai',
   'deepseek',
   'ollama',

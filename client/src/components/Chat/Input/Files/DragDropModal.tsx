@@ -61,6 +61,8 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
     if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
       currentProvider = Providers.OPENROUTER;
+    } else if (currentProvider?.toLowerCase() === Providers.VERCEL) {
+      currentProvider = Providers.VERCEL;
     }
 
     /** Helper to get inferred MIME type for a file */
@@ -76,7 +78,9 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
       isAzureWithResponsesApi
     ) {
       const supportsImageDocVideoAudio =
-        currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER;
+        currentProvider === EModelEndpoint.google ||
+        currentProvider === Providers.OPENROUTER ||
+        currentProvider === Providers.VERCEL;
       const validFileTypes = supportsImageDocVideoAudio
         ? files.every((file) => {
             const type = getFileType(file);

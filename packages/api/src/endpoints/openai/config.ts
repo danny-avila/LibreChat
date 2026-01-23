@@ -112,6 +112,7 @@ export function getOpenAIConfig(
       defaultParams,
       modelOptions,
       useOpenRouter,
+      useVercel: isVercel,
     });
     llmConfig = openaiResult.llmConfig;
     azure = openaiResult.azure;
@@ -189,6 +190,8 @@ export function getOpenAIConfig(
   };
   if (useOpenRouter) {
     result.provider = Providers.OPENROUTER;
+  } else if (isVercel) {
+    result.provider = 'vercel';
   }
   return result;
 }
