@@ -28,6 +28,7 @@ const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
+const { initializeTokenStore } = require('./services/TokenStore');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const { seedDatabase } = require('~/models');
@@ -60,6 +61,7 @@ const startServer = async () => {
   const appConfig = await getAppConfig();
   initializeFileStorage(appConfig);
   await performStartupChecks(appConfig);
+  initializeTokenStore(appConfig);
   await updateInterfacePermissions(appConfig);
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
