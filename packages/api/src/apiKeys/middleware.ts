@@ -3,6 +3,7 @@ import { ResourceType, PermissionBits, hasPermissions } from 'librechat-data-pro
 import type { Request, Response, NextFunction } from 'express';
 import type { IUser } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
+import { getRemoteAgentPermissions } from './service';
 
 export interface ApiKeyAuthDependencies {
   validateAgentApiKey: (apiKey: string) => Promise<{
@@ -130,12 +131,9 @@ export function createCheckRemoteAgentAccess(deps: RemoteAgentAccessDependencies
         });
       }
 
-      const permissions = await deps.getEffectivePermissions({
-        userId: req.user?.id || '',
-        role: req.user?.role,
-        resourceType: ResourceType.REMOTE_AGENT,
-        resourceId: agent._id,
-      });
+      const userId = req.user?.id || '';
+
+      const permissions = await getRemoteAgentPermissions(deps, userId, req.user?.role, agent._id);
 
       if (!hasPermissions(permissions, PermissionBits.VIEW)) {
         return res.status(403).json({

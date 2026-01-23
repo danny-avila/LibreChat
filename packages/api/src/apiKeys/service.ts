@@ -76,6 +76,41 @@ export function createApiKeyServiceDependencies(
   };
 }
 
+export interface GetRemoteAgentPermissionsDeps {
+  getEffectivePermissions: (params: {
+    userId: string;
+    role?: string;
+    resourceType: ResourceType;
+    resourceId: string | Types.ObjectId;
+  }) => Promise<number>;
+}
+
+/** AGENT owners automatically have full REMOTE_AGENT permissions */
+export async function getRemoteAgentPermissions(
+  deps: GetRemoteAgentPermissionsDeps,
+  userId: string,
+  role: string | undefined,
+  resourceId: string | Types.ObjectId,
+): Promise<number> {
+  const agentPerms = await deps.getEffectivePermissions({
+    userId,
+    role,
+    resourceType: ResourceType.AGENT,
+    resourceId,
+  });
+
+  if (hasPermissions(agentPerms, PermissionBits.SHARE)) {
+    return PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+  }
+
+  return deps.getEffectivePermissions({
+    userId,
+    role,
+    resourceType: ResourceType.REMOTE_AGENT,
+    resourceId,
+  });
+}
+
 export async function checkRemoteAgentAccess(params: {
   userId: string;
   role?: string;
@@ -98,12 +133,12 @@ export async function checkRemoteAgentAccess(params: {
     return { hasAccess: false, permissions: 0, agent: null };
   }
 
-  const permissions = await getEffectivePermissions({
+  const permissions = await getRemoteAgentPermissions(
+    { getEffectivePermissions },
     userId,
     role,
-    resourceType: ResourceType.REMOTE_AGENT,
-    resourceId: agent._id,
-  });
+    agent._id,
+  );
 
   const hasAccess = hasPermissions(permissions, PermissionBits.VIEW);
 
