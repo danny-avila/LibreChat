@@ -4,7 +4,14 @@ import type { Agent, TEphemeralAgent } from 'librechat-data-provider';
 import type { Logger } from 'winston';
 import type { MCPManager } from '~/mcp/MCPManager';
 
-type AgentWithTools = Omit<Agent, 'tools'> & { tools?: Array<DynamicStructuredTool | string> };
+/**
+ * Agent type with optional tools array that can contain DynamicStructuredTool or string.
+ * For context operations, we only require id and instructions, other Agent fields are optional.
+ */
+export type AgentWithTools = Pick<Agent, 'id'> &
+  Partial<Omit<Agent, 'id' | 'tools'>> & {
+    tools?: Array<DynamicStructuredTool | string>;
+  };
 
 /**
  * Extracts unique MCP server names from an agent's tools.
@@ -109,16 +116,15 @@ export async function applyContextToAgent({
   agentId?: string;
   logger?: Logger;
 }): Promise<void> {
+  const baseInstructions = agent.instructions || '';
+
   try {
-    const mcpServers =
-      ephemeralAgent?.mcp?.length && ephemeralAgent.mcp.length > 0
-        ? ephemeralAgent.mcp
-        : extractMCPServers(agent);
+    const mcpServers = ephemeralAgent?.mcp?.length ? ephemeralAgent.mcp : extractMCPServers(agent);
     const mcpInstructions = await getMCPInstructionsForServers(mcpServers, mcpManager, logger);
 
     agent.instructions = buildAgentInstructions({
       sharedRunContext,
-      baseInstructions: agent.instructions || '',
+      baseInstructions,
       mcpInstructions,
     });
 
@@ -126,6 +132,12 @@ export async function applyContextToAgent({
       logger.debug(`[AgentContext] Applied context to agent: ${agentId}`);
     }
   } catch (error) {
+    agent.instructions = buildAgentInstructions({
+      sharedRunContext,
+      baseInstructions,
+      mcpInstructions: '',
+    });
+
     if (logger) {
       logger.error(
         `[AgentContext] Failed to apply context to agent${agentId ? ` ${agentId}` : ''}, using base instructions only:`,
