@@ -1,13 +1,13 @@
 import React, { useState, useRef } from 'react';
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { useOnClickOutside } from '@librechat/client';
-import { useHasAccess } from '~/hooks';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import ImportConversations from './ImportConversations';
 import { AgentApiKeys } from './AgentApiKeys';
 import { DeleteCache } from './DeleteCache';
 import { RevokeKeys } from './RevokeKeys';
 import { ClearChats } from './ClearChats';
 import SharedLinks from './SharedLinks';
+import { useHasAccess } from '~/hooks';
 
 function Data() {
   const dataTabRef = useRef(null);

@@ -18,7 +18,6 @@ import {
   useToastContext,
 } from '@librechat/client';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
-import { cn } from '~/utils';
 
 function CreateKeyDialog({ open, setOpen }: { open: boolean; setOpen: (open: boolean) => void }) {
   const localize = useLocalize();
@@ -255,11 +254,14 @@ export function AgentApiKeys() {
       </div>
 
       <div className="space-y-2">
-        {isLoading ? (
+        {isLoading && (
           <div className="flex items-center justify-center py-8">
             <Spinner className="h-6 w-6" />
           </div>
-        ) : data?.keys && data.keys.length > 0 ? (
+        )}
+        {!isLoading &&
+          data?.keys &&
+          data.keys.length > 0 &&
           data.keys.map((key) => (
             <KeyItem
               key={key.id}
@@ -269,8 +271,8 @@ export function AgentApiKeys() {
               createdAt={key.createdAt}
               lastUsedAt={key.lastUsedAt}
             />
-          ))
-        ) : (
+          ))}
+        {!isLoading && (!data?.keys || data.keys.length === 0) && (
           <div className="rounded-lg border-2 border-dashed border-border-light p-8 text-center">
             <Key className="mx-auto h-8 w-8 text-text-secondary" />
             <p className="mt-2 text-sm text-text-secondary">{localize('com_ui_no_api_keys')}</p>
