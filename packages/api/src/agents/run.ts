@@ -22,19 +22,22 @@ const customProviders = new Set([
 ]);
 
 /**
- * Check if the endpoint is Scaleway.
- * Scaleway custom endpoints are identified by endpoint name or baseURL containing 'scaleway' or 'api.scaleway.ai'.
+ * Check if the endpoint is a custom OpenAI-compatible endpoint.
+ * Custom endpoints are identified when provider is OPENAI but endpoint name differs,
+ * or when a custom baseURL is provided (indicating a custom endpoint configuration).
  */
-function isScalewayEndpoint(
+function isCustomOpenAIEndpoint(
   provider?: string,
   endpoint?: string | null,
   baseURL?: string | null,
 ): boolean {
+  // Custom endpoints are typically configured with provider=OPENAI but different endpoint name
+  // or have a custom baseURL that differs from standard OpenAI endpoints
   return (
-    provider?.toLowerCase().includes('scaleway') ||
-    endpoint?.toLowerCase().includes('scaleway') ||
-    baseURL?.toLowerCase().includes('scaleway') ||
-    baseURL?.toLowerCase().includes('api.scaleway.ai')
+    provider === Providers.OPENAI &&
+    endpoint != null &&
+    endpoint !== provider &&
+    endpoint !== Providers.OPENAI
   );
 }
 
@@ -146,8 +149,10 @@ export async function createRun({
     }
 
     /** Resolves issues with new OpenAI usage field */
-    // Scaleway custom endpoints should be treated like other custom providers for usage handling
-    const isScaleway = isScalewayEndpoint(
+    // Custom OpenAI-compatible endpoints should use non-streaming usage extraction
+    // This includes all custom endpoints (provider=OPENAI but endpoint name differs)
+    // and known custom providers that require special handling
+    const isCustomEndpoint = isCustomOpenAIEndpoint(
       agent.provider,
       agent.endpoint,
       llmConfig.configuration?.baseURL,
@@ -155,8 +160,7 @@ export async function createRun({
     
     if (
       customProviders.has(agent.provider) ||
-      (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider) ||
-      isScaleway
+      isCustomEndpoint
     ) {
       llmConfig.streamUsage = false;
       llmConfig.usage = true;

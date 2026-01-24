@@ -17,8 +17,16 @@ const RECOGNIZED_PROVIDERS = new Set([
   'deepseek',
   'ollama',
   'bedrock',
-  'scaleway',
 ]);
+
+/**
+ * Check if a provider should receive structured content formatting for MCP tool responses.
+ * Custom OpenAI-compatible endpoints are automatically recognized since they use 'openai' as provider,
+ * which is already included in RECOGNIZED_PROVIDERS.
+ */
+function isRecognizedProvider(provider: t.Provider): boolean {
+  return RECOGNIZED_PROVIDERS.has(provider);
+}
 const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'azureopenai', 'openai']);
 
 const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
@@ -94,7 +102,7 @@ export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
 ): t.FormattedContentResult {
-  if (!RECOGNIZED_PROVIDERS.has(provider)) {
+  if (!isRecognizedProvider(provider)) {
     return [parseAsString(result), undefined];
   }
 
