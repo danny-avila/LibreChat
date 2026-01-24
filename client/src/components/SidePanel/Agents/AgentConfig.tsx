@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
+import { EModelEndpoint, getEndpointField, defaultAgentCapabilities } from 'librechat-data-provider';
 import type { AgentForm, IconComponentTypes } from '~/common';
 import {
   removeFocusOutlines,
@@ -29,6 +29,7 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
+import ImageVision from './ImageVision';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
@@ -85,7 +86,8 @@ export default function AgentConfig() {
     artifactsEnabled,
     webSearchEnabled,
     fileSearchEnabled,
-  } = useAgentCapabilities(agentsConfig?.capabilities);
+    visionEnabled,
+  } = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
   const context_files = useMemo(() => {
     if (typeof agent === 'string') {
@@ -288,7 +290,8 @@ export default function AgentConfig() {
           fileSearchEnabled ||
           artifactsEnabled ||
           contextEnabled ||
-          webSearchEnabled) && (
+          webSearchEnabled ||
+          visionEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block font-medium">
               {localize('com_assistants_capabilities')}
@@ -303,6 +306,19 @@ export default function AgentConfig() {
             {artifactsEnabled && <Artifacts />}
             {/* File Search */}
             {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+            {/* Vision */}
+            {visionEnabled && (
+              <div className="w-full">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span>
+                    <label className="text-token-text-primary block font-medium">
+                      {localize('com_assistants_image_vision')}
+                    </label>
+                  </span>
+                </div>
+                <ImageVision />
+              </div>
+            )}
           </div>
         )}
         {/* MCP Section */}
