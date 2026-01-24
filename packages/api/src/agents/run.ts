@@ -58,8 +58,6 @@ export function getReasoningKey(
   ) {
     reasoningKey = 'reasoning';
   }
-  // Scaleway uses reasoning_content format (standard OpenAI format)
-  // No special handling needed - reasoning_content is the default
   
   return reasoningKey;
 }
