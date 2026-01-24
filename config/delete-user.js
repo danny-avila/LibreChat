@@ -23,6 +23,7 @@ const {
   PluginAuth,
   MemoryEntry,
   PromptGroup,
+  AgentApiKey,
   Transaction,
   Conversation,
   ConversationTag,
@@ -79,6 +80,7 @@ async function gracefulExit(code = 0) {
   const tasks = [
     Action.deleteMany({ user: uid }),
     Agent.deleteMany({ author: uid }),
+    AgentApiKey.deleteMany({ user: uid }),
     Assistant.deleteMany({ user: uid }),
     Balance.deleteMany({ user: uid }),
     ConversationTag.deleteMany({ user: uid }),
