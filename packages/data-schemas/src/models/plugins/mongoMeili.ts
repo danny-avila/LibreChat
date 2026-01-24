@@ -1,5 +1,6 @@
 import _ from 'lodash';
 import { MeiliSearch } from 'meilisearch';
+import { parseTextParts } from 'librechat-data-provider';
 import type { SearchResponse, SearchParams, Index } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,
@@ -28,11 +29,6 @@ interface MeiliIndexable {
   _meiliIndex?: boolean;
 }
 
-interface ContentItem {
-  type: string;
-  text?: string;
-}
-
 interface SyncProgress {
   lastSyncedId?: string;
   totalProcessed: number;
@@ -54,17 +50,11 @@ interface _DocumentWithMeiliIndex extends Document {
 export type DocumentWithMeiliIndex = _DocumentWithMeiliIndex & IConversation & Partial<IMessage>;
 
 export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
-  syncWithMeili(options?: { resumeFromId?: string }): Promise<void>;
+  syncWithMeili(): Promise<void>;
   getSyncProgress(): Promise<SyncProgress>;
   processSyncBatch(
     index: Index<MeiliIndexable>,
     documents: Array<Record<string, unknown>>,
-    updateOps: Array<{
-      updateOne: {
-        filter: Record<string, unknown>;
-        update: { $set: { _meiliIndex: boolean } };
-      };
-    }>,
   ): Promise<void>;
   cleanupMeiliIndex(
     index: Index<MeiliIndexable>,
@@ -99,29 +89,6 @@ const getSyncConfig = () => ({
   batchSize: parseInt(process.env.MEILI_SYNC_BATCH_SIZE || '100', 10),
   delayMs: parseInt(process.env.MEILI_SYNC_DELAY_MS || '100', 10),
 });
-
-/**
- * Local implementation of parseTextParts to avoid dependency on librechat-data-provider
- * Extracts text content from an array of content items
- */
-const parseTextParts = (content: ContentItem[]): string => {
-  if (!Array.isArray(content)) {
-    return '';
-  }
-
-  return content
-    .filter((item) => item.type === 'text' && typeof item.text === 'string')
-    .map((item) => item.text)
-    .join(' ')
-    .trim();
-};
-
-/**
- * Local implementation to handle Bing convoId conversion
- */
-const cleanUpPrimaryKeyValue = (value: string): string => {
-  return value.replace(/--/g, '|');
-};
 
 /**
  * Validates the required options for configuring the mongoMeili plugin.
@@ -183,8 +150,8 @@ const createMeiliMongooseModel = ({
      * Get the current sync progress
      */
     static async getSyncProgress(this: SchemaWithMeiliMethods): Promise<SyncProgress> {
-      const totalDocuments = await this.countDocuments();
-      const indexedDocuments = await this.countDocuments({ _meiliIndex: true });
+      const totalDocuments = await this.countDocuments({ expiredAt: null });
+      const indexedDocuments = await this.countDocuments({ expiredAt: null, _meiliIndex: true });
 
       return {
         totalProcessed: indexedDocuments,
@@ -194,100 +161,79 @@ const createMeiliMongooseModel = ({
     }
 
     /**
-     * Synchronizes the data between the MongoDB collection and the MeiliSearch index.
-     * Now uses streaming and batching to reduce memory usage.
-     */
-    static async syncWithMeili(
-      this: SchemaWithMeiliMethods,
-      options?: { resumeFromId?: string },
-    ): Promise<void> {
+     * Synchronizes data between the MongoDB collection and the MeiliSearch index by
+     * incrementally indexing only documents where `expiredAt` is `null` and `_meiliIndex` is `false`
+     * (i.e., non-expired documents that have not yet been indexed).
+     * */
+    static async syncWithMeili(this: SchemaWithMeiliMethods): Promise<void> {
+      const startTime = Date.now();
+      const { batchSize, delayMs } = syncConfig;
+
+      const collectionName = primaryKey === 'messageId' ? 'messages' : 'conversations';
+      logger.info(
+        `[syncWithMeili] Starting sync for ${collectionName} with batch size ${batchSize}`,
+      );
+
+      // Get approximate total count for raw estimation, the sync should not overcome this number
+      const approxTotalCount = await this.estimatedDocumentCount();
+      logger.info(
+        `[syncWithMeili] Approximate total number of all ${collectionName}: ${approxTotalCount}`,
+      );
+
       try {
-        const startTime = Date.now();
-        const { batchSize, delayMs } = syncConfig;
-
-        logger.info(
-          `[syncWithMeili] Starting sync for ${primaryKey === 'messageId' ? 'messages' : 'conversations'} with batch size ${batchSize}`,
-        );
-
-        // Build query with resume capability
-        const query: FilterQuery<unknown> = {};
-        if (options?.resumeFromId) {
-          query._id = { $gt: options.resumeFromId };
-        }
-
-        // Get total count for progress tracking
-        const totalCount = await this.countDocuments(query);
-        let processedCount = 0;
-
         // First, handle documents that need to be removed from Meili
+        logger.info(`[syncWithMeili] Starting cleanup of Meili index ${index.uid} before sync`);
         await this.cleanupMeiliIndex(index, primaryKey, batchSize, delayMs);
-
-        // Process MongoDB documents in batches using cursor
-        const cursor = this.find(query)
-          .select(attributesToIndex.join(' ') + ' _meiliIndex')
-          .sort({ _id: 1 })
-          .batchSize(batchSize)
-          .cursor();
-
-        const format = (doc: Record<string, unknown>) =>
-          _.omitBy(_.pick(doc, attributesToIndex), (v, k) => k.startsWith('$'));
-
-        let documentBatch: Array<Record<string, unknown>> = [];
-        let updateOps: Array<{
-          updateOne: {
-            filter: Record<string, unknown>;
-            update: { $set: { _meiliIndex: boolean } };
-          };
-        }> = [];
-
-        // Process documents in streaming fashion
-        for await (const doc of cursor) {
-          const typedDoc = doc.toObject() as unknown as Record<string, unknown>;
-          const formatted = format(typedDoc);
-
-          // Check if document needs indexing
-          if (!typedDoc._meiliIndex) {
-            documentBatch.push(formatted);
-            updateOps.push({
-              updateOne: {
-                filter: { _id: typedDoc._id },
-                update: { $set: { _meiliIndex: true } },
-              },
-            });
-          }
-
-          processedCount++;
-
-          // Process batch when it reaches the configured size
-          if (documentBatch.length >= batchSize) {
-            await this.processSyncBatch(index, documentBatch, updateOps);
-            documentBatch = [];
-            updateOps = [];
-
-            // Log progress
-            const progress = Math.round((processedCount / totalCount) * 100);
-            logger.info(`[syncWithMeili] Progress: ${progress}% (${processedCount}/${totalCount})`);
-
-            // Add delay to prevent overwhelming resources
-            if (delayMs > 0) {
-              await new Promise((resolve) => setTimeout(resolve, delayMs));
-            }
-          }
-        }
-
-        // Process remaining documents
-        if (documentBatch.length > 0) {
-          await this.processSyncBatch(index, documentBatch, updateOps);
-        }
-
-        const duration = Date.now() - startTime;
-        logger.info(
-          `[syncWithMeili] Completed sync for ${primaryKey === 'messageId' ? 'messages' : 'conversations'} in ${duration}ms`,
-        );
+        logger.info(`[syncWithMeili] Completed cleanup of Meili index: ${index.uid}`);
       } catch (error) {
-        logger.error('[syncWithMeili] Error during sync:', error);
+        logger.error('[syncWithMeili] Error during cleanup Meili before sync:', error);
         throw error;
       }
+
+      let processedCount = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const query: FilterQuery<unknown> = {
+          expiredAt: null,
+          _meiliIndex: false,
+        };
+
+        try {
+          const documents = await this.find(query)
+            .select(attributesToIndex.join(' ') + ' _meiliIndex')
+            .limit(batchSize)
+            .lean();
+
+          // Check if there are more documents to process
+          if (documents.length === 0) {
+            logger.info('[syncWithMeili] No more documents to process');
+            break;
+          }
+
+          // Process the batch
+          await this.processSyncBatch(index, documents);
+          processedCount += documents.length;
+          logger.info(`[syncWithMeili] Processed: ${processedCount}`);
+
+          if (documents.length < batchSize) {
+            hasMore = false;
+          }
+
+          // Add delay to prevent overwhelming resources
+          if (hasMore && delayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
+        } catch (error) {
+          logger.error('[syncWithMeili] Error processing documents batch:', error);
+          throw error;
+        }
+      }
+
+      const duration = Date.now() - startTime;
+      logger.info(
+        `[syncWithMeili] Completed sync for ${collectionName}. Processed ${processedCount} documents in ${duration}ms`,
+      );
     }
 
     /**
@@ -297,28 +243,26 @@ const createMeiliMongooseModel = ({
       this: SchemaWithMeiliMethods,
       index: Index<MeiliIndexable>,
       documents: Array<Record<string, unknown>>,
-      updateOps: Array<{
-        updateOne: {
-          filter: Record<string, unknown>;
-          update: { $set: { _meiliIndex: boolean } };
-        };
-      }>,
     ): Promise<void> {
       if (documents.length === 0) {
         return;
       }
 
+      // Format documents for MeiliSearch
+      const formattedDocs = documents.map((doc) =>
+        _.omitBy(_.pick(doc, attributesToIndex), (_v, k) => k.startsWith('$')),
+      );
+
       try {
         // Add documents to MeiliSearch
-        await index.addDocuments(documents);
+        await index.addDocumentsInBatches(formattedDocs);
 
         // Update MongoDB to mark documents as indexed
-        if (updateOps.length > 0) {
-          await this.collection.bulkWrite(updateOps);
-        }
+        const docsIds = documents.map((doc) => doc._id);
+        await this.updateMany({ _id: { $in: docsIds } }, { $set: { _meiliIndex: true } });
       } catch (error) {
         logger.error('[processSyncBatch] Error processing batch:', error);
-        // Don't throw - allow sync to continue with other documents
+        throw error;
       }
     }
 
@@ -357,7 +301,7 @@ const createMeiliMongooseModel = ({
           // Delete documents that don't exist in MongoDB
           const toDelete = meiliIds.filter((id) => !existingIds.has(id));
           if (toDelete.length > 0) {
-            await Promise.all(toDelete.map((id) => index.deleteDocument(id as string)));
+            await index.deleteDocuments(toDelete.map(String));
             logger.debug(`[cleanupMeiliIndex] Deleted ${toDelete.length} orphaned documents`);
           }
 
@@ -393,9 +337,7 @@ const createMeiliMongooseModel = ({
 
       if (populate) {
         const query: Record<string, unknown> = {};
-        query[primaryKey] = _.map(data.hits, (hit) =>
-          cleanUpPrimaryKeyValue(hit[primaryKey] as string),
-        );
+        query[primaryKey] = _.map(data.hits, (hit) => hit[primaryKey]);
 
         const projection = Object.keys(this.schema.obj).reduce<Record<string, number>>(
           (results, key) => {
@@ -459,6 +401,11 @@ const createMeiliMongooseModel = ({
       this: DocumentWithMeiliIndex,
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
+      // If this conversation or message has a TTL, don't index it
+      if (!_.isNil(this.expiredAt)) {
+        return next();
+      }
+
       const object = this.preprocessObjectForIndex!();
       const maxRetries = 3;
       let retryCount = 0;

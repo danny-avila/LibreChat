@@ -63,7 +63,7 @@ const _listAssistants = async ({ req, res, version, query }) => {
  * @returns {Promise<Array<Assistant>>} A promise that resolves to the response from the `openai.beta.assistants.list` method call.
  */
 const listAllAssistants = async ({ req, res, version, query }) => {
-  /** @type {{ openai: OpenAIClient }} */
+  /** @type {{ openai: OpenAI }} */
   const { openai } = await getOpenAIClient({ req, res, version });
   const allAssistants = [];
 
@@ -138,6 +138,7 @@ const listAssistantsForAzure = async ({ req, res, version, azureConfig = {}, que
 
     /* The specified model is only necessary to
     fetch assistants for the shared instance */
+    req.body = req.body || {}; // Express 5: req.body is undefined instead of {} when no body parser runs
     req.body.model = currentModelTuples[0][0];
     promises.push(listAllAssistants({ req, res, version, query }));
   }
@@ -181,10 +182,10 @@ const listAssistantsForAzure = async ({ req, res, version, azureConfig = {}, que
  * @param {TEndpointOption} params.endpointOption - The endpoint options.
  * @param {boolean} params.initAppClient - Whether to initialize the app client.
  * @param {string} params.overrideEndpoint - The endpoint to override.
- * @returns {Promise<{ openai: OpenAIClient, openAIApiKey: string; client: import('~/app/clients/OpenAIClient') }>} - The initialized OpenAI client.
+ * @returns {Promise<{ openai: OpenAI, openAIApiKey: string }>} - The initialized OpenAI SDK client.
  */
 async function getOpenAIClient({ req, res, endpointOption, initAppClient, overrideEndpoint }) {
-  let endpoint = overrideEndpoint ?? req.body.endpoint ?? req.query.endpoint;
+  let endpoint = overrideEndpoint ?? req.body?.endpoint ?? req.query?.endpoint;
   const version = await getCurrentVersion(req, endpoint);
   if (!endpoint) {
     throw new Error(`[${req.baseUrl}] Endpoint is required`);

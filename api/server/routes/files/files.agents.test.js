@@ -4,16 +4,27 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
+const {
+  SystemRoles,
+  AccessRoleIds,
+  ResourceType,
+  PrincipalType,
+} = require('librechat-data-provider');
 const { createAgent } = require('~/models/Agent');
-const { createFile } = require('~/models/File');
+const { createFile } = require('~/models');
 
 // Only mock the external dependencies that we don't want to test
 jest.mock('~/server/services/Files/process', () => ({
   processDeleteRequest: jest.fn().mockResolvedValue({}),
   filterFile: jest.fn(),
   processFileUpload: jest.fn(),
-  processAgentFileUpload: jest.fn(),
+  processAgentFileUpload: jest.fn().mockImplementation(async ({ res }) => {
+    // processAgentFileUpload sends response directly via res.json()
+    return res.status(200).json({
+      message: 'Agent file uploaded and processed successfully',
+      file_id: 'test-file-id',
+    });
+  }),
 }));
 
 jest.mock('~/server/services/Files/strategies', () => ({
@@ -27,6 +38,31 @@ jest.mock('~/server/controllers/assistants/helpers', () => ({
 jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn(),
 }));
+
+jest.mock('~/server/services/Files/S3/crud', () => ({
+  refreshS3FileUrls: jest.fn(),
+}));
+
+jest.mock('~/cache', () => ({
+  getLogStores: jest.fn(() => ({
+    get: jest.fn(),
+    set: jest.fn(),
+  })),
+}));
+
+// Mock fs.promises.unlink to prevent file cleanup errors in tests
+jest.mock('fs', () => {
+  const actualFs = jest.requireActual('fs');
+  return {
+    ...actualFs,
+    promises: {
+      ...actualFs.promises,
+      unlink: jest.fn().mockResolvedValue(undefined),
+    },
+  };
+});
+
+const { processAgentFileUpload } = require('~/server/services/Files/process');
 
 // Import the router
 const router = require('~/server/routes/files/files');
@@ -337,6 +373,349 @@ describe('File Routes - Agent Files Endpoint', () => {
       expect(response.body).toHaveLength(2);
       expect(response.body.map((f) => f.file_id)).toContain(fileId1);
       expect(response.body.map((f) => f.file_id)).toContain(otherUserFileId);
+    });
+  });
+
+  describe('POST /files - Agent File Upload Permission Check', () => {
+    let agentCustomId;
+
+    beforeEach(async () => {
+      agentCustomId = `agent_${uuidv4().replace(/-/g, '').substring(0, 21)}`;
+      jest.clearAllMocks();
+    });
+
+    /**
+     * Helper to create an Express app with specific user context
+     */
+    const createAppWithUser = (userId, userRole = SystemRoles.USER) => {
+      const testApp = express();
+      testApp.use(express.json());
+
+      // Mock multer - populate req.file
+      testApp.use((req, res, next) => {
+        if (req.method === 'POST') {
+          req.file = {
+            originalname: 'test.txt',
+            mimetype: 'text/plain',
+            size: 100,
+            path: '/tmp/test.txt',
+          };
+          req.file_id = uuidv4();
+        }
+        next();
+      });
+
+      testApp.use((req, res, next) => {
+        req.user = { id: userId.toString(), role: userRole };
+        req.app = { locals: {} };
+        req.config = { fileStrategy: 'local' };
+        next();
+      });
+
+      testApp.use('/files', router);
+      return testApp;
+    };
+
+    it('should deny file upload to agent when user has no permission', async () => {
+      // Create an agent owned by authorId
+      await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+
+      const testApp = createAppWithUser(otherUserId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('Forbidden');
+      expect(response.body.message).toBe('Insufficient permissions to upload files to this agent');
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+    });
+
+    it('should allow file upload to agent for agent author', async () => {
+      // Create an agent owned by authorId
+      await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+
+      const testApp = createAppWithUser(authorId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(200);
+      expect(processAgentFileUpload).toHaveBeenCalled();
+    });
+
+    it('should allow file upload to agent for user with EDIT permission', async () => {
+      // Create an agent owned by authorId
+      const agent = await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+
+      // Grant EDIT permission to otherUserId
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
+      });
+
+      const testApp = createAppWithUser(otherUserId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(200);
+      expect(processAgentFileUpload).toHaveBeenCalled();
+    });
+
+    it('should deny file upload to agent for user with only VIEW permission', async () => {
+      // Create an agent owned by authorId
+      const agent = await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+
+      // Grant only VIEW permission to otherUserId
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: authorId,
+      });
+
+      const testApp = createAppWithUser(otherUserId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'file_search',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('Forbidden');
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+    });
+
+    it('should allow file upload for admin user regardless of agent ownership', async () => {
+      // Create an agent owned by authorId
+      await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+
+      // Create app with admin user (otherUserId as admin)
+      const testApp = createAppWithUser(otherUserId, SystemRoles.ADMIN);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(200);
+      expect(processAgentFileUpload).toHaveBeenCalled();
+    });
+
+    it('should return 404 when uploading to non-existent agent', async () => {
+      const testApp = createAppWithUser(otherUserId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: 'agent_nonexistent123456789',
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(404);
+      expect(response.body.error).toBe('Not Found');
+      expect(response.body.message).toBe('Agent not found');
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+    });
+
+    it('should allow file upload without agent_id (message attachment)', async () => {
+      const testApp = createAppWithUser(otherUserId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        file_id: uuidv4(),
+        // No agent_id or tool_resource - this is a message attachment
+      });
+
+      expect(response.status).toBe(200);
+      expect(processAgentFileUpload).toHaveBeenCalled();
+    });
+
+    it('should allow file upload with agent_id but no tool_resource (message attachment)', async () => {
+      // Create an agent owned by authorId
+      await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+
+      const testApp = createAppWithUser(otherUserId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        file_id: uuidv4(),
+        // No tool_resource - permission check should not apply
+      });
+
+      expect(response.status).toBe(200);
+      expect(processAgentFileUpload).toHaveBeenCalled();
+    });
+
+    it('should allow message_file attachment to agent even without EDIT permission', async () => {
+      // Create an agent owned by authorId
+      const agent = await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+
+      // Grant only VIEW permission to otherUserId
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: authorId,
+      });
+
+      const testApp = createAppWithUser(otherUserId);
+
+      // message_file: true indicates this is a chat message attachment, not a permanent file upload
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        message_file: true,
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(200);
+      expect(processAgentFileUpload).toHaveBeenCalled();
+    });
+
+    it('should allow message_file attachment (string "true") to agent even without EDIT permission', async () => {
+      // Create an agent owned by authorId
+      const agent = await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+
+      // Grant only VIEW permission to otherUserId
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: authorId,
+      });
+
+      const testApp = createAppWithUser(otherUserId);
+
+      // message_file as string "true" (from form data) should also be allowed
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        message_file: 'true',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(200);
+      expect(processAgentFileUpload).toHaveBeenCalled();
+    });
+
+    it('should deny file upload when message_file is false (not a message attachment)', async () => {
+      // Create an agent owned by authorId
+      const agent = await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+
+      // Grant only VIEW permission to otherUserId
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: authorId,
+      });
+
+      const testApp = createAppWithUser(otherUserId);
+
+      // message_file: false should NOT bypass permission check
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        message_file: false,
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('Forbidden');
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
     });
   });
 });

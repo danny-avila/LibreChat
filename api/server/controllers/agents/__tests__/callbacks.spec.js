@@ -73,10 +73,10 @@ describe('createToolEndCallback', () => {
         tool_call_id: 'tool123',
         artifact: {
           [Tools.ui_resources]: {
-            data: {
-              0: { type: 'button', label: 'Click me' },
-              1: { type: 'input', placeholder: 'Enter text' },
-            },
+            data: [
+              { type: 'button', label: 'Click me' },
+              { type: 'input', placeholder: 'Enter text' },
+            ],
           },
         },
       };
@@ -100,10 +100,10 @@ describe('createToolEndCallback', () => {
         messageId: 'run456',
         toolCallId: 'tool123',
         conversationId: 'thread789',
-        [Tools.ui_resources]: {
-          0: { type: 'button', label: 'Click me' },
-          1: { type: 'input', placeholder: 'Enter text' },
-        },
+        [Tools.ui_resources]: [
+          { type: 'button', label: 'Click me' },
+          { type: 'input', placeholder: 'Enter text' },
+        ],
       });
     });
 
@@ -115,9 +115,7 @@ describe('createToolEndCallback', () => {
         tool_call_id: 'tool123',
         artifact: {
           [Tools.ui_resources]: {
-            data: {
-              0: { type: 'carousel', items: [] },
-            },
+            data: [{ type: 'carousel', items: [] }],
           },
         },
       };
@@ -136,9 +134,7 @@ describe('createToolEndCallback', () => {
         messageId: 'run456',
         toolCallId: 'tool123',
         conversationId: 'thread789',
-        [Tools.ui_resources]: {
-          0: { type: 'carousel', items: [] },
-        },
+        [Tools.ui_resources]: [{ type: 'carousel', items: [] }],
       });
     });
 
@@ -155,9 +151,7 @@ describe('createToolEndCallback', () => {
         tool_call_id: 'tool123',
         artifact: {
           [Tools.ui_resources]: {
-            data: {
-              0: { type: 'test' },
-            },
+            data: [{ type: 'test' }],
           },
         },
       };
@@ -184,9 +178,7 @@ describe('createToolEndCallback', () => {
         tool_call_id: 'tool123',
         artifact: {
           [Tools.ui_resources]: {
-            data: {
-              0: { type: 'chart', data: [] },
-            },
+            data: [{ type: 'chart', data: [] }],
           },
           [Tools.web_search]: {
             results: ['result1', 'result2'],
@@ -209,9 +201,7 @@ describe('createToolEndCallback', () => {
       // Check ui_resources attachment
       const uiResourceAttachment = results.find((r) => r?.type === Tools.ui_resources);
       expect(uiResourceAttachment).toBeTruthy();
-      expect(uiResourceAttachment[Tools.ui_resources]).toEqual({
-        0: { type: 'chart', data: [] },
-      });
+      expect(uiResourceAttachment[Tools.ui_resources]).toEqual([{ type: 'chart', data: [] }]);
 
       // Check web_search attachment
       const webSearchAttachment = results.find((r) => r?.type === Tools.web_search);
@@ -250,7 +240,7 @@ describe('createToolEndCallback', () => {
         tool_call_id: 'tool123',
         artifact: {
           [Tools.ui_resources]: {
-            data: {},
+            data: [],
           },
         },
       };
@@ -268,7 +258,7 @@ describe('createToolEndCallback', () => {
         messageId: 'run456',
         toolCallId: 'tool123',
         conversationId: 'thread789',
-        [Tools.ui_resources]: {},
+        [Tools.ui_resources]: [],
       });
     });
 

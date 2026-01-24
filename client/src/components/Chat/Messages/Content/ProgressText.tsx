@@ -93,14 +93,15 @@ export default function ProgressText({
         )}
         disabled={!hasInput}
         onClick={hasInput ? onClick : undefined}
+        aria-expanded={hasInput ? isExpanded : undefined}
       >
         {icon}
         <span className={showShimmer ? 'shimmer' : ''}>{text}</span>
         {hasInput &&
           (isExpanded ? (
-            <ChevronUp className="size-4 shrink-0 translate-y-[1px]" />
+            <ChevronUp className="size-4 shrink-0 translate-y-[1px]" aria-hidden="true" />
           ) : (
-            <ChevronDown className="size-4 shrink-0 translate-y-[1px]" />
+            <ChevronDown className="size-4 shrink-0 translate-y-[1px]" aria-hidden="true" />
           ))}
       </button>
     </Wrapper>

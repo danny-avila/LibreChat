@@ -8,9 +8,16 @@ import {
   WebSocketOptionsSchema,
   StreamableHTTPOptionsSchema,
 } from 'librechat-data-provider';
+import type {
+  EmbeddedResource,
+  ListToolsResult,
+  ImageContent,
+  AudioContent,
+  TextContent,
+  Tool,
+} from '@modelcontextprotocol/sdk/types.js';
 import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
 import type { TokenMethods, JsonSchemaType, IUser } from '@librechat/data-schemas';
-import type * as t from '@modelcontextprotocol/sdk/types.js';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
@@ -57,10 +64,10 @@ export interface MCPPrompt {
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-export type MCPTool = z.infer<typeof t.ToolSchema>;
-export type MCPToolListResponse = z.infer<typeof t.ListToolsResultSchema>;
-export type ToolContentPart = t.TextContent | t.ImageContent | t.EmbeddedResource | t.AudioContent;
-export type ImageContent = Extract<ToolContentPart, { type: 'image' }>;
+export type MCPTool = Tool;
+export type MCPToolListResponse = ListToolsResult;
+export type ToolContentPart = TextContent | ImageContent | EmbeddedResource | AudioContent;
+export type { TextContent, ImageContent, EmbeddedResource, AudioContent };
 export type MCPToolCallResponse =
   | undefined
   | {
@@ -83,11 +90,7 @@ export type Provider =
 export type FormattedContent =
   | {
       type: 'text';
-      metadata?: {
-        type: string;
-        data: UIResource[];
-      };
-      text?: string;
+      text: string;
     }
   | {
       type: 'image';
@@ -153,6 +156,15 @@ export type ParsedServerConfig = MCPOptions & {
   tools?: string;
   toolFunctions?: LCAvailableTools;
   initDuration?: number;
+  updatedAt?: number;
+  dbId?: string;
+  /** True if access is only via agent (not directly shared with user) */
+  consumeOnly?: boolean;
+};
+
+export type AddServerResult = {
+  serverName: string;
+  config: ParsedServerConfig;
 };
 
 export interface BasicConnectionOptions {

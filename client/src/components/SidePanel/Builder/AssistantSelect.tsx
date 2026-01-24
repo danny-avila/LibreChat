@@ -263,7 +263,7 @@ export default function AssistantSelect({
     };
   }, [selectedAssistant, query.data, onSelect]);
 
-  const createAssistant = localize('com_ui_create') + ' ' + localize('com_ui_assistant');
+  const createAssistant = localize('com_ui_create_assistant');
   return (
     <SelectDropDown
       value={!value ? createAssistant : value}

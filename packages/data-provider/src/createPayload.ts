@@ -5,6 +5,7 @@ import * as s from './schemas';
 export default function createPayload(submission: t.TSubmission) {
   const {
     isEdited,
+    addedConvo,
     userMessage,
     isContinued,
     isTemporary,
@@ -32,6 +33,7 @@ export default function createPayload(submission: t.TSubmission) {
     ...userMessage,
     ...endpointOption,
     endpoint,
+    addedConvo,
     isTemporary,
     isRegenerate,
     editedContent,

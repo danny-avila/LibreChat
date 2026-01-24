@@ -40,4 +40,6 @@ export interface IAgent extends Omit<Document, 'model'> {
   category: string;
   support_contact?: ISupportContact;
   is_promoted?: boolean;
+  /** MCP server names extracted from tools for efficient querying */
+  mcpServerNames?: string[];
 }

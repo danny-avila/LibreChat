@@ -2,7 +2,6 @@ import { Schema } from 'mongoose';
 
 // @ts-ignore
 export const conversationPreset = {
-  // endpoint: [azureOpenAI, openAI, anthropic, chatGPTBrowser]
   endpoint: {
     type: String,
     default: null,
@@ -11,7 +10,7 @@ export const conversationPreset = {
   endpointType: {
     type: String,
   },
-  // for azureOpenAI, openAI, chatGPTBrowser only
+  // for azureOpenAI, openAI only
   model: {
     type: String,
     required: false,

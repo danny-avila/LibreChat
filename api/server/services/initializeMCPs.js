@@ -1,6 +1,7 @@
+const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { mergeAppTools, getAppConfig } = require('./Config');
-const { createMCPManager } = require('~/config');
+const { createMCPServersRegistry, createMCPManager } = require('~/config');
 
 /**
  * Initialize MCP servers
@@ -8,21 +9,31 @@ const { createMCPManager } = require('~/config');
 async function initializeMCPs() {
   const appConfig = await getAppConfig();
   const mcpServers = appConfig.mcpConfig;
-  if (!mcpServers) {
-    return;
-  }
-
-  const mcpManager = await createMCPManager(mcpServers);
 
   try {
-    const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
-    await mergeAppTools(mcpTools);
-
-    logger.info(
-      `MCP servers initialized successfully. Added ${Object.keys(mcpTools).length} MCP tools.`,
-    );
+    createMCPServersRegistry(mongoose, appConfig?.mcpSettings?.allowedDomains);
   } catch (error) {
-    logger.error('Failed to initialize MCP servers:', error);
+    logger.error('[MCP] Failed to initialize MCPServersRegistry:', error);
+    throw error;
+  }
+
+  try {
+    const mcpManager = await createMCPManager(mcpServers || {});
+
+    if (mcpServers && Object.keys(mcpServers).length > 0) {
+      const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
+      await mergeAppTools(mcpTools);
+      const serverCount = Object.keys(mcpServers).length;
+      const toolCount = Object.keys(mcpTools).length;
+      logger.info(
+        `[MCP] Initialized with ${serverCount} configured ${serverCount === 1 ? 'server' : 'servers'} and ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}.`,
+      );
+    } else {
+      logger.debug('[MCP] No servers configured. MCPManager ready for UI-based servers.');
+    }
+  } catch (error) {
+    logger.error('[MCP] Failed to initialize MCPManager:', error);
+    throw error;
   }
 }
 

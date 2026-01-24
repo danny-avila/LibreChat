@@ -51,8 +51,8 @@ const VersionTags = ({ tags }: { tags: string[] }) => {
               className={cn(
                 'w-24 justify-center border border-transparent',
                 tag === 'production'
-                  ? 'bg-green-100 text-green-500 dark:border-green-500 dark:bg-transparent dark:text-green-500'
-                  : 'bg-blue-100 text-blue-500 dark:border-blue-500 dark:bg-transparent dark:text-blue-500',
+                  ? 'bg-green-100 text-green-700 dark:border-green-400 dark:bg-transparent dark:text-green-400'
+                  : 'bg-blue-100 text-blue-700 dark:border-blue-400 dark:bg-transparent dark:text-blue-400',
               )}
               labelClassName="flex items-center m-0 justify-center gap-1"
               LabelNode={(() => {
@@ -105,7 +105,7 @@ const VersionCard = ({
       className={cn(
         'group relative w-full rounded-lg border border-border-light p-4 transition-all duration-300',
         isSelected
-          ? 'bg-surface-hover shadow-xl'
+          ? 'bg-surface-secondary shadow-xl ring-2 ring-gray-400'
           : 'bg-surface-primary shadow-sm hover:bg-surface-secondary',
       )}
       onClick={onClick}
@@ -125,7 +125,9 @@ const VersionCard = ({
 
         <div className="flex items-center gap-1 lg:flex-col xl:flex-row">
           {authorName && (
-            <Label className="text-left text-xs text-text-secondary">by {authorName}</Label>
+            <Label className="text-left text-xs text-text-secondary">
+              {localize('com_ui_by_author', { 0: authorName })}
+            </Label>
           )}
 
           {tags.length > 0 && <VersionTags tags={tags} />}

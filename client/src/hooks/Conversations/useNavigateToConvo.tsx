@@ -9,7 +9,13 @@ import type {
   TModelsConfig,
   TConversation,
 } from 'librechat-data-provider';
-import { getDefaultEndpoint, clearMessagesCache, buildDefaultConvo, logger } from '~/utils';
+import {
+  clearModelForNonEphemeralAgent,
+  getDefaultEndpoint,
+  clearMessagesCache,
+  buildDefaultConvo,
+  logger,
+} from '~/utils';
 import { useApplyModelSpecEffects } from '~/hooks/Agents';
 import store from '~/store';
 
@@ -49,7 +55,10 @@ const useNavigateToConvo = (index = 0) => {
         dataService.getConversationById(conversationId),
       );
       logger.log('conversation', 'Fetched fresh conversation data', data);
-      setConversation(data);
+
+      const convoData = { ...data };
+      clearModelForNonEphemeralAgent(convoData);
+      setConversation(convoData);
       navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
     } catch (error) {
       console.error('Error fetching conversation data on navigation', error);

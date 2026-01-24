@@ -25,11 +25,11 @@ describe('ServerConfigsCacheFactory', () => {
       cacheConfig.USE_REDIS = true;
 
       // Act
-      const cache = ServerConfigsCacheFactory.create('TestOwner', true);
+      const cache = ServerConfigsCacheFactory.create('App', true);
 
       // Assert
       expect(cache).toBeInstanceOf(ServerConfigsCacheRedis);
-      expect(ServerConfigsCacheRedis).toHaveBeenCalledWith('TestOwner', true);
+      expect(ServerConfigsCacheRedis).toHaveBeenCalledWith('App', true);
     });
 
     it('should return ServerConfigsCacheInMemory when USE_REDIS is false', () => {
@@ -37,7 +37,7 @@ describe('ServerConfigsCacheFactory', () => {
       cacheConfig.USE_REDIS = false;
 
       // Act
-      const cache = ServerConfigsCacheFactory.create('TestOwner', false);
+      const cache = ServerConfigsCacheFactory.create('App', false);
 
       // Assert
       expect(cache).toBeInstanceOf(ServerConfigsCacheInMemory);
@@ -49,10 +49,10 @@ describe('ServerConfigsCacheFactory', () => {
       cacheConfig.USE_REDIS = true;
 
       // Act
-      ServerConfigsCacheFactory.create('App', true);
+      ServerConfigsCacheFactory.create('CustomNamespace', true);
 
       // Assert
-      expect(ServerConfigsCacheRedis).toHaveBeenCalledWith('App', true);
+      expect(ServerConfigsCacheRedis).toHaveBeenCalledWith('CustomNamespace', true);
     });
 
     it('should create ServerConfigsCacheInMemory without parameters when USE_REDIS is false', () => {
@@ -60,10 +60,10 @@ describe('ServerConfigsCacheFactory', () => {
       cacheConfig.USE_REDIS = false;
 
       // Act
-      ServerConfigsCacheFactory.create('User', false);
+      ServerConfigsCacheFactory.create('App', false);
 
       // Assert
-      // In-memory cache doesn't use owner/leaderOnly parameters
+      // In-memory cache doesn't use namespace/leaderOnly parameters
       expect(ServerConfigsCacheInMemory).toHaveBeenCalledWith();
     });
   });

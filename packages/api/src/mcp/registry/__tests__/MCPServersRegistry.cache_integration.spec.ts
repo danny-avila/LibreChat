@@ -1,15 +1,37 @@
 import { expect } from '@playwright/test';
 import type * as t from '~/mcp/types';
+import type { MCPServersRegistry as MCPServersRegistryType } from '../MCPServersRegistry';
+
+// Mock ServerConfigsDB to avoid needing MongoDB for cache integration tests
+jest.mock('../db/ServerConfigsDB', () => ({
+  ServerConfigsDB: jest.fn().mockImplementation(() => ({
+    get: jest.fn().mockResolvedValue(undefined),
+    getAll: jest.fn().mockResolvedValue({}),
+    add: jest.fn().mockResolvedValue({
+      serverName: 'mock-server',
+      config: {} as t.ParsedServerConfig,
+    }),
+    update: jest.fn().mockResolvedValue(undefined),
+    remove: jest.fn().mockResolvedValue(undefined),
+    reset: jest.fn().mockResolvedValue(undefined),
+  })),
+}));
 
 /**
  * Integration tests for MCPServersRegistry using Redis-backed cache.
  * For unit tests using in-memory cache, see MCPServersRegistry.test.ts
+ *
+ * NOTE: After refactoring, these tests have been simplified.
+ * Private server functionality has been moved to DB (not yet implemented).
+ * The registry now uses a unified cache repository for YAML configs only.
  */
 describe('MCPServersRegistry Redis Integration Tests', () => {
-  let registry: typeof import('../MCPServersRegistry').mcpServersRegistry;
+  let MCPServersRegistry: typeof import('../MCPServersRegistry').MCPServersRegistry;
+  let registry: MCPServersRegistryType;
   let keyvRedisClient: Awaited<typeof import('~/cache/redisClients')>['keyvRedisClient'];
   let LeaderElection: typeof import('~/cluster/LeaderElection').LeaderElection;
   let leaderInstance: InstanceType<typeof import('~/cluster/LeaderElection').LeaderElection>;
+  let MCPServerInspector: typeof import('../MCPServerInspector').MCPServerInspector;
 
   const testParsedConfig: t.ParsedServerConfig = {
     type: 'stdio',
@@ -31,21 +53,36 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
     },
   };
 
+  const testRawConfig: t.MCPOptions = {
+    type: 'stdio',
+    command: 'node',
+    args: ['tools.js'],
+  };
+
   beforeAll(async () => {
     // Set up environment variables for Redis (only if not already set)
     process.env.USE_REDIS = process.env.USE_REDIS ?? 'true';
     process.env.REDIS_URI = process.env.REDIS_URI ?? 'redis://127.0.0.1:6379';
     process.env.REDIS_KEY_PREFIX =
-      process.env.REDIS_KEY_PREFIX ?? 'MCPServersRegistry-IntegrationTest';
+      process.env.REDIS_KEY_PREFIX ??
+      `MCPServersRegistry-IntegrationTest-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
     // Import modules after setting env vars
     const registryModule = await import('../MCPServersRegistry');
     const redisClients = await import('~/cache/redisClients');
     const leaderElectionModule = await import('~/cluster/LeaderElection');
+    const inspectorModule = await import('../MCPServerInspector');
+    const mongoose = await import('mongoose');
 
-    registry = registryModule.mcpServersRegistry;
+    MCPServersRegistry = registryModule.MCPServersRegistry;
     keyvRedisClient = redisClients.keyvRedisClient;
     LeaderElection = leaderElectionModule.LeaderElection;
+    MCPServerInspector = inspectorModule.MCPServerInspector;
+
+    // Reset singleton and create new instance with mongoose
+    (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+    MCPServersRegistry.createInstance(mongoose.default);
+    registry = MCPServersRegistry.getInstance();
 
     // Ensure Redis is connected
     if (!keyvRedisClient) throw new Error('Redis client is not initialized');
@@ -59,19 +96,41 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
     expect(isLeader).toBe(true);
   });
 
+  beforeEach(() => {
+    // Mock MCPServerInspector.inspect to avoid actual server connections
+    // Use mockImplementation to return the config that's actually passed in
+    jest
+      .spyOn(MCPServerInspector, 'inspect')
+      .mockImplementation(async (_serverName: string, rawConfig: t.MCPOptions) => {
+        return {
+          ...testParsedConfig,
+          ...rawConfig,
+          requiresOAuth: false,
+        } as unknown as t.ParsedServerConfig;
+      });
+  });
+
   afterEach(async () => {
     // Clean up: reset registry to clear all test data
     await registry.reset();
 
     // Also clean up any remaining test keys from Redis
-    if (keyvRedisClient) {
+    if (keyvRedisClient && 'scanIterator' in keyvRedisClient) {
       const pattern = '*MCPServersRegistry-IntegrationTest*';
-      if ('scanIterator' in keyvRedisClient) {
-        for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
-          await keyvRedisClient.del(key);
-        }
+      const keysToDelete: string[] = [];
+
+      // Collect all keys first
+      for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
+        keysToDelete.push(key);
+      }
+
+      // Delete in parallel for cluster mode efficiency
+      if (keysToDelete.length > 0) {
+        await Promise.all(keysToDelete.map((key) => keyvRedisClient!.del(key)));
       }
     }
+
+    jest.restoreAllMocks();
   });
 
   afterAll(async () => {
@@ -82,146 +141,99 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
     if (keyvRedisClient?.isOpen) await keyvRedisClient.disconnect();
   });
 
-  describe('private user servers', () => {
-    it('should add and remove private user server', async () => {
-      const userId = 'user123';
-      const serverName = 'private_server';
+  // Tests for the old privateServersCache API have been removed
+  // The refactoring simplified the architecture to use unified repositories (cache + DB)
+  // Private server functionality is now handled by the DB repository (not yet implemented)
 
-      // Add private user server
-      await registry.addPrivateUserServer(userId, serverName, testParsedConfig);
+  describe('cache repository functionality', () => {
+    it('should add and retrieve server config from cache', async () => {
+      const serverName = 'test_server';
+
+      // Add server using public API
+      await registry.addServer(serverName, testRawConfig, 'CACHE');
 
       // Verify server was added
-      const retrievedConfig = await registry.getServerConfig(serverName, userId);
-      expect(retrievedConfig).toEqual(testParsedConfig);
-
-      // Remove private user server
-      await registry.removePrivateUserServer(userId, serverName);
-
-      // Verify server was removed
-      const configAfterRemoval = await registry.getServerConfig(serverName, userId);
-      expect(configAfterRemoval).toBeUndefined();
+      const retrievedConfig = await registry.getServerConfig(serverName);
+      expect(retrievedConfig).toBeDefined();
+      expect(retrievedConfig?.type).toBe('stdio');
+      if (retrievedConfig && 'command' in retrievedConfig) {
+        expect(retrievedConfig.command).toBe('node');
+        expect(retrievedConfig.args).toEqual(['tools.js']);
+      }
     });
 
-    it('should throw error when adding duplicate private user server', async () => {
-      const userId = 'user123';
-      const serverName = 'private_server';
-
-      await registry.addPrivateUserServer(userId, serverName, testParsedConfig);
-      await expect(
-        registry.addPrivateUserServer(userId, serverName, testParsedConfig),
-      ).rejects.toThrow(
-        'Server "private_server" already exists in cache. Use update() to modify existing configs.',
-      );
-    });
-
-    it('should update an existing private user server', async () => {
-      const userId = 'user123';
-      const serverName = 'private_server';
-      const updatedConfig: t.ParsedServerConfig = {
+    it('should update existing server config in cache', async () => {
+      const serverName = 'test_server';
+      const updatedConfig: t.MCPOptions = {
         type: 'stdio',
         command: 'python',
         args: ['updated.py'],
-        requiresOAuth: true,
       };
 
-      // Add private user server
-      await registry.addPrivateUserServer(userId, serverName, testParsedConfig);
+      // Add server
+      await registry.addServer(serverName, testRawConfig, 'CACHE');
 
-      // Update the server config
-      await registry.updatePrivateUserServer(userId, serverName, updatedConfig);
+      // Update server
+      await registry.updateServer(serverName, updatedConfig, 'CACHE');
 
       // Verify server was updated
-      const retrievedConfig = await registry.getServerConfig(serverName, userId);
-      expect(retrievedConfig).toEqual(updatedConfig);
+      const retrievedConfig = await registry.getServerConfig(serverName);
+      expect(retrievedConfig).toBeDefined();
+      expect(retrievedConfig?.type).toBe('stdio');
+      if (retrievedConfig && 'command' in retrievedConfig) {
+        expect(retrievedConfig.command).toBe('python');
+        expect(retrievedConfig.args).toEqual(['updated.py']);
+      }
     });
 
-    it('should throw error when updating non-existent server', async () => {
-      const userId = 'user123';
-      const serverName = 'private_server';
+    it('should remove server config from cache', async () => {
+      const serverName = 'test_server';
 
-      // Add a user cache first
-      await registry.addPrivateUserServer(userId, 'other_server', testParsedConfig);
+      // Add server
+      await registry.addServer(serverName, testRawConfig, 'CACHE');
 
-      await expect(
-        registry.updatePrivateUserServer(userId, serverName, testParsedConfig),
-      ).rejects.toThrow(
-        'Server "private_server" does not exist in cache. Use add() to create new configs.',
-      );
-    });
+      // Verify server exists in underlying cache repository (not via getServerConfig to avoid populating read-through cache)
+      expect(await registry['cacheConfigsRepo'].get(serverName)).toBeDefined();
 
-    it('should throw error when updating server for non-existent user', async () => {
-      const userId = 'nonexistent_user';
-      const serverName = 'private_server';
+      // Remove server
+      await registry.removeServer(serverName, 'CACHE');
 
-      await expect(
-        registry.updatePrivateUserServer(userId, serverName, testParsedConfig),
-      ).rejects.toThrow('No private servers found for user "nonexistent_user".');
+      // Verify server was removed from underlying cache repository
+      const configAfter = await registry['cacheConfigsRepo'].get(serverName);
+      expect(configAfter).toBeUndefined();
     });
   });
 
   describe('getAllServerConfigs', () => {
-    it('should return correct servers based on userId', async () => {
-      // Add servers to all three caches
-      await registry.sharedAppServers.add('app_server', testParsedConfig);
-      await registry.sharedUserServers.add('user_server', testParsedConfig);
-      await registry.addPrivateUserServer('abc', 'abc_private_server', testParsedConfig);
-      await registry.addPrivateUserServer('xyz', 'xyz_private_server', testParsedConfig);
+    it('should return servers from cache repository', async () => {
+      // Add servers using public API
+      await registry.addServer('app_server', testRawConfig, 'CACHE');
+      await registry.addServer('user_server', testRawConfig, 'CACHE');
 
-      // Without userId: should return only shared app + shared user servers
-      const configsNoUser = await registry.getAllServerConfigs();
-      expect(Object.keys(configsNoUser)).toHaveLength(2);
-      expect(configsNoUser).toHaveProperty('app_server');
-      expect(configsNoUser).toHaveProperty('user_server');
-
-      // With userId 'abc': should return shared app + shared user + abc's private servers
-      const configsAbc = await registry.getAllServerConfigs('abc');
-      expect(Object.keys(configsAbc)).toHaveLength(3);
-      expect(configsAbc).toHaveProperty('app_server');
-      expect(configsAbc).toHaveProperty('user_server');
-      expect(configsAbc).toHaveProperty('abc_private_server');
-
-      // With userId 'xyz': should return shared app + shared user + xyz's private servers
-      const configsXyz = await registry.getAllServerConfigs('xyz');
-      expect(Object.keys(configsXyz)).toHaveLength(3);
-      expect(configsXyz).toHaveProperty('app_server');
-      expect(configsXyz).toHaveProperty('user_server');
-      expect(configsXyz).toHaveProperty('xyz_private_server');
+      // Get all configs
+      const configs = await registry.getAllServerConfigs();
+      expect(Object.keys(configs)).toHaveLength(2);
+      expect(configs).toHaveProperty('app_server');
+      expect(configs).toHaveProperty('user_server');
     });
   });
 
   describe('reset', () => {
-    it('should clear all servers from all caches (shared app, shared user, and private user)', async () => {
-      const userId = 'user123';
+    it('should clear all servers from cache repository', async () => {
+      // Add servers
+      await registry.addServer('app_server', testRawConfig, 'CACHE');
+      await registry.addServer('user_server', testRawConfig, 'CACHE');
 
-      // Add servers to all three caches
-      await registry.sharedAppServers.add('app_server', testParsedConfig);
-      await registry.sharedUserServers.add('user_server', testParsedConfig);
-      await registry.addPrivateUserServer(userId, 'private_server', testParsedConfig);
-
-      // Verify all servers are accessible before reset
-      const appConfigBefore = await registry.getServerConfig('app_server');
-      const userConfigBefore = await registry.getServerConfig('user_server');
-      const privateConfigBefore = await registry.getServerConfig('private_server', userId);
-      const allConfigsBefore = await registry.getAllServerConfigs(userId);
-
-      expect(appConfigBefore).toEqual(testParsedConfig);
-      expect(userConfigBefore).toEqual(testParsedConfig);
-      expect(privateConfigBefore).toEqual(testParsedConfig);
-      expect(Object.keys(allConfigsBefore)).toHaveLength(3);
+      // Verify servers exist
+      const configsBefore = await registry.getAllServerConfigs();
+      expect(Object.keys(configsBefore)).toHaveLength(2);
 
       // Reset everything
       await registry.reset();
 
-      // Verify all servers are cleared after reset
-      const appConfigAfter = await registry.getServerConfig('app_server');
-      const userConfigAfter = await registry.getServerConfig('user_server');
-      const privateConfigAfter = await registry.getServerConfig('private_server', userId);
-      const allConfigsAfter = await registry.getAllServerConfigs(userId);
-
-      expect(appConfigAfter).toBeUndefined();
-      expect(userConfigAfter).toBeUndefined();
-      expect(privateConfigAfter).toBeUndefined();
-      expect(Object.keys(allConfigsAfter)).toHaveLength(0);
+      // Verify all servers are cleared
+      const configsAfter = await registry.getAllServerConfigs();
+      expect(Object.keys(configsAfter)).toHaveLength(0);
     });
   });
 });

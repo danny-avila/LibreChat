@@ -5,7 +5,9 @@ const { logger } = require('@librechat/data-schemas');
 const {
   agentCreateSchema,
   agentUpdateSchema,
+  refreshListAvatars,
   mergeAgentOcrConversion,
+  MAX_AVATAR_REFRESH_AGENTS,
   convertOcrToContextInPlace,
 } = require('@librechat/api');
 const {
@@ -38,14 +40,13 @@ const {
   grantPermission,
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getCategoriesWithCounts, deleteFileByFilter } = require('~/models');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
-const { deleteFileByFilter } = require('~/models/File');
-const { getCategoriesWithCounts } = require('~/models');
 const { getLogStores } = require('~/cache');
 
 const systemTools = {
@@ -56,46 +57,6 @@ const systemTools = {
 
 const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/**
- * Opportunistically refreshes S3-backed avatars for agent list responses.
- * Only list responses are refreshed because they're the highest-traffic surface and
- * the avatar URLs have a short-lived TTL. The refresh is cached per-user for 30 minutes
- * via {@link CacheKeys.S3_EXPIRY_INTERVAL} so we refresh once per interval at most.
- * @param {Array} agents - Agents being enriched with S3-backed avatars
- * @param {string} userId - User identifier used for the cache refresh key
- */
-const refreshListAvatars = async (agents, userId) => {
-  if (!agents?.length) {
-    return;
-  }
-
-  const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
-  const refreshKey = `${userId}:agents_list`;
-  const alreadyChecked = await cache.get(refreshKey);
-  if (alreadyChecked) {
-    return;
-  }
-
-  await Promise.all(
-    agents.map(async (agent) => {
-      if (agent?.avatar?.source !== FileSources.s3 || !agent?.avatar?.filepath) {
-        return;
-      }
-
-      try {
-        const newPath = await refreshS3Url(agent.avatar);
-        if (newPath && newPath !== agent.avatar.filepath) {
-          agent.avatar = { ...agent.avatar, filepath: newPath };
-        }
-      } catch (err) {
-        logger.debug('[/Agents] Avatar refresh error for list item', err);
-      }
-    }),
-  );
-
-  await cache.set(refreshKey, true, Time.THIRTY_MINUTES);
-};
 
 /**
  * Creates an Agent.
@@ -110,13 +71,17 @@ const createAgentHandler = async (req, res) => {
     const validatedData = agentCreateSchema.parse(req.body);
     const { tools = [], ...agentData } = removeNullishValues(validatedData);
 
+    if (agentData.model_parameters && typeof agentData.model_parameters === 'object') {
+      agentData.model_parameters = removeNullishValues(agentData.model_parameters, true);
+    }
+
     const { id: userId } = req.user;
 
     agentData.id = `agent_${nanoid()}`;
     agentData.author = userId;
     agentData.tools = [];
 
-    const availableTools = await getCachedTools();
+    const availableTools = (await getCachedTools()) ?? {};
     for (const tool of tools) {
       if (availableTools[tool]) {
         agentData.tools.push(tool);
@@ -260,6 +225,11 @@ const updateAgentHandler = async (req, res) => {
     // Preserve explicit null for avatar to allow resetting the avatar
     const { avatar: avatarField, _id, ...rest } = validatedData;
     const updateData = removeNullishValues(rest);
+
+    if (updateData.model_parameters && typeof updateData.model_parameters === 'object') {
+      updateData.model_parameters = removeNullishValues(updateData.model_parameters, true);
+    }
+
     if (avatarField === null) {
       updateData.avatar = avatarField;
     }
@@ -536,6 +506,35 @@ const getListAgentsHandler = async (req, res) => {
       requiredPermissions: PermissionBits.VIEW,
     });
 
+    /**
+     * Refresh all S3 avatars for this user's accessible agent set (not only the current page)
+     * This addresses page-size limits preventing refresh of agents beyond the first page
+     */
+    const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+    const refreshKey = `${userId}:agents_avatar_refresh`;
+    const alreadyChecked = await cache.get(refreshKey);
+    if (alreadyChecked) {
+      logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
+    } else {
+      try {
+        const fullList = await getListAgentsByAccess({
+          accessibleIds,
+          otherParams: {},
+          limit: MAX_AVATAR_REFRESH_AGENTS,
+          after: null,
+        });
+        await refreshListAvatars({
+          agents: fullList?.data ?? [],
+          userId,
+          refreshS3Url,
+          updateAgent,
+        });
+        await cache.set(refreshKey, true, Time.THIRTY_MINUTES);
+      } catch (err) {
+        logger.error('[/Agents] Error refreshing avatars for full list: %o', err);
+      }
+    }
+
     // Use the new ACL-aware function
     const data = await getListAgentsByAccess({
       accessibleIds,
@@ -563,15 +562,9 @@ const getListAgentsHandler = async (req, res) => {
       return agent;
     });
 
-    // Opportunistically refresh S3 avatar URLs for list results with caching
-    try {
-      await refreshListAvatars(data.data, req.user.id);
-    } catch (err) {
-      logger.debug('[/Agents] Skipping avatar refresh for list', err);
-    }
     return res.json(data);
   } catch (error) {
-    logger.error('[/Agents] Error listing Agents', error);
+    logger.error('[/Agents] Error listing Agents: %o', error);
     res.status(500).json({ error: error.message });
   }
 };

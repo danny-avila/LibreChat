@@ -97,3 +97,78 @@ export const useEditArtifact = (
 
   return useMutation(mutationOptions);
 };
+
+type BranchMessageContext = {
+  previousMessages: t.TMessage[] | undefined;
+  conversationId: string | null;
+};
+
+export const useBranchMessageMutation = (
+  conversationId: string | null,
+  _options?: t.BranchMessageOptions,
+): UseMutationResult<
+  t.TBranchMessageResponse,
+  Error,
+  t.TBranchMessageRequest,
+  BranchMessageContext
+> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError, onMutate: userOnMutate, ...options } = _options ?? {};
+
+  const mutationOptions: UseMutationOptions<
+    t.TBranchMessageResponse,
+    Error,
+    t.TBranchMessageRequest,
+    BranchMessageContext
+  > = {
+    mutationFn: (variables: t.TBranchMessageRequest) => dataService.branchMessage(variables),
+    onMutate: async (vars) => {
+      // Call user's onMutate if provided
+      if (userOnMutate) {
+        await userOnMutate(vars);
+      }
+
+      // Cancel any outgoing queries for messages
+      if (conversationId) {
+        await queryClient.cancelQueries([QueryKeys.messages, conversationId]);
+      }
+
+      // Get the previous messages for rollback
+      const previousMessages = conversationId
+        ? queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, conversationId])
+        : undefined;
+
+      return { previousMessages, conversationId };
+    },
+    onError: (error, vars, context) => {
+      // Rollback to previous messages on error
+      if (context?.conversationId && context?.previousMessages) {
+        queryClient.setQueryData(
+          [QueryKeys.messages, context.conversationId],
+          context.previousMessages,
+        );
+      }
+      onError?.(error, vars, context);
+    },
+    onSuccess: (data, vars, context) => {
+      // Add the new message to the cache
+      const targetConversationId = data.conversationId || context?.conversationId;
+      if (targetConversationId) {
+        queryClient.setQueryData<t.TMessage[]>(
+          [QueryKeys.messages, targetConversationId],
+          (prev) => {
+            if (!prev) {
+              return [data];
+            }
+            return [...prev, data];
+          },
+        );
+      }
+
+      onSuccess?.(data, vars, context);
+    },
+    ...options,
+  };
+
+  return useMutation(mutationOptions);
+};

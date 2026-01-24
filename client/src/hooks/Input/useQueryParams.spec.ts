@@ -65,38 +65,33 @@ jest.mock('~/hooks/Agents/useAgentDefaultPermissionLevel', () => ({
   default: jest.fn(() => ({})),
 }));
 
-jest.mock('~/utils', () => ({
-  getConvoSwitchLogic: jest.fn(() => ({
-    template: {},
-    shouldSwitch: false,
-    isNewModular: false,
-    newEndpointType: null,
-    isCurrentModular: false,
-    isExistingConversation: false,
-  })),
-  getModelSpecIconURL: jest.fn(() => 'icon-url'),
-  removeUnavailableTools: jest.fn((preset) => preset),
-  logger: { log: jest.fn() },
-  getInitialTheme: jest.fn(() => 'light'),
-  applyFontSize: jest.fn(),
-}));
+jest.mock('~/utils', () => {
+  const actualUtils = jest.requireActual('~/utils');
+  return {
+    ...actualUtils,
+    // Only mock logger to suppress test output
+    logger: { log: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    // Mock theme utilities that interact with DOM
+    getInitialTheme: jest.fn(() => 'light'),
+    applyFontSize: jest.fn(),
+  };
+});
 
-// Mock the tQueryParamsSchema
-jest.mock('librechat-data-provider', () => ({
-  ...jest.requireActual('librechat-data-provider'),
-  tQueryParamsSchema: {
-    shape: {
-      model: { parse: jest.fn((value) => value) },
-      endpoint: { parse: jest.fn((value) => value) },
-      temperature: { parse: jest.fn((value) => value) },
-      // Add other schema shapes as needed
+// Use actual librechat-data-provider with minimal overrides
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    // Override schema to avoid complex validation in tests
+    tQueryParamsSchema: {
+      shape: {
+        model: { parse: jest.fn((value) => value) },
+        endpoint: { parse: jest.fn((value) => value) },
+        temperature: { parse: jest.fn((value) => value) },
+      },
     },
-  },
-  isAgentsEndpoint: jest.fn(() => false),
-  isAssistantsEndpoint: jest.fn(() => false),
-  QueryKeys: { startupConfig: 'startupConfig', endpoints: 'endpoints' },
-  EModelEndpoint: { custom: 'custom', assistants: 'assistants', agents: 'agents' },
-}));
+  };
+});
 
 // Mock data-provider hooks
 jest.mock('~/data-provider', () => ({

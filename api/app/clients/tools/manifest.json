@@ -31,20 +31,6 @@
     ]
   },
   {
-    "name": "YouTube",
-    "pluginKey": "youtube",
-    "toolkit": true,
-    "description": "Get YouTube video information, retrieve comments, analyze transcripts and search for videos.",
-    "icon": "https://www.youtube.com/s/desktop/7449ebf7/img/favicon_144x144.png",
-    "authConfig": [
-      {
-        "authField": "YOUTUBE_API_KEY",
-        "label": "YouTube API Key",
-        "description": "Your YouTube Data API v3 key."
-      }
-    ]
-  },
-  {
     "name": "OpenAI Image Tools",
     "pluginKey": "image_gen_oai",
     "toolkit": true,
@@ -181,164 +167,16 @@
     ]
   },
   {
-    "name": "Tractor Search",
-    "pluginKey": "woodland-ai-search-tractor",
-    "description": "Azure AI Search for the Tractor index (single-index, semantic results).",
-    "icon": "https://i.imgur.com/E7crPze.png",
+    "name": "Gemini Image Tools",
+    "pluginKey": "gemini_image_gen",
+    "toolkit": true,
+    "description": "Generate high-quality images using Google's Gemini Image Models. Supports Gemini API or Vertex AI.",
+    "icon": "assets/gemini_image_gen.svg",
     "authConfig": [
       {
-        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
-        "label": "Azure AI Search Endpoint",
-        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_API_KEY",
-        "label": "Azure AI Search API Key",
-        "description": "Admin or query API key for your Azure Search service."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_TRACTOR_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Tractor Index Name",
-        "description": "Index name for the Tractor data (e.g., <base>-tractor). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
-      }
-    ]
-  },
-  {
-    "name": "Cases Search",
-    "pluginKey": "woodland-ai-search-cases",
-    "description": "Azure AI Search for the Cases/Knowledge index (single-index, semantic answers).",
-    "icon": "https://i.imgur.com/E7crPze.png",
-    "authConfig": [
-      {
-        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
-        "label": "Azure AI Search Endpoint",
-        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_API_KEY",
-        "label": "Azure AI Search API Key",
-        "description": "Admin or query API key for your Azure Search service."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_CASES_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Cases Index Name",
-        "description": "Index name for the Cases/Knowledge data (e.g., <base>-cases). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
-      }
-    ]
-  },
-  {
-    "name": "Catalog Search",
-    "pluginKey": "woodland-ai-search-catalog",
-    "description": "Azure AI Search for the Catalog index (single-index, semantic/vector results).",
-    "icon": "https://i.imgur.com/E7crPze.png",
-    "authConfig": [
-      {
-        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
-        "label": "Azure AI Search Endpoint",
-        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_API_KEY",
-        "label": "Azure AI Search API Key",
-        "description": "Admin or query API key for your Azure Search service."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_CATALOG_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Catalog Index Name",
-        "description": "Index name for the Catalog data (e.g., <base>-catalog). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
-      }
-    ]
-  },
-  {
-    "name": "Cyclopedia Search",
-    "pluginKey": "woodland-ai-search-cyclopedia",
-    "description": "Azure AI Search for the Cyclopedia/Help Center index (single-index, semantic/vector results).",
-    "icon": "https://i.imgur.com/E7crPze.png",
-    "authConfig": [
-      {
-        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
-        "label": "Azure AI Search Endpoint",
-        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_API_KEY",
-        "label": "Azure AI Search API Key",
-        "description": "Admin or query API key for your Azure Search service."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_CYCLOPEDIA_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Cyclopedia Index Name",
-        "description": "Index name for the Cyclopedia data (e.g., <base>-cyclopedia). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
-      }
-    ]
-  },
-  {
-    "name": "Woodland Engine History",
-    "pluginKey": "woodland-ai-engine-history",
-    "description": "Query prior Woodland Engine conversations/searches by user/session/time window.",
-    "icon": "https://i.imgur.com/E7crPze.png",
-    "authConfig": [
-      {
-        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
-        "label": "Azure AI Search Endpoint",
-        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_API_KEY",
-        "label": "Azure AI Search API Key",
-        "description": "Admin or query API key for your Azure Search service."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Engine History Index Name",
-        "description": "Index name for engine history data (e.g., wpp-knowledge-prod-airtable-enginehistory)."
-      }
-    ]
-  }
-  ,
-  {
-    "name": "Website Search",
-    "pluginKey": "woodland-ai-search-website",
-    "description": "Azure AI Search for the public Website index (single-index, semantic/vector results).",
-    "icon": "https://i.imgur.com/E7crPze.png",
-    "authConfig": [
-      {
-        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
-        "label": "Azure AI Search Endpoint",
-        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_API_KEY",
-        "label": "Azure AI Search API Key",
-        "description": "Admin or query API key for your Azure Search service."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_WEBSITE_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Website Index Name",
-        "description": "Index name for the Website data (e.g., <base>-website). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
-      }
-    ]
-  },
-  {
-    "name": "Woodland Product History",
-    "pluginKey": "woodland-ai-product-history",
-    "description": "Query prior Woodland Product conversations/searches by user/session/time window.",
-    "icon": "https://i.imgur.com/E7crPze.png",
-    "authConfig": [
-      {
-        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
-        "label": "Azure AI Search Endpoint",
-        "description": "Your Azure Cognitive Search service endpoint (e.g., https://<service>.search.windows.net)."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_API_KEY",
-        "label": "Azure AI Search API Key",
-        "description": "Admin or query API key for your Azure Search service."
-      },
-      {
-        "authField": "AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "Product History Index Name",
-        "description": "Index name for product history data (e.g., wpp-knowledge-prod-airtable-producthistory)."
+        "authField": "GEMINI_API_KEY||GOOGLE_KEY||GEMINI_VERTEX_ENABLED",
+        "label": "Gemini API Key (Optional if Vertex AI is configured)",
+        "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank if using Vertex AI with service account."
       }
     ]
   }

@@ -8,19 +8,16 @@ import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { Plugin } from '~/components/Messages/Content';
+import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
+import { cn, getMessageAriaLabel } from '~/utils';
 import { fontSizeAtom } from '~/store/fontSize';
 import { MessageContext } from '~/Providers';
-import { useMessageActions } from '~/hooks';
-import { cn, logger } from '~/utils';
 import store from '~/store';
 
 type MessageRenderProps = {
   message?: TMessage;
-  isCard?: boolean;
-  isMultiMessage?: boolean;
-  isSubmittingFamily?: boolean;
+  isSubmitting?: boolean;
 } & Pick<
   TMessageProps,
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
@@ -29,15 +26,14 @@ type MessageRenderProps = {
 const MessageRender = memo(
   ({
     message: msg,
-    isCard = false,
     siblingIdx,
     siblingCount,
     setSiblingIdx,
     currentEditId,
-    isMultiMessage = false,
     setCurrentEditId,
-    isSubmittingFamily = false,
+    isSubmitting = false,
   }: MessageRenderProps) => {
+    const localize = useLocalize();
     const {
       ask,
       edit,
@@ -47,17 +43,14 @@ const MessageRender = memo(
       enterEdit,
       conversation,
       messageLabel,
-      isSubmitting,
       latestMessage,
+      handleFeedback,
       handleContinue,
       copyToClipboard,
-      setLatestMessage,
       regenerateMessage,
-      handleFeedback,
     } = useMessageActions({
       message: msg,
       currentEditId,
-      isMultiMessage,
       setCurrentEditId,
     });
     const fontSize = useAtomValue(fontSizeAtom);
@@ -70,9 +63,6 @@ const MessageRender = memo(
       [hasNoChildren, msg?.depth, latestMessage?.depth],
     );
     const isLatestMessage = msg?.messageId === latestMessage?.messageId;
-    const showCardRender = isLast && !isSubmittingFamily && isCard;
-    const isLatestCard = isCard && !isSubmittingFamily && isLatestMessage;
-
     /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
     const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
@@ -95,77 +85,60 @@ const MessageRender = memo(
       ],
     );
 
-    const clickHandler = useMemo(
-      () =>
-        showCardRender && !isLatestMessage
-          ? () => {
-              logger.log(
-                'latest_message',
-                `Message Card click: Setting ${msg?.messageId} as latest message`,
-              );
-              logger.dir(msg);
-              setLatestMessage(msg!);
-            }
-          : undefined,
-      [showCardRender, isLatestMessage, msg, setLatestMessage],
-    );
+    const { hasParallelContent } = useContentMetadata(msg);
 
     if (!msg) {
       return null;
     }
 
+    const getChatWidthClass = () => {
+      if (maximizeChatSpace) {
+        return 'w-full max-w-full md:px-5 lg:px-1 xl:px-5';
+      }
+      if (hasParallelContent) {
+        return 'md:max-w-[58rem] xl:max-w-[70rem]';
+      }
+      return 'md:max-w-[47rem] xl:max-w-[55rem]';
+    };
+
     const baseClasses = {
       common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu ',
-      card: 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4',
-      chat: maximizeChatSpace
-        ? 'w-full max-w-full md:px-5 lg:px-1 xl:px-5'
-        : 'md:max-w-[47rem] xl:max-w-[55rem]',
+      chat: getChatWidthClass(),
     };
 
     const conditionalClasses = {
-      latestCard: isLatestCard ? 'bg-surface-secondary' : '',
-      cardRender: showCardRender ? 'cursor-pointer transition-colors duration-300' : '',
       focus: 'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
     };
 
     return (
       <div
         id={msg.messageId}
-        aria-label={`message-${msg.depth}-${msg.messageId}`}
+        aria-label={getMessageAriaLabel(msg, localize)}
         className={cn(
           baseClasses.common,
-          isCard ? baseClasses.card : baseClasses.chat,
-          conditionalClasses.latestCard,
-          conditionalClasses.cardRender,
+          baseClasses.chat,
           conditionalClasses.focus,
           'message-render',
         )}
-        onClick={clickHandler}
-        onKeyDown={(e) => {
-          if ((e.key === 'Enter' || e.key === ' ') && clickHandler) {
-            clickHandler();
-          }
-        }}
-        role={showCardRender ? 'button' : undefined}
-        tabIndex={showCardRender ? 0 : undefined}
       >
-        {isLatestCard && (
-          <div className="absolute right-0 top-0 m-2 h-3 w-3 rounded-full bg-text-primary" />
-        )}
-
-        <div className="relative flex flex-shrink-0 flex-col items-center">
-          <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-            <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
+        {!hasParallelContent && (
+          <div className="relative flex flex-shrink-0 flex-col items-center">
+            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+              <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
+            </div>
           </div>
-        </div>
+        )}
 
         <div
           className={cn(
-            'relative flex w-11/12 flex-col',
+            'relative flex flex-col',
+            hasParallelContent ? 'w-full' : 'w-11/12',
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
         >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          {!hasParallelContent && (
+            <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          )}
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
@@ -178,7 +151,6 @@ const MessageRender = memo(
                   isLatestMessage,
                 }}
               >
-                {msg.plugin && <Plugin plugin={msg.plugin} />}
                 <MessageContent
                   ask={ask}
                   edit={edit}
@@ -195,9 +167,8 @@ const MessageRender = memo(
                 />
               </MessageContext.Provider>
             </div>
-
-            {hasNoChildren && (isSubmittingFamily === true || effectiveIsSubmitting) ? (
-              <PlaceholderRow isCard={isCard} />
+            {hasNoChildren && effectiveIsSubmitting ? (
+              <PlaceholderRow />
             ) : (
               <SubRow classes="text-xs">
                 <SiblingSwitch

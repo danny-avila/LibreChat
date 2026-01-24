@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { logger } = require('@librechat/data-schemas');
 const { parseConvo } = require('librechat-data-provider');
-const { sendEvent, handleError } = require('@librechat/api');
+const { sendEvent, handleError, sanitizeMessageForTransmit } = require('@librechat/api');
 const { saveMessage, getMessages } = require('~/models/Message');
 const { getConvo } = require('~/models/Conversation');
 
@@ -71,7 +71,7 @@ const sendError = async (req, res, options, callback) => {
 
     return sendEvent(res, {
       final: true,
-      requestMessage: query?.[0] ? query[0] : requestMessage,
+      requestMessage: sanitizeMessageForTransmit(query?.[0] ?? requestMessage),
       responseMessage: errorMessage,
       conversation: convo,
     });

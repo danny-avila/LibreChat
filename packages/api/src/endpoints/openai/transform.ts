@@ -1,28 +1,48 @@
 import { EModelEndpoint } from 'librechat-data-provider';
+import type { GoogleAIToolType } from '@langchain/google-common';
 import type { ClientOptions } from '@librechat/agents';
 import type * as t from '~/types';
 import { knownOpenAIParams } from './llm';
 
 const anthropicExcludeParams = new Set(['anthropicApiUrl']);
-const googleExcludeParams = new Set(['safetySettings', 'location', 'baseUrl', 'customHeaders']);
+const googleExcludeParams = new Set([
+  'safetySettings',
+  'location',
+  'baseUrl',
+  'customHeaders',
+  'thinkingConfig',
+  'thinkingBudget',
+  'includeThoughts',
+]);
+
+/** Google-specific tool types that have no OpenAI-compatible equivalent */
+const googleToolsToFilter = new Set(['googleSearch']);
+
+export type ConfigTools = Array<Record<string, unknown>> | Array<GoogleAIToolType>;
 
 /**
  * Transforms a Non-OpenAI LLM config to an OpenAI-conformant config.
  * Non-OpenAI parameters are moved to modelKwargs.
  * Also extracts configuration options that belong in configOptions.
  * Handles addParams and dropParams for parameter customization.
+ * Filters out provider-specific tools that have no OpenAI equivalent.
  */
 export function transformToOpenAIConfig({
+  tools,
   addParams,
   dropParams,
+  defaultParams,
   llmConfig,
   fromEndpoint,
 }: {
+  tools?: ConfigTools;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
+  defaultParams?: Record<string, unknown>;
   llmConfig: ClientOptions;
   fromEndpoint: string;
 }): {
+  tools: ConfigTools;
   llmConfig: t.OAIClientOptions;
   configOptions: Partial<t.OpenAIConfiguration>;
 } {
@@ -58,16 +78,7 @@ export function transformToOpenAIConfig({
       hasModelKwargs = true;
       continue;
     } else if (isGoogle && key === 'authOptions') {
-      // Handle Google authOptions
       modelKwargs = Object.assign({}, modelKwargs, value as Record<string, unknown>);
-      hasModelKwargs = true;
-      continue;
-    } else if (
-      isGoogle &&
-      (key === 'thinkingConfig' || key === 'thinkingBudget' || key === 'includeThoughts')
-    ) {
-      // Handle Google thinking configuration
-      modelKwargs = Object.assign({}, modelKwargs, { [key]: value });
       hasModelKwargs = true;
       continue;
     }
@@ -121,7 +132,34 @@ export function transformToOpenAIConfig({
     }
   }
 
+  /**
+   * Filter out provider-specific tools that have no OpenAI equivalent.
+   * Exception: If web_search was explicitly enabled via addParams or defaultParams,
+   * preserve googleSearch tools (pass through in Google-native format).
+   */
+  const webSearchExplicitlyEnabled =
+    addParams?.web_search === true || defaultParams?.web_search === true;
+
+  const filterGoogleTool = (tool: unknown): boolean => {
+    if (!isGoogle) {
+      return true;
+    }
+    if (typeof tool !== 'object' || tool === null) {
+      return false;
+    }
+    const toolKeys = Object.keys(tool as Record<string, unknown>);
+    const isGoogleSpecificTool = toolKeys.some((key) => googleToolsToFilter.has(key));
+    /** Preserve googleSearch if web_search was explicitly enabled */
+    if (isGoogleSpecificTool && webSearchExplicitlyEnabled) {
+      return true;
+    }
+    return !isGoogleSpecificTool;
+  };
+
+  const filteredTools = Array.isArray(tools) ? tools.filter(filterGoogleTool) : [];
+
   return {
+    tools: filteredTools,
     llmConfig: openAIConfig as t.OAIClientOptions,
     configOptions,
   };

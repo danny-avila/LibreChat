@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, MCPOAuthFlowMetadata, OAuthMetadata } from '~/mcp/oauth';
+import type { MCPOAuthTokens, OAuthMetadata } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
@@ -167,11 +167,16 @@ export class MCPConnectionFactory {
               config?.oauth,
             );
 
+          // Delete any existing flow state to ensure we start fresh
+          // This prevents stale codeVerifier issues when re-authenticating
+          await this.flowManager!.deleteFlow(flowId, 'mcp_oauth');
+
           // Create the flow state so the OAuth callback can find it
           // We spawn this in the background without waiting for it
-          this.flowManager!.createFlow(flowId, 'mcp_oauth', flowMetadata).catch(() => {
+          // Pass signal so the flow can be aborted if the request is cancelled
+          this.flowManager!.createFlow(flowId, 'mcp_oauth', flowMetadata, this.signal).catch(() => {
             // The OAuth callback will resolve this flow, so we expect it to timeout here
-            // which is fine - we just need the flow state to exist
+            // or it will be aborted if the request is cancelled - both are fine
           });
 
           if (this.oauthStart) {
@@ -259,14 +264,20 @@ export class MCPConnectionFactory {
         attempts++;
 
         if (this.useOAuth && this.isOAuthError(error)) {
-          // Only handle OAuth if this is a user connection (has oauthStart handler)
+          // For returnOnOAuth mode, let the event handler (handleOAuthEvents) deal with OAuth
+          // We just need to stop retrying and let the error propagate
+          if (this.returnOnOAuth) {
+            logger.info(
+              `${this.logPrefix} OAuth required (return on OAuth mode), stopping retries`,
+            );
+            throw error;
+          }
+
+          // Normal flow - wait for OAuth to complete
           if (this.oauthStart && !oauthHandled) {
-            const errorWithFlag = error as (Error & { isOAuthError?: boolean }) | undefined;
-            if (errorWithFlag?.isOAuthError) {
-              oauthHandled = true;
-              logger.info(`${this.logPrefix} Handling OAuth`);
-              await this.handleOAuthRequired();
-            }
+            oauthHandled = true;
+            logger.info(`${this.logPrefix} Handling OAuth`);
+            await this.handleOAuthRequired();
           }
           // Don't retry on OAuth errors - just throw
           logger.info(`${this.logPrefix} OAuth required, stopping connection attempts`);
@@ -288,15 +299,29 @@ export class MCPConnectionFactory {
       return false;
     }
 
-    // Check for SSE error with 401 status
-    if ('message' in error && typeof error.message === 'string') {
-      return error.message.includes('401') || error.message.includes('Non-200 status code (401)');
-    }
-
     // Check for error code
     if ('code' in error) {
       const code = (error as { code?: number }).code;
-      return code === 401 || code === 403;
+      if (code === 401 || code === 403) {
+        return true;
+      }
+    }
+
+    // Check message for various auth error indicators
+    if ('message' in error && typeof error.message === 'string') {
+      const message = error.message.toLowerCase();
+      // Check for 401 status
+      if (message.includes('401') || message.includes('non-200 status code (401)')) {
+        return true;
+      }
+      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
+      if (message.includes('invalid_token')) {
+        return true;
+      }
+      // Check for authentication required
+      if (message.includes('authentication required') || message.includes('unauthorized')) {
+        return true;
+      }
     }
 
     return false;
@@ -330,56 +355,26 @@ export class MCPConnectionFactory {
       /** Check if there's already an ongoing OAuth flow for this flowId */
       const existingFlow = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
 
-      if (existingFlow && existingFlow.status === 'PENDING') {
+      // If any flow exists (PENDING, COMPLETED, FAILED), cancel it and start fresh
+      // This ensures the user always gets a new OAuth URL instead of waiting for stale flows
+      if (existingFlow) {
         logger.debug(
-          `${this.logPrefix} OAuth flow already exists for ${flowId}, waiting for completion`,
+          `${this.logPrefix} Found existing OAuth flow (status: ${existingFlow.status}), cancelling to start fresh`,
         );
-        /** Tokens from existing flow to complete */
-        const tokens = await this.flowManager.createFlow(flowId, 'mcp_oauth');
-        if (typeof this.oauthEnd === 'function') {
-          await this.oauthEnd();
-        }
-        logger.info(
-          `${this.logPrefix} OAuth flow completed, tokens received for ${this.serverName}`,
-        );
-
-        /** Client information from the existing flow metadata */
-        const existingMetadata = existingFlow.metadata as unknown as MCPOAuthFlowMetadata;
-        const clientInfo = existingMetadata?.clientInfo;
-
-        return { tokens, clientInfo };
-      }
-
-      // Clean up old completed/failed flows, but only if they're actually stale
-      // This prevents race conditions where we delete a flow that's still being processed
-      if (existingFlow && existingFlow.status !== 'PENDING') {
-        const STALE_FLOW_THRESHOLD = 2 * 60 * 1000; // 2 minutes
-        const { isStale, age, status } = await this.flowManager.isFlowStale(
-          flowId,
-          'mcp_oauth',
-          STALE_FLOW_THRESHOLD,
-        );
-
-        if (isStale) {
-          try {
+        try {
+          if (existingFlow.status === 'PENDING') {
+            await this.flowManager.failFlow(
+              flowId,
+              'mcp_oauth',
+              new Error('Cancelled for new OAuth request'),
+            );
+          } else {
             await this.flowManager.deleteFlow(flowId, 'mcp_oauth');
-            logger.debug(
-              `${this.logPrefix} Cleared stale ${status} OAuth flow (age: ${Math.round(age / 1000)}s)`,
-            );
-          } catch (error) {
-            logger.warn(`${this.logPrefix} Failed to clear stale OAuth flow`, error);
           }
-        } else {
-          logger.debug(
-            `${this.logPrefix} Skipping cleanup of recent ${status} flow (age: ${Math.round(age / 1000)}s, threshold: ${STALE_FLOW_THRESHOLD / 1000}s)`,
-          );
-          // If flow is recent but not pending, something might be wrong
-          if (status === 'FAILED') {
-            logger.warn(
-              `${this.logPrefix} Recent OAuth flow failed, will retry after ${Math.round((STALE_FLOW_THRESHOLD - age) / 1000)}s`,
-            );
-          }
+        } catch (error) {
+          logger.warn(`${this.logPrefix} Failed to cancel existing OAuth flow`, error);
         }
+        // Continue to start a new flow below
       }
 
       logger.debug(`${this.logPrefix} Initiating new OAuth flow for ${this.serverName}...`);

@@ -25,10 +25,6 @@ export enum EModelEndpoint {
   agents = 'agents',
   custom = 'custom',
   bedrock = 'bedrock',
-  /** @deprecated */
-  chatGPTBrowser = 'chatGPTBrowser',
-  /** @deprecated */
-  gptPlugins = 'gptPlugins',
 }
 
 /** Mirrors `@librechat/agents` providers */
@@ -41,7 +37,6 @@ export enum Providers {
   BEDROCK = 'bedrock',
   MISTRALAI = 'mistralai',
   MISTRAL = 'mistral',
-  OLLAMA = 'ollama',
   DEEPSEEK = 'deepseek',
   OPENROUTER = 'openrouter',
   XAI = 'xai',
@@ -54,12 +49,12 @@ export const documentSupportedProviders = new Set<string>([
   EModelEndpoint.anthropic,
   EModelEndpoint.openAI,
   EModelEndpoint.custom,
-  EModelEndpoint.azureOpenAI,
+  // handled in AttachFileMenu and DragDropModal since azureOpenAI only supports documents with Use Responses API set to true
+  // EModelEndpoint.azureOpenAI,
   EModelEndpoint.google,
   Providers.VERTEXAI,
   Providers.MISTRALAI,
   Providers.MISTRAL,
-  Providers.OLLAMA,
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
   Providers.XAI,
@@ -71,7 +66,6 @@ const openAILikeProviders = new Set<string>([
   EModelEndpoint.custom,
   Providers.MISTRALAI,
   Providers.MISTRAL,
-  Providers.OLLAMA,
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
   Providers.XAI,
@@ -100,10 +94,11 @@ export enum BedrockProviders {
   Amazon = 'amazon',
   Anthropic = 'anthropic',
   Cohere = 'cohere',
+  DeepSeek = 'deepseek',
   Meta = 'meta',
   MistralAI = 'mistral',
+  Moonshot = 'moonshot',
   StabilityAI = 'stability',
-  DeepSeek = 'deepseek',
 }
 
 export const getModelKey = (endpoint: EModelEndpoint | string, model: string) => {
@@ -172,6 +167,7 @@ export enum ReasoningEffort {
   low = 'low',
   medium = 'medium',
   high = 'high',
+  xhigh = 'xhigh',
 }
 
 export enum ReasoningSummary {
@@ -386,6 +382,10 @@ export const anthropicSettings = {
         return CLAUDE_4_64K_MAX_OUTPUT;
       }
 
+      if (/claude-opus[-.]?(?:[5-9]|4[-.]?([5-9]|\d{2,}))/.test(modelName)) {
+        return CLAUDE_4_64K_MAX_OUTPUT;
+      }
+
       if (/claude-opus[-.]?[4-9]/.test(modelName)) {
         return CLAUDE_32K_MAX_OUTPUT;
       }
@@ -397,7 +397,14 @@ export const anthropicSettings = {
         return CLAUDE_4_64K_MAX_OUTPUT;
       }
 
-      if (/claude-(?:opus|haiku)[-.]?[4-9]/.test(modelName) && value > CLAUDE_32K_MAX_OUTPUT) {
+      if (/claude-opus[-.]?(?:[5-9]|4[-.]?([5-9]|\d{2,}))/.test(modelName)) {
+        if (value > CLAUDE_4_64K_MAX_OUTPUT) {
+          return CLAUDE_4_64K_MAX_OUTPUT;
+        }
+        return value;
+      }
+
+      if (/claude-opus[-.]?[4-9]/.test(modelName) && value > CLAUDE_32K_MAX_OUTPUT) {
         return CLAUDE_32K_MAX_OUTPUT;
       }
 
@@ -521,16 +528,6 @@ export type TInput = {
   inputStr: string;
 };
 
-export type TResPlugin = {
-  plugin: string;
-  input: string;
-  thought: string;
-  loading?: boolean;
-  outputs?: string;
-  latest?: string;
-  inputs?: TInput[];
-};
-
 export const tExampleSchema = z.object({
   input: z.object({
     content: z.string(),
@@ -541,39 +538,6 @@ export const tExampleSchema = z.object({
 });
 
 export type TExample = z.infer<typeof tExampleSchema>;
-
-export enum EAgent {
-  functions = 'functions',
-  classic = 'classic',
-}
-
-export const agentOptionSettings = {
-  model: {
-    default: 'gpt-4o-mini',
-  },
-  temperature: {
-    min: 0,
-    max: 1,
-    step: 0.01,
-    default: 0,
-  },
-  agent: {
-    default: EAgent.functions,
-    options: [EAgent.functions, EAgent.classic],
-  },
-  skipCompletion: {
-    default: true,
-  },
-};
-
-export const eAgentOptionsSchema = z.nativeEnum(EAgent);
-
-export const tAgentOptionsSchema = z.object({
-  agent: z.string().default(EAgent.functions),
-  skipCompletion: z.boolean().default(agentOptionSettings.skipCompletion.default),
-  model: z.string(),
-  temperature: z.number().default(agentOptionSettings.temperature.default),
-});
 
 export const tMessageSchema = z.object({
   messageId: z.string(),
@@ -622,9 +586,8 @@ export type MemoryArtifact = {
 };
 
 export type UIResource = {
-  type?: string;
-  data?: unknown;
-  uri?: string;
+  resourceId: string;
+  uri: string;
   mimeType?: string;
   text?: string;
   [key: string]: unknown;
@@ -651,8 +614,6 @@ export type TAttachment =
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
-  plugin?: TResPlugin | null;
-  plugins?: TResPlugin[];
   content?: TMessageContentParts[];
   files?: Partial<TFile>[];
   depth?: number;
@@ -767,8 +728,6 @@ export const tConversationSchema = z.object({
   fileTokenLimit: coerceNumber.optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
-  /** @deprecated */
-  agentOptions: tAgentOptionsSchema.nullable().optional(),
   /** @deprecated Prefer `modelLabel` over `chatGptLabel` */
   chatGptLabel: z.string().nullable().optional(),
 });
@@ -945,7 +904,7 @@ export const googleBaseSchema = tConversationSchema.pick({
 });
 
 export const googleSchema = googleBaseSchema
-  .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
 
 /**
@@ -973,75 +932,6 @@ export const googleGenConfigSchema = z
   })
   .strip()
   .optional();
-
-const gptPluginsBaseSchema = tConversationSchema.pick({
-  model: true,
-  modelLabel: true,
-  chatGptLabel: true,
-  promptPrefix: true,
-  temperature: true,
-  artifacts: true,
-  top_p: true,
-  presence_penalty: true,
-  frequency_penalty: true,
-  tools: true,
-  agentOptions: true,
-  iconURL: true,
-  greeting: true,
-  spec: true,
-  maxContextTokens: true,
-});
-
-export const gptPluginsSchema = gptPluginsBaseSchema
-  .transform((obj) => {
-    const result = {
-      ...obj,
-      model: obj.model ?? 'gpt-3.5-turbo',
-      chatGptLabel: obj.chatGptLabel ?? obj.modelLabel ?? null,
-      promptPrefix: obj.promptPrefix ?? null,
-      temperature: obj.temperature ?? 0.8,
-      top_p: obj.top_p ?? 1,
-      presence_penalty: obj.presence_penalty ?? 0,
-      frequency_penalty: obj.frequency_penalty ?? 0,
-      tools: obj.tools ?? [],
-      agentOptions: obj.agentOptions ?? {
-        agent: EAgent.functions,
-        skipCompletion: true,
-        model: 'gpt-3.5-turbo',
-        temperature: 0,
-      },
-      iconURL: obj.iconURL ?? undefined,
-      greeting: obj.greeting ?? undefined,
-      spec: obj.spec ?? undefined,
-      maxContextTokens: obj.maxContextTokens ?? undefined,
-    };
-
-    if (obj.modelLabel != null && obj.modelLabel !== '') {
-      result.modelLabel = null;
-    }
-
-    return result;
-  })
-  .catch(() => ({
-    model: 'gpt-3.5-turbo',
-    chatGptLabel: null,
-    promptPrefix: null,
-    temperature: 0.8,
-    top_p: 1,
-    presence_penalty: 0,
-    frequency_penalty: 0,
-    tools: [],
-    agentOptions: {
-      agent: EAgent.functions,
-      skipCompletion: true,
-      model: 'gpt-3.5-turbo',
-      temperature: 0,
-    },
-    iconURL: undefined,
-    greeting: undefined,
-    spec: undefined,
-    maxContextTokens: undefined,
-  }));
 
 export function removeNullishValues<T extends Record<string, unknown>>(
   obj: T,
@@ -1212,7 +1102,7 @@ export const compactGoogleSchema = googleBaseSchema
       delete newObj.topK;
     }
 
-    return removeNullishValues(newObj);
+    return removeNullishValues(newObj, true);
   })
   .catch(() => ({}));
 
@@ -1243,48 +1133,6 @@ export const anthropicSchema = anthropicBaseSchema
   .transform((obj) => removeNullishValues(obj))
   .catch(() => ({}));
 
-export const compactPluginsSchema = gptPluginsBaseSchema
-  .transform((obj) => {
-    const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.modelLabel === null) {
-      delete newObj.modelLabel;
-    }
-    if (newObj.chatGptLabel === null) {
-      delete newObj.chatGptLabel;
-    }
-    if (newObj.promptPrefix === null) {
-      delete newObj.promptPrefix;
-    }
-    if (newObj.temperature === 0.8) {
-      delete newObj.temperature;
-    }
-    if (newObj.top_p === 1) {
-      delete newObj.top_p;
-    }
-    if (newObj.presence_penalty === 0) {
-      delete newObj.presence_penalty;
-    }
-    if (newObj.frequency_penalty === 0) {
-      delete newObj.frequency_penalty;
-    }
-    if (newObj.tools?.length === 0) {
-      delete newObj.tools;
-    }
-
-    if (
-      newObj.agentOptions &&
-      newObj.agentOptions.agent === EAgent.functions &&
-      newObj.agentOptions.skipCompletion === true &&
-      newObj.agentOptions.model === 'gpt-3.5-turbo' &&
-      newObj.agentOptions.temperature === 0
-    ) {
-      delete newObj.agentOptions;
-    }
-
-    return removeNullishValues(newObj);
-  })
-  .catch(() => ({}));
-
 export const tBannerSchema = z.object({
   bannerId: z.string(),
   message: z.string(),
@@ -1293,6 +1141,7 @@ export const tBannerSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   isPublic: z.boolean(),
+  persistable: z.boolean().default(false),
 });
 export type TBanner = z.infer<typeof tBannerSchema>;
 

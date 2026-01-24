@@ -1,100 +1,185 @@
+import { Keyv } from 'keyv';
+import { logger } from '@librechat/data-schemas';
+import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
-import {
-  ServerConfigsCacheFactory,
-  type ServerConfigsCache,
-} from './cache/ServerConfigsCacheFactory';
+import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import { ServerConfigsCacheFactory } from './cache/ServerConfigsCacheFactory';
+import { MCPServerInspector } from './MCPServerInspector';
+import { ServerConfigsDB } from './db/ServerConfigsDB';
+import { cacheConfig } from '~/cache/cacheConfig';
 
 /**
- * Central registry for managing MCP server configurations across different scopes and users.
- * Maintains three categories of server configurations:
- * - Shared App Servers: Auto-started servers available to all users (initialized at startup)
- * - Shared User Servers: User-scope servers that require OAuth or on-demand startup
- * - Private User Servers: Per-user configurations dynamically added during runtime
+ * Central registry for managing MCP server configurations.
+ * Authoritative source of truth for all MCP servers provided by LibreChat.
  *
- * Provides a unified interface for retrieving server configs with proper fallback hierarchy:
- * checks shared app servers first, then shared user servers, then private user servers.
- * Falls back to raw config when servers haven't been initialized yet or failed to initialize.
- * Handles server lifecycle operations including adding, removing, and querying configurations.
+ * Uses a two-repository architecture:
+ * - Cache Repository: Stores YAML-defined configs loaded at startup (in-memory or Redis-backed)
+ * - DB Repository: Stores dynamic configs created at runtime (not yet implemented)
+ *
+ * Query priority: Cache configs are checked first, then DB configs.
  */
-class MCPServersRegistry {
-  public readonly sharedAppServers = ServerConfigsCacheFactory.create('App', false);
-  public readonly sharedUserServers = ServerConfigsCacheFactory.create('User', false);
-  private readonly privateUserServers: Map<string | undefined, ServerConfigsCache> = new Map();
-  private rawConfigs: t.MCPServers = {};
+export class MCPServersRegistry {
+  private static instance: MCPServersRegistry;
 
-  /**
-   * Stores the raw MCP configuration as a fallback when servers haven't been initialized yet.
-   * Should be called during initialization before inspecting servers.
-   */
-  public setRawConfigs(configs: t.MCPServers): void {
-    this.rawConfigs = configs;
+  private readonly dbConfigsRepo: IServerConfigsRepositoryInterface;
+  private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
+  private readonly allowedDomains?: string[] | null;
+  private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
+  private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
+
+  constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
+    this.dbConfigsRepo = new ServerConfigsDB(mongoose);
+    this.cacheConfigsRepo = ServerConfigsCacheFactory.create('App', false);
+    this.allowedDomains = allowedDomains;
+
+    const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
+
+    this.readThroughCache = new Keyv<t.ParsedServerConfig>({
+      namespace: 'mcp-registry-read-through',
+      ttl,
+    });
+
+    this.readThroughCacheAll = new Keyv<Record<string, t.ParsedServerConfig>>({
+      namespace: 'mcp-registry-read-through-all',
+      ttl,
+    });
   }
 
-  public async addPrivateUserServer(
-    userId: string,
-    serverName: string,
-    config: t.ParsedServerConfig,
-  ): Promise<void> {
-    if (!this.privateUserServers.has(userId)) {
-      const cache = ServerConfigsCacheFactory.create(`User(${userId})`, false);
-      this.privateUserServers.set(userId, cache);
+  /** Creates and initializes the singleton MCPServersRegistry instance */
+  public static createInstance(
+    mongoose: typeof import('mongoose'),
+    allowedDomains?: string[] | null,
+  ): MCPServersRegistry {
+    if (!mongoose) {
+      throw new Error(
+        'MCPServersRegistry creation failed: mongoose instance is required for database operations. ' +
+          'Ensure mongoose is initialized before creating the registry.',
+      );
     }
-    await this.privateUserServers.get(userId)!.add(serverName, config);
+    if (MCPServersRegistry.instance) {
+      logger.debug('[MCPServersRegistry] Returning existing instance');
+      return MCPServersRegistry.instance;
+    }
+    logger.info('[MCPServersRegistry] Creating new instance');
+    MCPServersRegistry.instance = new MCPServersRegistry(mongoose, allowedDomains);
+    return MCPServersRegistry.instance;
   }
 
-  public async updatePrivateUserServer(
-    userId: string,
-    serverName: string,
-    config: t.ParsedServerConfig,
-  ): Promise<void> {
-    const userCache = this.privateUserServers.get(userId);
-    if (!userCache) throw new Error(`No private servers found for user "${userId}".`);
-    await userCache.update(serverName, config);
-  }
-
-  public async removePrivateUserServer(userId: string, serverName: string): Promise<void> {
-    await this.privateUserServers.get(userId)?.remove(serverName);
+  /** Returns the singleton MCPServersRegistry instance */
+  public static getInstance(): MCPServersRegistry {
+    if (!MCPServersRegistry.instance) {
+      throw new Error('MCPServersRegistry has not been initialized.');
+    }
+    return MCPServersRegistry.instance;
   }
 
   public async getServerConfig(
     serverName: string,
     userId?: string,
   ): Promise<t.ParsedServerConfig | undefined> {
-    const sharedAppServer = await this.sharedAppServers.get(serverName);
-    if (sharedAppServer) return sharedAppServer;
+    const cacheKey = this.getReadThroughCacheKey(serverName, userId);
 
-    const sharedUserServer = await this.sharedUserServers.get(serverName);
-    if (sharedUserServer) return sharedUserServer;
+    if (await this.readThroughCache.has(cacheKey)) {
+      return await this.readThroughCache.get(cacheKey);
+    }
 
-    const privateUserServer = await this.privateUserServers.get(userId)?.get(serverName);
-    if (privateUserServer) return privateUserServer;
+    // First we check if any config exist with the cache
+    // Yaml config are pre loaded to the cache
+    const configFromCache = await this.cacheConfigsRepo.get(serverName);
+    if (configFromCache) {
+      await this.readThroughCache.set(cacheKey, configFromCache);
+      return configFromCache;
+    }
 
-    /** Fallback to raw config if server hasn't been initialized yet */
-    const rawConfig = this.rawConfigs[serverName];
-    if (rawConfig) return rawConfig as t.ParsedServerConfig;
-
-    return undefined;
+    const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
+    await this.readThroughCache.set(cacheKey, configFromDB);
+    return configFromDB;
   }
 
   public async getAllServerConfigs(userId?: string): Promise<Record<string, t.ParsedServerConfig>> {
-    const registryConfigs = {
-      ...(await this.sharedAppServers.getAll()),
-      ...(await this.sharedUserServers.getAll()),
-      ...((await this.privateUserServers.get(userId)?.getAll()) ?? {}),
+    const cacheKey = userId ?? '__no_user__';
+
+    // Check if key exists in read-through cache
+    if (await this.readThroughCacheAll.has(cacheKey)) {
+      return (await this.readThroughCacheAll.get(cacheKey)) ?? {};
+    }
+
+    const result = {
+      ...(await this.cacheConfigsRepo.getAll()),
+      ...(await this.dbConfigsRepo.getAll(userId)),
     };
 
-    /** Include all raw configs, but registry configs take precedence (they have inspection data) */
-    const allConfigs: Record<string, t.ParsedServerConfig> = {};
-    for (const serverName in this.rawConfigs) {
-      allConfigs[serverName] = this.rawConfigs[serverName] as t.ParsedServerConfig;
+    await this.readThroughCacheAll.set(cacheKey, result);
+    return result;
+  }
+
+  public async addServer(
+    serverName: string,
+    config: t.MCPOptions,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.AddServerResult> {
+    const configRepo = this.getConfigRepository(storageLocation);
+    let parsedConfig: t.ParsedServerConfig;
+    try {
+      parsedConfig = await MCPServerInspector.inspect(
+        serverName,
+        config,
+        undefined,
+        this.allowedDomains,
+      );
+    } catch (error) {
+      logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
+      // Preserve domain-specific error for better error handling
+      if (isMCPDomainNotAllowedError(error)) {
+        throw error;
+      }
+      throw new MCPInspectionFailedError(serverName, error as Error);
+    }
+    return await configRepo.add(serverName, parsedConfig, userId);
+  }
+
+  public async updateServer(
+    serverName: string,
+    config: t.MCPOptions,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.ParsedServerConfig> {
+    const configRepo = this.getConfigRepository(storageLocation);
+
+    // Merge existing admin API key if not provided in update (needed for inspection)
+    let configForInspection = { ...config };
+    if (config.apiKey?.source === 'admin' && !config.apiKey?.key) {
+      const existingConfig = await configRepo.get(serverName, userId);
+      if (existingConfig?.apiKey?.key) {
+        configForInspection = {
+          ...configForInspection,
+          apiKey: {
+            ...configForInspection.apiKey!,
+            key: existingConfig.apiKey.key,
+          },
+        };
+      }
     }
 
-    /** Override with registry configs where available (they have richer data) */
-    for (const serverName in registryConfigs) {
-      allConfigs[serverName] = registryConfigs[serverName];
+    let parsedConfig: t.ParsedServerConfig;
+    try {
+      parsedConfig = await MCPServerInspector.inspect(
+        serverName,
+        configForInspection,
+        undefined,
+        this.allowedDomains,
+      );
+    } catch (error) {
+      logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
+      // Preserve domain-specific error for better error handling
+      if (isMCPDomainNotAllowedError(error)) {
+        throw error;
+      }
+      throw new MCPInspectionFailedError(serverName, error as Error);
     }
-
-    return allConfigs;
+    await configRepo.update(serverName, parsedConfig, userId);
+    return parsedConfig;
   }
 
   // TODO: This is currently used to determine if a server requires OAuth. However, this info can
@@ -106,13 +191,34 @@ class MCPServersRegistry {
   }
 
   public async reset(): Promise<void> {
-    await this.sharedAppServers.reset();
-    await this.sharedUserServers.reset();
-    for (const cache of this.privateUserServers.values()) {
-      await cache.reset();
+    await this.cacheConfigsRepo.reset();
+    await this.readThroughCache.clear();
+    await this.readThroughCacheAll.clear();
+  }
+
+  public async removeServer(
+    serverName: string,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<void> {
+    const configRepo = this.getConfigRepository(storageLocation);
+    await configRepo.remove(serverName, userId);
+  }
+
+  private getConfigRepository(storageLocation: 'CACHE' | 'DB'): IServerConfigsRepositoryInterface {
+    switch (storageLocation) {
+      case 'CACHE':
+        return this.cacheConfigsRepo;
+      case 'DB':
+        return this.dbConfigsRepo;
+      default:
+        throw new Error(
+          `MCPServersRegistry: The provided storage location "${storageLocation}" is not supported`,
+        );
     }
-    this.privateUserServers.clear();
+  }
+
+  private getReadThroughCacheKey(serverName: string, userId?: string): string {
+    return userId ? `${serverName}::${userId}` : serverName;
   }
 }
-
-export const mcpServersRegistry = new MCPServersRegistry();

@@ -39,7 +39,7 @@ export default function StreamAudio({ index = 0 }) {
   const { pauseGlobalAudio } = usePauseGlobalAudio();
 
   const { conversationId: paramId } = useParams();
-  const queryParam = paramId === 'new' ? paramId : latestMessage?.conversationId ?? paramId ?? '';
+  const queryParam = paramId === 'new' ? paramId : (latestMessage?.conversationId ?? paramId ?? '');
 
   const queryClient = useQueryClient();
   const getMessages = useCallback(

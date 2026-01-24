@@ -4,11 +4,16 @@ import '@testing-library/jest-dom';
 import { getAgentAvatarUrl, renderAgentAvatar, getContactDisplayName } from '../agents';
 import type t from 'librechat-data-provider';
 
-// Mock the Bot icon from lucide-react
+// Mock the Feather icon from lucide-react
 jest.mock('lucide-react', () => ({
-  Bot: ({ className, strokeWidth, ...props }: any) => (
-    <svg data-testid="bot-icon" className={className} data-stroke-width={strokeWidth} {...props}>
-      <title>{/* eslint-disable-line i18next/no-literal-string */}Bot Icon</title>
+  Feather: ({ className, strokeWidth, ...props }: any) => (
+    <svg
+      data-testid="feather-icon"
+      className={className}
+      data-stroke-width={strokeWidth}
+      {...props}
+    >
+      <title>{/* eslint-disable-line i18next/no-literal-string */}Feather Icon</title>
     </svg>
   ),
 }));
@@ -72,7 +77,7 @@ describe('Agent Utilities', () => {
       expect(img).toHaveClass('rounded-full', 'object-cover', 'shadow-lg');
     });
 
-    it('should render Bot icon fallback when no avatar', () => {
+    it('should render Feather icon fallback when no avatar', () => {
       const agent = {
         id: '1',
         name: 'Test Agent',
@@ -80,9 +85,9 @@ describe('Agent Utilities', () => {
 
       render(<div>{renderAgentAvatar(agent)}</div>);
 
-      const botIcon = screen.getByTestId('bot-icon');
-      expect(botIcon).toBeInTheDocument();
-      expect(botIcon).toHaveAttribute('data-stroke-width', '1.5');
+      const featherIcon = screen.getByTestId('feather-icon');
+      expect(featherIcon).toBeInTheDocument();
+      expect(featherIcon).toHaveAttribute('data-stroke-width', '1.5');
     });
 
     it('should apply different size classes', () => {

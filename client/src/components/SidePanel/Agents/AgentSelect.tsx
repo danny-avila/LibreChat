@@ -181,7 +181,7 @@ export default function AgentSelect({
     };
   }, [selectedAgentId, agents, onSelect]);
 
-  const createAgent = localize('com_ui_create') + ' ' + localize('com_ui_agent');
+  const createAgent = localize('com_ui_create_new_agent');
 
   return (
     <Controller

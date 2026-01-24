@@ -992,4 +992,147 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       expect(headers.get('foo')).toBe('bar');
     });
   });
+
+  describe('Fallback OAuth Metadata (Legacy Server Support)', () => {
+    const originalFetch = global.fetch;
+    const mockFetch = jest.fn();
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = mockFetch as unknown as typeof fetch;
+    });
+
+    afterAll(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('should use fallback metadata when discoverAuthorizationServerMetadata returns undefined', async () => {
+      // Mock resource metadata discovery to fail
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      // Mock authorization server metadata discovery to return undefined (no .well-known)
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce(undefined);
+
+      // Mock client registration to succeed
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'dynamic-client-id',
+        client_secret: 'dynamic-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+      });
+
+      // Mock startAuthorization to return a successful response
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://mcp.example.com/authorize?client_id=dynamic-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://mcp.example.com',
+        'user-123',
+        {},
+        undefined,
+      );
+
+      // Verify registerClient was called with fallback metadata
+      expect(mockRegisterClient).toHaveBeenCalledWith(
+        'https://mcp.example.com/',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            issuer: 'https://mcp.example.com/',
+            authorization_endpoint: 'https://mcp.example.com/authorize',
+            token_endpoint: 'https://mcp.example.com/token',
+            registration_endpoint: 'https://mcp.example.com/register',
+            response_types_supported: ['code'],
+            grant_types_supported: ['authorization_code', 'refresh_token'],
+            code_challenge_methods_supported: ['S256', 'plain'],
+            token_endpoint_auth_methods_supported: [
+              'client_secret_basic',
+              'client_secret_post',
+              'none',
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('should use fallback /token endpoint for refresh when metadata discovery fails', async () => {
+      const metadata = {
+        serverName: 'test-server',
+        serverUrl: 'https://mcp.example.com',
+        clientInfo: {
+          client_id: 'test-client-id',
+          client_secret: 'test-client-secret',
+        },
+      };
+
+      // Mock metadata discovery to return undefined (no .well-known)
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce(undefined);
+
+      // Mock successful token refresh
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+          expires_in: 3600,
+        }),
+      } as Response);
+
+      const result = await MCPOAuthHandler.refreshOAuthTokens(
+        'test-refresh-token',
+        metadata,
+        {},
+        {},
+      );
+
+      // Verify fetch was called with fallback /token endpoint
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://mcp.example.com/token',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+
+      expect(result.access_token).toBe('new-access-token');
+    });
+
+    it('should use fallback auth methods when metadata discovery fails during refresh', async () => {
+      const metadata = {
+        serverName: 'test-server',
+        serverUrl: 'https://mcp.example.com',
+        clientInfo: {
+          client_id: 'test-client-id',
+          client_secret: 'test-client-secret',
+        },
+      };
+
+      // Mock metadata discovery to return undefined
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce(undefined);
+
+      // Mock successful token refresh
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-access-token',
+          expires_in: 3600,
+        }),
+      } as Response);
+
+      await MCPOAuthHandler.refreshOAuthTokens('test-refresh-token', metadata, {}, {});
+
+      // Verify it uses client_secret_basic (first in fallback auth methods)
+      const expectedAuth = `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`;
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: expectedAuth,
+          }),
+        }),
+      );
+    });
+  });
 });

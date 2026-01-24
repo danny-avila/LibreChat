@@ -5,6 +5,7 @@ on:
     branches: 
       - main
       - dev
+      - dev-staging
       - release/*
     paths:
       - 'client/**'
@@ -15,6 +16,8 @@ jobs:
     name: Run frontend unit tests on Ubuntu
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js 20.x
@@ -37,6 +40,8 @@ jobs:
     name: Run frontend unit tests on Windows
     timeout-minutes: 60
     runs-on: windows-latest
+    env:
+      NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js 20.x

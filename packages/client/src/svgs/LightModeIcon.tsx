@@ -13,6 +13,7 @@ export default function LightModeIcon() {
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
     >
       <circle cx="12" cy="12" r="5" />
       <line x1="12" y1="1" x2="12" y2="3" />

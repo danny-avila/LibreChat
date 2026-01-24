@@ -16,9 +16,9 @@ import { resolveHeaders, createSafeUser } from '~/utils/env';
 
 const customProviders = new Set([
   Providers.XAI,
-  Providers.OLLAMA,
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
+  KnownEndpoints.ollama,
 ]);
 
 export function getReasoningKey(
@@ -140,6 +140,7 @@ export async function createRun({
       provider,
       reasoningKey,
       agentId: agent.id,
+      name: agent.name ?? undefined,
       tools: agent.tools,
       clientOptions: llmConfig,
       instructions: systemContent,
