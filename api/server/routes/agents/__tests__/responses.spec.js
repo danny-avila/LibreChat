@@ -19,13 +19,12 @@ const originalEnv = {
 process.env.CREDS_KEY = '0123456789abcdef0123456789abcdef';
 process.env.CREDS_IV = '0123456789abcdef';
 
-// Skip tests if ANTHROPIC_API_KEY is not available
+/** Skip tests if ANTHROPIC_API_KEY is not available */
 const SKIP_INTEGRATION_TESTS = !process.env.ANTHROPIC_API_KEY;
 if (SKIP_INTEGRATION_TESTS) {
   console.warn('ANTHROPIC_API_KEY not found - skipping integration tests');
 }
 
-// Mock services that aren't needed for these tests
 jest.mock('~/server/services/Config', () => ({
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({
@@ -62,10 +61,26 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { agentSchema } = require('@librechat/data-schemas');
+const { hashToken, getRandomValues } = require('@librechat/data-schemas');
+const {
+  SystemRoles,
+  ResourceType,
+  AccessRoleIds,
+  PrincipalType,
+  PrincipalModel,
+  PermissionBits,
+} = require('librechat-data-provider');
 
 /** @type {import('mongoose').Model} */
 let Agent;
+/** @type {import('mongoose').Model} */
+let AgentApiKey;
+/** @type {import('mongoose').Model} */
+let User;
+/** @type {import('mongoose').Model} */
+let AclEntry;
+/** @type {import('mongoose').Model} */
+let AccessRole;
 
 /**
  * Parse SSE stream into events
@@ -345,6 +360,8 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
   let app;
   let testAgent;
   let thinkingAgent;
+  let testUser;
+  let testApiKey; // The raw API key for Authorization header
 
   // Mock fs.readFileSync for index.html
   const originalReadFileSync = fs.readFileSync;
@@ -382,18 +399,111 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0';
 
-    // Initialize Agent model
-    Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-
-    // Start the server
+    // Start the server (this registers all models)
     app = require('~/server');
 
     // Wait for health check
     await healthCheckPoll(app);
 
-    // Create test agents
-    testAgent = await createTestAgent();
-    thinkingAgent = await createThinkingAgent();
+    // Get models (now registered by the server)
+    Agent = mongoose.models.Agent;
+    AgentApiKey = mongoose.models.AgentApiKey;
+    User = mongoose.models.User;
+    AclEntry = mongoose.models.AclEntry;
+    AccessRole = mongoose.models.AccessRole;
+
+    // Create test user
+    testUser = await User.create({
+      name: 'Test API User',
+      username: 'testapiuser',
+      email: 'testapiuser@test.com',
+      emailVerified: true,
+      provider: 'local',
+      role: SystemRoles.ADMIN,
+    });
+
+    // Create REMOTE_AGENT access roles (if they don't exist)
+    const existingRoles = await AccessRole.find({
+      accessRoleId: {
+        $in: [
+          AccessRoleIds.REMOTE_AGENT_VIEWER,
+          AccessRoleIds.REMOTE_AGENT_EDITOR,
+          AccessRoleIds.REMOTE_AGENT_OWNER,
+        ],
+      },
+    });
+
+    if (existingRoles.length === 0) {
+      await AccessRole.create([
+        {
+          accessRoleId: AccessRoleIds.REMOTE_AGENT_VIEWER,
+          name: 'API Viewer',
+          description: 'Can query the agent via API',
+          resourceType: ResourceType.REMOTE_AGENT,
+          permBits: PermissionBits.VIEW,
+        },
+        {
+          accessRoleId: AccessRoleIds.REMOTE_AGENT_EDITOR,
+          name: 'API Editor',
+          description: 'Can view and modify the agent via API',
+          resourceType: ResourceType.REMOTE_AGENT,
+          permBits: PermissionBits.VIEW | PermissionBits.EDIT,
+        },
+        {
+          accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
+          name: 'API Owner',
+          description: 'Full API access + can grant remote access to others',
+          resourceType: ResourceType.REMOTE_AGENT,
+          permBits:
+            PermissionBits.VIEW |
+            PermissionBits.EDIT |
+            PermissionBits.DELETE |
+            PermissionBits.SHARE,
+        },
+      ]);
+    }
+
+    // Generate and create an API key for the test user
+    const rawKey = `sk-${await getRandomValues(32)}`;
+    const keyHash = await hashToken(rawKey);
+    const keyPrefix = rawKey.substring(0, 8);
+
+    await AgentApiKey.create({
+      userId: testUser._id,
+      name: 'Test API Key',
+      keyHash,
+      keyPrefix,
+    });
+
+    testApiKey = rawKey;
+
+    // Create test agents with the test user as author
+    testAgent = await createTestAgent({ author: testUser._id });
+    thinkingAgent = await createThinkingAgent({ author: testUser._id });
+
+    // Grant REMOTE_AGENT permissions for the test agents
+    await AclEntry.create([
+      {
+        principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
+        principalId: testUser._id,
+        resourceType: ResourceType.REMOTE_AGENT,
+        resourceId: testAgent._id,
+        accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
+        permBits:
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+      },
+      {
+        principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
+        principalId: testUser._id,
+        resourceType: ResourceType.REMOTE_AGENT,
+        resourceId: thinkingAgent._id,
+        accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
+        permBits:
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+      },
+    ]);
   }, 60000);
 
   afterAll(async () => {
@@ -410,10 +520,16 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
    * Based on: https://github.com/openresponses/openresponses/blob/main/src/lib/compliance-tests.ts
    * =========================================================================== */
 
+  /** Helper to add auth header to requests */
+  const authRequest = () => ({
+    post: (url) => request(app).post(url).set('Authorization', `Bearer ${testApiKey}`),
+    get: (url) => request(app).get(url).set('Authorization', `Bearer ${testApiKey}`),
+  });
+
   describe('Compliance Tests', () => {
     describe('basic-response', () => {
       it('should return a valid ResponseResource for a simple text request', async () => {
-        const response = await request(app)
+        const response = await authRequest()
           .post('/api/agents/v1/responses')
           .send({
             model: testAgent.id,
@@ -452,7 +568,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
 
     describe('streaming-response', () => {
       it('should return valid SSE streaming events', async () => {
-        const response = await request(app)
+        const response = await authRequest()
           .post('/api/agents/v1/responses')
           .send({
             model: testAgent.id,
@@ -524,7 +640,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
       });
 
       it('should emit valid event types per Open Responses spec', async () => {
-        const response = await request(app)
+        const response = await authRequest()
           .post('/api/agents/v1/responses')
           .send({
             model: testAgent.id,
@@ -561,7 +677,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
       });
 
       it('should include logprobs array in output_text events', async () => {
-        const response = await request(app)
+        const response = await authRequest()
           .post('/api/agents/v1/responses')
           .send({
             model: testAgent.id,
@@ -618,7 +734,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
         // Since the agent already has instructions, we use 'developer' role which
         // gets merged into the system prompt, or we test with a simple user message
         // that instructs the behavior.
-        const response = await request(app)
+        const response = await authRequest()
           .post('/api/agents/v1/responses')
           .send({
             model: testAgent.id,
@@ -644,7 +760,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
 
     describe('multi-turn', () => {
       it('should handle multi-turn conversation history', async () => {
-        const response = await request(app)
+        const response = await authRequest()
           .post('/api/agents/v1/responses')
           .send({
             model: testAgent.id,
@@ -685,7 +801,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
 
     describe('string-input', () => {
       it('should accept simple string input', async () => {
-        const response = await request(app).post('/api/agents/v1/responses').send({
+        const response = await authRequest().post('/api/agents/v1/responses').send({
           model: testAgent.id,
           input: 'Hello!',
         });
@@ -704,7 +820,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
 
   describe('Extended Thinking', () => {
     it('should return reasoning output when thinking is enabled', async () => {
-      const response = await request(app)
+      const response = await authRequest()
         .post('/api/agents/v1/responses')
         .send({
           model: thinkingAgent.id,
@@ -745,7 +861,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
     });
 
     it('should stream reasoning events when thinking is enabled', async () => {
-      const response = await request(app)
+      const response = await authRequest()
         .post('/api/agents/v1/responses')
         .send({
           model: thinkingAgent.id,
@@ -821,7 +937,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
 
   describe('Schema Validation', () => {
     it('should include all required fields in response', async () => {
-      const response = await request(app).post('/api/agents/v1/responses').send({
+      const response = await authRequest().post('/api/agents/v1/responses').send({
         model: testAgent.id,
         input: 'Test',
       });
@@ -867,7 +983,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
     });
 
     it('should have valid message item structure', async () => {
-      const response = await request(app).post('/api/agents/v1/responses').send({
+      const response = await authRequest().post('/api/agents/v1/responses').send({
         model: testAgent.id,
         input: 'Hello',
       });
@@ -917,7 +1033,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
   describe('Response Storage', () => {
     it('should store response when store: true and retrieve it', async () => {
       // Create a stored response
-      const createResponse = await request(app).post('/api/agents/v1/responses').send({
+      const createResponse = await authRequest().post('/api/agents/v1/responses').send({
         model: testAgent.id,
         input: 'Remember this: The answer is 42.',
         store: true,
@@ -933,7 +1049,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Retrieve the stored response
-      const getResponseResult = await request(app).get(`/api/agents/v1/responses/${responseId}`);
+      const getResponseResult = await authRequest().get(`/api/agents/v1/responses/${responseId}`);
 
       // Note: The response might be stored under conversationId, not responseId
       // If we get 404, that's expected behavior for now since we store by conversationId
@@ -945,7 +1061,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
     });
 
     it('should return 404 for non-existent response', async () => {
-      const response = await request(app).get('/api/agents/v1/responses/resp_nonexistent123');
+      const response = await authRequest().get('/api/agents/v1/responses/resp_nonexistent123');
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBeDefined();
@@ -958,7 +1074,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
 
   describe('Error Handling', () => {
     it('should return error for missing model', async () => {
-      const response = await request(app).post('/api/agents/v1/responses').send({
+      const response = await authRequest().post('/api/agents/v1/responses').send({
         input: 'Hello',
       });
 
@@ -967,7 +1083,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
     });
 
     it('should return error for missing input', async () => {
-      const response = await request(app).post('/api/agents/v1/responses').send({
+      const response = await authRequest().post('/api/agents/v1/responses').send({
         model: testAgent.id,
       });
 
@@ -976,7 +1092,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
     });
 
     it('should return error for non-existent agent', async () => {
-      const response = await request(app).post('/api/agents/v1/responses').send({
+      const response = await authRequest().post('/api/agents/v1/responses').send({
         model: 'agent_nonexistent123456789',
         input: 'Hello',
       });
@@ -992,7 +1108,7 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
 
   describe('GET /v1/responses/models', () => {
     it('should list available agents as models', async () => {
-      const response = await request(app).get('/api/agents/v1/responses/models');
+      const response = await authRequest().get('/api/agents/v1/responses/models');
 
       expect(response.status).toBe(200);
       expect(response.body.object).toBe('list');
