@@ -1,4 +1,5 @@
 const { nanoid } = require('nanoid');
+const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
 const {
@@ -284,7 +285,7 @@ const createResponse = async (req, res) => {
 
   // Generate IDs
   const responseId = generateResponseId();
-  const conversationId = request.previous_response_id ?? nanoid();
+  const conversationId = request.previous_response_id ?? uuidv4();
   const parentMessageId = null;
 
   // Create response context
