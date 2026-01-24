@@ -670,7 +670,6 @@ describe('Meilisearch Mongoose plugin', () => {
           { conversationId: orphanedConvoId1 },
           { conversationId: orphanedConvoId2 },
         ],
-        total: 3,
       });
 
       const indexMock = mockIndex();
@@ -716,13 +715,11 @@ describe('Meilisearch Mongoose plugin', () => {
             { messageId: orphanedIds[0] },
             { messageId: orphanedIds[1] },
           ],
-          total: 5,
         })
         // Second batch: should use offset=1 (3 - 2 deleted = 1)
-        // total=2 < batchSize=3, so loop should stop after this
+        // results.length=2 < batchSize=3, so loop should stop after this
         .mockResolvedValueOnce({
           results: [{ messageId: existingIds[1] }, { messageId: existingIds[2] }],
-          total: 2,
         });
 
       const indexMock = mockIndex();
@@ -768,7 +765,6 @@ describe('Meilisearch Mongoose plugin', () => {
       // Mock MeiliSearch to return the same documents
       mockGetDocuments.mockResolvedValueOnce({
         results: [{ conversationId: existingId1 }, { conversationId: existingId2 }],
-        total: 2,
       });
 
       const indexMock = mockIndex();
@@ -784,7 +780,6 @@ describe('Meilisearch Mongoose plugin', () => {
       // Mock empty MeiliSearch index
       mockGetDocuments.mockResolvedValueOnce({
         results: [],
-        total: 0,
       });
 
       const indexMock = mockIndex();
@@ -795,7 +790,7 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(mockGetDocuments).toHaveBeenCalledTimes(1);
     });
 
-    test('cleanupMeiliIndex stops when batch.total < batchSize', async () => {
+    test('cleanupMeiliIndex stops when results.length < batchSize', async () => {
       const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
       await conversationModel.deleteMany({});
 
@@ -821,10 +816,9 @@ describe('Meilisearch Mongoose plugin', () => {
         },
       ]);
 
-      // Mock: total (2) is less than batchSize (100), should process once and stop
+      // Mock: results.length (2) is less than batchSize (100), should process once and stop
       mockGetDocuments.mockResolvedValueOnce({
         results: [{ conversationId: id1 }, { conversationId: id2 }],
-        total: 2,
       });
 
       const indexMock = mockIndex();
@@ -863,7 +857,6 @@ describe('Meilisearch Mongoose plugin', () => {
             { messageId: existingIds[1] },
             { messageId: orphanedIds[0] },
           ],
-          total: 8,
         })
         // Batch 2: offset should be 0 + (3 - 1) = 2
         .mockResolvedValueOnce({
@@ -872,12 +865,10 @@ describe('Meilisearch Mongoose plugin', () => {
             { messageId: orphanedIds[1] },
             { messageId: orphanedIds[2] },
           ],
-          total: 5,
         })
         // Batch 3: offset should be 2 + (3 - 2) = 3
         .mockResolvedValueOnce({
           results: [{ messageId: existingIds[3] }, { messageId: existingIds[4] }],
-          total: 2,
         });
 
       const indexMock = mockIndex();
@@ -923,15 +914,12 @@ describe('Meilisearch Mongoose plugin', () => {
       mockGetDocuments
         .mockResolvedValueOnce({
           results: [{ conversationId: id1 }],
-          total: 2,
         })
         .mockResolvedValueOnce({
           results: [{ conversationId: id2 }],
-          total: 1,
         })
         .mockResolvedValueOnce({
           results: [],
-          total: 0,
         });
 
       const indexMock = mockIndex();
@@ -972,7 +960,6 @@ describe('Meilisearch Mongoose plugin', () => {
           { conversationId: orphanedId2 },
           { conversationId: orphanedId3 },
         ],
-        total: 3,
       });
 
       const indexMock = mockIndex();
@@ -1007,12 +994,10 @@ describe('Meilisearch Mongoose plugin', () => {
             { messageId: orphanedIds[1] },
             { messageId: orphanedIds[2] },
           ],
-          total: 4,
         })
         // Batch 2: offset should be 0 + (3 - 3) = 0
         .mockResolvedValueOnce({
           results: [{ messageId: existingId }],
-          total: 1,
         });
 
       const indexMock = mockIndex();

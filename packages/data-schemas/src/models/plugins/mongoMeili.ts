@@ -305,8 +305,7 @@ const createMeiliMongooseModel = ({
             logger.debug(`[cleanupMeiliIndex] Deleted ${toDelete.length} orphaned documents`);
           }
           // if fetch documents request returns less documents than limit, all documents are processed
-          if (batch.total < batchSize) {
-            moreDocuments = false;
+          if (batch.results.length < batchSize) {
             break;
           }
 
