@@ -1286,12 +1286,6 @@ export enum VisionModes {
 /**
  * Validates whether a model supports vision capabilities.
  * Checks modelSpecs configuration first, then falls back to hardcoded list.
- *
- * @param model - The model name to check
- * @param additionalModels - Additional vision models to include in the check
- * @param availableModels - List of available models (if provided, model must be in this list)
- * @param modelSpecs - Optional modelSpecs configuration to check first
- * @returns true if the model supports vision, false otherwise
  */
 export function validateVisionModel({
   model,
@@ -1323,7 +1317,7 @@ export function validateVisionModel({
     const matchingSpec = modelSpecs.list.find(
       (spec) => spec.preset?.model === model || model.includes(spec.preset?.model ?? ''),
     );
-    if (matchingSpec && matchingSpec.vision !== undefined) {
+    if (matchingSpec?.vision !== undefined) {
       return matchingSpec.vision === true;
     }
   }

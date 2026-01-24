@@ -8,7 +8,6 @@ import {
   EModelEndpoint,
   defaultAgentCapabilities,
   isDocumentSupportedProvider,
-  validateVisionModel,
 } from 'librechat-data-provider';
 import {
   ImageUpIcon,
@@ -24,8 +23,8 @@ import {
   useLocalize,
 } from '~/hooks';
 import { ephemeralAgentByConvoId } from '~/store';
-import { useDragDropContext, useChatContext } from '~/Providers';
-import { useGetStartupConfig } from '~/data-provider';
+import { useDragDropContext } from '~/Providers';
+import { useVisionModel } from '~/hooks';
 
 interface DragDropModalProps {
   onOptionSelect: (option: EToolResources | undefined) => void;
@@ -50,24 +49,12 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
   const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
-  const { conversation } = useChatContext();
-  const { data: startupConfig } = useGetStartupConfig();
   const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
   const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
     agentId,
     ephemeralAgent,
   );
-
-  const isVisionModel = useMemo(() => {
-    const model = conversation?.model;
-    if (!model) {
-      return false;
-    }
-    return validateVisionModel({
-      model,
-      modelSpecs: startupConfig?.modelSpecs,
-    });
-  }, [conversation?.model, startupConfig?.modelSpecs]);
+  const isVisionModel = useVisionModel();
 
   const options = useMemo(() => {
     const _options: FileOption[] = [];

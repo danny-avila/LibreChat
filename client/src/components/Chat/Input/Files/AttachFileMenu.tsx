@@ -14,7 +14,6 @@ import {
   EModelEndpoint,
   defaultAgentCapabilities,
   isDocumentSupportedProvider,
-  validateVisionModel,
 } from 'librechat-data-provider';
 import {
   FileUpload,
@@ -37,7 +36,7 @@ import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
-import { useChatContext } from '~/Providers';
+import { useVisionModel } from '~/hooks';
 
 type FileUploadType = 'image' | 'document' | 'image_document' | 'image_document_video_audio';
 
@@ -75,19 +74,8 @@ const AttachFileMenu = ({
 
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();
-  const { conversation } = useChatContext();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
-
-  const isVisionModel = useMemo(() => {
-    const model = conversation?.model;
-    if (!model) {
-      return false;
-    }
-    return validateVisionModel({
-      model,
-      modelSpecs: startupConfig?.modelSpecs,
-    });
-  }, [conversation?.model, startupConfig?.modelSpecs]);
+  const isVisionModel = useVisionModel();
 
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
 
