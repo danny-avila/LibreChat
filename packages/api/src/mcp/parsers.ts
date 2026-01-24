@@ -17,6 +17,7 @@ const RECOGNIZED_PROVIDERS = new Set([
   'deepseek',
   'ollama',
   'bedrock',
+  'scaleway',
 ]);
 const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'azureopenai', 'openai']);
 

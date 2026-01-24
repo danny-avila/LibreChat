@@ -21,12 +21,30 @@ const customProviders = new Set([
   KnownEndpoints.ollama,
 ]);
 
+/**
+ * Check if the endpoint is Scaleway.
+ * Scaleway custom endpoints are identified by endpoint name or baseURL containing 'scaleway' or 'api.scaleway.ai'.
+ */
+function isScalewayEndpoint(
+  provider?: string,
+  endpoint?: string | null,
+  baseURL?: string | null,
+): boolean {
+  return (
+    provider?.toLowerCase().includes('scaleway') ||
+    endpoint?.toLowerCase().includes('scaleway') ||
+    baseURL?.toLowerCase().includes('scaleway') ||
+    baseURL?.toLowerCase().includes('api.scaleway.ai')
+  );
+}
+
 export function getReasoningKey(
   provider: Providers,
   llmConfig: t.RunLLMConfig,
   agentEndpoint?: string | null,
 ): 'reasoning_content' | 'reasoning' {
   let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
+  
   if (provider === Providers.GOOGLE) {
     reasoningKey = 'reasoning';
   } else if (
@@ -40,6 +58,9 @@ export function getReasoningKey(
   ) {
     reasoningKey = 'reasoning';
   }
+  // Scaleway uses reasoning_content format (standard OpenAI format)
+  // No special handling needed - reasoning_content is the default
+  
   return reasoningKey;
 }
 
@@ -127,9 +148,17 @@ export async function createRun({
     }
 
     /** Resolves issues with new OpenAI usage field */
+    // Scaleway custom endpoints should be treated like other custom providers for usage handling
+    const isScaleway = isScalewayEndpoint(
+      agent.provider,
+      agent.endpoint,
+      llmConfig.configuration?.baseURL,
+    );
+    
     if (
       customProviders.has(agent.provider) ||
-      (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider)
+      (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider) ||
+      isScaleway
     ) {
       llmConfig.streamUsage = false;
       llmConfig.usage = true;
