@@ -8,6 +8,7 @@ import {
   EModelEndpoint,
   defaultAgentCapabilities,
   isDocumentSupportedProvider,
+  validateVisionModel,
 } from 'librechat-data-provider';
 import {
   ImageUpIcon,
@@ -23,7 +24,8 @@ import {
   useLocalize,
 } from '~/hooks';
 import { ephemeralAgentByConvoId } from '~/store';
-import { useDragDropContext } from '~/Providers';
+import { useDragDropContext, useChatContext } from '~/Providers';
+import { useGetStartupConfig } from '~/data-provider';
 
 interface DragDropModalProps {
   onOptionSelect: (option: EToolResources | undefined) => void;
@@ -48,11 +50,24 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
   const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
+  const { conversation } = useChatContext();
+  const { data: startupConfig } = useGetStartupConfig();
   const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
   const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
     agentId,
     ephemeralAgent,
   );
+
+  const isVisionModel = useMemo(() => {
+    const model = conversation?.model;
+    if (!model) {
+      return false;
+    }
+    return validateVisionModel({
+      model,
+      modelSpecs: startupConfig?.modelSpecs,
+    });
+  }, [conversation?.model, startupConfig?.modelSpecs]);
 
   const options = useMemo(() => {
     const _options: FileOption[] = [];
@@ -96,15 +111,14 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
         label: localize('com_ui_upload_provider'),
         value: undefined,
         icon: <FileImageIcon className="icon-md" />,
-        condition: validFileTypes,
+        condition: validFileTypes && isVisionModel,
       });
     } else {
-      // Only show image upload option if all files are images and provider doesn't support documents
       _options.push({
         label: localize('com_ui_upload_image_input'),
         value: undefined,
         icon: <ImageUpIcon className="icon-md" />,
-        condition: files.every((file) => getFileType(file)?.startsWith('image/')),
+        condition: files.every((file) => getFileType(file)?.startsWith('image/')) && isVisionModel,
       });
     }
     if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
@@ -140,6 +154,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     useResponsesApi,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
+    isVisionModel,
   ]);
 
   if (!isVisible) {
