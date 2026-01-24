@@ -1283,27 +1283,46 @@ export enum VisionModes {
   agents = 'agents',
 }
 
+/**
+ * Validates whether a model supports vision capabilities.
+ * Checks modelSpecs configuration first, then falls back to hardcoded list.
+ */
 export function validateVisionModel({
   model,
   additionalModels = [],
   availableModels,
+  modelSpecs,
 }: {
   model: string;
   additionalModels?: string[];
   availableModels?: string[];
-}) {
+  modelSpecs?: TSpecsConfig;
+}): boolean {
   if (!model) {
     return false;
   }
 
+  // Exclude known non-vision models
   if (model.includes('gpt-4-turbo-preview') || model.includes('o1-mini')) {
     return false;
   }
 
+  // Check if model is in available models list
   if (availableModels && !availableModels.includes(model)) {
     return false;
   }
 
+  // Check modelSpecs first if provided
+  if (modelSpecs?.list) {
+    const matchingSpec = modelSpecs.list.find(
+      (spec) => spec.preset?.model === model || model.includes(spec.preset?.model ?? ''),
+    );
+    if (matchingSpec?.vision !== undefined) {
+      return matchingSpec.vision === true;
+    }
+  }
+
+  // Fall back to hardcoded visionModels list
   return visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel));
 }
 

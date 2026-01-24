@@ -89,6 +89,7 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
+  modelSpecs,
   streaming = true,
   streamUsage = true,
 }: {
@@ -99,6 +100,7 @@ export async function createRun({
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
   user?: IUser;
+  modelSpecs?: TSpecsConfig;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
