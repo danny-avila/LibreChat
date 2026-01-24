@@ -335,7 +335,9 @@ async function createThinkingAgent(overrides = {}) {
   });
 }
 
-describe('Open Responses API Integration Tests', () => {
+const describeWithApiKey = SKIP_INTEGRATION_TESTS ? describe.skip : describe;
+
+describeWithApiKey('Open Responses API Integration Tests', () => {
   // Increase timeout for real API calls
   jest.setTimeout(120000);
 
@@ -408,10 +410,7 @@ describe('Open Responses API Integration Tests', () => {
    * Based on: https://github.com/openresponses/openresponses/blob/main/src/lib/compliance-tests.ts
    * =========================================================================== */
 
-  // Use conditional describe for tests requiring API key
-  const describeWithApiKey = SKIP_INTEGRATION_TESTS ? describe.skip : describe;
-
-  describeWithApiKey('Compliance Tests', () => {
+  describe('Compliance Tests', () => {
     describe('basic-response', () => {
       it('should return a valid ResponseResource for a simple text request', async () => {
         const response = await request(app)
@@ -703,7 +702,7 @@ describe('Open Responses API Integration Tests', () => {
    * Tests reasoning output from Claude models with extended thinking enabled
    * =========================================================================== */
 
-  describeWithApiKey('Extended Thinking', () => {
+  describe('Extended Thinking', () => {
     it('should return reasoning output when thinking is enabled', async () => {
       const response = await request(app)
         .post('/api/agents/v1/responses')
@@ -820,7 +819,7 @@ describe('Open Responses API Integration Tests', () => {
    * Verify response schema compliance
    * =========================================================================== */
 
-  describeWithApiKey('Schema Validation', () => {
+  describe('Schema Validation', () => {
     it('should include all required fields in response', async () => {
       const response = await request(app).post('/api/agents/v1/responses').send({
         model: testAgent.id,
@@ -915,7 +914,7 @@ describe('Open Responses API Integration Tests', () => {
    * Tests for store: true and GET /v1/responses/:id
    * =========================================================================== */
 
-  describeWithApiKey('Response Storage', () => {
+  describe('Response Storage', () => {
     it('should store response when store: true and retrieve it', async () => {
       // Create a stored response
       const createResponse = await request(app).post('/api/agents/v1/responses').send({
