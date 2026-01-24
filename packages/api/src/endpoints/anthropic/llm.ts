@@ -68,38 +68,6 @@ function applyDefaultParams(target: Record<string, unknown>, defaults: Record<st
   }
 }
 
-/** Known Anthropic parameters that map directly to the client config */
-export const knownAnthropicParams = new Set([
-  'model',
-  'temperature',
-  'topP',
-  'topK',
-  'maxTokens',
-  'maxOutputTokens',
-  'stopSequences',
-  'stop',
-  'stream',
-  'apiKey',
-  'maxRetries',
-  'timeout',
-  'anthropicVersion',
-  'anthropicApiUrl',
-  'defaultHeaders',
-]);
-
-/**
- * Applies default parameters to the target object only if the field is undefined
- * @param target - The target object to apply defaults to
- * @param defaults - Record of default parameter values
- */
-function applyDefaultParams(target: Record<string, unknown>, defaults: Record<string, unknown>) {
-  for (const [key, value] of Object.entries(defaults)) {
-    if (target[key] === undefined) {
-      target[key] = value;
-    }
-  }
-}
-
 /**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
  * @param credentials - The API key for authentication with Anthropic, or credentials object for Vertex AI.

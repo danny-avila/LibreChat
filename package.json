@@ -164,5 +164,12 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/core": "^2.5.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.207.0",
+    "@opentelemetry/sdk-node": "^0.207.0",
+    "oauth4webapi": "^3.8.3"
   }
 }

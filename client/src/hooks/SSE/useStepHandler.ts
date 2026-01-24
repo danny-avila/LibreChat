@@ -112,13 +112,6 @@ export default function useStepHandler({
     }
     /** Prevent overwriting an existing content part with a different type */
     const existingType = (updatedContent[index]?.type as string | undefined) ?? '';
-    if (existingType && !contentType.startsWith(existingType)) {
-      console.warn('Content type mismatch');
-      return message;
-    }
-
-    /** Prevent overwriting an existing content part with a different type */
-    const existingType = (updatedContent[index]?.type as string | undefined) ?? '';
     if (
       existingType &&
       existingType !== contentType &&
