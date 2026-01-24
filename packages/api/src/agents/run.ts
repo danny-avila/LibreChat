@@ -8,10 +8,9 @@ import type {
   GenericTool,
   RunConfig,
   IState,
-  ModelSpecsConfig,
 } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
-import type { Agent, TSpecsConfig } from 'librechat-data-provider';
+import type { Agent } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 
@@ -157,21 +156,10 @@ export async function createRun({
     buildAgentContext(agent);
   }
 
-  // Convert TSpecsConfig to ModelSpecsConfig (minimal type for agents package)
-  const convertedModelSpecs: ModelSpecsConfig | undefined = modelSpecs
-    ? {
-        list: modelSpecs.list.map((spec) => ({
-          preset: spec.preset ? { model: spec.preset.model } : undefined,
-          vision: spec.vision,
-        })),
-      }
-    : undefined;
-
   const graphConfig: RunConfig['graphConfig'] = {
     signal,
     agents: agentInputs,
     edges: agents[0].edges,
-    modelSpecs: convertedModelSpecs,
   };
 
   if (agentInputs.length > 1 || ((graphConfig as MultiAgentGraphConfig).edges?.length ?? 0) > 0) {
