@@ -28,6 +28,7 @@ const agentApiKeySchema: Schema<IAgentApiKey> = new Schema(
     keyHash: {
       type: String,
       required: true,
+      select: false,
     },
     keyPrefix: {
       type: String,

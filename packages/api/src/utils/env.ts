@@ -120,7 +120,7 @@ const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messageId'] a
  */
 function processUserPlaceholders(
   value: string,
-  user?: Partial<Partial<IUser>>,
+  user?: Partial<IUser>,
   isHeader: boolean = false,
 ): string {
   if (!user || typeof value !== 'string') {
