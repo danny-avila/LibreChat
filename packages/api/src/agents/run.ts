@@ -89,7 +89,6 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
-  modelSpecs,
   streaming = true,
   streamUsage = true,
 }: {
@@ -100,7 +99,6 @@ export async function createRun({
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
   user?: IUser;
-  modelSpecs?: TSpecsConfig;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -171,6 +169,7 @@ export async function createRun({
       instructions: systemContent,
       maxContextTokens: agent.maxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
+      vision: agent.vision,
     };
     agentInputs.push(agentInput);
   };

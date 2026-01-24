@@ -186,6 +186,7 @@ export enum AgentCapabilities {
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
+  vision = 'vision',
 }
 
 export const defaultAssistantsVersion = {
@@ -268,6 +269,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
+  AgentCapabilities.vision,
 ];
 
 export const agentsEndpointSchema = baseEndpointSchema

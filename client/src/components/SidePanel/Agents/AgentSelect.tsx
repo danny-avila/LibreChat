@@ -58,6 +58,7 @@ export default function AgentSelect({
         [AgentCapabilities.web_search]: false,
         [AgentCapabilities.file_search]: false,
         [AgentCapabilities.execute_code]: false,
+        [AgentCapabilities.vision]: false,
         [AgentCapabilities.end_after_tools]: false,
         [AgentCapabilities.hide_sequential_outputs]: false,
       };

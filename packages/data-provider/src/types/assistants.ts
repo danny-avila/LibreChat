@@ -236,6 +236,7 @@ export type Agent = {
   end_after_tools?: boolean;
   hide_sequential_outputs?: boolean;
   artifacts?: ArtifactModes;
+  vision?: boolean;
   recursion_limit?: number;
   isPublic?: boolean;
   version?: number;
