@@ -82,7 +82,21 @@ class ModelEndHandler {
         await handleToolCalls(toolCalls, metadata, graph);
       }
 
-      const usage = data?.output?.usage_metadata;
+      // Try multiple locations for usage data
+      // LangChain may store usage in response_metadata.usage instead of usage_metadata
+      let usage = data?.output?.usage_metadata;
+      if (!usage && data?.output?.response_metadata?.usage) {
+        const responseUsage = data.output.response_metadata.usage;
+        // Convert LangChain format to expected format if it contains token data
+        if (responseUsage && (responseUsage.input_tokens !== undefined || responseUsage.output_tokens !== undefined)) {
+          usage = {
+            input_tokens: responseUsage.input_tokens,
+            output_tokens: responseUsage.output_tokens,
+            total_tokens: (responseUsage.input_tokens || 0) + (responseUsage.output_tokens || 0),
+          };
+        }
+      }
+      
       if (!usage) {
         return this.finalize(errorMessage);
       }
