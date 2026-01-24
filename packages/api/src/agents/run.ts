@@ -23,16 +23,13 @@ const customProviders = new Set([
 
 /**
  * Check if the endpoint is a custom OpenAI-compatible endpoint.
- * Custom endpoints are identified when provider is OPENAI but endpoint name differs,
- * or when a custom baseURL is provided (indicating a custom endpoint configuration).
+ * Custom endpoints are identified when provider is OPENAI but endpoint name differs.
  */
 function isCustomOpenAIEndpoint(
   provider?: string,
   endpoint?: string | null,
   baseURL?: string | null,
 ): boolean {
-  // Custom endpoints are typically configured with provider=OPENAI but different endpoint name
-  // or have a custom baseURL that differs from standard OpenAI endpoints
   return (
     provider === Providers.OPENAI &&
     endpoint != null &&
@@ -149,9 +146,6 @@ export async function createRun({
     }
 
     /** Resolves issues with new OpenAI usage field */
-    // Custom OpenAI-compatible endpoints should use non-streaming usage extraction
-    // This includes all custom endpoints (provider=OPENAI but endpoint name differs)
-    // and known custom providers that require special handling
     const isCustomEndpoint = isCustomOpenAIEndpoint(
       agent.provider,
       agent.endpoint,

@@ -17,12 +17,12 @@ const RECOGNIZED_PROVIDERS = new Set([
   'deepseek',
   'ollama',
   'bedrock',
+  'scaleway',
 ]);
 
 /**
  * Check if a provider should receive structured content formatting for MCP tool responses.
- * Custom OpenAI-compatible endpoints are automatically recognized since they use 'openai' as provider,
- * which is already included in RECOGNIZED_PROVIDERS.
+ * Custom endpoints are passed with their endpoint name, so they need to be explicitly added to RECOGNIZED_PROVIDERS.
  */
 function isRecognizedProvider(provider: t.Provider): boolean {
   return RECOGNIZED_PROVIDERS.has(provider);
