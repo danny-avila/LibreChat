@@ -25,6 +25,19 @@ if (SKIP_INTEGRATION_TESTS) {
   console.warn('ANTHROPIC_API_KEY not found - skipping integration tests');
 }
 
+jest.mock('meilisearch', () => ({
+  MeiliSearch: jest.fn().mockImplementation(() => ({
+    getIndex: jest.fn().mockRejectedValue(new Error('mocked')),
+    index: jest.fn().mockReturnValue({
+      getRawInfo: jest.fn().mockResolvedValue({ primaryKey: 'id' }),
+      updateSettings: jest.fn().mockResolvedValue({}),
+      addDocuments: jest.fn().mockResolvedValue({}),
+      updateDocuments: jest.fn().mockResolvedValue({}),
+      deleteDocument: jest.fn().mockResolvedValue({}),
+    }),
+  })),
+}));
+
 jest.mock('~/server/services/Config', () => ({
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({
@@ -36,6 +49,11 @@ jest.mock('~/server/services/Config', () => ({
     },
     fileStrategy: 'local',
     imageOutputType: 'PNG',
+    endpoints: {
+      agents: {
+        allowedProviders: ['anthropic', 'openAI'],
+      },
+    },
   }),
   setCachedTools: jest.fn(),
   getCachedTools: jest.fn(),
@@ -56,12 +74,12 @@ jest.mock('~/config', () => ({
   }),
 }));
 
-const fs = require('fs');
+const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { hashToken, getRandomValues } = require('@librechat/data-schemas');
+const { hashToken, getRandomValues, createModels } = require('@librechat/data-schemas');
 const {
   SystemRoles,
   ResourceType,
@@ -69,6 +87,7 @@ const {
   PrincipalType,
   PrincipalModel,
   PermissionBits,
+  EModelEndpoint,
 } = require('librechat-data-provider');
 
 /** @type {import('mongoose').Model} */
@@ -305,7 +324,7 @@ async function createTestAgent(overrides = {}) {
     name: 'Test Anthropic Agent',
     description: 'An agent for testing Open Responses API',
     instructions: 'You are a helpful assistant. Be concise.',
-    provider: 'Anthropic',
+    provider: EModelEndpoint.anthropic,
     model: 'claude-sonnet-4-5-20250929',
     author: new mongoose.Types.ObjectId(),
     tools: [],
@@ -363,54 +382,36 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
   let testUser;
   let testApiKey; // The raw API key for Authorization header
 
-  // Mock fs.readFileSync for index.html
-  const originalReadFileSync = fs.readFileSync;
-  beforeAll(() => {
-    fs.readFileSync = function (filepath, options) {
-      if (filepath.includes('index.html')) {
-        return '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>';
-      }
-      return originalReadFileSync(filepath, options);
-    };
-  });
-
   afterAll(() => {
-    fs.readFileSync = originalReadFileSync;
     process.env.CREDS_KEY = originalEnv.CREDS_KEY;
     process.env.CREDS_IV = originalEnv.CREDS_IV;
   });
 
   beforeAll(async () => {
-    // Create required directories for tests
-    const dirs = ['/tmp/dist', '/tmp/fonts', '/tmp/assets'];
-    dirs.forEach((dir) => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-    });
-
-    fs.writeFileSync(
-      '/tmp/dist/index.html',
-      '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>',
-    );
-
     // Start MongoDB Memory Server
     mongoServer = await MongoMemoryServer.create();
-    process.env.MONGO_URI = mongoServer.getUri();
-    process.env.PORT = '0';
+    const mongoUri = mongoServer.getUri();
 
-    // Start the server (this registers all models)
-    app = require('~/server');
+    // Connect to MongoDB
+    await mongoose.connect(mongoUri);
 
-    // Wait for health check
-    await healthCheckPoll(app);
+    // Register all models
+    const models = createModels(mongoose);
 
-    // Get models (now registered by the server)
-    Agent = mongoose.models.Agent;
-    AgentApiKey = mongoose.models.AgentApiKey;
-    User = mongoose.models.User;
-    AclEntry = mongoose.models.AclEntry;
-    AccessRole = mongoose.models.AccessRole;
+    // Get models
+    Agent = models.Agent;
+    AgentApiKey = models.AgentApiKey;
+    User = models.User;
+    AclEntry = models.AclEntry;
+    AccessRole = models.AccessRole;
+
+    // Create minimal Express app with just the responses routes
+    app = express();
+    app.use(express.json());
+
+    // Mount the responses routes
+    const responsesRoutes = require('~/server/routes/agents/responses');
+    app.use('/api/agents/v1/responses', responsesRoutes);
 
     // Create test user
     testUser = await User.create({
@@ -1122,25 +1123,3 @@ describeWithApiKey('Open Responses API Integration Tests', () => {
     });
   });
 });
-
-/**
- * Poll health endpoint until server is ready
- */
-async function healthCheckPoll(app, retries = 0) {
-  const maxRetries = Math.floor(30000 / 100);
-  try {
-    const response = await request(app).get('/health');
-    if (response.status === 200) {
-      return;
-    }
-  } catch {
-    // Ignore during polling
-  }
-
-  if (retries < maxRetries) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    await healthCheckPoll(app, retries + 1);
-  } else {
-    throw new Error('App did not become healthy within 30 seconds.');
-  }
-}
