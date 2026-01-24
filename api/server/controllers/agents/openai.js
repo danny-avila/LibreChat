@@ -1,6 +1,6 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
 const {
   Callback,
   ToolEndHandler,
@@ -22,6 +22,7 @@ const {
   isChatCompletionValidationFailure,
 } = require('@librechat/api');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
+const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
@@ -533,14 +534,32 @@ const OpenAIChatCompletionController = async (req, res) => {
 };
 
 /**
- * List available agents as models
+ * List available agents as models (filtered by remote access permissions)
  *
  * GET /v1/models
  */
 const ListModelsController = async (req, res) => {
   try {
-    // Get all agents (you may want to filter by user permissions later)
-    const agents = await getAgents({});
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    if (!userId) {
+      return sendErrorResponse(res, 401, 'Authentication required', 'auth_error');
+    }
+
+    // Find agents the user has remote access to (VIEW permission on REMOTE_AGENT)
+    const accessibleAgentIds = await findAccessibleResources({
+      userId,
+      role: userRole,
+      resourceType: ResourceType.REMOTE_AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+
+    // Get the accessible agents
+    let agents = [];
+    if (accessibleAgentIds.length > 0) {
+      agents = await getAgents({ _id: { $in: accessibleAgentIds } });
+    }
 
     const models = agents.map((agent) => ({
       id: agent.id,
@@ -568,13 +587,20 @@ const ListModelsController = async (req, res) => {
 };
 
 /**
- * Get a specific model/agent
+ * Get a specific model/agent (with remote access permission check)
  *
  * GET /v1/models/:model
  */
 const GetModelController = async (req, res) => {
   try {
     const { model } = req.params;
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    if (!userId) {
+      return sendErrorResponse(res, 401, 'Authentication required', 'auth_error');
+    }
+
     const agent = await getAgent({ id: model });
 
     if (!agent) {
@@ -584,6 +610,26 @@ const GetModelController = async (req, res) => {
         `Model not found: ${model}`,
         'invalid_request_error',
         'model_not_found',
+      );
+    }
+
+    // Check if user has remote access to this agent
+    const accessibleAgentIds = await findAccessibleResources({
+      userId,
+      role: userRole,
+      resourceType: ResourceType.REMOTE_AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+
+    const hasAccess = accessibleAgentIds.some((id) => id.toString() === agent._id.toString());
+
+    if (!hasAccess) {
+      return sendErrorResponse(
+        res,
+        403,
+        `No remote access to model: ${model}`,
+        'permission_error',
+        'access_denied',
       );
     }
 

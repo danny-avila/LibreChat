@@ -1,6 +1,6 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
 const {
   Callback,
   ToolEndHandler,
@@ -33,8 +33,9 @@ const {
   createResponsesToolEndCallback,
   createToolEndCallback,
 } = require('~/server/controllers/agents/callbacks');
-const { loadAgentTools } = require('~/server/services/ToolService');
+const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
+const { loadAgentTools } = require('~/server/services/ToolService');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
@@ -630,18 +631,33 @@ const createResponse = async (req, res) => {
 /**
  * List available agents as models - GET /v1/models (also works with /v1/responses/models)
  *
- * Returns a list of available agents in a format similar to OpenAI's models endpoint.
+ * Returns a list of available agents the user has remote access to.
  *
  * @param {import('express').Request} req
  * @param {import('express').Response} res
  */
 const listModels = async (req, res) => {
   try {
-    // Get the user from request (for filtering by access)
-    const _userId = req.user?.id;
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
 
-    // Fetch all agents (or filter by user access in future)
-    const agents = await getAgents({});
+    if (!userId) {
+      return sendResponsesErrorResponse(res, 401, 'Authentication required', 'auth_error');
+    }
+
+    // Find agents the user has remote access to (VIEW permission on REMOTE_AGENT)
+    const accessibleAgentIds = await findAccessibleResources({
+      userId,
+      role: userRole,
+      resourceType: ResourceType.REMOTE_AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+
+    // Get the accessible agents
+    let agents = [];
+    if (accessibleAgentIds.length > 0) {
+      agents = await getAgents({ _id: { $in: accessibleAgentIds } });
+    }
 
     // Convert to models format
     const models = agents.map((agent) => ({
