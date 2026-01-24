@@ -29,6 +29,7 @@ const agentApiKeySchema: Schema<IAgentApiKey> = new Schema(
       type: String,
       required: true,
       select: false,
+      index: true,
     },
     keyPrefix: {
       type: String,
@@ -46,6 +47,13 @@ const agentApiKeySchema: Schema<IAgentApiKey> = new Schema(
 );
 
 agentApiKeySchema.index({ userId: 1, name: 1 });
+
+/**
+ * TTL index for automatic cleanup of expired keys.
+ * MongoDB deletes documents when expiresAt passes (expireAfterSeconds: 0 means immediate).
+ * Note: Expired keys are permanently removed, not soft-deleted.
+ * If audit trails are needed, remove this index and check expiration programmatically.
+ */
 agentApiKeySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default agentApiKeySchema;
