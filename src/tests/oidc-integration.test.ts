@@ -30,8 +30,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
     openidId: 'cognito-user-123',
     federatedTokens: {
       access_token: 'cognito-access-token-123',
-      id_token:
-        'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjb2duaXRvLXVzZXItMTIzIiwiZW1haWwiOiJ0ZXN0QGV4YW1wbGUuY29tIiwibmFtZSI6IlRlc3QgVXNlciIsImV4cCI6MTcwMDAwMDAwMH0.fake-signature',
+      id_token: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjb2duaXRvLXVzZXItMTIzIiwiZW1haWwiOiJ0ZXN0QGV4YW1wbGUuY29tIiwibmFtZSI6IlRlc3QgVXNlciIsImV4cCI6MTcwMDAwMDAwMH0.fake-signature',
       expires_at: Math.floor(Date.now() / 1000) + 3600, // Expires in 1 hour
     },
   };
@@ -273,7 +272,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
   describe('Integration with resolveHeaders', () => {
     it('should resolve OpenID Connect placeholders in headers for Cognito', () => {
       const headers = {
-        Authorization: '{{LIBRECHAT_OPENID_TOKEN}}',
+        'Authorization': '{{LIBRECHAT_OPENID_TOKEN}}',
         'X-User-ID': '{{LIBRECHAT_OPENID_USER_ID}}',
         'X-User-Email': '{{LIBRECHAT_OPENID_USER_EMAIL}}',
       };
@@ -290,7 +289,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
 
     it('should work with Bearer token format for Cognito', () => {
       const headers = {
-        Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
+        'Authorization': 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
       };
 
       const resolvedHeaders = resolveHeaders({
@@ -303,7 +302,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
 
     it('should work with specific access token placeholder', () => {
       const headers = {
-        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        'Authorization': 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
         'X-Cognito-ID-Token': '{{LIBRECHAT_OPENID_ID_TOKEN}}',
       };
 
@@ -313,9 +312,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
       });
 
       expect(resolvedHeaders['Authorization']).toBe('Bearer cognito-access-token-123');
-      expect(resolvedHeaders['X-Cognito-ID-Token']).toContain(
-        'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9',
-      );
+      expect(resolvedHeaders['X-Cognito-ID-Token']).toContain('eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9');
     });
   });
 
@@ -325,9 +322,9 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
         command: 'node',
         args: ['server.js'],
         env: {
-          COGNITO_ACCESS_TOKEN: '{{LIBRECHAT_OPENID_TOKEN}}',
-          USER_ID: '{{LIBRECHAT_OPENID_USER_ID}}',
-          USER_EMAIL: '{{LIBRECHAT_OPENID_USER_EMAIL}}',
+          'COGNITO_ACCESS_TOKEN': '{{LIBRECHAT_OPENID_TOKEN}}',
+          'USER_ID': '{{LIBRECHAT_OPENID_USER_ID}}',
+          'USER_EMAIL': '{{LIBRECHAT_OPENID_USER_EMAIL}}',
         },
       };
 
@@ -346,7 +343,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
         type: 'sse' as const,
         url: 'https://api.example.com/mcp',
         headers: {
-          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+          'Authorization': 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
           'X-Cognito-User-Info': '{{LIBRECHAT_OPENID_USER_EMAIL}}',
           'X-Cognito-ID-Token': '{{LIBRECHAT_OPENID_ID_TOKEN}}',
         },
@@ -359,9 +356,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
 
       expect(processedOptions.headers?.['Authorization']).toBe('Bearer cognito-access-token-123');
       expect(processedOptions.headers?.['X-Cognito-User-Info']).toBe('test@example.com');
-      expect(processedOptions.headers?.['X-Cognito-ID-Token']).toContain(
-        'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9',
-      );
+      expect(processedOptions.headers?.['X-Cognito-ID-Token']).toContain('eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9');
     });
 
     it('should handle AWS-specific MCP server configuration', () => {
@@ -369,9 +364,9 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
         command: 'node',
         args: ['aws-mcp-server.js'],
         env: {
-          AWS_COGNITO_TOKEN: '{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
-          AWS_COGNITO_ID_TOKEN: '{{LIBRECHAT_OPENID_ID_TOKEN}}',
-          COGNITO_USER_SUB: '{{LIBRECHAT_OPENID_USER_ID}}',
+          'AWS_COGNITO_TOKEN': '{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+          'AWS_COGNITO_ID_TOKEN': '{{LIBRECHAT_OPENID_ID_TOKEN}}',
+          'COGNITO_USER_SUB': '{{LIBRECHAT_OPENID_USER_ID}}',
         },
       };
 
@@ -381,9 +376,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
       });
 
       expect(processedOptions.env?.['AWS_COGNITO_TOKEN']).toBe('cognito-access-token-123');
-      expect(processedOptions.env?.['AWS_COGNITO_ID_TOKEN']).toContain(
-        'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9',
-      );
+      expect(processedOptions.env?.['AWS_COGNITO_ID_TOKEN']).toContain('eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9');
       expect(processedOptions.env?.['COGNITO_USER_SUB']).toBe('cognito-user-123');
     });
   });
@@ -391,7 +384,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
   describe('Security and Edge Cases', () => {
     it('should not process OpenID Connect placeholders for expired tokens', () => {
       const headers = {
-        Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
+        'Authorization': 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
       };
 
       const resolvedHeaders = resolveHeaders({
@@ -412,7 +405,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
       };
 
       const headers = {
-        Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
+        'Authorization': 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
       };
 
       const resolvedHeaders = resolveHeaders({
@@ -425,8 +418,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
     });
 
     it('should handle multiple placeholder instances in same string', () => {
-      const template =
-        '{{LIBRECHAT_OPENID_TOKEN}}-{{LIBRECHAT_OPENID_TOKEN}}-{{LIBRECHAT_OPENID_USER_ID}}';
+      const template = '{{LIBRECHAT_OPENID_TOKEN}}-{{LIBRECHAT_OPENID_TOKEN}}-{{LIBRECHAT_OPENID_USER_ID}}';
 
       const tokenInfo: OpenIDTokenInfo = {
         accessToken: 'cognito-token123',
@@ -447,7 +439,7 @@ describe('OpenID Connect Federated Provider Token Integration', () => {
       };
 
       const headers = {
-        Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
+        'Authorization': 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
       };
 
       const resolvedHeaders = resolveHeaders({
