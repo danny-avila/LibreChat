@@ -28,7 +28,6 @@ const customProviders = new Set([
 function isCustomOpenAIEndpoint(
   provider?: string,
   endpoint?: string | null,
-  baseURL?: string | null,
 ): boolean {
   return (
     provider === Providers.OPENAI &&
@@ -149,7 +148,6 @@ export async function createRun({
     const isCustomEndpoint = isCustomOpenAIEndpoint(
       agent.provider,
       agent.endpoint,
-      llmConfig.configuration?.baseURL,
     );
     
     if (
