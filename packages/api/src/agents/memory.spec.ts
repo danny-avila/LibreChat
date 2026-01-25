@@ -45,8 +45,8 @@ jest.mock('@librechat/agents', () => ({
   },
   Providers: {
     OPENAI: Providers.OPENAI,
-    BEDROCK: 'bedrock',
-    ANTHROPIC: 'anthropic',
+    BEDROCK: Providers.BEDROCK,
+    ANTHROPIC: Providers.ANTHROPIC,
   },
   GraphEvents: {
     TOOL_END: 'tool_end',
@@ -325,7 +325,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should include instructions in user message for Bedrock provider', async () => {
     const llmConfig = {
-      provider: 'bedrock',
+      provider: Providers.BEDROCK,
       model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
     };
 
@@ -386,7 +386,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should set temperature to 1 for Bedrock with thinking enabled', async () => {
     const llmConfig = {
-      provider: 'bedrock',
+      provider: Providers.BEDROCK,
       model: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
       temperature: 0.7,
       additionalModelRequestFields: {
@@ -420,7 +420,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should not modify temperature for Bedrock without thinking enabled', async () => {
     const llmConfig = {
-      provider: 'bedrock',
+      provider: Providers.BEDROCK,
       model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
       temperature: 0.7,
     };
@@ -448,7 +448,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should remove temperature for Anthropic with thinking enabled', async () => {
     const llmConfig = {
-      provider: 'anthropic',
+      provider: Providers.ANTHROPIC,
       model: 'claude-sonnet-4-20250514',
       temperature: 0.7,
       thinking: {
@@ -484,7 +484,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should not modify temperature for Anthropic without thinking enabled', async () => {
     const llmConfig = {
-      provider: 'anthropic',
+      provider: Providers.ANTHROPIC,
       model: 'claude-sonnet-4-20250514',
       temperature: 0.7,
     };
@@ -512,7 +512,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should not modify temperature for Anthropic with thinking type not enabled', async () => {
     const llmConfig = {
-      provider: 'anthropic',
+      provider: Providers.ANTHROPIC,
       model: 'claude-sonnet-4-20250514',
       temperature: 0.7,
       thinking: {
