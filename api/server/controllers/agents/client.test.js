@@ -2122,7 +2122,7 @@ describe('AgentClient - titleConvo', () => {
           },
           endpoints: {
             [EModelEndpoint.agents]: {
-              allowedProviders: ['openAI'],
+              allowedProviders: [EModelEndpoint.openAI],
             },
           },
         },
