@@ -195,8 +195,8 @@ const loadTools = async ({
     'woodland-ai-search-website': StructuredWPPACSWebsite,
     'woodland-ai-search-tractor': StructuredWPPACSTractor,
     'woodland-ai-search-cases': StructuredWPPACSCases,
-    'woodland-ai-search-engine-history': StructuredWoodlandAIEngineHistory,
-    'woodland-ai-search-product-history': StructuredWoodlandAIProductHistory,
+    'woodland-ai-engine-history': StructuredWoodlandAIEngineHistory,
+    'woodland-ai-product-history': StructuredWoodlandAIProductHistory,
   };
 
   const customConstructors = {
@@ -426,9 +426,9 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
             'AZURE_AI_SEARCH_SERVICE_ENDPOINT',
             'AZURE_AI_SEARCH_API_KEY',
           ];
-          if (tool === 'woodland-ai-search-product-history') {
+          if (tool === 'woodland-ai-product-history') {
             requiredVars.push('AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX');
-          } else if (tool === 'woodland-ai-search-engine-history') {
+          } else if (tool === 'woodland-ai-engine-history') {
             requiredVars.push('AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX');
           }
           const missing = requiredVars.filter((v) => !process.env[v]);
