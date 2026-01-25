@@ -410,13 +410,33 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
 
     if (toolConstructors[tool]) {
       const options = toolOptions[tool] || {};
-      const toolInstance = loadToolWithAuth(
-        user,
-        getAuthFields(tool),
-        toolConstructors[tool],
-        options,
-      );
-      requestedTools[tool] = toolInstance;
+      try {
+        const toolInstance = loadToolWithAuth(
+          user,
+          getAuthFields(tool),
+          toolConstructors[tool],
+          options,
+        );
+        requestedTools[tool] = toolInstance;
+      } catch (error) {
+        logger.error(`[handleTools] Failed to initialize tool '${tool}':`, error.message);
+        // Log specific missing env vars for woodland tools
+        if (tool.startsWith('woodland-ai-search-')) {
+          const requiredVars = [
+            'AZURE_AI_SEARCH_SERVICE_ENDPOINT',
+            'AZURE_AI_SEARCH_API_KEY',
+          ];
+          if (tool === 'woodland-ai-search-product-history') {
+            requiredVars.push('AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX');
+          } else if (tool === 'woodland-ai-search-engine-history') {
+            requiredVars.push('AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX');
+          }
+          const missing = requiredVars.filter((v) => !process.env[v]);
+          if (missing.length > 0) {
+            logger.error(`[handleTools] Missing required env vars for ${tool}:`, missing);
+          }
+        }
+      }
       continue;
     }
   }
