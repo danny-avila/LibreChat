@@ -217,14 +217,14 @@
   },
   {
     "name": "Woodland AI Search - Engine History",
-    "pluginKey": "woodland-ai-search-engine-history",
+    "pluginKey": "woodland-ai-engine-history",
     "description": "Search Woodland engine history for specifications and change logs for Cyclone Rake units.",
     "icon": "assets/woodland.png",
     "authConfig": []
   },
   {
     "name": "Woodland AI Search - Product History",
-    "pluginKey": "woodland-ai-search-product-history",
+    "pluginKey": "woodland-ai-product-history",
     "description": "Search Woodland product history for specs, timelines, and notable changes for Cyclone Rake models.",
     "icon": "assets/woodland.png",
     "authConfig": []
