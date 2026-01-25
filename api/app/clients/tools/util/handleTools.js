@@ -195,8 +195,8 @@ const loadTools = async ({
     'woodland-ai-search-website': StructuredWPPACSWebsite,
     'woodland-ai-search-tractor': StructuredWPPACSTractor,
     'woodland-ai-search-cases': StructuredWPPACSCases,
-    'woodland-ai-search-engine-history': StructuredWoodlandAIEngineHistory,
-    'woodland-ai-search-product-history': StructuredWoodlandAIProductHistory,
+    'woodland-ai-engine-history': StructuredWoodlandAIEngineHistory,
+    'woodland-ai-product-history': StructuredWoodlandAIProductHistory,
   };
 
   const customConstructors = {
@@ -410,13 +410,33 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
 
     if (toolConstructors[tool]) {
       const options = toolOptions[tool] || {};
-      const toolInstance = loadToolWithAuth(
-        user,
-        getAuthFields(tool),
-        toolConstructors[tool],
-        options,
-      );
-      requestedTools[tool] = toolInstance;
+      try {
+        const toolInstance = loadToolWithAuth(
+          user,
+          getAuthFields(tool),
+          toolConstructors[tool],
+          options,
+        );
+        requestedTools[tool] = toolInstance;
+      } catch (error) {
+        logger.error(`[handleTools] Failed to initialize tool '${tool}':`, error.message);
+        // Log specific missing env vars for woodland tools
+        if (tool.startsWith('woodland-ai-search-')) {
+          const requiredVars = [
+            'AZURE_AI_SEARCH_SERVICE_ENDPOINT',
+            'AZURE_AI_SEARCH_API_KEY',
+          ];
+          if (tool === 'woodland-ai-product-history') {
+            requiredVars.push('AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX');
+          } else if (tool === 'woodland-ai-engine-history') {
+            requiredVars.push('AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX');
+          }
+          const missing = requiredVars.filter((v) => !process.env[v]);
+          if (missing.length > 0) {
+            logger.error(`[handleTools] Missing required env vars for ${tool}:`, missing);
+          }
+        }
+      }
       continue;
     }
   }

@@ -76,7 +76,7 @@ const WOODLAND_AGENTS = [
     name: 'Engine History Agent',
     description: 'Surfaces historical engine specifications and change logs for Cyclone Rake units.',
     instructionsKey: 'EngineHistoryAgent',
-    tools: ['woodland-ai-search-engine-history'],
+    tools: ['woodland-ai-engine-history'],
     temperature: 0,
     conversation_starters: [
       'Identify my engine specs',
@@ -88,7 +88,7 @@ const WOODLAND_AGENTS = [
     name: 'Product History Agent',
     description: 'Provides historical product specs, timelines, and notable changes for Cyclone Rake models.',
     instructionsKey: 'ProductHistoryAgent',
-    tools: ['woodland-ai-search-product-history'],
+    tools: ['woodland-ai-product-history'],
     temperature: 0,
     conversation_starters: [
       'Identify my old Cyclone Rake',
