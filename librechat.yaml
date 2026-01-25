@@ -129,7 +129,7 @@ endpoints:
   azureOpenAI:
     groups:
     - group: "rg-woodland-ai-gpt"
-      apiKey: ""  # arbitrary env var name
+      apiKey: "Ee2vRqT8xrq8hrNtUS3krFAYEGUsNeDSRpYFVxrvTMcQeaNgJC7JJQQJ99BIACHYHv6XJ3w3AAAAACOGggBK"  # arbitrary env var name
       baseURL: "https://wppgenai.services.ai.azure.com/models/"
       version: "2024-05-01-preview" # Optional: specify API version
       serverless: true # Optional: set to true if using serverless deployment

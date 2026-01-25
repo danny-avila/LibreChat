@@ -6,6 +6,7 @@ const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
 const { getProjectByName } = require('~/models/Project');
 const { getLogStores } = require('~/cache');
+const { getMCPManager, getMCPServersRegistry } = require('~/config');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -37,7 +38,7 @@ const getMCPServers = async (payload, appConfig) => {
     if (!mcpManager) {
       return;
     }
-    const mcpServers = await mcpServersRegistry.getAllServerConfigs();
+    const mcpServers = await getMCPServersRegistry().getAllServerConfigs();
     if (!mcpServers) return;
     for (const serverName in mcpServers) {
       if (!payload.mcpServers) {

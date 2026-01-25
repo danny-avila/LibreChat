@@ -37,6 +37,14 @@ const {
   TavilySearchResults,
   createGeminiImageTool,
   createOpenAIImageTools,
+  // Woodland Tools
+  StructuredWPPACSCatalog,
+  StructuredWPPACSCyclopedia,
+  StructuredWPPACSWebsite,
+  StructuredWPPACSTractor,
+  StructuredWPPACSCases,
+  StructuredWoodlandAIEngineHistory,
+  StructuredWoodlandAIProductHistory,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -181,6 +189,14 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
+    // Woodland Tools
+    'woodland-ai-search-catalog': StructuredWPPACSCatalog,
+    'woodland-ai-search-cyclopedia': StructuredWPPACSCyclopedia,
+    'woodland-ai-search-website': StructuredWPPACSWebsite,
+    'woodland-ai-search-tractor': StructuredWPPACSTractor,
+    'woodland-ai-search-cases': StructuredWPPACSCases,
+    'woodland-ai-search-engine-history': StructuredWoodlandAIEngineHistory,
+    'woodland-ai-search-product-history': StructuredWoodlandAIProductHistory,
   };
 
   const customConstructors = {

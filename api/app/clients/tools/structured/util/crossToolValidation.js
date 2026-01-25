@@ -12,6 +12,9 @@ const CRITICAL_PART_CATEGORIES = new Set([
   'chassis',
   'blower_housing',
   'complete_rake',
+  'hitch_assembly',
+  'dual_pin_hitch',
+  'crs_hitch',
 ]);
 
 function normalizeCategory(cat) {
@@ -119,7 +122,7 @@ async function validateCriticalPart(catalogDoc, productHistoryTool) {
   if (fitmentModels.length > 0 && historyModels.size > 0) {
     const catalogModels = new Set(fitmentModels.map((m) => String(m).trim()));
     const mismatches = [];
-    
+
     catalogModels.forEach((model) => {
       if (!historyModels.has(model)) {
         mismatches.push(model);

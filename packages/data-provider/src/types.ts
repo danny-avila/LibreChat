@@ -115,15 +115,15 @@ export type TPayload = Partial<TMessage> &
 
 export type TEditedContent =
   | {
-      index: number;
-      type: ContentTypes.THINK;
-      [ContentTypes.THINK]: string;
-    }
+    index: number;
+    type: ContentTypes.THINK;
+    [ContentTypes.THINK]: string;
+  }
   | {
-      index: number;
-      type: ContentTypes.TEXT;
-      [ContentTypes.TEXT]: string;
-    };
+    index: number;
+    type: ContentTypes.TEXT;
+    [ContentTypes.TEXT]: string;
+  };
 
 export type TSubmission = {
   userMessage: TMessage;
@@ -502,6 +502,7 @@ export type TPrompt = {
   type: 'text' | 'chat';
   createdAt: string;
   updatedAt: string;
+  labels?: string[];
   _id?: string;
 };
 
@@ -513,7 +514,7 @@ export type TPromptGroup = {
   category?: string;
   projectIds?: string[];
   productionId?: string | null;
-  productionPrompt?: Pick<TPrompt, 'prompt'> | null;
+  productionPrompt?: Pick<TPrompt, 'prompt' | 'labels'> | null;
   author: string;
   authorName: string;
   createdAt?: Date;

@@ -7,6 +7,7 @@ export interface IPrompt extends Document {
   type: 'text' | 'chat';
   createdAt?: Date;
   updatedAt?: Date;
+  labels?: string[];
 }
 
 export interface IPromptGroup {
@@ -24,4 +25,4 @@ export interface IPromptGroup {
   isPublic?: boolean;
 }
 
-export interface IPromptGroupDocument extends IPromptGroup, Document {}
+export interface IPromptGroupDocument extends IPromptGroup, Document { }

@@ -179,5 +179,61 @@
         "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank if using Vertex AI with service account."
       }
     ]
+  },
+  {
+    "name": "Woodland AI Search - Catalog",
+    "pluginKey": "woodland-ai-search-catalog",
+    "description": "Search Woodland Cyclone Rake parts catalog for SKUs, availability, and specifications.",
+    "icon": "assets/woodland.png",
+    "authConfig": []
+  },
+  {
+    "name": "Woodland AI Search - Cyclopedia",
+    "pluginKey": "woodland-ai-search-cyclopedia",
+    "description": "Search Woodland Cyclopedia for policies, SOPs, warranty, and shipping information.",
+    "icon": "assets/woodland.png",
+    "authConfig": []
+  },
+  {
+    "name": "Woodland AI Search - Website",
+    "pluginKey": "woodland-ai-search-website",
+    "description": "Search Woodland website for product pricing, promotions, and availability.",
+    "icon": "assets/woodland.png",
+    "authConfig": []
+  },
+  {
+    "name": "Woodland AI Search - Tractor",
+    "pluginKey": "woodland-ai-search-tractor",
+    "description": "Search Woodland tractor fitment database for compatibility and installation requirements.",
+    "icon": "assets/woodland.png",
+    "authConfig": []
+  },
+  {
+    "name": "Woodland AI Search - Cases",
+    "pluginKey": "woodland-ai-search-cases",
+    "description": "Search Woodland case history database for precedent and customer issue resolution.",
+    "icon": "assets/woodland.png",
+    "authConfig": []
+  },
+  {
+    "name": "Woodland AI Search - Engine History",
+    "pluginKey": "woodland-ai-search-engine-history",
+    "description": "Search Woodland engine history for specifications and change logs for Cyclone Rake units.",
+    "icon": "assets/woodland.png",
+    "authConfig": []
+  },
+  {
+    "name": "Woodland AI Search - Product History",
+    "pluginKey": "woodland-ai-search-product-history",
+    "description": "Search Woodland product history for specs, timelines, and notable changes for Cyclone Rake models.",
+    "icon": "assets/woodland.png",
+    "authConfig": []
+  },
+  {
+    "name": "Woodland FAQ Search",
+    "pluginKey": "searchWoodlandFAQ_mcp",
+    "description": "Search Woodland FAQ database via MCP server for common questions and answers.",
+    "icon": "assets/woodland.png",
+    "authConfig": []
   }
 ]

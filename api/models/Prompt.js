@@ -51,6 +51,7 @@ const createGroupPipeline = (query, skip, limit) => {
         createdAt: 1,
         updatedAt: 1,
         'productionPrompt.prompt': 1,
+        'productionPrompt.labels': 1,
         // 'productionPrompt._id': 1,
         // 'productionPrompt.type': 1,
       },
@@ -76,6 +77,7 @@ const createAllGroupsPipeline = (
     updatedAt: 1,
     command: 1,
     'productionPrompt.prompt': 1,
+    'productionPrompt.labels': 1,
   },
 ) => {
   return [
@@ -328,6 +330,7 @@ async function getListPromptGroupsByAccess({
         createdAt: 1,
         updatedAt: 1,
         'productionPrompt.prompt': 1,
+        'productionPrompt.labels': 1,
       },
     },
   );

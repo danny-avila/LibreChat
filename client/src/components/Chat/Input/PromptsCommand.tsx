@@ -6,7 +6,7 @@ import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import { removeCharIfLast, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
-import { usePromptGroupsContext } from '~/Providers';
+import { usePromptGroupsContext, useChatContext } from '~/Providers';
 import MentionItem from './MentionItem';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -61,6 +61,7 @@ function PromptsCommand({
 }) {
   const localize = useLocalize();
   const { allPromptGroups, hasAccess } = usePromptGroupsContext();
+  const { conversation } = useChatContext();
   const { data, isLoading } = allPromptGroups;
 
   const [activeIndex, setActiveIndex] = useState(0);
@@ -70,8 +71,30 @@ function PromptsCommand({
   const [variableGroup, setVariableGroup] = useState<TPromptGroup | null>(null);
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
 
-  const prompts = useMemo(() => data?.promptGroups, [data]);
   const promptsMap = useMemo(() => data?.promptsMap, [data]);
+  const activeAgentId = useMemo(() => conversation?.agent_id, [conversation?.agent_id]);
+
+  const prompts = useMemo(() => {
+    if (!data?.promptGroups) {
+      return [];
+    }
+    if (!activeAgentId) {
+      return data.promptGroups;
+    }
+
+    return data.promptGroups.filter((p) => {
+      const group = promptsMap?.[p.id];
+      if (!group || group.category !== 'woodland') {
+        return true;
+      }
+      const labels = group.productionPrompt?.labels || [];
+      const agentLabels = labels.filter((l) => l.startsWith('agent_'));
+      if (agentLabels.length === 0) {
+        return true;
+      }
+      return agentLabels.includes(activeAgentId);
+    });
+  }, [data, activeAgentId, promptsMap]);
 
   const { open, setOpen, searchValue, setSearchValue, matches } = useCombobox({
     value: '',
