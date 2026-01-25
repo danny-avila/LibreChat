@@ -37,21 +37,18 @@ jest.mock('~/utils', () => ({
 
 const { createSafeUser } = jest.requireMock('~/utils');
 
-jest.mock('@librechat/agents', () => ({
-  Run: {
-    create: jest.fn(() => ({
-      processStream: jest.fn(() => Promise.resolve('success')),
-    })),
-  },
-  Providers: {
-    OPENAI: Providers.OPENAI,
-    BEDROCK: Providers.BEDROCK,
-    ANTHROPIC: Providers.ANTHROPIC,
-  },
-  GraphEvents: {
-    TOOL_END: 'tool_end',
-  },
-}));
+jest.mock('@librechat/agents', () => {
+  const actual = jest.requireActual('@librechat/agents');
+  return {
+    Run: {
+      create: jest.fn(() => ({
+        processStream: jest.fn(() => Promise.resolve('success')),
+      })),
+    },
+    Providers: actual.Providers,
+    GraphEvents: actual.GraphEvents,
+  };
+});
 
 function createTestUser(overrides: Partial<IUser> = {}): IUser {
   return {
