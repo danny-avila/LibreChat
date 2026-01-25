@@ -8,7 +8,10 @@ import {
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
-import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ResourceListChangedNotificationSchema,
+  ProgressNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
@@ -103,6 +106,13 @@ export class MCPConnection extends EventEmitter {
    * Used to detect if connection is stale compared to updated config.
    */
   public readonly createdAt: number;
+
+  // Progress notification state
+  private progressTokenCounter = 0;
+  private activeProgressTokens = new Map<t.ProgressToken, t.ProgressState>();
+  private lastProgressEmit = new Map<t.ProgressToken, number>();
+  private progressCleanupTimers = new Map<t.ProgressToken, NodeJS.Timeout>();
+  private readonly PROGRESS_THROTTLE_MS = 200; // Max 5 updates/second
 
   setRequestHeaders(headers: Record<string, string> | null): void {
     if (!headers) {
@@ -376,6 +386,7 @@ export class MCPConnection extends EventEmitter {
     });
 
     this.subscribeToResources();
+    this.subscribeToProgress();
   }
 
   private async handleReconnection(): Promise<void> {
@@ -451,6 +462,132 @@ export class MCPConnection extends EventEmitter {
     this.client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
       this.emit('resourcesChanged');
     });
+  }
+
+  /**
+   * Generates a unique progress token for tracking tool call progress
+   */
+  public generateProgressToken(): t.ProgressToken {
+    const userId = this.userId ? `${this.userId}-` : '';
+    return `${userId}${this.serverName}-${++this.progressTokenCounter}-${Date.now()}`;
+  }
+
+  /**
+   * Registers a progress token for tracking
+   */
+  public registerProgressToken(token: t.ProgressToken): void {
+    this.activeProgressTokens.set(token, {
+      token,
+      progress: 0,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Gets the current progress state for a token
+   */
+  public getProgressState(token: t.ProgressToken): t.ProgressState | undefined {
+    return this.activeProgressTokens.get(token);
+  }
+
+  /**
+   * Unregisters a progress token and cleans up associated state
+   */
+  public unregisterProgressToken(token: t.ProgressToken): void {
+    this.activeProgressTokens.delete(token);
+    this.lastProgressEmit.delete(token);
+    // Cancel any pending cleanup timer for this token
+    const existingTimer = this.progressCleanupTimers.get(token);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this.progressCleanupTimers.delete(token);
+    }
+  }
+
+  /**
+   * Checks if progress should be emitted (rate limiting)
+   */
+  private shouldEmitProgress(token: t.ProgressToken): boolean {
+    const lastEmit = this.lastProgressEmit.get(token) || 0;
+    const now = Date.now();
+    if (now - lastEmit < this.PROGRESS_THROTTLE_MS) {
+      return false;
+    }
+    this.lastProgressEmit.set(token, now);
+    return true;
+  }
+
+  /**
+   * Subscribes to progress notifications from MCP server
+   */
+  private subscribeToProgress(): void {
+    try {
+      this.client.setNotificationHandler(
+        ProgressNotificationSchema,
+        async (notification) => {
+          try {
+            logger.info(`${this.getLogPrefix()} Received progress notification:`, notification.params);
+            const { progressToken, progress, total, message } = notification.params;
+
+            // Validate token
+            if (!this.activeProgressTokens.has(progressToken)) {
+              logger.debug(`${this.getLogPrefix()} Progress for unknown token: ${progressToken}`);
+              return;
+            }
+
+            // Validate monotonic increase
+            const currentState = this.activeProgressTokens.get(progressToken);
+            if (currentState && progress < currentState.progress) {
+              logger.warn(`${this.getLogPrefix()} Progress decreased for ${progressToken}`);
+              return;
+            }
+
+            // Rate limiting
+            if (!this.shouldEmitProgress(progressToken) && (!total || progress < total)) {
+              return;
+            }
+
+            // Update state
+            const newState: t.ProgressState = {
+              token: progressToken,
+              progress,
+              total,
+              message,
+              timestamp: Date.now(),
+            };
+            this.activeProgressTokens.set(progressToken, newState);
+
+            // Emit progress event
+            this.emit('progress', {
+              serverName: this.serverName,
+              progressToken,
+              progress,
+              total,
+              message,
+            });
+
+            // Cleanup if complete
+            if (total && progress >= total) {
+              // Clear existing timer if present to prevent duplicates
+              const existingTimer = this.progressCleanupTimers.get(progressToken);
+              if (existingTimer) {
+                clearTimeout(existingTimer);
+              }
+              const timerId = setTimeout(() => {
+                this.activeProgressTokens.delete(progressToken);
+                this.lastProgressEmit.delete(progressToken);
+                this.progressCleanupTimers.delete(progressToken);
+              }, 5000);
+              this.progressCleanupTimers.set(progressToken, timerId);
+            }
+          } catch (error) {
+            logger.error(`${this.getLogPrefix()} Error handling progress:`, error);
+          }
+        }
+      );
+    } catch (error) {
+      logger.warn(`${this.getLogPrefix()} Failed to setup progress notifications:`, error);
+    }
   }
 
   async connectClient(): Promise<void> {
@@ -677,6 +814,12 @@ export class MCPConnection extends EventEmitter {
       this.emit('connectionChange', 'disconnected');
     } finally {
       this.connectPromise = null;
+      // Clean up progress tracking state to prevent memory leaks
+      this.activeProgressTokens.clear();
+      this.lastProgressEmit.clear();
+      // Clear all pending cleanup timers
+      this.progressCleanupTimers.forEach((timer) => clearTimeout(timer));
+      this.progressCleanupTimers.clear();
     }
   }
 

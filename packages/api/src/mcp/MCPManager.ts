@@ -174,6 +174,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthStart,
     oauthEnd,
     customUserVars,
+    onProgress,
   }: {
     user?: IUser;
     serverName: string;
@@ -187,9 +188,19 @@ Please follow these instructions when using tools from the respective MCP server
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
+    onProgress?: (progressData: {
+      progressToken: t.ProgressToken;
+      progress: number;
+      total?: number;
+      message?: string;
+      serverName: string;
+    }) => void;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
+    let progressHandler: ((data: t.ProgressNotification & { serverName: string }) => void) | null =
+      null;
+    let progressToken: t.ProgressToken | undefined;
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
@@ -230,12 +241,42 @@ Please follow these instructions when using tools from the respective MCP server
         connection.setRequestHeaders(currentOptions.headers || {});
       }
 
+      // Generate and register progress token BEFORE setting up listener
+      // to avoid race condition where progress arrives before token is registered
+      progressToken = connection.generateProgressToken();
+      connection.registerProgressToken(progressToken);
+      logger.info(`${logPrefix}[${toolName}] Progress token generated and registered: ${progressToken}`);
+
+      // Set up progress event listener if callback is provided
+      if (onProgress) {
+        progressHandler = (data) => {
+          logger.info(`${logPrefix}[${toolName}] Progress event received:`, {
+            progressToken: data.progressToken,
+            progress: data.progress,
+            total: data.total,
+            message: data.message,
+          });
+          onProgress({
+            progressToken: data.progressToken,
+            progress: data.progress,
+            total: data.total,
+            message: data.message,
+            serverName: data.serverName,
+          });
+        };
+        connection.on('progress', progressHandler);
+        logger.info(`${logPrefix}[${toolName}] Progress listener registered`);
+      }
+
       const result = await connection.client.request(
         {
           method: 'tools/call',
           params: {
             name: toolName,
             arguments: toolArguments,
+            _meta: {
+              progressToken,
+            },
           },
         },
         CallToolResultSchema,
@@ -249,12 +290,26 @@ Please follow these instructions when using tools from the respective MCP server
         this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
-      return formatToolContent(result as t.MCPToolCallResponse, provider);
+
+      // Format and return the tool response as a proper tuple [content, artifacts]
+      // Progress is handled separately via SSE events emitted by the connection
+      const formattedResponse = formatToolContent(result as t.MCPToolCallResponse, provider);
+
+      return formattedResponse;
     } catch (error) {
       // Log with context and re-throw or handle as needed
       logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
+    } finally {
+      // Clean up progress listener to prevent memory leaks
+      if (connection && progressHandler) {
+        connection.off('progress', progressHandler);
+      }
+      // Clean up progress token to prevent memory leak
+      if (connection && progressToken) {
+        connection.unregisterProgressToken(progressToken);
+      }
     }
   }
 }

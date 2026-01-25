@@ -1,13 +1,36 @@
 import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress } from '~/hooks';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
+import { toolCallProgressFamily, clearToolCallProgressAtom, type ProgressState } from '~/store/progress';
 import { logger, cn } from '~/utils';
+
+/**
+ * Gets the in-progress text to display for a tool call.
+ * Prioritizes MCP progress message, then progress/total, then default localized text.
+ */
+function getInProgressText(
+  mcpProgress: ProgressState | undefined,
+  functionName: string,
+  localize: ReturnType<typeof useLocalize>,
+): string {
+  if (mcpProgress?.message) {
+    return mcpProgress.message;
+  }
+  if (mcpProgress?.total) {
+    return `${functionName}: ${mcpProgress.progress}/${mcpProgress.total}`;
+  }
+  if (functionName) {
+    return localize('com_assistants_running_var', { 0: functionName });
+  }
+  return localize('com_assistants_running_action');
+}
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -18,6 +41,7 @@ export default function ToolCall({
   output,
   attachments,
   auth,
+  toolCallId,
 }: {
   initialProgress: number;
   isLast?: boolean;
@@ -28,6 +52,7 @@ export default function ToolCall({
   attachments?: TAttachment[];
   auth?: string;
   expires_at?: number;
+  toolCallId?: string;
 }) {
   const localize = useLocalize();
   const [showInfo, setShowInfo] = useState(false);
@@ -98,8 +123,35 @@ export default function ToolCall({
     }
   }, [auth]);
 
-  const progress = useProgress(initialProgress);
-  const cancelled = (!isSubmitting && progress < 1) || error === true;
+  // Get simulated progress
+  const simulatedProgress = useProgress(initialProgress);
+
+  // Get real-time progress from MCP server by tool call ID
+  // This provides exact matching - no stale data from other tool calls
+  const mcpProgress = useAtomValue(toolCallProgressFamily(toolCallId ?? ''));
+  const clearProgress = useSetAtom(clearToolCallProgressAtom);
+
+  // Check if tool has completed (has output)
+  const hasOutput = output != null && output.length > 0;
+
+  // Clean up progress data when tool completes
+  useEffect(() => {
+    if (hasOutput && toolCallId) {
+      clearProgress(toolCallId);
+    }
+  }, [hasOutput, toolCallId, clearProgress]);
+
+  // Calculate effective progress for the progress bar
+  // If tool has output, it's completed (progress = 1)
+  // Otherwise use simulated progress for the animation
+  const progress = useMemo(() => {
+    if (hasOutput) {
+      return 1; // Tool completed
+    }
+    return simulatedProgress;
+  }, [hasOutput, simulatedProgress]);
+
+  const cancelled = (!isSubmitting && progress < 1 && !hasOutput) || error === true;
 
   const getFinishedText = () => {
     if (cancelled) {
@@ -167,11 +219,7 @@ export default function ToolCall({
         <ProgressText
           progress={progress}
           onClick={() => setShowInfo((prev) => !prev)}
-          inProgressText={
-            function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
-              : localize('com_assistants_running_action')
-          }
+          inProgressText={getInProgressText(mcpProgress, function_name, localize)}
           authText={
             !cancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
           }
