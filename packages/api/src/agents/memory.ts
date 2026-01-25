@@ -369,7 +369,6 @@ ${memory ?? 'No existing memories'}`;
       }
     }
 
-    // Handle Bedrock with thinking enabled - temperature must be 1
     const bedrockConfig = finalLLMConfig as {
       additionalModelRequestFields?: { thinking?: unknown };
       temperature?: number;
@@ -380,6 +379,18 @@ ${memory ?? 'No existing memories'}`;
       bedrockConfig.temperature != null
     ) {
       (finalLLMConfig as unknown as Record<string, unknown>).temperature = 1;
+    }
+
+    const anthropicConfig = finalLLMConfig as {
+      thinking?: { type?: string };
+      temperature?: number;
+    };
+    if (
+      llmConfig?.provider === Providers.ANTHROPIC &&
+      anthropicConfig.thinking?.type === 'enabled' &&
+      anthropicConfig.temperature != null
+    ) {
+      delete (finalLLMConfig as Record<string, unknown>).temperature;
     }
 
     const llmConfigWithHeaders = finalLLMConfig as OpenAIClientOptions;
