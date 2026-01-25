@@ -9,6 +9,7 @@ const {
 } = require('@librechat/agents');
 const {
   sendEvent,
+  sendProgress,
   MCPOAuthHandler,
   isMCPDomainAllowed,
   normalizeServerName,
@@ -501,6 +502,14 @@ function createToolInstance({
         },
         oauthStart,
         oauthEnd,
+        onProgress: (progressData) => {
+          // Forward progress events to client via SSE, including tool call ID for matching
+          logger.debug(`[MCP][${serverName}][${toolName}] Sending progress to client:`, progressData);
+          sendProgress(res, {
+            ...progressData,
+            toolCallId: toolCall.id, // Include tool call ID so frontend can match progress to specific tool call
+          });
+        },
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
