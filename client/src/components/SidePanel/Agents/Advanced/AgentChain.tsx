@@ -150,7 +150,7 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
                   0: getAgentDetails(agentId)?.name || localize('com_ui_agent'),
                 })}
               >
-                <X size={18} className="text-text-secondary" />
+                <X size={18} className="text-text-secondary" aria-hidden="true" />
               </button>
             </div>
             {idx < agentIds.length - 1 && (

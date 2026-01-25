@@ -38,7 +38,7 @@ export const URLIcon = memo(
               className="absolute flex items-center justify-center rounded-full bg-red-500"
               style={{ width: '14px', height: '14px', top: 0, right: 0 }}
             >
-              <AlertCircle size={10} className="text-white" />
+              <AlertCircle size={10} className="text-white" aria-hidden="true" />
             </div>
           )}
         </div>

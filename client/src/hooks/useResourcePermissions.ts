@@ -24,3 +24,5 @@ export const useResourcePermissions = (resourceType: ResourceType, resourceId: s
     permissionBits: data?.permissionBits || 0,
   };
 };
+
+export default useResourcePermissions;

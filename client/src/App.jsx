@@ -18,6 +18,16 @@ const App = () => {
   const { setError } = useApiErrorBoundary();
 
   const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        // Always attempt network requests, even when navigator.onLine is false
+        // This is needed because localhost is reachable without WiFi
+        networkMode: 'always',
+      },
+      mutations: {
+        networkMode: 'always',
+      },
+    },
     queryCache: new QueryCache({
       onError: (error) => {
         if (error?.response?.status === 401) {

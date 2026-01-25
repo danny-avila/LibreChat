@@ -113,6 +113,8 @@ const tokenValues = Object.assign(
     'gpt-4o-2024-05-13': { prompt: 5, completion: 15 },
     'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
     'gpt-5': { prompt: 1.25, completion: 10 },
+    'gpt-5.1': { prompt: 1.25, completion: 10 },
+    'gpt-5.2': { prompt: 1.75, completion: 14 },
     'gpt-5-nano': { prompt: 0.05, completion: 0.4 },
     'gpt-5-mini': { prompt: 0.25, completion: 2 },
     'gpt-5-pro': { prompt: 15, completion: 120 },
@@ -136,10 +138,12 @@ const tokenValues = Object.assign(
     'claude-3.7-sonnet': { prompt: 3, completion: 15 },
     'claude-haiku-4-5': { prompt: 1, completion: 5 },
     'claude-opus-4': { prompt: 15, completion: 75 },
+    'claude-opus-4-5': { prompt: 5, completion: 25 },
     'claude-sonnet-4': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
     'command-r-plus': { prompt: 3, completion: 15 },
     'command-text': { prompt: 1.5, completion: 2.0 },
+    'deepseek-chat': { prompt: 0.28, completion: 0.42 },
     'deepseek-reasoner': { prompt: 0.28, completion: 0.42 },
     'deepseek-r1': { prompt: 0.4, completion: 2.0 },
     'deepseek-v3': { prompt: 0.2, completion: 0.8 },
@@ -156,7 +160,9 @@ const tokenValues = Object.assign(
     'gemini-2.5-flash': { prompt: 0.3, completion: 2.5 },
     'gemini-2.5-flash-lite': { prompt: 0.1, completion: 0.4 },
     'gemini-2.5-pro': { prompt: 1.25, completion: 10 },
+    'gemini-2.5-flash-image': { prompt: 0.15, completion: 30 },
     'gemini-3': { prompt: 2, completion: 12 },
+    'gemini-3-pro-image': { prompt: 2, completion: 120 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
     grok: { prompt: 2.0, completion: 10.0 }, // Base pattern defaults to grok-2
     'grok-beta': { prompt: 5.0, completion: 15.0 },
@@ -172,6 +178,9 @@ const tokenValues = Object.assign(
     'grok-3-mini': { prompt: 0.3, completion: 0.5 },
     'grok-3-mini-fast': { prompt: 0.6, completion: 4 },
     'grok-4': { prompt: 3.0, completion: 15.0 },
+    'grok-4-fast': { prompt: 0.2, completion: 0.5 },
+    'grok-4-1-fast': { prompt: 0.2, completion: 0.5 }, // covers reasoning & non-reasoning variants
+    'grok-code-fast': { prompt: 0.2, completion: 1.5 },
     codestral: { prompt: 0.3, completion: 0.9 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
     'ministral-8b': { prompt: 0.1, completion: 0.1 },
@@ -238,8 +247,14 @@ const cacheTokenValues = {
   'claude-3.5-haiku': { write: 1, read: 0.08 },
   'claude-3-5-haiku': { write: 1, read: 0.08 },
   'claude-3-haiku': { write: 0.3, read: 0.03 },
+  'claude-haiku-4-5': { write: 1.25, read: 0.1 },
   'claude-sonnet-4': { write: 3.75, read: 0.3 },
   'claude-opus-4': { write: 18.75, read: 1.5 },
+  'claude-opus-4-5': { write: 6.25, read: 0.5 },
+  // DeepSeek models - cache hit: $0.028/1M, cache miss: $0.28/1M
+  deepseek: { write: 0.28, read: 0.028 },
+  'deepseek-chat': { write: 0.28, read: 0.028 },
+  'deepseek-reasoner': { write: 0.28, read: 0.028 },
 };
 
 /**

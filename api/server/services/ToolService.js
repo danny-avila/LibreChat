@@ -9,7 +9,6 @@ const {
 } = require('@librechat/api');
 const {
   Tools,
-  Constants,
   ErrorTypes,
   ContentTypes,
   imageGenTools,
@@ -18,6 +17,7 @@ const {
   ImageVisionTool,
   openapiToFunction,
   AgentCapabilities,
+  isEphemeralAgentId,
   validateActionDomain,
   defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
@@ -79,7 +79,7 @@ async function processRequiredActions(client, requiredActions) {
     requiredActions,
   );
   const appConfig = client.req.config;
-  const toolDefinitions = await getCachedTools();
+  const toolDefinitions = (await getCachedTools()) ?? {};
   const seenToolkits = new Set();
   const tools = requiredActions
     .map((action) => {
@@ -369,7 +369,15 @@ async function processRequiredActions(client, requiredActions) {
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[]; userMCPAuthMap?: Record<string, Record<string, string>> }>} The agent tools.
  */
-async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIApiKey }) {
+async function loadAgentTools({
+  req,
+  res,
+  agent,
+  signal,
+  tool_resources,
+  openAIApiKey,
+  streamId = null,
+}) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
   } else if (
@@ -385,7 +393,7 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
   const endpointsConfig = await getEndpointsConfig(req);
   let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
   /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */
-  if (enabledCapabilities.size === 0 && agent.id === Constants.EPHEMERAL_AGENT_ID) {
+  if (enabledCapabilities.size === 0 && isEphemeralAgentId(agent.id)) {
     enabledCapabilities = new Set(
       appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
     );
@@ -422,11 +430,12 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
   /** @type {ReturnType<typeof createOnSearchResults>} */
   let webSearchCallbacks;
   if (includesWebSearch) {
-    webSearchCallbacks = createOnSearchResults(res);
+    webSearchCallbacks = createOnSearchResults(res, streamId);
   }
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
+  //TODO pass config from registry
   if (hasCustomUserVars(req.config)) {
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: agent.tools,
@@ -621,6 +630,7 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
         encrypted,
         name: toolName,
         description: functionSig.description,
+        streamId,
       });
 
       if (!tool) {

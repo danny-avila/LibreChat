@@ -493,6 +493,20 @@ export const useGetEffectivePermissionsQuery = (
   });
 };
 
+export const useGetAllEffectivePermissionsQuery = (
+  resourceType: ResourceType,
+  config?: UseQueryOptions<permissions.TAllEffectivePermissionsResponse>,
+): QueryObserverResult<permissions.TAllEffectivePermissionsResponse> => {
+  return useQuery<permissions.TAllEffectivePermissionsResponse>({
+    queryKey: [QueryKeys.effectivePermissions, 'all', resourceType],
+    queryFn: () => dataService.getAllEffectivePermissions(resourceType),
+    enabled: !!resourceType,
+    refetchOnWindowFocus: false,
+    staleTime: 30000,
+    ...config,
+  });
+};
+
 export const useMCPServerConnectionStatusQuery = (
   serverName: string,
   config?: UseQueryOptions<MCPServerConnectionStatusResponse>,

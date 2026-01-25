@@ -28,7 +28,7 @@ export default function ListCard({
     <div
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className="relative my-2 flex w-full cursor-pointer flex-col gap-2 rounded-xl border border-border-light px-3 pb-4 pt-3 text-start align-top text-[15px] shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg"
+      className="relative flex w-full cursor-pointer flex-col gap-2 rounded-xl px-3 pb-4 pt-3 text-start align-top text-[15px]"
       role="button"
       tabIndex={0}
       aria-labelledby={`card-title-${name}`}
@@ -50,7 +50,7 @@ export default function ListCard({
       </div>
       <div
         id={`card-snippet-${name}`}
-        className="ellipsis max-w-full select-none text-balance text-sm text-text-secondary"
+        className="ellipsis max-w-full select-none text-balance pt-1 text-sm text-text-secondary"
       >
         {snippet}
       </div>

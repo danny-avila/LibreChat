@@ -58,7 +58,7 @@ export default function HeaderOptions({
                   data-testid="parameters-button"
                   className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
                 >
-                  <Settings2 size={16} aria-label="Settings/Parameters Icon" />
+                  <Settings2 size={16} aria-hidden="true" />
                 </TooltipAnchor>
               )}
             </div>

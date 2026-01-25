@@ -3,7 +3,7 @@ const { Agent, User } = require('~/db/models');
 const promptTemplates = require('~/app/clients/agents/Woodland/promptTemplates');
 const { AgentCapabilities, EModelEndpoint, SystemRoles } = require('librechat-data-provider');
 
-const WOODLAND_PROMPT_VERSION = 'v2025.03.26';
+const WOODLAND_PROMPT_VERSION = 'v2026.01.24';
 
 const DEFAULT_PROVIDER =
   process.env.WOODLAND_AGENT_PROVIDER || EModelEndpoint.azureOpenAI;
@@ -17,20 +17,17 @@ const DEFAULT_MODEL =
 const WOODLAND_AGENTS = [
   {
     id: 'agent_wpp_orchestrator',
-    name: 'WPP Orchestrator',
+    name: 'WPP Supervisor',
     description: 'Prompt-only router minimizing tool/agent calls for Cyclone Rake support.',
     instructionsKey: 'OrchestratorRouter',
-    // Only keep core domain tools; FAQ grounding via MCP server
+    // Assign domain tools for intelligent routing
     tools: [
-      // MCP FAQ search tool - specific tool from azure-search-faq server
+      // MCP FAQ search tool
       'searchWoodlandFAQ_mcp_azure-search-faq',
-      // Domain tools
+      // Domain tools for routing
       'woodland-ai-search-catalog',
       'woodland-ai-search-cyclopedia',
       'woodland-ai-search-website',
-      'woodland-ai-search-tractor',
-      'woodland-ai-search-product-history',
-      'woodland-ai-search-engine-history',
       'woodland-ai-search-cases',
     ],
     // Attach MCP FAQ server
@@ -42,22 +39,25 @@ const WOODLAND_AGENTS = [
     hide_sequential_outputs: true,
     temperature: 0.2,
     recursion_limit: 10,
-  },
-  {
-    id: 'agent_woodland_catalog',
-    name: 'Catalog Parts Agent',
-    description: 'Answers SKU/part/model questions using Airtable catalog data.',
-    instructionsKey: 'CatalogPartsAgent',
-    tools: ['woodland-ai-search-catalog'],
-    temperature: 0,
+    conversation_starters: [
+      'I need help with my Cyclone Rake',
+      'Check if my tractor is compatible',
+      'Find a replacement part',
+      'How do I maintain my engine?'
+    ],
   },
   {
     id: 'agent_woodland_support',
     name: 'Cyclopedia Support Agent',
-    description: 'Handles policies, SOPs, warranty, and shipping via Cyclopedia.',
+    description: 'Handles policies, SOPs, warranty, and shipping via CycloneRake.com.',
     instructionsKey: 'CyclopediaSupportAgent',
     tools: ['woodland-ai-search-cyclopedia'],
     temperature: 0,
+    conversation_starters: [
+      'Engine maintenance guide',
+      'Check warranty policy',
+      'Shipping and return info'
+    ],
   },
   {
     id: 'agent_woodland_tractor',
@@ -66,51 +66,47 @@ const WOODLAND_AGENTS = [
     instructionsKey: 'TractorFitmentAgent',
     tools: ['woodland-ai-search-tractor'],
     temperature: 0,
-  },
-  {
-    id: 'agent_woodland_cases',
-    name: 'Cases Reference Agent',
-    description: 'Summarises internal cases when explicitly requested.',
-    instructionsKey: 'CasesReferenceAgent',
-    tools: ['woodland-ai-search-cases'],
-    temperature: 0,
-  },
-  {
-    id: 'agent_woodland_website',
-    name: 'Website Product Agent',
-    description: 'Provides pricing and ordering guidance from woodland.com pages.',
-    instructionsKey: 'WebsiteProductAgent',
-    tools: ['woodland-ai-search-website'],
-    temperature: 0,
+    conversation_starters: [
+      'Match my tractor to a Cyclone Rake',
+      'What parts do I need for my John Deere?'
+    ],
   },
   {
     id: 'agent_woodland_engine_history',
     name: 'Engine History Agent',
     description: 'Surfaces historical engine specifications and change logs for Cyclone Rake units.',
     instructionsKey: 'EngineHistoryAgent',
-    tools: ['woodland-ai-engine-history'],
+    tools: ['woodland-ai-search-engine-history'],
     temperature: 0,
+    conversation_starters: [
+      'Identify my engine specs',
+      'Check engine change logs'
+    ],
   },
   {
     id: 'agent_woodland_product_history',
     name: 'Product History Agent',
     description: 'Provides historical product specs, timelines, and notable changes for Cyclone Rake models.',
     instructionsKey: 'ProductHistoryAgent',
-    tools: ['woodland-ai-product-history'],
+    tools: ['woodland-ai-search-product-history'],
     temperature: 0,
+    conversation_starters: [
+      'Identify my old Cyclone Rake',
+      'Show me parts for my green tapered bag unit'
+    ],
   },
 ];
 
 const BASE_INSTRUCTIONS = {
-  CatalogPartsAgent: promptTemplates.catalogParts,
   CyclopediaSupportAgent: promptTemplates.cyclopediaSupport,
   TractorFitmentAgent: promptTemplates.tractorFitment,
-  CasesReferenceAgent: promptTemplates.casesReference,
   EngineHistoryAgent: promptTemplates.engineHistory,
   ProductHistoryAgent: promptTemplates.productHistory,
-  WebsiteProductAgent: promptTemplates.websiteProduct,
   SupervisorRouter: promptTemplates.supervisorRouter,
   OrchestratorRouter: promptTemplates.orchestratorRouter,
+  CatalogPartsAgent: promptTemplates.catalogParts,
+  WebsiteProductAgent: promptTemplates.websiteProduct,
+  CasesReferenceAgent: promptTemplates.casesReference,
 };
 
 let cachedAuthor;
@@ -253,7 +249,7 @@ async function ensureAgent(agentConfig) {
     JSON.stringify(existing.tools || []) !== JSON.stringify(updateFields.tools) ||
     JSON.stringify(existing.capabilities || []) !== JSON.stringify(updateFields.capabilities) ||
     JSON.stringify(existing.conversation_starters || []) !==
-      JSON.stringify(updateFields.conversation_starters || []) ||
+    JSON.stringify(updateFields.conversation_starters || []) ||
     JSON.stringify(existing.agent_ids || []) !== JSON.stringify(updateFields.agent_ids || []) ||
     JSON.stringify(existing.mcp || []) !== JSON.stringify(updateFields.mcp || []);
 

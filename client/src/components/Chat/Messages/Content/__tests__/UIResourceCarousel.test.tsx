@@ -1,8 +1,8 @@
-import React from 'react';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { UIResource } from 'librechat-data-provider';
 import UIResourceCarousel from '~/components/Chat/Messages/Content/UIResourceCarousel';
+import { handleUIAction } from '~/utils';
 
 // Mock the UIResourceRenderer component
 jest.mock('@mcp-ui/client', () => ({
@@ -11,6 +11,19 @@ jest.mock('@mcp-ui/client', () => ({
       {resource.text || 'UI Resource'}
     </div>
   ),
+}));
+
+// Mock useMessagesOperations hook
+const mockAsk = jest.fn();
+jest.mock('~/Providers', () => ({
+  useMessagesOperations: () => ({
+    ask: mockAsk,
+  }),
+}));
+
+// Mock handleUIAction utility
+jest.mock('~/utils', () => ({
+  handleUIAction: jest.fn(),
 }));
 
 // Mock scrollTo
@@ -29,8 +42,12 @@ describe('UIResourceCarousel', () => {
     { uri: 'resource5', mimeType: 'text/html', text: 'Resource 5' },
   ];
 
+  const mockHandleUIAction = handleUIAction as jest.MockedFunction<typeof handleUIAction>;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAsk.mockClear();
+    mockHandleUIAction.mockClear();
     // Reset scroll properties
     Object.defineProperty(HTMLElement.prototype, 'scrollLeft', {
       configurable: true,
@@ -141,18 +158,48 @@ describe('UIResourceCarousel', () => {
     });
   });
 
-  it('handles UIResource actions', async () => {
-    const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+  it('handles UIResource actions using handleUIAction', async () => {
     render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 1)} />);
 
     const renderer = screen.getByTestId('ui-resource-renderer');
     fireEvent.click(renderer);
 
     await waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalledWith('Action:', { action: 'test' });
+      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockAsk);
+    });
+  });
+
+  it('calls handleUIAction with correct parameters for multiple resources', async () => {
+    render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 3)} />);
+
+    const renderers = screen.getAllByTestId('ui-resource-renderer');
+
+    // Click the second renderer
+    fireEvent.click(renderers[1]);
+
+    await waitFor(() => {
+      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockAsk);
+      expect(mockHandleUIAction).toHaveBeenCalledTimes(1);
     });
 
-    consoleSpy.mockRestore();
+    // Click the third renderer
+    fireEvent.click(renderers[2]);
+
+    await waitFor(() => {
+      expect(mockHandleUIAction).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('passes correct ask function to handleUIAction', async () => {
+    render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 1)} />);
+
+    const renderer = screen.getByTestId('ui-resource-renderer');
+    fireEvent.click(renderer);
+
+    await waitFor(() => {
+      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockAsk);
+      expect(mockHandleUIAction).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('applies correct dimensions to resource containers', () => {

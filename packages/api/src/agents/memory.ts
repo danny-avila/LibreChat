@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
 import { Tools } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
+import { HumanMessage } from '@langchain/core/messages';
 import { Run, Providers, GraphEvents } from '@librechat/agents';
 import type {
   OpenAIClientOptions,
@@ -13,11 +14,12 @@ import type {
   ToolEndData,
   LLMConfig,
 } from '@librechat/agents';
+import type { ObjectId, MemoryMethods, IUser } from '@librechat/data-schemas';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
-import type { ObjectId, MemoryMethods } from '@librechat/data-schemas';
 import type { BaseMessage, ToolMessage } from '@langchain/core/messages';
 import type { Response as ServerResponse } from 'express';
-import { Tokenizer } from '~/utils';
+import { GenerationJobManager } from '~/stream/GenerationJobManager';
+import { Tokenizer, resolveHeaders, createSafeUser } from '~/utils';
 
 type RequiredMemoryMethods = Pick<
   MemoryMethods,
@@ -250,6 +252,7 @@ export class BasicToolEndHandler implements EventHandler {
   constructor(callback?: ToolEndCallback) {
     this.callback = callback;
   }
+
   handle(
     event: string,
     data: StreamEventData | undefined,
@@ -282,6 +285,8 @@ export async function processMemory({
   llmConfig,
   tokenLimit,
   totalTokens = 0,
+  streamId = null,
+  user,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -296,6 +301,8 @@ export async function processMemory({
   tokenLimit?: number;
   totalTokens?: number;
   llmConfig?: Partial<LLMConfig>;
+  streamId?: string | null;
+  user?: IUser;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -362,11 +369,69 @@ ${memory ?? 'No existing memories'}`;
       }
     }
 
+    // Handle Bedrock with thinking enabled - temperature must be 1
+    const bedrockConfig = finalLLMConfig as {
+      additionalModelRequestFields?: { thinking?: unknown };
+      temperature?: number;
+    };
+    if (
+      llmConfig?.provider === Providers.BEDROCK &&
+      bedrockConfig.additionalModelRequestFields?.thinking != null &&
+      bedrockConfig.temperature != null
+    ) {
+      (finalLLMConfig as unknown as Record<string, unknown>).temperature = 1;
+    }
+
+    const llmConfigWithHeaders = finalLLMConfig as OpenAIClientOptions;
+    if (llmConfigWithHeaders?.configuration?.defaultHeaders != null) {
+      llmConfigWithHeaders.configuration.defaultHeaders = resolveHeaders({
+        headers: llmConfigWithHeaders.configuration.defaultHeaders as Record<string, string>,
+        user: user ? createSafeUser(user) : undefined,
+      });
+    }
+
     const artifactPromises: Promise<TAttachment | null>[] = [];
-    const memoryCallback = createMemoryCallback({ res, artifactPromises });
+    const memoryCallback = createMemoryCallback({ res, artifactPromises, streamId });
     const customHandlers = {
       [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
     };
+
+    /**
+     * For Bedrock provider, include instructions in the user message instead of as a system prompt.
+     * Bedrock's Converse API requires conversations to start with a user message, not a system message.
+     * Other providers can use the standard system prompt approach.
+     */
+    const isBedrock = llmConfig?.provider === Providers.BEDROCK;
+
+    let graphInstructions: string | undefined = instructions;
+    let graphAdditionalInstructions: string | undefined = memoryStatus;
+    let processedMessages = messages;
+
+    if (isBedrock) {
+      const combinedInstructions = [instructions, memoryStatus].filter(Boolean).join('\n\n');
+
+      if (messages.length > 0) {
+        const firstMessage = messages[0];
+        const originalContent =
+          typeof firstMessage.content === 'string' ? firstMessage.content : '';
+
+        if (typeof firstMessage.content !== 'string') {
+          logger.warn(
+            'Bedrock memory processing: First message has non-string content, using empty string',
+          );
+        }
+
+        const bedrockUserMessage = new HumanMessage(
+          `${combinedInstructions}\n\n${originalContent}`,
+        );
+        processedMessages = [bedrockUserMessage, ...messages.slice(1)];
+      } else {
+        processedMessages = [new HumanMessage(combinedInstructions)];
+      }
+
+      graphInstructions = undefined;
+      graphAdditionalInstructions = undefined;
+    }
 
     const run = await Run.create({
       runId: messageId,
@@ -374,8 +439,8 @@ ${memory ?? 'No existing memories'}`;
         type: 'standard',
         llmConfig: finalLLMConfig,
         tools: [memoryTool, deleteMemoryTool],
-        instructions,
-        additional_instructions: memoryStatus,
+        instructions: graphInstructions,
+        additional_instructions: graphAdditionalInstructions,
         toolEnd: true,
       },
       customHandlers,
@@ -395,7 +460,7 @@ ${memory ?? 'No existing memories'}`;
     } as const;
 
     const inputs = {
-      messages,
+      messages: processedMessages,
     };
     const content = await run.processStream(inputs, config);
     if (content) {
@@ -416,6 +481,8 @@ export async function createMemoryProcessor({
   memoryMethods,
   conversationId,
   config = {},
+  streamId = null,
+  user,
 }: {
   res: ServerResponse;
   messageId: string;
@@ -423,6 +490,8 @@ export async function createMemoryProcessor({
   userId: string | ObjectId;
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
+  streamId?: string | null;
+  user?: IUser;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
@@ -443,12 +512,14 @@ export async function createMemoryProcessor({
           llmConfig,
           messageId,
           tokenLimit,
+          streamId,
           conversationId,
           memory: withKeys,
           totalTokens: totalTokens || 0,
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
+          user,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);
@@ -461,10 +532,12 @@ async function handleMemoryArtifact({
   res,
   data,
   metadata,
+  streamId = null,
 }: {
   res: ServerResponse;
   data: ToolEndData;
   metadata?: ToolEndMetadata;
+  streamId?: string | null;
 }) {
   const output = data?.output as ToolMessage | undefined;
   if (!output) {
@@ -490,7 +563,11 @@ async function handleMemoryArtifact({
   if (!res.headersSent) {
     return attachment;
   }
-  res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+  if (streamId) {
+    GenerationJobManager.emitChunk(streamId, { event: 'attachment', data: attachment });
+  } else {
+    res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+  }
   return attachment;
 }
 
@@ -499,14 +576,17 @@ async function handleMemoryArtifact({
  * @param params - The parameters object
  * @param params.res - The server response object
  * @param params.artifactPromises - Array to collect artifact promises
+ * @param params.streamId - The stream ID for resumable mode, or null for standard mode
  * @returns The memory callback function
  */
 export function createMemoryCallback({
   res,
   artifactPromises,
+  streamId = null,
 }: {
   res: ServerResponse;
   artifactPromises: Promise<Partial<TAttachment> | null>[];
+  streamId?: string | null;
 }): ToolEndCallback {
   return async (data: ToolEndData, metadata?: Record<string, unknown>) => {
     const output = data?.output as ToolMessage | undefined;
@@ -515,7 +595,7 @@ export function createMemoryCallback({
       return;
     }
     artifactPromises.push(
-      handleMemoryArtifact({ res, data, metadata }).catch((error) => {
+      handleMemoryArtifact({ res, data, metadata, streamId }).catch((error) => {
         logger.error('Error processing memory artifact content:', error);
         return null;
       }),

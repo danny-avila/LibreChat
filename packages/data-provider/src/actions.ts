@@ -290,7 +290,21 @@ class RequestExecutor {
       ...(this.config.contentType ? { 'Content-Type': this.config.contentType } : {}),
     };
     const method = this.config.method.toLowerCase();
-    const axios = _axios.create();
+
+    /**
+     * SECURITY: Disable automatic redirects to prevent SSRF bypass.
+     * Attackers could use redirects to access internal services:
+     *   1. Set action URL to allowed external domain
+     *   2. External domain redirects to internal service (e.g., 127.0.0.1, rag_api)
+     *   3. Without this protection, axios would follow the redirect
+     *
+     * By setting maxRedirects: 0, we prevent this attack vector.
+     * The action will receive the redirect response (3xx) instead of following it.
+     */
+    const axios = _axios.create({
+      maxRedirects: 0,
+      validateStatus: (status) => status >= 200 && status < 400, // Accept 3xx but don't follow
+    });
 
     // Initialize separate containers for query and body parameters.
     const queryParams: Record<string, unknown> = {};
@@ -684,9 +698,9 @@ export function validateActionDomain(
     if (clientHasProtocol) {
       normalizedClientDomain = extractDomainFromUrl(clientProvidedDomain);
     } else {
-      // IP addresses inherit protocol from spec, domains default to https
+      // No protocol specified by client
       if (isIPAddress) {
-        // IPv6 addresses need brackets in URLs
+        // IPs inherit protocol from spec (for legitimate internal services)
         const ipVersion = isIP(normalizedClientHostname);
         const hostname =
           ipVersion === 6 && !clientHostname.startsWith('[')
@@ -694,6 +708,7 @@ export function validateActionDomain(
             : clientHostname;
         normalizedClientDomain = `${specUrl.protocol}//${hostname}`;
       } else {
+        // Domain names default to HTTPS for security (forces explicit protocol)
         normalizedClientDomain = `https://${clientHostname}`;
       }
     }

@@ -6,7 +6,7 @@ const { SystemRoles } = require('librechat-data-provider');
 // const { grantPermission } = require('~/server/services/PermissionService');
 const { AccessRoleIds, PrincipalType, ResourceType } = require('librechat-data-provider');
 
-const WOODLAND_PROMPT_VERSION = 'v2025.12.20';
+const WOODLAND_PROMPT_VERSION = 'v2026.01.24.engine';
 const WOODLAND_CATEGORY = 'woodland';
 
 /**
@@ -20,6 +20,7 @@ const WOODLAND_PROMPTS = [
     category: WOODLAND_CATEGORY,
     oneliner: 'Find your model and replacement parts from physical attributes',
     command: 'identify-model',
+    tags: ['agent_woodland_product_history'],
     type: 'text',
     public: true,
     placeholders: ['bag_color', 'bag_shape', 'blower_color', 'intake_diameter', 'engine_info'],
@@ -38,11 +39,156 @@ Please identify the model and show me the available replacement parts.`,
     id: 'prompt_product_history_guided',
     name: 'Product History: Guided Identification',
     category: WOODLAND_CATEGORY,
-    oneliner: 'Answer 5 simple questions to identify your model',
+    oneliner: 'Answer questions one-by-one to identify your model',
     command: 'identify-guided',
+    tags: ['agent_woodland_product_history'],
     type: 'chat',
     public: true,
-    prompt: `I need help identifying my Cyclone Rake model. Please guide me through the identification questions.`,
+    prompt: "I'd like to identify my old Cyclone Rake model based on its physical features. Can you guide me through the identification process?",
+  },
+  {
+    id: 'prompt_tractor_fitment_setup',
+    name: 'Tractor Fitment: Model & Parts',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Rep enters make, model, deck; get compatible Cyclone Rake + parts',
+    command: 'tractor-fitment',
+    tags: ['agent_woodland_tractor'],
+    type: 'text',
+    public: true,
+    placeholders: ['tractor_make', 'tractor_model', 'deck_width'],
+    prompt: `You will receive the tractor details in one submission:
+  - Tractor make: {{tractor_make}}
+  - Tractor model: {{tractor_model}}
+  - Deck width (inches): {{deck_width}}
+
+  Return all of the following:
+  - The compatible or recommended Cyclone Rake model for this tractor
+  - The correct hitch connection kit
+  - The deck hose diameter and length needed
+  - The mower deck adapter (MDA) model, if required
+  - Any installation flags or special requirements
+  - Cite the tractor database rows you used`,
+  },
+  {
+    id: 'prompt_tractor_fitment_guided',
+    name: 'Tractor Fitment: Guided Match',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Answer questions one-by-one to get compatible Cyclone Rake + parts',
+    command: 'tractor-fitment-guided',
+    tags: ['agent_woodland_tractor'],
+    type: 'chat',
+    public: true,
+    prompt: "I need help finding the right Cyclone Rake model and fitment parts for my tractor. Can you guide me through the matching process?",
+  },
+  {
+    id: 'prompt_engine_history_identify',
+    name: 'Engine History: Identify Engine',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Find engine specs and history from physical attributes',
+    command: 'engine-identify',
+    tags: ['agent_woodland_engine_history'],
+    type: 'text',
+    public: true,
+    placeholders: ['rake_model', 'engine_brand', 'horsepower', 'filter_shape', 'engine_code'],
+    prompt: `I need help identifying an engine and finding its specifications.
+
+Here's what I can see:
+- **Rake Model:** {{rake_model}}
+- **Engine Brand:** {{engine_brand}}
+- **Horsepower:** {{horsepower}}
+- **Filter Shape:** {{filter_shape}}
+- **Engine Code:** {{engine_code}}
+
+Please identify the exact engine, show its specifications, and available retrofit kits.`,
+  },
+  {
+    id: 'prompt_engine_history_guided',
+    name: 'Engine History: Guided Identification',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Answer questions one-by-one to identify your engine',
+    command: 'engine-guided',
+    tags: ['agent_woodland_engine_history'],
+    type: 'chat',
+    public: true,
+    prompt: "I'd like to identify the engine on my Cyclone Rake and find its specifications. Can you guide me through the identification process?",
+  },
+  {
+    id: 'prompt_catalog_part_lookup',
+    name: 'Catalog: Find Part Number',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Find a specific part number or SKU for your unit',
+    command: 'part-lookup',
+    tags: ['agent_woodland_catalog'],
+    type: 'text',
+    public: true,
+    placeholders: ['part_name', 'rake_model'],
+    prompt: `I'm looking for a part number for my Cyclone Rake.
+- **Part/Component Name:** {{part_name}}
+- **My Rake Model:** {{rake_model}}
+
+Please provide the SKU, price, and a link to the catalog page.`,
+  },
+  {
+    id: 'prompt_support_engine_maint',
+    name: 'Support: Engine Maintenance',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Get step-by-step maintenance guide for your engine',
+    command: 'engine-maint',
+    tags: ['agent_woodland_support'],
+    type: 'text',
+    public: true,
+    placeholders: ['engine_model'],
+    prompt: `I need the maintenance guide for my engine:
+- **Engine Model:** {{engine_model}}
+
+Please provide oil type, spark plug specs, and air filter maintenance steps.`,
+  },
+  {
+    id: 'prompt_tractor_compatibility',
+    name: 'Tractor: Connection Help',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Check if a specific mower/tractor setup is supported',
+    command: 'tractor-check',
+    tags: ['agent_woodland_tractor'],
+    type: 'text',
+    public: true,
+    placeholders: ['mower_make_model', 'connection_type'],
+    prompt: `Can my Cyclone Rake connect to this setup?
+- **Mower Make/Model:** {{mower_make_model}}
+- **Special Setup:** {{connection_type}} (e.g., Power Flow, Ventrac, Electric)
+
+Please check compatibility and note any special requirements or "Not Recommended" statuses.`,
+  },
+  {
+    id: 'prompt_support_tech_specs',
+    name: 'Support: Technical Specs',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Get weights, decibel ratings, or fuel specs',
+    command: 'tech-specs',
+    tags: ['agent_woodland_support'],
+    type: 'text',
+    public: true,
+    placeholders: ['rake_model', 'spec_type'],
+    prompt: `I need technical specifications for my unit:
+- **Rake Model:** {{rake_model}}
+- **Spec Requested:** {{spec_type}} (e.g., Tongue Weight, Decibel Rating, Fuel Type)
+
+Please provide the official rating and any safety guidelines associated with it.`,
+  },
+  {
+    id: 'prompt_support_policy_check',
+    name: 'Support: Warranty & Policy',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Quick-check for warranty windows or cancellation policies',
+    command: 'policy-check',
+    tags: ['agent_woodland_support'],
+    type: 'text',
+    public: true,
+    placeholders: ['topic'],
+    prompt: `I have a policy question regarding:
+- **Topic:** {{topic}} (e.g., Warranty Status, Order Cancellation, Senior Discount)
+
+Please provide the official Woodland policy and relevant help links.`,
   },
 ];
 
@@ -134,7 +280,7 @@ async function resolveAuthor() {
 async function ensurePromptGroup(config, authorId, authorName) {
   // Lazy-load PermissionService to break circular dependency
   const { grantPermission } = require('~/server/services/PermissionService');
-  
+
   const timestamp = new Date();
   const authorObjectId = new mongoose.Types.ObjectId(authorId);
 
@@ -157,7 +303,7 @@ async function ensurePromptGroup(config, authorId, authorName) {
       category: config.category,
       command: config.command || undefined,
       author: authorObjectId,
-      authorName,
+      authorName: authorName,
       productionId: productionPromptId,
       numberOfGenerations: 0,
       projectIds: [],
@@ -176,11 +322,11 @@ async function ensurePromptGroup(config, authorId, authorName) {
       updatedAt: timestamp,
       ...(config.tags || config.placeholders
         ? {
-            labels: [
-              ...(config.tags || []),
-              ...(config.placeholders ? config.placeholders.map((p) => `placeholder:${p}`) : []),
-            ],
-          }
+          labels: [
+            ...(config.tags || []),
+            ...(config.placeholders ? config.placeholders.map((p) => `placeholder:${p}`) : []),
+          ],
+        }
         : {}),
     });
 
@@ -209,7 +355,18 @@ async function ensurePromptGroup(config, authorId, authorName) {
     ? await Prompt.findById(existing.productionId).lean()
     : null;
 
-  const promptChanged = productionPrompt?.prompt !== config.prompt;
+  const currentLabels = [
+    ...(config.tags || []),
+    ...(config.placeholders
+      ? config.placeholders.map((p) => `placeholder:${p}`)
+      : []),
+  ].sort().join(',');
+
+  const existingLabels = (productionPrompt?.labels || []).sort().join(',');
+
+  const promptChanged =
+    productionPrompt?.prompt !== config.prompt ||
+    existingLabels !== currentLabels;
   const metadataChanged =
     existing.name !== config.name ||
     existing.oneliner !== (config.oneliner || '') ||
@@ -228,11 +385,11 @@ async function ensurePromptGroup(config, authorId, authorName) {
       updatedAt: timestamp,
       ...(config.tags || config.placeholders
         ? {
-            labels: [
-              ...(config.tags || []),
-              ...(config.placeholders ? config.placeholders.map((p) => `placeholder:${p}`) : []),
-            ],
-          }
+          labels: [
+            ...(config.tags || []),
+            ...(config.placeholders ? config.placeholders.map((p) => `placeholder:${p}`) : []),
+          ],
+        }
         : {}),
     });
 

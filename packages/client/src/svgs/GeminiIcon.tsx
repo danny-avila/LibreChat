@@ -13,6 +13,7 @@ export default function GeminiIcon({
       viewBox="0 0 18 18"
       preserveAspectRatio="xMidYMid meet"
       focusable="false"
+      aria-hidden="true"
     >
       <path
         fill="url(#_4rif_paint0_radial_897_42)"

@@ -1,5 +1,8 @@
 import { expect } from '@playwright/test';
 import { ParsedServerConfig } from '~/mcp/types';
+const FIXED_TIME = 1699564800000;
+const originalDateNow = Date.now;
+Date.now = jest.fn(() => FIXED_TIME);
 
 describe('ServerConfigsCacheInMemory Integration Tests', () => {
   let ServerConfigsCacheInMemory: typeof import('../ServerConfigsCacheInMemory').ServerConfigsCacheInMemory;
@@ -12,12 +15,14 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
     command: 'node',
     args: ['server1.js'],
     env: { TEST: 'value1' },
+    updatedAt: FIXED_TIME,
   };
 
   const mockConfig2: ParsedServerConfig = {
     command: 'python',
     args: ['server2.py'],
     env: { TEST: 'value2' },
+    updatedAt: FIXED_TIME,
   };
 
   const mockConfig3: ParsedServerConfig = {
@@ -25,12 +30,17 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
     args: ['server3.js'],
     url: 'http://localhost:3000',
     requiresOAuth: true,
+    updatedAt: FIXED_TIME,
   };
 
   beforeAll(async () => {
     // Import modules
     const cacheModule = await import('../ServerConfigsCacheInMemory');
     ServerConfigsCacheInMemory = cacheModule.ServerConfigsCacheInMemory;
+  });
+
+  afterAll(() => {
+    Date.now = originalDateNow;
   });
 
   beforeEach(() => {

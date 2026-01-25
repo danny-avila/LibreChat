@@ -52,7 +52,11 @@ export default function ActionCallback({ action_id }: { action_id?: string }) {
               className={cn('h-8 rounded-md px-2', isCopying ? 'cursor-default' : '')}
               aria-label={localize('com_ui_copy_link')}
             >
-              {isCopying ? <CopyCheck className="size-4" /> : <Copy className="size-4" />}
+              {isCopying ? (
+                <CopyCheck className="size-4" aria-hidden="true" />
+              ) : (
+                <Copy className="size-4" aria-hidden="true" />
+              )}
             </Button>
           </div>
         </div>

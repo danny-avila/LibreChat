@@ -85,17 +85,46 @@ interface:
   parameters: true
   sidePanel: true
   presets: true
-  prompts: true
+  prompts:
+    use: true
+    share: false
+    public: false
   bookmarks: true
   multiConvo: true
-  agents: true
+  agents:
+    use: true
+    share: false
+    public: false
   peoplePicker:
     users: true
     groups: true
     roles: true
   marketplace:
-      use: false
+    use: false
   fileCitations: true
+  mcpServers:
+    # MCP Servers configuration
+    # Controls user permissions for MCP (Model Context Protocol) server management
+    # - use: Allow users to use configured MCP servers
+    # - create: Allow users to create and manage new MCP servers
+    # - share: Allow users to share MCP servers with other users
+    # - public: Allow users to share MCP servers publicly (with everyone)
+    use: false
+    share: false
+    create: false
+    public: false
+    # Creation / edit MCP server config Dialog config example
+    # trustCheckbox:
+    #   label:
+    #     en: 'I understand and I want to continue'
+    #     de: 'Ich verstehe und möchte fortfahren'
+    #     de-DE: 'Ich verstehe und möchte fortfahren' # You can narrow translation to regions like (de-DE or de-CH)
+    #   subLabel:
+    #     en: |
+    #       Librechat hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data. <a href="https://google.de" target="_blank"><strong>Learn more.</strong></a>
+    #     de: |
+    #       LibreChat hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
+
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
@@ -156,12 +185,29 @@ registration:
 #     userMax: 50
 #     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
 
-# Example Actions Object Structure
+# Agent Actions domain restrictions (OpenAPI spec validation)
+# SECURITY: If not configured, SSRF targets are blocked (localhost, private IPs, .internal/.local TLDs).
+# To allow internal targets, you MUST explicitly add them to allowedDomains.
+# Supports wildcards: '*.example.com' and protocol/port restrictions: 'https://api.example.com:8443'
 actions:
   allowedDomains:
     - 'swapi.dev'
     - 'librechat.ai'
     - 'google.com'
+    # - 'http://10.225.26.25:7894'  # Internal IP with protocol/port (uncomment if needed)
+
+# MCP Server domain restrictions for remote transports (SSE, WebSocket, HTTP)
+# SECURITY: If not configured, SSRF targets are blocked (localhost, private IPs, .internal/.local TLDs).
+# To allow internal targets like host.docker.internal, you MUST explicitly add them to allowedDomains.
+# Supports wildcards: '*.example.com' matches 'api.example.com', 'staging.example.com', etc.
+# Supports protocol/port restrictions: 'https://api.example.com:8443' restricts to specific protocol/port.
+# mcpSettings:
+#   allowedDomains:
+#     - 'host.docker.internal'    # Docker host access (required for Docker setups)
+#     - 'localhost'               # Local development
+#     - '*.example.com'           # Wildcard subdomain
+#     - 'https://secure.api.com'  # Protocol-restricted
+#     - 'http://internal:8080'    # Protocol and port restricted
 
 # Example MCP Servers Object Structure
 # mcpServers:
@@ -222,6 +268,67 @@ endpoints:
   #   minRelevanceScore: 0.45
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
+
+  # Anthropic endpoint configuration with Vertex AI support
+  # Use this to run Anthropic Claude models through Google Cloud Vertex AI
+  # anthropic:
+  #   # (optional) Stream rate limiting in milliseconds
+  #   streamRate: 20
+  #   # (optional) Title model for conversation titles
+  #   titleModel: claude-3.5-haiku  # Use the visible model name (key from models config)
+  #
+  #   # Vertex AI Configuration - enables running Claude models via Google Cloud
+  #   # This is similar to Azure OpenAI but for Anthropic models on Google Cloud
+  #   # Vertex AI is automatically enabled when this config section is present
+  #   vertex:
+  #     # Vertex AI region (optional, defaults to 'us-east5')
+  #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
+  #     region: "us-east5"
+  #     # Path to Google service account key file (optional)
+  #     # If not specified, uses GOOGLE_SERVICE_KEY_FILE env var or default path (api/data/auth.json)
+  #     # The project_id is automatically extracted from the service key file
+  #     # serviceKeyFile: "/path/to/service-account.json"
+  #     # Google Cloud Project ID (optional) - auto-detected from service key file
+  #     # Only specify if you need to override the project_id in your service key
+  #     # projectId: "${VERTEX_PROJECT_ID}"
+  #
+  #     # ============================================================================
+  #     # Model Configuration - Set Visible Model Names and Deployment Mappings
+  #     # Similar to Azure OpenAI model naming pattern
+  #     # ============================================================================
+  #
+  #     # Option 1: Simple array (legacy format - model name = deployment name)
+  #     # Use this if you want the technical model IDs to show in the UI
+  #     # models:
+  #     #   - "claude-sonnet-4-20250514"
+  #     #   - "claude-3-7-sonnet-20250219"
+  #     #   - "claude-3-5-sonnet-v2@20241022"
+  #     #   - "claude-3-5-haiku@20241022"
+  #
+  #     # Option 2: Object format with custom visible names (RECOMMENDED)
+  #     # The key is the visible model name shown in the UI (can be any name you want)
+  #     # The deploymentName is the actual Vertex AI model ID used for API calls
+  #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
+  #     models:
+  #       claude-opus-4.5:
+  #         deploymentName: claude-opus-4-5@20251101
+  #       claude-sonnet-4:
+  #         deploymentName: claude-sonnet-4-20250514
+  #       claude-3.7-sonnet:
+  #         deploymentName: claude-3-7-sonnet-20250219
+  #       claude-3.5-sonnet:
+  #         deploymentName: claude-3-5-sonnet-v2@20241022
+  #       claude-3.5-haiku:
+  #         deploymentName: claude-3-5-haiku@20241022
+  #
+  #     # Option 3: Mixed format with default deploymentName
+  #     # Set a default deploymentName and use boolean values for models
+  #     # deploymentName: claude-sonnet-4-20250514
+  #     # models:
+  #     #   claude-sonnet-4: true  # Will use the default deploymentName
+  #     #   claude-3.5-haiku:
+  #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
+
   custom:
     # Groq Example
     - name: 'groq'
@@ -291,7 +398,7 @@ endpoints:
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
       headers:
-          x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
       models:
         default: ['meta-llama/llama-3-70b-instruct']
         fetch: true
@@ -308,9 +415,10 @@ endpoints:
       apiKey: '${HELICONE_KEY}'
       baseURL: 'https://ai-gateway.helicone.ai'
       headers:
-          x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
       models:
-        default: ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
+        default:
+          ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
         fetch: true
       titleConvo: true
       titleModel: 'gpt-4o-mini'
@@ -334,11 +442,31 @@ endpoints:
       forcePrompt: false
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
+
+  # AWS Bedrock Example
+  # Note: Bedrock endpoint is configured via environment variables
+  # bedrock:
+  #   # Guardrail Configuration
+  #   guardrailConfig:
+  #     guardrailIdentifier: "your-guardrail-id"
+  #     guardrailVersion: "1"
+  #     
+  #     # Trace behavior for debugging (optional)
+  #     # - "enabled": Include basic trace information about guardrail assessments
+  #     # - "enabled_full": Include comprehensive trace details (recommended for debugging)
+  #     # - "disabled": No trace information (default)
+  #     # Trace output is logged to application log files for compliance auditing
+  #     trace: "enabled"
+
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:
 # - If 'group' matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint
 # - If 'group' is a custom name (doesn't match any endpoint), it creates a separate collapsible section
 # - If 'group' is omitted, the spec appears as a standalone item at the top level
+#
+# The 'groupIcon' field sets an icon for custom groups:
+# - Only needs to be set on one spec per group (first one is used)
+# - Can be a URL or a built-in endpoint key (e.g., "openAI", "anthropic", "groq")
 # modelSpecs:
 #   list:
 #     # Example 1: Nested under an endpoint (grouped with openAI endpoint)
@@ -359,11 +487,12 @@ endpoints:
 #         endpoint: "groq"
 #         model: "llama3-70b-8192"
 #
-#     # Example 3: Custom group (creates a separate collapsible section)
+#     # Example 3: Custom group with icon (creates a separate collapsible section)
 #     - name: "coding-assistant"
 #       label: "Coding Assistant"
 #       description: "Specialized for coding tasks"
 #       group: "my-assistants"  # Custom string - doesn't match any endpoint, so creates its own group
+#       groupIcon: "https://example.com/icons/assistants.png"  # Icon URL for the group
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o"
@@ -374,12 +503,22 @@ endpoints:
 #       label: "Writing Assistant"
 #       description: "Specialized for creative writing"
 #       group: "my-assistants"  # Same custom group name - both specs appear in same section
+#       # No need to set groupIcon again - the first spec's icon is used
 #       preset:
 #         endpoint: "anthropic"
 #         model: "claude-sonnet-4"
 #         instructions: "You are a creative writing expert..."
 #
-#     # Example 4: Standalone (no group - appears at top level)
+#     # Example 4: Custom group using built-in icon key
+#     - name: "fast-models"
+#       label: "Fast Response Model"
+#       group: "Fast Models"
+#       groupIcon: "groq"  # Uses the built-in Groq icon
+#       preset:
+#         endpoint: "groq"
+#         model: "llama3-8b-8192"
+#
+#     # Example 5: Standalone (no group - appears at top level)
 #     - name: "general-assistant"
 #       label: "General Assistant"
 #       description: "General purpose assistant"

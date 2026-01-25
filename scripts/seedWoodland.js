@@ -1,10 +1,11 @@
 const path = require('path');
-require('module-alias/register');
+require(path.resolve(__dirname, '../node_modules/module-alias/register'));
 const moduleAlias = require('module-alias');
 moduleAlias.addAlias('~', path.resolve(__dirname, '..', 'api'));
 moduleAlias.addAlias('~/db/models', path.resolve(__dirname, '..', 'api/db/models'));
 const mongoose = require('mongoose');
 const { seedWoodlandAgents } = require('~/models/AgentSeed');
+const { seedWoodlandPrompts } = require('~/models/PromptSeed');
 
 (async () => {
   try {
@@ -12,7 +13,8 @@ const { seedWoodlandAgents } = require('~/models/AgentSeed');
     console.log(`[Woodland Seed] Connecting to ${uri}`);
     await mongoose.connect(uri);
     await seedWoodlandAgents();
-    console.log('[Woodland Seed] Agents reseeded successfully.');
+    await seedWoodlandPrompts();
+    console.log('[Woodland Seed] Agents and Prompts reseeded successfully.');
   } catch (error) {
     console.error('[Woodland Seed] Failed to reseed agents:', error);
     process.exitCode = 1;

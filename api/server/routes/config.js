@@ -1,18 +1,12 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, getBalanceConfig } = require('@librechat/api');
-const {
-  Constants,
-  CacheKeys,
-  removeNullishValues,
-  defaultSocialLogins,
-} = require('librechat-data-provider');
+const { Constants, CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
 const { getProjectByName } = require('~/models/Project');
-const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
-const { mcpServersRegistry } = require('@librechat/api');
+const { getMCPManager, getMCPServersRegistry } = require('~/config');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -44,7 +38,7 @@ const getMCPServers = async (payload, appConfig) => {
     if (!mcpManager) {
       return;
     }
-    const mcpServers = await mcpServersRegistry.getAllServerConfigs();
+    const mcpServers = await getMCPServersRegistry().getAllServerConfigs();
     if (!mcpServers) return;
     for (const serverName in mcpServers) {
       if (!payload.mcpServers) {

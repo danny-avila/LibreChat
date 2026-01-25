@@ -33,6 +33,24 @@ const sanitizeCitations = (text, whitelist = []) => {
 
 const { logger } = require('@librechat/data-schemas');
 
+const HAZARDOUS_TERMS = [
+  /\bduct\s*tape\b/i,
+  /\bmodify\s*engine\b/i,
+  /\bbypass\s*sensor\b/i,
+  /\brig\s*up\b/i,
+  /\btemporary\s*fix\b/i,
+];
+
+const scanForSafety = (text) => {
+  if (typeof text !== 'string') return null;
+  for (const regex of HAZARDOUS_TERMS) {
+    if (regex.test(text)) {
+      return `⚠️ [CRITICAL SAFETY WARNING] Your response contains a suggestion (${text.match(regex)[0]}) that violates Woodland safety policies. DO NOT recommend unsafe workarounds. Please provide authorized procedures only.`;
+    }
+  }
+  return null;
+};
+
 const wrapExecutor = (executor, whitelist, agentName = 'WoodlandAgent') => {
   if (!executor || typeof executor !== 'object') {
     return executor;
@@ -46,6 +64,27 @@ const wrapExecutor = (executor, whitelist, agentName = 'WoodlandAgent') => {
     const original = executor[methodName].bind(executor);
     executor[methodName] = async (input, ...rest) => {
       const result = await original(input, ...rest);
+
+      // Safety Scan
+      let safetyWarning = null;
+      if (typeof result === 'string') {
+        safetyWarning = scanForSafety(result);
+      } else if (result && typeof result === 'object') {
+        safetyWarning = scanForSafety(result.output) || scanForSafety(result.text);
+      }
+
+      if (safetyWarning) {
+        logger.error('[SafetyInterceptor] Blocked hazardous recommendation', {
+          agent: agentName,
+          warning: safetyWarning,
+        });
+        const blockedResponse = `${safetyWarning}\n\n[Human Review Required] This query has been flagged for safety review. Please contact a senior technician.`;
+        if (typeof result === 'string') return blockedResponse;
+        if (result && typeof result === 'object') {
+          return { ...result, output: blockedResponse, text: blockedResponse };
+        }
+      }
+
       if (!whitelist || whitelist.length === 0) {
         return result;
       }

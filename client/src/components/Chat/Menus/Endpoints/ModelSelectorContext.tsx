@@ -104,10 +104,18 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   });
 
   // State
-  const [selectedValues, setSelectedValues] = useState<SelectedValues>({
-    endpoint: endpoint || '',
-    model: model || '',
-    modelSpec: spec || '',
+  const [selectedValues, setSelectedValues] = useState<SelectedValues>(() => {
+    let initialModel = model || '';
+    if (isAgentsEndpoint(endpoint) && agent_id) {
+      initialModel = agent_id;
+    } else if (isAssistantsEndpoint(endpoint) && assistant_id) {
+      initialModel = assistant_id;
+    }
+    return {
+      endpoint: endpoint || '',
+      model: initialModel,
+      modelSpec: spec || '',
+    };
   });
   useSelectorEffects({
     agentsMap,

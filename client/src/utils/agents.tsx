@@ -1,5 +1,6 @@
-import React from 'react';
-import { Bot } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Feather } from 'lucide-react';
+import { Skeleton } from '@librechat/client';
 import type t from 'librechat-data-provider';
 
 /**
@@ -22,6 +23,40 @@ export const getAgentAvatarUrl = (agent: t.Agent | null | undefined): string | n
   return null;
 };
 
+const LazyAgentAvatar = ({
+  url,
+  alt,
+  imgClass,
+}: {
+  url: string;
+  alt: string;
+  imgClass: string;
+}) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    setIsLoaded(false);
+  }, [url]);
+
+  return (
+    <>
+      <img
+        src={url}
+        alt={alt}
+        className={imgClass}
+        loading="lazy"
+        onLoad={() => setIsLoaded(true)}
+        onError={() => setIsLoaded(false)}
+        style={{
+          opacity: isLoaded ? 1 : 0,
+          transition: 'opacity 0.2s ease-in-out',
+        }}
+      />
+      {!isLoaded && <Skeleton className="absolute inset-0 rounded-full" aria-hidden="true" />}
+    </>
+  );
+};
+
 /**
  * Renders an agent avatar with fallback to Bot icon
  * Consistent across all agent displays
@@ -29,7 +64,7 @@ export const getAgentAvatarUrl = (agent: t.Agent | null | undefined): string | n
 export const renderAgentAvatar = (
   agent: t.Agent | null | undefined,
   options: {
-    size?: 'sm' | 'md' | 'lg' | 'xl';
+    size?: 'icon' | 'sm' | 'md' | 'lg' | 'xl';
     className?: string;
     showBorder?: boolean;
   } = {},
@@ -40,6 +75,7 @@ export const renderAgentAvatar = (
 
   // Size mappings for responsive design
   const sizeClasses = {
+    icon: 'h-5 w-5',
     sm: 'h-12 w-12 sm:h-14 sm:w-14',
     md: 'h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24',
     lg: 'h-20 w-20 sm:h-24 sm:w-24 md:h-28 md:w-28',
@@ -47,6 +83,7 @@ export const renderAgentAvatar = (
   };
 
   const iconSizeClasses = {
+    icon: 'h-4 w-4',
     sm: 'h-6 w-6 sm:h-7 sm:w-7',
     md: 'h-6 w-6 sm:h-8 sm:w-8 md:h-10 md:w-10',
     lg: 'h-8 w-8 sm:h-10 sm:w-10 md:h-12 md:w-12',
@@ -54,6 +91,7 @@ export const renderAgentAvatar = (
   };
 
   const placeholderSizeClasses = {
+    icon: 'h-5 w-5',
     sm: 'h-10 w-10 sm:h-12 sm:w-12',
     md: 'h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20',
     lg: 'h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24',
@@ -64,27 +102,21 @@ export const renderAgentAvatar = (
 
   if (avatarUrl) {
     return (
-      <div className={`flex items-center justify-center ${sizeClasses[size]} ${className}`}>
-        <img
-          src={avatarUrl}
+      <div
+        className={`relative flex items-center justify-center ${sizeClasses[size]} ${className}`}
+      >
+        <LazyAgentAvatar
+          url={avatarUrl}
           alt={`${agent?.name || 'Agent'} avatar`}
-          className={`${sizeClasses[size]} rounded-full object-cover shadow-lg ${borderClasses}`}
-          loading="lazy"
+          imgClass={`${sizeClasses[size]} rounded-full object-cover shadow-lg ${borderClasses}`}
         />
       </div>
     );
   }
 
-  // Fallback placeholder with Bot icon
   return (
     <div className={`relative flex items-center justify-center ${sizeClasses[size]} ${className}`}>
-      {/* Subtle minimalistic placeholder */}
-      <div className="absolute inset-0 rounded-full border border-border-medium bg-surface-secondary"></div>
-      <div
-        className={`relative flex items-center justify-center rounded-full ${placeholderSizeClasses[size]}`}
-      >
-        <Bot className={`text-text-primary ${iconSizeClasses[size]}`} strokeWidth={1.5} />
-      </div>
+      <Feather className={`text-text-primary ${iconSizeClasses[size]}`} strokeWidth={1.5} />
     </div>
   );
 };

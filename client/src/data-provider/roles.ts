@@ -6,6 +6,7 @@ import {
   memoryPermissionsSchema,
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
+  mcpServersPermissionsSchema,
 } from 'librechat-data-provider';
 import type {
   UseQueryOptions,
@@ -161,6 +162,42 @@ export const useUpdatePeoplePickerPermissionsMutation = (
         const error = args[0];
         if (error != null) {
           console.error('Failed to update people picker permissions:', error);
+        }
+        if (onError) {
+          onError(...args);
+        }
+      },
+      onMutate,
+    },
+  );
+};
+
+export const useUpdateMCPServersPermissionsMutation = (
+  options?: t.UpdateMCPServersPermOptions,
+): UseMutationResult<
+  t.UpdatePermResponse,
+  t.TError | undefined,
+  t.UpdateMCPServersPermVars,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onMutate, onSuccess, onError } = options ?? {};
+  return useMutation(
+    (variables) => {
+      mcpServersPermissionsSchema.partial().parse(variables.updates);
+      return dataService.updateMCPServersPermissions(variables);
+    },
+    {
+      onSuccess: (data, variables, context) => {
+        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
+        if (onSuccess) {
+          onSuccess(data, variables, context);
+        }
+      },
+      onError: (...args) => {
+        const error = args[0];
+        if (error != null) {
+          console.error('Failed to update MCP servers permissions:', error);
         }
         if (onError) {
           onError(...args);

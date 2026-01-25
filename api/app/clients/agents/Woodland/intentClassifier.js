@@ -26,10 +26,13 @@ Identify SPECIFIC missing data required to answer accurately:
 Return strict JSON only:
 {
   "primary_intent": "sales | parts | support | tractor_fitment | cases | service",
-  "secondary_intents": ["parts"],  // Additional domains if question spans multiple
-  "confidence": 0.87,  // Score from 0.0 to 1.0 based on clarity
-  "missing_anchors": ["tractor make", "deck width"],  // Specific missing data items
-  "clarifying_question": "To recommend the right adapter, I need your tractor's make, model, and deck width. What tractor are you using?"  // null if all anchors present
+  "secondary_intents": ["parts"],
+  "confidence": 0.87,
+  "missing_anchors": [
+    {"key": "tractor make", "type": "text", "label": "Tractor Brand"},
+    {"key": "deck width", "type": "select", "options": ["32", "42", "48", "54", "60"], "label": "Deck Size (Inches)"}
+  ],
+  "clarifying_question": "To recommend the right adapter, I need your tractor's make, model, and deck width. What tractor are you using?"
 }
 
 VALIDATION RULES:

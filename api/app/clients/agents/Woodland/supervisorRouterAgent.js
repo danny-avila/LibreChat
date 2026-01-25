@@ -42,6 +42,7 @@ const DOMAIN_AGENT_CONFIGS = [
 
 const DEFAULT_MAX_DOMAIN_TOOLS = 4;
 const DEFAULT_LOW_CONFIDENCE_THRESHOLD = 0.55;
+const HARD_BLOCK_THRESHOLD = 0.5;
 const HIGH_CONFIDENCE_THRESHOLD = 0.8;
 const HIGH_CONFIDENCE_TOOL_CAP = 2;
 
@@ -168,7 +169,7 @@ const resolveDomainTools = (
       .filter((name) => availableSet.has(name))
       .slice(0, 1)
       .forEach((name) => addTool(name, { front: true }));
-    
+
     logger?.warn?.('[SupervisorRouter] Low confidence classification', {
       primaryIntent,
       confidence,
@@ -190,7 +191,7 @@ const resolveDomainTools = (
       : DEFAULT_MAX_DOMAIN_TOOLS;
 
   let recommended = selections.slice(0, maxTools);
-  
+
   // Ensure Cases agent is always included for validation
   if (!recommended.includes('CasesReferenceAgent') && availableSet.has('CasesReferenceAgent')) {
     if (recommended.length >= maxTools) {
@@ -412,12 +413,18 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
         if (result.sources) result.sources = validated;
         result.url_validation = {
           performed: true,
-            removed,
-            timestamp: new Date().toISOString(),
+          removed,
+          timestamp: new Date().toISOString(),
         };
       }
     } catch (error) {
       logger?.warn?.('[SupervisorRouter] URL validation failed', { error: error?.message });
+    }
+    if (result && typeof result === 'object' && augmented?.intentMetadata) {
+      result.metadata = {
+        ...result.metadata,
+        ...augmented.intentMetadata,
+      };
     }
     return result;
   };
@@ -486,7 +493,7 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     const confidence = typeof metadata.confidence === 'number' ? metadata.confidence : null;
     const missingAnchors = Array.isArray(metadata.missing_anchors) ? metadata.missing_anchors : [];
     const clarifyingQuestion = metadata.clarifying_question || null;
-    
+
     // Log classification results for debugging
     logger?.info?.('[SupervisorRouter] Intent classification', {
       primaryIntent,
@@ -495,7 +502,7 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
       missingAnchors,
       hasClarifyingQuestion: !!clarifyingQuestion,
     });
-    
+
     const recommendedTools = resolveDomainTools(
       { primaryIntent, secondaryIntents, confidence },
       original,
@@ -504,12 +511,17 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
 
     // Build enhanced input with validation guidance
     const validationGuidance = [];
-    
+
+    const HARD_BLOCK_THRESHOLD = 0.6; // Define the constant here as it's used within this function.
+
     if (confidence != null && confidence < 0.7) {
-      validationGuidance.push(`[Low Confidence Warning: ${confidence.toFixed(2)}]`);
-      validationGuidance.push('Before answering, verify you have enough context to provide accurate guidance.');
+      const isHardBlock = confidence < HARD_BLOCK_THRESHOLD;
+      validationGuidance.push(isHardBlock ? `[HARD BLOCK: Confidence ${confidence.toFixed(2)} is too low]` : `[Low Confidence Warning: ${confidence.toFixed(2)}]`);
+      validationGuidance.push(isHardBlock
+        ? 'CRITICAL: Do NOT call domain agents. You MUST ask the clarifying_question provided below.'
+        : 'Before answering, verify you have enough context to provide accurate guidance.');
     }
-    
+
     if (missingAnchors.length > 0) {
       validationGuidance.push(`[Missing Required Data: ${missingAnchors.join(', ')}]`);
       if (clarifyingQuestion) {
@@ -518,30 +530,29 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
         validationGuidance.push(`Collect these anchors before routing to domain tools.`);
       }
     }
-    
-    if (clarifyingQuestion && missingAnchors.length > 0) {
+
+    if (clarifyingQuestion && (missingAnchors.length > 0 || (confidence != null && confidence < HARD_BLOCK_THRESHOLD))) {
       validationGuidance.push('[Action Required: Ask clarifying question BEFORE calling domain tools]');
     }
 
     const inputLines = [
-      `[Intent Classification]`,
+      '[Intent Classification]',
       `primary_intent: ${primaryIntent}`,
       `secondary_intents: ${secondaryIntents.join(', ') || 'none'}`,
       `confidence: ${confidence != null ? confidence.toFixed(2) : 'n/a'}`,
-      `missing_anchors: ${missingAnchors.join(', ') || 'none'}`,
+      `missing_anchors: ${JSON.stringify(missingAnchors)}`,
       `clarifying_question: ${clarifyingQuestion || 'none'}`,
-      `[/Intent Classification]`,
+      '[/Intent Classification]',
       '',
     ];
-    
-    // Add validation guidance if present
+
     if (validationGuidance.length > 0) {
       inputLines.push('[Validation Guidance]');
       inputLines.push(...validationGuidance);
       inputLines.push('[/Validation Guidance]');
       inputLines.push('');
     }
-    
+
     inputLines.push(original);
 
     return {

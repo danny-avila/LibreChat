@@ -394,6 +394,34 @@ describe('findOpenIDUser', () => {
       expect(mockFindUser).toHaveBeenCalledWith({ email: 'user@example.com' });
     });
 
+    it('should pass email to findUser for case-insensitive lookup (findUser handles normalization)', async () => {
+      const mockUser: IUser = {
+        _id: 'user123',
+        provider: 'openid',
+        openidId: 'openid_456',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser
+        .mockResolvedValueOnce(null) // Primary condition fails
+        .mockResolvedValueOnce(mockUser); // Email search succeeds
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        findUser: mockFindUser,
+        email: 'User@Example.COM',
+      });
+
+      /** Email is passed as-is; findUser implementation handles normalization */
+      expect(mockFindUser).toHaveBeenNthCalledWith(2, { email: 'User@Example.COM' });
+      expect(result).toEqual({
+        user: mockUser,
+        error: null,
+        migration: false,
+      });
+    });
+
     it('should handle findUser throwing an error', async () => {
       mockFindUser.mockRejectedValueOnce(new Error('Database error'));
 

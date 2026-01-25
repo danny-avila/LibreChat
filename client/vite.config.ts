@@ -110,6 +110,20 @@ export default defineConfig(({ command }) => ({
           const normalizedId = id.replace(/\\/g, '/');
           if (normalizedId.includes('node_modules')) {
             // High-impact chunking for large libraries
+
+            // IMPORTANT: mermaid and ALL its dependencies must be in the same chunk
+            // to avoid initialization order issues. This includes chevrotain, langium,
+            // dagre-d3-es, and their nested lodash-es dependencies.
+            if (
+              normalizedId.includes('mermaid') ||
+              normalizedId.includes('dagre-d3-es') ||
+              normalizedId.includes('chevrotain') ||
+              normalizedId.includes('langium') ||
+              normalizedId.includes('lodash-es')
+            ) {
+              return 'mermaid';
+            }
+
             if (normalizedId.includes('@codesandbox/sandpack')) {
               return 'sandpack';
             }
@@ -119,7 +133,8 @@ export default defineConfig(({ command }) => ({
             if (normalizedId.includes('i18next') || normalizedId.includes('react-i18next')) {
               return 'i18n';
             }
-            if (normalizedId.includes('lodash')) {
+            // Only regular lodash (not lodash-es which goes to mermaid chunk)
+            if (normalizedId.includes('/lodash/')) {
               return 'utilities';
             }
             if (normalizedId.includes('date-fns')) {
