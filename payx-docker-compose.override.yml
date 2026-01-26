@@ -53,6 +53,7 @@ services:
     hostname: atlas
     restart: unless-stopped
     image: mongodb/mongodb-atlas-local
+    user: "1000:1000"
     ports:
       - 27017:27017
     volumes:

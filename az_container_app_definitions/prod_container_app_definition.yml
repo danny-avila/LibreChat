@@ -34,6 +34,9 @@ properties:
       - name: maas-api-key
         keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-MAAS-API-KEY
         identity: system
+      - name: tavily-api-key
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-TAVILY-API-KEY
+        identity: system
     activeRevisionsMode: single
     registries:
       - server: conpaychexaiprod001.azurecr.io
@@ -88,6 +91,12 @@ properties:
           value: "https://service-internal.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}"
         - name: AZURE_OPENAI_API_KEY
           secretRef: maas-api-key
+        - name: GCP_VERTEXAI_BASEURL
+          value: https://service-internal.paychex.com/is/librechat  
+        - name: GCP_VERTEXAI_API_KEY
+          secretRef: maas-api-key
+        - name: TAVILY_API_KEY
+          secretRef: tavily-api-key
         - name: ALLOW_REGISTRATION
           value: FALSE
         - name: ALLOW_EMAIL_LOGIN
@@ -118,6 +127,11 @@ properties:
         cpu: 1
         memory: 8Gi
         ephemeralStorage: 4Gi
+      volumeMounts:
+        - volumeName: fspaichateastusprod001
+          mountPath: /app/uploads
+        - volumeName: fspaichateastusprod001
+          mountPath: /app/client/public/images
     - image: conpaychexaiprod001.azurecr.io/paychex/rag_api:prod.latest
       name: conpairag
       env:
@@ -160,8 +174,8 @@ properties:
         - volumeName: fspaichateastusprod001
           mountPath: /app/uploads
     scale:
-      minReplicas: 6
-      maxReplicas: 24
+      minReplicas: 3
+      maxReplicas: 6
       rules:
       - name: httpscalingrule
         custom:

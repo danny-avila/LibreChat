@@ -56,6 +56,9 @@ properties:
       - name: maas-api-key
         keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-MAAS-API-KEY
         identity: system
+      - name: tavily-api-key
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-TAVILY-API-KEY
+        identity: system
     activeRevisionsMode: Single
     ingress:
       external: true
@@ -116,6 +119,10 @@ properties:
             value: https://service-internal-n2a.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}
           - name: AZURE_OPENAI_API_KEY
             secretRef: maas-api-key
+          - name: GCP_VERTEXAI_BASEURL
+            value: https://service-internal-n2a.paychex.com/is/librechat  
+          - name: GCP_VERTEXAI_API_KEY
+            secretRef: maas-api-key
           - name: ALLOW_REGISTRATION
             value: FALSE
           - name: ALLOW_EMAIL_LOGIN
@@ -142,11 +149,26 @@ properties:
             value: TRUE
           - name: DEBUG_LOGGING
             value: TRUE
+          - name: TAVILY_API_KEY
+            secretRef: tavily-api-key
+          - name: NODE_OPTIONS
+            value: --max-old-space-size=4096
+          - name: BAN_VIOLATIONS
+            value: FALSE
+          - name: LOGIN_MAX
+            value: 5000
+          - name: LIMIT_MESSAGE_IP
+            value: FALSE
         resources:
           cpu: 2
           memory: 4Gi
           ephemeralStorage: 4Gi
         probes: []
+        volumeMounts:
+          - volumeName: fspaichateastusn2a001
+            mountPath: /app/uploads
+          - volumeName: fspaichateastusn2a001
+            mountPath: /app/client/public/images
       - image: conpaychexaiprod001.azurecr.io/paychex/rag_api:n2a.latest
         name: conpairag
         env:

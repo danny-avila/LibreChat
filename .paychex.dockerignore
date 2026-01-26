@@ -8,6 +8,8 @@
 
 # Specific patterns to ignore
 data-node
+data
+config-db
 meili_data*
 Dockerfile*
 docs

@@ -2,17 +2,77 @@ version: 1.0.0
 cache: true
 interface:
   agents: false
-  webSearch: false
   runCode: false
+  modelSelect: true
+  parameters: true
+  presets: true
+  prompts: true
+modelSpecs:
+  addedEndpoints:
+    - azureOpenAI
+    - "Gemini 2.5 Pro"
+    - "Gemini 2.5 Flash"
+    - "Claude Sonnet 4.5"
+  list:
+    - name: azure-gpt-4o
+      label: GPT-4o
+      default: true
+      description: For daily tasks with a quick response time.
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-4o
+    - name: azure-gpt-4o-mini
+      label: GPT-4o Mini
+      description: Offers simpler, more instant responses.
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-4o-mini
+    - name: azure-gpt-41
+      label: GPT-4.1
+      description: For complex reasoning and coding.
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-41
+    - name: azure-gpt-41-mini
+      label: GPT-4.1 Mini
+      description: A faster, more lightweight version of GPT-4.1.
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-41-mini
+    - name: azure-gpt-5
+      label: GPT-5
+      description: For advanced tasks with the highest accuracy and reasoning depth.
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-5
+    - name: google-gemini-25-pro
+      label: Gemini 2.5 Pro
+      description: Quickly analyze complex, mixed media content.
+      preset:
+        endpoint: "Gemini 2.5 Pro"
+        model: gemini-2.5-pro
+    - name: google-gemini-25-flash
+      label: Gemini 2.5 Flash
+      description: A faster, more lightweight version of Gemini 2.5 Pro.
+      preset:
+        endpoint: "Gemini 2.5 Flash"
+        model: gemini-2.5-flash
+    - name: anthropic-claude-sonnet-45
+      label: Claude Sonnet 4.5 (Limited)
+      description: For extended reasoning, coding, and automation. This model is being evaluated. It can be used a limited number of times.
+      preset:
+        endpoint: "Claude Sonnet 4.5"
+        model: claude-sonnet-4-5
+mcpServers:
+  Internet Search (Tavily):
+    type: streamable-http
+    url: https://mcp.tavily.com/mcp/
+    headers:
+      Authorization: "Bearer ${TAVILY_API_KEY}"
 endpoints:
-  agents:
-    capabilities:
-      - "file_search"
-      - "context"
-    
   azureOpenAI:
     # Endpoint-level configuration
-    titleModel: "gpt-4o-mini"
+    titleModel: "gpt-4o"
     plugins: false
     assistants: false
     groups:
@@ -24,6 +84,9 @@ endpoints:
       version: "2024-10-21"
       # Model-level configuration
       models:
+        gpt-5:
+          deploymentName: gpt-5
+          version: "2024-10-21"
         gpt-4o:
           deploymentName: gpt-4o
           version: "2024-10-21"
@@ -36,3 +99,52 @@ endpoints:
         gpt-41-mini:
           deploymentName: gpt-41-mini
           version: "2024-10-21"
+  custom:
+    - name: "Gemini 2.5 Pro"
+      apiKey: "${GCP_VERTEXAI_API_KEY}"
+      baseURL: "${GCP_VERTEXAI_BASEURL}/gemini-2.5-pro/v1"
+      directEndpoint: true
+      models:
+        default:
+          - gemini-2.5-pro
+      titleModel: "gemini-2.5-pro"
+      titleConvo: true
+      modelDisplayLabel: "gemini-2.5-pro"
+      addParams:
+        streaming: false
+        disableStreaming: true
+      dropParams:
+        - stream
+        - streaming
+    - name: "Gemini 2.5 Flash"
+      apiKey: "${GCP_VERTEXAI_API_KEY}"
+      baseURL: "${GCP_VERTEXAI_BASEURL}/gemini-2.5-flash/v1"
+      directEndpoint: true
+      models:
+        default:
+          - gemini-2.5-flash
+      titleModel: "gemini-2.5-flash"
+      titleConvo: true
+      modelDisplayLabel: "gemini-2.5-flash"
+      addParams:
+        streaming: false
+        disableStreaming: true
+      dropParams:
+        - stream
+        - streaming
+    - name: "Claude Sonnet 4.5"
+      apiKey: "${GCP_VERTEXAI_API_KEY}"
+      baseURL: "${GCP_VERTEXAI_BASEURL}/claude-sonnet-4-5/v1"
+      directEndpoint: true
+      models:
+        default:
+          - claude-sonnet-4-5
+      titleModel: "claude-sonnet-4-5"
+      titleConvo: true
+      modelDisplayLabel: "claude-sonnet-4-5"
+      addParams:
+        streaming: false
+        disableStreaming: true
+      dropParams:
+        - stream
+        - streaming
