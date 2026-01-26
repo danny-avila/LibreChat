@@ -16,13 +16,24 @@ const {
 const { getLogStores } = require('~/cache');
 
 /**
+ * Determines if secure cookies should be used.
+ * Only use secure cookies in production when not on localhost.
+ * @returns {boolean}
+ */
+function shouldUseSecureCookie() {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const domainServer = process.env.DOMAIN_SERVER || '';
+  const isLocalhost = domainServer.includes('localhost') || domainServer.includes('127.0.0.1');
+  return isProduction && !isLocalhost;
+}
+
+/**
  * Configures OpenID Connect for the application.
  * @param {Express.Application} app - The Express application instance.
  * @returns {Promise<void>}
  */
 async function configureOpenId(app) {
   logger.info('Configuring OpenID Connect...');
-  const isProduction = process.env.NODE_ENV === 'production';
   const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
   const sessionOptions = {
     secret: process.env.OPENID_SESSION_SECRET,
@@ -31,7 +42,7 @@ async function configureOpenId(app) {
     store: getLogStores(CacheKeys.OPENID_SESSION),
     cookie: {
       maxAge: sessionExpiry,
-      secure: isProduction,
+      secure: shouldUseSecureCookie(),
     },
   };
   app.use(session(sessionOptions));
@@ -88,7 +99,6 @@ const configureSocialLogins = async (app) => {
     process.env.SAML_SESSION_SECRET
   ) {
     logger.info('Configuring SAML Connect...');
-    const isProduction = process.env.NODE_ENV === 'production';
     const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
     const sessionOptions = {
       secret: process.env.SAML_SESSION_SECRET,
@@ -97,7 +107,7 @@ const configureSocialLogins = async (app) => {
       store: getLogStores(CacheKeys.SAML_SESSION),
       cookie: {
         maxAge: sessionExpiry,
-        secure: isProduction,
+        secure: shouldUseSecureCookie(),
       },
     };
     app.use(session(sessionOptions));
