@@ -99,17 +99,13 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const getModelDisplayName = useCallback(
     (endpoint: Endpoint, model: string): string => {
       if (isAgentsEndpoint(endpoint.value)) {
-        if (endpoint.agentNames && endpoint.agentNames[model]) {
-          return endpoint.agentNames[model];
-        }
-        if (agentsMap?.[model]?.name) {
-          return agentsMap[model].name;
-        }
-      } else if (isAssistantsEndpoint(endpoint.value)) {
-        if (endpoint.assistantNames && endpoint.assistantNames[model]) {
-          return endpoint.assistantNames[model];
-        }
+        return endpoint.agentNames?.[model] ?? agentsMap?.[model]?.name ?? model;
       }
+
+      if (isAssistantsEndpoint(endpoint.value)) {
+        return endpoint.assistantNames?.[model] ?? model;
+      }
+
       return model;
     },
     [agentsMap],
