@@ -486,7 +486,7 @@ function createToolInstance({
       // mcpManager.callTool returns FormattedContentResult: [content, artifacts]
       // This tuple format is already handled by formatToolContent in @librechat/api
       // and is compatible with responseFormat: CONTENT_AND_ARTIFACT
-      return await mcpManager.callTool({
+      const result = await mcpManager.callTool({
         serverName,
         toolName,
         provider,
@@ -506,6 +506,7 @@ function createToolInstance({
         oauthStart,
         oauthEnd,
       });
+      return result;
     } catch (error) {
       logger.error(
         `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
