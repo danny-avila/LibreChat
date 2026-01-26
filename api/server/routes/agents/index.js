@@ -20,30 +20,16 @@ const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 const router = express.Router();
 
 /**
- * Open Responses API routes - mounted BEFORE auth middleware for testing
- * TODO: Add API key authentication for production use
- *
+ * Open Responses API routes (API key authentication handled in route file)
  * Mounted at /agents/v1/responses (full path: /api/agents/v1/responses)
  * NOTE: Must be mounted BEFORE /v1 to avoid being caught by the less specific route
- *
- * Available endpoints:
- *   POST /v1/responses - Create a response (streaming/non-streaming)
- *   GET /v1/responses/models - List available agents
- *
  * @see https://openresponses.org/specification
  */
 router.use('/v1/responses', responses);
 
 /**
- * OpenAI-compatible API routes - mounted BEFORE auth middleware for testing
- * TODO: Add API key authentication for production use
- *
+ * OpenAI-compatible API routes (API key authentication handled in route file)
  * Mounted at /agents/v1 (full path: /api/agents/v1/chat/completions)
- *
- * Available endpoints:
- *   POST /v1/chat/completions - Chat with an agent (streaming/non-streaming)
- *   GET /v1/models - List available agents
- *   GET /v1/models/:model - Get agent details
  */
 router.use('/v1', openai);
 
