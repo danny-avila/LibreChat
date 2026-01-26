@@ -112,6 +112,7 @@ const BookmarkTable = () => {
                   variant="outline"
                   size="sm"
                   className="w-full gap-2 text-sm"
+                  aria-label={localize('com_ui_bookmarks_new')}
                   onClick={() => setOpen(!open)}
                 >
                   <BookmarkPlusIcon className="size-4" />

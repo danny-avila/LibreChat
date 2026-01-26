@@ -87,7 +87,7 @@ export default function FilterPrompts({ className = '' }: { className?: string }
         value={categoryFilter || SystemCategories.ALL}
         onChange={onSelect}
         options={filterOptions}
-        className="bg-transparent"
+        className="rounded-lg bg-transparent"
         icon={<ListFilter className="h-4 w-4" />}
         label="Filter: "
         ariaLabel={localize('com_ui_filter_prompts')}

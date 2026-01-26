@@ -58,6 +58,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
           checked={field.value}
           onCheckedChange={field.onChange}
           value={field.value.toString()}
+          aria-label={label}
         />
       )}
     />

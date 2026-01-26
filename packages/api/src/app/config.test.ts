@@ -1,8 +1,8 @@
 import { getTransactionsConfig, getBalanceConfig } from './config';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
-import type { AppConfig } from '~/types';
 import type { TCustomConfig } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 
 // Helper function to create a minimal AppConfig for testing
 const createTestAppConfig = (overrides: Partial<AppConfig> = {}): AppConfig => {
@@ -40,7 +40,6 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/utils', () => ({
   isEnabled: jest.fn((value) => value === 'true'),
-  normalizeEndpointName: jest.fn((name) => name),
 }));
 
 describe('getTransactionsConfig', () => {

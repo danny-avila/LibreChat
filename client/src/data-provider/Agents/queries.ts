@@ -1,17 +1,12 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Constants,
-  QueryKeys,
-  dataService,
-  EModelEndpoint,
-  PermissionBits,
-} from 'librechat-data-provider';
+import { QueryKeys, dataService, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
 import type {
   QueryObserverResult,
   UseQueryOptions,
   UseInfiniteQueryOptions,
 } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
+import { isEphemeralAgent } from '~/common';
 
 /**
  * AGENTS
@@ -73,11 +68,7 @@ export const useGetAgentByIdQuery = (
   agent_id: string | null | undefined,
   config?: UseQueryOptions<t.Agent>,
 ): QueryObserverResult<t.Agent> => {
-  const isValidAgentId = !!(
-    agent_id &&
-    agent_id !== '' &&
-    agent_id !== Constants.EPHEMERAL_AGENT_ID
-  );
+  const isValidAgentId = !!agent_id && !isEphemeralAgent(agent_id);
 
   return useQuery<t.Agent>(
     [QueryKeys.agent, agent_id],

@@ -10,6 +10,18 @@ jest.mock('@librechat/agents', () => ({
   }),
 }));
 
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+}));
+
+// Mock getMCPManager
+const mockFormatInstructions = jest.fn();
+jest.mock('~/config', () => ({
+  getMCPManager: jest.fn(() => ({
+    formatInstructionsForContext: mockFormatInstructions,
+  })),
+}));
+
 describe('AgentClient - titleConvo', () => {
   let client;
   let mockRun;
@@ -252,6 +264,38 @@ describe('AgentClient - titleConvo', () => {
       expect(result).toBe('Generated Title');
     });
 
+    it('should sanitize the generated title by removing think blocks', async () => {
+      const titleWithThinkBlock = '<think>reasoning about the title</think> User Hi Greeting';
+      mockRun.generateTitle.mockResolvedValue({
+        title: titleWithThinkBlock,
+      });
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should remove the <think> block and return only the clean title
+      expect(result).toBe('User Hi Greeting');
+      expect(result).not.toContain('<think>');
+      expect(result).not.toContain('</think>');
+    });
+
+    it('should return fallback title when sanitization results in empty string', async () => {
+      const titleOnlyThinkBlock = '<think>only reasoning no actual title</think>';
+      mockRun.generateTitle.mockResolvedValue({
+        title: titleOnlyThinkBlock,
+      });
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should return the fallback title since sanitization would result in empty string
+      expect(result).toBe('Untitled Conversation');
+    });
+
     it('should handle errors gracefully and return undefined', async () => {
       mockRun.generateTitle.mockRejectedValue(new Error('Title generation failed'));
 
@@ -261,6 +305,125 @@ describe('AgentClient - titleConvo', () => {
       const result = await client.titleConvo({ text, abortController });
 
       expect(result).toBeUndefined();
+    });
+
+    it('should skip title generation when titleConvo is set to false', async () => {
+      // Set titleConvo to false in endpoint config
+      mockReq.config = {
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titleConvo: false,
+            titleModel: 'gpt-3.5-turbo',
+            titlePrompt: 'Custom title prompt',
+            titleMethod: 'structured',
+            titlePromptTemplate: 'Template: {{content}}',
+          },
+        },
+      };
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should return undefined without generating title
+      expect(result).toBeUndefined();
+
+      // generateTitle should NOT have been called
+      expect(mockRun.generateTitle).not.toHaveBeenCalled();
+
+      // recordCollectedUsage should NOT have been called
+      expect(client.recordCollectedUsage).not.toHaveBeenCalled();
+    });
+
+    it('should skip title generation when titleConvo is false in all config', async () => {
+      // Set titleConvo to false in "all" config
+      mockReq.config = {
+        endpoints: {
+          all: {
+            titleConvo: false,
+            titleModel: 'gpt-4o-mini',
+            titlePrompt: 'All config title prompt',
+            titleMethod: 'completion',
+            titlePromptTemplate: 'All config template',
+          },
+        },
+      };
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should return undefined without generating title
+      expect(result).toBeUndefined();
+
+      // generateTitle should NOT have been called
+      expect(mockRun.generateTitle).not.toHaveBeenCalled();
+
+      // recordCollectedUsage should NOT have been called
+      expect(client.recordCollectedUsage).not.toHaveBeenCalled();
+    });
+
+    it('should skip title generation when titleConvo is false for custom endpoint scenario', async () => {
+      // This test validates the behavior when customEndpointConfig (retrieved via
+      // getProviderConfig for custom endpoints) has titleConvo: false.
+      //
+      // The code path is:
+      // 1. endpoints?.all is checked (undefined in this test)
+      // 2. endpoints?.[endpoint] is checked (our test config)
+      // 3. Would fall back to titleProviderConfig.customEndpointConfig (for real custom endpoints)
+      //
+      // We simulate a custom endpoint scenario using a dynamically named endpoint config
+
+      // Create a unique endpoint name that represents a custom endpoint
+      const customEndpointName = 'customEndpoint';
+
+      // Configure the endpoint to have titleConvo: false
+      // This simulates what would be in customEndpointConfig for a real custom endpoint
+      mockReq.config = {
+        endpoints: {
+          // No 'all' config - so it will check endpoints[endpoint]
+          // This config represents what customEndpointConfig would contain
+          [customEndpointName]: {
+            titleConvo: false,
+            titleModel: 'custom-model-v1',
+            titlePrompt: 'Custom endpoint title prompt',
+            titleMethod: 'completion',
+            titlePromptTemplate: 'Custom template: {{content}}',
+            baseURL: 'https://api.custom-llm.com/v1',
+            apiKey: 'test-custom-key',
+            // Additional custom endpoint properties
+            models: {
+              default: ['custom-model-v1', 'custom-model-v2'],
+            },
+          },
+        },
+      };
+
+      // Set up agent to use our custom endpoint
+      // Use openAI as base but override with custom endpoint name for this test
+      mockAgent.endpoint = EModelEndpoint.openAI;
+      mockAgent.provider = EModelEndpoint.openAI;
+
+      // Override the endpoint in the config to point to our custom config
+      mockReq.config.endpoints[EModelEndpoint.openAI] =
+        mockReq.config.endpoints[customEndpointName];
+      delete mockReq.config.endpoints[customEndpointName];
+
+      const text = 'Test custom endpoint conversation';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should return undefined without generating title because titleConvo is false
+      expect(result).toBeUndefined();
+
+      // generateTitle should NOT have been called
+      expect(mockRun.generateTitle).not.toHaveBeenCalled();
+
+      // recordCollectedUsage should NOT have been called
+      expect(client.recordCollectedUsage).not.toHaveBeenCalled();
     });
 
     it('should pass titleEndpoint configuration to generateTitle', async () => {
@@ -826,7 +989,7 @@ describe('AgentClient - titleConvo', () => {
       };
 
       // Simulate the getOptions logic that handles GPT-5+ models
-      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      if (/\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
         clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
         clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
         delete clientOptions.maxTokens;
@@ -846,7 +1009,7 @@ describe('AgentClient - titleConvo', () => {
         useResponsesApi: true,
       };
 
-      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      if (/\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
         clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
         const paramName =
           clientOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
@@ -871,7 +1034,7 @@ describe('AgentClient - titleConvo', () => {
       };
 
       // Simulate the getOptions logic
-      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      if (/\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
         clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
         clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
         delete clientOptions.maxTokens;
@@ -892,7 +1055,7 @@ describe('AgentClient - titleConvo', () => {
       };
 
       // Simulate the getOptions logic
-      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      if (/\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
         clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
         clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
         delete clientOptions.maxTokens;
@@ -905,6 +1068,9 @@ describe('AgentClient - titleConvo', () => {
 
     it('should handle various GPT-5+ model formats', () => {
       const testCases = [
+        { model: 'gpt-5.1', shouldTransform: true },
+        { model: 'gpt-5.1-chat-latest', shouldTransform: true },
+        { model: 'gpt-5.1-codex', shouldTransform: true },
         { model: 'gpt-5', shouldTransform: true },
         { model: 'gpt-5-turbo', shouldTransform: true },
         { model: 'gpt-6', shouldTransform: true },
@@ -924,7 +1090,10 @@ describe('AgentClient - titleConvo', () => {
         };
 
         // Simulate the getOptions logic
-        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        if (
+          /\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) &&
+          clientOptions.maxTokens != null
+        ) {
           clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
           clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
           delete clientOptions.maxTokens;
@@ -942,6 +1111,9 @@ describe('AgentClient - titleConvo', () => {
 
     it('should not swap max token param for older models when using useResponsesApi', () => {
       const testCases = [
+        { model: 'gpt-5.1', shouldTransform: true },
+        { model: 'gpt-5.1-chat-latest', shouldTransform: true },
+        { model: 'gpt-5.1-codex', shouldTransform: true },
         { model: 'gpt-5', shouldTransform: true },
         { model: 'gpt-5-turbo', shouldTransform: true },
         { model: 'gpt-6', shouldTransform: true },
@@ -961,7 +1133,10 @@ describe('AgentClient - titleConvo', () => {
           useResponsesApi: true,
         };
 
-        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        if (
+          /\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) &&
+          clientOptions.maxTokens != null
+        ) {
           clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
           const paramName =
             clientOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
@@ -994,7 +1169,10 @@ describe('AgentClient - titleConvo', () => {
         };
 
         // Simulate the getOptions logic
-        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        if (
+          /\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) &&
+          clientOptions.maxTokens != null
+        ) {
           clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
           clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
           delete clientOptions.maxTokens;
@@ -1010,6 +1188,200 @@ describe('AgentClient - titleConvo', () => {
           expect(clientOptions.modelKwargs?.max_completion_tokens).toBe(0);
         }
       });
+    });
+  });
+
+  describe('buildMessages with MCP server instructions', () => {
+    let client;
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      // Reset the mock to default behavior
+      mockFormatInstructions.mockResolvedValue(
+        '# MCP Server Instructions\n\nTest MCP instructions here',
+      );
+
+      const { DynamicStructuredTool } = require('@langchain/core/tools');
+
+      // Create mock MCP tools with the delimiter pattern
+      const mockMCPTool1 = new DynamicStructuredTool({
+        name: `tool1${Constants.mcp_delimiter}server1`,
+        description: 'Test MCP tool 1',
+        schema: {},
+        func: async () => 'result',
+      });
+
+      const mockMCPTool2 = new DynamicStructuredTool({
+        name: `tool2${Constants.mcp_delimiter}server2`,
+        description: 'Test MCP tool 2',
+        schema: {},
+        func: async () => 'result',
+      });
+
+      mockAgent = {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        instructions: 'Base agent instructions',
+        model_parameters: {
+          model: 'gpt-4',
+        },
+        tools: [mockMCPTool1, mockMCPTool2],
+      };
+
+      mockReq = {
+        user: {
+          id: 'user-123',
+        },
+        body: {
+          endpoint: EModelEndpoint.openAI,
+        },
+        config: {},
+      };
+
+      mockRes = {};
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+        endpoint: EModelEndpoint.agents,
+      };
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+    });
+
+    it('should await MCP instructions and not include [object Promise] in agent instructions', async () => {
+      // Set specific return value for this test
+      mockFormatInstructions.mockResolvedValue(
+        '# MCP Server Instructions\n\nUse these tools carefully',
+      );
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: 'Base instructions',
+        additional_instructions: null,
+      });
+
+      // Verify formatInstructionsForContext was called with correct server names
+      expect(mockFormatInstructions).toHaveBeenCalledWith(['server1', 'server2']);
+
+      // Verify the instructions do NOT contain [object Promise]
+      expect(client.options.agent.instructions).not.toContain('[object Promise]');
+
+      // Verify the instructions DO contain the MCP instructions
+      expect(client.options.agent.instructions).toContain('# MCP Server Instructions');
+      expect(client.options.agent.instructions).toContain('Use these tools carefully');
+
+      // Verify the base instructions are also included
+      expect(client.options.agent.instructions).toContain('Base instructions');
+    });
+
+    it('should handle MCP instructions with ephemeral agent', async () => {
+      // Set specific return value for this test
+      mockFormatInstructions.mockResolvedValue(
+        '# Ephemeral MCP Instructions\n\nSpecial ephemeral instructions',
+      );
+
+      // Set up ephemeral agent with MCP servers
+      mockReq.body.ephemeralAgent = {
+        mcp: ['ephemeral-server1', 'ephemeral-server2'],
+      };
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Test ephemeral',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: 'Ephemeral instructions',
+        additional_instructions: null,
+      });
+
+      // Verify formatInstructionsForContext was called with ephemeral server names
+      expect(mockFormatInstructions).toHaveBeenCalledWith([
+        'ephemeral-server1',
+        'ephemeral-server2',
+      ]);
+
+      // Verify no [object Promise] in instructions
+      expect(client.options.agent.instructions).not.toContain('[object Promise]');
+
+      // Verify ephemeral MCP instructions are included
+      expect(client.options.agent.instructions).toContain('# Ephemeral MCP Instructions');
+      expect(client.options.agent.instructions).toContain('Special ephemeral instructions');
+    });
+
+    it('should handle empty MCP instructions gracefully', async () => {
+      // Set empty return value for this test
+      mockFormatInstructions.mockResolvedValue('');
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: 'Base instructions only',
+        additional_instructions: null,
+      });
+
+      // Verify the instructions still work without MCP content
+      expect(client.options.agent.instructions).toBe('Base instructions only');
+      expect(client.options.agent.instructions).not.toContain('[object Promise]');
+    });
+
+    it('should handle MCP instructions error gracefully', async () => {
+      // Set error return for this test
+      mockFormatInstructions.mockRejectedValue(new Error('MCP error'));
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      // Should not throw
+      await client.buildMessages(messages, null, {
+        instructions: 'Base instructions',
+        additional_instructions: null,
+      });
+
+      // Should still have base instructions without MCP content
+      expect(client.options.agent.instructions).toContain('Base instructions');
+      expect(client.options.agent.instructions).not.toContain('[object Promise]');
     });
   });
 

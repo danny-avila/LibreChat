@@ -21,10 +21,12 @@ export default function ImageVision() {
             onCheckedChange={field.onChange}
             className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
             value={field.value.toString()}
+            aria-labelledby={Capabilities.image_vision}
           />
         )}
       />
       <label
+        id={Capabilities.image_vision}
         className="form-check-label text-token-text-primary w-full cursor-pointer"
         htmlFor={Capabilities.image_vision}
         onClick={() =>

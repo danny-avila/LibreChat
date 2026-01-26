@@ -53,13 +53,23 @@ export default function Badge({
     }
   };
 
+  const getWhileTapScale = () => {
+    if (isDragging) {
+      return 1.1;
+    }
+    if (isDisabled) {
+      return 1;
+    }
+    return 0.97;
+  };
+
   return (
     <motion.button
       onClick={handleClick}
       className={cn(
         'group relative inline-flex items-center gap-1.5 rounded-full px-4 py-1.5',
-        'border border-border-medium text-sm font-medium transition-shadow md:w-full',
-        'size-9 p-2 md:p-3',
+        'border border-border-medium text-sm font-medium transition-shadow',
+        '@container-[600px]:w-full size-9 p-2',
         isActive
           ? 'bg-surface-active shadow-md'
           : 'bg-surface-chat shadow-sm hover:bg-surface-hover hover:shadow-md',
@@ -72,16 +82,23 @@ export default function Badge({
         scale: isDragging ? 1.1 : 1,
         boxShadow: isDragging ? '0 10px 25px rgba(0,0,0,0.1)' : undefined,
       }}
-      whileTap={{ scale: isDragging ? 1.1 : isDisabled ? 1 : 0.97 }}
+      whileTap={{ scale: getWhileTapScale() }}
       transition={{ type: 'tween', duration: 0.1, ease: 'easeOut' }}
       {...(props as React.ComponentProps<typeof motion.button>)}
     >
-      {Icon && <Icon className={cn('relative h-5 w-5 md:h-4 md:w-4', !label && 'mx-auto')} />}
-      <span className="relative hidden md:inline">{label}</span>
+      {Icon && (
+        <Icon
+          className={cn(
+            '@container-[600px]:h-4 @container-[600px]:w-4 relative h-5 w-5',
+            !label && 'mx-auto',
+          )}
+        />
+      )}
+      <span className="@container-[600px]:inline relative hidden">{label}</span>
 
       {isEditing && !isDragging && (
         <motion.button
-          className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-surface-secondary-alt text-text-primary shadow-sm md:h-5 md:w-5"
+          className="@container-[600px]:h-5 @container-[600px]:w-5 absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-surface-secondary-alt text-text-primary shadow-sm"
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.8 }}

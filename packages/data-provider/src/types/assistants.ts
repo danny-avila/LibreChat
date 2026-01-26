@@ -1,7 +1,7 @@
 import type { OpenAPIV3 } from 'openapi-types';
 import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
-import type { Agents } from './agents';
 import type { TFile } from './files';
 import { ArtifactModes } from 'src/artifacts';
 
@@ -229,7 +229,9 @@ export type Agent = {
   /** @deprecated Use ACL permissions instead */
   isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
+  /** @deprecated Use edges instead */
   agent_ids?: string[];
+  edges?: GraphEdge[];
   end_after_tools?: boolean;
   hide_sequential_outputs?: boolean;
   artifacts?: ArtifactModes;
@@ -255,6 +257,7 @@ export type AgentCreateParams = {
 } & Pick<
   Agent,
   | 'agent_ids'
+  | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
   | 'artifacts'
@@ -280,6 +283,7 @@ export type AgentUpdateParams = {
 } & Pick<
   Agent,
   | 'agent_ids'
+  | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
   | 'artifacts'
@@ -475,10 +479,20 @@ export type ContentPart = (
 ) &
   PartMetadata;
 
+export type TextData = (Text & PartMetadata) | undefined;
+
 export type TMessageContentParts =
-  | { type: ContentTypes.ERROR; text?: string | (Text & PartMetadata); error?: string }
-  | { type: ContentTypes.THINK; think: string | (Text & PartMetadata) }
-  | { type: ContentTypes.TEXT; text: string | (Text & PartMetadata); tool_call_ids?: string[] }
+  | {
+      type: ContentTypes.ERROR;
+      text?: string | TextData;
+      error?: string;
+    }
+  | { type: ContentTypes.THINK; think?: string | TextData }
+  | {
+      type: ContentTypes.TEXT;
+      text?: string | TextData;
+      tool_call_ids?: string[];
+    }
   | {
       type: ContentTypes.TOOL_CALL;
       tool_call: (

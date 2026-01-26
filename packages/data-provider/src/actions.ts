@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import _axios from 'axios';
 import { URL } from 'url';
+import _axios from 'axios';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
 import type { ActionMetadata, ActionMetadataRuntime } from './types/agents';
@@ -563,7 +563,165 @@ export type ValidationResult = {
   status: boolean;
   message: string;
   spec?: OpenAPIV3.Document;
+  serverUrl?: string;
 };
+
+/**
+ * Cross-platform IP validation (works in Node.js and browser).
+ * @param input - String to check if it's an IP address
+ * @returns 0 if not IP, 4 for IPv4, 6 for IPv6
+ */
+function isIP(input: string): number {
+  // IPv4 regex - matches 0.0.0.0 to 255.255.255.255
+  const ipv4Regex =
+    /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+
+  if (ipv4Regex.test(input)) {
+    return 4;
+  }
+
+  // IPv6 regex - simplified but covers most cases
+  // Handles compressed (::), full, and mixed notations
+  const ipv6Regex =
+    /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
+
+  if (ipv6Regex.test(input)) {
+    return 6;
+  }
+
+  return 0;
+}
+
+/**
+ * Extracts domain from URL (protocol + hostname).
+ * @param url - URL to extract from
+ * @returns Protocol and hostname (e.g., "https://example.com")
+ */
+export function extractDomainFromUrl(url: string): string {
+  try {
+    /** Parsed URL object */
+    const parsedUrl = new URL(url);
+    // Preserve brackets for IPv6 addresses using isIP
+    const ipVersion = isIP(parsedUrl.hostname);
+    const hostname = ipVersion === 6 ? `[${parsedUrl.hostname}]` : parsedUrl.hostname;
+    return `${parsedUrl.protocol}//${hostname}`;
+  } catch {
+    throw new Error(`Invalid URL format: ${url}`);
+  }
+}
+
+export type DomainValidationResult = {
+  isValid: boolean;
+  message?: string;
+  normalizedSpecDomain?: string;
+  normalizedClientDomain?: string;
+};
+
+/**
+ * Validates client domain matches OpenAPI spec server URL domain (SSRF prevention).
+ * @param clientProvidedDomain - Domain from client (with/without protocol)
+ * @param specServerUrl - Server URL from OpenAPI spec
+ * @returns Validation result with normalized domains
+ */
+export function validateActionDomain(
+  clientProvidedDomain: string,
+  specServerUrl: string,
+): DomainValidationResult {
+  try {
+    /** Parsed spec URL */
+    const specUrl = new URL(specServerUrl);
+
+    if (specUrl.protocol !== 'http:' && specUrl.protocol !== 'https:') {
+      return {
+        isValid: false,
+        message: `Invalid protocol: Only HTTP and HTTPS are allowed, got ${specUrl.protocol}`,
+      };
+    }
+
+    /** Spec hostname only */
+    const specHostname = specUrl.hostname;
+    /** Spec domain with protocol (handle IPv6 brackets) */
+    const specIpVersion = isIP(specHostname);
+    const normalizedSpecDomain =
+      specIpVersion === 6
+        ? `${specUrl.protocol}//[${specHostname}]`
+        : `${specUrl.protocol}//${specHostname}`;
+
+    /** Extract hostname from client domain if it's a full URL */
+    let clientHostname = clientProvidedDomain;
+    let clientHasProtocol = false;
+
+    // Check for any protocol in the client domain
+    if (clientProvidedDomain.includes('://')) {
+      if (
+        !clientProvidedDomain.startsWith('http://') &&
+        !clientProvidedDomain.startsWith('https://')
+      ) {
+        return {
+          isValid: false,
+          message: `Invalid protocol: Only HTTP and HTTPS are allowed in client domain`,
+        };
+      }
+      try {
+        const clientUrl = new URL(clientProvidedDomain);
+        clientHostname = clientUrl.hostname;
+        clientHasProtocol = true;
+      } catch {
+        // If parsing fails, treat as hostname
+        clientHasProtocol = false;
+      }
+    }
+
+    /** Normalize IPv6 addresses by removing brackets for comparison */
+    const normalizedClientHostname = clientHostname.replace(/^\[(.+)\]$/, '$1');
+    const normalizedSpecHostname = specHostname.replace(/^\[(.+)\]$/, '$1');
+
+    /** Check if hostname is valid IP using cross-platform isIP */
+    const isIPAddress = isIP(normalizedClientHostname) !== 0;
+
+    /** Normalized client domain */
+    let normalizedClientDomain: string;
+    if (clientHasProtocol) {
+      normalizedClientDomain = extractDomainFromUrl(clientProvidedDomain);
+    } else {
+      // IP addresses inherit protocol from spec, domains default to https
+      if (isIPAddress) {
+        // IPv6 addresses need brackets in URLs
+        const ipVersion = isIP(normalizedClientHostname);
+        const hostname =
+          ipVersion === 6 && !clientHostname.startsWith('[')
+            ? `[${normalizedClientHostname}]`
+            : clientHostname;
+        normalizedClientDomain = `${specUrl.protocol}//${hostname}`;
+      } else {
+        normalizedClientDomain = `https://${clientHostname}`;
+      }
+    }
+
+    if (
+      normalizedSpecDomain === normalizedClientDomain ||
+      (!clientHasProtocol && isIPAddress && normalizedClientHostname === normalizedSpecHostname)
+    ) {
+      return {
+        isValid: true,
+        normalizedSpecDomain,
+        normalizedClientDomain,
+      };
+    }
+
+    return {
+      isValid: false,
+      message: `Domain mismatch: Client provided '${clientProvidedDomain}', but spec uses '${specHostname}'`,
+      normalizedSpecDomain,
+      normalizedClientDomain,
+    };
+  } catch (error) {
+    return {
+      isValid: false,
+      message: `Failed to validate domain: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
+}
 
 /**
  * Validates and parses an OpenAPI spec.
@@ -626,6 +784,7 @@ export function validateAndParseOpenAPISpec(specString: string): ValidationResul
       status: true,
       message: messages.join('\n') || 'OpenAPI spec is valid.',
       spec: parsedSpec,
+      serverUrl: parsedSpec.servers[0].url,
     };
   } catch (error) {
     console.error(error);

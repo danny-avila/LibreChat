@@ -40,6 +40,17 @@ export const agentSupportContactSchema = z
   })
   .optional();
 
+/** Graph edge schema for agent handoffs */
+export const graphEdgeSchema = z.object({
+  from: z.union([z.string(), z.array(z.string())]),
+  to: z.union([z.string(), z.array(z.string())]),
+  description: z.string().optional(),
+  edgeType: z.enum(['handoff', 'direct']).optional(),
+  prompt: z.union([z.string(), z.function()]).optional(),
+  excludeResults: z.boolean().optional(),
+  promptKey: z.string().optional(),
+});
+
 /** Base agent schema with all common fields */
 export const agentBaseSchema = z.object({
   name: z.string().nullable().optional(),
@@ -48,7 +59,9 @@ export const agentBaseSchema = z.object({
   avatar: agentAvatarSchema.nullable().optional(),
   model_parameters: z.record(z.unknown()).optional(),
   tools: z.array(z.string()).optional(),
+  /** @deprecated Use edges instead */
   agent_ids: z.array(z.string()).optional(),
+  edges: z.array(graphEdgeSchema).optional(),
   end_after_tools: z.boolean().optional(),
   hide_sequential_outputs: z.boolean().optional(),
   artifacts: z.string().optional(),
@@ -68,6 +81,7 @@ export const agentCreateSchema = agentBaseSchema.extend({
 
 /** Update schema extends base with all fields optional and additional update-only fields */
 export const agentUpdateSchema = agentBaseSchema.extend({
+  avatar: z.union([agentAvatarSchema, z.null()]).optional(),
   provider: z.string().optional(),
   model: z.string().nullable().optional(),
   projectIds: z.array(z.string()).optional(),

@@ -45,6 +45,10 @@ jest.mock('~/utils/axios', () => ({
   logAxiosError: jest.fn(({ message }) => message || 'Error'),
 }));
 
+jest.mock('~/utils/files', () => ({
+  readFileAsBuffer: jest.fn(),
+}));
+
 import * as fs from 'fs';
 import axios from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
@@ -56,6 +60,7 @@ import type {
   OCRResult,
 } from '~/types';
 import { logger as mockLogger } from '@librechat/data-schemas';
+import { readFileAsBuffer } from '~/utils/files';
 import {
   uploadDocumentToMistral,
   uploadAzureMistralOCR,
@@ -1978,9 +1983,10 @@ describe('MistralOCR Service', () => {
 
     describe('Azure Mistral OCR with proxy', () => {
       beforeEach(() => {
-        (jest.mocked(fs).readFileSync as jest.Mock).mockReturnValue(
-          Buffer.from('mock-file-content'),
-        );
+        (readFileAsBuffer as jest.Mock).mockResolvedValue({
+          content: Buffer.from('mock-file-content'),
+          bytes: Buffer.from('mock-file-content').length,
+        });
       });
 
       it('should use proxy for Azure Mistral OCR requests', async () => {
@@ -2098,7 +2104,10 @@ describe('MistralOCR Service', () => {
 
   describe('uploadAzureMistralOCR', () => {
     beforeEach(() => {
-      (jest.mocked(fs).readFileSync as jest.Mock).mockReturnValue(Buffer.from('mock-file-content'));
+      (readFileAsBuffer as jest.Mock).mockResolvedValue({
+        content: Buffer.from('mock-file-content'),
+        bytes: Buffer.from('mock-file-content').length,
+      });
       // Reset the HttpsProxyAgent mock to its default implementation for Azure tests
       (HttpsProxyAgent as unknown as jest.Mock).mockImplementation((url) => ({ proxyUrl: url }));
       // Clean up any PROXY env var from previous tests
@@ -2172,7 +2181,9 @@ describe('MistralOCR Service', () => {
         loadAuthValues: mockLoadAuthValues,
       });
 
-      expect(jest.mocked(fs).readFileSync).toHaveBeenCalledWith('/tmp/upload/azure-file.pdf');
+      expect(readFileAsBuffer).toHaveBeenCalledWith('/tmp/upload/azure-file.pdf', {
+        fileSize: undefined,
+      });
 
       // Verify OCR was called with base64 data URL
       expect(mockAxios.post).toHaveBeenCalledWith(

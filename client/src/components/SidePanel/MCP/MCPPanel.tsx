@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { ChevronLeft, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, useToastContext } from '@librechat/client';
@@ -11,8 +11,6 @@ import { MCPPanelProvider, useMCPPanelContext } from '~/Providers';
 import { useLocalize, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
-
-const POLL_FOR_CONNECTION_STATUS_INTERVAL = 2_000; // ms
 
 function MCPPanelContent() {
   const localize = useLocalize();
@@ -28,37 +26,14 @@ function MCPPanelContent() {
     null,
   );
 
-  // Check if any connections are in 'connecting' state
-  const hasConnectingServers = useMemo(() => {
-    if (!connectionStatus) {
-      return false;
-    }
-    return Object.values(connectionStatus).some(
-      (status) => status?.connectionState === 'connecting',
-    );
-  }, [connectionStatus]);
-
-  // Set up polling when servers are connecting
-  useEffect(() => {
-    if (!hasConnectingServers) {
-      return;
-    }
-
-    const intervalId = setInterval(() => {
-      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
-    }, POLL_FOR_CONNECTION_STATUS_INTERVAL);
-
-    return () => clearInterval(intervalId);
-  }, [hasConnectingServers, queryClient]);
-
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: async () => {
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
       await Promise.all([
-        queryClient.refetchQueries([QueryKeys.tools]),
-        queryClient.refetchQueries([QueryKeys.mcpAuthValues]),
-        queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
+        queryClient.invalidateQueries([QueryKeys.mcpTools]),
+        queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
+        queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
       ]);
     },
     onError: (error: unknown) => {
@@ -152,7 +127,12 @@ function MCPPanelContent() {
 
     return (
       <div className="h-auto max-w-full space-y-4 overflow-x-hidden py-2">
-        <Button variant="outline" onClick={handleGoBackToList} size="sm">
+        <Button
+          variant="outline"
+          onClick={handleGoBackToList}
+          size="sm"
+          aria-label={localize('com_ui_back')}
+        >
           <ChevronLeft className="mr-1 h-4 w-4" />
           {localize('com_ui_back')}
         </Button>
@@ -191,6 +171,7 @@ function MCPPanelContent() {
             size="sm"
             variant="destructive"
             onClick={() => handleConfigRevoke(selectedServerNameForEditing)}
+            aria-label={localize('com_ui_oauth_revoke')}
           >
             <Trash2 className="h-4 w-4" />
             {localize('com_ui_oauth_revoke')}
@@ -213,6 +194,7 @@ function MCPPanelContent() {
                   variant="outline"
                   className="flex-1 justify-start dark:hover:bg-gray-700"
                   onClick={() => handleServerClickToEdit(server.serverName)}
+                  aria-label={localize('com_ui_edit') + ' ' + server.serverName}
                 >
                   <div className="flex items-center gap-2">
                     <span>{server.serverName}</span>

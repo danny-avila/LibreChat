@@ -12,8 +12,8 @@
  *
  * @throws Throws an error if the input is not a string or number, contains invalid characters, or does not evaluate to a number.
  */
-export function math(str: string | number, fallbackValue?: number): number {
-  const fallback = typeof fallbackValue !== 'undefined' && typeof fallbackValue === 'number';
+export function math(str: string | number | undefined, fallbackValue?: number): number {
+  const fallback = fallbackValue != null;
   if (typeof str !== 'string' && typeof str === 'number') {
     return str;
   } else if (typeof str !== 'string') {

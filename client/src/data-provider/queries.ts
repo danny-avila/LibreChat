@@ -178,7 +178,8 @@ export const useConversationTagsQuery = (
  */
 
 /**
- * Hook for getting all available tools for Assistants
+ * Hook for getting available LibreChat tools (excludes MCP tools)
+ * For MCP tools, use `useMCPToolsQuery` from mcp-queries.ts
  */
 export const useAvailableToolsQuery = <TData = t.TPlugin[]>(
   endpoint: t.AssistantsEndpoint | EModelEndpoint.agents,

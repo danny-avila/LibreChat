@@ -15,7 +15,7 @@ async function initializeMCPs() {
   const mcpManager = await createMCPManager(mcpServers);
 
   try {
-    const mcpTools = mcpManager.getAppToolFunctions() || {};
+    const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
     await mergeAppTools(mcpTools);
 
     logger.info(

@@ -7,6 +7,7 @@ const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
 const CONSOLE_JSON_STRING_LENGTH: number =
   parseInt(process.env.CONSOLE_JSON_STRING_LENGTH || '', 10) || 255;
+const DEBUG_MESSAGE_LENGTH: number = parseInt(process.env.DEBUG_MESSAGE_LENGTH || '', 10) || 150;
 
 const sensitiveKeys: RegExp[] = [
   /^(sk-)[^\s]+/, // OpenAI API key pattern
@@ -125,7 +126,7 @@ const debugTraverse = winston.format.printf(
     }
 
     const msgParts: string[] = [
-      `${timestamp} ${level}: ${truncateLongStrings(message.trim(), 150)}`,
+      `${timestamp} ${level}: ${truncateLongStrings(message.trim(), DEBUG_MESSAGE_LENGTH)}`,
     ];
 
     try {

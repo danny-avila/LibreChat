@@ -7,6 +7,7 @@ import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import {
   alternateName,
   getSettingsKeys,
+  getEndpointField,
   LocalStorageKeys,
   SettingDefinition,
   agentParamSettings,
@@ -14,9 +15,9 @@ import {
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { getEndpointField, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
+import { cn } from '~/utils';
 
 export default function ModelPanel({
   providers,
@@ -102,6 +103,7 @@ export default function ModelPanel({
             onClick={() => {
               setActivePanel(Panel.builder);
             }}
+            aria-label={localize('com_ui_back_to_builder')}
           >
             <div className="model-panel-content flex w-full items-center justify-center gap-2">
               <ChevronLeft />

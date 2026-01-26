@@ -1,10 +1,9 @@
 const fs = require('fs');
 const LdapStrategy = require('passport-ldapauth');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, getBalanceConfig } = require('@librechat/api');
 const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
+const { isEnabled, getBalanceConfig, isEmailDomainAllowed } = require('@librechat/api');
 const { createUser, findUser, updateUser, countUsers } = require('~/models');
-const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { getAppConfig } = require('~/server/services/Config');
 
 const {
@@ -109,7 +108,8 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     const username =
       (LDAP_USERNAME && userinfo[LDAP_USERNAME]) || userinfo.givenName || userinfo.mail;
 
-    const mail = (LDAP_EMAIL && userinfo[LDAP_EMAIL]) || userinfo.mail || username + '@ldap.local';
+    let mail = (LDAP_EMAIL && userinfo[LDAP_EMAIL]) || userinfo.mail || username + '@ldap.local';
+    mail = Array.isArray(mail) ? mail[0] : mail;
 
     if (!userinfo.mail && !(LDAP_EMAIL && userinfo[LDAP_EMAIL])) {
       logger.warn(

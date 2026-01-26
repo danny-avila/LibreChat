@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+const { logger } = require('@librechat/data-schemas');
 const { getStrategyFunctions } = require('../strategies');
 const { resizeImageBuffer } = require('./resize');
-const { logger } = require('~/config');
 
 /**
  * Converts an image file or buffer to target output type with specified resolution.

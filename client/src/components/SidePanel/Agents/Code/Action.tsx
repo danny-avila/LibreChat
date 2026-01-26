@@ -61,6 +61,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
                 disabled={runCodeIsEnabled ? false : !isToolAuthenticated}
+                aria-label={localize('com_ui_run_code')}
               />
             )}
           />
@@ -81,7 +82,11 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
           </button>
           <div className="ml-2 flex gap-2">
             {isUserProvided && (isToolAuthenticated || runCodeIsEnabled) && (
-              <button type="button" onClick={() => setIsDialogOpen(true)}>
+              <button
+                type="button"
+                onClick={() => setIsDialogOpen(true)}
+                aria-label={localize('com_ui_add_api_key')}
+              >
                 <KeyRoundIcon className="h-5 w-5 text-text-primary" />
               </button>
             )}

@@ -85,7 +85,9 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
         <div className="flex h-auto gap-3 max-sm:w-full max-sm:flex-col sm:flex-row">
           {showCancelButton && (
             <OGDialogClose asChild>
-              <Button variant="outline">{localize('com_ui_cancel')}</Button>
+              <Button variant="outline" aria-label={localize('com_ui_cancel')}>
+                {localize('com_ui_cancel')}
+              </Button>
             </OGDialogClose>
           )}
           {buttons != null ? buttons : null}

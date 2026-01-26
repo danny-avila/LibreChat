@@ -7,21 +7,19 @@ import {
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import {
-  OGDialog,
-  OGDialogTrigger,
   Label,
-  OGDialogTemplate,
+  OGDialog,
   TrashIcon,
+  OGDialogTrigger,
   useToastContext,
+  OGDialogTemplate,
 } from '@librechat/client';
+import type { MCPForm } from '~/common';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { defaultMCPFormValues } from '~/common/mcp';
-import type { MCPForm } from '~/common';
+import { Panel, isEphemeralAgent } from '~/common';
 import { useLocalize } from '~/hooks';
 import MCPInput from './MCPInput';
-import { Panel } from '~/common';
-// TODO: Add MCP delete (for now mocked for ui)
-// import { useDeleteAgentMCP } from '~/data-provider';
 
 function useDeleteAgentMCP({
   onSuccess,
@@ -127,7 +125,7 @@ export default function MCPPanel() {
                   <div className="absolute right-0 top-6">
                     <button
                       type="button"
-                      disabled={!agent_id || !mcp.mcp_id}
+                      disabled={isEphemeralAgent(agent_id) || !mcp.mcp_id}
                       className="btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium"
                     >
                       <TrashIcon className="text-red-500" />
@@ -145,7 +143,7 @@ export default function MCPPanel() {
                   }
                   selection={{
                     selectHandler: () => {
-                      if (!agent_id) {
+                      if (isEphemeralAgent(agent_id)) {
                         return showToast({
                           message: localize('com_agents_no_agent_id_error'),
                           status: 'error',
@@ -153,7 +151,7 @@ export default function MCPPanel() {
                       }
                       deleteAgentMCP.mutate({
                         mcp_id: mcp.mcp_id,
-                        agent_id,
+                        agent_id: agent_id || '',
                       });
                     },
                     selectClasses:

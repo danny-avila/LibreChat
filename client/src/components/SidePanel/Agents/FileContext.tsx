@@ -5,7 +5,7 @@ import {
   EModelEndpoint,
   EToolResources,
   mergeFileConfig,
-  fileConfig as defaultFileConfig,
+  getEndpointFileConfig,
 } from 'librechat-data-provider';
 import {
   HoverCard,
@@ -22,8 +22,8 @@ import { useFileHandling, useLocalize, useLazyEffect, useSharePointFileHandling 
 import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { ESide, isEphemeralAgent } from '~/common';
 import { useChatContext } from '~/Providers';
-import { ESide } from '~/common';
 
 export default function FileContext({
   agent_id,
@@ -41,17 +41,15 @@ export default function FileContext({
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
 
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+  const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
 
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource: EToolResources.context },
     fileSetter: setFiles,
   });
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
     fileSetter: setFiles,
   });
@@ -65,8 +63,12 @@ export default function FileContext({
     750,
   );
 
-  const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents];
-  const isUploadDisabled = endpointFileConfig.disabled ?? false;
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig,
+    endpoint: EModelEndpoint.agents,
+    endpointType: EModelEndpoint.agents,
+  });
+  const isUploadDisabled = endpointFileConfig?.disabled ?? false;
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
     try {
       await handleSharePointFiles(sharePointFiles);
@@ -156,7 +158,7 @@ export default function FileContext({
           ) : (
             <button
               type="button"
-              disabled={!agent_id}
+              disabled={isEphemeralAgent(agent_id)}
               className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
               onClick={handleLocalFileClick}
             >
@@ -173,7 +175,7 @@ export default function FileContext({
             style={{ display: 'none' }}
             tabIndex={-1}
             ref={fileInputRef}
-            disabled={!agent_id}
+            disabled={isEphemeralAgent(agent_id)}
             onChange={handleFileChange}
           />
         </div>

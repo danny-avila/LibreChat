@@ -229,13 +229,11 @@ endpoints:
       baseURL: 'https://api.groq.com/openai/v1/'
       models:
         default:
-          [
-            'llama3-70b-8192',
-            'llama3-8b-8192',
-            'llama2-70b-4096',
-            'mixtral-8x7b-32768',
-            'gemma-7b-it',
-          ]
+          - 'llama3-70b-8192'
+          - 'llama3-8b-8192'
+          - 'llama2-70b-4096'
+          - 'mixtral-8x7b-32768'
+          - 'gemma-7b-it'
         fetch: false
       titleConvo: true
       titleModel: 'mixtral-8x7b-32768'
@@ -303,6 +301,22 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # Helicone Example
+    - name: 'Helicone'
+      # For `apiKey` and `baseURL`, you can use environment variables that you define.
+      # recommended environment variables:
+      apiKey: '${HELICONE_KEY}'
+      baseURL: 'https://ai-gateway.helicone.ai'
+      headers:
+          x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+      models:
+        default: ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-4o-mini'
+      modelDisplayLabel: 'Helicone'
+      iconURL: https://marketing-assets-helicone.s3.us-west-2.amazonaws.com/helicone.png
+
     # Portkey AI Example
     - name: 'Portkey'
       apiKey: 'dummy'
@@ -320,6 +334,60 @@ endpoints:
       forcePrompt: false
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
+# Example modelSpecs configuration showing grouping options
+# The 'group' field organizes model specs in the UI selector:
+# - If 'group' matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint
+# - If 'group' is a custom name (doesn't match any endpoint), it creates a separate collapsible section
+# - If 'group' is omitted, the spec appears as a standalone item at the top level
+# modelSpecs:
+#   list:
+#     # Example 1: Nested under an endpoint (grouped with openAI endpoint)
+#     - name: "gpt-4o"
+#       label: "GPT-4 Optimized"
+#       description: "Most capable GPT-4 model with multimodal support"
+#       group: "openAI"  # String value matching the endpoint name
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o"
+#
+#     # Example 2: Nested under a custom endpoint (grouped with groq endpoint)
+#     - name: "llama3-70b-8192"
+#       label: "Llama 3 70B"
+#       description: "Fastest inference available - great for quick responses"
+#       group: "groq"  # String value matching your custom endpoint name from endpoints.custom
+#       preset:
+#         endpoint: "groq"
+#         model: "llama3-70b-8192"
+#
+#     # Example 3: Custom group (creates a separate collapsible section)
+#     - name: "coding-assistant"
+#       label: "Coding Assistant"
+#       description: "Specialized for coding tasks"
+#       group: "my-assistants"  # Custom string - doesn't match any endpoint, so creates its own group
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o"
+#         instructions: "You are an expert coding assistant..."
+#         temperature: 0.3
+#
+#     - name: "writing-assistant"
+#       label: "Writing Assistant"
+#       description: "Specialized for creative writing"
+#       group: "my-assistants"  # Same custom group name - both specs appear in same section
+#       preset:
+#         endpoint: "anthropic"
+#         model: "claude-sonnet-4"
+#         instructions: "You are a creative writing expert..."
+#
+#     # Example 4: Standalone (no group - appears at top level)
+#     - name: "general-assistant"
+#       label: "General Assistant"
+#       description: "General purpose assistant"
+#       # No 'group' field - appears as standalone item at top level (not nested)
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o-mini"
+
 # fileConfig:
 #   endpoints:
 #     assistants:
@@ -355,15 +423,12 @@ endpoints:
 #   # Jina Reranking Configuration
 #   jinaApiKey: '${JINA_API_KEY}'  # Your Jina API key
 #   jinaApiUrl: '${JINA_API_URL}'  # Custom Jina API URL (optional, defaults to https://api.jina.ai/v1/rerank)
-#   
 #   # Other rerankers
 #   cohereApiKey: '${COHERE_API_KEY}'
-#   
 #   # Search providers
 #   serperApiKey: '${SERPER_API_KEY}'
 #   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
 #   searxngApiKey: '${SEARXNG_API_KEY}'
-#   
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'

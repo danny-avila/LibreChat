@@ -15,7 +15,7 @@ export default function DisplayUsernameMessages() {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
-        <Label className="font-light">{localize('com_nav_user_name_display')}</Label>
+        <Label id="user-name-display-label">{localize('com_nav_user_name_display')}</Label>
         <InfoHoverCard side={ESide.Bottom} text={localize('com_nav_info_user_name_display')} />
       </div>
       <Switch
@@ -24,6 +24,7 @@ export default function DisplayUsernameMessages() {
         onCheckedChange={handleCheckedChange}
         className="ml-4"
         data-testid="UsernameDisplay"
+        aria-labelledby="user-name-display-label"
       />
     </div>
   );

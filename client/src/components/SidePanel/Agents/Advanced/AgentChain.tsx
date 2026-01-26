@@ -146,6 +146,9 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
               <button
                 className="rounded-xl p-1 transition hover:bg-surface-hover"
                 onClick={() => removeAgentAt(idx)}
+                aria-label={localize('com_ui_remove_agent_from_chain', {
+                  0: getAgentDetails(agentId)?.name || localize('com_ui_agent'),
+                })}
               >
                 <X size={18} className="text-text-secondary" />
               </button>

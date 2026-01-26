@@ -12,6 +12,7 @@ const { getAppConfig } = require('~/server/services/Config/app');
 const { getProjectByName } = require('~/models/Project');
 const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
+const { mcpServersRegistry } = require('@librechat/api');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -29,11 +30,46 @@ const publicSharedLinksEnabled =
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
 
+/**
+ * Fetches MCP servers from registry and adds them to the payload.
+ * Registry now includes all configured servers (from YAML) plus inspection data when available.
+ * Always fetches fresh to avoid caching incomplete initialization state.
+ */
+const getMCPServers = async (payload, appConfig) => {
+  try {
+    if (appConfig?.mcpConfig == null) {
+      return;
+    }
+    const mcpManager = getMCPManager();
+    if (!mcpManager) {
+      return;
+    }
+    const mcpServers = await mcpServersRegistry.getAllServerConfigs();
+    if (!mcpServers) return;
+    for (const serverName in mcpServers) {
+      if (!payload.mcpServers) {
+        payload.mcpServers = {};
+      }
+      const serverConfig = mcpServers[serverName];
+      payload.mcpServers[serverName] = removeNullishValues({
+        startup: serverConfig?.startup,
+        chatMenu: serverConfig?.chatMenu,
+        isOAuth: serverConfig.requiresOAuth,
+        customUserVars: serverConfig?.customUserVars,
+      });
+    }
+  } catch (error) {
+    logger.error('Error loading MCP servers', error);
+  }
+};
+
 router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
 
   const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
   if (cachedStartupConfig) {
+    const appConfig = await getAppConfig({ role: req.user?.role });
+    await getMCPServers(cachedStartupConfig, appConfig);
     res.send(cachedStartupConfig);
     return;
   }
@@ -115,6 +151,9 @@ router.get('/', async function (req, res) {
       sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
       sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
       openidReuseTokens,
+      conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
+        ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
+        : 0,
     };
 
     const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
@@ -122,41 +161,11 @@ router.get('/', async function (req, res) {
       payload.minPasswordLength = minPasswordLength;
     }
 
-    const getMCPServers = () => {
-      try {
-        if (appConfig?.mcpConfig == null) {
-          return;
-        }
-        const mcpManager = getMCPManager();
-        if (!mcpManager) {
-          return;
-        }
-        const mcpServers = mcpManager.getAllServers();
-        if (!mcpServers) return;
-        const oauthServers = mcpManager.getOAuthServers();
-        for (const serverName in mcpServers) {
-          if (!payload.mcpServers) {
-            payload.mcpServers = {};
-          }
-          const serverConfig = mcpServers[serverName];
-          payload.mcpServers[serverName] = removeNullishValues({
-            startup: serverConfig?.startup,
-            chatMenu: serverConfig?.chatMenu,
-            isOAuth: oauthServers?.has(serverName),
-            customUserVars: serverConfig?.customUserVars,
-          });
-        }
-      } catch (error) {
-        logger.error('Error loading MCP servers', error);
-      }
-    };
-
-    getMCPServers();
     const webSearchConfig = appConfig?.webSearch;
     if (
       webSearchConfig != null &&
       (webSearchConfig.searchProvider ||
-        webSearchConfig.scraperType ||
+        webSearchConfig.scraperProvider ||
         webSearchConfig.rerankerType)
     ) {
       payload.webSearch = {};
@@ -165,8 +174,8 @@ router.get('/', async function (req, res) {
     if (webSearchConfig?.searchProvider) {
       payload.webSearch.searchProvider = webSearchConfig.searchProvider;
     }
-    if (webSearchConfig?.scraperType) {
-      payload.webSearch.scraperType = webSearchConfig.scraperType;
+    if (webSearchConfig?.scraperProvider) {
+      payload.webSearch.scraperProvider = webSearchConfig.scraperProvider;
     }
     if (webSearchConfig?.rerankerType) {
       payload.webSearch.rerankerType = webSearchConfig.rerankerType;
@@ -181,6 +190,7 @@ router.get('/', async function (req, res) {
     }
 
     await cache.set(CacheKeys.STARTUP_CONFIG, payload);
+    await getMCPServers(payload, appConfig);
     return res.status(200).send(payload);
   } catch (err) {
     logger.error('Error in startup config', err);

@@ -54,6 +54,11 @@ const addTitle = async (req, { text, response, client }) => {
       clearTimeout(timeoutId);
     }
 
+    if (!title) {
+      logger.debug(`[${key}] No title generated`);
+      return;
+    }
+
     await titleCache.set(key, title, 120000);
     await saveConvo(
       req,

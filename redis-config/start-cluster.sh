@@ -35,7 +35,7 @@ redis-server redis-7002.conf --daemonize yes
 redis-server redis-7003.conf --daemonize yes
 
 # Wait for nodes to start
-sleep 3
+sleep 5
 
 # Check if all nodes are running
 NODES_RUNNING=0
@@ -66,10 +66,14 @@ fi
 
 # Initialize the cluster
 echo "🔧 Initializing cluster..."
-echo "yes" | redis-cli --cluster create 127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003 --cluster-replicas 0 > /dev/null
+echo "yes" | redis-cli --cluster create 127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003 --cluster-replicas 0 2>&1 | tee /tmp/cluster-init.log || {
+    echo "❌ Cluster creation command failed. Output:"
+    cat /tmp/cluster-init.log
+    exit 1
+}
 
 # Wait for cluster to stabilize
-sleep 3
+sleep 5
 
 # Verify cluster status
 if redis-cli -p 7001 cluster info | grep -q "cluster_state:ok"; then
@@ -80,5 +84,10 @@ if redis-cli -p 7001 cluster info | grep -q "cluster_state:ok"; then
     echo "  Stop: ./stop-cluster.sh"
 else
     echo "❌ Cluster initialization failed!"
+    echo "📊 Cluster info from node 7001:"
+    redis-cli -p 7001 cluster info
+    echo ""
+    echo "📊 Cluster nodes from node 7001:"
+    redis-cli -p 7001 cluster nodes
     exit 1
 fi

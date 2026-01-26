@@ -1,37 +1,47 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, webSearchKeys } = require('@librechat/data-schemas');
+const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-provider');
 const {
-  webSearchKeys,
-  extractWebSearchEnvVars,
-  normalizeHttpError,
+  MCPOAuthHandler,
   MCPTokenStorage,
+  mcpServersRegistry,
+  normalizeHttpError,
+  extractWebSearchEnvVars,
 } = require('@librechat/api');
 const {
-  getFiles,
-  updateUser,
-  deleteFiles,
-  deleteConvos,
-  deletePresets,
-  deleteMessages,
-  deleteUserById,
   deleteAllUserSessions,
+  deleteAllSharedLinks,
+  deleteUserById,
+  deleteMessages,
+  deletePresets,
+  deleteConvos,
+  deleteFiles,
+  updateUser,
+  findToken,
+  getFiles,
 } = require('~/models');
+const {
+  ConversationTag,
+  Transaction,
+  MemoryEntry,
+  Assistant,
+  AclEntry,
+  Balance,
+  Action,
+  Group,
+  Token,
+  User,
+} = require('~/db/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
-const { Tools, Constants, FileSources } = require('librechat-data-provider');
 const { processDeleteRequest } = require('~/server/services/Files/process');
-const { Transaction, Balance, User, Token } = require('~/db/models');
+const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
-const { deleteAllSharedLinks } = require('~/models');
-const { getMCPManager } = require('~/config');
-const { MCPOAuthHandler } = require('@librechat/api');
-const { getFlowStateManager } = require('~/config');
-const { CacheKeys } = require('librechat-data-provider');
+const { deleteUserPrompts } = require('~/models/Prompt');
+const { deleteUserAgents } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
-const { clearMCPServerTools } = require('~/server/services/Config/mcpToolsCache');
-const { findToken } = require('~/models');
 
 const getUserController = async (req, res) => {
   const appConfig = await getAppConfig({ role: req.user?.role });
@@ -202,7 +212,7 @@ const updateUserPluginsController = async (req, res) => {
       // If auth was updated successfully, disconnect MCP sessions as they might use these credentials
       if (pluginKey.startsWith(Constants.mcp_prefix)) {
         try {
-          const mcpManager = getMCPManager(user.id);
+          const mcpManager = getMCPManager();
           if (mcpManager) {
             // Extract server name from pluginKey (format: "mcp_<serverName>")
             const serverName = pluginKey.replace(Constants.mcp_prefix, '');
@@ -240,7 +250,6 @@ const deleteUserController = async (req, res) => {
     await deleteUserKey({ userId: user.id, all: true }); // delete user keys
     await Balance.deleteMany({ user: user._id }); // delete user balances
     await deletePresets(user.id); // delete user presets
-    /* TODO: Delete Assistant Threads */
     try {
       await deleteConvos(user.id); // delete user convos
     } catch (error) {
@@ -252,7 +261,19 @@ const deleteUserController = async (req, res) => {
     await deleteUserFiles(req); // delete user files
     await deleteFiles(null, user.id); // delete database files in case of orphaned files from previous steps
     await deleteToolCalls(user.id); // delete user tool calls
-    /* TODO: queue job for cleaning actions and assistants of non-existant users */
+    await deleteUserAgents(user.id); // delete user agents
+    await Assistant.deleteMany({ user: user.id }); // delete user assistants
+    await ConversationTag.deleteMany({ user: user.id }); // delete user conversation tags
+    await MemoryEntry.deleteMany({ userId: user.id }); // delete user memory entries
+    await deleteUserPrompts(req, user.id); // delete user prompts
+    await Action.deleteMany({ user: user.id }); // delete user actions
+    await Token.deleteMany({ userId: user.id }); // delete user OAuth tokens
+    await Group.updateMany(
+      // remove user from all groups
+      { memberIds: user.id },
+      { $pull: { memberIds: user.id } },
+    );
+    await AclEntry.deleteMany({ principalId: user._id }); // delete user ACL entries
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
@@ -299,10 +320,11 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   }
 
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
-  const mcpManager = getMCPManager(userId);
-  const serverConfig = mcpManager.getRawConfig(serverName) ?? appConfig?.mcpServers?.[serverName];
-
-  if (!mcpManager.getOAuthServers().has(serverName)) {
+  const serverConfig =
+    (await mcpServersRegistry.getServerConfig(serverName, userId)) ??
+    appConfig?.mcpServers?.[serverName];
+  const oauthServers = await mcpServersRegistry.getOAuthServers();
+  if (!oauthServers.has(serverName)) {
     // this server does not use OAuth, so nothing to do here as well
     return;
   }
@@ -331,16 +353,23 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   const revocationEndpointAuthMethodsSupported =
     serverConfig.oauth?.revocation_endpoint_auth_methods_supported ??
     clientMetadata.revocation_endpoint_auth_methods_supported;
+  const oauthHeaders = serverConfig.oauth_headers ?? {};
 
   if (tokens?.access_token) {
     try {
-      await MCPOAuthHandler.revokeOAuthToken(serverName, tokens.access_token, 'access', {
-        serverUrl: serverConfig.url,
-        clientId: clientInfo.client_id,
-        clientSecret: clientInfo.client_secret ?? '',
-        revocationEndpoint,
-        revocationEndpointAuthMethodsSupported,
-      });
+      await MCPOAuthHandler.revokeOAuthToken(
+        serverName,
+        tokens.access_token,
+        'access',
+        {
+          serverUrl: serverConfig.url,
+          clientId: clientInfo.client_id,
+          clientSecret: clientInfo.client_secret ?? '',
+          revocationEndpoint,
+          revocationEndpointAuthMethodsSupported,
+        },
+        oauthHeaders,
+      );
     } catch (error) {
       logger.error(`Error revoking OAuth access token for ${serverName}:`, error);
     }
@@ -348,13 +377,19 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 
   if (tokens?.refresh_token) {
     try {
-      await MCPOAuthHandler.revokeOAuthToken(serverName, tokens.refresh_token, 'refresh', {
-        serverUrl: serverConfig.url,
-        clientId: clientInfo.client_id,
-        clientSecret: clientInfo.client_secret ?? '',
-        revocationEndpoint,
-        revocationEndpointAuthMethodsSupported,
-      });
+      await MCPOAuthHandler.revokeOAuthToken(
+        serverName,
+        tokens.refresh_token,
+        'refresh',
+        {
+          serverUrl: serverConfig.url,
+          clientId: clientInfo.client_id,
+          clientSecret: clientInfo.client_secret ?? '',
+          revocationEndpoint,
+          revocationEndpointAuthMethodsSupported,
+        },
+        oauthHeaders,
+      );
     } catch (error) {
       logger.error(`Error revoking OAuth refresh token for ${serverName}:`, error);
     }
@@ -375,9 +410,6 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
   await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
   await flowManager.deleteFlow(flowId, 'mcp_oauth');
-
-  // 6. clear the tools cache for the server
-  await clearMCPServerTools({ userId, serverName });
 };
 
 module.exports = {

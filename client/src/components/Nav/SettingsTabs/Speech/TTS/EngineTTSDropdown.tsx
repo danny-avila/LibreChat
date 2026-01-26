@@ -23,9 +23,11 @@ const EngineTTSDropdown: React.FC<EngineTTSDropdownProps> = ({ external }) => {
     setEngineTTS(value);
   };
 
+  const labelId = 'engine-tts-dropdown-label';
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_engine')}</div>
+      <div id={labelId}>{localize('com_nav_engine')}</div>
       <Dropdown
         value={engineTTS}
         onChange={handleSelect}
@@ -33,6 +35,7 @@ const EngineTTSDropdown: React.FC<EngineTTSDropdownProps> = ({ external }) => {
         sizeClasses="w-[180px]"
         testId="EngineTTSDropdown"
         className="z-50"
+        aria-labelledby={labelId}
       />
     </div>
   );

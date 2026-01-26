@@ -42,8 +42,11 @@ export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetR
   return request.get(endpoints.getSharedLink(conversationId));
 }
 
-export function createSharedLink(conversationId: string): Promise<t.TSharedLinkResponse> {
-  return request.post(endpoints.createSharedLink(conversationId));
+export function createSharedLink(
+  conversationId: string,
+  targetMessageId?: string,
+): Promise<t.TSharedLinkResponse> {
+  return request.post(endpoints.createSharedLink(conversationId), { targetMessageId });
 }
 
 export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
@@ -295,6 +298,12 @@ export const getAvailableTools = (
   }
 
   return request.get(path);
+};
+
+/* MCP Tools - Decoupled from regular tools */
+
+export const getMCPTools = (): Promise<q.MCPServersResponse> => {
+  return request.get(endpoints.mcp.tools);
 };
 
 export const getVerifyAgentToolAuth = (

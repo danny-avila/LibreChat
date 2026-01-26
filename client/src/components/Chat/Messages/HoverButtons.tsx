@@ -45,6 +45,9 @@ const extractMessageContent = (message: TMessage): string => {
   if (Array.isArray(message.content)) {
     return message.content
       .map((part) => {
+        if (part == null) {
+          return '';
+        }
         if (typeof part === 'string') {
           return part;
         }

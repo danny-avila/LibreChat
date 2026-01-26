@@ -1,4 +1,5 @@
 const express = require('express');
+const { isEnabled } = require('@librechat/api');
 const {
   uaParser,
   checkBan,
@@ -8,7 +9,6 @@ const {
   concurrentLimiter,
   messageUserLimiter,
 } = require('~/server/middleware');
-const { isEnabled } = require('~/server/utils');
 const { v1 } = require('./v1');
 const chat = require('./chat');
 

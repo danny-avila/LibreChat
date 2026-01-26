@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { JsonSchemaType, ConvertJsonSchemaToZodOptions } from '~/types';
+import type { JsonSchemaType, ConvertJsonSchemaToZodOptions } from '@librechat/data-schemas';
 
 function isEmptyObjectSchema(jsonSchema?: JsonSchemaType): boolean {
   return (

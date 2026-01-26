@@ -4,6 +4,7 @@ import { useLocalize } from '~/hooks';
 interface Option {
   value: string;
   label: string;
+  icon?: React.ReactNode;
 }
 
 interface RadioProps {
@@ -11,9 +12,18 @@ interface RadioProps {
   value?: string;
   onChange?: (value: string) => void;
   disabled?: boolean;
+  className?: string;
+  fullWidth?: boolean;
 }
 
-const Radio = memo(function Radio({ options, value, onChange, disabled = false }: RadioProps) {
+const Radio = memo(function Radio({
+  options,
+  value,
+  onChange,
+  disabled = false,
+  className = '',
+  fullWidth = false,
+}: RadioProps) {
   const localize = useLocalize();
   const [currentValue, setCurrentValue] = useState<string>(value ?? '');
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -67,7 +77,10 @@ const Radio = memo(function Radio({ options, value, onChange, disabled = false }
   const selectedIndex = options.findIndex((opt) => opt.value === currentValue);
 
   return (
-    <div className="relative inline-flex items-center rounded-lg bg-muted p-1" role="radiogroup">
+    <div
+      className={`relative ${fullWidth ? 'flex' : 'inline-flex'} items-center rounded-lg bg-muted p-1 ${className}`}
+      role="radiogroup"
+    >
       {selectedIndex >= 0 && (
         <div
           className="pointer-events-none absolute inset-y-1 rounded-md border border-border/50 bg-background shadow-sm transition-all duration-300 ease-out"
@@ -85,10 +98,11 @@ const Radio = memo(function Radio({ options, value, onChange, disabled = false }
           aria-checked={currentValue === option.value}
           onClick={() => handleChange(option.value)}
           disabled={disabled}
-          className={`relative z-10 flex h-[34px] items-center justify-center rounded-md px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`relative z-10 flex h-[34px] items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             currentValue === option.value ? 'text-foreground' : 'text-foreground'
-          } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+          } ${disabled ? 'cursor-not-allowed opacity-50' : ''} ${fullWidth ? 'flex-1' : ''}`}
         >
+          {option.icon && <span className="flex-shrink-0">{option.icon}</span>}
           <span className="whitespace-nowrap">{option.label}</span>
         </button>
       ))}

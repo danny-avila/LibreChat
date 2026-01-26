@@ -1,4 +1,4 @@
-const { isEnabled } = require('~/server/utils');
+const { isEnabled } = require('@librechat/api');
 
 function validateRegistration(req, res, next) {
   if (req.invite) {

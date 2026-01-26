@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { Button, OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
   AuthType,
-  SearchCategories,
   RerankerTypes,
   SearchProviders,
-  ScraperTypes,
+  ScraperProviders,
+  SearchCategories,
 } from 'librechat-data-provider';
 import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
@@ -45,7 +45,9 @@ export default function ApiKeyDialog({
   const [selectedReranker, setSelectedReranker] = useState(
     config?.webSearch?.rerankerType || RerankerTypes.JINA,
   );
-  const [selectedScraper, setSelectedScraper] = useState(ScraperTypes.FIRECRAWL);
+  const [selectedScraper, setSelectedScraper] = useState(
+    config?.webSearch?.scraperProvider || ScraperProviders.FIRECRAWL,
+  );
 
   const providerOptions: DropdownOption[] = [
     {
@@ -119,7 +121,7 @@ export default function ApiKeyDialog({
 
   const scraperOptions: DropdownOption[] = [
     {
-      key: ScraperTypes.FIRECRAWL,
+      key: ScraperProviders.FIRECRAWL,
       label: localize('com_ui_web_search_scraper_firecrawl'),
       inputs: {
         firecrawlApiUrl: {
@@ -132,6 +134,20 @@ export default function ApiKeyDialog({
           link: {
             url: 'https://docs.firecrawl.dev/introduction#api-key',
             text: localize('com_ui_web_search_scraper_firecrawl_key'),
+          },
+        },
+      },
+    },
+    {
+      key: ScraperProviders.SERPER,
+      label: localize('com_ui_web_search_scraper_serper'),
+      inputs: {
+        serperApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://serper.dev/api-keys',
+            text: localize('com_ui_web_search_scraper_serper_key'),
           },
         },
       },
@@ -157,7 +173,7 @@ export default function ApiKeyDialog({
   };
 
   const handleScraperChange = (key: string) => {
-    setSelectedScraper(key as ScraperTypes);
+    setSelectedScraper(key as ScraperProviders);
   };
 
   return (
@@ -198,7 +214,7 @@ export default function ApiKeyDialog({
                   selectedKey={selectedScraper}
                   onSelectionChange={handleScraperChange}
                   dropdownOptions={scraperOptions}
-                  showDropdown={!config?.webSearch?.scraperType}
+                  showDropdown={!config?.webSearch?.scraperProvider}
                   register={register}
                   dropdownOpen={dropdownOpen.scraper}
                   setDropdownOpen={(open) =>
@@ -234,7 +250,11 @@ export default function ApiKeyDialog({
         }}
         buttons={
           isToolAuthenticated && (
-            <Button onClick={onRevoke} className="bg-red-500 text-white hover:bg-red-600">
+            <Button
+              onClick={onRevoke}
+              className="bg-red-500 text-white hover:bg-red-600"
+              aria-label={localize('com_ui_revoke')}
+            >
               {localize('com_ui_revoke')}
             </Button>
           )

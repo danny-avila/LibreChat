@@ -34,6 +34,8 @@ const RenameForm: React.FC<RenameFormProps> = ({
       case 'Enter':
         onSubmit(titleInput);
         break;
+      case 'Tab':
+        break;
     }
   };
 
@@ -50,22 +52,23 @@ const RenameForm: React.FC<RenameFormProps> = ({
         value={titleInput}
         onChange={(e) => setTitleInput(e.target.value)}
         onKeyDown={handleKeyDown}
-        onBlur={() => onSubmit(titleInput)}
         maxLength={100}
         aria-label={localize('com_ui_new_conversation_title')}
       />
       <div className="flex gap-1" role="toolbar">
         <button
           onClick={() => onCancel()}
-          className="p-1 hover:opacity-70 focus:outline-none focus:ring-2"
+          className="rounded-md p-1 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-ring"
           aria-label={localize('com_ui_cancel')}
+          type="button"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
         <button
           onClick={() => onSubmit(titleInput)}
-          className="p-1 hover:opacity-70 focus:outline-none focus:ring-2"
+          className="rounded-md p-1 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-ring"
           aria-label={localize('com_ui_save')}
+          type="button"
         >
           <Check className="h-4 w-4" aria-hidden="true" />
         </button>

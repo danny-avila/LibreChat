@@ -1,6 +1,7 @@
 import type { Types } from 'mongoose';
 
 export type ObjectId = Types.ObjectId;
+export * from './app';
 export * from './user';
 export * from './token';
 export * from './convo';
@@ -24,3 +25,5 @@ export * from './prompts';
 export * from './accessRole';
 export * from './aclEntry';
 export * from './group';
+/* Web */
+export * from './web';

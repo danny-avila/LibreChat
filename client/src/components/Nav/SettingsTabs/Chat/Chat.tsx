@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { showThinkingAtom } from '~/store/showThinking';
 import FontSizeSelector from './FontSizeSelector';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
@@ -28,7 +29,7 @@ const toggleSwitchConfigs = [
     key: 'centerFormOnLanding',
   },
   {
-    stateAtom: store.showThinking,
+    stateAtom: showThinkingAtom,
     localizationKey: 'com_nav_show_thinking',
     switchId: 'showThinking',
     hoverCardText: undefined,

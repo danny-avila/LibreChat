@@ -162,6 +162,12 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                               }
                             }}
                             tabIndex={isExpanded ? 0 : -1}
+                            aria-label={
+                              selectedTools.length === serverInfo.tools?.length &&
+                              selectedTools.length > 0
+                                ? localize('com_ui_deselect_all')
+                                : localize('com_ui_select_all')
+                            }
                           />
                         </div>
 
@@ -252,6 +258,7 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                     className={cn(
                       'relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-border-medium transition-[border-color] duration-200 hover:border-border-heavy focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
                     )}
+                    aria-label={subTool.metadata.name}
                   />
                   <span className="text-token-text-primary select-none">
                     {subTool.metadata.name}

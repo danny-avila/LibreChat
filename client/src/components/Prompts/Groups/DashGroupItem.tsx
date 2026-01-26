@@ -89,7 +89,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
       onKeyDown={handleKeyDown}
       role="button"
       tabIndex={0}
-      aria-label={`${group.name} prompt group`}
+      aria-label={`${group.name} Prompt, ${localize('com_ui_category')}: ${group.category ?? ''}`}
     >
       <div className="flex w-full items-center justify-between">
         <div className="flex items-center gap-2 truncate pr-2">

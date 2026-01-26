@@ -171,6 +171,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               min={google.temperature.min}
               step={google.temperature.step}
               className="flex h-4 w-full"
+              aria-labelledby="temp-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={ESide.Left} />
@@ -211,6 +212,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               min={google.topP.min}
               step={google.topP.step}
               className="flex h-4 w-full"
+              aria-labelledby="top-p-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="topp" side={ESide.Left} />
@@ -252,6 +254,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               min={google.topK.min}
               step={google.topK.step}
               className="flex h-4 w-full"
+              aria-labelledby="top-k-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="topk" side={ESide.Left} />
@@ -296,6 +299,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               min={google.maxOutputTokens.min}
               step={google.maxOutputTokens.step}
               className="flex h-4 w-full"
+              aria-labelledby="max-tokens-int"
             />
           </HoverCardTrigger>
           <OptionHover

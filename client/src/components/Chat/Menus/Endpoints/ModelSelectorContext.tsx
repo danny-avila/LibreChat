@@ -57,7 +57,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const agentsMap = useAgentsMapContext();
   const assistantsMap = useAssistantsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const { endpoint, model, spec, agent_id, assistant_id, newConversation } =
+  const { endpoint, model, spec, agent_id, assistant_id, conversation, newConversation } =
     useModelSelectorChatContext();
   const modelSpecs = useMemo(() => {
     const specs = startupConfig?.modelSpecs?.list ?? [];
@@ -96,6 +96,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,
     modelSpecs,
+    conversation,
     assistantsMap,
     endpointsConfig,
     newConversation,

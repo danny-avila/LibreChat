@@ -17,6 +17,7 @@ export const columns: ColumnDef<TFile | undefined>[] = [
           variant="ghost"
           className="hover:bg-surface-hover"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          aria-label={localize('com_ui_name')}
         >
           {localize('com_ui_name')}
           <ArrowUpDown className="ml-2 h-4 w-4" />
@@ -40,6 +41,7 @@ export const columns: ColumnDef<TFile | undefined>[] = [
           variant="ghost"
           className="hover:bg-surface-hover"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          aria-label={localize('com_ui_date')}
         >
           {localize('com_ui_date')}
           <ArrowUpDown className="ml-2 h-4 w-4" />

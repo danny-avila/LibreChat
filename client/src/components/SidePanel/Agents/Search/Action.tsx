@@ -69,6 +69,7 @@ export default function Action({
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
                 disabled={webSearchIsEnabled ? false : !isToolAuthenticated}
+                aria-label={localize('com_ui_web_search')}
               />
             )}
           />

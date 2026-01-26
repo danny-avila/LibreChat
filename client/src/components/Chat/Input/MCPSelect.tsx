@@ -8,6 +8,7 @@ function MCPSelectContent() {
   const { conversationId, mcpServerManager } = useBadgeRowContext();
   const {
     localize,
+    isPinned,
     mcpValues,
     isInitializing,
     placeholderText,
@@ -67,6 +68,10 @@ function MCPSelectContent() {
     },
     [getServerStatusIconProps, isInitializing],
   );
+
+  if (!isPinned && mcpValues?.length === 0) {
+    return null;
+  }
 
   const configDialogProps = getConfigDialogProps();
 

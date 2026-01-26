@@ -1,10 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
 import type { AgentToolResources, TFile, AgentBaseResource } from 'librechat-data-provider';
+import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
-import type { IMongoFile, IUser } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
-import type { AppConfig } from '~/types/';
 
 /**
  * Function type for retrieving files from the database

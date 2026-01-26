@@ -3,8 +3,8 @@ import { openAISchema, EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption, TAzureConfig, TEndpoint, TConfig } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { OpenAIClientOptions, Providers } from '@librechat/agents';
+import type { AppConfig } from '@librechat/data-schemas';
 import type { AzureOptions } from './azure';
-import type { AppConfig } from './config';
 
 export type OpenAIParameters = z.infer<typeof openAISchema>;
 
@@ -31,6 +31,7 @@ export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
 
 export type OAIClientOptions = OpenAIClientOptions & {
   include_reasoning?: boolean;
+  _lc_stream_delay?: number;
 };
 
 /**
@@ -99,11 +100,4 @@ export interface InitializeOpenAIOptionsParams {
   endpointOption: Partial<TEndpointOption>;
   getUserKeyValues: GetUserKeyValuesFunction;
   checkUserKeyExpiry: CheckUserKeyExpiryFunction;
-}
-
-/**
- * Extended LLM config result with stream rate handling
- */
-export interface OpenAIOptionsResult extends LLMConfigResult {
-  streamRate?: number;
 }

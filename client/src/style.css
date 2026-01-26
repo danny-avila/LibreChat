@@ -1243,8 +1243,12 @@ pre {
     Ubuntu Mono,
     monospace !important;
 }
-code[class='language-plaintext'] {
-  white-space: pre-line;
+code.language-text,
+code.language-txt,
+code.language-plaintext,
+code.language-markdown,
+code.language-md {
+  white-space: pre-wrap !important;
 }
 code.hljs,
 code[class*='language-'],
@@ -1481,6 +1485,26 @@ button {
 
 .dark .scrollbar-transparent::-webkit-scrollbar-thumb {
   background-color: transparent;
+}
+
+/* Show scrollbar only on hover */
+.scrollbar-hover {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.scrollbar-hover:hover {
+  scrollbar-color: var(--border-medium) transparent;
+}
+
+.scrollbar-hover::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  transition: background-color 0.3s ease 0.5s;
+}
+
+.scrollbar-hover:hover::-webkit-scrollbar-thumb {
+  background-color: var(--border-medium);
+  transition-delay: 0s;
 }
 
 body,
@@ -2711,6 +2735,7 @@ html {
 .animate-pulse-slow {
   animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -2724,10 +2749,6 @@ html {
 
 .animate-fadeIn {
   animation: fadeIn 0.5s ease-out forwards;
-}
-
-.scale-98 {
-  transform: scale(0.98);
 }
 
 /* Chat Badges Animation */

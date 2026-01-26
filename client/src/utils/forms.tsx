@@ -52,6 +52,9 @@ export const getDefaultAgentFormValues = () => ({
   ...defaultAgentFormValues,
   model: localStorage.getItem(LocalStorageKeys.LAST_AGENT_MODEL) ?? '',
   provider: createProviderOption(localStorage.getItem(LocalStorageKeys.LAST_AGENT_PROVIDER) ?? ''),
+  avatar_file: null,
+  avatar_preview: '',
+  avatar_action: null,
 });
 
 export const processAgentOption = ({

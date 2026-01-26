@@ -24,11 +24,13 @@ export default function AgentFooter({
   updateMutation,
   setActivePanel,
   setCurrentAgentId,
+  isAvatarUploading = false,
 }: Pick<
   AgentPanelProps,
   'setCurrentAgentId' | 'createMutation' | 'activePanel' | 'setActivePanel'
 > & {
   updateMutation: ReturnType<typeof useUpdateAgentMutation>;
+  isAvatarUploading?: boolean;
 }) {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -49,8 +51,9 @@ export default function AgentFooter({
 
   const canShareThisAgent = hasPermission(PermissionBits.SHARE);
   const canDeleteThisAgent = hasPermission(PermissionBits.DELETE);
+  const isSaving = createMutation.isLoading || updateMutation.isLoading || isAvatarUploading;
   const renderSaveButton = () => {
-    if (createMutation.isLoading || updateMutation.isLoading) {
+    if (isSaving) {
       return <Spinner className="icon-md" aria-hidden="true" />;
     }
 
@@ -93,8 +96,8 @@ export default function AgentFooter({
         <button
           className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
           type="submit"
-          disabled={createMutation.isLoading || updateMutation.isLoading}
-          aria-busy={createMutation.isLoading || updateMutation.isLoading}
+          disabled={isSaving}
+          aria-busy={isSaving}
         >
           {renderSaveButton()}
         </button>

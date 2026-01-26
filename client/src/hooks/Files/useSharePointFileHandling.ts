@@ -5,11 +5,9 @@ import type { SharePointFile } from '~/data-provider/Files/sharepoint';
 
 interface UseSharePointFileHandlingProps {
   fileSetter?: any;
+  toolResource?: string;
   fileFilter?: (file: File) => boolean;
   additionalMetadata?: Record<string, string | undefined>;
-  overrideEndpoint?: any;
-  overrideEndpointFileConfig?: any;
-  toolResource?: string;
 }
 
 interface UseSharePointFileHandlingReturn {

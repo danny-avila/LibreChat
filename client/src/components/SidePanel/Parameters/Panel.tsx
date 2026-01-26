@@ -5,6 +5,7 @@ import {
   excludedKeys,
   paramSettings,
   getSettingsKeys,
+  getEndpointField,
   SettingDefinition,
   tConvoUpdateSchema,
 } from 'librechat-data-provider';
@@ -12,9 +13,9 @@ import type { TPreset } from 'librechat-data-provider';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { getEndpointField, logger } from '~/utils';
 import { componentMapping } from './components';
 import { useChatContext } from '~/Providers';
+import { logger } from '~/utils';
 
 export default function Parameters() {
   const localize = useLocalize();

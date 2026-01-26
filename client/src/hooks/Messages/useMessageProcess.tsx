@@ -3,8 +3,8 @@ import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import type { TMessage } from 'librechat-data-provider';
+import { getTextKey, TEXT_KEY_DIVIDER, logger } from '~/utils';
 import { useMessagesViewContext } from '~/Providers';
-import { getTextKey, logger } from '~/utils';
 import store from '~/store';
 
 export default function useMessageProcess({ message }: { message?: TMessage | null }) {
@@ -43,11 +43,21 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
       messageId: message.messageId,
       convoId,
     };
+
+    /* Extracted convoId from previous textKey (format: messageId|||length|||lastChars|||convoId) */
+    let previousConvoId: string | null = null;
+    if (
+      latestText.current &&
+      typeof latestText.current === 'string' &&
+      latestText.current.length > 0
+    ) {
+      const parts = latestText.current.split(TEXT_KEY_DIVIDER);
+      previousConvoId = parts[parts.length - 1] || null;
+    }
+
     if (
       textKey !== latestText.current ||
-      (convoId != null &&
-        latestText.current &&
-        convoId !== latestText.current.split(Constants.COMMON_DIVIDER)[2])
+      (convoId != null && previousConvoId != null && convoId !== previousConvoId)
     ) {
       logger.log('latest_message', '[useMessageProcess] Setting latest message; logInfo:', logInfo);
       latestText.current = textKey;

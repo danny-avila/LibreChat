@@ -3,15 +3,15 @@ import { useLocalize } from '~/hooks';
 import { useToastContext } from '@librechat/client';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import MCP from '~/components/SidePanel/Builder/MCP';
-import { Panel } from '~/common';
+import { Panel, isEphemeralAgent } from '~/common';
 
 export default function MCPSection() {
-  const { showToast } = useToastContext();
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const { mcps = [], agent_id, setMcp, setActivePanel } = useAgentPanelContext();
 
   const handleAddMCP = useCallback(() => {
-    if (!agent_id) {
+    if (isEphemeralAgent(agent_id)) {
       showToast({
         message: localize('com_agents_mcps_disabled'),
         status: 'warning',

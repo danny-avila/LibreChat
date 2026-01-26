@@ -1,9 +1,8 @@
 const { z } = require('zod');
 const path = require('path');
 const OpenAI = require('openai');
-const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
-const { ProxyAgent } = require('undici');
+const { ProxyAgent, fetch } = require('undici');
 const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { getImageBasename } = require('@librechat/api');

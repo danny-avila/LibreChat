@@ -93,6 +93,11 @@ export default function ArchivedChatsTable({
     onSuccess: async () => {
       setIsDeleteOpen(false);
       await refetch();
+      showToast({
+        message: localize('com_ui_convo_delete_success'),
+        severity: NotificationSeverity.SUCCESS,
+        showIcon: true,
+      });
     },
     onError: (error: unknown) => {
       showToast({

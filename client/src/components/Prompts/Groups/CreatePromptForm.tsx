@@ -151,6 +151,7 @@ const CreatePromptForm = ({
                       className="w-full rounded border border-border-medium px-2 py-1 focus:outline-none dark:bg-transparent dark:text-gray-200"
                       minRows={6}
                       tabIndex={0}
+                      aria-label={localize('com_ui_prompt_input_field')}
                     />
                     <div
                       className={`mt-1 text-sm text-red-500 ${

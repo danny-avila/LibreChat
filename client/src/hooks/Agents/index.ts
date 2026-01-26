@@ -6,3 +6,4 @@ export { default as useAgentCapabilities } from './useAgentCapabilities';
 export { default as useGetAgentsConfig } from './useGetAgentsConfig';
 export { default as useAgentDefaultPermissionLevel } from './useAgentDefaultPermissionLevel';
 export { default as useAgentToolPermissions } from './useAgentToolPermissions';
+export * from './useApplyModelSpecAgents';

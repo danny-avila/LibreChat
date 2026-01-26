@@ -124,13 +124,15 @@ export default function ExportModal({
                       disabled={!exportOptionsSupport}
                       checked={includeOptions}
                       onCheckedChange={setIncludeOptions}
+                      aria-labelledby="includeOptions-label"
                     />
                     <label
+                      id="includeOptions-label"
                       htmlFor="includeOptions"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
                       {exportOptionsSupport
-                        ? localize('com_nav_enabled')
+                        ? localize('com_nav_export_include_endpoint_options')
                         : localize('com_nav_not_supported')}
                     </label>
                   </div>
@@ -146,13 +148,15 @@ export default function ExportModal({
                     disabled={!exportBranchesSupport}
                     checked={exportBranches}
                     onCheckedChange={setExportBranches}
+                    aria-labelledby="exportBranches-label"
                   />
                   <label
+                    id="exportBranches-label"
                     htmlFor="exportBranches"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                   >
                     {exportBranchesSupport
-                      ? localize('com_nav_enabled')
+                      ? localize('com_nav_export_all_message_branches')
                       : localize('com_nav_not_supported')}
                   </label>
                 </div>
@@ -163,8 +167,14 @@ export default function ExportModal({
                     {localize('com_nav_export_recursive_or_sequential')}
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
-                    <Checkbox id="recursive" checked={recursive} onCheckedChange={setRecursive} />
+                    <Checkbox
+                      id="recursive"
+                      checked={recursive}
+                      onCheckedChange={setRecursive}
+                      aria-labelledby="recursive-label"
+                    />
                     <label
+                      id="recursive-label"
                       htmlFor="recursive"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >

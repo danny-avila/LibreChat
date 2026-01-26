@@ -5,14 +5,36 @@ import { signPayload } from '~/crypto';
 /** Factory function that takes mongoose instance and returns the methods */
 export function createUserMethods(mongoose: typeof import('mongoose')) {
   /**
+   * Normalizes email fields in search criteria to lowercase and trimmed.
+   * Handles both direct email fields and $or arrays containing email conditions.
+   */
+  function normalizeEmailInCriteria<T extends FilterQuery<IUser>>(criteria: T): T {
+    const normalized = { ...criteria };
+    if (typeof normalized.email === 'string') {
+      normalized.email = normalized.email.trim().toLowerCase();
+    }
+    if (Array.isArray(normalized.$or)) {
+      normalized.$or = normalized.$or.map((condition) => {
+        if (typeof condition.email === 'string') {
+          return { ...condition, email: condition.email.trim().toLowerCase() };
+        }
+        return condition;
+      });
+    }
+    return normalized;
+  }
+
+  /**
    * Search for a single user based on partial data and return matching user document as plain object.
+   * Email fields in searchCriteria are automatically normalized to lowercase for case-insensitive matching.
    */
   async function findUser(
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
   ): Promise<IUser | null> {
     const User = mongoose.models.User;
-    const query = User.findOne(searchCriteria);
+    const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
+    const query = User.findOne(normalizedCriteria);
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }

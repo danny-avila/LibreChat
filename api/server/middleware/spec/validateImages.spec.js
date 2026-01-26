@@ -1,10 +1,13 @@
 const jwt = require('jsonwebtoken');
-const { isEnabled } = require('@librechat/api');
 const createValidateImageRequest = require('~/server/middleware/validateImageRequest');
 
+// Mock only isEnabled, keep getBasePath real so it reads process.env.DOMAIN_CLIENT
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn(),
 }));
+
+const { isEnabled } = require('@librechat/api');
 
 describe('validateImageRequest middleware', () => {
   let req, res, next, validateImageRequest;
@@ -23,6 +26,7 @@ describe('validateImageRequest middleware', () => {
     next = jest.fn();
     process.env.JWT_REFRESH_SECRET = 'test-secret';
     process.env.OPENID_REUSE_TOKENS = 'false';
+    delete process.env.DOMAIN_CLIENT; // Clear for tests without basePath
 
     // Default: OpenID token reuse disabled
     isEnabled.mockReturnValue(false);
@@ -294,6 +298,177 @@ describe('validateImageRequest middleware', () => {
       await validateImageRequest(req, res, next);
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.send).toHaveBeenCalledWith('Access Denied');
+    });
+  });
+
+  describe('basePath functionality', () => {
+    let originalDomainClient;
+
+    beforeEach(() => {
+      originalDomainClient = process.env.DOMAIN_CLIENT;
+    });
+
+    afterEach(() => {
+      process.env.DOMAIN_CLIENT = originalDomainClient;
+    });
+
+    test('should validate image paths with base path', async () => {
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/librechat/images/${validObjectId}/test.jpg`;
+
+      await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should validate agent avatar paths with base path', async () => {
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/librechat/images/${validObjectId}/agent-avatar.png`;
+
+      await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should reject image paths without base path when DOMAIN_CLIENT is set', async () => {
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/images/${validObjectId}/test.jpg`;
+
+      await validateImageRequest(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.send).toHaveBeenCalledWith('Access Denied');
+    });
+
+    test('should handle empty base path (root deployment)', async () => {
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/images/${validObjectId}/test.jpg`;
+
+      await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should handle missing DOMAIN_CLIENT', async () => {
+      delete process.env.DOMAIN_CLIENT;
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/images/${validObjectId}/test.jpg`;
+
+      await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should handle nested subdirectories in base path', async () => {
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/apps/librechat';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/apps/librechat/images/${validObjectId}/test.jpg`;
+
+      await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should prevent path traversal with base path', async () => {
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/librechat/images/${validObjectId}/../../../etc/passwd`;
+
+      await validateImageRequest(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.send).toHaveBeenCalledWith('Access Denied');
+    });
+
+    test('should handle URLs with query parameters and base path', async () => {
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/librechat/images/${validObjectId}/test.jpg?version=1`;
+
+      await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should handle URLs with fragments and base path', async () => {
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/librechat/images/${validObjectId}/test.jpg#section`;
+
+      await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should handle HTTPS URLs with base path', async () => {
+      process.env.DOMAIN_CLIENT = 'https://example.com/librechat';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/librechat/images/${validObjectId}/test.jpg`;
+
+      await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should handle invalid DOMAIN_CLIENT gracefully', async () => {
+      process.env.DOMAIN_CLIENT = 'not-a-valid-url';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/images/${validObjectId}/test.jpg`;
+
+      await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should handle OpenID flow with base path', async () => {
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      process.env.OPENID_REUSE_TOKENS = 'true';
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}; token_provider=openid; openid_user_id=${validToken}`;
+      req.originalUrl = `/librechat/images/${validObjectId}/test.jpg`;
+
+      await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
     });
   });
 });

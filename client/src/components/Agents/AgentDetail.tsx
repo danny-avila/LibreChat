@@ -11,9 +11,9 @@ import {
   AgentListResponse,
 } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
+import { renderAgentAvatar, clearMessagesCache } from '~/utils';
 import { useLocalize, useDefaultConvo } from '~/hooks';
 import { useChatContext } from '~/Providers';
-import { renderAgentAvatar } from '~/utils';
 
 interface SupportContact {
   name?: string;
@@ -56,10 +56,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
 
       localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, agent.id);
 
-      queryClient.setQueryData<t.TMessage[]>(
-        [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
-        [],
-      );
+      clearMessagesCache(queryClient, conversation?.conversationId);
       queryClient.invalidateQueries([QueryKeys.messages]);
 
       /** Template with agent configuration */

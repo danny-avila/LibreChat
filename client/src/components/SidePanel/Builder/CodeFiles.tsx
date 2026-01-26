@@ -1,10 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import {
-  EToolResources,
-  mergeFileConfig,
-  fileConfig as defaultFileConfig,
-} from 'librechat-data-provider';
-import type { AssistantsEndpoint, EndpointFileConfig } from 'librechat-data-provider';
+import { EToolResources, mergeFileConfig, getEndpointFileConfig } from 'librechat-data-provider';
+import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
@@ -28,11 +24,10 @@ export default function CodeFiles({
   const { setFilesLoading } = useChatContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+  const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: endpoint,
     additionalMetadata: { assistant_id, tool_resource },
     fileSetter: setFiles,
   });
@@ -43,7 +38,11 @@ export default function CodeFiles({
     }
   }, [_files]);
 
-  const endpointFileConfig = fileConfig.endpoints[endpoint] as EndpointFileConfig | undefined;
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig,
+    endpoint,
+    endpointType: endpoint,
+  });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   if (isUploadDisabled) {

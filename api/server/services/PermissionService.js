@@ -292,7 +292,7 @@ const ensurePrincipalExists = async function (principal) {
     let existingUser = await findUser({ idOnTheSource: principal.idOnTheSource });
 
     if (!existingUser) {
-      existingUser = await findUser({ email: principal.email.toLowerCase() });
+      existingUser = await findUser({ email: principal.email });
     }
 
     if (existingUser) {

@@ -1,7 +1,7 @@
-import { EModelEndpoint, extractEnvVariable } from 'librechat-data-provider';
+import { EModelEndpoint, extractEnvVariable, normalizeEndpointName } from 'librechat-data-provider';
 import type { TCustomEndpoints, TEndpoint, TConfig } from 'librechat-data-provider';
 import type { TCustomEndpointsConfig } from '~/types/endpoints';
-import { isUserProvided, normalizeEndpointName } from '~/utils';
+import { isUserProvided } from '~/utils';
 
 /**
  * Load config endpoints from the cached configuration object

@@ -2,7 +2,12 @@ import React, { useMemo } from 'react';
 import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
 import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
-import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
+import {
+  renderModelSpecs,
+  renderEndpoints,
+  renderSearchResults,
+  renderCustomGroups,
+} from './components';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
@@ -86,8 +91,15 @@ function ModelSelectorContent() {
           renderSearchResults(searchResults, localize, searchValue)
         ) : (
           <>
-            {renderModelSpecs(modelSpecs, selectedValues.modelSpec || '')}
+            {/* Render ungrouped modelSpecs (no group field) */}
+            {renderModelSpecs(
+              modelSpecs?.filter((spec) => !spec.group) || [],
+              selectedValues.modelSpec || '',
+            )}
+            {/* Render endpoints (will include grouped specs matching endpoint names) */}
             {renderEndpoints(mappedEndpoints ?? [])}
+            {/* Render custom groups (specs with group field not matching any endpoint) */}
+            {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
           </>
         )}
       </Menu>

@@ -1,4 +1,4 @@
-import type { AppConfig } from '~/types';
+import type { AppConfig } from '@librechat/data-schemas';
 import {
   createTempChatExpirationDate,
   getTempChatRetentionHours,
@@ -92,14 +92,16 @@ describe('tempChatRetention', () => {
 
   describe('createTempChatExpirationDate', () => {
     it('should create expiration date with default retention period', () => {
+      const beforeCall = Date.now();
       const result = createTempChatExpirationDate();
+      const afterCall = Date.now();
 
-      const expectedDate = new Date();
-      expectedDate.setHours(expectedDate.getHours() + DEFAULT_RETENTION_HOURS);
+      const expectedMin = beforeCall + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000;
+      const expectedMax = afterCall + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000;
 
-      // Allow for small time differences in test execution
-      const timeDiff = Math.abs(result.getTime() - expectedDate.getTime());
-      expect(timeDiff).toBeLessThan(1000); // Less than 1 second difference
+      // Result should be between expectedMin and expectedMax
+      expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin);
+      expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
     });
 
     it('should create expiration date with custom retention period', () => {
@@ -109,14 +111,16 @@ describe('tempChatRetention', () => {
         },
       };
 
+      const beforeCall = Date.now();
       const result = createTempChatExpirationDate(config?.interfaceConfig);
+      const afterCall = Date.now();
 
-      const expectedDate = new Date();
-      expectedDate.setHours(expectedDate.getHours() + 12);
+      const expectedMin = beforeCall + 12 * 60 * 60 * 1000;
+      const expectedMax = afterCall + 12 * 60 * 60 * 1000;
 
-      // Allow for small time differences in test execution
-      const timeDiff = Math.abs(result.getTime() - expectedDate.getTime());
-      expect(timeDiff).toBeLessThan(1000); // Less than 1 second difference
+      // Result should be between expectedMin and expectedMax
+      expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin);
+      expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
     });
 
     it('should return a Date object', () => {

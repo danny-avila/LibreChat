@@ -30,7 +30,7 @@ export default function AutoSendPrompt({
     >
       <div> {localize('com_nav_auto_send_prompts')} </div>
       <Switch
-        aria-label="toggle-auto-send-prompts"
+        aria-label={localize('com_nav_auto_send_prompts')}
         id="autoSendPrompts"
         checked={autoSendPrompts}
         onCheckedChange={handleCheckedChange}

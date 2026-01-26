@@ -135,8 +135,9 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
         'group relative flex h-12 w-full items-center rounded-lg transition-colors duration-200 md:h-9',
         isActiveConvo ? 'bg-surface-active-alt' : 'hover:bg-surface-active-alt',
       )}
-      role="listitem"
-      tabIndex={0}
+      role="button"
+      tabIndex={renaming ? -1 : 0}
+      aria-label={`${title || localize('com_ui_untitled')} conversation`}
       onClick={(e) => {
         if (renaming) {
           return;
@@ -149,7 +150,8 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
         if (renaming) {
           return;
         }
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
           handleNavigation(false);
         }
       }}

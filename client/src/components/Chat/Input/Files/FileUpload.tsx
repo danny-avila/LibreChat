@@ -62,17 +62,28 @@ const FileUpload: React.FC<FileUploadProps> = ({
     statusText = invalidText ?? localize('com_ui_upload_invalid');
   }
 
+  const handleClick = () => {
+    const fileInput = document.getElementById(`file-upload-${id}`) as HTMLInputElement;
+    if (fileInput) {
+      fileInput.click();
+    }
+  };
+
   return (
-    <label
-      htmlFor={`file-upload-${id}`}
-      className={cn(
-        'mr-1 flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-normal transition-colors hover:bg-gray-100 hover:text-green-600 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-green-500',
-        statusColor,
-        containerClassName,
-      )}
-    >
-      <FileUp className="mr-1 flex w-[22px] items-center stroke-1" />
-      <span className="flex text-xs">{statusText}</span>
+    <>
+      <button
+        type="button"
+        onClick={handleClick}
+        className={cn(
+          'mr-1 flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-normal transition-colors hover:bg-gray-100 hover:text-green-600 focus:ring-ring dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-green-500',
+          statusColor,
+          containerClassName,
+        )}
+        aria-label={statusText}
+      >
+        <FileUp className="mr-1 flex w-[22px] items-center stroke-1" aria-hidden="true" />
+        <span className="flex text-xs">{statusText}</span>
+      </button>
       <input
         id={`file-upload-${id}`}
         value=""
@@ -80,8 +91,9 @@ const FileUpload: React.FC<FileUploadProps> = ({
         className={cn('hidden', className)}
         accept=".json"
         onChange={handleFileChange}
+        tabIndex={-1}
       />
-    </label>
+    </>
   );
 };
 

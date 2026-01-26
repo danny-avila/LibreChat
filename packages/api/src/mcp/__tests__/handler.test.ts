@@ -1,6 +1,6 @@
 import type { MCPOptions } from 'librechat-data-provider';
 import type { AuthorizationServerMetadata } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { MCPOAuthHandler } from '~/mcp/oauth';
+import { MCPOAuthFlowMetadata, MCPOAuthHandler, MCPOAuthTokens } from '~/mcp/oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -14,18 +14,33 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@modelcontextprotocol/sdk/client/auth.js', () => ({
   startAuthorization: jest.fn(),
   discoverAuthorizationServerMetadata: jest.fn(),
+  discoverOAuthProtectedResourceMetadata: jest.fn(),
+  registerClient: jest.fn(),
+  exchangeAuthorization: jest.fn(),
 }));
 
 import {
   startAuthorization,
   discoverAuthorizationServerMetadata,
+  discoverOAuthProtectedResourceMetadata,
+  registerClient,
+  exchangeAuthorization,
 } from '@modelcontextprotocol/sdk/client/auth.js';
+import { FlowStateManager } from '../../flow/manager';
 
 const mockStartAuthorization = startAuthorization as jest.MockedFunction<typeof startAuthorization>;
 const mockDiscoverAuthorizationServerMetadata =
   discoverAuthorizationServerMetadata as jest.MockedFunction<
     typeof discoverAuthorizationServerMetadata
   >;
+const mockDiscoverOAuthProtectedResourceMetadata =
+  discoverOAuthProtectedResourceMetadata as jest.MockedFunction<
+    typeof discoverOAuthProtectedResourceMetadata
+  >;
+const mockRegisterClient = registerClient as jest.MockedFunction<typeof registerClient>;
+const mockExchangeAuthorization = exchangeAuthorization as jest.MockedFunction<
+  typeof exchangeAuthorization
+>;
 
 describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
   const mockServerName = 'test-server';
@@ -60,6 +75,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         mockServerName,
         mockServerUrl,
         mockUserId,
+        {},
         baseConfig,
       );
 
@@ -82,7 +98,13 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         grant_types_supported: ['authorization_code'],
       };
 
-      await MCPOAuthHandler.initiateOAuthFlow(mockServerName, mockServerUrl, mockUserId, config);
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        config,
+      );
 
       expect(mockStartAuthorization).toHaveBeenCalledWith(
         mockServerUrl,
@@ -100,7 +122,13 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         token_endpoint_auth_methods_supported: ['client_secret_post'],
       };
 
-      await MCPOAuthHandler.initiateOAuthFlow(mockServerName, mockServerUrl, mockUserId, config);
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        config,
+      );
 
       expect(mockStartAuthorization).toHaveBeenCalledWith(
         mockServerUrl,
@@ -118,7 +146,13 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         response_types_supported: ['code', 'token'],
       };
 
-      await MCPOAuthHandler.initiateOAuthFlow(mockServerName, mockServerUrl, mockUserId, config);
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        config,
+      );
 
       expect(mockStartAuthorization).toHaveBeenCalledWith(
         mockServerUrl,
@@ -136,7 +170,13 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         code_challenge_methods_supported: ['S256'],
       };
 
-      await MCPOAuthHandler.initiateOAuthFlow(mockServerName, mockServerUrl, mockUserId, config);
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        config,
+      );
 
       expect(mockStartAuthorization).toHaveBeenCalledWith(
         mockServerUrl,
@@ -157,7 +197,13 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         code_challenge_methods_supported: ['S256'],
       };
 
-      await MCPOAuthHandler.initiateOAuthFlow(mockServerName, mockServerUrl, mockUserId, config);
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        config,
+      );
 
       expect(mockStartAuthorization).toHaveBeenCalledWith(
         mockServerUrl,
@@ -181,7 +227,13 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         code_challenge_methods_supported: [],
       };
 
-      await MCPOAuthHandler.initiateOAuthFlow(mockServerName, mockServerUrl, mockUserId, config);
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        config,
+      );
 
       expect(mockStartAuthorization).toHaveBeenCalledWith(
         mockServerUrl,
@@ -251,7 +303,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           }),
         } as Response);
 
-        const result = await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata);
+        const result = await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata, {}, {});
 
         // Verify the call was made without Authorization header
         expect(mockFetch).toHaveBeenCalledWith(
@@ -314,7 +366,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           }),
         } as Response);
 
-        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata);
+        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata, {}, {});
 
         const expectedAuth = `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`;
         expect(mockFetch).toHaveBeenCalledWith(
@@ -363,7 +415,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           }),
         } as Response);
 
-        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata);
+        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata, {}, {});
 
         const expectedAuth = `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`;
         expect(mockFetch).toHaveBeenCalledWith(
@@ -410,7 +462,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           }),
         } as Response);
 
-        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata);
+        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata, {}, {});
 
         const expectedAuth = `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`;
         expect(mockFetch).toHaveBeenCalledWith(
@@ -457,7 +509,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           }),
         } as Response);
 
-        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata);
+        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata, {}, {});
 
         // Verify the call was made without Authorization header
         expect(mockFetch).toHaveBeenCalledWith(
@@ -498,6 +550,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         await MCPOAuthHandler.refreshOAuthTokens(
           mockRefreshToken,
           { serverName: 'test-server' },
+          {},
           config,
         );
 
@@ -539,6 +592,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         await MCPOAuthHandler.refreshOAuthTokens(
           mockRefreshToken,
           { serverName: 'test-server' },
+          {},
           config,
         );
 
@@ -575,6 +629,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         await MCPOAuthHandler.refreshOAuthTokens(
           mockRefreshToken,
           { serverName: 'test-server' },
+          {},
           config,
         );
 
@@ -617,7 +672,9 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           '{"error":"invalid_request","error_description":"refresh_token.client_id: Field required"}',
       } as Response);
 
-      await expect(MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata)).rejects.toThrow(
+      await expect(
+        MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata, {}, {}),
+      ).rejects.toThrow(
         'Token refresh failed: 400 Bad Request - {"error":"invalid_request","error_description":"refresh_token.client_id: Field required"}',
       );
     });
@@ -808,6 +865,271 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: expect.stringMatching(/^Basic /),
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('Custom OAuth Headers', () => {
+    const originalFetch = global.fetch;
+    const mockFetch = jest.fn();
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = mockFetch as unknown as typeof fetch;
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValue({
+        issuer: 'http://example.com',
+        authorization_endpoint: 'http://example.com/auth',
+        token_endpoint: 'http://example.com/token',
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+      mockStartAuthorization.mockResolvedValue({
+        authorizationUrl: new URL('http://example.com/auth'),
+        codeVerifier: 'test-verifier',
+      });
+    });
+
+    afterAll(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('passes headers to client registration', async () => {
+      mockRegisterClient.mockImplementation(async (_, options) => {
+        await options.fetchFn?.('http://example.com/register', {});
+        return { client_id: 'test', redirect_uris: [] };
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'http://example.com',
+        'user-123',
+        { foo: 'bar' },
+        {},
+      );
+
+      const headers = mockFetch.mock.calls[0][1]?.headers as Headers;
+      expect(headers.get('foo')).toBe('bar');
+    });
+
+    it('passes headers to discovery operations', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockImplementation(async (_, __, fetchFn) => {
+        await fetchFn?.('http://example.com/.well-known/oauth-protected-resource', {});
+        return {
+          resource: 'http://example.com',
+          authorization_servers: ['http://auth.example.com'],
+        };
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'http://example.com',
+        'user-123',
+        { foo: 'bar' },
+        {},
+      );
+
+      const allHaveHeader = mockFetch.mock.calls.every((call) => {
+        const headers = call[1]?.headers as Headers;
+        return headers?.get('foo') === 'bar';
+      });
+      expect(allHaveHeader).toBe(true);
+    });
+
+    it('passes headers to token exchange', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          metadata: {
+            serverName: 'test-server',
+            codeVerifier: 'test-verifier',
+            clientInfo: {},
+            metadata: {},
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlow: jest.fn(),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+
+      mockExchangeAuthorization.mockImplementation(async (_, options) => {
+        await options.fetchFn?.('http://example.com/token', {});
+        return { access_token: 'test-token', token_type: 'Bearer', expires_in: 3600 };
+      });
+
+      await MCPOAuthHandler.completeOAuthFlow('test-flow-id', 'test-auth-code', mockFlowManager, {
+        foo: 'bar',
+      });
+
+      const headers = mockFetch.mock.calls[0][1]?.headers as Headers;
+      expect(headers.get('foo')).toBe('bar');
+    });
+
+    it('passes headers to token refresh', async () => {
+      mockDiscoverAuthorizationServerMetadata.mockImplementation(async (_, options) => {
+        await options?.fetchFn?.('http://example.com/.well-known/oauth-authorization-server', {});
+        return {
+          issuer: 'http://example.com',
+          token_endpoint: 'http://example.com/token',
+        } as AuthorizationServerMetadata;
+      });
+
+      await MCPOAuthHandler.refreshOAuthTokens(
+        'test-refresh-token',
+        {
+          serverName: 'test-server',
+          serverUrl: 'http://example.com',
+          clientInfo: { client_id: 'test-client', client_secret: 'test-secret' },
+        },
+        { foo: 'bar' },
+        {},
+      );
+
+      const discoveryCall = mockFetch.mock.calls.find((call) =>
+        call[0].toString().includes('.well-known'),
+      );
+      expect(discoveryCall).toBeDefined();
+      const headers = discoveryCall![1]?.headers as Headers;
+      expect(headers.get('foo')).toBe('bar');
+    });
+  });
+
+  describe('Fallback OAuth Metadata (Legacy Server Support)', () => {
+    const originalFetch = global.fetch;
+    const mockFetch = jest.fn();
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = mockFetch as unknown as typeof fetch;
+    });
+
+    afterAll(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('should use fallback metadata when discoverAuthorizationServerMetadata returns undefined', async () => {
+      // Mock resource metadata discovery to fail
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      // Mock authorization server metadata discovery to return undefined (no .well-known)
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce(undefined);
+
+      // Mock client registration to succeed
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'dynamic-client-id',
+        client_secret: 'dynamic-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+      });
+
+      // Mock startAuthorization to return a successful response
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://mcp.example.com/authorize?client_id=dynamic-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://mcp.example.com',
+        'user-123',
+        {},
+        undefined,
+      );
+
+      // Verify registerClient was called with fallback metadata
+      expect(mockRegisterClient).toHaveBeenCalledWith(
+        'https://mcp.example.com/',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            issuer: 'https://mcp.example.com/',
+            authorization_endpoint: 'https://mcp.example.com/authorize',
+            token_endpoint: 'https://mcp.example.com/token',
+            registration_endpoint: 'https://mcp.example.com/register',
+            response_types_supported: ['code'],
+            grant_types_supported: ['authorization_code', 'refresh_token'],
+            code_challenge_methods_supported: ['S256', 'plain'],
+            token_endpoint_auth_methods_supported: [
+              'client_secret_basic',
+              'client_secret_post',
+              'none',
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('should use fallback /token endpoint for refresh when metadata discovery fails', async () => {
+      const metadata = {
+        serverName: 'test-server',
+        serverUrl: 'https://mcp.example.com',
+        clientInfo: {
+          client_id: 'test-client-id',
+          client_secret: 'test-client-secret',
+        },
+      };
+
+      // Mock metadata discovery to return undefined (no .well-known)
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce(undefined);
+
+      // Mock successful token refresh
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+          expires_in: 3600,
+        }),
+      } as Response);
+
+      const result = await MCPOAuthHandler.refreshOAuthTokens(
+        'test-refresh-token',
+        metadata,
+        {},
+        {},
+      );
+
+      // Verify fetch was called with fallback /token endpoint
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://mcp.example.com/token',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+
+      expect(result.access_token).toBe('new-access-token');
+    });
+
+    it('should use fallback auth methods when metadata discovery fails during refresh', async () => {
+      const metadata = {
+        serverName: 'test-server',
+        serverUrl: 'https://mcp.example.com',
+        clientInfo: {
+          client_id: 'test-client-id',
+          client_secret: 'test-client-secret',
+        },
+      };
+
+      // Mock metadata discovery to return undefined
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce(undefined);
+
+      // Mock successful token refresh
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-access-token',
+          expires_in: 3600,
+        }),
+      } as Response);
+
+      await MCPOAuthHandler.refreshOAuthTokens('test-refresh-token', metadata, {}, {});
+
+      // Verify it uses client_secret_basic (first in fallback auth methods)
+      const expectedAuth = `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`;
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: expectedAuth,
           }),
         }),
       );

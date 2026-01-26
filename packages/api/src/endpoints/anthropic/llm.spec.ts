@@ -122,6 +122,38 @@ describe('getLLMConfig', () => {
     });
   });
 
+  it('should add "prompt-caching" beta header for claude-opus-4-5 model', () => {
+    const modelOptions = {
+      model: 'claude-opus-4-5',
+      promptCache: true,
+    };
+    const result = getLLMConfig('test-key', { modelOptions });
+    const clientOptions = result.llmConfig.clientOptions;
+    expect(clientOptions?.defaultHeaders).toBeDefined();
+    expect(clientOptions?.defaultHeaders).toHaveProperty('anthropic-beta');
+    const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string>;
+    expect(defaultHeaders['anthropic-beta']).toBe('prompt-caching-2024-07-31');
+  });
+
+  it('should add "prompt-caching" beta header for claude-opus-4-5 model formats', () => {
+    const modelVariations = [
+      'claude-opus-4-5',
+      'claude-opus-4-5-20250420',
+      'claude-opus-4.5',
+      'anthropic/claude-opus-4-5',
+    ];
+
+    modelVariations.forEach((model) => {
+      const modelOptions = { model, promptCache: true };
+      const result = getLLMConfig('test-key', { modelOptions });
+      const clientOptions = result.llmConfig.clientOptions;
+      expect(clientOptions?.defaultHeaders).toBeDefined();
+      expect(clientOptions?.defaultHeaders).toHaveProperty('anthropic-beta');
+      const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string>;
+      expect(defaultHeaders['anthropic-beta']).toBe('prompt-caching-2024-07-31');
+    });
+  });
+
   it('should NOT include topK and topP for Claude-3.7 models with thinking enabled (decimal notation)', () => {
     const result = getLLMConfig('test-api-key', {
       modelOptions: {
@@ -245,8 +277,8 @@ describe('getLLMConfig', () => {
         },
       });
 
-      // The actual anthropicSettings.maxOutputTokens.reset('claude-3-opus') returns 4096
-      expect(result.llmConfig).toHaveProperty('maxTokens', 4096);
+      // The actual anthropicSettings.maxOutputTokens.reset('claude-3-opus') returns 8192
+      expect(result.llmConfig).toHaveProperty('maxTokens', 8192);
     });
 
     it('should handle both proxy and reverseProxyUrl', () => {
@@ -698,9 +730,18 @@ describe('getLLMConfig', () => {
           { model: 'claude-3.5-sonnet-20241022', expectedMaxTokens: 8192 },
           { model: 'claude-3-7-sonnet', expectedMaxTokens: 8192 },
           { model: 'claude-3.7-sonnet-20250109', expectedMaxTokens: 8192 },
-          { model: 'claude-3-opus', expectedMaxTokens: 4096 },
-          { model: 'claude-3-haiku', expectedMaxTokens: 4096 },
-          { model: 'claude-2.1', expectedMaxTokens: 4096 },
+          { model: 'claude-3-opus', expectedMaxTokens: 8192 },
+          { model: 'claude-3-haiku', expectedMaxTokens: 8192 },
+          { model: 'claude-2.1', expectedMaxTokens: 8192 },
+          { model: 'claude-sonnet-4-5', expectedMaxTokens: 64000 },
+          { model: 'claude-sonnet-4-5-20250929', expectedMaxTokens: 64000 },
+          { model: 'claude-haiku-4-5', expectedMaxTokens: 64000 },
+          { model: 'claude-haiku-4-5-20251001', expectedMaxTokens: 64000 },
+          { model: 'claude-opus-4-1', expectedMaxTokens: 32000 },
+          { model: 'claude-opus-4-1-20250805', expectedMaxTokens: 32000 },
+          { model: 'claude-opus-4-5', expectedMaxTokens: 64000 },
+          { model: 'claude-sonnet-4-20250514', expectedMaxTokens: 64000 },
+          { model: 'claude-opus-4-0', expectedMaxTokens: 32000 },
         ];
 
         testCases.forEach(({ model, expectedMaxTokens }) => {
@@ -726,6 +767,242 @@ describe('getLLMConfig', () => {
         });
         // Should have prompt cache headers by default
         expect(result.llmConfig.clientOptions?.defaultHeaders).toBeDefined();
+      });
+    });
+
+    describe('Claude 4.x Model maxOutputTokens Defaults', () => {
+      it('should default Claude Sonnet 4.x models to 64K tokens', () => {
+        const testCases = ['claude-sonnet-4-5', 'claude-sonnet-4-5-20250929', 'claude-sonnet-4.5'];
+
+        testCases.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(64000);
+        });
+      });
+
+      it('should default Claude Haiku 4.x models to 64K tokens', () => {
+        const testCases = ['claude-haiku-4-5', 'claude-haiku-4-5-20251001', 'claude-haiku-4.5'];
+
+        testCases.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(64000);
+        });
+      });
+
+      it('should default Claude Opus 4.x models to 32K tokens', () => {
+        const testCases = ['claude-opus-4-1', 'claude-opus-4-1-20250805', 'claude-opus-4.1'];
+
+        testCases.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(32000);
+        });
+      });
+
+      it('should default Claude Opus 4.5 model to 64K tokens', () => {
+        const testCases = ['claude-opus-4-5', 'claude-opus-4-5-20250420', 'claude-opus-4.5'];
+
+        testCases.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(64000);
+        });
+      });
+
+      it('should default future Claude 4.x Sonnet/Haiku models to 64K (future-proofing)', () => {
+        const testCases = ['claude-sonnet-4-20250514', 'claude-sonnet-4-9', 'claude-haiku-4-8'];
+
+        testCases.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(64000);
+        });
+      });
+
+      it('should default future Claude 4.x Opus models (future-proofing)', () => {
+        // opus-4-0 through opus-4-4 get 32K
+        const opus32kModels = ['claude-opus-4-0', 'claude-opus-4-1', 'claude-opus-4-4'];
+        opus32kModels.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(32000);
+        });
+
+        // opus-4-5+ get 64K
+        const opus64kModels = ['claude-opus-4-5', 'claude-opus-4-7', 'claude-opus-4-10'];
+        opus64kModels.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(64000);
+        });
+      });
+
+      it('should handle explicit maxOutputTokens override for Claude 4.x models', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-sonnet-4-5',
+            maxOutputTokens: 64000, // Explicitly set to 64K
+          },
+        });
+
+        expect(result.llmConfig.maxTokens).toBe(64000);
+      });
+
+      it('should handle undefined maxOutputTokens for Claude 4.x (use reset default)', () => {
+        const testCases = [
+          { model: 'claude-sonnet-4-5', expected: 64000 },
+          { model: 'claude-haiku-4-5', expected: 64000 },
+          { model: 'claude-opus-4-1', expected: 32000 },
+        ];
+
+        testCases.forEach(({ model, expected }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: {
+              model,
+              maxOutputTokens: undefined,
+            },
+          });
+          expect(result.llmConfig.maxTokens).toBe(expected);
+        });
+      });
+
+      it('should handle Claude 4 Sonnet/Haiku with thinking enabled', () => {
+        const testCases = ['claude-sonnet-4-5', 'claude-haiku-4-5'];
+
+        testCases.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: {
+              model,
+              thinking: true,
+              thinkingBudget: 10000,
+            },
+          });
+
+          expect(result.llmConfig.thinking).toMatchObject({
+            type: 'enabled',
+            budget_tokens: 10000,
+          });
+          expect(result.llmConfig.maxTokens).toBe(64000);
+        });
+      });
+
+      it('should handle Claude 4 Opus with thinking enabled', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-1',
+            thinking: true,
+            thinkingBudget: 10000,
+          },
+        });
+
+        expect(result.llmConfig.thinking).toMatchObject({
+          type: 'enabled',
+          budget_tokens: 10000,
+        });
+        expect(result.llmConfig.maxTokens).toBe(32000);
+      });
+
+      it('should respect model-specific maxOutputTokens for Claude 4.x models', () => {
+        const testCases = [
+          { model: 'claude-sonnet-4-5', maxOutputTokens: 50000, expected: 50000 },
+          { model: 'claude-haiku-4-5', maxOutputTokens: 40000, expected: 40000 },
+          { model: 'claude-opus-4-1', maxOutputTokens: 20000, expected: 20000 },
+        ];
+
+        testCases.forEach(({ model, maxOutputTokens, expected }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: {
+              model,
+              maxOutputTokens,
+            },
+          });
+          expect(result.llmConfig.maxTokens).toBe(expected);
+        });
+      });
+
+      it('should future-proof Claude 5.x Sonnet models with 64K default', () => {
+        const testCases = [
+          'claude-sonnet-5',
+          'claude-sonnet-5-0',
+          'claude-sonnet-5-2-20260101',
+          'claude-sonnet-5.5',
+        ];
+
+        testCases.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(64000);
+        });
+      });
+
+      it('should future-proof Claude 5.x Haiku models with 64K default', () => {
+        const testCases = [
+          'claude-haiku-5',
+          'claude-haiku-5-0',
+          'claude-haiku-5-2-20260101',
+          'claude-haiku-5.5',
+        ];
+
+        testCases.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(64000);
+        });
+      });
+
+      it('should future-proof Claude 5.x Opus models with 64K default', () => {
+        const testCases = [
+          'claude-opus-5',
+          'claude-opus-5-0',
+          'claude-opus-5-2-20260101',
+          'claude-opus-5.5',
+        ];
+
+        testCases.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(64000);
+        });
+      });
+
+      it('should future-proof Claude 6-9.x models with correct defaults', () => {
+        const testCases = [
+          // Claude 6.x - All get 64K since they're version 5+
+          { model: 'claude-sonnet-6', expected: 64000 },
+          { model: 'claude-haiku-6-0', expected: 64000 },
+          { model: 'claude-opus-6-1', expected: 64000 }, // opus 6+ gets 64K
+          // Claude 7.x
+          { model: 'claude-sonnet-7-20270101', expected: 64000 },
+          { model: 'claude-haiku-7.5', expected: 64000 },
+          { model: 'claude-opus-7', expected: 64000 }, // opus 7+ gets 64K
+          // Claude 8.x
+          { model: 'claude-sonnet-8', expected: 64000 },
+          { model: 'claude-haiku-8-2', expected: 64000 },
+          { model: 'claude-opus-8-latest', expected: 64000 }, // opus 8+ gets 64K
+          // Claude 9.x
+          { model: 'claude-sonnet-9', expected: 64000 },
+          { model: 'claude-haiku-9', expected: 64000 },
+          { model: 'claude-opus-9', expected: 64000 }, // opus 9+ gets 64K
+        ];
+
+        testCases.forEach(({ model, expected }) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(expected);
+        });
       });
     });
 
@@ -784,7 +1061,7 @@ describe('getLLMConfig', () => {
       it('should handle maxOutputTokens boundary values', () => {
         const testCases = [
           { model: 'claude-3-opus', maxOutputTokens: 1, expected: 1 }, // min
-          { model: 'claude-3-opus', maxOutputTokens: 4096, expected: 4096 }, // max for legacy
+          { model: 'claude-3-opus', maxOutputTokens: 8192, expected: 8192 }, // default for claude-3
           { model: 'claude-3-5-sonnet', maxOutputTokens: 1, expected: 1 }, // min
           { model: 'claude-3-5-sonnet', maxOutputTokens: 200000, expected: 200000 }, // max for new
           { model: 'claude-3-7-sonnet', maxOutputTokens: 8192, expected: 8192 }, // default

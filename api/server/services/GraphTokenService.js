@@ -1,8 +1,8 @@
-const { getOpenIdConfig } = require('~/strategies/openidStrategy');
-const { logger } = require('~/config');
-const { CacheKeys } = require('librechat-data-provider');
-const getLogStores = require('~/cache/getLogStores');
 const client = require('openid-client');
+const { logger } = require('@librechat/data-schemas');
+const { CacheKeys } = require('librechat-data-provider');
+const { getOpenIdConfig } = require('~/strategies/openidStrategy');
+const getLogStores = require('~/cache/getLogStores');
 
 /**
  * Get Microsoft Graph API token using existing token exchange mechanism

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import type { EModelEndpoint } from 'librechat-data-provider';
+import type { EModelEndpoint, TConversation } from 'librechat-data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
 
 interface ModelSelectorChatContextValue {
@@ -8,6 +8,7 @@ interface ModelSelectorChatContextValue {
   spec?: string | null;
   agent_id?: string | null;
   assistant_id?: string | null;
+  conversation: TConversation | null;
   newConversation: ReturnType<typeof useChatContext>['newConversation'];
 }
 
@@ -26,16 +27,10 @@ export function ModelSelectorChatProvider({ children }: { children: React.ReactN
       spec: conversation?.spec,
       agent_id: conversation?.agent_id,
       assistant_id: conversation?.assistant_id,
+      conversation,
       newConversation,
     }),
-    [
-      conversation?.endpoint,
-      conversation?.model,
-      conversation?.spec,
-      conversation?.agent_id,
-      conversation?.assistant_id,
-      newConversation,
-    ],
+    [conversation, newConversation],
   );
 
   return (

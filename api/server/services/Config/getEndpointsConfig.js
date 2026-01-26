@@ -109,7 +109,7 @@ async function getEndpointsConfig(req) {
  * @returns {Promise<boolean>}
  */
 const checkCapability = async (req, capability) => {
-  const isAgents = isAgentsEndpoint(req.body?.original_endpoint || req.body?.endpoint);
+  const isAgents = isAgentsEndpoint(req.body?.endpointType || req.body?.endpoint);
   const endpointsConfig = await getEndpointsConfig(req);
   const capabilities =
     isAgents || endpointsConfig?.[EModelEndpoint.agents]?.capabilities != null

@@ -213,7 +213,11 @@ function Avatar({
     <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
       <div className="flex w-full items-center justify-center gap-4">
         <Popover.Trigger asChild>
-          <button type="button" className="h-20 w-20">
+          <button
+            type="button"
+            className="h-20 w-20"
+            aria-label={localize('com_ui_upload_avatar_label')}
+          >
             {previewUrl ? <AssistantAvatar url={previewUrl} progress={progress} /> : <NoImage />}
           </button>
         </Popover.Trigger>

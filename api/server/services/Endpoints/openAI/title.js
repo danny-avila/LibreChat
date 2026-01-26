@@ -1,6 +1,6 @@
+const { isEnabled } = require('@librechat/api');
 const { CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
-const { isEnabled } = require('~/server/utils');
 const { saveConvo } = require('~/models');
 
 const addTitle = async (req, { text, response, client }) => {

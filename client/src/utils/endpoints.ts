@@ -1,8 +1,10 @@
 import {
+  Constants,
   EModelEndpoint,
   defaultEndpoints,
   modularEndpoints,
   LocalStorageKeys,
+  getEndpointField,
   isAgentsEndpoint,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
@@ -56,24 +58,6 @@ export const getAvailableEndpoints = (
 
   return availableEndpoints;
 };
-
-/** Get the specified field from the endpoint config */
-export function getEndpointField<K extends keyof t.TConfig>(
-  endpointsConfig: t.TEndpointsConfig | undefined | null,
-  endpoint: EModelEndpoint | string | null | undefined,
-  property: K,
-): t.TConfig[K] | undefined {
-  if (!endpointsConfig || endpoint === null || endpoint === undefined) {
-    return undefined;
-  }
-
-  const config = endpointsConfig[endpoint];
-  if (!config) {
-    return undefined;
-  }
-
-  return config[property];
-}
 
 export function mapEndpoints(endpointsConfig: t.TEndpointsConfig) {
   const filter = getEndpointsFilter(endpointsConfig);
@@ -176,11 +160,50 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
   };
 }
 
-/** Gets the default spec by order.
- *
- * First, the admin defined default, then last selected spec, followed by first spec
+export function getModelSpec({
+  specName,
+  startupConfig,
+}: {
+  specName?: string | null;
+  startupConfig?: t.TStartupConfig;
+}): t.TModelSpec | undefined {
+  if (!startupConfig || !specName) {
+    return;
+  }
+  return startupConfig.modelSpecs?.list?.find((spec) => spec.name === specName);
+}
+
+export function applyModelSpecEphemeralAgent({
+  convoId,
+  modelSpec,
+  updateEphemeralAgent,
+}: {
+  convoId?: string | null;
+  modelSpec?: t.TModelSpec;
+  updateEphemeralAgent: ((convoId: string, agent: t.TEphemeralAgent | null) => void) | undefined;
+}) {
+  if (!modelSpec || !updateEphemeralAgent) {
+    return;
+  }
+  updateEphemeralAgent((convoId ?? Constants.NEW_CONVO) || Constants.NEW_CONVO, {
+    mcp: modelSpec.mcpServers ?? [Constants.mcp_clear as string],
+    web_search: modelSpec.webSearch ?? false,
+    file_search: modelSpec.fileSearch ?? false,
+    execute_code: modelSpec.executeCode ?? false,
+  });
+}
+
+/**
+ * Gets default model spec from config and user preferences.
+ * Priority: admin default → last selected → first spec (when prioritize=true or modelSelect disabled).
+ * Otherwise: admin default or last conversation spec.
  */
-export function getDefaultModelSpec(startupConfig?: t.TStartupConfig) {
+export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
+  | {
+      default?: t.TModelSpec;
+      last?: t.TModelSpec;
+    }
+  | undefined {
   const { modelSpecs, interface: interfaceConfig } = startupConfig ?? {};
   const { list, prioritize } = modelSpecs ?? {};
   if (!list) {
@@ -190,9 +213,9 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig) {
   if (prioritize === true || !interfaceConfig?.modelSelect) {
     const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
     const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
-    return defaultSpec || lastSelectedSpec || list?.[0];
+    return { default: defaultSpec || lastSelectedSpec || list?.[0] };
   } else if (defaultSpec) {
-    return defaultSpec;
+    return { default: defaultSpec };
   }
   const lastConversationSetup = JSON.parse(
     localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}',
@@ -200,7 +223,7 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig) {
   if (!lastConversationSetup.spec) {
     return;
   }
-  return list?.find((spec) => spec.name === lastConversationSetup.spec);
+  return { last: list?.find((spec) => spec.name === lastConversationSetup.spec) };
 }
 
 export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
