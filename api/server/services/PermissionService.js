@@ -141,7 +141,6 @@ const checkPermission = async ({ userId, role, resourceType, resourceId, require
 
     validateResourceType(resourceType);
 
-    // Get all principals for the user (user + groups + public)
     const principals = await getUserPrincipals({ userId, role });
 
     if (principals.length === 0) {
@@ -151,7 +150,6 @@ const checkPermission = async ({ userId, role, resourceType, resourceId, require
     return await hasPermission(principals, resourceType, resourceId, requiredPermission);
   } catch (error) {
     logger.error(`[PermissionService.checkPermission] Error: ${error.message}`);
-    // Re-throw validation errors
     if (error.message.includes('requiredPermission must be')) {
       throw error;
     }
@@ -172,12 +170,12 @@ const getEffectivePermissions = async ({ userId, role, resourceType, resourceId 
   try {
     validateResourceType(resourceType);
 
-    // Get all principals for the user (user + groups + public)
     const principals = await getUserPrincipals({ userId, role });
 
     if (principals.length === 0) {
       return 0;
     }
+
     return await getEffectivePermissionsACL(principals, resourceType, resourceId);
   } catch (error) {
     logger.error(`[PermissionService.getEffectivePermissions] Error: ${error.message}`);

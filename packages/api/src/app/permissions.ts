@@ -43,6 +43,8 @@ function hasExplicitConfig(
       return interfaceConfig?.fileCitations !== undefined;
     case PermissionTypes.MCP_SERVERS:
       return interfaceConfig?.mcpServers !== undefined;
+    case PermissionTypes.REMOTE_AGENTS:
+      return interfaceConfig?.remoteAgents !== undefined;
     default:
       return false;
   }
@@ -101,7 +103,9 @@ export async function updateInterfacePermissions({
     const defaultPerms = roleDefaults[roleName]?.permissions;
 
     const existingRole = await getRoleByName(roleName);
-    const existingPermissions = existingRole?.permissions;
+    const existingPermissions = existingRole?.permissions as
+      | Partial<Record<PermissionTypes, Record<string, boolean | undefined>>>
+      | undefined;
     const permissionsToUpdate: Partial<
       Record<PermissionTypes, Record<string, boolean | undefined>>
     > = {};
@@ -333,6 +337,28 @@ export async function updateInterfacePermissions({
           loadedInterface.mcpServers?.public,
           defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE_PUBLIC],
           defaults.mcpServers?.public,
+        ),
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.remoteAgents?.use,
+          defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.USE],
+          defaults.remoteAgents?.use,
+        ),
+        [Permissions.CREATE]: getPermissionValue(
+          loadedInterface.remoteAgents?.create,
+          defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.CREATE],
+          defaults.remoteAgents?.create,
+        ),
+        [Permissions.SHARE]: getPermissionValue(
+          loadedInterface.remoteAgents?.share,
+          defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE],
+          defaults.remoteAgents?.share,
+        ),
+        [Permissions.SHARE_PUBLIC]: getPermissionValue(
+          loadedInterface.remoteAgents?.public,
+          defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE_PUBLIC],
+          defaults.remoteAgents?.public,
         ),
       },
     };
