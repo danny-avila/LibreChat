@@ -370,6 +370,17 @@ class E2BDataAnalystAgent {
             if (!message.tool_calls || message.tool_calls.length === 0) {
               // finish_reason 为 'stop' 表示 LLM 认为对话已完成（例如简单问答）
               if (message.finish_reason === 'stop') {
+                // ✨ 自动继续逻辑：如果任务已开始（有中间步骤）但没有明确结束（无 complete_task），强制继续
+                if (intermediateSteps.length > 0 && !hasCompleteTask && iteration < this.maxIterations) {
+                   logger.info(`[E2BAgent] LLM stopped without complete_task. Auto-continuing...`);
+                   messages.push({
+                     role: 'user', 
+                     content: "Please continue with the next step of your plan. If you are finished, use the `complete_task` tool."
+                   });
+                   // 跳出 retry 循环，让外层循环继续下一次迭代
+                   break; 
+                }
+
                 logger.info(`[E2BAgent] No tool calls and finish_reason is 'stop' - LLM completed the response. Exiting loop.`);
                 shouldExitMainLoop = true;
                 break; // Exit immediately
@@ -381,7 +392,13 @@ class E2BDataAnalystAgent {
             }
 
             // 5. 执行工具调用 (ReAct 模式)
-            for (const toolCall of message.tool_calls) {
+            // ✨ 强制策略：每次迭代只执行第一个工具调用 (Streaming Mode)
+            const toolCallsToExecute = message.tool_calls.slice(0, 1);
+            if (message.tool_calls.length > 1) {
+              logger.warn(`[E2BAgent] LLM returned ${message.tool_calls.length} tool calls in streaming mode. Enforcing single-step execution.`);
+            }
+
+            for (const toolCall of toolCallsToExecute) {
               const { id, function: func } = toolCall;
               const name = func.name;
               const args = JSON.parse(func.arguments);
@@ -389,6 +406,46 @@ class E2BDataAnalystAgent {
               logger.info(`[E2BAgent] Calling tool: ${name}`);
               logger.debug(`[E2BAgent] Tool arguments:`, JSON.stringify(args, null, 2));
               
+              // ✨ 优化流式体验：在执行前立即发送 "Pending" 状态的 TOOL_CALL 事件
+              // 这会让前端立即显示代码块 loading 状态，而不是等待执行完成
+              let toolCallIndex = -1;
+              if (onToken && name === 'execute_code') {
+                toolCallIndex = this.getContentIndex();
+                const argsString = JSON.stringify(args);
+                
+                // 构造初始 Tool Call Part
+                const pendingToolCallPart = {
+                  type: ContentTypes.TOOL_CALL,
+                  [ContentTypes.TOOL_CALL]: {
+                    id: id,
+                    name: name,
+                    args: argsString,
+                    input: args.code || argsString,
+                    output: '', // 暂时为空
+                    progress: 0.1, // 表示开始执行
+                    startTime: Date.now(),
+                  },
+                };
+                
+                // 占位并发送
+                this.contentParts[toolCallIndex] = pendingToolCallPart;
+                
+                const pendingEvent = {
+                  ...pendingToolCallPart,
+                  index: toolCallIndex,
+                  messageId: this.responseMessageId,
+                  conversationId: this.conversationId,
+                };
+                
+                sendEvent(this.res, pendingEvent);
+                logger.info(`[E2BAgent] Sent PENDING TOOL_CALL event (index=${toolCallIndex})`);
+                
+                // ✨ 通知 controller 切断当前 TEXT part，确保 UI 顺序正确
+                if (this.startNewTextPart) {
+                  this.startNewTextPart();
+                }
+              }
+
               // 记录开始时间（用于前端计时器）
               const startTime = Date.now();
               
@@ -417,17 +474,15 @@ class E2BDataAnalystAgent {
 
               logger.debug(`[E2BAgent] Tool result:`, JSON.stringify(result, null, 2));
               
-              // 🔧 只在执行成功时发送 TOOL_CALL 事件到前端
-              let toolCallIndex = -1;
-              if (onToken && name === 'execute_code' && result.success) {
-                toolCallIndex = this.getContentIndex();
+              // 🔧 更新工具执行结果 (Completed)
+              if (onToken && name === 'execute_code' && result.success && toolCallIndex !== -1) {
                 const argsString = JSON.stringify(args);
                 logger.info(`[E2BAgent] TOOL_CALL args: ${argsString.substring(0, 150)}...`);
                 
                 // result 是 observation 对象，已包含 stdout/stderr
                 const output = result.stdout || result.stderr || '';
                 
-                const toolCallPart = {
+                const completedToolCallPart = {
                   type: ContentTypes.TOOL_CALL,
                   [ContentTypes.TOOL_CALL]: {
                     id: id,
@@ -435,36 +490,75 @@ class E2BDataAnalystAgent {
                     args: argsString,
                     input: args.code || argsString,
                     output: output,
-                    progress: 1.0,
+                    progress: 1.0, // 完成
                     startTime: startTime,       // ✨ 前端计时器
                     elapsedTime: elapsedTime,   // ✨ 实际执行时间（毫秒）
                   },
                 };
                 
-                this.contentParts[toolCallIndex] = toolCallPart;
+                // 更新内容并再次发送事件
+                this.contentParts[toolCallIndex] = completedToolCallPart;
                 
-                const toolCallEvent = {
-                  ...toolCallPart,
+                const completedEvent = {
+                  ...completedToolCallPart,
                   index: toolCallIndex,
                   messageId: this.responseMessageId,
                   conversationId: this.conversationId,
                 };
                 
                 // 🐛 调试：打印完整的事件对象
-                logger.info(`[E2BAgent] 📤 toolCallEvent.tool_call has startTime: ${toolCallEvent.tool_call.startTime}`);
-                logger.info(`[E2BAgent] 📤 toolCallEvent.tool_call has elapsedTime: ${toolCallEvent.tool_call.elapsedTime}`);
+                logger.info(`[E2BAgent] 📤 completedEvent.tool_call has startTime: ${completedEvent.tool_call.startTime}`);
+                logger.info(`[E2BAgent] 📤 completedEvent.tool_call has elapsedTime: ${completedEvent.tool_call.elapsedTime}`);
                 
-                sendEvent(this.res, toolCallEvent);
-                logger.info(`[E2BAgent] Sent TOOL_CALL event (index=${toolCallIndex}, output=${output.length} chars) - SUCCESS ONLY`);
+                sendEvent(this.res, completedEvent);
+                logger.info(`[E2BAgent] Sent COMPLETED TOOL_CALL event (index=${toolCallIndex}, output=${output.length} chars)`);
                 logger.info(`[E2BAgent] 🕒 Timer data sent: startTime=${startTime}, elapsedTime=${elapsedTime}ms`);
 
-                // ✨ 通知 controller 切断当前 TEXT part，为后续文本创建新 part
+                // ✨ 再次确认切断 Text Part (通常在 Pending 时已切断，但为了保险)
                 if (this.startNewTextPart) {
-                  logger.info(`[E2BAgent] Triggering new TEXT part after tool execution: ${name}`);
-                  this.startNewTextPart();
+                  // logger.info(`[E2BAgent] Triggering new TEXT part after tool execution: ${name}`);
+                  // this.startNewTextPart(); 
+                  // 注释掉：因为在 pending 阶段已经切断过了，不需要重复切断空 part
                 }
               } else if (name === 'execute_code' && !result.success) {
-                logger.info(`[E2BAgent] Code execution FAILED - NOT sending to frontend, LLM will retry`);
+                logger.info(`[E2BAgent] Code execution FAILED - LLM will retry`);
+                
+                // ✨ 关键修复：即使失败，也要更新前端状态，防止 Infinite Loading
+                if (toolCallIndex !== -1) {
+                    const argsString = JSON.stringify(args);
+                    const output = result.stderr || result.error || 'Execution failed';
+                    
+                    const failedToolCallPart = {
+                        type: ContentTypes.TOOL_CALL,
+                        [ContentTypes.TOOL_CALL]: {
+                            id: id,
+                            name: name,
+                            args: argsString,
+                            input: args.code || argsString,
+                            output: output,
+                            progress: 1.0, // 标记为完成，停止 loading
+                            startTime: startTime,
+                            elapsedTime: Date.now() - startTime,
+                        },
+                    };
+
+                    this.contentParts[toolCallIndex] = failedToolCallPart;
+
+                    const failedEvent = {
+                        ...failedToolCallPart,
+                        index: toolCallIndex,
+                        messageId: this.responseMessageId,
+                        conversationId: this.conversationId,
+                    };
+
+                    sendEvent(this.res, failedEvent);
+                    logger.info(`[E2BAgent] Sent FAILED TOOL_CALL event to stop loading (index=${toolCallIndex})`);
+                    
+                    // 确保切断 Text Part，为 LLM 的解释或重试做准备
+                    if (this.startNewTextPart) {
+                      this.startNewTextPart();
+                    }
+                }
               }
 
               // 记录中间步骤

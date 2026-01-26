@@ -331,19 +331,11 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
       logger.info(`[E2BAgent Tools] Task completion requested`);
       logger.info(`[E2BAgent Tools] Summary: ${summary?.substring(0, 100)}...`);
       
-      // 自动附加本次对话生成的所有图片
-      const artifacts = contextManager.sessionState.generatedArtifacts || [];
-      const images = artifacts.filter(a => a.type === 'image');
+      // Removed: Auto-appending images to summary
+      // We now rely on the LLM to include image markdown in the summary itself
+      // based on the "Output Format Standards" in the system prompt.
       
-      let fullSummary = summary || 'All planned steps have been executed.';
-      
-      if (images.length > 0) {
-        logger.info(`[E2BAgent Tools] Appending ${images.length} generated images to summary`);
-        fullSummary += '\n\n## 生成的可视化图表\n\n';
-        images.forEach((img, index) => {
-          fullSummary += `![图表 ${index + 1}](${img.path})\n\n`;
-        });
-      }
+      const fullSummary = summary || 'All planned steps have been executed.';
       
       return {
         success: true,
