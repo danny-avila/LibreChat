@@ -19,7 +19,12 @@ const {
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
-const { sanitizeFilename, parseText, processAudioFile } = require('@librechat/api');
+const {
+  sanitizeFilename,
+  parseText,
+  processAudioFile,
+  createTempChatExpirationDate,
+} = require('@librechat/api');
 const {
   convertImage,
   resizeAndConvert,
@@ -250,21 +255,18 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, c
       dimensions = {},
     } = (await saveURL({ userId, URL, fileName, basePath })) || {};
     const filepath = await getFileURL({ fileName: `${userId}/${fileName}`, basePath });
-    return await createFile(
-      {
-        user: userId,
-        file_id: v4(),
-        bytes,
-        filepath,
-        filename: fileName,
-        source: fileStrategy,
-        type,
-        context,
-        width: dimensions.width,
-        height: dimensions.height,
-      },
-      true,
-    );
+    return await createFile({
+      user: userId,
+      file_id: v4(),
+      bytes,
+      filepath,
+      filename: fileName,
+      source: fileStrategy,
+      type,
+      context,
+      width: dimensions.width,
+      height: dimensions.height,
+    });
   } catch (error) {
     logger.error(`Error while processing the image with ${fileStrategy}:`, error);
     throw new Error(`Failed to process the image with ${fileStrategy}. ${error.message}`);
@@ -287,31 +289,30 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
   const { handleImageUpload } = getStrategyFunctions(source);
-  const { file_id, temp_file_id, endpoint } = metadata;
+  const { file_id, temp_file_id, endpoint, temporary } = metadata;
 
   const { filepath, bytes, width, height } = await handleImageUpload({
     req,
     file,
     file_id,
     endpoint,
+    temporary,
   });
 
-  const result = await createFile(
-    {
-      user: req.user.id,
-      file_id,
-      temp_file_id,
-      bytes,
-      filepath,
-      filename: file.originalname,
-      context: FileContext.message_attachment,
-      source,
-      type: `image/${appConfig.imageOutputType}`,
-      width,
-      height,
-    },
-    true,
-  );
+  const result = await createFile({
+    user: req.user.id,
+    file_id,
+    temp_file_id,
+    bytes,
+    filepath,
+    filename: file.originalname,
+    context: FileContext.message_attachment,
+    source,
+    type: `image/${appConfig.imageOutputType}`,
+    width,
+    height,
+    expiresAt: getExpiresAt(appConfig, temporary),
+  });
 
   if (returnFile) {
     return result;
@@ -348,21 +349,18 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
   }
   const fileName = `${file_id}-${filename}`;
   const filepath = await saveBuffer({ userId: req.user.id, fileName, buffer });
-  return await createFile(
-    {
-      user: req.user.id,
-      file_id,
-      bytes,
-      filepath,
-      filename,
-      context,
-      source,
-      type,
-      width,
-      height,
-    },
-    true,
-  );
+  return await createFile({
+    user: req.user.id,
+    file_id,
+    bytes,
+    filepath,
+    filename,
+    context,
+    source,
+    type,
+    width,
+    height,
+  });
 };
 
 /**
@@ -384,7 +382,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
   // Use the configured file strategy for regular file uploads (not vectordb)
   const source = isAssistantUpload ? assistantSource : appConfig.fileStrategy;
   const { handleFileUpload } = getStrategyFunctions(source);
-  const { file_id, temp_file_id = null } = metadata;
+  const { file_id, temp_file_id = null, temporary } = metadata;
 
   /** @type {OpenAI | undefined} */
   let openai;
@@ -407,6 +405,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
     file,
     file_id,
     openai,
+    temporary,
   });
 
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
@@ -434,24 +433,22 @@ const processFileUpload = async ({ req, res, metadata }) => {
     filepath = result.filepath;
   }
 
-  const result = await createFile(
-    {
-      user: req.user.id,
-      file_id: id ?? file_id,
-      temp_file_id,
-      bytes,
-      filepath,
-      filename: filename ?? sanitizeFilename(file.originalname),
-      context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
-      model: isAssistantUpload ? req.body.model : undefined,
-      type: file.mimetype,
-      embedded,
-      source,
-      height,
-      width,
-    },
-    true,
-  );
+  const result = await createFile({
+    user: req.user.id,
+    file_id: id ?? file_id,
+    temp_file_id,
+    bytes,
+    filepath,
+    filename: filename ?? sanitizeFilename(file.originalname),
+    context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
+    model: isAssistantUpload ? req.body.model : undefined,
+    type: file.mimetype,
+    embedded,
+    source,
+    height,
+    width,
+    expiresAt: getExpiresAt(appConfig, temporary),
+  });
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
 
@@ -545,7 +542,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
           tool_resource,
         });
       }
-      const result = await createFile(fileInfo, true);
+      const result = await createFile(fileInfo);
       return res
         .status(200)
         .json({ message: 'Agent file uploaded and processed successfully', ...result });
@@ -690,7 +687,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     width,
   });
 
-  const result = await createFile(fileInfo, true);
+  const result = await createFile(fileInfo);
 
   res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
 };
@@ -736,7 +733,7 @@ const processOpenAIFile = async ({
   };
 
   if (saveFile) {
-    await createFile(file, true);
+    await createFile(file);
   } else if (updateUsage) {
     try {
       await updateFileUsage({ file_id });
@@ -777,7 +774,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     file_id,
     filename,
   };
-  createFile(file, true);
+  createFile(file);
   return file;
 };
 
@@ -921,21 +918,18 @@ async function saveBase64Image(
     fileName: filename,
     buffer: image.buffer,
   });
-  return await createFile(
-    {
-      type,
-      source,
-      context,
-      file_id,
-      filepath,
-      filename,
-      user: req.user.id,
-      bytes: image.bytes,
-      width: image.width,
-      height: image.height,
-    },
-    true,
-  );
+  return await createFile({
+    type,
+    source,
+    context,
+    file_id,
+    filepath,
+    filename,
+    user: req.user.id,
+    bytes: image.bytes,
+    width: image.width,
+    height: image.height,
+  });
 }
 
 /**
@@ -1014,6 +1008,10 @@ function filterFile({ req, image, isAvatar }) {
   if (!height) {
     throw new Error('No height provided');
   }
+}
+
+function getExpiresAt(appConfig, temporary) {
+  return temporary ? createTempChatExpirationDate(appConfig?.interfaceConfig) : undefined;
 }
 
 module.exports = {

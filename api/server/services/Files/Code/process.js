@@ -262,7 +262,7 @@ const processCodeOutput = async ({
       createdAt: isUpdate ? existingFile.createdAt : formattedDate,
     };
 
-    createFile(file, true);
+    createFile(file);
     return Object.assign(file, { messageId, toolCallId });
   } catch (error) {
     logAxiosError({
