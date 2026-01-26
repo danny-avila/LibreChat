@@ -23,7 +23,27 @@ const { getLogStores } = require('~/cache');
 function shouldUseSecureCookie() {
   const isProduction = process.env.NODE_ENV === 'production';
   const domainServer = process.env.DOMAIN_SERVER || '';
-  const isLocalhost = domainServer.includes('localhost') || domainServer.includes('127.0.0.1');
+
+  let hostname = '';
+  if (domainServer) {
+    try {
+      const normalized = /^https?:\/\//i.test(domainServer)
+        ? domainServer
+        : `http://${domainServer}`;
+      const url = new URL(normalized);
+      hostname = (url.hostname || '').toLowerCase();
+    } catch {
+      // Fallback: treat DOMAIN_SERVER directly as a hostname-like string
+      hostname = domainServer.toLowerCase();
+    }
+  }
+
+  const isLocalhost =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname.endsWith('.localhost');
+
   return isProduction && !isLocalhost;
 }
 
