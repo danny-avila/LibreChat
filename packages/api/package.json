@@ -114,5 +114,8 @@
     "tiktoken": "^1.0.15",
     "undici": "^7.18.2",
     "zod": "^3.22.4"
+  },
+  "dependencies": {
+    "transliteration": "^2.6.1"
   }
 }
