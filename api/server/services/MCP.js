@@ -483,7 +483,10 @@ function createToolInstance({
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
-      const result = await mcpManager.callTool({
+      // mcpManager.callTool returns FormattedContentResult: [content, artifacts]
+      // This tuple format is already handled by formatToolContent in @librechat/api
+      // and is compatible with responseFormat: CONTENT_AND_ARTIFACT
+      return await mcpManager.callTool({
         serverName,
         toolName,
         provider,
@@ -503,18 +506,6 @@ function createToolInstance({
         oauthStart,
         oauthEnd,
       });
-
-      // For MCP tools, always return the full [content, artifact] array
-      // This allows both ToolService.js (Assistants) and ToolNode.ts (Agents) to process artifacts correctly
-      // MCP tools use responseFormat: CONTENT_AND_ARTIFACT, so we must return the tuple
-      if (Array.isArray(result) && result.length === 2) {
-        // This is a [content, artifact] tuple from formatToolContent
-        return result;
-      }
-      if (isGoogle && Array.isArray(result[0]) && result[0][0]?.type === ContentTypes.TEXT) {
-        return [result[0][0].text, result[1]];
-      }
-      return result;
     } catch (error) {
       logger.error(
         `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,

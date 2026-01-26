@@ -66,20 +66,25 @@ function determineVisionCapability(
 ): boolean {
   // Explicit override takes precedence
   if (agent.vision !== undefined) {
+    console.log(`[VISION] Agent ${agent.id}: Using explicit vision override: ${agent.vision}`);
     return agent.vision;
   }
   
   // Auto-detect from model
   const agentModel = (agent.model_parameters as { model?: string })?.model ?? agent.model;
   if (!agentModel) {
+    console.log(`[VISION] Agent ${agent.id}: No model found, returning false`);
     return false;
   }
   
-  return validateVisionModel({
+  const result = validateVisionModel({
     model: agentModel,
     modelSpecs,
-    availableModels,
+    // Don't pass availableModels - it incorrectly filters out valid models
   });
+  
+  console.log(`[VISION] Agent ${agent.id}: Model "${agentModel}" -> vision=${result}`);
+  return result;
 }
 
 type RunAgent = Omit<Agent, 'tools'> & {
