@@ -156,6 +156,19 @@ function parseAsString(result: t.MCPToolCallResponse): string {
  * @param provider - The provider name (google, anthropic, openai)
  * @returns Tuple of content and image_urls
  */
+/**
+ * Formats MCP tool call response content for different provider types.
+ *
+ * Handles provider-specific formatting:
+ * - OpenAI-compatible providers: Uses content array format with artifacts
+ * - Non-OpenAI providers: Uses string format
+ *
+ * Automatically detects custom OpenAI-compatible endpoints (not in NON_OPENAI_PROVIDERS).
+ *
+ * @param result - MCP tool call response with content array
+ * @param provider - Provider identifier (e.g., 'openai', 'scaleway', 'anthropic')
+ * @returns Tuple of [formattedContent, artifacts] where artifacts contain image URLs
+ */
 export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
@@ -278,9 +291,7 @@ UI Resource Markers Available:
     };
   }
 
-  if (usesContentArrayFormat(provider)) {
-    return [formattedContent, artifacts];
-  }
-
-  return [currentTextBlock, artifacts];
+  return usesContentArrayFormat(provider)
+    ? [formattedContent, artifacts]
+    : [currentTextBlock, artifacts];
 }

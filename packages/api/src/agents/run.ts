@@ -1,5 +1,10 @@
 import { Run, Providers } from '@librechat/agents';
-import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
+import {
+  providerEndpointMap,
+  KnownEndpoints,
+  type TSpecsConfig,
+  validateVisionModel,
+} from 'librechat-data-provider';
 import type {
   MultiAgentGraphConfig,
   OpenAIClientOptions,
@@ -20,22 +25,6 @@ const customProviders = new Set([
   Providers.OPENROUTER,
   KnownEndpoints.ollama,
 ]);
-
-/**
- * Check if the endpoint is a custom OpenAI-compatible endpoint.
- * Custom endpoints are identified when provider is OPENAI but endpoint name differs.
- */
-function isCustomOpenAIEndpoint(
-  provider?: string,
-  endpoint?: string | null,
-): boolean {
-  return (
-    provider === Providers.OPENAI &&
-    endpoint != null &&
-    endpoint !== provider &&
-    endpoint !== Providers.OPENAI
-  );
-}
 
 export function getReasoningKey(
   provider: Providers,
@@ -59,6 +48,38 @@ export function getReasoningKey(
   }
   
   return reasoningKey;
+}
+
+/**
+ * Determines vision capability for an agent.
+ * Uses explicit override if set, otherwise auto-detects from model.
+ *
+ * @param agent - The agent to check
+ * @param modelSpecs - Optional modelSpecs configuration
+ * @param availableModels - Optional list of available models
+ * @returns true if the agent supports vision, false otherwise
+ */
+function determineVisionCapability(
+  agent: RunAgent,
+  modelSpecs?: TSpecsConfig,
+  availableModels?: string[]
+): boolean {
+  // Explicit override takes precedence
+  if (agent.vision !== undefined) {
+    return agent.vision;
+  }
+  
+  // Auto-detect from model
+  const agentModel = (agent.model_parameters as { model?: string })?.model ?? agent.model;
+  if (!agentModel) {
+    return false;
+  }
+  
+  return validateVisionModel({
+    model: agentModel,
+    modelSpecs,
+    availableModels,
+  });
 }
 
 type RunAgent = Omit<Agent, 'tools'> & {
@@ -89,6 +110,8 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
+  modelSpecs,
+  availableModels,
   streaming = true,
   streamUsage = true,
 }: {
@@ -99,6 +122,8 @@ export async function createRun({
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
   user?: IUser;
+  modelSpecs?: TSpecsConfig;
+  availableModels?: string[];
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -145,20 +170,20 @@ export async function createRun({
     }
 
     /** Resolves issues with new OpenAI usage field */
-    const isCustomEndpoint = isCustomOpenAIEndpoint(
-      agent.provider,
-      agent.endpoint,
-    );
-    
     if (
       customProviders.has(agent.provider) ||
-      isCustomEndpoint
+      (agent.provider === Providers.OPENAI &&
+        agent.endpoint != null &&
+        agent.endpoint !== agent.provider &&
+        agent.endpoint !== Providers.OPENAI)
     ) {
       llmConfig.streamUsage = false;
       llmConfig.usage = true;
     }
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
+    const visionCapability = determineVisionCapability(agent, modelSpecs, availableModels);
+
     const agentInput: AgentInputs = {
       provider,
       reasoningKey,
@@ -169,8 +194,9 @@ export async function createRun({
       instructions: systemContent,
       maxContextTokens: agent.maxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
-      vision: agent.vision,
+      vision: visionCapability,
     };
+    
     agentInputs.push(agentInput);
   };
 

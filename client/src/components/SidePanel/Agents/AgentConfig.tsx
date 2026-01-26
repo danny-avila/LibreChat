@@ -1,7 +1,13 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { EModelEndpoint, getEndpointField, defaultAgentCapabilities } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  getEndpointField,
+  defaultAgentCapabilities,
+  validateVisionModel,
+  AgentCapabilities,
+} from 'librechat-data-provider';
 import type { AgentForm, IconComponentTypes } from '~/common';
 import {
   removeFocusOutlines,
@@ -18,7 +24,7 @@ import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
 import { useLocalize, useVisibleTools } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
-import { useGetAgentFiles } from '~/data-provider';
+import { useGetAgentFiles, useGetStartupConfig } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
@@ -65,8 +71,12 @@ export default function AgentConfig() {
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
   const agent_id = useWatch({ control, name: 'id' });
+  const vision = useWatch({ control, name: AgentCapabilities.vision });
+  const modelParameters = useWatch({ control, name: 'model_parameters' });
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
+  const { data: startupConfig } = useGetStartupConfig();
+  const { setValue, getValues } = methods;
 
   const mergedFileMap = useMemo(() => {
     const newFileMap = { ...fileMap };
@@ -88,6 +98,30 @@ export default function AgentConfig() {
     fileSearchEnabled,
     visionEnabled,
   } = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
+
+  // Auto-update vision when model changes if vision was not explicitly set
+  useEffect(() => {
+    // Only update if vision is undefined (not explicitly set)
+    if (vision !== undefined) {
+      return;
+    }
+
+    const agentModel = (modelParameters as { model?: string })?.model ?? model;
+    if (!agentModel) {
+      return;
+    }
+
+    const autoVision = validateVisionModel({
+      model: agentModel,
+      modelSpecs: startupConfig?.modelSpecs,
+      availableModels: startupConfig?.availableModels,
+    });
+
+    // Only update if the calculated value differs from current form value
+    if (getValues(AgentCapabilities.vision) !== autoVision) {
+      setValue(AgentCapabilities.vision, autoVision, { shouldDirty: false });
+    }
+  }, [model, modelParameters, vision, startupConfig, setValue, getValues]);
 
   const context_files = useMemo(() => {
     if (typeof agent === 'string') {

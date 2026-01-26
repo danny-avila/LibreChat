@@ -1287,7 +1287,16 @@ export enum VisionModes {
 
 /**
  * Validates whether a model supports vision capabilities.
- * Checks modelSpecs configuration first, then falls back to hardcoded list.
+ * 
+ * Checks in order:
+ * 1. modelSpecs configuration (if provided) - explicit vision flag per model
+ * 2. Hardcoded visionModels list - fallback for known vision-capable models
+ * 
+ * @param model - Model identifier to check
+ * @param modelSpecs - Optional modelSpecs configuration from librechat.yaml
+ * @param availableModels - Optional list of available models to validate against
+ * @param additionalModels - Optional additional models to include in vision check
+ * @returns true if the model supports vision, false otherwise
  */
 export function validateVisionModel({
   model,
@@ -1319,6 +1328,7 @@ export function validateVisionModel({
     const matchingSpec = modelSpecs.list.find(
       (spec) => spec.preset?.model === model || model.includes(spec.preset?.model ?? ''),
     );
+
     if (matchingSpec?.vision !== undefined) {
       return matchingSpec.vision === true;
     }

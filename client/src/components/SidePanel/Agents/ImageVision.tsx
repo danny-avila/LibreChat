@@ -1,4 +1,3 @@
-import { memo } from 'react';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import {
@@ -13,7 +12,7 @@ import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
-function ImageVision() {
+export default function ImageVision() {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control } = methods;
@@ -65,5 +64,3 @@ function ImageVision() {
     </HoverCard>
   );
 }
-
-export default memo(ImageVision);

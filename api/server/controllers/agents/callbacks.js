@@ -397,6 +397,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
     if (output.artifact.content) {
       /** @type {FormattedContent[]} */
       const content = output.artifact.content;
+
       for (let i = 0; i < content.length; i++) {
         const part = content[i];
         if (!part) {
@@ -406,6 +407,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
           continue;
         }
         const { url } = part.image_url;
+
         artifactPromises.push(
           (async () => {
             const filename = `${output.name}_img_${nanoid()}`;
@@ -417,6 +419,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
               endpoint: metadata.provider,
               context: FileContext.image_generation,
             });
+
             const fileMetadata = Object.assign(file, {
               messageId: metadata.run_id,
               toolCallId: output.tool_call_id,

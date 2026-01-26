@@ -453,6 +453,7 @@ function createToolInstance({
       derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
       const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
+      const endpoint = config?.metadata?.endpoint;
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
       const flowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
@@ -503,8 +504,12 @@ function createToolInstance({
         oauthEnd,
       });
 
-      if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
-        return result[0];
+      // For MCP tools, always return the full [content, artifact] array
+      // This allows both ToolService.js (Assistants) and ToolNode.ts (Agents) to process artifacts correctly
+      // MCP tools use responseFormat: CONTENT_AND_ARTIFACT, so we must return the tuple
+      if (Array.isArray(result) && result.length === 2) {
+        // This is a [content, artifact] tuple from formatToolContent
+        return result;
       }
       if (isGoogle && Array.isArray(result[0]) && result[0][0]?.type === ContentTypes.TEXT) {
         return [result[0][0].text, result[1]];

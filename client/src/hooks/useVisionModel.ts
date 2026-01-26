@@ -16,6 +16,7 @@ export function useVisionModel(): boolean {
     if (!model) {
       return false;
     }
+    
     return validateVisionModel({
       model,
       modelSpecs: startupConfig?.modelSpecs,
