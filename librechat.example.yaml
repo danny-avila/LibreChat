@@ -27,7 +27,18 @@ cache: true
 
 # Custom interface configuration
 interface:
-  customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  customWelcome:
+    messages:
+      en:
+        - 'Welcome, {{user.name}}!'
+        - 'How can I help you today?'
+      es:
+        - 'Bienvenido, {{user.name}}!'
+        - 'En qué puedo ayudarte hoy?'
+      de:
+        - 'Willkommen, {{user.name}}!'
+        - 'Wie kann ich Ihnen heute helfen?'
+    includeTimeGreetings: true  # Include "Good morning, {{username}}", "Good afternoon, {{username}}", etc.
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.
