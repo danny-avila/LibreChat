@@ -100,6 +100,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: false,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -140,6 +146,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
     };
 
@@ -246,6 +258,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: false,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -286,6 +304,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
     };
 
@@ -378,6 +402,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: false,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -414,6 +444,12 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -523,6 +559,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: false,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -559,6 +601,12 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -655,6 +703,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: false,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -691,6 +745,12 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -784,6 +844,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: false,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -808,6 +874,12 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -920,6 +992,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: false,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -950,6 +1028,12 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,

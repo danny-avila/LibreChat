@@ -1,7 +1,7 @@
 const { nanoid } = require('nanoid');
 const { Constants } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
-const { sendEvent, GenerationJobManager } = require('@librechat/api');
+const { sendEvent, GenerationJobManager, writeAttachmentEvent } = require('@librechat/api');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
   EnvVar,
@@ -489,7 +489,226 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
   };
 }
 
+/**
+ * Helper to write attachment events in Open Responses format (librechat:attachment)
+ * @param {ServerResponse} res - The server response object
+ * @param {Object} tracker - The response tracker with sequence number
+ * @param {Object} attachment - The attachment data
+ * @param {Object} metadata - Additional metadata (messageId, conversationId)
+ */
+function writeResponsesAttachment(res, tracker, attachment, metadata) {
+  const sequenceNumber = tracker.nextSequence();
+  writeAttachmentEvent(res, sequenceNumber, attachment, {
+    messageId: metadata.run_id,
+    conversationId: metadata.thread_id,
+  });
+}
+
+/**
+ * Creates a tool end callback specifically for the Responses API.
+ * Emits attachments as `librechat:attachment` events per the Open Responses extension spec.
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {ServerResponse} params.res
+ * @param {Object} params.tracker - Response tracker with sequence number
+ * @param {Promise<MongoFile | { filename: string; filepath: string; expires: number;} | null>[]} params.artifactPromises
+ * @returns {ToolEndCallback} The tool end callback.
+ */
+function createResponsesToolEndCallback({ req, res, tracker, artifactPromises }) {
+  /**
+   * @type {ToolEndCallback}
+   */
+  return async (data, metadata) => {
+    const output = data?.output;
+    if (!output) {
+      return;
+    }
+
+    if (!output.artifact) {
+      return;
+    }
+
+    if (output.artifact[Tools.file_search]) {
+      artifactPromises.push(
+        (async () => {
+          const user = req.user;
+          const attachment = await processFileCitations({
+            user,
+            metadata,
+            appConfig: req.config,
+            toolArtifact: output.artifact,
+            toolCallId: output.tool_call_id,
+          });
+          if (!attachment) {
+            return null;
+          }
+          // For Responses API, emit attachment during streaming
+          if (res.headersSent && !res.writableEnded) {
+            writeResponsesAttachment(res, tracker, attachment, metadata);
+          }
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing file citations:', error);
+          return null;
+        }),
+      );
+    }
+
+    if (output.artifact[Tools.ui_resources]) {
+      artifactPromises.push(
+        (async () => {
+          const attachment = {
+            type: Tools.ui_resources,
+            toolCallId: output.tool_call_id,
+            [Tools.ui_resources]: output.artifact[Tools.ui_resources].data,
+          };
+          // For Responses API, always emit attachment during streaming
+          if (res.headersSent && !res.writableEnded) {
+            writeResponsesAttachment(res, tracker, attachment, metadata);
+          }
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing artifact content:', error);
+          return null;
+        }),
+      );
+    }
+
+    if (output.artifact[Tools.web_search]) {
+      artifactPromises.push(
+        (async () => {
+          const attachment = {
+            type: Tools.web_search,
+            toolCallId: output.tool_call_id,
+            [Tools.web_search]: { ...output.artifact[Tools.web_search] },
+          };
+          // For Responses API, always emit attachment during streaming
+          if (res.headersSent && !res.writableEnded) {
+            writeResponsesAttachment(res, tracker, attachment, metadata);
+          }
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing artifact content:', error);
+          return null;
+        }),
+      );
+    }
+
+    if (output.artifact.content) {
+      /** @type {FormattedContent[]} */
+      const content = output.artifact.content;
+      for (let i = 0; i < content.length; i++) {
+        const part = content[i];
+        if (!part) {
+          continue;
+        }
+        if (part.type !== 'image_url') {
+          continue;
+        }
+        const { url } = part.image_url;
+        artifactPromises.push(
+          (async () => {
+            const filename = `${output.name}_img_${nanoid()}`;
+            const file_id = output.artifact.file_ids?.[i];
+            const file = await saveBase64Image(url, {
+              req,
+              file_id,
+              filename,
+              endpoint: metadata.provider,
+              context: FileContext.image_generation,
+            });
+            const fileMetadata = Object.assign(file, {
+              toolCallId: output.tool_call_id,
+            });
+
+            if (!fileMetadata) {
+              return null;
+            }
+
+            // For Responses API, emit attachment during streaming
+            if (res.headersSent && !res.writableEnded) {
+              const attachment = {
+                file_id: fileMetadata.file_id,
+                filename: fileMetadata.filename,
+                type: fileMetadata.type,
+                url: fileMetadata.filepath,
+                width: fileMetadata.width,
+                height: fileMetadata.height,
+                tool_call_id: output.tool_call_id,
+              };
+              writeResponsesAttachment(res, tracker, attachment, metadata);
+            }
+
+            return fileMetadata;
+          })().catch((error) => {
+            logger.error('Error processing artifact content:', error);
+            return null;
+          }),
+        );
+      }
+      return;
+    }
+
+    const isCodeTool =
+      output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
+    if (!isCodeTool) {
+      return;
+    }
+
+    if (!output.artifact.files) {
+      return;
+    }
+
+    for (const file of output.artifact.files) {
+      const { id, name } = file;
+      artifactPromises.push(
+        (async () => {
+          const result = await loadAuthValues({
+            userId: req.user.id,
+            authFields: [EnvVar.CODE_API_KEY],
+          });
+          const fileMetadata = await processCodeOutput({
+            req,
+            id,
+            name,
+            apiKey: result[EnvVar.CODE_API_KEY],
+            messageId: metadata.run_id,
+            toolCallId: output.tool_call_id,
+            conversationId: metadata.thread_id,
+            session_id: output.artifact.session_id,
+          });
+
+          if (!fileMetadata) {
+            return null;
+          }
+
+          // For Responses API, emit attachment during streaming
+          if (res.headersSent && !res.writableEnded) {
+            const attachment = {
+              file_id: fileMetadata.file_id,
+              filename: fileMetadata.filename,
+              type: fileMetadata.type,
+              url: fileMetadata.filepath,
+              width: fileMetadata.width,
+              height: fileMetadata.height,
+              tool_call_id: output.tool_call_id,
+            };
+            writeResponsesAttachment(res, tracker, attachment, metadata);
+          }
+
+          return fileMetadata;
+        })().catch((error) => {
+          logger.error('Error processing code output:', error);
+          return null;
+        }),
+      );
+    }
+  };
+}
+
 module.exports = {
   getDefaultHandlers,
   createToolEndCallback,
+  createResponsesToolEndCallback,
 };
