@@ -10,6 +10,7 @@ import type {
   GenericTool,
   RunConfig,
   IState,
+  LCTool,
 } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
@@ -166,6 +167,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   useLegacyContent?: boolean;
   toolContextMap?: Record<string, string>;
   toolRegistry?: LCToolRegistry;
+  /** Serializable tool definitions for event-driven execution */
+  toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
 };
@@ -294,6 +297,7 @@ export async function createRun({
       clientOptions: llmConfig,
       instructions: systemContent,
       toolRegistry: agent.toolRegistry,
+      toolDefinitions: agent.toolDefinitions,
       maxContextTokens: agent.maxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
     };

@@ -1,7 +1,12 @@
 const { nanoid } = require('nanoid');
 const { Constants } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
-const { sendEvent, GenerationJobManager, writeAttachmentEvent } = require('@librechat/api');
+const {
+  sendEvent,
+  GenerationJobManager,
+  writeAttachmentEvent,
+  createToolExecuteHandler,
+} = require('@librechat/api');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
   EnvVar,
@@ -160,6 +165,12 @@ function emitEvent(res, streamId, eventData) {
 }
 
 /**
+ * @typedef {Object} ToolExecuteOptions
+ * @property {(toolNames: string[]) => Promise<{loadedTools: StructuredTool[]}>} loadTools - Function to load tools by name
+ * @property {Object} configurable - Configurable context for tool invocation
+ */
+
+/**
  * Get default handlers for stream events.
  * @param {Object} options - The options object.
  * @param {ServerResponse} options.res - The server response object.
@@ -167,6 +178,7 @@ function emitEvent(res, streamId, eventData) {
  * @param {ToolEndCallback} options.toolEndCallback - Callback to use when tool ends.
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
+ * @param {ToolExecuteOptions} [options.toolExecuteOptions] - Options for event-driven tool execution.
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
  */
@@ -176,6 +188,7 @@ function getDefaultHandlers({
   toolEndCallback,
   collectedUsage,
   streamId = null,
+  toolExecuteOptions = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -284,6 +297,10 @@ function getDefaultHandlers({
       },
     },
   };
+
+  if (toolExecuteOptions) {
+    handlers[GraphEvents.ON_TOOL_EXECUTE] = createToolExecuteHandler(toolExecuteOptions);
+  }
 
   return handlers;
 }

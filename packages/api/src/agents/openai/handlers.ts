@@ -12,6 +12,7 @@ import type {
   CompletionUsage,
   ToolCall,
 } from './types';
+import { createToolExecuteHandler, type ToolExecuteOptions } from '../handlers';
 
 /**
  * Create a chat completion chunk in OpenAI format
@@ -167,6 +168,7 @@ export const GraphEvents = {
   ON_RUN_STEP_COMPLETED: 'on_run_step_completed',
   ON_MESSAGE_DELTA: 'on_message_delta',
   ON_REASONING_DELTA: 'on_reasoning_delta',
+  ON_TOOL_EXECUTE: 'on_tool_execute',
 } as const;
 
 /**
@@ -404,8 +406,9 @@ export class OpenAIReasoningDeltaHandler implements EventHandler {
  */
 export function createOpenAIHandlers(
   config: OpenAIStreamHandlerConfig,
+  toolExecuteOptions?: ToolExecuteOptions,
 ): Record<string, EventHandler> {
-  return {
+  const handlers: Record<string, EventHandler> = {
     [GraphEvents.ON_MESSAGE_DELTA]: new OpenAIMessageDeltaHandler(config),
     [GraphEvents.ON_RUN_STEP_DELTA]: new OpenAIRunStepDeltaHandler(config),
     [GraphEvents.ON_RUN_STEP]: new OpenAIRunStepHandler(config),
@@ -415,6 +418,12 @@ export function createOpenAIHandlers(
     [GraphEvents.TOOL_END]: new OpenAIToolEndHandler(),
     [GraphEvents.ON_REASONING_DELTA]: new OpenAIReasoningDeltaHandler(config),
   };
+
+  if (toolExecuteOptions) {
+    handlers[GraphEvents.ON_TOOL_EXECUTE] = createToolExecuteHandler(toolExecuteOptions);
+  }
+
+  return handlers;
 }
 
 /**

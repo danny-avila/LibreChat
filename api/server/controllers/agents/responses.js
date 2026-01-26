@@ -12,6 +12,7 @@ const {
   createRun,
   createSafeUser,
   initializeAgent,
+  createToolExecuteHandler,
   // Responses API
   writeDone,
   buildResponse,
@@ -36,7 +37,7 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
-const { loadAgentTools } = require('~/server/services/ToolService');
+const { loadAgentTools, loadTools: loadToolsLegacy } = require('~/server/services/ToolService');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
@@ -54,8 +55,10 @@ function setAppConfig(config) {
 /**
  * Creates a tool loader function for the agent.
  * @param {AbortSignal} signal - The abort signal
+ * @param {boolean} [definitionsOnly=true] - When true, returns only serializable
+ *   tool definitions without creating full tool instances (for event-driven mode)
  */
-function createToolLoader(signal) {
+function createToolLoader(signal, definitionsOnly = true) {
   return async function loadTools({
     req,
     res,
@@ -74,6 +77,7 @@ function createToolLoader(signal) {
         agent,
         signal,
         tool_resources,
+        definitionsOnly,
         streamId: null,
       });
     } catch (error) {
@@ -407,6 +411,19 @@ const createResponse = async (req, res) => {
         artifactPromises,
       });
 
+      // Create tool execute options for event-driven tool execution
+      const toolExecuteOptions = {
+        loadTools: async (toolNames) => {
+          const { loadedTools } = await loadToolsLegacy({
+            tools: toolNames,
+            user: req.user.id,
+            functions: true,
+            options: { req, res },
+          });
+          return { loadedTools: loadedTools || [] };
+        },
+      };
+
       // Combine handlers
       const handlers = {
         on_chat_model_stream: {
@@ -425,6 +442,7 @@ const createResponse = async (req, res) => {
         on_chain_end: { handle: () => {} },
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
+        on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
       };
 
       // Create and run the agent
@@ -504,18 +522,26 @@ const createResponse = async (req, res) => {
         });
       }
     } else {
-      // Non-streaming response
       const aggregatorHandlers = createAggregatorEventHandlers(aggregator);
 
-      // Built-in handler for processing raw model stream chunks
       const chatModelStreamHandler = new ChatModelStreamHandler();
 
-      // Artifact promises for processing tool outputs
       /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
       const artifactPromises = [];
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
-      // Combine handlers
+      const toolExecuteOptions = {
+        loadTools: async (toolNames) => {
+          const { loadedTools } = await loadToolsLegacy({
+            tools: toolNames,
+            user: req.user.id,
+            functions: true,
+            options: { req, res },
+          });
+          return { loadedTools: loadedTools || [] };
+        },
+      };
+
       const handlers = {
         on_chat_model_stream: {
           handle: async (event, data, metadata, graph) => {
@@ -533,9 +559,9 @@ const createResponse = async (req, res) => {
         on_chain_end: { handle: () => {} },
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
+        on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
       };
 
-      // Create and run the agent
       const userId = req.user?.id ?? 'api-user';
       const userMCPAuthMap = primaryConfig.userMCPAuthMap;
 
@@ -557,7 +583,6 @@ const createResponse = async (req, res) => {
         throw new Error('Failed to create agent run');
       }
 
-      // Process the stream
       const config = {
         runName: 'AgentRun',
         configurable: {
@@ -579,7 +604,6 @@ const createResponse = async (req, res) => {
         },
       });
 
-      // Wait for artifacts before sending response
       if (artifactPromises.length > 0) {
         try {
           await Promise.all(artifactPromises);
@@ -588,19 +612,14 @@ const createResponse = async (req, res) => {
         }
       }
 
-      // Build and send the response
       const response = buildAggregatedResponse(context, aggregator);
 
-      // Save to database if store: true
       if (request.store === true) {
         try {
-          // Save conversation
           await saveConversation(req, conversationId, agentId, agent);
 
-          // Save input messages
           await saveInputMessages(req, conversationId, inputMessages, agentId);
 
-          // Save response output
           await saveResponseOutput(req, conversationId, responseId, response, agentId);
 
           logger.debug(

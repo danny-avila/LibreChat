@@ -33,11 +33,11 @@ const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/p
 const { getEndpointsConfig, getCachedTools } = require('~/server/services/Config');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { findPluginAuthsByKeys } = require('~/models');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
 /**
  * Processes the required actions by calling the appropriate tools and returning the outputs.
  * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
@@ -377,6 +377,20 @@ async function processRequiredActions(client, requiredActions) {
  *   hasDeferredTools?: boolean;
  * }>} The agent tools and registry.
  */
+/**
+ * Loads agent tools for initialization or execution.
+ * @param {Object} params
+ * @param {ServerRequest} params.req - The request object
+ * @param {ServerResponse} params.res - The response object
+ * @param {Object} params.agent - The agent configuration
+ * @param {AbortSignal} [params.signal] - Abort signal
+ * @param {Object} [params.tool_resources] - Tool resources
+ * @param {string} [params.openAIApiKey] - OpenAI API key
+ * @param {string|null} [params.streamId] - Stream ID for resumable mode
+ * @param {boolean} [params.definitionsOnly=true] - When true, returns only serializable
+ *   tool definitions without creating full tool instances. Use for event-driven mode
+ *   where tools are loaded on-demand during execution.
+ */
 async function loadAgentTools({
   req,
   res,
@@ -385,16 +399,17 @@ async function loadAgentTools({
   tool_resources,
   openAIApiKey,
   streamId = null,
+  definitionsOnly = true,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
-    return {};
+    return { toolDefinitions: [] };
   } else if (
     agent.tools &&
     agent.tools.length === 1 &&
     /** Legacy handling for `ocr` as may still exist in existing Agents */
     (agent.tools[0] === AgentCapabilities.context || agent.tools[0] === AgentCapabilities.ocr)
   ) {
-    return {};
+    return { toolDefinitions: [] };
   }
 
   const appConfig = req.config;
@@ -480,6 +495,32 @@ async function loadAgentTools({
     imageOutputType: appConfig.imageOutputType,
   });
 
+  /** Build tool registry from MCP tools and create PTC/tool search tools if configured */
+  const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
+  const { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools } =
+    await buildToolClassification({
+      loadedTools,
+      userId: req.user.id,
+      agentId: agent.id,
+      agentToolOptions: agent.tool_options,
+      deferredToolsEnabled,
+      loadAuthValues,
+    });
+
+  /**
+   * For event-driven mode (definitionsOnly=true), return only serializable data.
+   * Tool instances will be created on-demand during ON_TOOL_EXECUTE events.
+   */
+  if (definitionsOnly) {
+    return {
+      toolRegistry,
+      userMCPAuthMap,
+      toolContextMap,
+      toolDefinitions,
+      hasDeferredTools,
+    };
+  }
+
   const agentTools = [];
   for (let i = 0; i < loadedTools.length; i++) {
     const tool = loadedTools[i];
@@ -524,25 +565,16 @@ async function loadAgentTools({
     return map;
   }, {});
 
-  /** Build tool registry from MCP tools and create PTC/tool search tools if configured */
-  const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
-  const { toolRegistry, additionalTools, hasDeferredTools } = await buildToolClassification({
-    loadedTools,
-    userId: req.user.id,
-    agentId: agent.id,
-    agentToolOptions: agent.tool_options,
-    deferredToolsEnabled,
-    loadAuthValues,
-  });
   agentTools.push(...additionalTools);
 
   if (!checkCapability(AgentCapabilities.actions)) {
     return {
-      tools: agentTools,
+      toolRegistry,
       userMCPAuthMap,
       toolContextMap,
-      toolRegistry,
+      toolDefinitions,
       hasDeferredTools,
+      tools: agentTools,
     };
   }
 
@@ -552,11 +584,12 @@ async function loadAgentTools({
       logger.warn(`No tools found for the specified tool calls: ${_agentTools.join(', ')}`);
     }
     return {
-      tools: agentTools,
+      toolRegistry,
       userMCPAuthMap,
       toolContextMap,
-      toolRegistry,
+      toolDefinitions,
       hasDeferredTools,
+      tools: agentTools,
     };
   }
 
@@ -681,15 +714,17 @@ async function loadAgentTools({
   }
 
   return {
-    tools: agentTools,
+    toolRegistry,
     toolContextMap,
     userMCPAuthMap,
-    toolRegistry,
+    toolDefinitions,
     hasDeferredTools,
+    tools: agentTools,
   };
 }
 
 module.exports = {
+  loadTools,
   getToolkitKey,
   loadAgentTools,
   processRequiredActions,

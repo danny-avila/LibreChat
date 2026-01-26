@@ -19,11 +19,12 @@ const {
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   createOpenAIContentAggregator,
+  createToolExecuteHandler,
   isChatCompletionValidationFailure,
 } = require('@librechat/api');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { loadAgentTools } = require('~/server/services/ToolService');
+const { loadAgentTools, loadTools: loadToolsLegacy } = require('~/server/services/ToolService');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
@@ -31,8 +32,10 @@ const db = require('~/models');
 /**
  * Creates a tool loader function for the agent.
  * @param {AbortSignal} signal - The abort signal
+ * @param {boolean} [definitionsOnly=true] - When true, returns only serializable
+ *   tool definitions without creating full tool instances (for event-driven mode)
  */
-function createToolLoader(signal) {
+function createToolLoader(signal, definitionsOnly = true) {
   return async function loadTools({
     req,
     res,
@@ -51,6 +54,7 @@ function createToolLoader(signal) {
         agent,
         signal,
         tool_resources,
+        definitionsOnly,
         streamId: null, // No resumable stream for OpenAI compat
       });
     } catch (error) {
@@ -239,18 +243,26 @@ const OpenAIChatCompletionController = async (req, res) => {
         }
       : null;
 
-    // We need custom handlers that stream in OpenAI format
     const collectedUsage = [];
     /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
     const artifactPromises = [];
 
-    // Create tool end callback for processing artifacts (images, file citations, code output)
     const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
-    // Convert messages to internal format
+    const toolExecuteOptions = {
+      loadTools: async (toolNames) => {
+        const { loadedTools } = await loadToolsLegacy({
+          tools: toolNames,
+          user: req.user.id,
+          functions: true,
+          options: { req, res },
+        });
+        return { loadedTools: loadedTools || [] };
+      },
+    };
+
     const openaiMessages = convertMessages(request.messages);
 
-    // Format for agent
     const toolSet = new Set((primaryConfig.tools ?? []).map((tool) => tool && tool.name));
     const { messages: formattedMessages, indexTokenCountMap } = formatAgentMessages(
       openaiMessages,
@@ -425,6 +437,8 @@ const OpenAIChatCompletionController = async (req, res) => {
       on_chain_end: createHandler(),
       on_agent_update: createHandler(),
       on_custom_event: createHandler(),
+      // Event-driven tool execution handler
+      on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
     };
 
     // Create and run the agent
