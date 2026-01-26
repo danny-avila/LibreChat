@@ -35,7 +35,7 @@ function ConvoOptions({
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
   isPopoverActive: boolean;
-  setIsPopoverActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsPopoverActive: (open: boolean) => void;
   isActiveConvo: boolean;
   isShiftHeld?: boolean;
 }) {
