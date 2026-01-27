@@ -44,6 +44,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const tool = toolMap.get(tc.name);
 
             if (!tool) {
+              logger.warn(
+                `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].join(', ')}`,
+              );
               return {
                 toolCallId: tc.id,
                 status: 'error' as const,

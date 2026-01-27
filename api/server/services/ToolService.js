@@ -21,9 +21,12 @@ const {
   AgentCapabilities,
   isEphemeralAgentId,
   validateActionDomain,
+  actionDomainSeparator,
   defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
+
+const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 const {
   createActionTool,
   decryptMetadata,
@@ -850,6 +853,8 @@ async function loadAgentTools({
  * This function encapsulates all dependencies needed for tool loading,
  * so callers don't need to import processFileURL, uploadImageBuffer, etc.
  *
+ * Handles both regular tools (MCP, built-in) and action tools.
+ *
  * @param {Object} params
  * @param {ServerRequest} params.req - The request object
  * @param {ServerResponse} params.res - The response object
@@ -872,35 +877,190 @@ async function loadToolsForExecution({
   streamId = null,
 }) {
   const appConfig = req.config;
+  const allLoadedTools = [];
 
-  const includesWebSearch = toolNames.includes(Tools.web_search);
-  const webSearchCallbacks = includesWebSearch ? createOnSearchResults(res, streamId) : undefined;
+  const actionToolNames = toolNames.filter((name) => name.includes(actionDelimiter));
+  const regularToolNames = toolNames.filter((name) => !name.includes(actionDelimiter));
 
-  const { loadedTools } = await loadTools({
-    agent,
-    signal,
-    userMCPAuthMap,
-    functions: true,
-    tools: toolNames,
-    user: req.user.id,
-    options: {
+  if (regularToolNames.length > 0) {
+    const includesWebSearch = regularToolNames.includes(Tools.web_search);
+    const webSearchCallbacks = includesWebSearch ? createOnSearchResults(res, streamId) : undefined;
+
+    const { loadedTools } = await loadTools({
+      agent,
+      signal,
+      userMCPAuthMap,
+      functions: true,
+      tools: regularToolNames,
+      user: req.user.id,
+      options: {
+        req,
+        res,
+        processFileURL,
+        uploadImageBuffer,
+        returnMetadata: true,
+        tool_resources,
+        [Tools.web_search]: webSearchCallbacks,
+      },
+      webSearch: appConfig?.webSearch,
+      fileStrategy: appConfig?.fileStrategy,
+      imageOutputType: appConfig?.imageOutputType,
+    });
+
+    if (loadedTools) {
+      allLoadedTools.push(...loadedTools);
+    }
+  }
+
+  if (actionToolNames.length > 0 && agent) {
+    const actionTools = await loadActionToolsForExecution({
       req,
       res,
-      processFileURL,
-      uploadImageBuffer,
-      returnMetadata: true,
-      tool_resources,
-      [Tools.web_search]: webSearchCallbacks,
-    },
-    webSearch: appConfig?.webSearch,
-    fileStrategy: appConfig?.fileStrategy,
-    imageOutputType: appConfig?.imageOutputType,
-  });
+      agent,
+      appConfig,
+      streamId,
+      actionToolNames,
+    });
+    allLoadedTools.push(...actionTools);
+  }
 
   return {
-    loadedTools: loadedTools || [],
+    loadedTools: allLoadedTools,
     configurable: { userMCPAuthMap },
   };
+}
+
+/**
+ * Loads action tools for event-driven execution.
+ * @param {Object} params
+ * @param {ServerRequest} params.req - The request object
+ * @param {ServerResponse} params.res - The response object
+ * @param {Object} params.agent - The agent object
+ * @param {Object} params.appConfig - App configuration
+ * @param {string|null} params.streamId - Stream ID
+ * @param {string[]} params.actionToolNames - Action tool names to load
+ * @returns {Promise<Array>} Loaded action tools
+ */
+async function loadActionToolsForExecution({
+  req,
+  res,
+  agent,
+  appConfig,
+  streamId,
+  actionToolNames,
+}) {
+  const loadedActionTools = [];
+
+  const actionSets = (await loadActionSets({ agent_id: agent.id })) ?? [];
+  if (actionSets.length === 0) {
+    return loadedActionTools;
+  }
+
+  const processedActionSets = new Map();
+  const domainMap = new Map();
+  const allowedDomains = appConfig?.actions?.allowedDomains;
+
+  for (const action of actionSets) {
+    const domain = await domainParser(action.metadata.domain, true);
+    domainMap.set(domain, action);
+
+    const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
+    if (!isDomainAllowed) {
+      logger.warn(
+        `[Actions] Domain "${action.metadata.domain}" not in allowedDomains. ` +
+          `Add it to librechat.yaml actions.allowedDomains to enable this action.`,
+      );
+      continue;
+    }
+
+    const validationResult = validateAndParseOpenAPISpec(action.metadata.raw_spec);
+    if (!validationResult.spec || !validationResult.serverUrl) {
+      logger.warn(`[Actions] Invalid OpenAPI spec for domain: ${domain}`);
+      continue;
+    }
+
+    const domainValidation = validateActionDomain(
+      action.metadata.domain,
+      validationResult.serverUrl,
+    );
+    if (!domainValidation.isValid) {
+      logger.error(`Domain mismatch in stored action: ${domainValidation.message}`, {
+        userId: req.user.id,
+        agent_id: agent.id,
+        action_id: action.action_id,
+      });
+      continue;
+    }
+
+    const encrypted = {
+      oauth_client_id: action.metadata.oauth_client_id,
+      oauth_client_secret: action.metadata.oauth_client_secret,
+    };
+
+    const decryptedAction = { ...action };
+    decryptedAction.metadata = await decryptMetadata(action.metadata);
+
+    const { requestBuilders, functionSignatures, zodSchemas } = openapiToFunction(
+      validationResult.spec,
+      true,
+    );
+
+    processedActionSets.set(domain, {
+      action: decryptedAction,
+      requestBuilders,
+      functionSignatures,
+      zodSchemas,
+      encrypted,
+    });
+  }
+
+  for (const toolName of actionToolNames) {
+    let currentDomain = '';
+    for (const domain of domainMap.keys()) {
+      const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
+      if (toolName.includes(normalizedDomain)) {
+        currentDomain = domain;
+        break;
+      }
+    }
+
+    if (!currentDomain || !processedActionSets.has(currentDomain)) {
+      continue;
+    }
+
+    const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
+      processedActionSets.get(currentDomain);
+    const normalizedDomain = currentDomain.replace(domainSeparatorRegex, '_');
+    const functionName = toolName.replace(`${actionDelimiter}${normalizedDomain}`, '');
+    const functionSig = functionSignatures.find((sig) => sig.name === functionName);
+    const requestBuilder = requestBuilders[functionName];
+    const zodSchema = zodSchemas[functionName];
+
+    if (!requestBuilder) {
+      continue;
+    }
+
+    const tool = await createActionTool({
+      userId: req.user.id,
+      res,
+      action,
+      streamId,
+      zodSchema,
+      encrypted,
+      requestBuilder,
+      name: toolName,
+      description: functionSig?.description ?? '',
+    });
+
+    if (!tool) {
+      logger.warn(`[Actions] Failed to create action tool: ${toolName}`);
+      continue;
+    }
+
+    loadedActionTools.push(tool);
+  }
+
+  return loadedActionTools;
 }
 
 module.exports = {

@@ -5,10 +5,13 @@
  * @module packages/api/src/tools/definitions
  */
 
-import { Constants, actionDelimiter } from 'librechat-data-provider';
+import { Constants, actionDelimiter, actionDomainSeparator } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import { buildToolClassification, type ToolDefinition } from './classification';
+
+/** Regex to replace domain separators (---) with underscores for tool names */
+const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
 export interface MCPServerTool {
   function?: {
@@ -84,7 +87,8 @@ export async function loadToolDefinitions(
   for (const toolName of tools) {
     if (!mcpToolPattern.test(toolName)) {
       if (toolName.includes(actionDelimiter)) {
-        actionToolDefs.push({ name: toolName });
+        const normalizedName = toolName.replace(domainSeparatorRegex, '_');
+        actionToolDefs.push({ name: normalizedName });
       } else if (isBuiltInTool(toolName)) {
         builtInToolDefs.push({ name: toolName });
       }
