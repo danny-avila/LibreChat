@@ -52,13 +52,14 @@ export function getReasoningKey(
 
 /**
  * Determines vision capability for an agent.
- * 
- * Priority:
+ *
+ * Priority (manual specification wins over hardcoded list):
  * 1. Explicit override (`agent.vision`) takes precedence
- * 2. Auto-detection from model using `validateVisionModel()`
- * 
+ * 2. Spec-based: when agent has a `spec` and modelSpecs has that spec with vision set, use it
+ * 3. Auto-detection from model using `validateVisionModel()` (modelSpecs then hardcoded list)
+ *
  * Model is resolved from `agent.model_parameters?.model` or `agent.model`.
- * 
+ *
  * @param agent - The agent to check for vision capability
  * @param modelSpecs - Optional modelSpecs configuration from librechat.yaml
  * @param availableModels - Not used (kept for backwards compatibility)
@@ -71,6 +72,14 @@ function determineVisionCapability(
 ): boolean {
   if (agent.vision !== undefined) {
     return agent.vision;
+  }
+
+  const agentSpec = (agent as { spec?: string }).spec;
+  if (agentSpec != null && agentSpec !== '' && modelSpecs?.list?.length) {
+    const specByName = modelSpecs.list.find((s) => s.name === agentSpec);
+    if (specByName?.vision !== undefined) {
+      return specByName.vision === true;
+    }
   }
 
   const agentModel = (agent.model_parameters as { model?: string })?.model ?? agent.model;
@@ -184,19 +193,20 @@ export async function createRun({
     }
 
     /**
-     * Ensure max_tokens/maxTokens is at least 1 for provider APIs.
-     * Avoids invalid values from missing/wrong model metadata or stored config
-     * (e.g. custom/Scaleway with undefined context leading to negative max_tokens).
+     * Only pass max_tokens/maxTokens when it has a valid value (number >= 1).
+     * Invalid or missing values are omitted so the provider uses its default.
      */
-    const llmConfigRecord = llmConfig as Record<string, unknown>;
-    const rawMaxTokens = llmConfig.maxTokens ?? llmConfigRecord.max_tokens;
-    const sanitizedMaxTokens =
+    const llmConfigRecord = llmConfig as unknown as Record<string, unknown>;
+    const rawMaxTokens = llmConfigRecord.maxTokens ?? llmConfigRecord.max_tokens;
+    const isValidMaxTokens =
       typeof rawMaxTokens === 'number' &&
       !Number.isNaN(rawMaxTokens) &&
-      rawMaxTokens >= 1
-        ? rawMaxTokens
-        : 4096;
-    llmConfig.maxTokens = sanitizedMaxTokens;
+      rawMaxTokens >= 1;
+    if (isValidMaxTokens) {
+      llmConfigRecord.maxTokens = rawMaxTokens;
+    } else {
+      delete llmConfigRecord.maxTokens;
+    }
     delete llmConfigRecord.max_tokens;
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);

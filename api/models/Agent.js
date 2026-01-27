@@ -178,6 +178,16 @@ const loadEphemeralAgent = async ({ req, spec, endpoint, model_parameters: _m })
   if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
   }
+
+  // Manual spec wins: when the user chose a model spec with vision set, use it so
+  // vision is determined by the spec rather than the hardcoded list.
+  if (modelSpec?.vision !== undefined) {
+    result.vision = modelSpec.vision;
+  }
+  if (spec != null && spec !== '') {
+    result.spec = spec;
+  }
+
   return result;
 };
 
