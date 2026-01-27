@@ -440,14 +440,15 @@ async function runAssistant({
 
   // Add artifact content as user message to thread if artifacts were processed
   if (openai.pendingArtifactContent?.length) {
+    const willAttachFileIds =
+      openai.pendingArtifactFileIds?.length &&
+      openai.pendingArtifactContent.some((item) => item?.type === ContentTypes.IMAGE_FILE);
+
     const artifactMessage = {
       role: 'user',
       content: openai.pendingArtifactContent,
     };
-    if (
-      openai.pendingArtifactFileIds?.length &&
-      openai.pendingArtifactContent.some((item) => item?.type === ContentTypes.IMAGE_FILE)
-    ) {
+    if (willAttachFileIds) {
       artifactMessage.file_ids = openai.pendingArtifactFileIds;
     }
     await openai.beta.threads.messages.create(thread_id, artifactMessage);

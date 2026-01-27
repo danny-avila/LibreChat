@@ -72,12 +72,12 @@ function determineVisionCapability(
   if (agent.vision !== undefined) {
     return agent.vision;
   }
-  
+
   const agentModel = (agent.model_parameters as { model?: string })?.model ?? agent.model;
   if (!agentModel) {
     return false;
   }
-  
+
   return validateVisionModel({
     model: agentModel,
     modelSpecs,
@@ -182,6 +182,22 @@ export async function createRun({
       llmConfig.streamUsage = false;
       llmConfig.usage = true;
     }
+
+    /**
+     * Ensure max_tokens/maxTokens is at least 1 for provider APIs.
+     * Avoids invalid values from missing/wrong model metadata or stored config
+     * (e.g. custom/Scaleway with undefined context leading to negative max_tokens).
+     */
+    const llmConfigRecord = llmConfig as Record<string, unknown>;
+    const rawMaxTokens = llmConfig.maxTokens ?? llmConfigRecord.max_tokens;
+    const sanitizedMaxTokens =
+      typeof rawMaxTokens === 'number' &&
+      !Number.isNaN(rawMaxTokens) &&
+      rawMaxTokens >= 1
+        ? rawMaxTokens
+        : 4096;
+    llmConfig.maxTokens = sanitizedMaxTokens;
+    delete llmConfigRecord.max_tokens;
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     const visionCapability = determineVisionCapability(agent, modelSpecs, availableModels);

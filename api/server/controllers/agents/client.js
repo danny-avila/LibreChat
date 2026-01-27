@@ -425,13 +425,8 @@ class AgentClient extends BaseClient {
       );
     }
 
-    if (!(this.options.agent?.vision ?? false)) {
-      orderedMessages.forEach((msg) => {
-        if (msg.image_urls) {
-          delete msg.image_urls;
-        }
-      });
-    }
+    // Image content in messages is filtered by the LLM layer (_convertMessagesToOpenAIParams)
+    // when agent.vision is false; no need to strip image_urls here.
 
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
