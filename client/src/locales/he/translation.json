@@ -84,7 +84,7 @@
   "com_agents_no_agent_id_error": "לא נמצא מזהה סוכן. אנא ודא שהסוכן נוצר תחילה",
   "com_agents_no_more_results": "הגעת לסוף התוצאות",
   "com_agents_not_available": "הסוכן לא זמין",
-  "com_agents_prompt_selection": "בחירה מהירה",
+  "com_agents_prompt_selection": "בחר הנחיה",
   "com_agents_recommended": "הסוכנים המומלצים שלנו",
   "com_agents_results_for": "תוצאות עבור '{{query}}'",
   "com_agents_search_aria": "חפש סוכנים",

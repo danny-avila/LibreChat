@@ -72,7 +72,7 @@
   "com_agents_name_placeholder": "Opcional: El nombre del agente",
   "com_agents_no_access": "No tiene acceso para editar este agente",
   "com_agents_not_available": "Agente no disponible",
-  "com_agents_prompt_selection": "Selección rápida",
+  "com_agents_prompt_selection": "Seleccionar prompt",
   "com_agents_search_name": "Buscar agentes por nombre",
   "com_agents_update_error": "Hubo un error al actualizar su agente.",
   "com_assistants_action_attempt": "El asistente quiere hablar con {{0}}",

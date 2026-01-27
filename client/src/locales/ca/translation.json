@@ -24,7 +24,7 @@
   "com_agents_name_placeholder": "Opcional: El nom de l'agent",
   "com_agents_no_access": "No tens accés per editar aquest agent.",
   "com_agents_not_available": "Agent no disponible",
-  "com_agents_prompt_selection": "Selecció ràpida",
+  "com_agents_prompt_selection": "Selecciona un prompt",
   "com_agents_search_name": "Cerca agents per nom",
   "com_agents_update_error": "S'ha produït un error en actualitzar el teu agent.",
   "com_assistants_action_attempt": "L'assistent vol parlar amb {{0}}",

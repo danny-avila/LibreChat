@@ -19,7 +19,7 @@
   "com_agents_name_placeholder": "Volitelné: Název agenta",
   "com_agents_no_access": "Nemáte oprávnění upravovat tohoto agenta.",
   "com_agents_not_available": "Agent není k dispozici",
-  "com_agents_prompt_selection": "Rychlý výběr",
+  "com_agents_prompt_selection": "Výběr výzvy",
   "com_agents_search_name": "Hledat agenty podle jména",
   "com_agents_update_error": "Při aktualizaci agenta došlo k chybě.",
   "com_assistants_action_attempt": "Asistent se chce spojit s {{0}}",

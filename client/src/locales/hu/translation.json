@@ -18,7 +18,7 @@
   "com_agents_name_placeholder": "Opcionális: Az ügynök neve",
   "com_agents_no_access": "Nincs jogosultsága ennek az ügynöknek a szerkesztéséhez.",
   "com_agents_not_available": "Az ügynök nem érhető el",
-  "com_agents_prompt_selection": "Gyors kiválasztás",
+  "com_agents_prompt_selection": "Prompt kiválasztása név vagy parancs szerint",
   "com_agents_search_name": "Ügynökök keresése név szerint",
   "com_agents_update_error": "Hiba történt az ügynök frissítése során.",
   "com_assistants_action_attempt": "Az asszisztens beszélni akar {{0}}-val",

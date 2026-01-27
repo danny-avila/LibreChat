@@ -18,7 +18,7 @@
   "com_agents_name_placeholder": "Valikuline: Agendi nimi",
   "com_agents_no_access": "Sul pole õigust seda agenti muuta.",
   "com_agents_not_available": "Agent pole saadaval",
-  "com_agents_prompt_selection": "Kiire valik",
+  "com_agents_prompt_selection": "Vali viip",
   "com_agents_search_info": "Kui see on lubatud, saab sinu agent otsida veebist ajakohast teavet. Vajalik on kehtiv API võti.",
   "com_agents_search_name": "Otsi agente nime järgi",
   "com_agents_update_error": "Agendi uuendamisel tekkis viga.",

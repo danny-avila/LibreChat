@@ -18,7 +18,7 @@
   "com_agents_name_placeholder": "اختیاری: نام کارگزار",
   "com_agents_no_access": "شما به ویرایش این کارگزار دسترسی ندارید.",
   "com_agents_not_available": "کارگزار در دسترس نیست",
-  "com_agents_prompt_selection": "انتخاب سریع",
+  "com_agents_prompt_selection": "انتخاب پرامپت",
   "com_agents_search_name": "کارگزارها را با نام جستجو کنید",
   "com_agents_update_error": "هنگام به‌روزرسانی کارگزار شما خطایی روی داد.",
   "com_assistants_action_attempt": "دستیار می خواهد با {{0}} صحبت کند ",

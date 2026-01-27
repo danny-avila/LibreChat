@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
 import { usePromptGroupsContext } from '~/Providers';
@@ -15,14 +15,9 @@ const ROW_HEIGHT = 40;
 type PromptsDialogTriggerProps = {
   icon: React.ReactNode;
   submitPrompt: (textPrompt: string) => void;
-  buttonClassName?: string;
 };
 
-const PromptsButtonCommand: React.FC<PromptsDialogTriggerProps> = ({
-  icon,
-  submitPrompt,
-  buttonClassName = '',
-}) => {
+const PromptsButtonCommand: React.FC<PromptsDialogTriggerProps> = ({ icon, submitPrompt }) => {
   const localize = useLocalize();
   const { allPromptGroups, hasAccess } = usePromptGroupsContext();
   const { data, isLoading } = allPromptGroups;
@@ -41,6 +36,12 @@ const PromptsButtonCommand: React.FC<PromptsDialogTriggerProps> = ({
     value: '',
     options: prompts ?? [],
   });
+
+  useEffect(() => {
+    if (open) {
+      setActiveIndex(0);
+    }
+  }, [open, matches.length]);
 
   const handleSelect = useCallback(
     (mention?: PromptOption, e?: React.KeyboardEvent<HTMLInputElement>) => {
@@ -97,7 +98,6 @@ const PromptsButtonCommand: React.FC<PromptsDialogTriggerProps> = ({
         render={
           <button
             type="button"
-            className={buttonClassName}
             onClick={() => setOpen(true)}
             aria-label={localize('com_agents_prompt_selection')}
           >
@@ -111,10 +111,13 @@ const PromptsButtonCommand: React.FC<PromptsDialogTriggerProps> = ({
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
           onClick={() => setOpen(false)}
+          role="dialog"
+          aria-modal="true"
         >
           <div
             className="relative w-full max-w-3xl rounded-2xl bg-surface-tertiary-alt p-4 shadow-lg"
             onClick={(e) => e.stopPropagation()}
+            aria-label={localize('com_agents_prompt_selection')}
           >
             <input
               ref={inputRef}
@@ -127,13 +130,24 @@ const PromptsButtonCommand: React.FC<PromptsDialogTriggerProps> = ({
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Escape') setOpen(false);
-                if (e.key === 'ArrowDown') setActiveIndex((i) => (i + 1) % matches.length);
-                else if (e.key === 'ArrowUp')
+                if (e.key === 'Escape') {
+                  setOpen(false);
+                  return;
+                }
+                // Avoid navigation and selection when there are no matches
+                if (!matches.length) {
+                  return;
+                }
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setActiveIndex((i) => (i + 1) % matches.length);
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
                   setActiveIndex((i) => (i - 1 + matches.length) % matches.length);
-                else if (e.key === 'Enter' || e.key === 'Tab') {
-                  if (e.key === 'Enter') e.preventDefault();
-                  handleSelect(matches[activeIndex] as PromptOption | undefined, e);
+                } else if (e.key === 'Enter' || e.key === 'Tab') {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                  }
                 }
               }}
             />
@@ -158,14 +172,14 @@ const PromptsButtonCommand: React.FC<PromptsDialogTriggerProps> = ({
                 </AutoSizer>
               )}
             </div>
-            <VariableDialog
-              open={isVariableDialogOpen}
-              onClose={() => setVariableDialogOpen(false)}
-              group={variableGroup}
-            />
           </div>
         </div>
       )}
+      <VariableDialog
+        open={isVariableDialogOpen}
+        onClose={() => setVariableDialogOpen(false)}
+        group={variableGroup}
+      />
     </>
   );
 };

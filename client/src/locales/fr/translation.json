@@ -75,7 +75,7 @@
   "com_agents_no_agent_id_error": "Aucun identifiant (ID) d'agent trouvé. Assurez-vous que l'agent existe.",
   "com_agents_no_more_results": "Plus de résultats à afficher",
   "com_agents_not_available": "Agent non disponible",
-  "com_agents_prompt_selection": "Sélection rapide",
+  "com_agents_prompt_selection": "Sélectionner un prompt",
   "com_agents_recommended": "Nos agents recommandés",
   "com_agents_results_for": "Résultats pour '{{query}}'",
   "com_agents_search_aria": "Rechercher un agent",
