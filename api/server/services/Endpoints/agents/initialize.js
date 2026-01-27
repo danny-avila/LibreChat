@@ -19,8 +19,8 @@ const {
   createToolEndCallback,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
+const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
-const { loadAgentTools, loadTools: loadToolsLegacy } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getConvoFiles } = require('~/models/Conversation');
 const { processAddedConvo } = require('./addedConvo');
@@ -98,8 +98,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   /**
    * Agent context store - populated after initialization, accessed by callback via closure.
-   * Maps agentId -> { userMCPAuthMap, agent }
-   * @type {Map<string, { userMCPAuthMap?: Record<string, Record<string, string>>, agent?: { id: string, provider: string, model: string } }>}
+   * Maps agentId -> { userMCPAuthMap, agent, tool_resources, openAIApiKey }
+   * @type {Map<string, {
+   *   userMCPAuthMap?: Record<string, Record<string, string>>,
+   *   agent?: object,
+   *   tool_resources?: object,
+   *   openAIApiKey?: string
+   * }>}
    */
   const agentToolContexts = new Map();
 
@@ -107,20 +112,20 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     loadTools: async (toolNames, agentId) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
-      const { loadedTools } = await loadToolsLegacy({
+
+      const result = await loadToolsForExecution({
+        req,
+        res,
         signal,
-        functions: true,
+        streamId,
+        toolNames,
         agent: ctx.agent,
-        tools: toolNames,
-        user: req.user.id,
-        options: { req, res },
         userMCPAuthMap: ctx.userMCPAuthMap,
+        tool_resources: ctx.tool_resources,
       });
-      logger.debug(`[ON_TOOL_EXECUTE] loaded ${loadedTools?.length ?? 0} tools`);
-      return {
-        loadedTools: loadedTools || [],
-        configurable: { userMCPAuthMap: ctx.userMCPAuthMap },
-      };
+
+      logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
+      return result;
     },
   };
 
@@ -201,8 +206,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   /** Store primary agent's tool context for ON_TOOL_EXECUTE callback */
   logger.debug(`[initializeClient] Storing tool context for agentId: ${primaryConfig.id}`);
   agentToolContexts.set(primaryConfig.id, {
+    agent: primaryAgent,
     userMCPAuthMap: primaryConfig.userMCPAuthMap,
-    agent: { id: primaryConfig.id, provider: primaryAgent.provider, model: primaryAgent.model },
+    tool_resources: primaryConfig.tool_resources,
   });
 
   const agent_ids = primaryConfig.agent_ids;
@@ -266,8 +272,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
     /** Store handoff agent's tool context for ON_TOOL_EXECUTE callback */
     agentToolContexts.set(agentId, {
+      agent,
       userMCPAuthMap: config.userMCPAuthMap,
-      agent: { id: agentId, provider: agent.provider, model: agent.model },
+      tool_resources: config.tool_resources,
     });
 
     agentConfigs.set(agentId, config);

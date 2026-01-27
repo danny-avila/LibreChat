@@ -22,9 +22,9 @@ const {
   createToolExecuteHandler,
   isChatCompletionValidationFailure,
 } = require('@librechat/api');
+const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { loadAgentTools, loadTools: loadToolsLegacy } = require('~/server/services/ToolService');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
@@ -251,13 +251,15 @@ const OpenAIChatCompletionController = async (req, res) => {
 
     const toolExecuteOptions = {
       loadTools: async (toolNames) => {
-        const { loadedTools } = await loadToolsLegacy({
-          tools: toolNames,
-          user: req.user.id,
-          functions: true,
-          options: { req, res },
+        return loadToolsForExecution({
+          req,
+          res,
+          agent,
+          toolNames,
+          signal: abortController.signal,
+          userMCPAuthMap: primaryConfig.userMCPAuthMap,
+          tool_resources: primaryConfig.tool_resources,
         });
-        return { loadedTools: loadedTools || [] };
       },
     };
 

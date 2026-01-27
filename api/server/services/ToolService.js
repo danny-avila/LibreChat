@@ -845,10 +845,69 @@ async function loadAgentTools({
   };
 }
 
+/**
+ * Loads tools for event-driven execution (ON_TOOL_EXECUTE handler).
+ * This function encapsulates all dependencies needed for tool loading,
+ * so callers don't need to import processFileURL, uploadImageBuffer, etc.
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req - The request object
+ * @param {ServerResponse} params.res - The response object
+ * @param {AbortSignal} [params.signal] - Abort signal
+ * @param {Object} params.agent - The agent object
+ * @param {string[]} params.toolNames - Names of tools to load
+ * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap] - User MCP auth map
+ * @param {Object} [params.tool_resources] - Tool resources
+ * @param {string|null} [params.streamId] - Stream ID for web search callbacks
+ * @returns {Promise<{ loadedTools: Array, configurable: Object }>}
+ */
+async function loadToolsForExecution({
+  req,
+  res,
+  signal,
+  agent,
+  toolNames,
+  userMCPAuthMap,
+  tool_resources,
+  streamId = null,
+}) {
+  const appConfig = req.config;
+
+  const includesWebSearch = toolNames.includes(Tools.web_search);
+  const webSearchCallbacks = includesWebSearch ? createOnSearchResults(res, streamId) : undefined;
+
+  const { loadedTools } = await loadTools({
+    agent,
+    signal,
+    userMCPAuthMap,
+    functions: true,
+    tools: toolNames,
+    user: req.user.id,
+    options: {
+      req,
+      res,
+      processFileURL,
+      uploadImageBuffer,
+      returnMetadata: true,
+      tool_resources,
+      [Tools.web_search]: webSearchCallbacks,
+    },
+    webSearch: appConfig?.webSearch,
+    fileStrategy: appConfig?.fileStrategy,
+    imageOutputType: appConfig?.imageOutputType,
+  });
+
+  return {
+    loadedTools: loadedTools || [],
+    configurable: { userMCPAuthMap },
+  };
+}
+
 module.exports = {
   loadTools,
   isBuiltInTool,
   getToolkitKey,
   loadAgentTools,
+  loadToolsForExecution,
   processRequiredActions,
 };

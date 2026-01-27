@@ -35,9 +35,9 @@ const {
   createResponsesToolEndCallback,
   createToolEndCallback,
 } = require('~/server/controllers/agents/callbacks');
+const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
-const { loadAgentTools, loadTools: loadToolsLegacy } = require('~/server/services/ToolService');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
@@ -414,13 +414,15 @@ const createResponse = async (req, res) => {
       // Create tool execute options for event-driven tool execution
       const toolExecuteOptions = {
         loadTools: async (toolNames) => {
-          const { loadedTools } = await loadToolsLegacy({
-            tools: toolNames,
-            user: req.user.id,
-            functions: true,
-            options: { req, res },
+          return loadToolsForExecution({
+            req,
+            res,
+            agent,
+            toolNames,
+            signal: abortController.signal,
+            userMCPAuthMap: primaryConfig.userMCPAuthMap,
+            tool_resources: primaryConfig.tool_resources,
           });
-          return { loadedTools: loadedTools || [] };
         },
       };
 
@@ -532,13 +534,15 @@ const createResponse = async (req, res) => {
 
       const toolExecuteOptions = {
         loadTools: async (toolNames) => {
-          const { loadedTools } = await loadToolsLegacy({
-            tools: toolNames,
-            user: req.user.id,
-            functions: true,
-            options: { req, res },
+          return loadToolsForExecution({
+            req,
+            res,
+            agent,
+            toolNames,
+            signal: abortController.signal,
+            userMCPAuthMap: primaryConfig.userMCPAuthMap,
+            tool_resources: primaryConfig.tool_resources,
           });
-          return { loadedTools: loadedTools || [] };
         },
       };
 
