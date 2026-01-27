@@ -344,6 +344,10 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Array<Partial<MongoFile>>>}
    */
   async addImageURLs(message, attachments) {
+    if (!(this.options.agent?.vision ?? false)) {
+      return attachments;
+    }
+
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
@@ -420,6 +424,9 @@ class AgentClient extends BaseClient {
         orderedMessages[orderedMessages.length - 1].text,
       );
     }
+
+    // Image content in messages is filtered by the LLM layer (_convertMessagesToOpenAIParams)
+    // when agent.vision is false; no need to strip image_urls here.
 
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
@@ -1041,6 +1048,8 @@ class AgentClient extends BaseClient {
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
           tokenCounter: createTokenCounter(this.getEncoding()),
+          modelSpecs: appConfig.modelSpecs,
+          availableModels: appConfig.availableModels,
         });
 
         if (!run) {

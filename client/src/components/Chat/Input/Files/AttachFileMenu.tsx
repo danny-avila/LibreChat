@@ -36,6 +36,7 @@ import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
+import { useVisionModel } from '~/hooks';
 
 type FileUploadType = 'image' | 'document' | 'image_document' | 'image_document_video_audio';
 
@@ -74,6 +75,7 @@ const AttachFileMenu = ({
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
+  const isVisionModel = useVisionModel();
 
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
 
@@ -127,27 +129,34 @@ const AttachFileMenu = ({
         isDocumentSupportedProvider(currentProvider) ||
         isAzureWithResponsesApi
       ) {
-        items.push({
-          label: localize('com_ui_upload_provider'),
-          onClick: () => {
-            setToolResource(undefined);
-            let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
-            if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
-              fileType = 'image_document_video_audio';
-            }
-            onAction(fileType);
-          },
-          icon: <FileImageIcon className="icon-md" />,
-        });
+        if (isVisionModel) {
+          items.push({
+            label: localize('com_ui_upload_provider'),
+            onClick: () => {
+              setToolResource(undefined);
+              let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
+              if (
+                currentProvider === Providers.GOOGLE ||
+                currentProvider === Providers.OPENROUTER
+              ) {
+                fileType = 'image_document_video_audio';
+              }
+              onAction(fileType);
+            },
+            icon: <FileImageIcon className="icon-md" />,
+          });
+        }
       } else {
-        items.push({
-          label: localize('com_ui_upload_image_input'),
-          onClick: () => {
-            setToolResource(undefined);
-            onAction('image');
-          },
-          icon: <ImageUpIcon className="icon-md" />,
-        });
+        if (isVisionModel) {
+          items.push({
+            label: localize('com_ui_upload_image_input'),
+            onClick: () => {
+              setToolResource(undefined);
+              onAction('image');
+            },
+            icon: <ImageUpIcon className="icon-md" />,
+          });
+        }
       }
 
       if (capabilities.contextEnabled) {
@@ -224,6 +233,7 @@ const AttachFileMenu = ({
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
+    isVisionModel,
   ]);
 
   const menuTrigger = (

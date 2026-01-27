@@ -23,3 +23,4 @@ export * from './http';
 export * from './tokens';
 export * from './url';
 export * from './message';
+export * from './image-helpers';
