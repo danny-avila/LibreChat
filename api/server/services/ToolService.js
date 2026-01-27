@@ -475,6 +475,53 @@ async function loadToolDefinitionsWrapper({ req, agent }) {
     return result?.availableTools || null;
   };
 
+  const getActionToolDefinitions = async (agentId, actionToolNames) => {
+    const actionSets = (await loadActionSets({ agent_id: agentId })) ?? [];
+    if (actionSets.length === 0) {
+      return [];
+    }
+
+    const definitions = [];
+    const allowedDomains = appConfig?.actions?.allowedDomains;
+
+    for (const action of actionSets) {
+      const domain = await domainParser(action.metadata.domain, true);
+      const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
+
+      const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
+      if (!isDomainAllowed) {
+        logger.warn(
+          `[Actions] Domain "${action.metadata.domain}" not in allowedDomains. ` +
+            `Add it to librechat.yaml actions.allowedDomains to enable this action.`,
+        );
+        continue;
+      }
+
+      const validationResult = validateAndParseOpenAPISpec(action.metadata.raw_spec);
+      if (!validationResult.spec || !validationResult.serverUrl) {
+        logger.warn(`[Actions] Invalid OpenAPI spec for domain: ${domain}`);
+        continue;
+      }
+
+      const { functionSignatures } = openapiToFunction(validationResult.spec, true);
+
+      for (const sig of functionSignatures) {
+        const toolName = `${sig.name}${actionDelimiter}${normalizedDomain}`;
+        if (!actionToolNames.some((name) => name.replace(domainSeparatorRegex, '_') === toolName)) {
+          continue;
+        }
+
+        definitions.push({
+          name: toolName,
+          description: sig.description,
+          parameters: sig.parameters,
+        });
+      }
+    }
+
+    return definitions;
+  };
+
   const { toolDefinitions, toolRegistry, hasDeferredTools } = await loadToolDefinitions(
     {
       userId: req.user.id,
@@ -487,6 +534,7 @@ async function loadToolDefinitionsWrapper({ req, agent }) {
       isBuiltInTool,
       loadAuthValues,
       getOrFetchMCPServerTools,
+      getActionToolDefinitions,
     },
   );
 

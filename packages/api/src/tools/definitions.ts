@@ -5,14 +5,11 @@
  * @module packages/api/src/tools/definitions
  */
 
-import { Constants, actionDelimiter, actionDomainSeparator } from 'librechat-data-provider';
+import { Constants, actionDelimiter } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import { buildToolClassification, type ToolDefinition } from './classification';
 import { getToolDefinition } from './registry/definitions';
-
-/** Regex to replace domain separators (---) with underscores for tool names */
-const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
 export interface MCPServerTool {
   function?: {
@@ -37,6 +34,12 @@ export interface LoadToolDefinitionsParams {
   deferredToolsEnabled?: boolean;
 }
 
+export interface ActionToolDefinition {
+  name: string;
+  description?: string;
+  parameters?: JsonSchemaType;
+}
+
 export interface LoadToolDefinitionsDeps {
   /** Gets MCP server tools - first checks cache, then initializes server if needed */
   getOrFetchMCPServerTools: (userId: string, serverName: string) => Promise<MCPServerTools | null>;
@@ -47,6 +50,11 @@ export interface LoadToolDefinitionsDeps {
     userId: string;
     authFields: string[];
   }) => Promise<Record<string, string>>;
+  /** Loads action tool definitions (schemas) from OpenAPI specs */
+  getActionToolDefinitions?: (
+    agentId: string,
+    actionToolNames: string[],
+  ) => Promise<ActionToolDefinition[]>;
 }
 
 export interface LoadToolDefinitionsResult {
@@ -66,7 +74,8 @@ export async function loadToolDefinitions(
   deps: LoadToolDefinitionsDeps,
 ): Promise<LoadToolDefinitionsResult> {
   const { userId, agentId, tools, toolOptions = {}, deferredToolsEnabled = false } = params;
-  const { getOrFetchMCPServerTools, isBuiltInTool, loadAuthValues } = deps;
+  const { getOrFetchMCPServerTools, isBuiltInTool, loadAuthValues, getActionToolDefinitions } =
+    deps;
 
   const emptyResult: LoadToolDefinitionsResult = {
     toolDefinitions: [],
@@ -81,14 +90,14 @@ export async function loadToolDefinitions(
   const mcpServerToolsCache = new Map<string, MCPServerTools>();
   const mcpToolDefs: ToolDefinition[] = [];
   const builtInToolDefs: ToolDefinition[] = [];
-  const actionToolDefs: ToolDefinition[] = [];
+  let actionToolDefs: ToolDefinition[] = [];
+  const actionToolNames: string[] = [];
 
   const mcpAllPattern = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
 
   for (const toolName of tools) {
     if (toolName.includes(actionDelimiter)) {
-      const normalizedName = toolName.replace(domainSeparatorRegex, '_');
-      actionToolDefs.push({ name: normalizedName });
+      actionToolNames.push(toolName);
       continue;
     }
 
@@ -141,6 +150,15 @@ export async function loadToolDefinitions(
         serverName,
       });
     }
+  }
+
+  if (actionToolNames.length > 0 && getActionToolDefinitions) {
+    const fetchedActionDefs = await getActionToolDefinitions(agentId, actionToolNames);
+    actionToolDefs = fetchedActionDefs.map((def) => ({
+      name: def.name,
+      description: def.description,
+      parameters: def.parameters,
+    }));
   }
 
   const loadedTools = mcpToolDefs.map((def) => ({
