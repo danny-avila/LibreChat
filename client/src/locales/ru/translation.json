@@ -84,6 +84,7 @@
   "com_agents_no_agent_id_error": "Идентификатор агента не найден. Убедитесь, что агент сначала создан.",
   "com_agents_no_more_results": "Вы дошли до конца результатов",
   "com_agents_not_available": "Агент недоступен",
+  "com_agents_prompt_selection": "Выберите подсказку по названию или команде.",
   "com_agents_recommended": "Наши рекомендуемые агенты",
   "com_agents_results_for": "Результат для '{{query}}'",
   "com_agents_search_aria": "Поиск агентов",

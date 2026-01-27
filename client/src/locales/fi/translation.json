@@ -17,6 +17,7 @@
   "com_agents_no_access": "Sinulla ei ole lupaa muokata tätä agenttia.",
   "com_agents_no_agent_id_error": "Agentin tunnistetta ei löytynyt. Varmista ensin, että agentti on luotu.",
   "com_agents_not_available": "Agentti ei ole saatavilla.",
+  "com_agents_prompt_selection": "Valitse kehote",
   "com_agents_search_info": "Asetuksen ollessa päällä agentti voi tehdä verkkohakuja ajantasaisen tiedon hakemista varten. Vaatii voimassaolevan API-avaimen.",
   "com_agents_search_name": "Etsi agentteja nimen perusteella",
   "com_agents_update_error": "Agentin päivittämisessä tapahtui virhe.",
