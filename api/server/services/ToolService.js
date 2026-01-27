@@ -43,29 +43,28 @@ const { redactMessage } = require('~/config/parsers');
 const { findPluginAuthsByKeys } = require('~/models');
 
 /**
- * Gets vision capability for the current model using validateVisionModel.
+ * Determines if the current model supports vision capabilities.
  * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
  * @returns {boolean} true if the model supports vision, false otherwise
  */
 function getVisionCapability(client) {
   const model = client.req.body.model ?? 'gpt-4o-mini';
   const modelSpecs = client.req.config?.modelSpecs;
-  const availableModels = client.req.config?.availableModels;
-  return validateVisionModel({ model, modelSpecs, availableModels });
+  return validateVisionModel({ model, modelSpecs });
 }
 
 /**
  * Processes MCP tool artifacts for Assistants endpoint.
  *
- * ALWAYS saves base64 images to files (for LibreChat UI/attachments).
- * ONLY includes images in contentParts if vision is enabled (prevents errors for non-vision LLMs).
+ * Behavior:
+ * - Base64 images: Always saved to files (visible in UI), included in contentParts only if vision enabled
+ * - HTTP image URLs: Included in contentParts only if vision enabled  
+ * - Non-image content: Always included
  *
- * This allows image generation tools to work with non-vision LLMs:
- * - Images are generated and saved (visible in UI)
- * - Images are NOT sent back to the LLM (prevents context overflow errors)
+ * This allows image generation tools to work with non-vision models without API errors.
  *
  * @param {Object} params - Processing parameters
- * @param {Object} params.artifacts - Artifacts object with content array
+ * @param {Object} params.artifacts - Artifacts from MCP tool
  * @param {boolean} params.isVisionModel - Whether the model supports vision
  * @param {Object} params.req - Express request object
  * @param {string} params.thread_id - Thread ID
@@ -88,6 +87,15 @@ async function processArtifactsForAssistants({
     return { fileIds: [], contentParts: [] };
   }
 
+  if (typeof isVisionModel !== 'boolean') {
+    logger.warn('[processArtifactsForAssistants] Invalid isVisionModel value, defaulting to false', {
+      isVisionModel,
+      model: req.body.model,
+      endpoint: req.body.endpoint,
+    });
+    isVisionModel = false;
+  }
+
   const fileIds = [];
   const contentParts = [];
 
@@ -106,7 +114,6 @@ async function processArtifactsForAssistants({
 
       const isBase64 = isBase64ImageUrl(item);
 
-      // ALWAYS save base64 images to files (for LibreChat UI/attachments)
       if (isBase64) {
         const imageUrl = typeof item.image_url === 'string' 
           ? item.image_url 
@@ -126,27 +133,20 @@ async function processArtifactsForAssistants({
           });
           if (file?.file_id) {
             fileIds.push(file.file_id);
-
-            // ONLY add to contentParts if vision enabled (prevents errors for non-vision LLMs)
             if (isVisionModel) {
               contentParts.push({
                 type: ContentTypes.IMAGE_FILE,
                 [ContentTypes.IMAGE_FILE]: { file_id: file.file_id },
               });
             }
-            // If vision disabled: file is saved but NOT added to contentParts
-            // This allows image generation with non-vision LLMs without errors
           }
         } catch (error) {
           logger.error('[processArtifactsForAssistants] Error saving base64 image:', error);
-          // Continue processing other items even if one fails
         }
-      } else {
-        // HTTP URLs are just text references - always include them
+      } else if (isVisionModel) {
         contentParts.push(item);
       }
     } else {
-      // Non-image content: always keep as-is
       contentParts.push(item);
     }
   }
@@ -504,7 +504,6 @@ async function processRequiredActions(client, requiredActions) {
     }
   }
 
-  // Process artifacts if any exist
   if (allArtifacts.length > 0) {
     const isVisionModel = getVisionCapability(client);
     const artifactFileIds = [];
@@ -524,8 +523,7 @@ async function processRequiredActions(client, requiredActions) {
       artifactContent.push(...processed.contentParts);
     }
 
-    // Store processed artifacts on client for later use in runAssistant
-    if (artifactContent.length > 0) {
+    if (artifactContent.length > 0 || artifactFileIds.length > 0) {
       client.pendingArtifactContent = artifactContent;
       client.pendingArtifactFileIds = artifactFileIds;
     }
@@ -838,4 +836,5 @@ module.exports = {
   getToolkitKey,
   loadAgentTools,
   processRequiredActions,
+  getVisionCapability,
 };

@@ -52,11 +52,16 @@ export function getReasoningKey(
 
 /**
  * Determines vision capability for an agent.
- * Uses explicit override if set, otherwise auto-detects from model.
- *
- * @param agent - The agent to check
- * @param modelSpecs - Optional modelSpecs configuration
- * @param availableModels - Optional list of available models
+ * 
+ * Priority:
+ * 1. Explicit override (`agent.vision`) takes precedence
+ * 2. Auto-detection from model using `validateVisionModel()`
+ * 
+ * Model is resolved from `agent.model_parameters?.model` or `agent.model`.
+ * 
+ * @param agent - The agent to check for vision capability
+ * @param modelSpecs - Optional modelSpecs configuration from librechat.yaml
+ * @param availableModels - Not used (kept for backwards compatibility)
  * @returns true if the agent supports vision, false otherwise
  */
 function determineVisionCapability(
@@ -64,24 +69,19 @@ function determineVisionCapability(
   modelSpecs?: TSpecsConfig,
   availableModels?: string[]
 ): boolean {
-  // Explicit override takes precedence
   if (agent.vision !== undefined) {
     return agent.vision;
   }
   
-  // Auto-detect from model
   const agentModel = (agent.model_parameters as { model?: string })?.model ?? agent.model;
   if (!agentModel) {
     return false;
   }
   
-  const result = validateVisionModel({
+  return validateVisionModel({
     model: agentModel,
     modelSpecs,
-    // Don't pass availableModels - it incorrectly filters out valid models
   });
-  
-  return result;
 }
 
 type RunAgent = Omit<Agent, 'tools'> & {

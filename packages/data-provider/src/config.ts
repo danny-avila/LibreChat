@@ -1289,12 +1289,13 @@ export enum VisionModes {
  * Validates whether a model supports vision capabilities.
  * 
  * Checks in order:
- * 1. modelSpecs configuration (if provided) - explicit vision flag per model
- * 2. Hardcoded visionModels list - fallback for known vision-capable models
+ * 1. Exclude known non-vision models
+ * 2. modelSpecs configuration (highest priority if provided)
+ * 3. Hardcoded visionModels list
  * 
  * @param model - Model identifier to check
  * @param modelSpecs - Optional modelSpecs configuration from librechat.yaml
- * @param availableModels - Optional list of available models to validate against
+ * @param availableModels - Not used (kept for backwards compatibility)
  * @param additionalModels - Optional additional models to include in vision check
  * @returns true if the model supports vision, false otherwise
  */
@@ -1313,17 +1314,10 @@ export function validateVisionModel({
     return false;
   }
 
-  // Exclude known non-vision models
   if (model.includes('gpt-4-turbo-preview') || model.includes('o1-mini')) {
     return false;
   }
 
-  // Check if model is in available models list
-  if (availableModels && !availableModels.includes(model)) {
-    return false;
-  }
-
-  // Check modelSpecs first if provided
   if (modelSpecs?.list) {
     const matchingSpec = modelSpecs.list.find(
       (spec) => spec.preset?.model === model || model.includes(spec.preset?.model ?? ''),

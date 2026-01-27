@@ -444,7 +444,10 @@ async function runAssistant({
       role: 'user',
       content: openai.pendingArtifactContent,
     };
-    if (openai.pendingArtifactFileIds?.length) {
+    if (
+      openai.pendingArtifactFileIds?.length &&
+      openai.pendingArtifactContent.some((item) => item?.type === ContentTypes.IMAGE_FILE)
+    ) {
       artifactMessage.file_ids = openai.pendingArtifactFileIds;
     }
     await openai.beta.threads.messages.create(thread_id, artifactMessage);

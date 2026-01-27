@@ -344,6 +344,10 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Array<Partial<MongoFile>>>}
    */
   async addImageURLs(message, attachments) {
+    if (!(this.options.agent?.vision ?? false)) {
+      return attachments;
+    }
+
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
@@ -419,6 +423,14 @@ class AgentClient extends BaseClient {
         this.options.req,
         orderedMessages[orderedMessages.length - 1].text,
       );
+    }
+
+    if (!(this.options.agent?.vision ?? false)) {
+      orderedMessages.forEach((msg) => {
+        if (msg.image_urls) {
+          delete msg.image_urls;
+        }
+      });
     }
 
     const formattedMessages = orderedMessages.map((message, i) => {
