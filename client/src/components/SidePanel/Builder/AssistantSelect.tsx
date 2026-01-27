@@ -39,6 +39,7 @@ const keys = new Set([
   'conversation_starters',
   'model',
   'append_current_datetime',
+  'data_sources', // ✨ Add this!
 ]);
 
 export default function AssistantSelect({
@@ -223,6 +224,11 @@ export default function AssistantSelect({
           Array.isArray(value) &&
           value.every((item) => typeof item === 'string')
         ) {
+          formValues[name] = value;
+          return;
+        }
+
+        if (name === 'data_sources' && Array.isArray(value)) {
           formValues[name] = value;
           return;
         }

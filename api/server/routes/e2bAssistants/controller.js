@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { sendEvent, sanitizeMessageForTransmit } = require('@librechat/api');
@@ -11,6 +11,59 @@ const {
 const E2BDataAnalystAgent = require('~/server/services/Agents/e2bAgent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { saveMessage, getConvo, getMessages, getFiles } = require('~/models');
+
+/**
+ * Helper: Encrypt passwords in data_sources
+ */
+const encryptDataSources = async (dataSources) => {
+  if (!dataSources || !Array.isArray(dataSources)) return dataSources;
+  
+  const encrypted = await Promise.all(dataSources.map(async (ds) => {
+    if (ds.config && ds.config.password) {
+      try {
+        const encPassword = await encryptV2(ds.config.password);
+        return {
+          ...ds,
+          config: {
+            ...ds.config,
+            password: encPassword
+          }
+        };
+      } catch (e) {
+        logger.error('[E2B Assistant] Encryption failed for datasource:', e);
+        return ds;
+      }
+    }
+    return ds;
+  }));
+  return encrypted;
+};
+
+/**
+ * Helper: Decrypt passwords in data_sources (for frontend display)
+ */
+const decryptDataSources = async (dataSources) => {
+  if (!dataSources || !Array.isArray(dataSources)) return [];
+  
+  const decrypted = await Promise.all(dataSources.map(async (ds) => {
+    if (ds.config && ds.config.password) {
+      try {
+        const decPassword = await decryptV2(ds.config.password);
+        return {
+          ...ds,
+          config: {
+            ...ds.config,
+            password: decPassword
+          }
+        };
+      } catch (e) {
+        return ds;
+      }
+    }
+    return ds;
+  }));
+  return decrypted;
+};
 
 /**
  * Populates code_files in the assistant response.
@@ -78,10 +131,14 @@ const createAssistant = async (req, res) => {
       tools,
       tool_resources,
       append_current_datetime,
+      data_sources, // ✨ Extract data_sources
       // ...other fields
     } = req.body;
     
     logger.info(`[E2B Assistant] Creating assistant: ${name}`);
+    if (data_sources) {
+      logger.info(`[E2B Assistant] Received ${data_sources.length} data_sources for creation`);
+    }
     
     // Default values if not provided
     const assistantData = {
@@ -113,6 +170,7 @@ const createAssistant = async (req, res) => {
       tools: tools || [],
       tool_resources: tool_resources || {},
       append_current_datetime: append_current_datetime !== undefined ? append_current_datetime : false,
+      data_sources: data_sources || [], // ✨ Save data_sources
       // Access control defaults (to be refined by collaborators)
       is_public: false,
       access_level: 0,
@@ -187,7 +245,7 @@ const listAssistants = async (req, res) => {
     // Map prompt to instructions for frontend compatibility
     const mappedAssistants = assistants.map(assistant => {
       const mapped = {
-        ...assistant,
+        ...(assistant.toObject ? assistant.toObject() : assistant),
         instructions: assistant.prompt,
       };
       
@@ -203,6 +261,9 @@ const listAssistants = async (req, res) => {
       }
       if (!mapped.tool_resources) {
         mapped.tool_resources = {};
+      }
+      if (!mapped.data_sources) {
+        mapped.data_sources = []; // ✨ Ensure data_sources exists
       }
       
       return mapped;
@@ -241,9 +302,10 @@ const getAssistant = async (req, res) => {
     }
     
     // Map prompt back to instructions for frontend compatibility
+    const assistantObj = assistant.toObject ? assistant.toObject() : assistant;
     const assistantResponse = {
-      ...assistant,
-      instructions: assistant.prompt,
+      ...assistantObj,
+      instructions: assistantObj.prompt,
     };
     
     // Ensure all frontend fields exist
@@ -259,9 +321,12 @@ const getAssistant = async (req, res) => {
     if (!assistantResponse.tool_resources) {
       assistantResponse.tool_resources = {};
     }
+    if (!assistantResponse.data_sources) {
+      assistantResponse.data_sources = []; // ✨ Ensure data_sources exists
+    }
     
     // Populate code_files
-    await populateCodeFiles(assistant, assistantResponse);
+    await populateCodeFiles(assistantObj, assistantResponse);
     
     res.json(assistantResponse);
   } catch (error) {
@@ -279,11 +344,8 @@ const updateAssistant = async (req, res) => {
     const updateData = { ...req.body };
     
     logger.debug(`[E2B Assistant] Updating assistant ${assistant_id}. Payload keys: ${Object.keys(updateData).join(', ')}`);
-    if (updateData.tool_resources) {
-      logger.debug(`[E2B Assistant] Updating tool_resources: ${JSON.stringify(updateData.tool_resources)}`);
-    }
-    if (updateData.file_ids) {
-      logger.debug(`[E2B Assistant] Updating file_ids: ${JSON.stringify(updateData.file_ids)}`);
+    if (updateData.data_sources) {
+      logger.info(`[E2B Assistant] Received data_sources for update: ${updateData.data_sources.length} items`);
     }
     
     // Remove immutable fields
@@ -318,6 +380,7 @@ const updateAssistant = async (req, res) => {
     if (updateData.has_internet_access !== undefined) fieldsToUpdate.has_internet_access = updateData.has_internet_access;
     if (updateData.is_persistent !== undefined) fieldsToUpdate.is_persistent = updateData.is_persistent;
     if (updateData.metadata !== undefined) fieldsToUpdate.metadata = updateData.metadata;
+    if (updateData.data_sources !== undefined) fieldsToUpdate.data_sources = updateData.data_sources; // ✨ Add this!
     
     // Validate ownership before update
     const assistants = await getE2BAssistantDocs({ id: assistant_id });
@@ -333,10 +396,24 @@ const updateAssistant = async (req, res) => {
       fieldsToUpdate
     );
     
+    // DEBUG: Immediate verification read
+    const verifyDoc = await getE2BAssistantDocs({ id: assistant_id });
+    if (verifyDoc && verifyDoc[0]) {
+        logger.info(`[E2B Assistant] VERIFICATION READ: data_sources length = ${verifyDoc[0].data_sources?.length || 0}`);
+        logger.info(`[E2B Assistant] VERIFICATION READ Keys: ${Object.keys(verifyDoc[0]).join(', ')}`);
+        
+        // 如果这里读不到，说明数据库里真没有。可能原因：
+        // 1. Schema 没生效（虽然编译了，但加载的还是旧的？）
+        // 2. Mongoose 过滤了字段
+    }
+
+    // Convert to object if it's a mongoose document (safety first)
+    const assistantObj = assistant.toObject ? assistant.toObject() : assistant;
+
     // Map prompt to instructions for frontend compatibility
     const assistantResponse = {
-      ...assistant,
-      instructions: assistant.prompt,
+      ...assistantObj,
+      instructions: assistantObj.prompt,
     };
     
     // Ensure all frontend fields exist
@@ -352,9 +429,12 @@ const updateAssistant = async (req, res) => {
     if (!assistantResponse.tool_resources) {
       assistantResponse.tool_resources = {};
     }
+    if (!assistantResponse.data_sources) {
+      assistantResponse.data_sources = [];
+    }
     
     // Populate code_files
-    await populateCodeFiles(assistant, assistantResponse);
+    await populateCodeFiles(assistantObj, assistantResponse);
     
     res.json(assistantResponse);
   } catch (error) {

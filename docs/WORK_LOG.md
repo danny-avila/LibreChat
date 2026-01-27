@@ -2,6 +2,40 @@
 
 > 记录 E2B Data Analyst Agent 的每日开发进展、问题解决和关键决策。
 
+
+## 2026-01-27 (周二)
+
+### 🔐 数据库连接安全加固与 CRUD 完善
+**Git Commit**: feat(e2b): Implement secure database connections with encryption, redaction, and full CRUD UI
+
+### 主要工作
+1. **数据库连接功能全闭环** ⭐⭐⭐
+   - **UI 完善**: 实现了 Data Sources 的完整 CRUD（增删改查）。
+   - **交互优化**: 新增编辑模式（PencilIcon），支持保留原密码修改其他字段。
+   - **图标修复**: 统一使用 Lucide 的 `Trash2` 和 `Pencil` 确保兼容性。
+
+2. **企业级安全体系构建** 🛡️
+   - **静态加密 (Encryption at Rest)**: 
+     - 在 Controller 层使用 AES-CBC (`encryptV2`) 加密数据库密码存入 MongoDB。
+     - 读取时解密回传给前端（兼顾体验与安全）。
+   - **动态解密 (Runtime Injection)**:
+     - 仅在沙箱初始化或代码执行瞬间解密 (`decryptV2`) 并注入环境变量。
+     - 密码在内存中短暂存在，数据库中始终加密。
+   - **输出脱敏 (Output Redaction)**:
+     - 拦截 Agent 执行结果的 stdout/stderr。
+     - 自动检测环境变量中的敏感值（Key/Secret/Password）并替换为 `[REDACTED]`。
+     - 防止用户诱导 Agent 打印环境变量导致泄露。
+
+3. **鲁棒性增强**
+   - **特殊字符处理**: 更新 System Prompt，强制要求 Python 代码中使用 `urllib.parse.quote_plus` 处理数据库密码，解决 `@` 等特殊字符导致的连接失败。
+   - **回显修复**: 修复 `AssistantSelect` 白名单逻辑，解决数组类型配置 (`data_sources`) 刷新丢失的问题。
+
+### 验证结果
+- ✅ 数据库密码加密存储，无明文落地。
+- ✅ Agent 无法通过 print 泄露密码。
+- ✅ 包含特殊字符的复杂密码能成功连接 PostgreSQL/MySQL。
+- ✅ 前端可以正常添加、修改、删除数据库连接配置。
+
 ---
 
 ## 2026-01-26 (周一)
@@ -1129,3 +1163,4 @@ npm run e2b:build:dev
 - [TODO.md](TODO.md) - 任务清单
 - [CHANGELOG.md](CHANGELOG.md) - 版本更新日志
 - [E2B_DATA_ANALYST_AGENT_DEVELOPMENT.md](E2B_DATA_ANALYST_AGENT_DEVELOPMENT.md) - 完整开发历史
+

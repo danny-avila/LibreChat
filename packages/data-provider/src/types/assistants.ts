@@ -79,6 +79,19 @@ export interface FileSearchResource {
   vector_store_ids?: Array<string>;
 }
 
+export type DataSource = {
+  id?: string;
+  type: string;
+  name: string;
+  config: {
+    host: string;
+    port: number;
+    database: string;
+    user: string;
+    password?: string;
+  };
+};
+
 /* Assistant types */
 
 export type Assistant = {
@@ -94,6 +107,7 @@ export type Assistant = {
   object: string;
   tools?: FunctionTool[];
   tool_resources?: ToolResources;
+  data_sources?: DataSource[];
 };
 
 export type TAssistantsMap = Record<AssistantsEndpoint, Record<string, Assistant>>;
@@ -110,6 +124,7 @@ export type AssistantCreateParams = {
   endpoint: AssistantsEndpoint;
   version: number | string;
   append_current_datetime?: boolean;
+  data_sources?: DataSource[];
 };
 
 export type AssistantUpdateParams = {
@@ -124,6 +139,7 @@ export type AssistantUpdateParams = {
   tool_resources?: ToolResources;
   endpoint: AssistantsEndpoint;
   append_current_datetime?: boolean;
+  data_sources?: DataSource[];
 };
 
 export type AssistantListParams = {

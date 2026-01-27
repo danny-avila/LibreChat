@@ -46,6 +46,14 @@ interface IE2BAssistantData {
   has_internet_access: boolean;
   is_persistent: boolean;
   metadata: Record<string, unknown>;
+  
+  // 数据源配置
+  data_sources?: Array<{
+    id: string;
+    type: 'mysql' | 'postgresql';
+    name: string;
+    config: Record<string, unknown>;
+  }>;
 }
 
 const e2bAssistantSchema = new Schema<IE2BAssistantData>(
@@ -164,6 +172,12 @@ const e2bAssistantSchema = new Schema<IE2BAssistantData>(
       type: Schema.Types.Mixed,
       default: {},
       description: '自定义元数据，方便添加实验性功能',
+    },
+    // 数据源配置
+    data_sources: {
+      type: [Schema.Types.Mixed],
+      default: [],
+      description: '数据库连接配置列表 (MySQL, PostgreSQL)',
     },
   },
   {

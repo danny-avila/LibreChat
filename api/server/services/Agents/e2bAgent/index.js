@@ -69,7 +69,7 @@ class E2BDataAnalystAgent {
           this.assistant.e2b_sandbox_template || 'xed696qfsyzpaei3ulh5',
           this.userId,
           this.conversationId,
-          this.assistant.e2b_config
+          this.assistant // ✨ Fix: Pass full assistant object to include data_sources
         );
         
         // CRITICAL: After creating new sandbox, check if we need to restore files

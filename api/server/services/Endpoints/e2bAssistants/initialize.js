@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, decryptV2 } = require('@librechat/data-schemas');
 const { Sandbox } = require('@e2b/code-interpreter');
 const OpenAI = require('openai');
 const { ProxyAgent } = require('undici');
@@ -25,6 +25,38 @@ class E2BClientManager {
   }
 
   /**
+   * Helper: Prepare data source environment variables with decryption
+   */
+  async _prepareDataSourceEnvs(dataSources) {
+    const envs = {};
+    if (!dataSources || !Array.isArray(dataSources)) return envs;
+
+    for (const source of dataSources) {
+      if (!source.name || !source.config) continue;
+      
+      const normalizedName = source.name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+      const prefix = `DB_${normalizedName}`;
+      
+      let password = source.config.password;
+      if (password) {
+        try {
+          password = await decryptV2(password);
+        } catch (e) {
+          // Ignore decryption errors, assume plaintext
+        }
+      }
+
+      envs[`${prefix}_TYPE`] = source.type;
+      envs[`${prefix}_HOST`] = source.config.host;
+      envs[`${prefix}_PORT`] = String(source.config.port);
+      envs[`${prefix}_USER`] = source.config.user;
+      envs[`${prefix}_PASSWORD`] = password;
+      envs[`${prefix}_NAME`] = source.config.database;
+    }
+    return envs;
+  }
+
+  /**
    * 创建新的沙箱实例
    * 使用E2B Code Interpreter SDK v2
    * 参考：https://e2b.dev/docs/sdk-reference/code-interpreter-js-sdk/v2/sandbox
@@ -45,6 +77,9 @@ class E2BClientManager {
       if (assistantConfig.has_internet_access) {
         logger.info(`[E2B] Internet access enabled for this sandbox`);
       }
+
+      // 提取并转换数据源配置为环境变量
+      const envs = await this._prepareDataSourceEnvs(assistantConfig.data_sources);
       
       const sandboxOpts = {
         apiKey: this.apiKey,
@@ -52,6 +87,7 @@ class E2BClientManager {
         // 兼容性设置：如果 API Key 开启了 Secure Access 但模板不支持，需要设为 false
         // 使用 V2 构建的模板通常不需要此设置，但为了稳健性保留
         secure: false,
+        envs: envs, // 注入环境变量
       };
       
       logger.info(`[E2B] Sandbox configuration: template=${templateToUse}, timeout=${sandboxOpts.timeoutMs}ms (${sandboxOpts.timeoutMs/60000} min)`);
@@ -131,21 +167,56 @@ class E2BClientManager {
     try {
       logger.info(`[E2B] Executing code in sandbox ${sandboxData.id}`);
       
-      // 合并Assistant配置的环境变量和执行时的环境变量
+      const assistantConfig = sandboxData.config || {};
+      
+      // 提取并转换数据源配置为环境变量 (用于代码执行上下文)
+      const dbEnvs = await this._prepareDataSourceEnvs(assistantConfig.data_sources);
+
+      // 合并所有环境变量源
       const envVars = {
-        ...(sandboxData.config?.env_vars instanceof Map ? Object.fromEntries(sandboxData.config.env_vars) : {}),
+        ...(assistantConfig.env_vars instanceof Map ? Object.fromEntries(assistantConfig.env_vars) : {}),
+        ...dbEnvs,
         ...(options.envVars || {}),
       };
       
+      // 🛡️ SECURITY: Collect sensitive values for redaction
+      // We identify sensitive keys and ensure we don't accidentally redact short common words
+      const sensitiveValues = Object.entries(envVars)
+        .filter(([key, val]) => {
+          const k = key.toUpperCase();
+          return (k.includes('PASSWORD') || k.includes('KEY') || k.includes('SECRET') || k.includes('TOKEN')) &&
+                 val && val.length > 3; // Only redact values longer than 3 chars to avoid false positives
+        })
+        .map(([_, val]) => val);
+      
+      // 🔍 DEBUG: 打印环境变量
+      logger.info(`[E2B] 🔧 Environment variables being injected (count: ${Object.keys(envVars).length})`);
+      if (Object.keys(dbEnvs).length > 0) {
+        logger.info(`[E2B] 📊 Database env vars: ${Object.keys(dbEnvs).join(', ')}`);
+      }
+      
+      // Helper to redact logs
+      const redactLogs = (text) => {
+        if (!text || typeof text !== 'string') return text;
+        let cleaned = text;
+        sensitiveValues.forEach(secret => {
+          // Global replacement of the secret
+          if (secret) {
+            cleaned = cleaned.split(secret).join('[REDACTED]');
+          }
+        });
+        return cleaned;
+      };
+
       // E2B SDK v2.8.4 正确用法 - 使用 runCode
       const result = await sandboxData.sandbox.runCode(code, {
         language: 'python',
         envs: Object.keys(envVars).length > 0 ? envVars : undefined,
         onStdout: (output) => {
-          logger.debug(`[E2B] stdout: ${output.message}`);
+          logger.debug(`[E2B] stdout: ${redactLogs(output.message)}`);
         },
         onStderr: (output) => {
-          logger.debug(`[E2B] stderr: ${output.message}`);
+          logger.debug(`[E2B] stderr: ${redactLogs(output.message)}`);
         },
         onResult: (result) => {
           logger.info(`[E2B] Code execution result in sandbox ${sandboxData.id}`);
@@ -158,7 +229,7 @@ class E2BClientManager {
           };
           logger.error(`[E2B] Code execution error in sandbox ${sandboxData.id}: ${JSON.stringify(errorDetails, null, 2)}`);
         },
-        timeoutMs: options.timeoutMs || sandboxData.config?.timeout_ms || this.defaultConfig.timeoutMs,
+        timeoutMs: options.timeoutMs || assistantConfig.timeout_ms || this.defaultConfig.timeoutMs,
       });
       
       
@@ -173,8 +244,8 @@ class E2BClientManager {
       if (result.error) {
         hasError = true;
         errorName = result.error.name;
-        errorMessage = result.error.message || result.error.value || String(result.error);
-        errorTraceback = result.error.traceback;
+        errorMessage = redactLogs(result.error.message || result.error.value || String(result.error));
+        errorTraceback = redactLogs(result.error.traceback);
         
         const pythonError = {
           name: errorName,
@@ -184,29 +255,20 @@ class E2BClientManager {
         logger.error(`[E2B] Execution result contains error: ${JSON.stringify(pythonError, null, 2)}`);
       }
       
+      // Process logs with redaction
+      const stdoutLogs = (result.logs?.stdout || []).map(log => redactLogs(log));
+      const stderrLogs = (result.logs?.stderr || []).map(log => redactLogs(log));
+
       // 修正：根据E2B v2结构，stdout和stderr在logs对象中
       return {
         success: !hasError,
-        stdout: result.logs?.stdout || [],
-        stderr: result.logs?.stderr || [],
+        stdout: stdoutLogs,
+        stderr: stderrLogs,
         results: result.results || [],
         error: hasError ? errorMessage : null,
         errorName: hasError ? errorName : null,
         traceback: hasError ? errorTraceback : null,
-        logs: result.logs || [],
-        exitCode: result.exitCode || 0,
-        runtime: result.runtime || 0,
-      };
-      // 修正：根据E2B v2结构，stdout和stderr在logs对象中
-      return {
-        success: !hasError,
-        stdout: result.logs?.stdout || [],
-        stderr: result.logs?.stderr || [],
-        results: result.results || [],
-        error: hasError ? errorMessage : null,
-        errorName: hasError ? errorName : null,
-        traceback: hasError ? errorTraceback : null,
-        logs: result.logs || [],
+        logs: { stdout: stdoutLogs, stderr: stderrLogs }, // Provide redacted logs object
         exitCode: result.exitCode || 0,
         runtime: result.runtime || 0,
       };

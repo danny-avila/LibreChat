@@ -28,6 +28,7 @@ import AssistantSelect from './AssistantSelect';
 import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
 import Knowledge from './Knowledge';
+import DataSources from './DataSources';
 import { Panel } from '~/common';
 import Action from './Action';
 
@@ -182,7 +183,12 @@ export default function AssistantPanel({
       conversation_starters: starters,
       model,
       append_current_datetime,
+      data_sources,
     } = data;
+
+    console.log('[AssistantPanel] Submitting form data...');
+    console.log('[AssistantPanel] data_sources count:', data_sources?.length || 0);
+    console.log('[AssistantPanel] Full data_sources:', data_sources);
 
     if (assistant_id) {
       update.mutate({
@@ -196,6 +202,7 @@ export default function AssistantPanel({
           tools,
           endpoint,
           append_current_datetime,
+          data_sources,
         },
       });
       return;
@@ -211,6 +218,7 @@ export default function AssistantPanel({
       endpoint,
       version,
       append_current_datetime,
+      data_sources,
     });
   };
 
@@ -397,6 +405,10 @@ export default function AssistantPanel({
           {/* Knowledge */}
           {(codeEnabled === true || retrievalEnabled === true) && version == 1 && (
             <Knowledge assistant_id={assistant_id} files={files} endpoint={endpoint} />
+          )}
+          {/* Data Sources (E2B Only) */}
+          {endpoint === 'e2bAssistants' && (
+            <DataSources assistant_id={assistant_id} />
           )}
           {/* Capabilities */}
           <CapabilitiesForm
