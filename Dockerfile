@@ -1,4 +1,4 @@
-# v0.8.2-rc1
+# v0.8.2-rc3
 
 # Base node image
 FROM node:20-alpine AS node
@@ -13,6 +13,9 @@ ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 # Add `uv` for extended MCP support
 COPY --from=ghcr.io/astral-sh/uv:0.9.5-python3.12-alpine /usr/local/bin/uv /usr/local/bin/uvx /bin/
 RUN uv --version
+
+# Set configurable max-old-space-size with default
+ARG NODE_MAX_OLD_SPACE_SIZE=6144
 
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
@@ -39,8 +42,8 @@ RUN \
 COPY --chown=node:node . .
 
 RUN \
-    # React client build
-    NODE_OPTIONS="--max-old-space-size=2048" npm run frontend; \
+    # React client build with configurable memory
+    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend; \
     npm prune --production; \
     npm cache clean --force
 

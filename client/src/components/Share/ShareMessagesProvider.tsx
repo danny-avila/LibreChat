@@ -27,7 +27,6 @@ export function ShareMessagesProvider({ messages, children }: ShareMessagesProvi
       handleContinue: () => {},
       latestMessage: messages[messages.length - 1] ?? null,
       isSubmitting: false,
-      isSubmittingFamily: false,
       abortScroll: false,
       setAbortScroll: () => {},
       index: 0,

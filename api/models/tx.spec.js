@@ -36,6 +36,19 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-5-0130')).toBe('gpt-5');
   });
 
+  it('should return "gpt-5.1" for model name containing "gpt-5.1"', () => {
+    expect(getValueKey('gpt-5.1')).toBe('gpt-5.1');
+    expect(getValueKey('gpt-5.1-chat')).toBe('gpt-5.1');
+    expect(getValueKey('gpt-5.1-codex')).toBe('gpt-5.1');
+    expect(getValueKey('openai/gpt-5.1')).toBe('gpt-5.1');
+  });
+
+  it('should return "gpt-5.2" for model name containing "gpt-5.2"', () => {
+    expect(getValueKey('gpt-5.2')).toBe('gpt-5.2');
+    expect(getValueKey('gpt-5.2-chat')).toBe('gpt-5.2');
+    expect(getValueKey('openai/gpt-5.2')).toBe('gpt-5.2');
+  });
+
   it('should return "gpt-3.5-turbo-1106" for model name containing "gpt-3.5-turbo-1106"', () => {
     expect(getValueKey('gpt-3.5-turbo-1106-some-other-info')).toBe('gpt-3.5-turbo-1106');
     expect(getValueKey('openai/gpt-3.5-turbo-1106')).toBe('gpt-3.5-turbo-1106');
@@ -309,6 +322,34 @@ describe('getMultiplier', () => {
     expect(getMultiplier({ model: 'openai/gpt-5-pro', tokenType: 'completion' })).toBe(
       tokenValues['gpt-5-pro'].completion,
     );
+  });
+
+  it('should return the correct multiplier for gpt-5.1', () => {
+    expect(getMultiplier({ model: 'gpt-5.1', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.1'].prompt,
+    );
+    expect(getMultiplier({ model: 'gpt-5.1', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.1'].completion,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5.1', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.1'].prompt,
+    );
+    expect(tokenValues['gpt-5.1'].prompt).toBe(1.25);
+    expect(tokenValues['gpt-5.1'].completion).toBe(10);
+  });
+
+  it('should return the correct multiplier for gpt-5.2', () => {
+    expect(getMultiplier({ model: 'gpt-5.2', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.2'].prompt,
+    );
+    expect(getMultiplier({ model: 'gpt-5.2', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.2'].completion,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5.2', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.2'].prompt,
+    );
+    expect(tokenValues['gpt-5.2'].prompt).toBe(1.75);
+    expect(tokenValues['gpt-5.2'].completion).toBe(14);
   });
 
   it('should return the correct multiplier for gpt-4o', () => {

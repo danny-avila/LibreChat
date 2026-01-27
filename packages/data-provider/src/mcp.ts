@@ -221,12 +221,16 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
   });
 
 /**
- * MCP Server configuration that comes from UI input only
+ * MCP Server configuration that comes from UI/API input only.
  * Omits server-managed fields like startup, timeout, customUserVars, etc.
  * Allows: title, description, url, iconPath, oauth (user credentials)
+ *
+ * SECURITY: Stdio transport is intentionally excluded from user input.
+ * Stdio allows arbitrary command execution and should only be configured
+ * by administrators via the YAML config file (librechat.yaml).
+ * Only remote transports (SSE, HTTP, WebSocket) are allowed via the API.
  */
 export const MCPServerUserInputSchema = z.union([
-  omitServerManagedFields(StdioOptionsSchema),
   omitServerManagedFields(WebSocketOptionsSchema),
   omitServerManagedFields(SSEOptionsSchema),
   omitServerManagedFields(StreamableHTTPOptionsSchema),

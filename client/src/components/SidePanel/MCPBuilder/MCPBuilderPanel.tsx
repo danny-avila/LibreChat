@@ -1,12 +1,12 @@
 import { useState, useRef, useMemo } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { Button, Spinner, OGDialogTrigger, Input } from '@librechat/client';
+import { Button, Spinner, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
 import { useLocalize, useMCPServerManager, useHasAccess } from '~/hooks';
-import MCPServerList from './MCPServerList';
-import MCPServerDialog from './MCPServerDialog';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import MCPAdminSettings from './MCPAdminSettings';
+import MCPServerDialog from './MCPServerDialog';
+import MCPServerList from './MCPServerList';
 
 export default function MCPBuilderPanel() {
   const localize = useLocalize();
@@ -37,44 +37,48 @@ export default function MCPBuilderPanel() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-visible">
-      <div role="region" aria-label="MCP Builder" className="mt-2 space-y-2">
-        {/* Admin Settings Button */}
-        <MCPAdminSettings />
-
-        {/* Search Input */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-          <Input
+      <div role="region" aria-label={localize('com_ui_mcp_servers')} className="mt-2 space-y-2">
+        {/* Toolbar: Search + Add Button */}
+        <div className="flex items-center gap-2">
+          <FilterInput
+            inputId="mcp-filter"
+            label={localize('com_ui_filter_mcp_servers')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={localize('com_ui_filter_mcp_servers')}
-            className="pl-9"
-            aria-label={localize('com_ui_filter_mcp_servers')}
+            containerClassName="flex-1"
           />
+          {hasCreateAccess && (
+            <MCPServerDialog
+              open={showDialog}
+              onOpenChange={setShowDialog}
+              triggerRef={addButtonRef}
+            >
+              <OGDialogTrigger asChild>
+                <TooltipAnchor
+                  description={localize('com_ui_add_mcp')}
+                  side="bottom"
+                  render={
+                    <Button
+                      ref={addButtonRef}
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0 bg-transparent"
+                      onClick={() => setShowDialog(true)}
+                      aria-label={localize('com_ui_add_mcp')}
+                    >
+                      <Plus className="size-4" aria-hidden="true" />
+                    </Button>
+                  }
+                />
+              </OGDialogTrigger>
+            </MCPServerDialog>
+          )}
         </div>
 
-        {hasCreateAccess && (
-          <MCPServerDialog open={showDialog} onOpenChange={setShowDialog} triggerRef={addButtonRef}>
-            <OGDialogTrigger asChild>
-              <div className="flex w-full justify-end">
-                <Button
-                  ref={addButtonRef}
-                  variant="outline"
-                  className="w-full bg-transparent"
-                  onClick={() => setShowDialog(true)}
-                >
-                  <Plus className="size-4" aria-hidden />
-                  {localize('com_ui_add_mcp')}
-                </Button>
-              </div>
-            </OGDialogTrigger>
-          </MCPServerDialog>
-        )}
-
-        {/* Server List */}
+        {/* Server Cards List */}
         {isLoading ? (
           <div className="flex items-center justify-center p-8">
-            <Spinner className="h-6 w-6" />
+            <Spinner className="size-6" aria-label={localize('com_ui_loading')} />
           </div>
         ) : (
           <MCPServerList
@@ -83,7 +87,12 @@ export default function MCPBuilderPanel() {
             isFiltered={searchQuery.trim().length > 0}
           />
         )}
+
+        {/* Config Dialog for custom user vars */}
         {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
+
+        {/* Admin Settings Section */}
+        <MCPAdminSettings />
       </div>
     </div>
   );

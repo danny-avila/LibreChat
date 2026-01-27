@@ -590,7 +590,6 @@
   "com_ui_bookmarks": "북마크",
   "com_ui_bookmarks_add": "북마크 추가",
   "com_ui_bookmarks_add_to_conversation": "현재 대화에 추가",
-  "com_ui_bookmarks_count": "개수",
   "com_ui_bookmarks_create_error": "북마크 생성 중 오류가 발생했습니다",
   "com_ui_bookmarks_create_exists": "이미 존재하는 북마크입니다",
   "com_ui_bookmarks_create_success": "북마크가 성공적으로 생성되었습니다",

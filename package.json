@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.2-rc1",
+  "version": "v0.8.2-rc3",
   "description": "",
   "workspaces": [
     "api",
@@ -36,6 +36,7 @@
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
+    "backend:inspect": "cross-env NODE_ENV=production node --inspect api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:experimental": "cross-env NODE_ENV=production node api/server/experimental.js",
     "backend:stop": "node config/stop-backend.js",
@@ -133,6 +134,7 @@
     "axios": "1.12.1",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.4",
+    "tslib": "^2.8.1",
     "mdast-util-gfm-autolink-literal": "2.0.0",
     "remark-gfm": {
       "mdast-util-gfm-autolink-literal": "2.0.0"

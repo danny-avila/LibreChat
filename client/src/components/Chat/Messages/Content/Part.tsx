@@ -103,7 +103,9 @@ const Part = memo(
         );
       } else if (
         isToolCall &&
-        (toolCall.name === 'image_gen_oai' || toolCall.name === 'image_edit_oai')
+        (toolCall.name === 'image_gen_oai' ||
+          toolCall.name === 'image_edit_oai' ||
+          toolCall.name === 'gemini_image_gen')
       ) {
         return (
           <OpenAIImageGen

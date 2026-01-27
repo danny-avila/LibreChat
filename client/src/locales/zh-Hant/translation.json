@@ -589,7 +589,6 @@
   "com_ui_bookmarks": "書籤",
   "com_ui_bookmarks_add": "新增書籤",
   "com_ui_bookmarks_add_to_conversation": "添加到當前對話",
-  "com_ui_bookmarks_count": "計數",
   "com_ui_bookmarks_create_error": "創建書籤時出錯",
   "com_ui_bookmarks_create_exists": "此書籤已存在",
   "com_ui_bookmarks_create_success": "書籤創建成功",

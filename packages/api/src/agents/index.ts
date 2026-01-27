@@ -1,4 +1,7 @@
+export * from './avatars';
 export * from './chain';
+export * from './context';
+export * from './edges';
 export * from './initialize';
 export * from './legacy';
 export * from './memory';

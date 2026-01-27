@@ -352,6 +352,7 @@ export function updateConvoInAllQueries(
   queryClient: QueryClient,
   conversationId: string,
   updater: (c: TConversation) => TConversation,
+  moveToTop = false,
 ) {
   const queries = queryClient
     .getQueryCache()
@@ -362,15 +363,67 @@ export function updateConvoInAllQueries(
       if (!oldData) {
         return oldData;
       }
-      return {
-        ...oldData,
-        pages: oldData.pages.map((page) => ({
-          ...page,
-          conversations: page.conversations.map((c) =>
-            c.conversationId === conversationId ? updater(c) : c,
+
+      // Find conversation location (single pass with early exit)
+      let pageIdx = -1;
+      let convoIdx = -1;
+      for (let pi = 0; pi < oldData.pages.length; pi++) {
+        const ci = oldData.pages[pi].conversations.findIndex(
+          (c) => c.conversationId === conversationId,
+        );
+        if (ci !== -1) {
+          pageIdx = pi;
+          convoIdx = ci;
+          break;
+        }
+      }
+
+      if (pageIdx === -1) {
+        return oldData;
+      }
+
+      const found = oldData.pages[pageIdx].conversations[convoIdx];
+      const updated = moveToTop
+        ? { ...updater(found), updatedAt: new Date().toISOString() }
+        : updater(found);
+
+      // If not moving to top, or already at top of page 0, update in place
+      if (!moveToTop || (pageIdx === 0 && convoIdx === 0)) {
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page, pi) =>
+            pi === pageIdx
+              ? {
+                  ...page,
+                  conversations: page.conversations.map((c, ci) => (ci === convoIdx ? updated : c)),
+                }
+              : page,
           ),
-        })),
-      };
+        };
+      }
+
+      // Move to top: only modify affected pages
+      const newPages = oldData.pages.map((page, pi) => {
+        if (pi === 0 && pageIdx === 0) {
+          // Source is page 0: remove from current position, add to front
+          const convos = page.conversations.filter((_, ci) => ci !== convoIdx);
+          return { ...page, conversations: [updated, ...convos] };
+        }
+        if (pi === 0) {
+          // Add to front of page 0
+          return { ...page, conversations: [updated, ...page.conversations] };
+        }
+        if (pi === pageIdx) {
+          // Remove from source page
+          return {
+            ...page,
+            conversations: page.conversations.filter((_, ci) => ci !== convoIdx),
+          };
+        }
+        return page;
+      });
+
+      return { ...oldData, pages: newPages };
     });
   }
 }

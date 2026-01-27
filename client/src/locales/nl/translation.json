@@ -357,7 +357,6 @@
   "com_ui_bookmark_delete_confirm": "Weet je zeker dat je deze bladwijzer wilt verwijderen?",
   "com_ui_bookmarks": "Bladwijzers",
   "com_ui_bookmarks_add_to_conversation": "Toevoegen aan huidige gesprek",
-  "com_ui_bookmarks_count": "Aantal",
   "com_ui_bookmarks_create_error": "Er is een fout opgetreden bij het aanmaken van de bladwijzer",
   "com_ui_bookmarks_create_success": "Bladwijzer succesvol aangemaakt",
   "com_ui_bookmarks_delete_error": "Er is een fout opgetreden bij het verwijderen van de bladwijzer",

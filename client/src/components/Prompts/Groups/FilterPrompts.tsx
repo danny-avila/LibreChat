@@ -2,14 +2,20 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRecoilState } from 'recoil';
 import { ListFilter, User, Share2 } from 'lucide-react';
 import { SystemCategories } from 'librechat-data-provider';
-import { Dropdown, AnimatedSearchInput } from '@librechat/client';
+import { Dropdown, FilterInput } from '@librechat/client';
 import type { Option } from '~/common';
 import { useLocalize, useCategories, useDebounce } from '~/hooks';
 import { usePromptGroupsContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function FilterPrompts({ className = '' }: { className?: string }) {
+export default function FilterPrompts({
+  className = '',
+  dropdownClassName = '',
+}: {
+  className?: string;
+  dropdownClassName?: string;
+}) {
   const localize = useLocalize();
   const { name, setName, hasAccess, promptGroups } = usePromptGroupsContext();
   const { categories } = useCategories({ className: 'h-4 w-4', hasAccess });
@@ -77,8 +83,6 @@ export default function FilterPrompts({ className = '' }: { className?: string }
     setSearchTerm(e.target.value);
   }, []);
 
-  const isSearching = searchTerm !== debouncedSearchTerm;
-
   const resultCount = promptGroups?.length ?? 0;
   const searchResultsAnnouncement = useMemo(() => {
     if (!debouncedSearchTerm.trim()) {
@@ -96,17 +100,18 @@ export default function FilterPrompts({ className = '' }: { className?: string }
         value={categoryFilter || SystemCategories.ALL}
         onChange={onSelect}
         options={filterOptions}
-        className="rounded-lg bg-transparent"
+        className={cn('rounded-lg bg-transparent', dropdownClassName)}
         icon={<ListFilter className="h-4 w-4" />}
         label="Filter: "
         ariaLabel={localize('com_ui_filter_prompts')}
         iconOnly
       />
-      <AnimatedSearchInput
+      <FilterInput
+        inputId="prompts-filter"
+        label={localize('com_ui_filter_prompts_name')}
         value={searchTerm}
         onChange={handleSearchChange}
-        isSearching={isSearching}
-        placeholder={localize('com_ui_filter_prompts_name')}
+        containerClassName="flex-1"
       />
     </div>
   );

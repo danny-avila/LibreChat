@@ -157,15 +157,18 @@ export function getGoogleConfig(
 
   let enableWebSearch = web_search;
 
-  const llmConfig: GoogleClientOptions | VertexAIClientOptions = removeNullishValues({
-    ...(modelOptions || {}),
-    model: modelOptions?.model ?? '',
-    maxRetries: 2,
-    topP: modelOptions?.topP ?? undefined,
-    topK: modelOptions?.topK ?? undefined,
-    temperature: modelOptions?.temperature ?? undefined,
-    maxOutputTokens: modelOptions?.maxOutputTokens ?? undefined,
-  });
+  const llmConfig: GoogleClientOptions | VertexAIClientOptions = removeNullishValues(
+    {
+      ...(modelOptions || {}),
+      model: modelOptions?.model ?? '',
+      maxRetries: 2,
+      topP: modelOptions?.topP ?? undefined,
+      topK: modelOptions?.topK ?? undefined,
+      temperature: modelOptions?.temperature ?? undefined,
+      maxOutputTokens: modelOptions?.maxOutputTokens ?? undefined,
+    },
+    true,
+  );
 
   /** Used only for Safety Settings */
   llmConfig.safetySettings = getSafetySettings(llmConfig.model);

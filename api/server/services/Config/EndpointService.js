@@ -1,4 +1,4 @@
-const { isUserProvided } = require('@librechat/api');
+const { isUserProvided, isEnabled } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { generateConfig } = require('~/server/utils/handleText');
 
@@ -23,7 +23,9 @@ module.exports = {
     openAIApiKey,
     azureOpenAIApiKey,
     userProvidedOpenAI,
-    [EModelEndpoint.anthropic]: generateConfig(anthropicApiKey),
+    [EModelEndpoint.anthropic]: generateConfig(
+      anthropicApiKey || isEnabled(process.env.ANTHROPIC_USE_VERTEX),
+    ),
     [EModelEndpoint.openAI]: generateConfig(openAIApiKey, OPENAI_REVERSE_PROXY),
     [EModelEndpoint.azureOpenAI]: generateConfig(azureOpenAIApiKey, AZURE_OPENAI_BASEURL),
     [EModelEndpoint.assistants]: generateConfig(

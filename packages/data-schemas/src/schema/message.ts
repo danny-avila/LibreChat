@@ -140,6 +140,10 @@ const messageSchema: Schema<IMessage> = new Schema(
     expiredAt: {
       type: Date,
     },
+    addedConvo: {
+      type: Boolean,
+      default: undefined,
+    },
   },
   { timestamps: true },
 );
@@ -147,5 +151,8 @@ const messageSchema: Schema<IMessage> = new Schema(
 messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 messageSchema.index({ createdAt: 1 });
 messageSchema.index({ messageId: 1, user: 1 }, { unique: true });
+
+// index for MeiliSearch sync operations
+messageSchema.index({ _meiliIndex: 1, expiredAt: 1 });
 
 export default messageSchema;

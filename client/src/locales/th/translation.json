@@ -507,7 +507,6 @@
   "com_ui_bookmarks": "บุ๊กมาร์ก",
   "com_ui_bookmarks_add": "เพิ่มบุ๊กมาร์ก",
   "com_ui_bookmarks_add_to_conversation": "เพิ่มในการสนทนาปัจจุบัน",
-  "com_ui_bookmarks_count": "จำนวน",
   "com_ui_bookmarks_create_error": "เกิดข้อผิดพลาดในการสร้างบุ๊กมาร์ก",
   "com_ui_bookmarks_create_exists": "บุ๊กมาร์กนี้มีอยู่แล้ว",
   "com_ui_bookmarks_create_success": "สร้างบุ๊กมาร์กเรียบร้อยแล้ว",

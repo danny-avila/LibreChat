@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Trans } from 'react-i18next';
 import { QrCode, RotateCw, Trash2 } from 'lucide-react';
 import {
@@ -20,6 +20,7 @@ import {
   useDeleteSharedLinkMutation,
 } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
+import { buildShareLinkUrl } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 export default function SharedLinkButton({
@@ -85,9 +86,7 @@ export default function SharedLinkButton({
     },
   });
 
-  const generateShareLink = useCallback((shareId: string) => {
-    return `${window.location.protocol}//${window.location.host}/share/${shareId}`;
-  }, []);
+  const generateShareLink = (shareId: string) => buildShareLinkUrl(shareId);
 
   const updateSharedLink = async () => {
     if (!shareId) {

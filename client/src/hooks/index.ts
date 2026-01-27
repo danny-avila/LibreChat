@@ -9,6 +9,7 @@ export * from './Files';
 export * from './Generic';
 export * from './Input';
 export * from './MCP';
+export * from './Mermaid';
 export * from './Messages';
 export * from './Plugins';
 export * from './Prompts';

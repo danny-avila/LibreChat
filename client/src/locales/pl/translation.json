@@ -436,7 +436,6 @@
   "com_ui_bookmarks": "Zakładki",
   "com_ui_bookmarks_add": "Dodaj zakładki",
   "com_ui_bookmarks_add_to_conversation": "Dodaj do bieżącej rozmowy",
-  "com_ui_bookmarks_count": "Licznik",
   "com_ui_bookmarks_create_error": "Wystąpił błąd podczas tworzenia zakładki",
   "com_ui_bookmarks_create_exists": "Ta zakładka już istnieje",
   "com_ui_bookmarks_create_success": "Zakładka została pomyślnie utworzona",

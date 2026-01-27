@@ -23,6 +23,7 @@ export * from './roles';
 export * from './localStorage';
 export * from './promptGroups';
 export * from './email';
+export * from './share';
 export * from './timestamps';
 export { default as cn } from './cn';
 export { default as logger } from './logger';

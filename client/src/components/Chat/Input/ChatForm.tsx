@@ -75,14 +75,11 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     handleStopGenerating,
   } = useChatContext();
   const {
-    addedIndex,
     generateConversation,
     conversation: addedConvo,
     setConversation: setAddedConvo,
-    isSubmitting: isSubmittingAdded,
   } = useAddedChatContext();
   const assistantMap = useAssistantsMapContext();
-  const showStopAdded = useRecoilValue(store.showStopButtonByIndex(addedIndex));
 
   const endpoint = useMemo(
     () => conversation?.endpointType ?? conversation?.endpoint,
@@ -128,7 +125,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     setFiles,
     textAreaRef,
     conversationId,
-    isSubmitting: isSubmitting || isSubmittingAdded,
+    isSubmitting,
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
@@ -261,7 +258,17 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             <FileFormChat conversation={conversation} />
             {endpoint && (
               <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
-                <div className="relative flex-1">
+                <div
+                  className="relative flex-1"
+                  style={
+                    isCollapsed
+                      ? {
+                          WebkitMaskImage: 'linear-gradient(to bottom, black 60%, transparent 90%)',
+                          maskImage: 'linear-gradient(to bottom, black 60%, transparent 90%)',
+                        }
+                      : undefined
+                  }
+                >
                   <TextareaAutosize
                     {...registerProps}
                     ref={(e) => {
@@ -293,16 +300,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                       'scrollbar-hover transition-[max-height] duration-200 disabled:cursor-not-allowed',
                     )}
                   />
-                  {isCollapsed && (
-                    <div
-                      className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 transition-all duration-200"
-                      style={{
-                        backdropFilter: 'blur(2px)',
-                        WebkitMaskImage: 'linear-gradient(to top, black 15%, transparent 75%)',
-                        maskImage: 'linear-gradient(to top, black 15%, transparent 75%)',
-                      }}
-                    />
-                  )}
                 </div>
                 <div className="flex flex-col items-start justify-start pr-2.5 pt-1.5">
                   <CollapseChat
@@ -323,8 +320,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 <AttachFileChat conversation={conversation} disableInputs={disableInputs} />
               </div>
               <BadgeRow
-                showEphemeralBadges={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}
-                isSubmitting={isSubmitting || isSubmittingAdded}
+                showEphemeralBadges={
+                  !!endpoint && !isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)
+                }
+                isSubmitting={isSubmitting}
                 conversationId={conversationId}
                 onChange={setBadges}
                 isInChat={
@@ -342,7 +341,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 />
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
+                {isSubmitting && showStopButton ? (
                   <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
                 ) : (
                   endpoint && (

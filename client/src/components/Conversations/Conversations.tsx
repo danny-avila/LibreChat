@@ -7,6 +7,7 @@ import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtuali
 import type { TConversation } from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
+import { useActiveJobs } from '~/data-provider';
 import { groupConversationsByDate, cn } from '~/utils';
 import Convo from './Convo';
 import store from '~/store';
@@ -81,7 +82,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
   return (
     <button
       onClick={onToggle}
-      className="group flex w-full items-center justify-between px-1 py-2 text-xs font-bold text-text-secondary"
+      className="group flex w-full items-center justify-between rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
       type="button"
     >
       <span className="select-none">{localize('com_ui_chats')}</span>
@@ -120,18 +121,28 @@ const MemoizedConvo = memo(
     conversation,
     retainView,
     toggleNav,
+    isGenerating,
   }: {
     conversation: TConversation;
     retainView: () => void;
     toggleNav: () => void;
+    isGenerating: boolean;
   }) => {
-    return <Convo conversation={conversation} retainView={retainView} toggleNav={toggleNav} />;
+    return (
+      <Convo
+        conversation={conversation}
+        retainView={retainView}
+        toggleNav={toggleNav}
+        isGenerating={isGenerating}
+      />
+    );
   },
   (prevProps, nextProps) => {
     return (
       prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
       prevProps.conversation.title === nextProps.conversation.title &&
-      prevProps.conversation.endpoint === nextProps.conversation.endpoint
+      prevProps.conversation.endpoint === nextProps.conversation.endpoint &&
+      prevProps.isGenerating === nextProps.isGenerating
     );
   },
 );
@@ -153,6 +164,13 @@ const Conversations: FC<ConversationsProps> = ({
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
+
+  // Fetch active job IDs for showing generation indicators
+  const { data: activeJobsData } = useActiveJobs();
+  const activeJobIds = useMemo(
+    () => new Set(activeJobsData?.activeJobIds ?? []),
+    [activeJobsData?.activeJobIds],
+  );
 
   // Determine if FavoritesList will render content
   const shouldShowFavorites =
@@ -292,9 +310,15 @@ const Conversations: FC<ConversationsProps> = ({
       }
 
       if (item.type === 'convo') {
+        const isGenerating = activeJobIds.has(item.convo.conversationId ?? '');
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <MemoizedConvo conversation={item.convo} retainView={moveToTop} toggleNav={toggleNav} />
+            <MemoizedConvo
+              conversation={item.convo}
+              retainView={moveToTop}
+              toggleNav={toggleNav}
+              isGenerating={isGenerating}
+            />
           </MeasuredRow>
         );
       }
@@ -311,6 +335,7 @@ const Conversations: FC<ConversationsProps> = ({
       isChatsExpanded,
       setIsChatsExpanded,
       shouldShowFavorites,
+      activeJobIds,
     ],
   );
 

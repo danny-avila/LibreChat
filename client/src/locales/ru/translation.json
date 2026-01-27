@@ -715,7 +715,6 @@
   "com_ui_bookmarks": "Закладки",
   "com_ui_bookmarks_add": "Добавить закладку",
   "com_ui_bookmarks_add_to_conversation": "Добавить в текущий разговор",
-  "com_ui_bookmarks_count": "Количество",
   "com_ui_bookmarks_create_error": "Произошла ошибка при создании закладки",
   "com_ui_bookmarks_create_exists": "Такая закладка уже существует",
   "com_ui_bookmarks_create_success": "Закладка успешно создана",

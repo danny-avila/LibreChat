@@ -9,12 +9,7 @@ const { createMCPServersRegistry, createMCPManager } = require('~/config');
 async function initializeMCPs() {
   const appConfig = await getAppConfig();
   const mcpServers = appConfig.mcpConfig;
-  if (!mcpServers) {
-    return;
-  }
 
-  // Initialize MCPServersRegistry first (required for MCPManager)
-  // Pass allowedDomains from mcpSettings for domain validation
   try {
     createMCPServersRegistry(mongoose, appConfig?.mcpSettings?.allowedDomains);
   } catch (error) {
@@ -22,17 +17,23 @@ async function initializeMCPs() {
     throw error;
   }
 
-  const mcpManager = await createMCPManager(mcpServers);
-
   try {
-    const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
-    await mergeAppTools(mcpTools);
+    const mcpManager = await createMCPManager(mcpServers || {});
 
-    logger.info(
-      `MCP servers initialized successfully. Added ${Object.keys(mcpTools).length} MCP tools.`,
-    );
+    if (mcpServers && Object.keys(mcpServers).length > 0) {
+      const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
+      await mergeAppTools(mcpTools);
+      const serverCount = Object.keys(mcpServers).length;
+      const toolCount = Object.keys(mcpTools).length;
+      logger.info(
+        `[MCP] Initialized with ${serverCount} configured ${serverCount === 1 ? 'server' : 'servers'} and ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}.`,
+      );
+    } else {
+      logger.debug('[MCP] No servers configured. MCPManager ready for UI-based servers.');
+    }
   } catch (error) {
-    logger.error('Failed to initialize MCP servers:', error);
+    logger.error('[MCP] Failed to initialize MCPManager:', error);
+    throw error;
   }
 }
 

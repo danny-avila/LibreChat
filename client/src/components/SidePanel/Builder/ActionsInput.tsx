@@ -131,12 +131,12 @@ export default function ActionsInput({
     const action_id = action?.action_id;
     metadata.raw_spec = inputValue;
     const parsedUrl = new URL(data[0].domain);
-    const domain = parsedUrl.hostname;
-    if (!domain) {
+    if (!parsedUrl.hostname) {
       // alert user?
       return;
     }
-    metadata.domain = domain;
+    // Send protocol + hostname for proper SSRF validation (e.g., "http://192.168.1.1")
+    metadata.domain = `${parsedUrl.protocol}//${parsedUrl.hostname}`;
 
     const { type, saved_auth_fields } = authFormData;
 
@@ -221,22 +221,20 @@ export default function ActionsInput({
           >
             {localize('com_ui_schema')}
           </label>
+          {/* TODO: Implement examples functionality
           <div className="flex items-center gap-2">
-            {/* <button className="btn btn-neutral border-token-border-light relative h-8 min-w-[100px] rounded-lg font-medium">
-              <div className="flex w-full items-center justify-center text-xs">Import from URL</div>
-            </button> */}
             <select
               id="example-schema"
               onChange={(e) => console.log(e.target.value)}
               className="border-token-border-medium h-8 min-w-[100px] rounded-lg border bg-transparent px-2 py-0 text-sm"
             >
               <option value="label">{localize('com_ui_examples')}</option>
-              {/* TODO: make these appear and function correctly */}
               <option value="0">Weather (JSON)</option>
               <option value="1">Pet Store (YAML)</option>
               <option value="2">Blank Template</option>
             </select>
           </div>
+          */}
         </div>
         <div className="border-token-border-medium bg-token-surface-primary hover:border-token-border-hover mb-4 w-full overflow-hidden rounded-lg border ring-0">
           <div className="relative">

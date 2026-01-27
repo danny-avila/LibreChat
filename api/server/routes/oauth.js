@@ -42,7 +42,7 @@ const oauthHandler = async (req, res, next) => {
       isEnabled(process.env.OPENID_REUSE_TOKENS) === true
     ) {
       await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
-      setOpenIDAuthTokens(req.user.tokenset, res, req.user._id.toString());
+      setOpenIDAuthTokens(req.user.tokenset, req, res, req.user._id.toString());
     } else {
       await setAuthTokens(req.user._id, res);
     }

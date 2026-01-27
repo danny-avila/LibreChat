@@ -5,14 +5,15 @@ import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } 
 import {
   Constants,
   FileSources,
+  Permissions,
   EModelEndpoint,
   isParamEndpoint,
-  getEndpointField,
-  LocalStorageKeys,
-  isAssistantsEndpoint,
-  isAgentsEndpoint,
   PermissionTypes,
-  Permissions,
+  getEndpointField,
+  isAgentsEndpoint,
+  LocalStorageKeys,
+  isEphemeralAgentId,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type {
   TPreset,
@@ -120,8 +121,8 @@ const useNewConvo = (index = 0) => {
             isAgentsEndpoint(lastConversationSetup?.endpoint) && lastConversationSetup?.agent_id;
           const isExistingAgentConvo =
             isAgentsEndpoint(defaultEndpoint) &&
-            ((conversation.agent_id && conversation.agent_id !== Constants.EPHEMERAL_AGENT_ID) ||
-              (storedAgentId && storedAgentId !== Constants.EPHEMERAL_AGENT_ID));
+            ((conversation.agent_id && !isEphemeralAgentId(conversation.agent_id)) ||
+              (storedAgentId && !isEphemeralAgentId(storedAgentId)));
           if (
             defaultEndpoint &&
             isAgentsEndpoint(defaultEndpoint) &&
@@ -248,7 +249,7 @@ const useNewConvo = (index = 0) => {
           state: disableFocus ? {} : { focusChat: true },
         });
       },
-    [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data],
+    [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data, hasAgentAccess],
   );
 
   const newConversation = useCallback(

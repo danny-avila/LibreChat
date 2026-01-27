@@ -678,7 +678,6 @@
   "com_ui_bookmarks": "Favoritos",
   "com_ui_bookmarks_add": "Adicionar Bookmarks",
   "com_ui_bookmarks_add_to_conversation": "Adicionar à conversa atual",
-  "com_ui_bookmarks_count": "Contagem",
   "com_ui_bookmarks_create_error": "Houve um erro ao criar o favorito",
   "com_ui_bookmarks_create_exists": "Este favorito já existe",
   "com_ui_bookmarks_create_success": "Favorito criado com sucesso",

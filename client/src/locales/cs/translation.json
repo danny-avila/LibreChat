@@ -407,7 +407,6 @@
   "com_ui_bookmarks": "Záložky",
   "com_ui_bookmarks_add": "Přidat záložky",
   "com_ui_bookmarks_add_to_conversation": "Přidat do aktuální konverzace",
-  "com_ui_bookmarks_count": "Počet",
   "com_ui_bookmarks_create_error": "Při vytváření záložky došlo k chybě",
   "com_ui_bookmarks_create_exists": "Tato záložka již existuje",
   "com_ui_bookmarks_create_success": "Záložka byla úspěšně vytvořena",

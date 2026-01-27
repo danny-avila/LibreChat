@@ -702,7 +702,6 @@
   "com_ui_bookmarks": "סימניות",
   "com_ui_bookmarks_add": "הוסף סימניות",
   "com_ui_bookmarks_add_to_conversation": "הוסף לשיחה הנוכחית",
-  "com_ui_bookmarks_count": "ספירה",
   "com_ui_bookmarks_create_error": "אירעה שגיאה בעת יצירת הסימניה",
   "com_ui_bookmarks_create_exists": "סימניה זו כבר קיימת",
   "com_ui_bookmarks_create_success": "הסימניה נוצרה בהצלחה",

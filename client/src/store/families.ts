@@ -11,7 +11,7 @@ import {
   useSetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import { LocalStorageKeys, Constants } from 'librechat-data-provider';
+import { LocalStorageKeys, isEphemeralAgentId, Constants } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import {
@@ -88,7 +88,7 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
             newValue.assistant_id,
           );
         }
-        if (newValue?.agent_id != null && newValue.agent_id) {
+        if (newValue?.agent_id != null && !isEphemeralAgentId(newValue.agent_id)) {
           localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`, newValue.agent_id);
         }
         if (newValue?.spec != null && newValue.spec) {

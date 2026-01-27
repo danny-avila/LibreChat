@@ -434,7 +434,6 @@
   "com_ui_bookmarks": "الإشارات المرجعية",
   "com_ui_bookmarks_add": "إضافة إشارات مرجعية",
   "com_ui_bookmarks_add_to_conversation": "أضف إلى المحادثة الحالية",
-  "com_ui_bookmarks_count": "العدد",
   "com_ui_bookmarks_create_error": "حدث خطأ أثناء إنشاء الإشارة المرجعية",
   "com_ui_bookmarks_create_exists": "هذه الإشارة المرجعية موجودة بالفعل",
   "com_ui_bookmarks_create_success": "تم إنشاء الإشارة المرجعية بنجاح",

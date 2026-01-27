@@ -63,7 +63,6 @@ describe('DragDropModal - Provider Detection', () => {
       { name: 'OpenAI', value: EModelEndpoint.openAI },
       { name: 'Anthropic', value: EModelEndpoint.anthropic },
       { name: 'Google', value: EModelEndpoint.google },
-      { name: 'Azure OpenAI', value: EModelEndpoint.azureOpenAI },
       { name: 'Custom', value: EModelEndpoint.custom },
     ];
 
@@ -71,6 +70,10 @@ describe('DragDropModal - Provider Detection', () => {
       it(`should recognize ${name} as supported`, () => {
         expect(isDocumentSupportedProvider(value)).toBe(true);
       });
+    });
+
+    it('should NOT recognize Azure OpenAI as supported (requires useResponsesApi)', () => {
+      expect(isDocumentSupportedProvider(EModelEndpoint.azureOpenAI)).toBe(false);
     });
   });
 

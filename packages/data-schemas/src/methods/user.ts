@@ -2,6 +2,9 @@ import mongoose, { FilterQuery } from 'mongoose';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
 import { signPayload } from '~/crypto';
 
+/** Default JWT session expiry: 15 minutes in milliseconds */
+export const DEFAULT_SESSION_EXPIRY = 1000 * 60 * 15;
+
 /** Factory function that takes mongoose instance and returns the methods */
 export function createUserMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -161,24 +164,15 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Generates a JWT token for a given user.
+   * @param user - The user object
+   * @param expiresIn - Optional expiry time in milliseconds. Default: 15 minutes
    */
-  async function generateToken(user: IUser): Promise<string> {
+  async function generateToken(user: IUser, expiresIn?: number): Promise<string> {
     if (!user) {
       throw new Error('No user provided');
     }
 
-    let expires = 1000 * 60 * 15;
-
-    if (process.env.SESSION_EXPIRY !== undefined && process.env.SESSION_EXPIRY !== '') {
-      try {
-        const evaluated = eval(process.env.SESSION_EXPIRY);
-        if (evaluated) {
-          expires = evaluated;
-        }
-      } catch (error) {
-        console.warn('Invalid SESSION_EXPIRY expression, using default:', error);
-      }
-    }
+    const expires = expiresIn ?? DEFAULT_SESSION_EXPIRY;
 
     return await signPayload({
       payload: {

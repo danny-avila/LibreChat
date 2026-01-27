@@ -331,12 +331,14 @@ describe('MCPConnectionFactory', () => {
       expect(deleteCallOrder).toBeLessThan(createCallOrder);
 
       // Verify createFlow was called with fresh metadata
+      // 4th arg is the abort signal (undefined in this test since no signal was provided)
       expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
         'user123:test-server',
         'mcp_oauth',
         expect.objectContaining({
           codeVerifier: 'new-code-verifier-xyz',
         }),
+        undefined,
       );
     });
   });

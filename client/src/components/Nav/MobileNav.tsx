@@ -21,7 +21,7 @@ export default function MobileNav({
   const { title = 'New Chat' } = conversation || {};
 
   return (
-    <div className="bg-token-main-surface-primary sticky top-0 z-10 flex min-h-[40px] items-center justify-center bg-white pl-1 dark:bg-gray-800 dark:text-white md:hidden">
+    <div className="bg-token-main-surface-primary sticky top-0 z-10 flex min-h-[40px] items-center justify-center bg-presentation pl-1 dark:text-white md:hidden">
       <button
         type="button"
         data-testid="mobile-header-new-chat-button"
@@ -29,7 +29,7 @@ export default function MobileNav({
           navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')
         }
         aria-live="polite"
-        className="m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover"
+        className="m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-active-alt"
         onClick={() =>
           setNavVisible((prev) => {
             localStorage.setItem('navVisible', JSON.stringify(!prev));
@@ -62,7 +62,7 @@ export default function MobileNav({
       <button
         type="button"
         aria-label={localize('com_ui_new_chat')}
-        className="m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover"
+        className="m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-active-alt"
         onClick={() => {
           clearMessagesCache(queryClient, conversation?.conversationId);
           queryClient.invalidateQueries([QueryKeys.messages]);
