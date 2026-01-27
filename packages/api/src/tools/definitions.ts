@@ -9,6 +9,7 @@ import { Constants, actionDelimiter, actionDomainSeparator } from 'librechat-dat
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import { buildToolClassification, type ToolDefinition } from './classification';
+import { getToolDefinition } from './registry/definitions';
 
 /** Regex to replace domain separators (---) with underscores for tool names */
 const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
@@ -85,13 +86,22 @@ export async function loadToolDefinitions(
   const mcpAllPattern = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
 
   for (const toolName of tools) {
+    if (toolName.includes(actionDelimiter)) {
+      const normalizedName = toolName.replace(domainSeparatorRegex, '_');
+      actionToolDefs.push({ name: normalizedName });
+      continue;
+    }
+
     if (!mcpToolPattern.test(toolName)) {
-      if (toolName.includes(actionDelimiter)) {
-        const normalizedName = toolName.replace(domainSeparatorRegex, '_');
-        actionToolDefs.push({ name: normalizedName });
-      } else if (isBuiltInTool(toolName)) {
-        builtInToolDefs.push({ name: toolName });
+      if (!isBuiltInTool(toolName)) {
+        continue;
       }
+      const registryDef = getToolDefinition(toolName);
+      builtInToolDefs.push({
+        name: toolName,
+        description: registryDef?.description,
+        parameters: registryDef?.schema as JsonSchemaType | undefined,
+      });
       continue;
     }
 
