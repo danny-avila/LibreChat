@@ -5,6 +5,7 @@ const {
   getToolkitKey,
   hasCustomUserVars,
   getUserMCPAuthMap,
+  loadToolDefinitions,
   isActionDomainAllowed,
   buildToolClassification,
 } = require('@librechat/api');
@@ -30,10 +31,15 @@ const {
   domainParser,
 } = require('./ActionService');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
-const { getEndpointsConfig, getCachedTools } = require('~/server/services/Config');
+const {
+  getEndpointsConfig,
+  getCachedTools,
+  getMCPServerTools,
+} = require('~/server/services/Config');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
@@ -377,6 +383,118 @@ async function processRequiredActions(client, requiredActions) {
  *   hasDeferredTools?: boolean;
  * }>} The agent tools and registry.
  */
+/** Checks if a tool name is a known built-in tool */
+const isBuiltInTool = (toolName) =>
+  Boolean(manifestToolMap[toolName] || toolkits.some((t) => t.pluginKey === toolName));
+
+/**
+ * Loads only tool definitions without creating tool instances.
+ * This is the efficient path for event-driven mode where tools are loaded on-demand.
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req - The request object
+ * @param {Object} params.agent - The agent configuration
+ * @returns {Promise<{
+ *   toolDefinitions?: import('@librechat/api').LCTool[];
+ *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
+ *   userMCPAuthMap?: Record<string, Record<string, string>>;
+ *   hasDeferredTools?: boolean;
+ * }>}
+ */
+async function loadToolDefinitionsWrapper({ req, agent }) {
+  if (!agent.tools || agent.tools.length === 0) {
+    return { toolDefinitions: [] };
+  }
+
+  if (
+    agent.tools.length === 1 &&
+    (agent.tools[0] === AgentCapabilities.context || agent.tools[0] === AgentCapabilities.ocr)
+  ) {
+    return { toolDefinitions: [] };
+  }
+
+  const appConfig = req.config;
+  const endpointsConfig = await getEndpointsConfig(req);
+  let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
+
+  if (enabledCapabilities.size === 0 && isEphemeralAgentId(agent.id)) {
+    enabledCapabilities = new Set(
+      appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+    );
+  }
+
+  const checkCapability = (capability) => enabledCapabilities.has(capability);
+  const areToolsEnabled = checkCapability(AgentCapabilities.tools);
+  const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
+
+  const filteredTools = agent.tools?.filter((tool) => {
+    if (tool === Tools.file_search) {
+      return checkCapability(AgentCapabilities.file_search);
+    }
+    if (tool === Tools.execute_code) {
+      return checkCapability(AgentCapabilities.execute_code);
+    }
+    if (tool === Tools.web_search) {
+      return checkCapability(AgentCapabilities.web_search);
+    }
+    if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
+      return false;
+    }
+    return true;
+  });
+
+  if (!filteredTools || filteredTools.length === 0) {
+    return { toolDefinitions: [] };
+  }
+
+  /** @type {Record<string, Record<string, string>>} */
+  let userMCPAuthMap;
+  if (hasCustomUserVars(req.config)) {
+    userMCPAuthMap = await getUserMCPAuthMap({
+      tools: agent.tools,
+      userId: req.user.id,
+      findPluginAuthsByKeys,
+    });
+  }
+
+  const getOrFetchMCPServerTools = async (userId, serverName) => {
+    const cached = await getMCPServerTools(userId, serverName);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await reinitMCPServer({
+      user: req.user,
+      serverName,
+      userMCPAuthMap,
+    });
+
+    return result?.availableTools || null;
+  };
+
+  const { toolDefinitions, toolRegistry, hasDeferredTools } = await loadToolDefinitions(
+    {
+      userId: req.user.id,
+      agentId: agent.id,
+      tools: filteredTools,
+      toolOptions: agent.tool_options,
+      deferredToolsEnabled,
+    },
+    {
+      isBuiltInTool,
+      loadAuthValues,
+      getOrFetchMCPServerTools,
+    },
+  );
+
+  return {
+    toolRegistry,
+    userMCPAuthMap,
+    toolDefinitions,
+    hasDeferredTools,
+  };
+}
+
 /**
  * Loads agent tools for initialization or execution.
  * @param {Object} params
@@ -401,6 +519,10 @@ async function loadAgentTools({
   streamId = null,
   definitionsOnly = true,
 }) {
+  if (definitionsOnly) {
+    return loadToolDefinitionsWrapper({ req, agent });
+  }
+
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
   } else if (
@@ -725,6 +847,7 @@ async function loadAgentTools({
 
 module.exports = {
   loadTools,
+  isBuiltInTool,
   getToolkitKey,
   loadAgentTools,
   processRequiredActions,
