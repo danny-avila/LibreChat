@@ -1,10 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
-import { useEffect } from 'react';
 import { TooltipAnchor } from '@librechat/client';
 import { Transition } from 'react-transition-group';
 import { Constants } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
+
+const MAX_STARTER_LENGTH = 100;
 
 interface AgentConversationStartersProps {
   field: {
@@ -42,7 +43,7 @@ const AgentConversationStarters: React.FC<AgentConversationStartersProps> = ({
       field.onChange(initialStarters);
       hasInitialized.current = true;
     }
-  }, [initialStarters, field]);
+  }, [initialStarters]);
 
   const handleAddStarter = () => {
     if (newStarter.trim() && field.value.length < Constants.MAX_CONVO_STARTERS) {
@@ -94,7 +95,7 @@ const AgentConversationStarters: React.FC<AgentConversationStartersProps> = ({
           <input
             ref={(el) => (inputRefs.current[0] = el)}
             value={newStarter}
-            maxLength={100}
+            maxLength={MAX_STARTER_LENGTH}
             className={`${inputClass} pr-10`}
             type="text"
             placeholder={
@@ -138,39 +139,37 @@ const AgentConversationStarters: React.FC<AgentConversationStartersProps> = ({
                   onClick={handleAddStarter}
                   disabled={hasReachedMax}
                 >
-                  <Plus className="size-4" />
+                  <Plus className="size-4" aria-hidden="true" />
                 </TooltipAnchor>
               </div>
             )}
           </Transition>
         </div>
-        {field.value.map((starter, index) => {
-          return (
-            <div key={index} className="relative">
-              <input
-                ref={(el) => (inputRefs.current[index + 1] = el)}
-                value={starter}
-                onChange={(e) => {
-                  const newValue = [...field.value];
-                  newValue[index] = e.target.value;
-                  field.onChange(newValue);
-                }}
-                className={`${inputClass} pr-10`}
-                type="text"
-                maxLength={100}
-              />
-              <TooltipAnchor
-                side="top"
-                description={localize('com_ui_delete')}
-                aria-label={localize('com_ui_delete')}
-                className="absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
-                onClick={() => handleDeleteStarter(index)}
-              >
-                <X className="size-4" />
-              </TooltipAnchor>
-            </div>
-          );
-        })}
+        {field.value.map((starter, index) => (
+          <div key={index} className="relative">
+            <input
+              ref={(el) => (inputRefs.current[index + 1] = el)}
+              value={starter}
+              onChange={(e) => {
+                const newValue = [...field.value];
+                newValue[index] = e.target.value;
+                field.onChange(newValue);
+              }}
+              className={`${inputClass} pr-10`}
+              type="text"
+              maxLength={MAX_STARTER_LENGTH}
+            />
+            <TooltipAnchor
+              side="top"
+              description={localize('com_ui_delete')}
+              aria-label={localize('com_ui_delete')}
+              className="absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
+              onClick={() => handleDeleteStarter(index)}
+            >
+              <X className="size-4" aria-hidden="true" />
+            </TooltipAnchor>
+          </div>
+        ))}
       </div>
     </div>
   );

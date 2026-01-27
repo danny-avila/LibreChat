@@ -225,7 +225,7 @@ describe('ConversationStarters', () => {
     // Simulate click on the first conversation starter button
     secondButton?.click();
 
-    // Vertify submitMessage was called with the correct text
+    // Verify submitMessage was called with the correct text
     expect(mockSubmitMessage).toHaveBeenCalledTimes(1);
     expect(mockSubmitMessage).toHaveBeenCalledWith({ text: 'Test starter 2' });
   });
