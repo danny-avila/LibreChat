@@ -10,6 +10,8 @@ type TextPartProps = {
   text: string;
   showCursor: boolean;
   isCreatedByUser: boolean;
+  endpoint?: string;
+  model?: string;
 };
 
 type ContentType =
@@ -17,20 +19,20 @@ type ContentType =
   | ReactElement<React.ComponentProps<typeof MarkdownLite>>
   | ReactElement;
 
-const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => {
+const TextPart = memo(({ text, isCreatedByUser, showCursor, endpoint, model }: TextPartProps) => {
   const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(() => showCursor && isSubmitting, [showCursor, isSubmitting]);
 
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
-      return <Markdown content={text} isLatestMessage={isLatestMessage} />;
+      return <Markdown content={text} isLatestMessage={isLatestMessage} endpoint={endpoint} model={model} />;
     } else if (enableUserMsgMarkdown) {
       return <MarkdownLite content={text} />;
     } else {
       return <>{text}</>;
     }
-  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage]);
+  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage, endpoint, model]);
 
   return (
     <div
