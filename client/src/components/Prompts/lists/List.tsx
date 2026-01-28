@@ -2,8 +2,8 @@ import { FileText } from 'lucide-react';
 import { Skeleton } from '@librechat/client';
 import { Permissions } from 'librechat-data-provider';
 import type { TPromptGroup, TStartupConfig } from 'librechat-data-provider';
-import DashGroupItem from '~/components/Prompts/Groups/DashGroupItem';
-import ChatGroupItem from '~/components/Prompts/Groups/ChatGroupItem';
+import DashGroupItem from './DashGroupItem';
+import ChatGroupItem from './ChatGroupItem';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -28,11 +28,13 @@ export default function List({
           {isLoading && isChatRoute && (
             <Skeleton className="my-2 flex h-[84px] w-full rounded-2xl border-0 px-3 pb-4 pt-3" />
           )}
-          {isLoading &&
-            !isChatRoute &&
-            Array.from({ length: 10 }).map((_, index: number) => (
-              <Skeleton key={index} className="w-100 mx-2 my-2 flex h-14 rounded-lg border-0 p-4" />
-            ))}
+          {isLoading && !isChatRoute && (
+            <div className="space-y-2 px-2">
+              {Array.from({ length: 10 }).map((_, index: number) => (
+                <Skeleton key={index} className="flex h-14 w-full rounded-lg border-0 p-4" />
+              ))}
+            </div>
+          )}
           {!isLoading && groups.length === 0 && (
             <div
               className={cn(
@@ -51,20 +53,21 @@ export default function List({
               </p>
             </div>
           )}
-          {groups.map((group) => {
-            if (isChatRoute) {
-              return (
-                <ChatGroupItem
+          {isChatRoute ? (
+            groups.map((group) => (
+              <ChatGroupItem key={group._id} group={group} instanceProjectId={instanceProjectId} />
+            ))
+          ) : (
+            <div className="space-y-2 px-2">
+              {groups.map((group) => (
+                <DashGroupItem
                   key={group._id}
                   group={group}
                   instanceProjectId={instanceProjectId}
                 />
-              );
-            }
-            return (
-              <DashGroupItem key={group._id} group={group} instanceProjectId={instanceProjectId} />
-            );
-          })}
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
