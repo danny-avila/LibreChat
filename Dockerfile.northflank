@@ -3,6 +3,9 @@
 # Base node image
 FROM node:20-alpine AS node
 
+# Set configurable max-old-space-size with default
+ARG NODE_MAX_OLD_SPACE_SIZE=6144
+
 # Install jemalloc
 RUN apk add --no-cache jemalloc
 RUN apk add --no-cache python3 py3-pip uv
@@ -43,10 +46,11 @@ COPY --chown=node:node . .
 COPY .env.example .env
 
 RUN \
-    # React client build
-    NODE_OPTIONS="--max-old-space-size=2048" npm run frontend; \
-    npm prune --production; \
+    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend && \
+    npm prune --production && \
     npm cache clean --force
+
+RUN test -f /app/client/dist/index.html
 
 # Node API setup
 EXPOSE 3080
