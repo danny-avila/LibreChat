@@ -1,7 +1,14 @@
 import React, { useCallback } from 'react';
 import { Trash2 } from 'lucide-react';
 import { useDeletePrompt } from '~/data-provider';
-import { Button, OGDialog, OGDialogTrigger, Label, OGDialogTemplate } from '@librechat/client';
+import {
+  Button,
+  OGDialog,
+  OGDialogTrigger,
+  Label,
+  TooltipAnchor,
+  OGDialogTemplate,
+} from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 const DeleteConfirmDialog = ({
@@ -18,18 +25,25 @@ const DeleteConfirmDialog = ({
   return (
     <OGDialog>
       <OGDialogTrigger asChild>
-        <Button
-          variant="destructive"
-          size="sm"
-          aria-label="Delete version"
-          className="h-10 w-10 p-0.5"
-          disabled={disabled}
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-        >
-          <Trash2 className="size-5 cursor-pointer text-white" aria-hidden="true" />
-        </Button>
+        <TooltipAnchor
+          description={localize('com_ui_delete')}
+          side="top"
+          render={
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label={localize('com_ui_delete')}
+              className="h-9 gap-2 border-border-medium text-text-primary hover:border-red-500 hover:bg-red-500/10 hover:text-red-500"
+              disabled={disabled}
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+              <span>{localize('com_ui_delete')}</span>
+            </Button>
+          }
+        />
       </OGDialogTrigger>
       <OGDialogTemplate
         showCloseButton={false}
