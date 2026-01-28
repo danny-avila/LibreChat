@@ -1,4 +1,4 @@
-const { isUserProvided, isEnabled } = require('@librechat/api');
+const { isUserProvided, isEnabled, shouldUseEntraId } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { generateConfig } = require('~/server/utils/handleText');
 
@@ -15,19 +15,27 @@ const {
   AZURE_ASSISTANTS_BASE_URL,
 } = process.env ?? {};
 
+/**
+ * Entra ID mode detection via shouldUseEntraId() is synchronous, so we set a placeholder token here.
+ * The actual Entra ID access token is retrieved asynchronously in initialize functions (initializeOpenAI,
+ * initializeClient) via getEntraIdAccessToken() and set in headers['Authorization'].
+ * The placeholder is never used for authentication - it only satisfies config validation.
+ */
+const finalAzureOpenAIApiKey = shouldUseEntraId() ? 'entra-id-placeholder' : azureOpenAIApiKey;
+
 const userProvidedOpenAI = isUserProvided(openAIApiKey);
 
 module.exports = {
   config: {
     googleKey,
     openAIApiKey,
-    azureOpenAIApiKey,
+    azureOpenAIApiKey: finalAzureOpenAIApiKey,
     userProvidedOpenAI,
     [EModelEndpoint.anthropic]: generateConfig(
       anthropicApiKey || isEnabled(process.env.ANTHROPIC_USE_VERTEX),
     ),
     [EModelEndpoint.openAI]: generateConfig(openAIApiKey, OPENAI_REVERSE_PROXY),
-    [EModelEndpoint.azureOpenAI]: generateConfig(azureOpenAIApiKey, AZURE_OPENAI_BASEURL),
+    [EModelEndpoint.azureOpenAI]: generateConfig(finalAzureOpenAIApiKey, AZURE_OPENAI_BASEURL),
     [EModelEndpoint.assistants]: generateConfig(
       assistantsApiKey,
       ASSISTANTS_BASE_URL,
