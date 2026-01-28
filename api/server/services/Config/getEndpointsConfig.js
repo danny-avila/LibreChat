@@ -100,14 +100,20 @@ async function getEndpointsConfig(req) {
       capabilities,
     };
   }
-
-  if (mergedConfig[EModelEndpoint.bedrock] && appConfig?.endpoints?.[EModelEndpoint.bedrock]) {
-    const { availableRegions } = appConfig.endpoints[EModelEndpoint.bedrock];
-    mergedConfig[EModelEndpoint.bedrock] = {
-      ...mergedConfig[EModelEndpoint.bedrock],
-      availableRegions,
-    };
-  }
+  /** regions */
+  const mergeRegions = (endpoint) => {
+    if (mergedConfig[endpoint] && appConfig?.endpoints?.[endpoint]) {
+      const { availableRegions } = appConfig.endpoints[endpoint];
+      mergedConfig[endpoint] = {
+        ...mergedConfig[endpoint],
+        availableRegions,
+      };
+    }
+  };
+  // bedrock
+  mergeRegions(EModelEndpoint.bedrock);
+  // google
+  mergeRegions(EModelEndpoint.google);
 
   const endpointsConfig = orderEndpointsConfig(mergedConfig);
 
