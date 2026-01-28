@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Button, Sidebar, TooltipAnchor } from '@librechat/client';
-import ManagePrompts from '~/components/Prompts/ManagePrompts';
+import ManagePrompts from '../buttons/ManagePrompts';
 import { usePromptGroupsContext } from '~/Providers';
-import List from '~/components/Prompts/Groups/List';
-import PanelNavigation from '../Groups/PanelNavigation';
+import List from '../lists/List';
+import PanelNavigation from './PanelNavigation';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
