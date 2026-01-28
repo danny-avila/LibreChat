@@ -882,6 +882,7 @@ export const webSearchSchema = z.object({
       extractionStrategy: z.string().optional(),
       chunkingStrategy: z.string().optional(),
       timeout: z.number().optional(),
+      fitStrategy: z.string().optional()
     })
     .optional(),
 });
