@@ -1,7 +1,7 @@
-import PromptSidePanel from '~/components/Prompts/SidePanel/GroupSidePanel';
-import FilterPrompts from '~/components/Prompts/Groups/FilterPrompts';
+import PromptSidePanel from './GroupSidePanel';
+import FilterPrompts from './FilterPrompts';
 import { usePromptGroupsContext } from '~/Providers';
-import AutoSendPrompt from './AutoSendPrompt';
+import AutoSendPrompt from '../buttons/AutoSendPrompt';
 
 export default function PromptsAccordion() {
   const groupsNav = usePromptGroupsContext();
