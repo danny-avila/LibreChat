@@ -447,7 +447,7 @@
     },
     "packages/data-schemas": {
       "name": "@librechat/data-schemas",
-      "version": "0.0.34",
+      "version": "0.0.35",
       "devDependencies": {
         "@rollup/plugin-alias": "^5.1.0",
         "@rollup/plugin-commonjs": "^29.0.0",
