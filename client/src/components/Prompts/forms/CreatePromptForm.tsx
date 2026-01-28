@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { Button, TextareaAutosize, Input } from '@librechat/client';
 import { useForm, Controller, FormProvider } from 'react-hook-form';
 import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
-import CategorySelector from '~/components/Prompts/Groups/CategorySelector';
-import VariablesDropdown from '~/components/Prompts/VariablesDropdown';
-import PromptVariables from '~/components/Prompts/PromptVariables';
-import Description from '~/components/Prompts/Description';
+import CategorySelector from '../fields/CategorySelector';
+import VariablesDropdown from '../editor/VariablesDropdown';
+import PromptVariables from '../display/PromptVariables';
+import Description from '../fields/Description';
 import { usePromptGroupsContext } from '~/Providers';
 import { useLocalize, useHasAccess } from '~/hooks';
-import Command from '~/components/Prompts/Command';
+import Command from '../fields/Command';
 import { useCreatePrompt } from '~/data-provider';
 import { cn } from '~/utils';
 

@@ -12,7 +12,7 @@ import type { TPromptGroup } from 'librechat-data-provider';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { cn, wrapVariable, defaultTextProps, extractVariableInfo } from '~/utils';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
-import { PromptVariableGfm } from '../Markdown';
+import { PromptVariableGfm } from '../editor/Markdown';
 
 type FieldType = 'text' | 'select';
 
