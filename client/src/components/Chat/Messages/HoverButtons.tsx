@@ -192,7 +192,7 @@ const HoverButtons = ({
           index={index}
           isLast={isLast}
           messageId={message.messageId}
-          content={extractMessageContent(message)}
+          content={message.content ?? message.text ?? ''}
           renderButton={(props) => (
             <HoverButton
               onClick={props.onClick}
