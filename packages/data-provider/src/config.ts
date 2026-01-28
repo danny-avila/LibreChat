@@ -882,6 +882,7 @@ export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
   baseURL: z.string().optional().default('${OCR_BASEURL}'),
+  region: z.string().optional().default('${MISTRAL_VERTEX_REGION}'),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
