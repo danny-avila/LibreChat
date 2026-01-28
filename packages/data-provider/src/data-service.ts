@@ -1037,3 +1037,137 @@ export function getGraphApiToken(params: q.GraphTokenParams): Promise<q.GraphTok
 export function getDomainServerBaseUrl(): string {
   return `${endpoints.apiBaseUrl()}/api`;
 }
+
+// Admin API
+export interface AdminUser {
+  _id: string;
+  email: string;
+  username?: string;
+  name?: string;
+  role: string;
+  provider?: string;
+  createdAt: string;
+  emailVerified?: boolean;
+  avatar?: string;
+}
+
+export interface AdminUsersResponse {
+  users: AdminUser[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface CreateAdminUserRequest {
+  email: string;
+  name: string;
+  username: string;
+  password: string;
+}
+
+export interface CreateAdminUserResponse {
+  message: string;
+  user: AdminUser;
+}
+
+export function getAdminUsers(params?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+}): Promise<AdminUsersResponse> {
+  return request.get(endpoints.adminUsers(params));
+}
+
+export function createAdminUser(data: CreateAdminUserRequest): Promise<CreateAdminUserResponse> {
+  return request.post(endpoints.adminCreateUser(), data);
+}
+
+export function updateUserRole(
+  userId: string,
+  role: string,
+): Promise<{ message: string; user: AdminUser }> {
+  return request.patch(endpoints.adminUpdateUserRole(userId), { role });
+}
+
+export function deleteUserByAdmin(userId: string): Promise<{ message: string }> {
+  return request.delete(endpoints.adminDeleteUser(userId));
+}
+
+// Admin Conversation Types
+export interface AdminConversationUser {
+  _id: string;
+  email: string;
+  name?: string;
+  username?: string;
+  avatar?: string;
+}
+
+export interface AdminConversation {
+  conversationId: string;
+  title: string;
+  endpoint: string;
+  user: string;
+  model?: string;
+  agent_id?: string;
+  assistant_id?: string;
+  createdAt: string;
+  updatedAt: string;
+  userInfo: AdminConversationUser | null;
+}
+
+export interface AdminConversationsResponse {
+  conversations: AdminConversation[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface AdminConversationMessagesResponse {
+  conversation: AdminConversation;
+  messages: Array<{
+    messageId: string;
+    conversationId: string;
+    parentMessageId?: string;
+    text: string;
+    sender: string;
+    isCreatedByUser: boolean;
+    createdAt: string;
+    updatedAt?: string;
+    endpoint?: string;
+    model?: string;
+  }>;
+}
+
+export function getAdminConversations(params?: {
+  page?: number;
+  limit?: number;
+  userId?: string;
+  endpoint?: string;
+  search?: string;
+  sortBy?: string;
+  sortDirection?: string;
+}): Promise<AdminConversationsResponse> {
+  return request.get(endpoints.adminConversations(params));
+}
+
+export function getAdminConversationMessages(
+  conversationId: string,
+): Promise<AdminConversationMessagesResponse> {
+  return request.get(endpoints.adminConversationMessages(conversationId));
+}
+
+// Types re-export for convenience
+export type { AdminUser as TAdminUser };
+export type { AdminUsersResponse as TAdminUsersResponse };
+export type { CreateAdminUserRequest as TCreateAdminUserRequest };
+export type { CreateAdminUserResponse as TCreateAdminUserResponse };
+export type { AdminConversation as TAdminConversation };
+export type { AdminConversationUser as TAdminConversationUser };
+export type { AdminConversationsResponse as TAdminConversationsResponse };
+export type { AdminConversationMessagesResponse as TAdminConversationMessagesResponse };

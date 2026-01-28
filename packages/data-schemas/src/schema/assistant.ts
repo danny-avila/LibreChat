@@ -30,6 +30,10 @@ const assistantSchema = new Schema<IAssistant>(
       type: Boolean,
       default: false,
     },
+    role: {
+      type: String,
+      default: undefined,
+    },
   },
   {
     timestamps: true,

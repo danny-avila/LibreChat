@@ -1,13 +1,13 @@
 services:
   api:
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile.multi
-    #   target: api-build
-    image: ghcr.io/danny-avila/librechat-dev-api:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.multi
+      target: api-build
+    # image: ghcr.io/danny-avila/librechat-dev-api:latest
     container_name: LibreChat-API
-    ports:
-      - 80:3080
+    # API 通过内部网络与 nginx 通信，通常不需要将其端口暴露到主机上。
+    # 如果你确实需要从主机访问 API，请在这里设置合适且不冲突的端口映射。
     depends_on:
       - mongodb
       - rag_api

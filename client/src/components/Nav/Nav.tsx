@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef
 import { useRecoilValue } from 'recoil';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Skeleton, useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import {
@@ -13,6 +13,8 @@ import {
   useNavScrolling,
 } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
+import AdminUserConversations from './AdminUserConversations';
+import AdminUserSelector from './AdminUserSelector';
 import { Conversations } from '~/components/Conversations';
 import SearchBar from './SearchBar';
 import NewChat from './NewChat';
@@ -62,7 +64,9 @@ const Nav = memo(
     setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
   }) => {
     const localize = useLocalize();
-    const { isAuthenticated } = useAuthContext();
+    const { isAuthenticated, user: currentUser } = useAuthContext();
+    const isAdminViewMode = useRecoilValue(store.isAdminViewMode);
+    const isAdmin = currentUser?.role === SystemRoles.ADMIN;
 
     const [navWidth, setNavWidth] = useState(NAV_WIDTH_DESKTOP);
     const isSmallScreen = useMediaQuery('(max-width: 768px)');
@@ -229,18 +233,29 @@ const Nav = memo(
                         headerButtons={headerButtons}
                         isSmallScreen={isSmallScreen}
                       />
+                      {/* Admin User Selector */}
+                      {isAdmin && (
+                        <div className="mb-2 mt-1">
+                          <AdminUserSelector />
+                        </div>
+                      )}
                       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
-                        <Conversations
-                          conversations={conversations}
-                          moveToTop={moveToTop}
-                          toggleNav={itemToggleNav}
-                          containerRef={conversationsRef}
-                          loadMoreConversations={loadMoreConversations}
-                          isLoading={isFetchingNextPage || showLoading || isLoading}
-                          isSearchLoading={isSearchLoading}
-                          isChatsExpanded={isChatsExpanded}
-                          setIsChatsExpanded={setIsChatsExpanded}
-                        />
+                        {/* Admin User Conversations View */}
+                        {isAdminViewMode ? (
+                          <AdminUserConversations />
+                        ) : (
+                          <Conversations
+                            conversations={conversations}
+                            moveToTop={moveToTop}
+                            toggleNav={itemToggleNav}
+                            containerRef={conversationsRef}
+                            loadMoreConversations={loadMoreConversations}
+                            isLoading={isFetchingNextPage || showLoading || isLoading}
+                            isSearchLoading={isSearchLoading}
+                            isChatsExpanded={isChatsExpanded}
+                            setIsChatsExpanded={setIsChatsExpanded}
+                          />
+                        )}
                       </div>
                     </div>
                     <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>

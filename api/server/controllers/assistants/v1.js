@@ -1,6 +1,6 @@
 const fs = require('fs').promises;
 const { logger } = require('@librechat/data-schemas');
-const { FileContext } = require('librechat-data-provider');
+const { FileContext, SystemRoles } = require('librechat-data-provider');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -61,11 +61,12 @@ const createAssistant = async (req, res) => {
     assistantData.metadata = {
       author: req.user.id,
       endpoint,
+      role: req.user.role,
     };
 
     const assistant = await openai.beta.assistants.create(assistantData);
 
-    const createData = { user: req.user.id };
+    const createData = { user: req.user.id, role: req.user.role };
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }
@@ -230,22 +231,20 @@ const listAssistants = async (req, res) => {
  *
  * @param {object} params - The parameters object.
  * @param {string} params.userId -  The user ID to filter private assistants.
- * @param {AssistantDocument[]} params.assistants - The list of assistants to filter.
+ * @param {string} [params.userRole] - The role of the current user.
+ * @param {AssistantDocument[]} params.documents - The list of assistant documents to filter.
  * @param {Partial<TAssistantEndpoint>} [params.assistantsConfig] -  The assistant configuration.
  * @returns {AssistantDocument[]} - The filtered list of assistants.
  */
-function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
-  const { supportedIds, excludedIds, privateAssistants } = assistantsConfig;
+function filterAssistantDocs({ documents, userId, userRole, assistantsConfig = {} }) {
+  const { supportedIds, excludedIds } = assistantsConfig;
   const removeUserId = (doc) => {
     const { user: _u, ...document } = doc;
     return document;
   };
 
-  // 默认只显示用户自己创建的助手
-  const userDocs = documents.filter((doc) => userId === doc.user.toString());
-  
-  if (privateAssistants === false) {
-    // 如果明确配置 privateAssistants 为 false，则显示所有助手（受其他过滤器限制）
+  // ADMIN 用户可以看到所有助手
+  if (userRole === SystemRoles.ADMIN) {
     if (supportedIds?.length) {
       return documents.filter((doc) => supportedIds.includes(doc.assistant_id)).map(removeUserId);
     } else if (excludedIds?.length) {
@@ -254,13 +253,25 @@ function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
     return documents.map(removeUserId);
   }
   
-  // 默认情况或 privateAssistants 为 true 时，只显示用户创建的助手
+  // 普通用户：显示自己创建的助手 + ADMIN 用户创建的助手
+  const filteredDocs = documents.filter((doc) => {
+    // 用户自己创建的助手
+    if (userId === doc.user.toString()) {
+      return true;
+    }
+    // ADMIN 用户创建的助手
+    if (doc.role && doc.role.toUpperCase() === SystemRoles.ADMIN) {
+      return true;
+    }
+    return false;
+  });
+  
   if (supportedIds?.length) {
-    return userDocs.filter((doc) => supportedIds.includes(doc.assistant_id)).map(removeUserId);
+    return filteredDocs.filter((doc) => supportedIds.includes(doc.assistant_id)).map(removeUserId);
   } else if (excludedIds?.length) {
-    return userDocs.filter((doc) => !excludedIds.includes(doc.assistant_id)).map(removeUserId);
+    return filteredDocs.filter((doc) => !excludedIds.includes(doc.assistant_id)).map(removeUserId);
   }
-  return userDocs.map(removeUserId);
+  return filteredDocs.map(removeUserId);
 }
 
 /**
@@ -273,10 +284,27 @@ const getAssistantDocuments = async (req, res) => {
     const appConfig = req.config;
     const endpoint = req.query?.endpoint;
     const assistantsConfig = appConfig.endpoints?.[endpoint];
+    
+    // 查询条件：ADMIN 用户获取所有助手，普通用户获取自己的 + ADMIN 创建的助手
+    let searchParams;
+    if (req.user.role === SystemRoles.ADMIN) {
+      // ADMIN 可以看到所有助手
+      searchParams = {};
+    } else {
+      // 普通用户：自己创建的 + ADMIN 创建的助手
+      searchParams = {
+        $or: [
+          { user: req.user.id },
+          { role: SystemRoles.ADMIN }
+        ]
+      };
+    }
+    
     const documents = await getAssistants(
-      { user: req.user.id },
+      searchParams,
       {
         user: 1,
+        role: 1,
         assistant_id: 1,
         conversation_starters: 1,
         createdAt: 1,
@@ -288,6 +316,7 @@ const getAssistantDocuments = async (req, res) => {
     const docs = filterAssistantDocs({
       documents,
       userId: req.user.id,
+      userRole: req.user.role,
       assistantsConfig,
     });
     res.json(docs);
