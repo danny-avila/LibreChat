@@ -13,21 +13,13 @@ export default function Footer({ className }: { className?: string }) {
   const termsOfService = config?.interface?.termsOfService;
 
   const privacyPolicyRender = privacyPolicy?.externalUrl != null && (
-    <a
-      className="text-text-secondary underline"
-      href={privacyPolicy.externalUrl}
-      rel="noreferrer"
-    >
+    <a className="text-text-secondary underline" href={privacyPolicy.externalUrl} rel="noreferrer">
       {localize('com_ui_privacy_policy')}
     </a>
   );
 
   const termsOfServiceRender = termsOfService?.externalUrl != null && (
-    <a
-      className="text-text-secondary underline"
-      href={termsOfService.externalUrl}
-      rel="noreferrer"
-    >
+    <a className="text-text-secondary underline" href={termsOfService.externalUrl} rel="noreferrer">
       {localize('com_ui_terms_of_service')}
     </a>
   );
