@@ -1,4 +1,4 @@
-import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
+import { CategoryIcon } from '~/components/Prompts';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { useGetCategories } from '~/data-provider';
 

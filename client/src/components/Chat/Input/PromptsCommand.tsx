@@ -5,7 +5,7 @@ import { useSetRecoilState, useRecoilValue } from 'recoil';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import { removeCharIfLast, detectVariables } from '~/utils';
-import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
+import { VariableDialog } from '~/components/Prompts';
 import { usePromptGroupsContext } from '~/Providers';
 import MentionItem from './MentionItem';
 import { useLocalize } from '~/hooks';

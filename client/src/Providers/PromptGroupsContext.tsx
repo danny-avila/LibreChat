@@ -2,7 +2,7 @@ import React, { createContext, useContext, ReactNode, useMemo } from 'react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
-import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
+import { CategoryIcon } from '~/components/Prompts';
 import { usePromptGroupsNav, useHasAccess } from '~/hooks';
 import { useGetAllPromptGroups } from '~/data-provider';
 import { mapPromptGroups } from '~/utils';
