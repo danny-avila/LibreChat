@@ -4,7 +4,7 @@ import { ListFilter, User, Share2 } from 'lucide-react';
 import { Dropdown, FilterInput } from '@librechat/client';
 import { SystemCategories } from 'librechat-data-provider';
 import type { Option } from '~/common';
-import { CreatePromptButton } from '~/components/Prompts/components';
+import CreatePromptButton from '../buttons/CreatePromptButton';
 import { useLocalize, useCategories, useDebounce } from '~/hooks';
 import { usePromptGroupsContext } from '~/Providers';
 import { cn } from '~/utils';
