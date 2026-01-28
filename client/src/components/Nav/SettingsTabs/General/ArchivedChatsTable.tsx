@@ -2,7 +2,14 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Trans } from 'react-i18next';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
-import { TrashIcon, ArchiveRestore, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import {
+  TrashIcon,
+  ArchiveRestore,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  ExternalLink,
+} from 'lucide-react';
 import {
   Button,
   Label,
@@ -17,7 +24,6 @@ import {
   OGDialogContent,
 } from '@librechat/client';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
-import type { TranslationKeys } from '~/hooks';
 import {
   useConversationsInfiniteQuery,
   useDeleteConversationMutation,
@@ -138,17 +144,23 @@ export default function ArchivedChatsTable({
             ariaSort = 'ascending';
           }
           return (
-            <Button
-              variant="ghost"
-              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              aria-sort={ariaSort}
-              aria-label={localize('com_nav_archive_name_sort' as TranslationKeys)}
-              aria-current={sortState ? 'true' : 'false'}
-            >
-              {localize('com_nav_archive_name')}
-              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-            </Button>
+            <TooltipAnchor
+              description={localize('com_ui_name_sort')}
+              side="top"
+              render={
+                <Button
+                  variant="ghost"
+                  onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                  className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+                  aria-sort={ariaSort}
+                  aria-label={localize('com_ui_name_sort')}
+                  aria-current={sortState ? 'true' : 'false'}
+                >
+                  {localize('com_nav_archive_name')}
+                  <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+                </Button>
+              }
+            />
           );
         },
         cell: ({ row }) => {
@@ -156,8 +168,9 @@ export default function ArchivedChatsTable({
           return (
             <button
               type="button"
-              className="flex items-center gap-2 truncate rounded-sm"
+              className="group flex items-center gap-2 truncate rounded-sm"
               onClick={() => window.open(`/c/${conversationId}`, '_blank')}
+              aria-label={`${title} ${localize('com_ui_opens_new_tab')}`}
             >
               <MinimalIcon
                 endpoint={row.original.endpoint}
@@ -165,7 +178,15 @@ export default function ArchivedChatsTable({
                 isCreatedByUser={false}
                 iconClassName="size-4"
               />
-              <span className="underline">{title}</span>
+              <span className="flex items-center gap-1 text-blue-600">
+                <span className="truncate underline decoration-1 underline-offset-2 group-hover:decoration-2">
+                  {title}
+                </span>
+                <ExternalLink
+                  className="size-3 flex-shrink-0 opacity-70 group-hover:opacity-100"
+                  aria-hidden="true"
+                />
+              </span>
             </button>
           );
         },
@@ -188,17 +209,23 @@ export default function ArchivedChatsTable({
             ariaSort = 'ascending';
           }
           return (
-            <Button
-              variant="ghost"
-              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              aria-sort={ariaSort}
-              aria-label={localize('com_nav_archive_created_at_sort' as TranslationKeys)}
-              aria-current={sortState ? 'true' : 'false'}
-            >
-              {localize('com_nav_archive_created_at')}
-              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-            </Button>
+            <TooltipAnchor
+              description={localize('com_ui_date_sort')}
+              side="top"
+              render={
+                <Button
+                  variant="ghost"
+                  onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                  className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+                  aria-sort={ariaSort}
+                  aria-label={localize('com_ui_date_sort')}
+                  aria-current={sortState ? 'true' : 'false'}
+                >
+                  {localize('com_nav_archive_created_at')}
+                  <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+                </Button>
+              }
+            />
           );
         },
         cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
@@ -219,7 +246,7 @@ export default function ArchivedChatsTable({
           return (
             <div className="flex items-center gap-2">
               <TooltipAnchor
-                description={localize('com_ui_unarchive')}
+                description={localize('com_ui_unarchive_conversation')}
                 render={
                   <Button
                     variant="ghost"
@@ -230,8 +257,8 @@ export default function ArchivedChatsTable({
                         isArchived: false,
                       })
                     }
-                    title={localize('com_ui_unarchive')}
-                    aria-label={localize('com_ui_unarchive')}
+                    title={localize('com_ui_unarchive_conversation')}
+                    aria-label={localize('com_ui_unarchive_conversation')}
                     disabled={unarchiveMutation.isLoading}
                   >
                     {unarchiveMutation.isLoading ? (
@@ -243,7 +270,7 @@ export default function ArchivedChatsTable({
                 }
               />
               <TooltipAnchor
-                description={localize('com_ui_delete')}
+                description={localize('com_ui_delete_conversation_tooltip')}
                 render={
                   <Button
                     variant="ghost"
@@ -252,8 +279,8 @@ export default function ArchivedChatsTable({
                       setDeleteConversation(row.original);
                       setIsDeleteOpen(true);
                     }}
-                    title={localize('com_ui_delete')}
-                    aria-label={localize('com_ui_delete')}
+                    title={localize('com_ui_delete_conversation_tooltip')}
+                    aria-label={localize('com_ui_delete_conversation_tooltip')}
                   >
                     <TrashIcon className="size-4" />
                   </Button>

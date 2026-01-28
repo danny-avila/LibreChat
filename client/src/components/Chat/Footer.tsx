@@ -67,12 +67,10 @@ export default function Footer({ className }: { className?: string }) {
               <a
                 className="text-text-secondary underline"
                 href={href}
-                target="_blank"
                 rel="noreferrer"
                 {...otherProps}
               >
                 {children}
-                <span className="sr-only">{' ' + localize('com_ui_opens_new_tab')}</span>
               </a>
             );
           },
