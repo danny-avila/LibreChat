@@ -8,6 +8,25 @@ import type {
 import { GraphEvents } from '@librechat/agents';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 
+export interface ToolEndCallbackData {
+  output: {
+    tool_call_id: string;
+    content: string | unknown;
+    artifact?: unknown;
+  };
+}
+
+export interface ToolEndCallbackMetadata {
+  run_id?: string;
+  thread_id?: string;
+  [key: string]: unknown;
+}
+
+export type ToolEndCallback = (
+  data: ToolEndCallbackData,
+  metadata: ToolEndCallbackMetadata,
+) => Promise<void>;
+
 export interface ToolExecuteOptions {
   /** Loads tools by name, using agentId to look up agent-specific context */
   loadTools: (
@@ -18,6 +37,8 @@ export interface ToolExecuteOptions {
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
     configurable?: Record<string, unknown>;
   }>;
+  /** Callback to process tool artifacts (code output files, file citations, etc.) */
+  toolEndCallback?: ToolEndCallback;
 }
 
 /**
@@ -26,16 +47,15 @@ export interface ToolExecuteOptions {
  * executes them in parallel, and resolves with the results.
  */
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
+  const { loadTools, toolEndCallback } = options;
+
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
       const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
 
       try {
         const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
-        const { loadedTools, configurable: toolConfigurable } = await options.loadTools(
-          toolNames,
-          agentId,
-        );
+        const { loadedTools, configurable: toolConfigurable } = await loadTools(toolNames, agentId);
         const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
         const mergedConfigurable = { ...configurable, ...toolConfigurable };
 
@@ -65,6 +85,25 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 configurable: mergedConfigurable,
                 metadata,
               } as Record<string, unknown>);
+
+              if (toolEndCallback) {
+                await toolEndCallback(
+                  {
+                    output: {
+                      tool_call_id: tc.id,
+                      content: result.content,
+                      artifact: result.artifact,
+                    },
+                  },
+                  {
+                    run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
+                    thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                      | string
+                      | undefined,
+                    ...metadata,
+                  },
+                );
+              }
 
               return {
                 toolCallId: tc.id,

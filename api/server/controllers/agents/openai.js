@@ -261,6 +261,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           tool_resources: primaryConfig.tool_resources,
         });
       },
+      toolEndCallback,
     };
 
     const openaiMessages = convertMessages(request.messages);

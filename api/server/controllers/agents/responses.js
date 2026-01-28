@@ -424,6 +424,7 @@ const createResponse = async (req, res) => {
             tool_resources: primaryConfig.tool_resources,
           });
         },
+        toolEndCallback,
       };
 
       // Combine handlers
@@ -544,6 +545,7 @@ const createResponse = async (req, res) => {
             tool_resources: primaryConfig.tool_resources,
           });
         },
+        toolEndCallback,
       };
 
       const handlers = {
