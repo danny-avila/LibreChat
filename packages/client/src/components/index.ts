@@ -1,3 +1,6 @@
+export { FILE_TYPE_MAP } from './FileInput';
+export type { FileType } from './FileInput';
+
 export * from './Accordion';
 export * from './AnimatedTabs';
 export * from './AlertDialog';
@@ -7,6 +10,7 @@ export * from './Checkbox';
 export * from './Dialog';
 export * from './DropdownMenu';
 export * from './HoverCard';
+export * from './FileInput';
 export * from './Input';
 export * from './InputNumber';
 export * from './SecretInput';
