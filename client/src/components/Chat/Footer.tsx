@@ -16,13 +16,9 @@ export default function Footer({ className }: { className?: string }) {
     <a
       className="text-text-secondary underline"
       href={privacyPolicy.externalUrl}
-      target={privacyPolicy.openNewTab === true ? '_blank' : undefined}
       rel="noreferrer"
     >
       {localize('com_ui_privacy_policy')}
-      {privacyPolicy.openNewTab === true && (
-        <span className="sr-only">{' ' + localize('com_ui_opens_new_tab')}</span>
-      )}
     </a>
   );
 
@@ -30,13 +26,9 @@ export default function Footer({ className }: { className?: string }) {
     <a
       className="text-text-secondary underline"
       href={termsOfService.externalUrl}
-      target={termsOfService.openNewTab === true ? '_blank' : undefined}
       rel="noreferrer"
     >
       {localize('com_ui_terms_of_service')}
-      {termsOfService.openNewTab === true && (
-        <span className="sr-only">{' ' + localize('com_ui_opens_new_tab')}</span>
-      )}
     </a>
   );
 
