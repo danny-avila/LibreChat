@@ -149,7 +149,15 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
                 </div>
               </div>
             )}
-            <div className={cn('flex flex-col', showSearch ? 'max-h-[320px] overflow-y-auto p-1.5' : 'max-h-[320px] overflow-y-auto', 'gap-1')}>
+            <div
+              className={cn(
+                'flex flex-col',
+                showSearch
+                  ? 'max-h-[320px] overflow-y-auto p-1.5'
+                  : 'max-h-[320px] overflow-y-auto',
+                'gap-1',
+              )}
+            >
               {filteredServers.length === 0 ? (
                 <div className="px-2 py-3 text-center text-sm text-text-secondary">
                   {localize('com_ui_no_results_found')}

@@ -170,7 +170,12 @@ function MCPSelectContent() {
               </div>
             </div>
           )}
-          <div className={cn('flex flex-col gap-1', showSearch ? 'max-h-[320px] overflow-y-auto p-1.5' : 'max-h-[320px] overflow-y-auto')}>
+          <div
+            className={cn(
+              'flex flex-col gap-1',
+              showSearch ? 'max-h-[320px] overflow-y-auto p-1.5' : 'max-h-[320px] overflow-y-auto',
+            )}
+          >
             {filteredServers.length === 0 ? (
               <div className="px-2 py-3 text-center text-sm text-text-secondary">
                 {localize('com_ui_no_results_found')}
