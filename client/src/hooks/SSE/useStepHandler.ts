@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { useSetAtom } from 'jotai';
 import {
   Constants,
   StepTypes,
@@ -17,6 +18,8 @@ import type {
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
+import { mcpProgressAtom, mcpActiveAtom } from '~/store/mcp';
+import type { MCPProgress } from '~/store/mcp';
 
 type TUseStepHandler = {
   announcePolite: (options: AnnounceOptions) => void;
@@ -61,6 +64,8 @@ export default function useStepHandler({
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
   const stepMap = useRef(new Map<string, Agents.RunStep>());
+  const setMcpProgress = useSetAtom(mcpProgressAtom);
+  const setMcpActive = useSetAtom(mcpActiveAtom);
 
   /**
    * Calculate content index for a run step.
@@ -87,6 +92,56 @@ export default function useStepHandler({
       return serverIndex + initialContent.length;
     },
     [],
+  );
+
+  // Callback to update MCP progress state
+  const updateMCPProgress = useCallback(
+    (
+      conversationId: string,
+      progressData: {
+        serverName: string;
+        toolName: string;
+        progress: number;
+        total?: number;
+        message?: string;
+        progressToken: string;
+      },
+    ) => {
+      const newProgress: MCPProgress = {
+        progressToken: progressData.progressToken,
+        serverName: progressData.serverName,
+        toolName: progressData.toolName,
+        progress: progressData.progress,
+        total: progressData.total,
+        message: progressData.message,
+        timestamp: Date.now(),
+      };
+
+      setMcpProgress((currentProgress) => {
+        const conversationProgress = currentProgress[conversationId] || [];
+
+        // Find existing progress for this token or add new
+        const existingIndex = conversationProgress.findIndex(
+          (p) => p.progressToken === progressData.progressToken,
+        );
+
+        let updatedProgress;
+        if (existingIndex >= 0) {
+          // Update existing progress
+          updatedProgress = [...conversationProgress];
+          updatedProgress[existingIndex] = newProgress;
+        } else {
+          // Add new progress
+          updatedProgress = [...conversationProgress, newProgress];
+        }
+
+        return {
+          ...currentProgress,
+          [conversationId]: updatedProgress,
+        };
+      });
+    },
+    [setMcpProgress],
   );
 
   /** Metadata to propagate onto content parts for parallel rendering - uses ContentMetadata from data-provider */
@@ -472,6 +527,36 @@ export default function useStepHandler({
           parentMessageId = submission?.initialResponse?.parentMessageId ?? '';
         }
 
+        // Handle progress events for MCP tools
+        if (runStepDelta.delta.type === 'progress') {
+          const progressData = runStepDelta.delta;
+          const conversationId =
+            submission?.initialResponse?.conversationId || userMessage.conversationId;
+          if (
+            progressData.serverName &&
+            progressData.toolName &&
+            progressData.progressToken &&
+            progressData.progress != null &&
+            conversationId
+          ) {
+            // Set active state when receiving progress updates
+            setMcpActive((current) => ({
+              ...current,
+              [conversationId]: true,
+            }));
+
+            updateMCPProgress(conversationId, {
+              serverName: progressData.serverName,
+              toolName: progressData.toolName,
+              progress: progressData.progress,
+              total: progressData.total,
+              message: progressData.message,
+              progressToken: progressData.progressToken,
+            });
+          }
+          return;
+        }
+
         if (!runStep || !responseMessageId) {
           console.warn('No run step or runId found for run step delta event');
           return;
@@ -532,6 +617,16 @@ export default function useStepHandler({
           parentMessageId = submission?.initialResponse?.parentMessageId ?? '';
         }
 
+        // Clear active state for this conversation when tool completes
+        const conversationId =
+          submission?.initialResponse?.conversationId || userMessage.conversationId;
+        if (conversationId) {
+          setMcpActive((current) => ({
+            ...current,
+            [conversationId]: false,
+          }));
+        }
+
         if (!runStep || !responseMessageId) {
           console.warn('No run step or runId found for completed tool call event');
           return;
@@ -546,11 +641,24 @@ export default function useStepHandler({
             tool_call: result.tool_call,
           };
 
-          // Use server's index, offset by initialContent for edit scenarios
-          const currentIndex = runStep.index + initialContent.length;
+          // Completion events come back with wrong stepId, so find the next incomplete tool call
+          const targetToolCallId = result.tool_call?.id;
+          let targetIndex = runStep.index + initialContent.length; // fallback to original logic
+
+          // Find the first incomplete tool call with matching ID
+          const incompleteIndex = updatedResponse.content?.findIndex(
+            (part) =>
+              part?.type === ContentTypes.TOOL_CALL &&
+              part[ContentTypes.TOOL_CALL]?.id === targetToolCallId &&
+              !part[ContentTypes.TOOL_CALL]?.progress,
+          );
+          if (incompleteIndex !== undefined && incompleteIndex >= 0) {
+            targetIndex = incompleteIndex;
+          }
+
           updatedResponse = updateContent(
             updatedResponse,
-            currentIndex,
+            targetIndex,
             contentPart,
             true,
             getStepMetadata(runStep),
@@ -571,7 +679,15 @@ export default function useStepHandler({
         stepMap.current.clear();
       };
     },
-    [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages, calculateContentIndex],
+    [
+      getMessages,
+      lastAnnouncementTimeRef,
+      announcePolite,
+      setMessages,
+      updateMCPProgress,
+      setMcpActive,
+      calculateContentIndex,
+    ],
   );
 
   const clearStepMaps = useCallback(() => {

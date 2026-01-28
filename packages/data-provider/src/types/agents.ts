@@ -81,6 +81,8 @@ export namespace Agents {
     auth?: string;
     /** Expiration time */
     expires_at?: number;
+    /** If true, indicates the tool call resulted in an error */
+    isError?: boolean;
   };
 
   export type ToolEndEvent = {
@@ -245,6 +247,13 @@ export namespace Agents {
     tool_calls?: ToolCallChunk[];
     auth?: string;
     expires_at?: number;
+    // Progress-related fields for MCP tools
+    progressToken?: string;
+    serverName?: string;
+    toolName?: string;
+    progress?: number;
+    total?: number;
+    message?: string;
   };
   export type AgentToolCall = FunctionToolCall | ToolCall;
   export interface ExtendedMessageContent {

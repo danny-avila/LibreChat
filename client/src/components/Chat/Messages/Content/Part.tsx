@@ -6,7 +6,7 @@ import {
   imageGenTools,
   isImageVisionTool,
 } from 'librechat-data-provider';
-import { memo } from 'react';
+import { memo, useContext } from 'react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
 import { OpenAIImageGen, EmptyText, Reasoning, ExecuteCode, AgentUpdate, Text } from './Parts';
 import { ErrorMessage } from './MessageContent';
@@ -18,6 +18,7 @@ import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import ImageGen from './ImageGen';
 import Image from './Image';
+import { MessageContext } from '~/Providers';
 
 type PartProps = {
   part?: TMessageContentParts;
@@ -30,6 +31,7 @@ type PartProps = {
 
 const Part = memo(
   ({ part, isSubmitting, attachments, isLast, showCursor, isCreatedByUser }: PartProps) => {
+    const { conversationId } = useContext(MessageContext);
     if (!part) {
       return null;
     }
@@ -147,6 +149,8 @@ const Part = memo(
             auth={toolCall.auth}
             expires_at={toolCall.expires_at}
             isLast={isLast}
+            conversationId={conversationId}
+            isError={toolCall.isError}
           />
         );
       } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
@@ -196,6 +200,8 @@ const Part = memo(
             name={toolCall.function.name}
             output={toolCall.function.output}
             isLast={isLast}
+            conversationId={conversationId}
+            isError={toolCall.function.isError}
           />
         );
       }

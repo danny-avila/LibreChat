@@ -7,6 +7,7 @@ import { useLocalize, useProgress } from '~/hooks';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
+import MCPProgress from './MCPProgress';
 import { logger, cn } from '~/utils';
 
 export default function ToolCall({
@@ -18,6 +19,8 @@ export default function ToolCall({
   output,
   attachments,
   auth,
+  conversationId,
+  isError: toolIsError,
 }: {
   initialProgress: number;
   isLast?: boolean;
@@ -28,6 +31,8 @@ export default function ToolCall({
   attachments?: TAttachment[];
   auth?: string;
   expires_at?: number;
+  conversationId?: string | null;
+  isError?: boolean;
 }) {
   const localize = useLocalize();
   const [showInfo, setShowInfo] = useState(false);
@@ -100,6 +105,9 @@ export default function ToolCall({
 
   const progress = useProgress(initialProgress);
   const cancelled = (!isSubmitting && progress < 1) || error === true;
+
+  // Type guard for conversationId
+  const hasConversationId = conversationId != null && conversationId !== '';
 
   const getFinishedText = () => {
     if (cancelled) {
@@ -181,6 +189,15 @@ export default function ToolCall({
           error={cancelled}
         />
       </div>
+      {isMCPToolCall && hasConversationId && !cancelled && progress < 1 && (
+        <div className="mt-2">
+          <MCPProgress
+            conversationId={conversationId!}
+            serverName={domain ?? ''}
+            toolName={function_name}
+          />
+        </div>
+      )}
       <div
         className="relative"
         style={{

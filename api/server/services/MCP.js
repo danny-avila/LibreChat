@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
+const { ToolMessage } = require('@langchain/core/messages');
 const { logger } = require('@librechat/data-schemas');
 const {
   Providers,
@@ -446,12 +447,16 @@ function createToolInstance({
     let abortHandler = null;
     /** @type {AbortSignal} */
     let derivedSignal = null;
+    /** @type {ReturnType<typeof getMCPManager>} */
+    let mcpManager = null;
+    /** @type {Function | null} */
+    let progressListener = null;
 
     try {
       const flowsCache = getLogStores(CacheKeys.FLOWS);
       const flowManager = getFlowStateManager(flowsCache);
       derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
-      const mcpManager = getMCPManager(userId);
+      mcpManager = getMCPManager(userId);
       const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
@@ -473,6 +478,38 @@ function createToolInstance({
         toolCall,
         streamId,
       });
+
+      // Set up progress event listener for MCP tools
+      progressListener = (progressData) => {
+        if (progressData.serverName === serverName && progressData.userId === userId) {
+          /** @type {{ id: string; delta: any }} */
+          const data = {
+            id: stepId,
+            delta: {
+              type: 'progress',
+              progressToken: progressData.progressToken,
+              progress: progressData.progress,
+              total: progressData.total,
+              message: progressData.message,
+              serverName: progressData.serverName,
+              toolName: progressData.toolName,
+            },
+          };
+
+          try {
+            const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
+            if (streamId) {
+              GenerationJobManager.emitChunk(streamId, eventData);
+            } else {
+              sendEvent(res, eventData);
+            }
+          } catch (error) {
+            logger.error(`[MCP Service] Error sending progress SSE event:`, error);
+          }
+        }
+      };
+
+      mcpManager.on('toolProgress', progressListener);
 
       if (derivedSignal) {
         abortHandler = createAbortHandler({ userId, serverName, toolName, flowManager });
@@ -502,6 +539,23 @@ function createToolInstance({
         oauthStart,
         oauthEnd,
       });
+
+      // Extract isError flag from result tuple [content, artifacts, isError]
+      const isError = Array.isArray(result) && result.length > 2 ? result[2] : false;
+
+      // If there's an error, return a ToolMessage with error status
+      if (isError && config?.toolCall?.id) {
+        const content = Array.isArray(result) ? result[0] : result;
+        const artifact = Array.isArray(result) && result.length > 1 ? result[1] : undefined;
+
+        return new ToolMessage({
+          name: normalizedToolKey,
+          tool_call_id: config.toolCall.id,
+          content: typeof content === 'string' ? content : JSON.stringify(content),
+          status: 'error',
+          artifact,
+        });
+      }
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];
@@ -533,6 +587,11 @@ function createToolInstance({
         `[MCP][${serverName}][${toolName}] tool call failed${error?.message ? `: ${error?.message}` : '.'}`,
       );
     } finally {
+      // Clean up progress listener
+      if (mcpManager && progressListener) {
+        mcpManager.off('toolProgress', progressListener);
+      }
+
       // Clean up abort handler to prevent memory leaks
       if (abortHandler && derivedSignal) {
         derivedSignal.removeEventListener('abort', abortHandler);
