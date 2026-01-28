@@ -52,7 +52,7 @@ export default function BasicInfoSection() {
             })}
             className={cn(errors.title && 'border-red-500 focus:border-red-500')}
           />
-          {errors.title && <p className="text-xs text-red-500">{errors.title.message}</p>}
+          {errors.title && <p className="text-text-destructive text-xs">{errors.title.message}</p>}
         </div>
       </div>
 
