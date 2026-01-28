@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Trans } from 'react-i18next';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
+import { Link } from 'react-router-dom';
 import {
   TrashIcon,
   ArchiveRestore,
@@ -166,28 +167,28 @@ export default function ArchivedChatsTable({
         cell: ({ row }) => {
           const { conversationId, title } = row.original;
           return (
-            <button
-              type="button"
-              className="group flex items-center gap-2 truncate rounded-sm"
-              onClick={() => window.open(`/c/${conversationId}`, '_blank')}
-              aria-label={`${title} ${localize('com_ui_opens_new_tab')}`}
-            >
+            <div className="flex items-center gap-2">
               <MinimalIcon
                 endpoint={row.original.endpoint}
                 size={28}
                 isCreatedByUser={false}
                 iconClassName="size-4"
               />
-              <span className="flex items-center gap-1 text-blue-600">
-                <span className="truncate underline decoration-1 underline-offset-2 group-hover:decoration-2">
-                  {title}
-                </span>
+              <Link
+                to={`/c/${conversationId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex items-center gap-1 truncate rounded-sm text-blue-600 underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                title={title}
+                aria-label={localize('com_ui_open_archived_chat_new_tab_title', { title })}
+              >
+                <span className="truncate">{title}</span>
                 <ExternalLink
                   className="size-3 flex-shrink-0 opacity-70 group-hover:opacity-100"
                   aria-hidden="true"
                 />
-              </span>
-            </button>
+              </Link>
+            </div>
           );
         },
         meta: {
