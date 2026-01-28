@@ -16,6 +16,8 @@ export type SearchApiKeyFormData = {
   firecrawlApiUrl: string;
   jinaApiKey: string;
   jinaApiUrl: string;
+  crawl4aiApiUrl: string;
+  crawl4aiApiKey: string;
   cohereApiKey: string;
 };
 
@@ -56,6 +58,8 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
         firecrawlApiUrl: data.firecrawlApiUrl,
         jinaApiKey: data.jinaApiKey,
         jinaApiUrl: data.jinaApiUrl,
+        crawl4aiApiUrl: data.crawl4aiApiUrl,
+        crawl4aiApiKey: data.crawl4aiApiKey,
         cohereApiKey: data.cohereApiKey,
       }).reduce(
         (acc, [key, value]) => {
