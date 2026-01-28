@@ -157,7 +157,7 @@ jest.mock('../DuplicateAgent', () => ({
   ),
 }));
 
-jest.mock('~/components', () => ({
+jest.mock('@librechat/client', () => ({
   Spinner: () => <div data-testid="spinner" />,
 }));
 
@@ -225,6 +225,7 @@ describe('AgentFooter', () => {
     updateMutation: mockUpdateMutation,
     setActivePanel: mockSetActivePanel,
     setCurrentAgentId: mockSetCurrentAgentId,
+    isAvatarUploading: false,
   };
 
   beforeEach(() => {
@@ -275,14 +276,14 @@ describe('AgentFooter', () => {
       expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
       expect(screen.getByTestId('grant-access-dialog')).toBeInTheDocument();
       expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
-      expect(document.querySelector('.spinner')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
     });
 
     test('handles loading states for createMutation', () => {
       const { unmount } = render(
         <AgentFooter {...defaultProps} createMutation={createBaseMutation(true)} />,
       );
-      expect(document.querySelector('.spinner')).toBeInTheDocument();
+      expect(screen.getByTestId('spinner')).toBeInTheDocument();
       expect(screen.queryByText('Save')).not.toBeInTheDocument();
       // Find the submit button (the one with aria-busy attribute)
       const buttons = screen.getAllByRole('button');
@@ -294,8 +295,17 @@ describe('AgentFooter', () => {
 
     test('handles loading states for updateMutation', () => {
       render(<AgentFooter {...defaultProps} updateMutation={createBaseMutation(true)} />);
-      expect(document.querySelector('.spinner')).toBeInTheDocument();
+      expect(screen.getByTestId('spinner')).toBeInTheDocument();
       expect(screen.queryByText('Save')).not.toBeInTheDocument();
+    });
+
+    test('handles loading state when avatar upload is in progress', () => {
+      render(<AgentFooter {...defaultProps} isAvatarUploading={true} />);
+      expect(screen.getByTestId('spinner')).toBeInTheDocument();
+      const buttons = screen.getAllByRole('button');
+      const submitButton = buttons.find((button) => button.getAttribute('type') === 'submit');
+      expect(submitButton).toBeDisabled();
+      expect(submitButton).toHaveAttribute('aria-busy', 'true');
     });
   });
 

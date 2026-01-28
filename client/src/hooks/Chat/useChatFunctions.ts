@@ -1,21 +1,24 @@
 import { v4 } from 'uuid';
 import { cloneDeep } from 'lodash';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import {
   Constants,
   QueryKeys,
   ContentTypes,
   EModelEndpoint,
+  getEndpointField,
   isAgentsEndpoint,
   parseCompactConvo,
   replaceSpecialVars,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import type {
   TMessage,
   TSubmission,
   TConversation,
+  TStartupConfig,
   TEndpointOption,
   TEndpointsConfig,
   EndpointSchemaKey,
@@ -24,10 +27,9 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { logger, createDualMessageContent } from '~/utils';
 import store, { useGetEphemeralAgent } from '~/store';
-import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
-import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks';
 
 const logChatRequest = (request: Record<string, unknown>) => {
@@ -68,6 +70,7 @@ export default function useChatFunctions({
   const getEphemeralAgent = useGetEphemeralAgent();
   const isTemporary = useRecoilValue(store.isTemporary);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
+  const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
 
@@ -88,6 +91,7 @@ export default function useChatFunctions({
       isEdited = false,
       overrideMessages,
       overrideFiles,
+      addedConvo,
     } = {},
   ) => {
     setShowStopButton(false);
@@ -166,7 +170,9 @@ export default function useChatFunctions({
     }
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+    const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
+    const iconURL = conversation?.iconURL;
 
     /** This becomes part of the `endpointOption` */
     const convo = parseCompactConvo({
@@ -247,9 +253,9 @@ export default function useChatFunctions({
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
-      iconURL: convo?.iconURL,
       model: convo?.model,
       error: false,
+      iconURL,
     };
 
     if (isAssistantsEndpoint(endpoint)) {
@@ -280,16 +286,19 @@ export default function useChatFunctions({
             contentPart[ContentTypes.TEXT] = part[ContentTypes.TEXT];
           }
         }
+      } else if (addedConvo && conversation) {
+        // Pre-populate placeholders for smooth UI - these will be overridden/extended
+        // as SSE events arrive with actual content, preserving the agent-based agentId
+        initialResponse.content = createDualMessageContent(
+          conversation,
+          addedConvo,
+          endpointsConfig,
+          startupConfig?.modelSpecs?.list,
+        );
       } else {
-        initialResponse.content = [
-          {
-            type: ContentTypes.TEXT,
-            [ContentTypes.TEXT]: {
-              value: '',
-            },
-          },
-        ];
+        initialResponse.content = [];
       }
+      setIsSubmitting(true);
       setShowStopButton(true);
     }
 
@@ -317,6 +326,7 @@ export default function useChatFunctions({
       isTemporary,
       ephemeralAgent,
       editedContent,
+      addedConvo,
     };
 
     if (isRegenerate) {
@@ -332,12 +342,15 @@ export default function useChatFunctions({
     logger.dir('message_stream', submission, { depth: null });
   };
 
-  const regenerate = ({ parentMessageId }) => {
+  const regenerate = ({ parentMessageId }, options?: { addedConvo?: TConversation | null }) => {
     const messages = getMessages();
     const parentMessage = messages?.find((element) => element.messageId == parentMessageId);
 
     if (parentMessage && parentMessage.isCreatedByUser) {
-      ask({ ...parentMessage }, { isRegenerate: true });
+      ask(
+        { ...parentMessage },
+        { isRegenerate: true, addedConvo: options?.addedConvo ?? undefined },
+      );
     } else {
       console.error(
         'Failed to regenerate the message: parentMessage not found or not created by user.',

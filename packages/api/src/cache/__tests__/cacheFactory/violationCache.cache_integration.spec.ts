@@ -26,17 +26,13 @@ describe('violationCache', () => {
   beforeEach(() => {
     originalEnv = { ...process.env };
 
-    // Clear cache-related env vars
-    delete process.env.USE_REDIS;
-    delete process.env.REDIS_URI;
-    delete process.env.USE_REDIS_CLUSTER;
-    delete process.env.REDIS_PING_INTERVAL;
-    delete process.env.REDIS_KEY_PREFIX;
-
-    // Set test configuration
+    // Set test configuration with fallback defaults for local testing
     process.env.REDIS_PING_INTERVAL = '0';
     process.env.REDIS_KEY_PREFIX = 'Cache-Integration-Test';
     process.env.REDIS_RETRY_MAX_ATTEMPTS = '5';
+    process.env.USE_REDIS = process.env.USE_REDIS || 'true';
+    process.env.USE_REDIS_CLUSTER = process.env.USE_REDIS_CLUSTER || 'false';
+    process.env.REDIS_URI = process.env.REDIS_URI || 'redis://127.0.0.1:6379';
 
     // Clear require cache to reload modules
     jest.resetModules();
@@ -48,10 +44,6 @@ describe('violationCache', () => {
   });
 
   test('should create violation cache with Redis when USE_REDIS is true', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
     const redisClients = await import('../../redisClients');
     const { ioredisClient } = redisClients;
@@ -119,10 +111,6 @@ describe('violationCache', () => {
   });
 
   test('should respect namespace prefixing', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
     const redisClients = await import('../../redisClients');
     const { ioredisClient } = redisClients;
@@ -157,10 +145,6 @@ describe('violationCache', () => {
   });
 
   test('should respect TTL settings', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
     const redisClients = await import('../../redisClients');
     const { ioredisClient } = redisClients;
@@ -193,10 +177,6 @@ describe('violationCache', () => {
   });
 
   test('should handle complex violation data structures', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
     const redisClients = await import('../../redisClients');
     const { ioredisClient } = redisClients;

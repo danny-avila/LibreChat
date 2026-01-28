@@ -1,13 +1,16 @@
 import type {
   TEndpoint,
   FileSources,
+  TFileConfig,
   TAzureConfig,
   TCustomConfig,
   TMemoryConfig,
   EModelEndpoint,
+  TVertexAIConfig,
   TAgentsEndpoint,
   TCustomEndpoints,
   TAssistantEndpoint,
+  TAnthropicEndpoint,
 } from 'librechat-data-provider';
 
 export type JsonSchemaType = {
@@ -81,8 +84,10 @@ export interface AppConfig {
   speech?: TCustomConfig['speech'];
   /** MCP server configuration */
   mcpConfig?: TCustomConfig['mcpServers'] | null;
+  /** MCP settings (domain allowlist, etc.) */
+  mcpSettings?: TCustomConfig['mcpSettings'] | null;
   /** File configuration */
-  fileConfig?: TCustomConfig['fileConfig'];
+  fileConfig?: TFileConfig;
   /** Secure image links configuration */
   secureImageLinks?: TCustomConfig['secureImageLinks'];
   /** Processed model specifications */
@@ -96,10 +101,11 @@ export interface AppConfig {
     google?: Partial<TEndpoint>;
     /** Bedrock endpoint configuration */
     bedrock?: Partial<TEndpoint>;
-    /** Anthropic endpoint configuration */
-    anthropic?: Partial<TEndpoint>;
-    /** GPT plugins endpoint configuration */
-    gptPlugins?: Partial<TEndpoint>;
+    /** Anthropic endpoint configuration with optional Vertex AI support */
+    anthropic?: Partial<TAnthropicEndpoint> & {
+      /** Validated Vertex AI configuration */
+      vertexConfig?: TVertexAIConfig;
+    };
     /** Azure OpenAI endpoint configuration */
     azureOpenAI?: TAzureConfig;
     /** Assistants endpoint configuration */

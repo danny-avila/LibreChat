@@ -7,4 +7,5 @@ export interface IBanner extends Document {
   displayTo?: Date;
   type: 'banner' | 'popup';
   isPublic: boolean;
+  persistable: boolean;
 }

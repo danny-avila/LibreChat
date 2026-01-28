@@ -56,6 +56,11 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                       aria-describedby={`${authField}-error`}
                       aria-label={config.label}
                       aria-required="true"
+                      /* autoFocus is generally disabled due to the fact that it can disorient users,
+                       * but in this case, the required field must be navigated to anyways, and the component's functionality
+                       * emulates that of a new modal opening, where users would expect focus to be shifted to the new content */
+                      // eslint-disable-next-line jsx-a11y/no-autofocus
+                      autoFocus={i === 0}
                       {...register(authField, {
                         required: `${config.label} is required.`,
                         minLength: {
@@ -70,7 +75,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                 </HoverCard>
                 {errors[authField] && (
                   <span role="alert" className="mt-1 text-sm text-red-400">
-                    {errors[authField].message as string}
+                    {String(errors?.[authField]?.message ?? '')}
                   </span>
                 )}
               </div>
@@ -93,7 +98,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
           >
             <div className="flex items-center justify-center gap-2">
               {localize('com_ui_save')}
-              <Save className="flex h-4 w-4 items-center stroke-2" />
+              <Save className="flex h-4 w-4 items-center stroke-2" aria-hidden="true" />
             </div>
           </button>
         </form>

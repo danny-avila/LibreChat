@@ -15,7 +15,6 @@ import { SidePanelGroup } from '~/components/SidePanel';
 import { OpenSidebar } from '~/components/Chat/Menus';
 import { cn, clearMessagesCache } from '~/utils';
 import CategoryTabs from './CategoryTabs';
-import AgentDetail from './AgentDetail';
 import SearchBar from './SearchBar';
 import AgentGrid from './AgentGrid';
 import store from '~/store';
@@ -45,7 +44,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
   // Get URL parameters
   const searchQuery = searchParams.get('q') || '';
-  const selectedAgentId = searchParams.get('agent_id') || '';
 
   // Animation state
   type Direction = 'left' | 'right';
@@ -57,10 +55,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
   // Ref for the scrollable container to enable infinite scroll
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  // Local state
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<t.Agent | null>(null);
 
   // Set page title
   useDocumentTitle(`${localize('com_agents_marketplace')} | LibreChat`);
@@ -102,28 +96,12 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   }, [category, categoriesQuery.data, displayCategory]);
 
   /**
-   * Handle agent card selection
-   *
-   * @param agent - The selected agent object
+   * Handle agent card selection - updates URL for deep linking
    */
   const handleAgentSelect = (agent: t.Agent) => {
-    // Update URL with selected agent
     const newParams = new URLSearchParams(searchParams);
     newParams.set('agent_id', agent.id);
     setSearchParams(newParams);
-    setSelectedAgent(agent);
-    setIsDetailOpen(true);
-  };
-
-  /**
-   * Handle closing the agent detail dialog
-   */
-  const handleDetailClose = () => {
-    const newParams = new URLSearchParams(searchParams);
-    newParams.delete('agent_id');
-    setSearchParams(newParams);
-    setSelectedAgent(null);
-    setIsDetailOpen(false);
   };
 
   /**
@@ -229,11 +207,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     newConversation();
   };
 
-  // Check if a detail view should be open based on URL
-  useEffect(() => {
-    setIsDetailOpen(!!selectedAgentId);
-  }, [selectedAgentId]);
-
   // Layout configuration for SidePanelGroup
   const defaultLayout = useMemo(() => {
     const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
@@ -295,7 +268,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                               variant="outline"
                               data-testid="agents-new-chat-button"
                               aria-label={localize('com_ui_new_chat')}
-                              className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-hover max-md:hidden"
+                              className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-active-alt max-md:hidden"
                               onClick={handleNewChat}
                             >
                               <NewChatIcon />
@@ -512,14 +485,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                   {/* Note: Using Tailwind keyframes for slide in/out animations */}
                 </div>
               </div>
-              {/* Agent detail dialog */}
-              {isDetailOpen && selectedAgent && (
-                <AgentDetail
-                  agent={selectedAgent}
-                  isOpen={isDetailOpen}
-                  onClose={handleDetailClose}
-                />
-              )}
             </div>
           </main>
         </SidePanelGroup>

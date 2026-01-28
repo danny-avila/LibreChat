@@ -18,6 +18,8 @@ jest.mock('~/server/services/Config', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn(() => false),
+  isEmailDomainAllowed: jest.fn(() => true),
+  findOpenIDUser: jest.requireActual('@librechat/api').findOpenIDUser,
   getBalanceConfig: jest.fn(() => ({
     enabled: false,
   })),
@@ -444,6 +446,46 @@ describe('setupOpenId', () => {
     const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
     expect(callOptions.usePKCE).toBe(false);
     expect(callOptions.params?.code_challenge_method).toBeUndefined();
+  });
+
+  it('should attach federatedTokens to user object for token propagation', async () => {
+    // Arrange - setup tokenset with access token, refresh token, and expiration
+    const tokensetWithTokens = {
+      ...tokenset,
+      access_token: 'mock_access_token_abc123',
+      refresh_token: 'mock_refresh_token_xyz789',
+      expires_at: 1234567890,
+    };
+
+    // Act - validate with the tokenset containing tokens
+    const { user } = await validate(tokensetWithTokens);
+
+    // Assert - verify federatedTokens object is attached with correct values
+    expect(user.federatedTokens).toBeDefined();
+    expect(user.federatedTokens).toEqual({
+      access_token: 'mock_access_token_abc123',
+      refresh_token: 'mock_refresh_token_xyz789',
+      expires_at: 1234567890,
+    });
+  });
+
+  it('should include tokenset along with federatedTokens', async () => {
+    // Arrange
+    const tokensetWithTokens = {
+      ...tokenset,
+      access_token: 'test_access_token',
+      refresh_token: 'test_refresh_token',
+      expires_at: 9999999999,
+    };
+
+    // Act
+    const { user } = await validate(tokensetWithTokens);
+
+    // Assert - both tokenset and federatedTokens should be present
+    expect(user.tokenset).toBeDefined();
+    expect(user.federatedTokens).toBeDefined();
+    expect(user.tokenset.access_token).toBe('test_access_token');
+    expect(user.federatedTokens.access_token).toBe('test_access_token');
   });
 
   it('should set role to "ADMIN" if OPENID_ADMIN_ROLE is set and user has that role', async () => {

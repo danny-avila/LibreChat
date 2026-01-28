@@ -5,15 +5,28 @@ const { logoutUser } = require('~/server/services/AuthService');
 const { getOpenIdConfig } = require('~/strategies');
 
 const logoutController = async (req, res) => {
-  const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
+  const parsedCookies = req.headers.cookie ? cookies.parse(req.headers.cookie) : {};
+  const isOpenIdUser = req.user?.openidId != null && req.user?.provider === 'openid';
+
+  /** For OpenID users, read refresh token from session; for others, use cookie */
+  let refreshToken;
+  if (isOpenIdUser && req.session?.openidTokens) {
+    refreshToken = req.session.openidTokens.refreshToken;
+    delete req.session.openidTokens;
+  }
+  refreshToken = refreshToken || parsedCookies.refreshToken;
+
   try {
     const logout = await logoutUser(req, refreshToken);
     const { status, message } = logout;
+
     res.clearCookie('refreshToken');
+    res.clearCookie('openid_access_token');
+    res.clearCookie('openid_user_id');
     res.clearCookie('token_provider');
     const response = { message };
     if (
-      req.user.openidId != null &&
+      isOpenIdUser &&
       isEnabled(process.env.OPENID_USE_END_SESSION_ENDPOINT) &&
       process.env.OPENID_ISSUER
     ) {
@@ -27,7 +40,12 @@ const logoutController = async (req, res) => {
           ? openIdConfig.serverMetadata().end_session_endpoint
           : null;
         if (endSessionEndpoint) {
-          response.redirect = endSessionEndpoint;
+          const endSessionUrl = new URL(endSessionEndpoint);
+          /** Redirect back to app's login page after IdP logout */
+          const postLogoutRedirectUri =
+            process.env.OPENID_POST_LOGOUT_REDIRECT_URI || `${process.env.DOMAIN_CLIENT}/login`;
+          endSessionUrl.searchParams.set('post_logout_redirect_uri', postLogoutRedirectUri);
+          response.redirect = endSessionUrl.toString();
         } else {
           logger.warn(
             '[logoutController] end_session_endpoint not found in OpenID issuer metadata. Please verify that the issuer is correct.',

@@ -1,9 +1,9 @@
 const path = require('path');
 const { v4 } = require('uuid');
 const axios = require('axios');
-const { logAxiosError } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
+const { logAxiosError, getBasePath } = require('@librechat/api');
 const {
   Tools,
   FileContext,
@@ -14,7 +14,7 @@ const {
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
-const { createFile, getFiles, updateFile } = require('~/models/File');
+const { createFile, getFiles, updateFile } = require('~/models');
 
 /**
  * Process OpenAI image files, convert to target format, save and return file metadata.
@@ -41,11 +41,12 @@ const processCodeOutput = async ({
   const appConfig = req.config;
   const currentDate = new Date();
   const baseURL = getCodeBaseURL();
+  const basePath = getBasePath();
   const fileExt = path.extname(name);
   if (!fileExt || !imageExtRegex.test(name)) {
     return {
       filename: name,
-      filepath: `/api/files/code/download/${session_id}/${id}`,
+      filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
       /** Note: expires 24 hours after creation */
       expiresAt: currentDate.getTime() + 86400000,
       conversationId,

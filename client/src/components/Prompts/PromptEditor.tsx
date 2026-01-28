@@ -55,7 +55,8 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
 
   return (
     <div className="flex max-h-[85vh] flex-col sm:max-h-[85vh]">
-      <h2 className="flex items-center justify-between rounded-t-xl border border-border-light py-1.5 pl-3 text-sm font-semibold text-text-primary sm:py-2 sm:pl-4 sm:text-base">
+      <h2 className="sr-only">{localize('com_ui_control_bar')}</h2>
+      <div className="flex items-center justify-between rounded-t-xl border border-border-light py-1.5 pl-3 text-sm font-semibold text-text-primary sm:py-2 sm:pl-4 sm:text-base">
         <span className="max-w-[200px] truncate sm:max-w-none">
           {localize('com_ui_prompt_text')}
         </span>
@@ -78,7 +79,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             />
           </button>
         </div>
-      </h2>
+      </div>
       <div
         role="button"
         className={cn(

@@ -55,7 +55,7 @@ const MenuItem: FC<MenuItemProps> = ({
     >
       <div className="flex grow items-center justify-between gap-2">
         <div>
-          <div className={cn('flex items-center gap-1 ')}>
+          <div className={cn('flex items-center gap-1')}>
             {icon != null ? icon : null}
             <div className={cn('truncate', textClassName)}>
               {title}
@@ -72,7 +72,7 @@ const MenuItem: FC<MenuItemProps> = ({
               viewBox="0 0 24 24"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
-              className="icon-md block "
+              className="icon-md block"
             >
               <path
                 fillRule="evenodd"

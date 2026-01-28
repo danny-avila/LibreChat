@@ -4,11 +4,34 @@ import {
   defaultEndpoints,
   modularEndpoints,
   LocalStorageKeys,
+  getEndpointField,
   isAgentsEndpoint,
+  isEphemeralAgentId,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';
+
+/**
+ * Clears model for non-ephemeral agent conversations.
+ * Agents use their configured model internally, so the conversation model should be undefined.
+ * Mutates the template in place.
+ */
+export function clearModelForNonEphemeralAgent<
+  T extends {
+    endpoint?: EModelEndpoint | string | null;
+    agent_id?: string | null;
+    model?: string | null;
+  },
+>(template: T): void {
+  if (
+    isAgentsEndpoint(template.endpoint) &&
+    template.agent_id &&
+    !isEphemeralAgentId(template.agent_id)
+  ) {
+    template.model = undefined as T['model'];
+  }
+}
 
 export const getEntityName = ({
   name = '',
@@ -57,24 +80,6 @@ export const getAvailableEndpoints = (
 
   return availableEndpoints;
 };
-
-/** Get the specified field from the endpoint config */
-export function getEndpointField<K extends keyof t.TConfig>(
-  endpointsConfig: t.TEndpointsConfig | undefined | null,
-  endpoint: EModelEndpoint | string | null | undefined,
-  property: K,
-): t.TConfig[K] | undefined {
-  if (!endpointsConfig || endpoint === null || endpoint === undefined) {
-    return undefined;
-  }
-
-  const config = endpointsConfig[endpoint];
-  if (!config) {
-    return undefined;
-  }
-
-  return config[property];
-}
 
 export function mapEndpoints(endpointsConfig: t.TEndpointsConfig) {
   const filter = getEndpointsFilter(endpointsConfig);
@@ -141,6 +146,18 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
     endpoint: newEndpoint,
     conversationId: 'new',
   };
+
+  // Reset agent_id if switching to a non-agents endpoint but template has a non-ephemeral agent_id
+  if (
+    !isAgentsEndpoint(newEndpoint) &&
+    template.agent_id &&
+    !isEphemeralAgentId(template.agent_id)
+  ) {
+    template.agent_id = Constants.EPHEMERAL_AGENT_ID;
+  }
+
+  // Clear model for non-ephemeral agents - agents use their configured model internally
+  clearModelForNonEphemeralAgent(template);
 
   const isAssistantSwitch =
     isAssistantsEndpoint(newEndpoint) &&

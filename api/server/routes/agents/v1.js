@@ -25,7 +25,7 @@ const checkGlobalAgentShare = generateCheckAccess({
   permissionType: PermissionTypes.AGENTS,
   permissions: [Permissions.USE, Permissions.CREATE],
   bodyProps: {
-    [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
+    [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
   },
   getRoleByName,
 });
@@ -146,7 +146,15 @@ router.delete(
  * @param {number} req.body.version_index - Index of the version to revert to.
  * @returns {Agent} 200 - success response - application/json
  */
-router.post('/:id/revert', checkGlobalAgentShare, v1.revertAgentVersion);
+router.post(
+  '/:id/revert',
+  checkGlobalAgentShare,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'id',
+  }),
+  v1.revertAgentVersion,
+);
 
 /**
  * Returns a list of agents.

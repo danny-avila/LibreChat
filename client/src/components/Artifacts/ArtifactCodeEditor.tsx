@@ -1,5 +1,7 @@
+import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
 import debounce from 'lodash/debounce';
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { KeyBinding } from '@codemirror/view';
+import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
 import {
   useSandpack,
   SandpackCodeEditor,
@@ -10,116 +12,143 @@ import type { SandpackBundlerFile } from '@codesandbox/sandpack-client';
 import type { CodeEditorRef } from '@codesandbox/sandpack-react';
 import type { ArtifactFiles, Artifact } from '~/common';
 import { useEditArtifact, useGetStartupConfig } from '~/data-provider';
-import { useEditorContext, useArtifactsContext } from '~/Providers';
+import { useMutationState, useCodeState } from '~/Providers/EditorContext';
+import { useArtifactsContext } from '~/Providers';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
 
-const createDebouncedMutation = (
-  callback: (params: {
-    index: number;
-    messageId: string;
-    original: string;
-    updated: string;
-  }) => void,
-) => debounce(callback, 500);
-
-const CodeEditor = ({
-  fileKey,
-  readOnly,
-  artifact,
-  editorRef,
-}: {
-  fileKey: string;
-  readOnly?: boolean;
-  artifact: Artifact;
-  editorRef: React.MutableRefObject<CodeEditorRef>;
-}) => {
-  const { sandpack } = useSandpack();
-  const [currentUpdate, setCurrentUpdate] = useState<string | null>(null);
-  const { isMutating, setIsMutating, setCurrentCode } = useEditorContext();
-  const editArtifact = useEditArtifact({
-    onMutate: (vars) => {
-      setIsMutating(true);
-      setCurrentUpdate(vars.updated);
-    },
-    onSuccess: () => {
-      setIsMutating(false);
-      setCurrentUpdate(null);
-    },
-    onError: () => {
-      setIsMutating(false);
-    },
-  });
-
-  const mutationCallback = useCallback(
-    (params: { index: number; messageId: string; original: string; updated: string }) => {
-      editArtifact.mutate(params);
-    },
-    [editArtifact],
-  );
-
-  const debouncedMutation = useMemo(
-    () => createDebouncedMutation(mutationCallback),
-    [mutationCallback],
-  );
-
-  useEffect(() => {
-    if (readOnly) {
-      return;
-    }
-    if (isMutating) {
-      return;
-    }
-    if (artifact.index == null) {
-      return;
-    }
-
-    const currentCode = (sandpack.files['/' + fileKey] as SandpackBundlerFile | undefined)?.code;
-    const isNotOriginal =
-      currentCode && artifact.content != null && currentCode.trim() !== artifact.content.trim();
-    const isNotRepeated =
-      currentUpdate == null
-        ? true
-        : currentCode != null && currentCode.trim() !== currentUpdate.trim();
-
-    if (artifact.content && isNotOriginal && isNotRepeated) {
-      setCurrentCode(currentCode);
-      debouncedMutation({
-        index: artifact.index,
-        messageId: artifact.messageId ?? '',
-        original: artifact.content,
-        updated: currentCode,
-      });
-    }
-
-    return () => {
-      debouncedMutation.cancel();
-    };
-  }, [
+const CodeEditor = memo(
+  ({
     fileKey,
-    artifact.index,
-    artifact.content,
-    artifact.messageId,
     readOnly,
-    isMutating,
-    currentUpdate,
-    setIsMutating,
-    sandpack.files,
-    setCurrentCode,
-    debouncedMutation,
-  ]);
+    artifact,
+    editorRef,
+  }: {
+    fileKey: string;
+    readOnly?: boolean;
+    artifact: Artifact;
+    editorRef: React.MutableRefObject<CodeEditorRef>;
+  }) => {
+    const { sandpack } = useSandpack();
+    const [currentUpdate, setCurrentUpdate] = useState<string | null>(null);
+    const { isMutating, setIsMutating } = useMutationState();
+    const { setCurrentCode } = useCodeState();
+    const editArtifact = useEditArtifact({
+      onMutate: (vars) => {
+        setIsMutating(true);
+        setCurrentUpdate(vars.updated);
+      },
+      onSuccess: () => {
+        setIsMutating(false);
+        setCurrentUpdate(null);
+      },
+      onError: () => {
+        setIsMutating(false);
+      },
+    });
 
-  return (
-    <SandpackCodeEditor
-      ref={editorRef}
-      showTabs={false}
-      showRunButton={false}
-      showLineNumbers={true}
-      showInlineErrors={true}
-      readOnly={readOnly === true}
-      className="hljs language-javascript bg-black"
-    />
-  );
-};
+    /**
+     * Create stable debounced mutation that doesn't depend on changing callbacks
+     * Use refs to always access the latest values without recreating the debounce
+     */
+    const artifactRef = useRef(artifact);
+    const isMutatingRef = useRef(isMutating);
+    const currentUpdateRef = useRef(currentUpdate);
+    const editArtifactRef = useRef(editArtifact);
+    const setCurrentCodeRef = useRef(setCurrentCode);
+
+    useEffect(() => {
+      artifactRef.current = artifact;
+    }, [artifact]);
+
+    useEffect(() => {
+      isMutatingRef.current = isMutating;
+    }, [isMutating]);
+
+    useEffect(() => {
+      currentUpdateRef.current = currentUpdate;
+    }, [currentUpdate]);
+
+    useEffect(() => {
+      editArtifactRef.current = editArtifact;
+    }, [editArtifact]);
+
+    useEffect(() => {
+      setCurrentCodeRef.current = setCurrentCode;
+    }, [setCurrentCode]);
+
+    /**
+     * Create debounced mutation once - never recreate it
+     * All values are accessed via refs so they're always current
+     */
+    const debouncedMutation = useMemo(
+      () =>
+        debounce((code: string) => {
+          if (readOnly) {
+            return;
+          }
+          if (isMutatingRef.current) {
+            return;
+          }
+          if (artifactRef.current.index == null) {
+            return;
+          }
+
+          const artifact = artifactRef.current;
+          const artifactIndex = artifact.index;
+          const isNotOriginal =
+            code && artifact.content != null && code.trim() !== artifact.content.trim();
+          const isNotRepeated =
+            currentUpdateRef.current == null
+              ? true
+              : code != null && code.trim() !== currentUpdateRef.current.trim();
+
+          if (artifact.content && isNotOriginal && isNotRepeated && artifactIndex != null) {
+            setCurrentCodeRef.current(code);
+            editArtifactRef.current.mutate({
+              index: artifactIndex,
+              messageId: artifact.messageId ?? '',
+              original: artifact.content,
+              updated: code,
+            });
+          }
+        }, 500),
+      [readOnly],
+    );
+
+    /**
+     * Listen to Sandpack file changes and trigger debounced mutation
+     */
+    useEffect(() => {
+      const currentCode = (sandpack.files['/' + fileKey] as SandpackBundlerFile | undefined)?.code;
+      if (currentCode) {
+        debouncedMutation(currentCode);
+      }
+    }, [sandpack.files, fileKey, debouncedMutation]);
+
+    /**
+     * Cleanup: cancel pending mutations when component unmounts or artifact changes
+     */
+    useEffect(() => {
+      return () => {
+        debouncedMutation.cancel();
+      };
+    }, [artifact.id, debouncedMutation]);
+
+    return (
+      <SandpackCodeEditor
+        ref={editorRef}
+        showTabs={false}
+        showRunButton={false}
+        showLineNumbers={true}
+        showInlineErrors={true}
+        readOnly={readOnly === true}
+        extensions={[autocompletion()]}
+        extensionsKeymap={Array.from<KeyBinding>(completionKeymap)}
+        className="hljs language-javascript bg-black"
+      />
+    );
+  },
+);
 
 export const ArtifactCodeEditor = function ({
   files,
@@ -128,6 +157,7 @@ export const ArtifactCodeEditor = function ({
   artifact,
   editorRef,
   sharedProps,
+  readOnly: externalReadOnly,
 }: {
   fileKey: string;
   artifact: Artifact;
@@ -135,6 +165,7 @@ export const ArtifactCodeEditor = function ({
   template: SandpackProviderProps['template'];
   sharedProps: Partial<SandpackProviderProps>;
   editorRef: React.MutableRefObject<CodeEditorRef>;
+  readOnly?: boolean;
 }) {
   const { data: config } = useGetStartupConfig();
   const { isSubmitting } = useArtifactsContext();
@@ -148,10 +179,11 @@ export const ArtifactCodeEditor = function ({
       bundlerURL: template === 'static' ? config.staticBundlerURL : config.bundlerURL,
     };
   }, [config, template, fileKey]);
-  const [readOnly, setReadOnly] = useState(isSubmitting ?? false);
+  const initialReadOnly = (externalReadOnly ?? false) || (isSubmitting ?? false);
+  const [readOnly, setReadOnly] = useState(initialReadOnly);
   useEffect(() => {
-    setReadOnly(isSubmitting ?? false);
-  }, [isSubmitting]);
+    setReadOnly((externalReadOnly ?? false) || (isSubmitting ?? false));
+  }, [isSubmitting, externalReadOnly]);
 
   if (Object.keys(files).length === 0) {
     return null;

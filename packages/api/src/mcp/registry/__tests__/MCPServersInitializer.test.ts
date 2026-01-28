@@ -5,7 +5,14 @@ import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPConnection } from '~/mcp/connection';
 import { registryStatusCache } from '~/mcp/registry/cache/RegistryStatusCache';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
-import { mcpServersRegistry as registry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+
+const FIXED_TIME = 1699564800000;
+const originalDateNow = Date.now;
+Date.now = jest.fn(() => FIXED_TIME);
+
+// Mock mongoose for registry initialization
+const mockMongoose = {} as typeof import('mongoose');
 
 // Mock external dependencies
 jest.mock('../../MCPConnectionFactory');
@@ -23,6 +30,18 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
+// Mock ServerConfigsDB to avoid mongoose dependency
+jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
+  ServerConfigsDB: jest.fn().mockImplementation(() => ({
+    get: jest.fn().mockResolvedValue(undefined),
+    getAll: jest.fn().mockResolvedValue({}),
+    add: jest.fn().mockResolvedValue(undefined),
+    update: jest.fn().mockResolvedValue(undefined),
+    remove: jest.fn().mockResolvedValue(undefined),
+    reset: jest.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 const mockLogger = logger as jest.Mocked<typeof logger>;
 const mockInspect = MCPServerInspector.inspect as jest.MockedFunction<
   typeof MCPServerInspector.inspect
@@ -30,6 +49,11 @@ const mockInspect = MCPServerInspector.inspect as jest.MockedFunction<
 
 describe('MCPServersInitializer', () => {
   let mockConnection: jest.Mocked<MCPConnection>;
+  let registry: MCPServersRegistry;
+
+  afterAll(() => {
+    Date.now = originalDateNow;
+  });
 
   const testConfigs: t.MCPServers = {
     disabled_server: {
@@ -40,7 +64,7 @@ describe('MCPServersInitializer', () => {
     },
     oauth_server: {
       type: 'streamable-http',
-      url: 'https://api.example.com/mcp',
+      url: 'https://api.example.com/mcp-oauth',
     },
     file_tools_server: {
       type: 'stdio',
@@ -51,6 +75,10 @@ describe('MCPServersInitializer', () => {
       type: 'stdio',
       command: 'node',
       args: ['instructions.js'],
+    },
+    remote_no_oauth_server: {
+      type: 'streamable-http',
+      url: 'https://api.example.com/mcp-no-auth',
     },
   };
 
@@ -64,7 +92,7 @@ describe('MCPServersInitializer', () => {
     },
     oauth_server: {
       type: 'streamable-http',
-      url: 'https://api.example.com/mcp',
+      url: 'https://api.example.com/mcp-oauth',
       requiresOAuth: true,
     },
     file_tools_server: {
@@ -105,9 +133,31 @@ describe('MCPServersInitializer', () => {
         },
       },
     },
+    remote_no_oauth_server: {
+      type: 'streamable-http',
+      url: 'https://api.example.com/mcp-no-auth',
+      requiresOAuth: false,
+    },
+  };
+
+  // Helper to determine requiresOAuth based on URL pattern
+  // URLs ending with '-oauth' require OAuth, others don't
+  const determineRequiresOAuth = (config: t.MCPOptions): boolean => {
+    if ('url' in config && config.url) {
+      // If URL ends with '-oauth', requires OAuth
+      return config.url.endsWith('-oauth');
+    }
+    return false;
   };
 
   beforeEach(async () => {
+    // Reset the singleton instance before each test
+    (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+
+    // Create a new instance for testing
+    MCPServersRegistry.createInstance(mockMongoose);
+    registry = MCPServersRegistry.getInstance();
+
     // Setup MCPConnection mock
     mockConnection = {
       disconnect: jest.fn().mockResolvedValue(undefined),
@@ -117,17 +167,22 @@ describe('MCPServersInitializer', () => {
     (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
 
     // Mock MCPServerInspector.inspect to return parsed config
-    mockInspect.mockImplementation(async (serverName: string) => {
+    // This mock inspects the actual rawConfig to determine requiresOAuth dynamically
+    mockInspect.mockImplementation(async (serverName: string, rawConfig: t.MCPOptions) => {
+      const baseConfig = testParsedConfigs[serverName] || {};
       return {
-        ...testParsedConfigs[serverName],
+        ...baseConfig,
+        ...rawConfig,
+        // Override requiresOAuth based on the actual config being inspected
+        requiresOAuth: determineRequiresOAuth(rawConfig),
         _processedByInspector: true,
       } as unknown as t.ParsedServerConfig;
     });
 
-    // Reset caches before each test
+    // Reset caches and process flag before each test
     await registryStatusCache.reset();
-    await registry.sharedAppServers.reset();
-    await registry.sharedUserServers.reset();
+    await registry.reset();
+    MCPServersInitializer.resetProcessFlag();
     jest.clearAllMocks();
   });
 
@@ -137,20 +192,20 @@ describe('MCPServersInitializer', () => {
 
   describe('initialize()', () => {
     it('should reset registry and status cache before initialization', async () => {
-      // Pre-populate registry with some old servers
-      await registry.sharedAppServers.add('old_app_server', testParsedConfigs.file_tools_server);
-      await registry.sharedUserServers.add('old_user_server', testParsedConfigs.oauth_server);
+      // Pre-populate registry with some old servers using the public API
+      await registry.addServer('old_app_server', testConfigs.file_tools_server, 'CACHE');
+      await registry.addServer('old_user_server', testConfigs.oauth_server, 'CACHE');
 
       // Initialize with new configs (this should reset first)
       await MCPServersInitializer.initialize(testConfigs);
 
       // Verify old servers are gone
-      expect(await registry.sharedAppServers.get('old_app_server')).toBeUndefined();
-      expect(await registry.sharedUserServers.get('old_user_server')).toBeUndefined();
+      expect(await registry.getServerConfig('old_app_server')).toBeUndefined();
+      expect(await registry.getServerConfig('old_user_server')).toBeUndefined();
 
       // Verify new servers are present
-      expect(await registry.sharedAppServers.get('file_tools_server')).toBeDefined();
-      expect(await registry.sharedUserServers.get('oauth_server')).toBeDefined();
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+      expect(await registry.getServerConfig('oauth_server')).toBeDefined();
       expect(await registryStatusCache.isInitialized()).toBe(true);
     });
 
@@ -169,75 +224,62 @@ describe('MCPServersInitializer', () => {
     it('should process all server configs through inspector', async () => {
       await MCPServersInitializer.initialize(testConfigs);
 
-      // Verify all configs were processed by inspector (without connection parameter)
-      expect(mockInspect).toHaveBeenCalledTimes(4);
-      expect(mockInspect).toHaveBeenCalledWith('disabled_server', testConfigs.disabled_server);
-      expect(mockInspect).toHaveBeenCalledWith('oauth_server', testConfigs.oauth_server);
-      expect(mockInspect).toHaveBeenCalledWith('file_tools_server', testConfigs.file_tools_server);
+      // Verify all configs were processed by inspector
+      // Signature: inspect(serverName, rawConfig, connection?, allowedDomains?)
+      expect(mockInspect).toHaveBeenCalledTimes(5);
+      expect(mockInspect).toHaveBeenCalledWith(
+        'disabled_server',
+        testConfigs.disabled_server,
+        undefined,
+        undefined,
+      );
+      expect(mockInspect).toHaveBeenCalledWith(
+        'oauth_server',
+        testConfigs.oauth_server,
+        undefined,
+        undefined,
+      );
+      expect(mockInspect).toHaveBeenCalledWith(
+        'file_tools_server',
+        testConfigs.file_tools_server,
+        undefined,
+        undefined,
+      );
       expect(mockInspect).toHaveBeenCalledWith(
         'search_tools_server',
         testConfigs.search_tools_server,
+        undefined,
+        undefined,
+      );
+      expect(mockInspect).toHaveBeenCalledWith(
+        'remote_no_oauth_server',
+        testConfigs.remote_no_oauth_server,
+        undefined,
+        undefined,
       );
     });
 
-    it('should add disabled servers to sharedUserServers', async () => {
+    it('should initialize all servers to cache repository', async () => {
       await MCPServersInitializer.initialize(testConfigs);
 
-      const disabledServer = await registry.sharedUserServers.get('disabled_server');
-      expect(disabledServer).toBeDefined();
-      expect(disabledServer).toMatchObject({
-        ...testParsedConfigs.disabled_server,
-        _processedByInspector: true,
-      });
-    });
-
-    it('should add OAuth servers to sharedUserServers', async () => {
-      await MCPServersInitializer.initialize(testConfigs);
-
-      const oauthServer = await registry.sharedUserServers.get('oauth_server');
-      expect(oauthServer).toBeDefined();
-      expect(oauthServer).toMatchObject({
-        ...testParsedConfigs.oauth_server,
-        _processedByInspector: true,
-      });
-    });
-
-    it('should add enabled non-OAuth servers to sharedAppServers', async () => {
-      await MCPServersInitializer.initialize(testConfigs);
-
-      const fileToolsServer = await registry.sharedAppServers.get('file_tools_server');
-      expect(fileToolsServer).toBeDefined();
-      expect(fileToolsServer).toMatchObject({
-        ...testParsedConfigs.file_tools_server,
-        _processedByInspector: true,
-      });
-
-      const searchToolsServer = await registry.sharedAppServers.get('search_tools_server');
-      expect(searchToolsServer).toBeDefined();
-      expect(searchToolsServer).toMatchObject({
-        ...testParsedConfigs.search_tools_server,
-        _processedByInspector: true,
-      });
-    });
-
-    it('should successfully initialize all servers', async () => {
-      await MCPServersInitializer.initialize(testConfigs);
-
-      // Verify all servers were added to appropriate registries
-      expect(await registry.sharedUserServers.get('disabled_server')).toBeDefined();
-      expect(await registry.sharedUserServers.get('oauth_server')).toBeDefined();
-      expect(await registry.sharedAppServers.get('file_tools_server')).toBeDefined();
-      expect(await registry.sharedAppServers.get('search_tools_server')).toBeDefined();
+      // Verify all server types (disabled, OAuth, and regular) were added to cache
+      expect(await registry.getServerConfig('disabled_server')).toBeDefined();
+      expect(await registry.getServerConfig('oauth_server')).toBeDefined();
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+      expect(await registry.getServerConfig('search_tools_server')).toBeDefined();
     });
 
     it('should handle inspection failures gracefully', async () => {
       // Mock inspection failure for one server
-      mockInspect.mockImplementation(async (serverName: string) => {
+      mockInspect.mockImplementation(async (serverName: string, rawConfig: t.MCPOptions) => {
         if (serverName === 'file_tools_server') {
           throw new Error('Inspection failed');
         }
+        const baseConfig = testParsedConfigs[serverName] || {};
         return {
-          ...testParsedConfigs[serverName],
+          ...rawConfig,
+          ...baseConfig,
+          requiresOAuth: determineRequiresOAuth(rawConfig),
           _processedByInspector: true,
         } as unknown as t.ParsedServerConfig;
       });
@@ -245,17 +287,17 @@ describe('MCPServersInitializer', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       // Verify other servers were still processed
-      const disabledServer = await registry.sharedUserServers.get('disabled_server');
+      const disabledServer = await registry.getServerConfig('disabled_server');
       expect(disabledServer).toBeDefined();
 
-      const oauthServer = await registry.sharedUserServers.get('oauth_server');
+      const oauthServer = await registry.getServerConfig('oauth_server');
       expect(oauthServer).toBeDefined();
 
-      const searchToolsServer = await registry.sharedAppServers.get('search_tools_server');
+      const searchToolsServer = await registry.getServerConfig('search_tools_server');
       expect(searchToolsServer).toBeDefined();
 
       // Verify file_tools_server was not added (due to inspection failure)
-      const fileToolsServer = await registry.sharedAppServers.get('file_tools_server');
+      const fileToolsServer = await registry.getServerConfig('file_tools_server');
       expect(fileToolsServer).toBeUndefined();
     });
 
@@ -287,6 +329,52 @@ describe('MCPServersInitializer', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       expect(await registryStatusCache.isInitialized()).toBe(true);
+    });
+
+    it('should re-initialize on first call even if Redis cache says initialized (simulating app restart)', async () => {
+      // First initialization - populates caches
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(await registryStatusCache.isInitialized()).toBe(true);
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+
+      // Simulate stale data: add an extra server that shouldn't be there
+      await registry.addServer('stale_server', testConfigs.file_tools_server, 'CACHE');
+      expect(await registry.getServerConfig('stale_server')).toBeDefined();
+
+      jest.clearAllMocks();
+
+      // Simulate app restart by resetting the process flag
+      // In real scenario, this happens automatically when process restarts
+      MCPServersInitializer.resetProcessFlag();
+
+      // Re-initialize - should reset caches even though Redis says initialized
+      await MCPServersInitializer.initialize(testConfigs);
+
+      // Verify stale server was removed (cache was reset)
+      expect(await registry.getServerConfig('stale_server')).toBeUndefined();
+
+      // Verify new servers are present
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+      expect(await registry.getServerConfig('oauth_server')).toBeDefined();
+
+      // Verify inspector was called again (re-initialization happened)
+      expect(mockInspect).toHaveBeenCalled();
+    });
+
+    it('should not re-initialize on subsequent calls within same process', async () => {
+      // First initialization (5 servers in testConfigs)
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).toHaveBeenCalledTimes(5);
+
+      jest.clearAllMocks();
+
+      // Second call - should skip because process flag is set and Redis says initialized
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).not.toHaveBeenCalled();
+
+      // Third call - still skips
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).not.toHaveBeenCalled();
     });
   });
 });

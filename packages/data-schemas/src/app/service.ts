@@ -60,7 +60,9 @@ export const AppService = async (params?: {
 
   const availableTools = systemTools;
 
-  const mcpConfig = config.mcpServers || null;
+  const mcpServersConfig = config.mcpServers || null;
+  const mcpSettings = config.mcpSettings || null;
+  const actions = config.actions;
   const registration = config.registration ?? configDefaults.registration;
   const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
@@ -73,8 +75,10 @@ export const AppService = async (params?: {
     memory,
     speech,
     balance,
+    actions,
     transactions,
-    mcpConfig,
+    mcpConfig: mcpServersConfig,
+    mcpSettings,
     webSearch,
     fileStrategy,
     registration,
@@ -101,9 +105,9 @@ export const AppService = async (params?: {
 
   const loadedEndpoints = loadEndpoints(config, agentsDefaults);
 
-  const appConfig = {
+  const appConfig: AppConfig = {
     ...defaultConfig,
-    fileConfig: config?.fileConfig,
+    fileConfig: config?.fileConfig as AppConfig['fileConfig'],
     secureImageLinks: config?.secureImageLinks,
     modelSpecs: processModelSpecs(config?.endpoints, config.modelSpecs, interfaceConfig),
     endpoints: loadedEndpoints,

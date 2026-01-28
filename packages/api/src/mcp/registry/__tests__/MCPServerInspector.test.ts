@@ -175,6 +175,55 @@ describe('MCPServerInspector', () => {
       });
     });
 
+    it('should set requiresOAuth to false when apiKey.source is admin', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'sse',
+        url: 'https://api.example.com/sse',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'my-api-key',
+        },
+      };
+
+      // OAuth detection should be skipped
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: true, // This would be returned if called, but it shouldn't be
+        method: 'protected-resource-metadata',
+      });
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      // Should NOT call OAuth detection
+      expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+
+      // requiresOAuth should be false due to admin-provided API key
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.apiKey?.source).toBe('admin');
+    });
+
+    it('should still detect OAuth when apiKey.source is user', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'sse',
+        url: 'https://api.example.com/sse',
+        apiKey: {
+          source: 'user',
+          authorization_type: 'bearer',
+        },
+      };
+
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: true,
+        method: 'protected-resource-metadata',
+      });
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      // Should call OAuth detection for user-provided API key
+      expect(mockDetectOAuthRequirement).toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(true);
+    });
+
     it('should fetch capabilities when server has no tools', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',

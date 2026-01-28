@@ -1,4 +1,3 @@
-import { Providers } from '@librechat/agents';
 import { AuthType } from 'librechat-data-provider';
 
 /**
@@ -51,9 +50,10 @@ export function optionalChainWithEmptyCheck(
 }
 
 /**
- * Normalize the endpoint name to system-expected value.
- * @param name
+ * Escapes special characters in a string for use in a regular expression.
+ * @param str - The string to escape.
+ * @returns The escaped string safe for use in RegExp.
  */
-export function normalizeEndpointName(name = ''): string {
-  return name.toLowerCase() === Providers.OLLAMA ? Providers.OLLAMA : name;
+export function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -1,7 +1,7 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { isEnabled, getBasePath } = require('@librechat/api');
 
 const OBJECT_ID_LENGTH = 24;
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
@@ -68,17 +68,11 @@ function createValidateImageRequest(secureImageLinks) {
       }
 
       const parsedCookies = cookies.parse(cookieHeader);
-      const refreshToken = parsedCookies.refreshToken;
-
-      if (!refreshToken) {
-        logger.warn('[validateImageRequest] Token not provided');
-        return res.status(401).send('Unauthorized');
-      }
-
       const tokenProvider = parsedCookies.token_provider;
       let userIdForPath;
 
       if (tokenProvider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+        /** For OpenID users with OPENID_REUSE_TOKENS, use openid_user_id cookie */
         const openidUserId = parsedCookies.openid_user_id;
         if (!openidUserId) {
           logger.warn('[validateImageRequest] No OpenID user ID cookie found');
@@ -92,6 +86,17 @@ function createValidateImageRequest(secureImageLinks) {
         }
         userIdForPath = validationResult.userId;
       } else {
+        /**
+         * For non-OpenID users (or OpenID without REUSE_TOKENS), use refreshToken from cookies.
+         * These users authenticate via setAuthTokens() which stores refreshToken in cookies.
+         */
+        const refreshToken = parsedCookies.refreshToken;
+
+        if (!refreshToken) {
+          logger.warn('[validateImageRequest] Token not provided');
+          return res.status(401).send('Unauthorized');
+        }
+
         const validationResult = validateToken(refreshToken);
         if (!validationResult.valid) {
           logger.warn(`[validateImageRequest] ${validationResult.error}`);
@@ -124,14 +129,21 @@ function createValidateImageRequest(secureImageLinks) {
         return res.status(403).send('Access Denied');
       }
 
-      const agentAvatarPattern = /^\/images\/[a-f0-9]{24}\/agent-[^/]*$/;
+      const basePath = getBasePath();
+      const imagesPath = `${basePath}/images`;
+
+      const agentAvatarPattern = new RegExp(
+        `^${imagesPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[a-f0-9]{24}/agent-[^/]*$`,
+      );
       if (agentAvatarPattern.test(fullPath)) {
         logger.debug('[validateImageRequest] Image request validated');
         return next();
       }
 
       const escapedUserId = userIdForPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pathPattern = new RegExp(`^/images/${escapedUserId}/[^/]+$`);
+      const pathPattern = new RegExp(
+        `^${imagesPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/${escapedUserId}/[^/]+$`,
+      );
 
       if (pathPattern.test(fullPath)) {
         logger.debug('[validateImageRequest] Image request validated');

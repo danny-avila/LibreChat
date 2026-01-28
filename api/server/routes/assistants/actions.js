@@ -154,6 +154,7 @@ router.post('/:assistant_id', async (req, res) => {
 router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
   try {
     const { assistant_id, action_id, model } = req.params;
+    req.body = req.body || {}; // Express 5: ensure req.body exists
     req.body.model = model;
     const { openai } = await getOpenAIClient({ req, res });
 

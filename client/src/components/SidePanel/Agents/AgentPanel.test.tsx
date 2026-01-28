@@ -50,8 +50,6 @@ jest.mock('librechat-data-provider', () => {
     },
     EModelEndpoint: actualModule.EModelEndpoint || {
       agents: 'agents',
-      chatGPTBrowser: 'chatGPTBrowser',
-      gptPlugins: 'gptPlugins',
     },
     ResourceType: actualModule.ResourceType || {
       AGENT: 'agent',
@@ -335,7 +333,8 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'com_assistants_update_success Test Agent',
+          message: 'com_assistants_update_success_name',
+          status: undefined,
         });
       });
     });
@@ -355,7 +354,8 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'com_assistants_update_success com_ui_agent',
+          message: 'com_assistants_update_success_name',
+          status: undefined,
         });
       });
     });
@@ -375,7 +375,8 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'com_assistants_update_success Test Agent',
+          message: 'com_assistants_update_success_name',
+          status: undefined,
         });
       });
     });

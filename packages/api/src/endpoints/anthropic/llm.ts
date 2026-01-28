@@ -1,18 +1,82 @@
 import { Dispatcher, ProxyAgent } from 'undici';
+import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
-import { anthropicSettings, removeNullishValues } from 'librechat-data-provider';
-import type { AnthropicLLMConfigResult, AnthropicConfigOptions } from '~/types/anthropic';
+import { anthropicSettings, removeNullishValues, AuthKeys } from 'librechat-data-provider';
+import type {
+  AnthropicLLMConfigResult,
+  AnthropicConfigOptions,
+  AnthropicCredentials,
+} from '~/types/anthropic';
 import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from './helpers';
+import {
+  createAnthropicVertexClient,
+  isAnthropicVertexCredentials,
+  getVertexDeploymentName,
+} from './vertex';
+
+/**
+ * Parses credentials from string or object format
+ * - If a valid JSON string is passed, it parses and returns the object
+ * - If a plain API key string is passed, it wraps it in an AnthropicCredentials object
+ * - If an object is passed, it returns it directly
+ * - If undefined, returns an empty object
+ */
+function parseCredentials(
+  credentials: string | AnthropicCredentials | undefined,
+): AnthropicCredentials {
+  if (typeof credentials === 'string') {
+    try {
+      return JSON.parse(credentials);
+    } catch {
+      // If not valid JSON, treat as a plain API key
+      logger.debug('[Anthropic] Credentials not JSON, treating as API key');
+      return { [AuthKeys.ANTHROPIC_API_KEY]: credentials };
+    }
+  }
+  return credentials && typeof credentials === 'object' ? credentials : {};
+}
+
+/** Known Anthropic parameters that map directly to the client config */
+export const knownAnthropicParams = new Set([
+  'model',
+  'temperature',
+  'topP',
+  'topK',
+  'maxTokens',
+  'maxOutputTokens',
+  'stopSequences',
+  'stop',
+  'stream',
+  'apiKey',
+  'maxRetries',
+  'timeout',
+  'anthropicVersion',
+  'anthropicApiUrl',
+  'defaultHeaders',
+]);
+
+/**
+ * Applies default parameters to the target object only if the field is undefined
+ * @param target - The target object to apply defaults to
+ * @param defaults - Record of default parameter values
+ */
+function applyDefaultParams(target: Record<string, unknown>, defaults: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(defaults)) {
+    if (target[key] === undefined) {
+      target[key] = value;
+    }
+  }
+}
 
 /**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
- * @param apiKey - The API key for authentication with Anthropic.
+ * @param credentials - The API key for authentication with Anthropic, or credentials object for Vertex AI.
  * @param options={} - Additional options for configuring the LLM.
  * @returns Configuration options for creating an Anthropic LLM instance, with null and undefined values removed.
  */
 function getLLMConfig(
-  apiKey?: string,
-  options: AnthropicConfigOptions = {} as AnthropicConfigOptions,
+  credentials: string | AnthropicCredentials | undefined,
+  options: AnthropicConfigOptions = {},
 ): AnthropicLLMConfigResult {
   const systemOptions = {
     thinking: options.modelOptions?.thinking ?? anthropicSettings.thinking.default,
@@ -39,8 +103,9 @@ function getLLMConfig(
 
   const mergedOptions = Object.assign(defaultOptions, options.modelOptions);
 
+  let enableWebSearch = mergedOptions.web_search;
+
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
-    apiKey,
     model: mergedOptions.model,
     stream: mergedOptions.stream,
     temperature: mergedOptions.temperature,
@@ -55,6 +120,29 @@ function getLLMConfig(
     },
   };
 
+  const creds = parseCredentials(credentials);
+  const apiKey = creds[AuthKeys.ANTHROPIC_API_KEY] ?? null;
+
+  if (isAnthropicVertexCredentials(creds)) {
+    // Vertex AI configuration - use custom client with optional YAML config
+    // Map the visible model name to the actual deployment name for Vertex AI
+    const deploymentName = getVertexDeploymentName(
+      requestOptions.model ?? '',
+      options.vertexConfig,
+    );
+    requestOptions.model = deploymentName;
+
+    requestOptions.createClient = () =>
+      createAnthropicVertexClient(creds, requestOptions.clientOptions, options.vertexOptions);
+  } else if (apiKey) {
+    // Direct API configuration
+    requestOptions.apiKey = apiKey;
+  } else {
+    throw new Error(
+      'Invalid credentials provided. Please provide either a valid Anthropic API key or service account credentials for Vertex AI.',
+    );
+  }
+
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
   if (!/claude-3[-.]7/.test(mergedOptions.model)) {
@@ -67,6 +155,12 @@ function getLLMConfig(
 
   const supportsCacheControl =
     systemOptions.promptCache === true && checkPromptCacheSupport(requestOptions.model ?? '');
+
+  /** Pass promptCache boolean for downstream cache_control application */
+  if (supportsCacheControl) {
+    (requestOptions as Record<string, unknown>).promptCache = true;
+  }
+
   const headers = getClaudeHeaders(requestOptions.model ?? '', supportsCacheControl);
   if (headers && requestOptions.clientOptions) {
     requestOptions.clientOptions.defaultHeaders = headers;
@@ -84,13 +178,79 @@ function getLLMConfig(
     requestOptions.anthropicApiUrl = options.reverseProxyUrl;
   }
 
+  /** Handle defaultParams first - only process Anthropic-native params if undefined */
+  if (options.defaultParams && typeof options.defaultParams === 'object') {
+    for (const [key, value] of Object.entries(options.defaultParams)) {
+      /** Handle web_search separately - don't add to config */
+      if (key === 'web_search') {
+        if (enableWebSearch === undefined && typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
+
+      if (knownAnthropicParams.has(key)) {
+        /** Route known Anthropic params to requestOptions only if undefined */
+        applyDefaultParams(requestOptions as Record<string, unknown>, { [key]: value });
+      }
+      /** Leave other params for transform to handle - they might be OpenAI params */
+    }
+  }
+
+  /** Handle addParams - can override defaultParams */
+  if (options.addParams && typeof options.addParams === 'object') {
+    for (const [key, value] of Object.entries(options.addParams)) {
+      /** Handle web_search separately - don't add to config */
+      if (key === 'web_search') {
+        if (typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
+
+      if (knownAnthropicParams.has(key)) {
+        /** Route known Anthropic params to requestOptions */
+        (requestOptions as Record<string, unknown>)[key] = value;
+      }
+      /** Leave other params for transform to handle - they might be OpenAI params */
+    }
+  }
+
+  /** Handle dropParams - only drop from Anthropic config */
+  if (options.dropParams && Array.isArray(options.dropParams)) {
+    options.dropParams.forEach((param) => {
+      if (param === 'web_search') {
+        enableWebSearch = false;
+        return;
+      }
+
+      if (param in requestOptions) {
+        delete requestOptions[param as keyof AnthropicClientOptions];
+      }
+      if (requestOptions.invocationKwargs && param in requestOptions.invocationKwargs) {
+        delete (requestOptions.invocationKwargs as Record<string, unknown>)[param];
+      }
+    });
+  }
+
   const tools = [];
 
-  if (mergedOptions.web_search) {
+  if (enableWebSearch) {
     tools.push({
       type: 'web_search_20250305',
       name: 'web_search',
     });
+
+    if (isAnthropicVertexCredentials(creds)) {
+      if (!requestOptions.clientOptions) {
+        requestOptions.clientOptions = {};
+      }
+
+      requestOptions.clientOptions.defaultHeaders = {
+        ...requestOptions.clientOptions.defaultHeaders,
+        'anthropic-beta': 'web-search-2025-03-05',
+      };
+    }
   }
 
   return {

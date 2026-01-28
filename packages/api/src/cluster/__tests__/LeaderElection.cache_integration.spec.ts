@@ -25,10 +25,8 @@ describe('LeaderElection with Redis', () => {
       throw new Error('Redis client is not initialized');
     }
 
-    // Wait for Redis to be ready
-    if (!keyvRedisClient.isOpen) {
-      await keyvRedisClient.connect();
-    }
+    // Wait for connection and topology discovery to complete
+    await redisClients.keyvRedisClientReady;
 
     // Increase max listeners to handle many instances in tests
     process.setMaxListeners(200);

@@ -8,7 +8,7 @@ import {
   EToolResources,
   mergeFileConfig,
   AgentCapabilities,
-  fileConfig as defaultFileConfig,
+  getEndpointFileConfig,
 } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
 import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
@@ -38,18 +38,16 @@ export default function FileSearch({
   // Get startup configuration for SharePoint feature flag
   const { data: startupConfig } = useGetStartupConfig();
 
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+  const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
 
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
     fileSetter: setFiles,
   });
 
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
     fileSetter: setFiles,
   });
@@ -66,8 +64,12 @@ export default function FileSearch({
 
   const fileSearchChecked = watch(AgentCapabilities.file_search);
 
-  const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents];
-  const isUploadDisabled = endpointFileConfig.disabled ?? false;
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig,
+    endpoint: EModelEndpoint.agents,
+    endpointType: EModelEndpoint.agents,
+  });
+  const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
   const disabledUploadButton = isEphemeralAgent(agent_id) || fileSearchChecked === false;

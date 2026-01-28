@@ -4,7 +4,7 @@ import { AuthKeys, googleBaseSchema } from 'librechat-data-provider';
 export type GoogleParameters = z.infer<typeof googleBaseSchema>;
 
 export type GoogleCredentials = {
-  [AuthKeys.GOOGLE_SERVICE_KEY]?: string;
+  [AuthKeys.GOOGLE_SERVICE_KEY]?: string | Record<string, unknown>;
   [AuthKeys.GOOGLE_API_KEY]?: string;
 };
 
@@ -19,6 +19,12 @@ export interface GoogleConfigOptions {
   proxy?: string;
   streaming?: boolean;
   authHeader?: boolean;
+  /** Default parameters to apply only if fields are undefined */
+  defaultParams?: Record<string, unknown>;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
+  /** Stream rate delay for controlling token streaming speed */
+  streamRate?: number;
+  /** Model to use for title generation */
+  titleModel?: string;
 }

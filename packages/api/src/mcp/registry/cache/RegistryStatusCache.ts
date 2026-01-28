@@ -5,11 +5,12 @@ import { BaseRegistryCache } from './BaseRegistryCache';
 const INITIALIZED = 'INITIALIZED';
 
 /**
- * Cache for tracking MCP Servers Registry metadata and status across distributed instances.
+ * Cache for tracking MCP Servers Registry global metadata and status across distributed instances.
  * Uses Redis-backed storage to coordinate state between leader and follower nodes.
- * Currently, tracks initialization status to ensure only the leader performs initialization
- * while followers wait for completion. Designed to be extended with additional registry
- * metadata as needed (e.g., last update timestamps, version info, health status).
+ * Tracks global initialization status for the registry.
+ *
+ * Designed to be extended with additional global registry metadata as needed
+ * (e.g., last update timestamps, version info, health status).
  * This cache is only meant to be used internally by registry management components.
  */
 class RegistryStatusCache extends BaseRegistryCache {

@@ -10,7 +10,7 @@ import type {
   TPluginAction,
   TError,
 } from 'librechat-data-provider';
-import type { TPluginStoreDialogProps } from '~/common/types';
+import type { ToolDialogProps } from '~/common/types';
 import { PluginPagination, PluginAuthForm } from '~/components/Plugins/Store';
 import { useLocalize, usePluginDialogHelpers } from '~/hooks';
 import { useAvailableToolsQuery } from '~/data-provider';
@@ -20,7 +20,7 @@ function AssistantToolsDialog({
   isOpen,
   endpoint,
   setIsOpen,
-}: TPluginStoreDialogProps & {
+}: ToolDialogProps & {
   endpoint: AssistantsEndpoint | EModelEndpoint.agents;
 }) {
   const localize = useLocalize();

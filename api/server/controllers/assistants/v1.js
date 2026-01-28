@@ -9,7 +9,7 @@ const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { getCachedTools } = require('~/server/services/Config');
 const { manifestToolMap } = require('~/app/clients/tools');
-const { deleteFileByFilter } = require('~/models/File');
+const { deleteFileByFilter } = require('~/models');
 
 /**
  * Create an assistant.
@@ -31,7 +31,7 @@ const createAssistant = async (req, res) => {
     delete assistantData.conversation_starters;
     delete assistantData.append_current_datetime;
 
-    const toolDefinitions = await getCachedTools();
+    const toolDefinitions = (await getCachedTools()) ?? {};
 
     assistantData.tools = tools
       .map((tool) => {
@@ -136,7 +136,7 @@ const patchAssistant = async (req, res) => {
       ...updateData
     } = req.body;
 
-    const toolDefinitions = await getCachedTools();
+    const toolDefinitions = (await getCachedTools()) ?? {};
 
     updateData.tools = (updateData.tools ?? [])
       .map((tool) => {
@@ -259,7 +259,7 @@ function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
 const getAssistantDocuments = async (req, res) => {
   try {
     const appConfig = req.config;
-    const endpoint = req.query;
+    const endpoint = req.query?.endpoint;
     const assistantsConfig = appConfig.endpoints?.[endpoint];
     const documents = await getAssistants(
       {},

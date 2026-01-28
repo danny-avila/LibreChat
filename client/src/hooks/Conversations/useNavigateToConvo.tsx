@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, Constants, dataService } from 'librechat-data-provider';
+import { QueryKeys, Constants, dataService, getEndpointField } from 'librechat-data-provider';
 import type {
   TEndpointsConfig,
   TStartupConfig,
@@ -10,10 +10,10 @@ import type {
   TConversation,
 } from 'librechat-data-provider';
 import {
+  clearModelForNonEphemeralAgent,
   getDefaultEndpoint,
   clearMessagesCache,
   buildDefaultConvo,
-  getEndpointField,
   logger,
 } from '~/utils';
 import { useApplyModelSpecEffects } from '~/hooks/Agents';
@@ -55,7 +55,10 @@ const useNavigateToConvo = (index = 0) => {
         dataService.getConversationById(conversationId),
       );
       logger.log('conversation', 'Fetched fresh conversation data', data);
-      setConversation(data);
+
+      const convoData = { ...data };
+      clearModelForNonEphemeralAgent(convoData);
+      setConversation(convoData);
       navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
     } catch (error) {
       console.error('Error fetching conversation data on navigation', error);

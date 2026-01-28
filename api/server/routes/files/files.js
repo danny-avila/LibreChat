@@ -7,11 +7,12 @@ const {
   isUUID,
   CacheKeys,
   FileSources,
+  SystemRoles,
   ResourceType,
   EModelEndpoint,
   PermissionBits,
-  isAgentsEndpoint,
   checkOpenAIStorage,
+  isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const {
   filterFile,
@@ -26,7 +27,7 @@ const { checkPermission } = require('~/server/services/PermissionService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
-const { getFiles, batchUpdateFiles } = require('~/models/File');
+const { getFiles, batchUpdateFiles } = require('~/models');
 const { cleanFileName } = require('~/server/utils/files');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
@@ -376,11 +377,55 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    if (isAgentsEndpoint(metadata.endpoint)) {
-      return await processAgentFileUpload({ req, res, metadata });
+    if (isAssistantsEndpoint(metadata.endpoint)) {
+      return await processFileUpload({ req, res, metadata });
     }
 
-    await processFileUpload({ req, res, metadata });
+    /**
+     * Check agent permissions for permanent agent file uploads (not message attachments).
+     * Message attachments (message_file=true) are temporary files for a single conversation
+     * and should be allowed for users who can chat with the agent.
+     * Permanent file uploads to tool_resources require EDIT permission.
+     */
+    const isMessageAttachment = metadata.message_file === true || metadata.message_file === 'true';
+    if (metadata.agent_id && metadata.tool_resource && !isMessageAttachment) {
+      const userId = req.user.id;
+
+      /** Admin users bypass permission checks */
+      if (req.user.role !== SystemRoles.ADMIN) {
+        const agent = await getAgent({ id: metadata.agent_id });
+
+        if (!agent) {
+          return res.status(404).json({
+            error: 'Not Found',
+            message: 'Agent not found',
+          });
+        }
+
+        /** Check if user is the author or has edit permission */
+        if (agent.author.toString() !== userId) {
+          const hasEditPermission = await checkPermission({
+            userId,
+            role: req.user.role,
+            resourceType: ResourceType.AGENT,
+            resourceId: agent._id,
+            requiredPermission: PermissionBits.EDIT,
+          });
+
+          if (!hasEditPermission) {
+            logger.warn(
+              `[/files] User ${userId} denied upload to agent ${metadata.agent_id} (insufficient permissions)`,
+            );
+            return res.status(403).json({
+              error: 'Forbidden',
+              message: 'Insufficient permissions to upload files to this agent',
+            });
+          }
+        }
+      }
+    }
+
+    return await processAgentFileUpload({ req, res, metadata });
   } catch (error) {
     let message = 'Error processing file';
     logger.error('[/files] Error processing file:', error);

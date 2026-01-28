@@ -11,6 +11,7 @@ export default function RegenerateIcon({ className = '', size = '1em' }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       className={cn('icon-md-heavy', className)}
+      aria-hidden="true"
     >
       <path
         fill="currentColor"

@@ -346,8 +346,8 @@ async function getMessage({ user, messageId }) {
  *
  * @async
  * @function deleteMessages
- * @param {Object} filter - The filter criteria to find messages to delete.
- * @returns {Promise<Object>} The metadata with count of deleted messages.
+ * @param {import('mongoose').FilterQuery<import('mongoose').Document>} filter - The filter criteria to find messages to delete.
+ * @returns {Promise<import('mongoose').DeleteResult>} The metadata with count of deleted messages.
  * @throws {Error} If there is an error in deleting messages.
  */
 async function deleteMessages(filter) {

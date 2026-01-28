@@ -9,6 +9,8 @@ const {
   PermissionTypes,
   actionDelimiter,
   removeNullishValues,
+  validateActionDomain,
+  validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
@@ -83,6 +85,32 @@ router.post(
 
       let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
       const appConfig = req.config;
+
+      // SECURITY: Validate the OpenAPI spec and extract the server URL
+      if (metadata.raw_spec) {
+        const validationResult = validateAndParseOpenAPISpec(metadata.raw_spec);
+        if (!validationResult.status || !validationResult.serverUrl) {
+          return res.status(400).json({
+            message: validationResult.message || 'Invalid OpenAPI specification',
+          });
+        }
+
+        // SECURITY: Validate the client-provided domain matches the spec's server URL domain
+        // This prevents SSRF attacks where an attacker provides a whitelisted domain
+        // but uses a different (potentially internal) URL in the raw_spec
+        const domainValidation = validateActionDomain(metadata.domain, validationResult.serverUrl);
+        if (!domainValidation.isValid) {
+          logger.warn(`Domain mismatch detected: ${domainValidation.message}`, {
+            userId: req.user.id,
+            agent_id,
+          });
+          return res.status(400).json({
+            message:
+              'Domain mismatch: The domain in the OpenAPI spec does not match the provided domain',
+          });
+        }
+      }
+
       const isDomainAllowed = await isActionDomainAllowed(
         metadata.domain,
         appConfig?.actions?.allowedDomains,

@@ -9,7 +9,13 @@ import type {
   TEndpointsConfig,
 } from 'librechat-data-provider';
 import type { MentionOption, ConvoGenerator } from '~/common';
-import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools, logger } from '~/utils';
+import {
+  clearModelForNonEphemeralAgent,
+  removeUnavailableTools,
+  getModelSpecIconURL,
+  getConvoSwitchLogic,
+  logger,
+} from '~/utils';
 import { useDefaultConvo } from '~/hooks';
 import store from '~/store';
 
@@ -154,6 +160,7 @@ export default function useSelectMention({
       if (agent_id) {
         template.agent_id = agent_id;
       }
+      clearModelForNonEphemeralAgent(template);
 
       template.spec = null;
       template.iconURL = null;

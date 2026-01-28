@@ -112,6 +112,12 @@ const agentSchema = new Schema<IAgent>(
       default: false,
       index: true,
     },
+    /** MCP server names extracted from tools for efficient querying */
+    mcpServerNames: {
+      type: [String],
+      default: [],
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -119,5 +125,6 @@ const agentSchema = new Schema<IAgent>(
 );
 
 agentSchema.index({ updatedAt: -1, _id: 1 });
+agentSchema.index({ 'edges.to': 1 });
 
 export default agentSchema;
