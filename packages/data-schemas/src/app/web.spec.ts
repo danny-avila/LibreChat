@@ -54,6 +54,8 @@ describe('loadWebSearchConfig', () => {
         firecrawlVersion: '${FIRECRAWL_VERSION}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       });
@@ -154,6 +156,7 @@ describe('loadWebSearchConfig', () => {
       expect(result?.searxngInstanceUrl).toBe('${SEARXNG_INSTANCE_URL}');
       expect(result?.firecrawlApiUrl).toBe('${FIRECRAWL_API_URL}');
       expect(result?.jinaApiUrl).toBe('${JINA_API_URL}');
+      expect(result?.crawl4aiApiUrl).toBe('${CRAWL4AI_API_URL}');
     });
 
     it('should preserve custom URLs', () => {
@@ -161,6 +164,7 @@ describe('loadWebSearchConfig', () => {
         searxngInstanceUrl: 'https://custom-searxng.com',
         firecrawlApiUrl: 'https://custom-firecrawl.com',
         jinaApiUrl: 'https://custom-jina.com',
+        crawl4aiApiUrl: 'https://custom-crawl4ai.com'
       };
 
       const result = loadWebSearchConfig(config);
@@ -168,6 +172,7 @@ describe('loadWebSearchConfig', () => {
       expect(result?.searxngInstanceUrl).toBe('https://custom-searxng.com');
       expect(result?.firecrawlApiUrl).toBe('https://custom-firecrawl.com');
       expect(result?.jinaApiUrl).toBe('https://custom-jina.com');
+      expect(result?.crawl4aiApiUrl).toBe('https://custom-crawl4ai.com');
     });
   });
 });

@@ -27,7 +27,7 @@ export const webSearchAuth = {
       /** Optional (0) - works without API key for public deployments */
       crawl4aiApiKey: 0 as const,
       /** Optional (0) */
-      crawl4aiApiUrl: 0 as const,
+      crawl4aiApiUrl: 1 as const,
     },
   },
   rerankers: {
