@@ -10,6 +10,7 @@ import {
   OGDialog,
   OGDialogTitle,
   OGDialogHeader,
+  OGDialogFooter,
   OGDialogContent,
   OGDialogTemplate,
 } from '@librechat/client';
@@ -166,7 +167,7 @@ export default function MCPServerDialog({
                 </Button>
               </div>
             </div>
-            <OGDialogHeader>
+            <OGDialogFooter>
               <Button
                 variant="default"
                 onClick={() => {
@@ -177,7 +178,7 @@ export default function MCPServerDialog({
               >
                 {localize('com_ui_done')}
               </Button>
-            </OGDialogHeader>
+            </OGDialogFooter>
           </div>
         </OGDialogContent>
       </OGDialog>

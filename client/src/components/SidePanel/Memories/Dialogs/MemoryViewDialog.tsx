@@ -33,7 +33,7 @@ export default function MemoryEditDialog({ memory }: MemoryEditDialogProps) {
   const localize = useLocalize();
   const { data: memData } = useMemoriesQuery();
 
-  const [viewTrue, setViewTrue] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   // Calculate memory-specific usage: available = tokenLimit - (totalTokens - thisMemoryTokens)
   const memoryUsage = useMemo(() => {
@@ -46,7 +46,7 @@ export default function MemoryEditDialog({ memory }: MemoryEditDialogProps) {
   }, [memory?.tokenCount, memData?.tokenLimit, memData?.totalTokens]);
 
   return (
-    <OGDialog open={viewTrue} onOpenChange={setViewTrue}>
+    <OGDialog open={isOpen} onOpenChange={setIsOpen}>
       <OGDialogTrigger asChild>
         <TooltipAnchor
           description={localize('com_ui_view')}
@@ -57,7 +57,7 @@ export default function MemoryEditDialog({ memory }: MemoryEditDialogProps) {
               size="icon"
               className="size-7"
               aria-label={localize('com_ui_view')}
-              onClick={() => setViewTrue(true)}
+              onClick={() => setIsOpen(true)}
             >
               <Eye className="size-4" aria-hidden="true" />
             </Button>
