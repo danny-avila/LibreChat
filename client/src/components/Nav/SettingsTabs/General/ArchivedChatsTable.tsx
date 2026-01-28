@@ -4,16 +4,16 @@ import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { Link } from 'react-router-dom';
 import {
-  TrashIcon,
-  ArchiveRestore,
   ArrowUp,
+  TrashIcon,
   ArrowDown,
   ArrowUpDown,
   ExternalLink,
+  ArchiveRestore,
 } from 'lucide-react';
 import {
-  Button,
   Label,
+  Button,
   Spinner,
   OGDialog,
   DataTable,
@@ -49,10 +49,10 @@ export default function ArchivedChatsTable({
   onOpenChange: (isOpen: boolean) => void;
 }) {
   const localize = useLocalize();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { showToast } = useToastContext();
   const searchState = useRecoilValue(store.search);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [queryParams, setQueryParams] = useState<ConversationListParams>(DEFAULT_PARAMS);
   const [deleteConversation, setDeleteConversation] = useState<TConversation | null>(null);
 
