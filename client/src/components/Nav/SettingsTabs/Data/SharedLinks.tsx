@@ -48,7 +48,7 @@ export default function SharedLinks() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const searchState = useRecoilValue(store.search);
+  const searchStore = useRecoilValue(store.search);
   const [queryParams, setQueryParams] = useState<SharedLinksListParams>(DEFAULT_PARAMS);
   const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -342,7 +342,7 @@ export default function SharedLinks() {
             onFilterChange={debouncedFilterChange}
             filterValue={queryParams.search}
             isLoading={isLoading}
-            enableSearch={searchState.enabled === true}
+            enableSearch={searchStore.enabled === true}
           />
         </OGDialogContent>
       </OGDialog>
