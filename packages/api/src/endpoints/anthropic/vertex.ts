@@ -112,10 +112,6 @@ function filterVertexHeaders(headers?: Record<string, string>): Record<string, s
         if (v.includes('token-efficient-tools')) {
           return false;
         }
-        // Remove context-1m headers
-        if (v.includes('context-1m')) {
-          return false;
-        }
         return true;
       });
 
