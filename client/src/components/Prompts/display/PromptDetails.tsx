@@ -10,11 +10,11 @@ import { replaceSpecialVars } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { useLocalize, useAuthContext } from '~/hooks';
-import CategoryIcon from './Groups/CategoryIcon';
+import CategoryIcon from '../utils/CategoryIcon';
 import PromptVariables from './PromptVariables';
-import { PromptVariableGfm } from './Markdown';
-import Description from './Description';
-import Command from './Command';
+import { PromptVariableGfm } from '../editor/Markdown';
+import Description from '../fields/Description';
+import Command from '../fields/Command';
 
 const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
   const localize = useLocalize();

@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { Separator } from '@librechat/client';
 import { specialVariables } from 'librechat-data-provider';
 import { cn, extractUniqueVariables } from '~/utils';
-import { CodeVariableGfm } from './Markdown';
+import { CodeVariableGfm } from '../editor/Markdown';
 import { useLocalize } from '~/hooks';
 
 const specialVariableClasses =
