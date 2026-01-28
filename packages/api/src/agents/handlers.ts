@@ -10,6 +10,7 @@ import type { StructuredToolInterface } from '@langchain/core/tools';
 
 export interface ToolEndCallbackData {
   output: {
+    name: string;
     tool_call_id: string;
     content: string | unknown;
     artifact?: unknown;
@@ -90,6 +91,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 await toolEndCallback(
                   {
                     output: {
+                      name: tc.name,
                       tool_call_id: tc.id,
                       content: result.content,
                       artifact: result.artifact,

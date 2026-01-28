@@ -127,6 +127,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
       return result;
     },
+    toolEndCallback,
   };
 
   const eventHandlers = getDefaultHandlers({

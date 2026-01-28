@@ -162,6 +162,80 @@ describe('definitions.ts', () => {
         expect(calcDef).toBeDefined();
         expect(calcDef?.parameters).toBeDefined();
       });
+
+      it('should include parameters for execute_code native tool', async () => {
+        mockIsBuiltInTool.mockImplementation((name) => name === 'execute_code');
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['execute_code'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const execCodeDef = result.toolDefinitions.find((d) => d.name === 'execute_code');
+        expect(execCodeDef).toBeDefined();
+        expect(execCodeDef?.parameters).toBeDefined();
+        expect(execCodeDef?.parameters?.properties).toHaveProperty('lang');
+        expect(execCodeDef?.parameters?.properties).toHaveProperty('code');
+        expect(execCodeDef?.parameters?.required).toContain('lang');
+        expect(execCodeDef?.parameters?.required).toContain('code');
+      });
+
+      it('should include parameters for web_search native tool', async () => {
+        mockIsBuiltInTool.mockImplementation((name) => name === 'web_search');
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['web_search'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const webSearchDef = result.toolDefinitions.find((d) => d.name === 'web_search');
+        expect(webSearchDef).toBeDefined();
+        expect(webSearchDef?.parameters).toBeDefined();
+        expect(webSearchDef?.parameters?.properties).toHaveProperty('query');
+        expect(webSearchDef?.parameters?.required).toContain('query');
+      });
+
+      it('should include parameters for file_search native tool', async () => {
+        mockIsBuiltInTool.mockImplementation((name) => name === 'file_search');
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['file_search'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const fileSearchDef = result.toolDefinitions.find((d) => d.name === 'file_search');
+        expect(fileSearchDef).toBeDefined();
+        expect(fileSearchDef?.parameters).toBeDefined();
+        expect(fileSearchDef?.parameters?.properties).toHaveProperty('query');
+        expect(fileSearchDef?.parameters?.required).toContain('query');
+      });
     });
   });
 });

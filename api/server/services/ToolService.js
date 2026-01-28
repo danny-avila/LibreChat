@@ -386,9 +386,16 @@ async function processRequiredActions(client, requiredActions) {
  *   hasDeferredTools?: boolean;
  * }>} The agent tools and registry.
  */
+/** Native LibreChat tools that are not in the manifest */
+const nativeTools = new Set([Tools.execute_code, Tools.file_search, Tools.web_search]);
+
 /** Checks if a tool name is a known built-in tool */
 const isBuiltInTool = (toolName) =>
-  Boolean(manifestToolMap[toolName] || toolkits.some((t) => t.pluginKey === toolName));
+  Boolean(
+    manifestToolMap[toolName] ||
+      toolkits.some((t) => t.pluginKey === toolName) ||
+      nativeTools.has(toolName),
+  );
 
 /**
  * Loads only tool definitions without creating tool instances.

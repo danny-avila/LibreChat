@@ -1,3 +1,9 @@
+import {
+  WebSearchToolDefinition,
+  CalculatorToolDefinition,
+  CodeExecutionToolDefinition,
+} from '@librechat/agents';
+
 /** Extended JSON Schema type that includes standard validation keywords */
 export type ExtendedJsonSchema = {
   type?: 'string' | 'number' | 'integer' | 'float' | 'boolean' | 'array' | 'object';
@@ -468,18 +474,6 @@ Guidelines:
   required: ['prompt'],
 };
 
-/** Calculator tool JSON schema (from @librechat/agents) */
-export const calculatorSchema: ExtendedJsonSchema = {
-  type: 'object',
-  properties: {
-    input: {
-      type: 'string',
-      description: 'A valid mathematical expression to evaluate',
-    },
-  },
-  required: ['input'],
-};
-
 /** Tool definitions registry - maps tool names to their definitions */
 export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   google: {
@@ -606,22 +600,38 @@ Generated image IDs will be returned in the response, so you can refer to them i
     toolType: 'builtin',
     responseFormat: 'content_and_artifact',
   },
-  calculator: {
-    name: 'calculator',
-    description: 'Useful for getting the result of a math expression.',
-    schema: calculatorSchema,
+};
+
+/** Tool definitions from @librechat/agents */
+const agentToolDefinitions: Record<string, ToolRegistryDefinition> = {
+  [CalculatorToolDefinition.name]: {
+    name: CalculatorToolDefinition.name,
+    description: CalculatorToolDefinition.description,
+    schema: CalculatorToolDefinition.schema as unknown as ExtendedJsonSchema,
+    toolType: 'builtin',
+  },
+  [CodeExecutionToolDefinition.name]: {
+    name: CodeExecutionToolDefinition.name,
+    description: CodeExecutionToolDefinition.description,
+    schema: CodeExecutionToolDefinition.schema as unknown as ExtendedJsonSchema,
+    toolType: 'builtin',
+  },
+  [WebSearchToolDefinition.name]: {
+    name: WebSearchToolDefinition.name,
+    description: WebSearchToolDefinition.description,
+    schema: WebSearchToolDefinition.schema as unknown as ExtendedJsonSchema,
     toolType: 'builtin',
   },
 };
 
 export function getToolDefinition(toolName: string): ToolRegistryDefinition | undefined {
-  return toolDefinitions[toolName];
+  return toolDefinitions[toolName] ?? agentToolDefinitions[toolName];
 }
 
 export function getAllToolDefinitions(): ToolRegistryDefinition[] {
-  return Object.values(toolDefinitions);
+  return [...Object.values(toolDefinitions), ...Object.values(agentToolDefinitions)];
 }
 
 export function getToolSchema(toolName: string): ExtendedJsonSchema | undefined {
-  return toolDefinitions[toolName]?.schema;
+  return getToolDefinition(toolName)?.schema;
 }
