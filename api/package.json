@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "v0.8.2-rc3",
+  "version": "v0.8.2",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -49,7 +49,7 @@
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "@modelcontextprotocol/sdk": "^1.25.2",
+    "@modelcontextprotocol/sdk": "^1.25.3",
     "@node-saml/passport-saml": "^5.1.0",
     "@smithy/node-http-handler": "^4.4.5",
     "axios": "^1.12.1",
