@@ -13,6 +13,17 @@ const {
 } = require('./Message');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const {
+  createScheduledTask,
+  getScheduledTaskById,
+  getScheduledTasks,
+  updateScheduledTask,
+  deleteScheduledTask,
+  deleteScheduledTaskRuns,
+  createScheduledTaskRun,
+  updateScheduledTaskRun,
+  getScheduledTaskRuns,
+} = require('./ScheduledTask');
 const { File } = require('~/db/models');
 
 const seedDatabase = async () => {
@@ -43,6 +54,16 @@ module.exports = {
   getPresets,
   savePreset,
   deletePresets,
+
+  createScheduledTask,
+  getScheduledTaskById,
+  getScheduledTasks,
+  updateScheduledTask,
+  deleteScheduledTask,
+  deleteScheduledTaskRuns,
+  createScheduledTaskRun,
+  updateScheduledTaskRun,
+  getScheduledTaskRuns,
 
   Files: File,
 };

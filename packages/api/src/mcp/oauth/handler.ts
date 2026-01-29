@@ -18,12 +18,14 @@ import type {
   MCPOAuthTokens,
   OAuthMetadata,
 } from './types';
+import type { ParsedFlowId } from './scope';
 import {
   resolveTokenEndpointAuthMethod,
   getForcedTokenEndpointAuthMethod,
   selectRegistrationAuthMethod,
   inferClientAuthMethod,
 } from './methods';
+import { buildMCPOAuthFlowId, isMCPOAuthFlowOwnedByUser, parseMCPOAuthFlowId } from './scope';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 
 /** Type for the OAuth metadata from the SDK */
@@ -655,6 +657,14 @@ export class MCPOAuthHandler {
       return null;
     }
     return flowState.metadata as MCPOAuthFlowMetadata;
+  }
+
+  static parseFlowId(flowId: string): ParsedFlowId | null {
+    return parseMCPOAuthFlowId(flowId);
+  }
+
+  static isFlowOwnedByUser(flowId: string, userId: string): boolean {
+    return isMCPOAuthFlowOwnedByUser(flowId, userId);
   }
 
   /**
