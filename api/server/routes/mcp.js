@@ -31,6 +31,7 @@ const { getMCPTools } = require('~/server/controllers/mcp');
 const { findPluginAuthsByKeys } = require('~/models');
 const { getRoleByName } = require('~/models/Role');
 const { getLogStores } = require('~/cache');
+const { handleMCPError } = require('~/server/utils/routeErrorHandlers');
 const {
   createMCPServerController,
   getMCPServerById,
@@ -430,7 +431,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     });
   } catch (error) {
     logger.error('[MCP Reinitialize] Unexpected error', error);
-    res.status(500).json({ error: 'Internal server error' });
+    handleMCPError(error, req, res, 'reinitialize-server');
   }
 });
 
