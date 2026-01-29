@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo, useCallback } from 'react';
 import {
   Select,
   SelectArrow,
@@ -8,6 +8,7 @@ import {
   SelectPopover,
   SelectProvider,
 } from '@ariakit/react';
+import { Search, X } from 'lucide-react';
 import './AnimatePopover.css';
 import { cn } from '~/utils';
 
@@ -45,6 +46,10 @@ interface MultiSelectProps<T extends string> {
     defaultContent: React.ReactNode,
     isSelected: boolean,
   ) => React.ReactNode;
+  searchable?: boolean;
+  searchThreshold?: number;
+  searchPlaceholder?: string;
+  noResultsText?: string;
 }
 
 function defaultRender<T extends string>(
@@ -84,9 +89,32 @@ export default function MultiSelect<T extends string>({
   selectedValues = [],
   setSelectedValues,
   renderItemContent,
+  searchable = false,
+  searchThreshold = 5,
+  searchPlaceholder = 'Search...',
+  noResultsText = 'No results found',
 }: MultiSelectProps<T>) {
   const selectRef = useRef<HTMLButtonElement>(null);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+
+  const showSearch = searchable || items.length > searchThreshold;
+
+  const filteredItems = useMemo(() => {
+    if (!showSearch || !searchValue.trim()) {
+      return items;
+    }
+    const lowerSearch = searchValue.toLowerCase();
+    return items.filter((item) => getItemLabel(item).toLowerCase().includes(lowerSearch));
+  }, [items, searchValue, showSearch]);
+
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchValue(e.target.value);
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    setSearchValue('');
+  }, []);
 
   const handleValueChange = (values: T[]) => {
     setSelectedValues(values);
@@ -137,47 +165,86 @@ export default function MultiSelect<T extends string>({
           unmountOnHide
           finalFocus={selectRef}
           className={cn(
-            'animate-popover z-40 flex max-h-[300px]',
-            'flex-col overflow-auto overscroll-contain rounded-xl',
-            'bg-surface-secondary px-1.5 py-1 text-text-primary shadow-lg',
+            'animate-popover z-50 flex max-h-[300px]',
+            'flex-col overscroll-contain rounded-xl',
+            'bg-surface-secondary text-text-primary shadow-lg',
             'border border-border-light',
             'outline-none',
+            showSearch ? 'p-0' : 'px-1.5 py-1',
             popoverClassName,
           )}
         >
-          {items.map((item) => {
-            const value = getItemValue(item);
-            const label = getItemLabel(item);
-            const defaultContent = (
-              <>
-                <SelectItemCheck className="mr-0.5 text-primary" />
-                <span className="truncate">{label}</span>
-              </>
-            );
-            const isCurrentItemSelected = selectedValues.includes(value);
-            return (
-              <SelectItem
-                key={value}
-                value={value}
-                className={cn(
-                  'flex items-center gap-2 rounded-lg px-2 py-1.5 hover:cursor-pointer',
-                  'scroll-m-1 outline-none transition-colors',
-                  'hover:bg-black/[0.075] dark:hover:bg-white/10',
-                  'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
-                  'w-full min-w-0 text-sm',
-                  itemClassName,
+          {showSearch && (
+            <div className="sticky top-0 z-10 border-b border-border-light bg-surface-secondary p-1.5">
+              <div className="flex items-center gap-2 rounded-lg bg-surface-tertiary px-2 py-1">
+                <Search className="h-3.5 w-3.5 text-text-secondary" aria-hidden="true" />
+                <input
+                  type="text"
+                  value={searchValue}
+                  onChange={handleSearchChange}
+                  placeholder={searchPlaceholder}
+                  className="flex-1 border-none bg-transparent text-sm text-text-primary placeholder-text-secondary focus:outline-none"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  aria-label={searchPlaceholder}
+                />
+                {searchValue && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearSearch();
+                    }}
+                    className="flex h-4 w-4 items-center justify-center rounded text-text-secondary hover:text-text-primary"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 )}
-              >
-                {renderItemContent
-                  ? (renderItemContent(
-                      value,
-                      defaultContent,
-                      isCurrentItemSelected,
-                    ) as React.JSX.Element)
-                  : (defaultContent as React.JSX.Element)}
-              </SelectItem>
-            );
-          })}
+              </div>
+            </div>
+          )}
+          <div className={cn('flex flex-col', showSearch ? 'overflow-auto px-1.5 py-1' : '')}>
+            {filteredItems.length === 0 ? (
+              <div className="px-2 py-3 text-center text-sm text-text-secondary">
+                {noResultsText}
+              </div>
+            ) : (
+              filteredItems.map((item) => {
+                const value = getItemValue(item);
+                const label = getItemLabel(item);
+                const defaultContent = (
+                  <>
+                    <SelectItemCheck className="mr-0.5 text-primary" />
+                    <span className="truncate">{label}</span>
+                  </>
+                );
+                const isCurrentItemSelected = selectedValues.includes(value);
+                return (
+                  <SelectItem
+                    key={value}
+                    value={value}
+                    className={cn(
+                      'flex items-center gap-2 rounded-lg px-2 py-1.5 hover:cursor-pointer',
+                      'scroll-m-1 outline-none transition-colors',
+                      'hover:bg-black/[0.075] dark:hover:bg-white/10',
+                      'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
+                      'w-full min-w-0 text-sm',
+                      itemClassName,
+                    )}
+                  >
+                    {renderItemContent
+                      ? (renderItemContent(
+                          value,
+                          defaultContent,
+                          isCurrentItemSelected,
+                        ) as React.JSX.Element)
+                      : (defaultContent as React.JSX.Element)}
+                  </SelectItem>
+                );
+              })
+            )}
+          </div>
         </SelectPopover>
       </SelectProvider>
     </div>
