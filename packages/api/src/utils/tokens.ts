@@ -352,6 +352,7 @@ export const maxOutputTokensMap = {
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
   [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
   [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
+  [EModelEndpoint.bedrock]: anthropicMaxOutputs,
 };
 
 /**
@@ -421,6 +422,64 @@ export function getModelTokenValue(
 }
 
 /**
+ * Configuration for AWS Bedrock custom inference profile mappings
+ * This allows users to map custom inference profile ARNs to their underlying models
+ */
+const BEDROCK_INFERENCE_PROFILE_MAPPINGS = {
+  // Example mappings - these would be configurable via environment variables or config files
+  // 'arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake': 'anthropic.claude-3-7-sonnet-20250219-v1:0',
+};
+
+/**
+ * Detects the underlying model from AWS Bedrock custom inference profile ARN
+ * @param {string} modelName - The model name or ARN
+ * @returns {string|null} - The detected underlying model name or null if not a custom inference profile
+ */
+function detectBedrockInferenceProfileModel(modelName: string): string | null {
+  if (!modelName || typeof modelName !== 'string') {
+    return null;
+  }
+
+  // Check if this is a custom inference profile ARN
+  const inferenceProfilePattern =
+    /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+  if (!inferenceProfilePattern.test(modelName)) {
+    return null;
+  }
+
+  // Check if we have a configured mapping for this ARN
+  if (BEDROCK_INFERENCE_PROFILE_MAPPINGS[modelName]) {
+    return BEDROCK_INFERENCE_PROFILE_MAPPINGS[modelName];
+  }
+
+  // TODO: Implement AWS Bedrock API call to get inference profile details
+  // This would require AWS SDK and proper credentials
+  // For now, return null to indicate this needs special handling
+  return null;
+}
+
+/**
+ * Loads custom inference profile mappings from environment variables
+ * @returns {Object} - The mappings object
+ */
+function loadBedrockInferenceProfileMappings(): Record<string, string> {
+  const mappings = {};
+
+  // Check for environment variable with mappings
+  const mappingsEnv = process.env.BEDROCK_INFERENCE_PROFILE_MAPPINGS;
+  if (mappingsEnv) {
+    try {
+      const parsed = JSON.parse(mappingsEnv);
+      Object.assign(mappings, parsed);
+    } catch (error) {
+      console.warn('Failed to parse BEDROCK_INFERENCE_PROFILE_MAPPINGS:', error.message);
+    }
+  }
+
+  return mappings;
+}
+
+/**
  * Retrieves the maximum tokens for a given model name.
  *
  * @param modelName - The name of the model to look up.
@@ -433,6 +492,16 @@ export function getModelMaxTokens(
   endpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
 ): number | undefined {
+  // Special handling for AWS Bedrock custom inference profiles
+  if (endpoint === EModelEndpoint.bedrock) {
+    const inferenceProfileModel = detectBedrockInferenceProfileModel(modelName);
+    if (inferenceProfileModel) {
+      // Use the underlying model's token limits
+      const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint as keyof typeof maxTokensMap];
+      return getModelTokenValue(inferenceProfileModel, tokensMap);
+    }
+  }
+
   const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint as keyof typeof maxTokensMap];
   return getModelTokenValue(modelName, tokensMap);
 }
@@ -450,17 +519,32 @@ export function getModelMaxOutputTokens(
   endpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
 ): number | undefined {
+  // Special handling for AWS Bedrock custom inference profiles
+  if (endpoint === EModelEndpoint.bedrock) {
+    const inferenceProfileModel = detectBedrockInferenceProfileModel(modelName);
+    if (inferenceProfileModel) {
+      // Use the underlying model's output token limits
+      const tokensMap =
+        endpointTokenConfig ?? maxOutputTokensMap[endpoint as keyof typeof maxOutputTokensMap];
+      return getModelTokenValue(inferenceProfileModel, tokensMap, 'output');
+    }
+  }
+
   const tokensMap =
     endpointTokenConfig ?? maxOutputTokensMap[endpoint as keyof typeof maxOutputTokensMap];
   return getModelTokenValue(modelName, tokensMap, 'output');
 }
 
+// Initialize mappings from environment
+Object.assign(BEDROCK_INFERENCE_PROFILE_MAPPINGS, loadBedrockInferenceProfileMappings());
+
 /**
+ * Enhanced model name matching that handles AWS Bedrock custom inference profiles
  * Retrieves the model name key for a given model name input. If the exact model name isn't found,
  * it searches for partial matches within the model name, checking keys in reverse order.
  *
- * @param modelName - The name of the model to look up.
- * @param endpoint - The endpoint (default is 'openAI').
+ * @param modelName - The name of the model to look up or ARN.
+ * @param endpoint - The endpoint type (default is 'openAI').
  * @returns The model name key for the given model; returns input if no match is found and is string.
  *
  * @example
@@ -476,6 +560,16 @@ export function matchModelName(
     return undefined;
   }
 
+  // Special handling for AWS Bedrock custom inference profiles
+  if (endpoint === EModelEndpoint.bedrock) {
+    const inferenceProfileModel = detectBedrockInferenceProfileModel(modelName);
+    if (inferenceProfileModel) {
+      // If we can detect the underlying model, use it for matching
+      modelName = inferenceProfileModel;
+    }
+    // If we can't detect the underlying model, continue with the original ARN
+  }
+
   const tokensMap: Record<string, number> = maxTokensMap[endpoint as keyof typeof maxTokensMap];
   if (!tokensMap) {
     return modelName;
@@ -488,6 +582,8 @@ export function matchModelName(
   const matchedPattern = findMatchingPattern(modelName, tokensMap);
   return matchedPattern || modelName;
 }
+
+
 
 export const modelSchema = z.object({
   id: z.string(),
@@ -576,3 +672,6 @@ export const tiktokenModels = new Set([
   'gpt-3.5-turbo',
   'gpt-3.5-turbo-0301',
 ]);
+
+// Export Bedrock inference profile functions and mappings
+export { detectBedrockInferenceProfileModel, loadBedrockInferenceProfileMappings, BEDROCK_INFERENCE_PROFILE_MAPPINGS };
