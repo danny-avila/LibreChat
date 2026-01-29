@@ -6,8 +6,14 @@ const {
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
+const {
+  math,
+  isEnabled,
+  checkEmailConfig,
+  isEmailDomainAllowed,
+  extractSubFromAccessToken,
+} = require('@librechat/api');
 const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
-const { isEnabled, checkEmailConfig, isEmailDomainAllowed, math } = require('@librechat/api');
 const {
   findUser,
   findToken,
@@ -489,6 +495,27 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         secure: isProduction,
         sameSite: 'strict',
       });
+    }
+
+    if (isEnabled(process.env.OPENID_EXPOSE_SUB_COOKIE)) {
+      if (!process.env.JWT_REFRESH_SECRET) {
+        logger.error(
+          '[setOpenIDAuthTokens] JWT_REFRESH_SECRET not configured for openid_sub cookie',
+        );
+        return tokenset.access_token;
+      }
+      const { sub } = extractSubFromAccessToken(tokenset.access_token);
+      if (sub) {
+        const signedSub = jwt.sign({ sub }, process.env.JWT_REFRESH_SECRET, {
+          expiresIn: expiryInMilliseconds / 1000,
+        });
+        res.cookie('openid_sub', signedSub, {
+          expires: expirationDate,
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: 'lax',
+        });
+      }
     }
     return tokenset.access_token;
   } catch (error) {
