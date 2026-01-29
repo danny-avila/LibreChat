@@ -98,11 +98,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   /**
    * Agent context store - populated after initialization, accessed by callback via closure.
-   * Maps agentId -> { userMCPAuthMap, agent, tool_resources, openAIApiKey }
+   * Maps agentId -> { userMCPAuthMap, agent, tool_resources, toolRegistry, openAIApiKey }
    * @type {Map<string, {
    *   userMCPAuthMap?: Record<string, Record<string, string>>,
    *   agent?: object,
    *   tool_resources?: object,
+   *   toolRegistry?: import('@librechat/agents').LCToolRegistry,
    *   openAIApiKey?: string
    * }>}
    */
@@ -120,6 +121,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         streamId,
         toolNames,
         agent: ctx.agent,
+        toolRegistry: ctx.toolRegistry,
         userMCPAuthMap: ctx.userMCPAuthMap,
         tool_resources: ctx.tool_resources,
       });
@@ -208,6 +210,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   logger.debug(`[initializeClient] Storing tool context for agentId: ${primaryConfig.id}`);
   agentToolContexts.set(primaryConfig.id, {
     agent: primaryAgent,
+    toolRegistry: primaryConfig.toolRegistry,
     userMCPAuthMap: primaryConfig.userMCPAuthMap,
     tool_resources: primaryConfig.tool_resources,
   });
@@ -274,6 +277,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     /** Store handoff agent's tool context for ON_TOOL_EXECUTE callback */
     agentToolContexts.set(agentId, {
       agent,
+      toolRegistry: config.toolRegistry,
       userMCPAuthMap: config.userMCPAuthMap,
       tool_resources: config.tool_resources,
     });

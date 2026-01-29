@@ -1,4 +1,10 @@
-const { sleep } = require('@librechat/agents');
+const {
+  sleep,
+  EnvVar,
+  Constants,
+  createToolSearch,
+  createProgrammaticToolCallingTool,
+} = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
@@ -927,15 +933,62 @@ async function loadToolsForExecution({
   signal,
   agent,
   toolNames,
+  toolRegistry,
   userMCPAuthMap,
   tool_resources,
   streamId = null,
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
+  const configurable = { userMCPAuthMap };
 
-  const actionToolNames = toolNames.filter((name) => name.includes(actionDelimiter));
-  const regularToolNames = toolNames.filter((name) => !name.includes(actionDelimiter));
+  const isToolSearch = toolNames.includes(Constants.TOOL_SEARCH);
+  const isPTC = toolNames.includes(Constants.PROGRAMMATIC_TOOL_CALLING);
+
+  if (isToolSearch && toolRegistry) {
+    const toolSearchTool = createToolSearch({
+      mode: 'local',
+      toolRegistry,
+    });
+    allLoadedTools.push(toolSearchTool);
+    configurable.toolRegistry = toolRegistry;
+  }
+
+  if (isPTC && toolRegistry) {
+    try {
+      const authValues = await loadAuthValues({
+        userId: req.user.id,
+        authFields: [EnvVar.CODE_API_KEY],
+      });
+      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+
+      if (codeApiKey) {
+        const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
+        allLoadedTools.push(ptcTool);
+      } else {
+        logger.warn('[loadToolsForExecution] PTC requested but CODE_API_KEY not available');
+      }
+    } catch (error) {
+      logger.error('[loadToolsForExecution] Error creating PTC tool:', error);
+    }
+  }
+
+  const specialToolNames = new Set([Constants.TOOL_SEARCH, Constants.PROGRAMMATIC_TOOL_CALLING]);
+
+  let ptcOrchestratedToolNames = [];
+  if (isPTC && toolRegistry) {
+    ptcOrchestratedToolNames = Array.from(toolRegistry.keys()).filter(
+      (name) => !specialToolNames.has(name),
+    );
+  }
+
+  const requestedNonSpecialToolNames = toolNames.filter((name) => !specialToolNames.has(name));
+  const allToolNamesToLoad = isPTC
+    ? [...new Set([...requestedNonSpecialToolNames, ...ptcOrchestratedToolNames])]
+    : requestedNonSpecialToolNames;
+
+  const actionToolNames = allToolNamesToLoad.filter((name) => name.includes(actionDelimiter));
+  const regularToolNames = allToolNamesToLoad.filter((name) => !name.includes(actionDelimiter));
 
   if (regularToolNames.length > 0) {
     const includesWebSearch = regularToolNames.includes(Tools.web_search);
@@ -979,9 +1032,19 @@ async function loadToolsForExecution({
     allLoadedTools.push(...actionTools);
   }
 
+  if (isPTC && allLoadedTools.length > 0) {
+    const ptcToolMap = new Map();
+    for (const tool of allLoadedTools) {
+      if (tool.name && tool.name !== Constants.PROGRAMMATIC_TOOL_CALLING) {
+        ptcToolMap.set(tool.name, tool);
+      }
+    }
+    configurable.ptcToolMap = ptcToolMap;
+  }
+
   return {
+    configurable,
     loadedTools: allLoadedTools,
-    configurable: { userMCPAuthMap },
   };
 }
 

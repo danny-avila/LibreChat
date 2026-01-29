@@ -169,12 +169,12 @@ export async function loadToolDefinitions(
   })) as unknown as GenericTool[];
 
   const classificationResult = await buildToolClassification({
-    loadedTools,
     userId,
     agentId,
-    agentToolOptions: toolOptions,
-    deferredToolsEnabled,
+    loadedTools,
     loadAuthValues,
+    deferredToolsEnabled,
+    agentToolOptions: toolOptions,
   });
 
   const { toolDefinitions, hasDeferredTools } = classificationResult;

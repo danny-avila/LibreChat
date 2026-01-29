@@ -26,7 +26,13 @@
 
 import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
-import { EnvVar, createProgrammaticToolCallingTool, createToolSearch } from '@librechat/agents';
+import {
+  EnvVar,
+  createToolSearch,
+  ToolSearchToolDefinition,
+  createProgrammaticToolCallingTool,
+  ProgrammaticToolCallingDefinition,
+} from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type {
   LCToolRegistry,
@@ -511,7 +517,7 @@ export async function buildToolClassification(
   }
 
   /** Build toolDefinitions array from registry (single pass, reused) */
-  const toolDefinitions = Array.from(toolRegistry.values());
+  const toolDefinitions: LCTool[] = Array.from(toolRegistry.values());
 
   /** Agent not allowed for classification - return basic definitions */
   if (!isAllowedForClassification) {
@@ -536,28 +542,55 @@ export async function buildToolClassification(
       toolRegistry,
     });
     additionalTools.push(toolSearchTool);
+
+    /** Add ToolSearch definition for event-driven mode */
+    toolDefinitions.push({
+      name: ToolSearchToolDefinition.name,
+      description: ToolSearchToolDefinition.description,
+      parameters: ToolSearchToolDefinition.schema as unknown as LCTool['parameters'],
+    });
+    toolRegistry.set(ToolSearchToolDefinition.name, {
+      name: ToolSearchToolDefinition.name,
+      allowed_callers: ['direct'],
+    });
+
     logger.debug(`[buildToolClassification] Tool Search enabled for agent ${agentId}`);
   }
 
   /** PTC requires CODE_API_KEY for sandbox execution */
-  if (hasProgrammaticTools) {
-    try {
-      const authValues = await loadAuthValues({
-        userId,
-        authFields: [EnvVar.CODE_API_KEY],
-      });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+  if (!hasProgrammaticTools) {
+    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
+  }
 
-      if (!codeApiKey) {
-        logger.warn('[buildToolClassification] PTC configured but CODE_API_KEY not available');
-      } else {
-        const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
-        additionalTools.push(ptcTool);
-        logger.debug(`[buildToolClassification] PTC tool enabled for agent ${agentId}`);
-      }
-    } catch (error) {
-      logger.error('[buildToolClassification] Error creating PTC tool:', error);
+  try {
+    const authValues = await loadAuthValues({
+      userId,
+      authFields: [EnvVar.CODE_API_KEY],
+    });
+    const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+
+    if (!codeApiKey) {
+      logger.warn('[buildToolClassification] PTC configured but CODE_API_KEY not available');
+      return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
     }
+
+    const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
+    additionalTools.push(ptcTool);
+
+    /** Add PTC definition for event-driven mode */
+    toolDefinitions.push({
+      name: ProgrammaticToolCallingDefinition.name,
+      description: ProgrammaticToolCallingDefinition.description,
+      parameters: ProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
+    });
+    toolRegistry.set(ProgrammaticToolCallingDefinition.name, {
+      name: ProgrammaticToolCallingDefinition.name,
+      allowed_callers: ['direct'],
+    });
+
+    logger.debug(`[buildToolClassification] PTC tool enabled for agent ${agentId}`);
+  } catch (error) {
+    logger.error('[buildToolClassification] Error creating PTC tool:', error);
   }
 
   return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };

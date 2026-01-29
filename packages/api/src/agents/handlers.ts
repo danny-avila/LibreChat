@@ -1,11 +1,13 @@
 import { logger } from '@librechat/data-schemas';
+import { GraphEvents, Constants } from '@librechat/agents';
 import type {
+  LCTool,
   EventHandler,
+  LCToolRegistry,
   ToolCallRequest,
   ToolExecuteResult,
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
-import { GraphEvents } from '@librechat/agents';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 
 export interface ToolEndCallbackData {
@@ -77,12 +79,30 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             }
 
             try {
+              const toolCallConfig: Record<string, unknown> = {
+                id: tc.id,
+                stepId: tc.stepId,
+                turn: tc.turn,
+              };
+
+              if (tc.name === Constants.PROGRAMMATIC_TOOL_CALLING) {
+                const toolRegistry = mergedConfigurable?.toolRegistry as LCToolRegistry | undefined;
+                const ptcToolMap = mergedConfigurable?.ptcToolMap as
+                  | Map<string, StructuredToolInterface>
+                  | undefined;
+                if (toolRegistry) {
+                  const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
+                    (t) =>
+                      t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                      t.name !== Constants.TOOL_SEARCH,
+                  );
+                  toolCallConfig.toolDefs = toolDefs;
+                  toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                }
+              }
+
               const result = await tool.invoke(tc.args, {
-                toolCall: {
-                  id: tc.id,
-                  stepId: tc.stepId,
-                  turn: tc.turn,
-                } as unknown as Record<string, unknown>,
+                toolCall: toolCallConfig,
                 configurable: mergedConfigurable,
                 metadata,
               } as Record<string, unknown>);
