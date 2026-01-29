@@ -10,6 +10,7 @@ import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import { buildToolClassification, type ToolDefinition } from './classification';
 import { getToolDefinition } from './registry/definitions';
+import { resolveJsonSchemaRefs } from '~/mcp/zod';
 
 export interface MCPServerTool {
   function?: {
@@ -133,7 +134,9 @@ export async function loadToolDefinitions(
           mcpToolDefs.push({
             name: actualToolName,
             description: toolDef.function.description,
-            parameters: toolDef.function.parameters,
+            parameters: toolDef.function.parameters
+              ? resolveJsonSchemaRefs(toolDef.function.parameters)
+              : undefined,
             serverName,
           });
         }
@@ -146,7 +149,9 @@ export async function loadToolDefinitions(
       mcpToolDefs.push({
         name: toolName,
         description: toolDef.function.description,
-        parameters: toolDef.function.parameters,
+        parameters: toolDef.function.parameters
+          ? resolveJsonSchemaRefs(toolDef.function.parameters)
+          : undefined,
         serverName,
       });
     }

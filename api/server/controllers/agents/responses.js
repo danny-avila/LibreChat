@@ -10,6 +10,7 @@ const {
 } = require('@librechat/agents');
 const {
   createRun,
+  buildToolSet,
   createSafeUser,
   initializeAgent,
   createToolExecuteHandler,
@@ -372,8 +373,7 @@ const createResponse = async (req, res) => {
     // Merge previous messages with new input
     const allMessages = [...previousMessages, ...inputMessages];
 
-    // Format for agent
-    const toolSet = new Set((primaryConfig.tools ?? []).map((tool) => tool && tool.name));
+    const toolSet = buildToolSet(primaryConfig);
     const { messages: formattedMessages, indexTokenCountMap } = formatAgentMessages(
       allMessages,
       {},

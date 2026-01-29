@@ -282,24 +282,39 @@ export async function createRun({
     /**
      * Override defer_loading for tools that were discovered in previous turns.
      * This prevents the LLM from having to re-discover tools via tool_search.
+     * Also add the discovered tools' definitions so the LLM has their schemas.
      */
+    let toolDefinitions = agent.toolDefinitions ?? [];
     if (discoveredTools.size > 0 && agent.toolRegistry) {
       overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
+
+      /** Add discovered tools' definitions so the LLM can see their schemas */
+      const existingToolNames = new Set(toolDefinitions.map((d) => d.name));
+      for (const toolName of discoveredTools) {
+        if (existingToolNames.has(toolName)) {
+          continue;
+        }
+        const toolDef = agent.toolRegistry.get(toolName);
+        if (toolDef) {
+          toolDefinitions = [...toolDefinitions, toolDef];
+        }
+      }
     }
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     const agentInput: AgentInputs = {
       provider,
       reasoningKey,
+      toolDefinitions,
       agentId: agent.id,
-      name: agent.name ?? undefined,
       tools: agent.tools,
       clientOptions: llmConfig,
       instructions: systemContent,
+      name: agent.name ?? undefined,
       toolRegistry: agent.toolRegistry,
-      toolDefinitions: agent.toolDefinitions,
       maxContextTokens: agent.maxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
+      discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
     };
     agentInputs.push(agentInput);
   };

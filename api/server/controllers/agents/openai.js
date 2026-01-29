@@ -11,6 +11,7 @@ const {
   writeSSE,
   createRun,
   createChunk,
+  buildToolSet,
   sendFinalChunk,
   createSafeUser,
   validateRequest,
@@ -272,7 +273,7 @@ const OpenAIChatCompletionController = async (req, res) => {
 
     const openaiMessages = convertMessages(request.messages);
 
-    const toolSet = new Set((primaryConfig.tools ?? []).map((tool) => tool && tool.name));
+    const toolSet = buildToolSet(primaryConfig);
     const { messages: formattedMessages, indexTokenCountMap } = formatAgentMessages(
       openaiMessages,
       {},
