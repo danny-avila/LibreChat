@@ -21,21 +21,21 @@ import {
   useMakePromptProduction,
 } from '~/data-provider';
 import { useResourcePermissions, useHasAccess, useLocalize } from '~/hooks';
-import CategorySelector from './Groups/CategorySelector';
+import CategorySelector from '../fields/CategorySelector';
 import { usePromptGroupsContext } from '~/Providers';
-import NoPromptGroup from './Groups/NoPromptGroup';
-import PromptVariables from './PromptVariables';
+import NoPromptGroup from '../lists/NoPromptGroup';
+import PromptVariables from '../display/PromptVariables';
 import { cn, findPromptGroup } from '~/utils';
-import PromptVersions from './PromptVersions';
+import PromptVersions from '../display/PromptVersions';
 import { PromptsEditorMode } from '~/common';
-import DeleteVersion from './DeleteVersion';
-import PromptDetails from './PromptDetails';
-import PromptEditor from './PromptEditor';
-import SkeletonForm from './SkeletonForm';
-import Description from './Description';
-import SharePrompt from './SharePrompt';
-import PromptName from './PromptName';
-import Command from './Command';
+import DeleteVersion from '../dialogs/DeleteVersion';
+import PromptDetails from '../display/PromptDetails';
+import PromptEditor from '../editor/PromptEditor';
+import SkeletonForm from '../utils/SkeletonForm';
+import Description from '../fields/Description';
+import SharePrompt from '../dialogs/SharePrompt';
+import PromptName from '../fields/PromptName';
+import Command from '../fields/Command';
 import store from '~/store';
 
 interface RightPanelProps {
