@@ -81,6 +81,7 @@
     "klona": "^2.0.6",
     "librechat-data-provider": "*",
     "lodash": "^4.17.23",
+    "mammoth": "^1.11.0",
     "mathjs": "^15.1.0",
     "meilisearch": "^0.38.0",
     "memorystore": "^1.6.7",
@@ -103,6 +104,7 @@
     "passport-jwt": "^4.0.1",
     "passport-ldapauth": "^3.0.1",
     "passport-local": "^1.0.0",
+    "pdfjs-dist": "^5.4.530",
     "rate-limit-redis": "^4.2.0",
     "sharp": "^0.33.5",
     "tiktoken": "^1.0.15",
@@ -111,6 +113,7 @@
     "undici": "^7.18.2",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^5.0.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^3.22.4"
   },
   "devDependencies": {
