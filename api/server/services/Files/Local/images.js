@@ -19,6 +19,7 @@ const { updateUser, updateFile } = require('~/models');
  * @param {string} params.file_id - The file ID.
  * @param {EModelEndpoint} params.endpoint - The params object.
  * @param {string} [params.resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
+ * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  *
  * @returns {Promise<{ filepath: string, bytes: number, width: number, height: number}>}
  *          A promise that resolves to an object containing:
@@ -27,7 +28,7 @@ const { updateUser, updateFile } = require('~/models');
  *            - width: The width of the converted image.
  *            - height: The height of the converted image.
  */
-async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'high' }) {
+async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'high', temporary }) {
   const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
@@ -39,7 +40,9 @@ async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'hi
   const extension = path.extname(inputFilePath);
 
   const { imageOutput } = appConfig.paths;
-  const userPath = path.join(imageOutput, req.user.id);
+  const userPath = temporary
+    ? path.join(imageOutput, 'tmp', req.user.id)
+    : path.join(imageOutput, req.user.id);
 
   if (!fs.existsSync(userPath)) {
     fs.mkdirSync(userPath, { recursive: true });
@@ -49,10 +52,14 @@ async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'hi
   const newPath = path.join(userPath, fileName);
   const targetExtension = `.${appConfig.imageOutputType}`;
 
+  const filepathStart = temporary
+    ? path.join('/', 'images', 'tmp', req.user.id)
+    : path.join('/', 'images', req.user.id);
+
   if (extension.toLowerCase() === targetExtension) {
     const bytes = Buffer.byteLength(resizedBuffer);
     await fs.promises.writeFile(newPath, resizedBuffer);
-    const filepath = path.posix.join('/', 'images', req.user.id, path.basename(newPath));
+    const filepath = path.posix.join(filepathStart, path.basename(newPath));
     return { filepath, bytes, width, height };
   }
 
@@ -60,7 +67,7 @@ async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'hi
   const data = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
   await fs.promises.writeFile(outputFilePath, data);
   const bytes = Buffer.byteLength(data);
-  const filepath = path.posix.join('/', 'images', req.user.id, path.basename(outputFilePath));
+  const filepath = path.posix.join(filepathStart, path.basename(outputFilePath));
   await fs.promises.unlink(inputFilePath);
   return { filepath, bytes, width, height };
 }
