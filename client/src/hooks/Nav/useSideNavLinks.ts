@@ -1,6 +1,13 @@
 import { useMemo } from 'react';
 import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
-import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote } from 'lucide-react';
+import {
+  Database,
+  Bookmark,
+  Settings2,
+  ArrowRightToLine,
+  MessageSquareQuote,
+  Clock,
+} from 'lucide-react';
 import {
   Permissions,
   EModelEndpoint,
@@ -19,7 +26,9 @@ import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
+import ScheduledTasksPanel from '~/components/SidePanel/ScheduledTasks/ScheduledTasksPanel';
 import { useHasAccess, useMCPServerManager } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -68,6 +77,8 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.CREATE,
   });
+  const { data: startupConfig } = useGetStartupConfig();
+  const scheduledTasksEnabled = startupConfig?.scheduledTasks?.enabled !== false;
   const { availableMCPServers } = useMCPServerManager();
 
   const Links = useMemo(() => {
@@ -103,6 +114,16 @@ export default function useSideNavLinks({
         icon: Blocks,
         id: EModelEndpoint.agents,
         Component: AgentPanelSwitch,
+      });
+    }
+
+    if (hasAccessToAgents && scheduledTasksEnabled) {
+      links.push({
+        title: 'com_sidepanel_scheduled_tasks',
+        label: '',
+        icon: Clock,
+        id: 'scheduled-tasks',
+        Component: ScheduledTasksPanel,
       });
     }
 
@@ -197,6 +218,7 @@ export default function useSideNavLinks({
     hasAccessToUseMCPSettings,
     hasAccessToCreateMCP,
     hidePanel,
+    scheduledTasksEnabled,
   ]);
 
   return Links;
