@@ -33,6 +33,15 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN ?? '';
+if (!COOKIE_DOMAIN) {
+  logger.info(
+    '[AuthService] cookies will be set without a domain attribute (browser default behavior)',
+  );
+} else {
+  logger.info(`[AuthService] cookies are set to domain ${COOKIE_DOMAIN}`);
+}
+
 const isProduction = process.env.NODE_ENV === 'production';
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 
@@ -87,9 +96,7 @@ const createTokenHash = () => {
 const sendVerificationEmail = async (user) => {
   const [verifyToken, hash] = createTokenHash();
 
-  const verificationLink = `${
-    domains.client
-  }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+  const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
   await sendEmail({
     email: user.email,
     subject: 'Verify your email',
@@ -394,12 +401,14 @@ const setAuthTokens = async (userId, res, _session = null) => {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'strict',
+      domain: COOKIE_DOMAIN,
     });
     res.cookie('token_provider', 'librechat', {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
       secure: isProduction,
       sameSite: 'strict',
+      domain: COOKIE_DOMAIN,
     });
     return token;
   } catch (error) {
@@ -462,12 +471,14 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         httpOnly: true,
         secure: isProduction,
         sameSite: 'strict',
+        domain: COOKIE_DOMAIN,
       });
       res.cookie('openid_access_token', tokenset.access_token, {
         expires: expirationDate,
         httpOnly: true,
         secure: isProduction,
         sameSite: 'strict',
+        domain: COOKIE_DOMAIN,
       });
     }
 
@@ -477,6 +488,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       httpOnly: true,
       secure: isProduction,
       sameSite: 'strict',
+      domain: COOKIE_DOMAIN,
     });
     if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
       /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
@@ -488,6 +500,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         httpOnly: true,
         secure: isProduction,
         sameSite: 'strict',
+        domain: COOKIE_DOMAIN,
       });
     }
     return tokenset.access_token;
@@ -517,9 +530,7 @@ const resendVerificationEmail = async (req) => {
 
     const [verifyToken, hash] = createTokenHash();
 
-    const verificationLink = `${
-      domains.client
-    }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+    const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
 
     await sendEmail({
       email: user.email,
