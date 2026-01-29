@@ -85,10 +85,16 @@ interface:
   parameters: true
   sidePanel: true
   presets: true
-  prompts: true
+  prompts:
+    use: true
+    share: false
+    public: false
   bookmarks: true
   multiConvo: true
-  agents: true
+  agents:
+    use: true
+    share: false
+    public: false
   peoplePicker:
     users: true
     groups: true
@@ -102,9 +108,11 @@ interface:
     # - use: Allow users to use configured MCP servers
     # - create: Allow users to create and manage new MCP servers
     # - share: Allow users to share MCP servers with other users
+    # - public: Allow users to share MCP servers publicly (with everyone)
     use: false
-    create: false
     share: false
+    create: false
+    public: false
     # Creation / edit MCP server config Dialog config example
     # trustCheckbox:
     #   label:

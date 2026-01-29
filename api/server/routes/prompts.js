@@ -60,7 +60,7 @@ const checkGlobalPromptShare = generateCheckAccess({
   permissionType: PermissionTypes.PROMPTS,
   permissions: [Permissions.USE, Permissions.CREATE],
   bodyProps: {
-    [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
+    [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
   },
   getRoleByName,
 });

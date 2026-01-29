@@ -8,9 +8,10 @@ import { useLocalize } from '~/hooks';
 import type { PermissionConfig } from '~/components/ui';
 
 const permissions: PermissionConfig[] = [
-  { permission: Permissions.SHARED_GLOBAL, labelKey: 'com_ui_prompts_allow_share' },
-  { permission: Permissions.CREATE, labelKey: 'com_ui_prompts_allow_create' },
   { permission: Permissions.USE, labelKey: 'com_ui_prompts_allow_use' },
+  { permission: Permissions.CREATE, labelKey: 'com_ui_prompts_allow_create' },
+  { permission: Permissions.SHARE, labelKey: 'com_ui_prompts_allow_share' },
+  { permission: Permissions.SHARE_PUBLIC, labelKey: 'com_ui_prompts_allow_share_public' },
 ];
 
 const AdminSettings = () => {
