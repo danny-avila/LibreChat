@@ -15,6 +15,7 @@ import {
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
+import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 import { cn } from '~/utils';
@@ -25,6 +26,7 @@ export default function ModelPanel({
   models: modelsData,
 }: Pick<AgentModelPanelProps, 'models' | 'providers' | 'setActivePanel'>) {
   const localize = useLocalize();
+  const { announcePolite } = useLiveAnnouncer();
 
   const { control, setValue } = useFormContext<AgentForm>();
 
@@ -91,6 +93,7 @@ export default function ModelPanel({
 
   const handleResetParameters = () => {
     setValue('model_parameters', {} as t.AgentModelParameters);
+    announcePolite({ message: localize('com_ui_model_parameters_reset'), isStatus: true });
   };
 
   return (
