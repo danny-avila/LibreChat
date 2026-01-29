@@ -31,6 +31,7 @@
   "dependencies": {
     "@ariakit/react": "^0.4.15",
     "@ariakit/react-core": "^0.4.17",
+    "@capacitor/keyboard": "^6.0.4",
     "@codesandbox/sandpack-react": "^2.19.10",
     "@dicebear/collection": "^9.2.2",
     "@dicebear/core": "^9.2.2",
@@ -80,6 +81,7 @@
     "lucide-react": "^0.394.0",
     "match-sorter": "^8.1.0",
     "micromark-extension-llm-math": "^3.1.0",
+    "pdfjs-dist": "^3.11.174",
     "qrcode.react": "^4.2.0",
     "rc-input-number": "^7.4.2",
     "react": "^18.2.0",
@@ -102,7 +104,6 @@
     "react-virtualized": "^9.22.6",
     "recoil": "^0.7.7",
     "regenerator-runtime": "^0.14.1",
-    "pdfjs-dist": "^3.11.174",
     "rehype-highlight": "^6.0.0",
     "rehype-katex": "^6.0.3",
     "remark-directive": "^3.0.0",

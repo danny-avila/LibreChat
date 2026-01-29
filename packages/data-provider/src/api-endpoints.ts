@@ -7,11 +7,24 @@ if (
   typeof process === 'undefined' ||
   (process as typeof process & { browser?: boolean }).browser === true
 ) {
+  const globalBaseUrl =
+    typeof globalThis !== 'undefined' &&
+    typeof (globalThis as { __LIBRECHAT_API_BASE_URL__?: string }).__LIBRECHAT_API_BASE_URL__ ===
+      'string'
+      ? (
+          globalThis as { __LIBRECHAT_API_BASE_URL__?: string }
+        ).__LIBRECHAT_API_BASE_URL__?.trim()
+      : '';
+  if (globalBaseUrl && !globalBaseUrl.includes('%VITE_')) {
+    BASE_URL = globalBaseUrl;
+  }
   // process is only available in node context, or process.browser is true in client-side code
   // This is to ensure that the BASE_URL is set correctly based on the <base>
   // element in the HTML document, if it exists.
-  const baseEl = document.querySelector('base');
-  BASE_URL = baseEl?.getAttribute('href') || '/';
+  if (!BASE_URL) {
+    const baseEl = document.querySelector('base');
+    BASE_URL = baseEl?.getAttribute('href') || '/';
+  }
 }
 
 if (BASE_URL && BASE_URL.endsWith('/')) {

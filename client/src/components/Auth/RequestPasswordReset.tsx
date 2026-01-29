@@ -89,6 +89,9 @@ function RequestPasswordReset() {
           <input
             type="email"
             id="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             autoComplete="off"
             aria-label={localize('com_auth_email')}
             {...register('email', {

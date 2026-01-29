@@ -43,9 +43,11 @@ export default function Header() {
             className={`flex items-center gap-2 ${
               !isSmallScreen ? 'transition-all duration-200 ease-in-out' : ''
             } ${
-              !navVisible
+              !isSmallScreen && !navVisible
                 ? 'translate-x-0 opacity-100'
-                : 'pointer-events-none translate-x-[-100px] opacity-0'
+                : !isSmallScreen
+                  ? 'pointer-events-none translate-x-[-100px] opacity-0'
+                  : ''
             }`}
           >
             <OpenSidebar setNavVisible={setNavVisible} className="max-md:hidden" />
@@ -54,7 +56,13 @@ export default function Header() {
           <div
             className={`flex items-center gap-2 ${
               !isSmallScreen ? 'transition-all duration-200 ease-in-out' : ''
-            } ${!navVisible ? 'translate-x-0' : 'translate-x-[-100px]'}`}
+            } ${
+              !isSmallScreen && !navVisible
+                ? 'translate-x-0'
+                : !isSmallScreen
+                  ? 'translate-x-[-100px]'
+                  : ''
+            }`}
           >
             <ModelSelector startupConfig={startupConfig} />
             {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}

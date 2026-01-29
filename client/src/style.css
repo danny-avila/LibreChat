@@ -62,6 +62,15 @@
   --font-size-xl: 1.25rem;
   --markdown-font-size: 1rem;
 }
+
+@supports (-webkit-touch-callout: none) {
+  .ios-dock {
+    backdrop-filter: blur(20px);
+  }
+  .ios-input {
+    border-radius: 22px;
+  }
+}
 html {
   --brand-purple: #ab68ff;
   --presentation: var(--white);

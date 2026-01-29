@@ -63,12 +63,17 @@ const Registration: React.FC = () => {
     },
   });
 
-  const renderInput = (id: string, label: TranslationKeys, type: string, validation: object) => (
+  const renderInput = (id: string, label: TranslationKeys, type: string, validation: object) => {
+    const isEmail = id === 'email';
+    return (
     <div className="mb-4">
       <div className="relative">
         <input
           id={id}
           type={type}
+          autoCapitalize={isEmail ? 'none' : undefined}
+          autoCorrect={isEmail ? 'off' : undefined}
+          spellCheck={isEmail ? false : undefined}
           autoComplete={id}
           aria-label={localize(label)}
           {...register(
@@ -93,7 +98,8 @@ const Registration: React.FC = () => {
         </span>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <>

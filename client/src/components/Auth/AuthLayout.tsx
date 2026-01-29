@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { ThemeSelector } from '@librechat/client';
 import { TStartupConfig } from 'librechat-data-provider';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import { TranslationKeys, useLocalize } from '~/hooks';
+import { hideAccessoryBar, showAccessoryBar } from '~/utils/keyboard';
 import SocialLoginRender from './SocialLoginRender';
 import { BlinkAnimation } from './BlinkAnimation';
 import { Banner } from '../Banners';
@@ -25,6 +27,13 @@ function AuthLayout({
   error: TranslationKeys | null;
 }) {
   const localize = useLocalize();
+
+  useEffect(() => {
+    void hideAccessoryBar();
+    return () => {
+      void showAccessoryBar();
+    };
+  }, []);
 
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
   const DisplayError = () => {

@@ -1,11 +1,11 @@
 import { memo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
-import { Spinner } from '@librechat/client';
-import { useParams } from 'react-router-dom';
+import { Spinner, useMediaQuery } from '@librechat/client';
+import { useParams, useOutletContext } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import type { ChatFormValues } from '~/common';
+import type { ChatFormValues, ContextType } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
 import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
@@ -31,6 +31,8 @@ function LoadingSpinner() {
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
+  const { navVisible } = useOutletContext<ContextType>();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
@@ -80,33 +82,42 @@ function ChatView({ index = 0 }: { index?: number }) {
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
             <div className="flex h-full w-full flex-col">
-              <div className="px-4 py-3 text-lg font-semibold text-text-primary">
+              <div className="hidden px-4 pb-3 pt-[max(env(safe-area-inset-top),16px)] text-lg font-semibold text-text-primary md:block">
                 {ASSISTANT_DISPLAY_NAME}
               </div>
-              <div className="px-4 pb-2 text-sm text-text-secondary">
+              <div className="hidden px-4 pb-2 text-sm text-text-secondary md:block">
                 Answers are limited to the Ontario Building Code and include page-cited references.
               </div>
               <>
                 <div
                   className={cn(
-                    'flex flex-col',
+                    'flex flex-1 flex-col overflow-hidden',
                     isLandingPage
-                      ? 'flex-1 items-center justify-end sm:justify-center'
-                      : 'h-full overflow-y-auto',
+                      ? 'items-center justify-end sm:justify-center'
+                      : 'min-h-0',
                   )}
                 >
-                  {content}
                   <div
                     className={cn(
-                      'w-full',
-                      isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
+                      'flex-1',
+                      isLandingPage
+                        ? 'pb-32 md:pb-0'
+                        : 'min-h-0 overflow-y-auto pb-32 md:pb-0',
                     )}
                   >
-                    <ChatForm index={index} />
-                    {isLandingPage ? <ConversationStarters /> : <Footer />}
+                    {content}
                   </div>
+                  {isLandingPage && <ConversationStarters />}
                 </div>
-                {isLandingPage && <Footer />}
+                <div
+                  className={cn(
+                    'ios-dock fixed inset-x-0 bottom-0 z-40 w-full shrink-0 border-t border-border-light bg-surface-primary-alt/90 px-4 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 backdrop-blur-md dark:bg-gray-900/80 md:static md:z-auto',
+                    isSmallScreen && navVisible && 'hidden',
+                  )}
+                >
+                  <ChatForm index={index} />
+                  {!isLandingPage && <Footer />}
+                </div>
               </>
             </div>
           </Presentation>

@@ -91,6 +91,9 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             <input
               type="text"
               id="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               autoComplete={useUsernameLogin ? 'username' : 'email'}
               aria-label={localize('com_auth_email')}
               {...register('email', {

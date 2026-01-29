@@ -31,7 +31,10 @@ const NavMask = memo(
       id="mobile-nav-mask-toggle"
       role="button"
       tabIndex={0}
-      className={`nav-mask transition-opacity duration-200 ease-in-out ${navVisible ? 'active opacity-100' : 'opacity-0'}`}
+      className={cn(
+        'fixed inset-0 z-50 bg-black/40 transition-opacity duration-200 ease-in-out',
+        navVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+      )}
       onClick={toggleNavVisible}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -197,11 +200,15 @@ const Nav = memo(
         <div
           data-testid="nav"
           className={cn(
-            'nav active max-w-[320px] flex-shrink-0 transform overflow-x-hidden bg-surface-primary-alt transition-all duration-200 ease-in-out',
+            'transform overflow-x-hidden bg-surface-primary-alt transition-all duration-200 ease-in-out',
+            isSmallScreen
+              ? 'fixed inset-y-0 left-0 z-[64] w-[320px] max-w-[320px] shadow-xl'
+              : 'nav active max-w-[320px] flex-shrink-0',
             'md:max-w-[260px]',
+            isSmallScreen && !navVisible && 'pointer-events-none',
           )}
           style={{
-            width: navVisible ? navWidth : '0px',
+            width: isSmallScreen ? navWidth : navVisible ? navWidth : '0px',
             transform: navVisible ? 'translateX(0)' : 'translateX(-100%)',
           }}
         >
@@ -214,7 +221,7 @@ const Nav = memo(
                   <nav
                     id="chat-history-nav"
                     aria-label={localize('com_ui_chat_history')}
-                    className="flex h-full flex-col px-2 pb-3.5 md:px-3"
+                    className="flex h-full flex-col px-2 pb-3.5 pt-[max(env(safe-area-inset-top),12px)] md:px-3 md:pt-0"
                   >
                     <div className="flex flex-1 flex-col" ref={outerContainerRef}>
                       <MemoNewChat

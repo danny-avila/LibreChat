@@ -22,10 +22,10 @@ import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
 import { cn, removeFocusRings } from '~/utils';
+import { hideAccessoryBar, showAccessoryBar } from '~/utils/keyboard';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
-import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -40,7 +40,13 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   useFocusChatEffect(textAreaRef);
 
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  useEffect(() => {
+    void hideAccessoryBar();
+    return () => {
+      void showAccessoryBar();
+    };
+  }, []);
+
   const [, setIsScrollable] = useState(false);
   const [visualRowCount, setVisualRowCount] = useState(1);
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
@@ -115,12 +121,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     }
     textAreaRef.current?.focus();
   }, []);
-
-  const handleFocusOrClick = useCallback(() => {
-    if (isCollapsed) {
-      setIsCollapsed(false);
-    }
-  }, [isCollapsed]);
 
   useAutoSave({
     files,
@@ -197,10 +197,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     () =>
       cn(
         'md:py-3.5 m-0 w-full resize-none py-[13px] placeholder-black/50 bg-transparent dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
-        isCollapsed ? 'max-h-[52px]' : 'max-h-[45vh] md:max-h-[55vh]',
+        'max-h-[45vh] md:max-h-[55vh]',
         isMoreThanThreeRows ? 'pl-5' : 'px-5',
       ),
-    [isCollapsed, isMoreThanThreeRows],
+    [isMoreThanThreeRows],
   );
 
   return (
@@ -240,11 +240,11 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
           <div
             onClick={handleContainerClick}
             className={cn(
-              'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
-              isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
+              'ios-input relative flex w-full flex-grow flex-col overflow-hidden rounded-[22px] border pb-3 text-text-primary transition-all duration-200',
+              isTextAreaFocused ? 'shadow-sm' : 'shadow-xs',
               isTemporary
                 ? 'border-violet-800/60 bg-violet-950/10'
-                : 'border-border-light bg-surface-chat',
+                : 'border-border-light/70 bg-surface-chat',
             )}
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
@@ -275,11 +275,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   data-testid="text-input"
                   rows={1}
                   onFocus={() => {
-                    handleFocusOrClick();
                     setIsTextAreaFocused(true);
                   }}
                   onBlur={setIsTextAreaFocused.bind(null, false)}
-                  onClick={handleFocusOrClick}
                   style={{ height: 44, overflowY: 'auto' }}
                   className={cn(
                     baseClasses,
@@ -287,18 +285,11 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     'transition-[max-height] duration-200 disabled:cursor-not-allowed',
                   )}
                 />
-                <div className="flex flex-col items-start justify-start pt-1.5">
-                  <CollapseChat
-                    isCollapsed={isCollapsed}
-                    isScrollable={isMoreThanThreeRows}
-                    setIsCollapsed={setIsCollapsed}
-                  />
-                </div>
               </div>
             )}
             <div
               className={cn(
-                'items-between flex gap-2 pb-2',
+                'items-between flex items-center gap-2 pb-1.5',
                 isRTL ? 'flex-row-reverse' : 'flex-row',
               )}
             >

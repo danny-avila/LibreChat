@@ -8,6 +8,7 @@ import {
   useAgentsMap,
   useFileMap,
 } from '~/hooks';
+import { useMediaQuery } from '@librechat/client';
 import {
   PromptGroupsProvider,
   AssistantsMapContext,
@@ -20,6 +21,7 @@ import { TermsAndConditionsModal } from '~/components/ui';
 import { Nav, MobileNav } from '~/components/Nav';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
+import { cn } from '~/utils';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -28,6 +30,7 @@ export default function Root() {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   const { isAuthenticated, logout } = useAuthContext();
 
@@ -50,6 +53,16 @@ export default function Root() {
       setShowTerms(!termsData.termsAccepted);
     }
   }, [termsData]);
+  useEffect(() => {
+    if (!isSmallScreen) {
+      document.body.style.overflow = '';
+      return;
+    }
+    document.body.style.overflow = navVisible ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isSmallScreen, navVisible]);
 
   const handleAcceptTerms = () => {
     setShowTerms(false);
@@ -71,15 +84,24 @@ export default function Root() {
           <AgentsMapContext.Provider value={agentsMap}>
             <PromptGroupsProvider>
               <Banner onHeightChange={setBannerHeight} />
-              <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
-                <div className="relative z-0 flex h-full w-full overflow-hidden">
-                  <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
-                  <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
+              <div
+                className="flex pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+                style={{ height: `calc(100dvh - ${bannerHeight}px)` }}
+              >
+                  <div className="relative z-0 flex h-full w-full overflow-hidden">
+                    {!isSmallScreen && <Nav navVisible={navVisible} setNavVisible={setNavVisible} />}
+                  <div
+                    className={cn(
+                      'relative flex h-full max-w-full flex-1 flex-col overflow-hidden',
+                      isSmallScreen && navVisible && 'pointer-events-none',
+                    )}
+                  >
                     <MobileNav setNavVisible={setNavVisible} />
                     <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
                   </div>
                 </div>
               </div>
+              {isSmallScreen && <Nav navVisible={navVisible} setNavVisible={setNavVisible} />}
             </PromptGroupsProvider>
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (

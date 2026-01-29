@@ -30,36 +30,8 @@
 }
 
 @media (max-width: 767px) {
-  .nav {
-    width: calc(100% - 10px)  ;
-    transition: all 0.15s;
-  }
-  .nav-mask {
-    position: fixed;
-    z-index: 63;
-    left: 0;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    background-color: rgba(7, 7, 7, 0.4);
-    padding-left: 420px;
-    padding-top: 12px;
-    opacity: 0;
-    transition: all 0.5s;
-    pointer-events: none;
-  }
-
   .nav-open-button {
     opacity: 0;
-  }
-
-  .nav-mask.active {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .nav.active {
-    position: fixed;
   }
 }
 
