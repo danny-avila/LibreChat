@@ -87,6 +87,7 @@ export const AppService = async (params?: {
     availableTools,
     imageOutputType,
     interfaceConfig,
+    i18n: config.i18n,
     turnstileConfig,
     fileStrategies: config.fileStrategies,
   };

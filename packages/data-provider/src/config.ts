@@ -581,6 +581,14 @@ export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 const localizedStringSchema = z.union([z.string(), z.record(z.string())]);
 export type LocalizedString = z.infer<typeof localizedStringSchema>;
 
+const i18nSchema = z
+  .object({
+    translations: z.record(z.record(z.unknown())).optional(),
+  })
+  .optional();
+
+export type TI18nConfig = z.infer<typeof i18nSchema>;
+
 const mcpServersSchema = z
   .object({
     placeholder: z.string().optional(),
@@ -707,6 +715,7 @@ export type TStartupConfig = {
   openidLabel: string;
   openidImageUrl: string;
   openidAutoRedirect: boolean;
+  i18n?: TI18nConfig;
   samlLabel: string;
   samlImageUrl: string;
   /** LDAP Auth Configuration */
@@ -930,6 +939,7 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
+  i18n: i18nSchema,
   balance: balanceSchema.optional(),
   transactions: transactionsSchema.optional(),
   speech: z

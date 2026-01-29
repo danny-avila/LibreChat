@@ -6,6 +6,7 @@ import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import { cleanupTimestampedStorage } from '~/utils/timestamps';
 import useSpeechSettingsInit from './useSpeechSettingsInit';
 import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';
+import { applyTranslationOverrides } from '~/locales/i18n';
 import store from '~/store';
 
 export default function useAppStartup({
@@ -72,4 +73,8 @@ export default function useAppStartup({
       TagManager.initialize(tagManagerArgs);
     }
   }, [startupConfig?.analyticsGtmId]);
+
+  useEffect(() => {
+    applyTranslationOverrides(startupConfig?.i18n?.translations);
+  }, [startupConfig?.i18n?.translations]);
 }

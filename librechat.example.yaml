@@ -120,6 +120,19 @@ interface:
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
+# Example runtime translation overrides (optional)
+# Only provided keys override the bundled locale JSON; missing keys fall back to the built-in translations.
+# i18n:
+#   translations:
+#     en:
+#       com_nav_conversations: 'Threads'
+#       com_ui_name: 'AI Copilot'
+#     fr:
+#       com_nav_conversations: 'Fils de discussion'
+#     es:
+#       nested:
+#         label: 'Etiqueta personalizada'
+
 # Example Cloudflare turnstile (optional)
 #turnstile:
 #  siteKey: "your-site-key-here"

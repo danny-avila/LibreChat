@@ -74,6 +74,8 @@ export interface AppConfig {
   imageOutputType: string;
   /** Interface configuration */
   interfaceConfig?: TCustomConfig['interface'];
+  /** Custom i18n configuration */
+  i18n?: TCustomConfig['i18n'];
   /** Turnstile configuration */
   turnstileConfig?: Partial<TCustomConfig['turnstile']>;
   /** Balance configuration */

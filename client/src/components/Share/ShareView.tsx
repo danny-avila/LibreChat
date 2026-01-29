@@ -1,4 +1,4 @@
-import { memo, useState, useCallback, useContext } from 'react';
+import { memo, useState, useCallback, useContext, useEffect } from 'react';
 import Cookies from 'js-cookie';
 import { useRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
@@ -24,6 +24,7 @@ import { ShareContext } from '~/Providers';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
+import { applyTranslationOverrides } from '~/locales/i18n';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -37,6 +38,10 @@ function SharedView() {
   const messagesTree = dataTree?.length === 0 ? null : (dataTree ?? null);
 
   const [langcode, setLangcode] = useRecoilState(store.lang);
+
+  useEffect(() => {
+    applyTranslationOverrides(config?.i18n?.translations);
+  }, [config?.i18n?.translations]);
 
   // configure document title
   let docTitle = '';

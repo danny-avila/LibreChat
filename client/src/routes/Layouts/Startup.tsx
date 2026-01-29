@@ -4,6 +4,7 @@ import type { TStartupConfig } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import AuthLayout from '~/components/Auth/AuthLayout';
 import { TranslationKeys, useLocalize } from '~/hooks';
+import { applyTranslationOverrides } from '~/locales/i18n';
 
 const headerMap: Record<string, TranslationKeys> = {
   '/login': 'com_auth_welcome_back',
@@ -45,6 +46,10 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
     setError(null);
     setHeaderText(null);
   }, [location.pathname]);
+
+  useEffect(() => {
+    applyTranslationOverrides(startupConfig?.i18n?.translations);
+  }, [startupConfig?.i18n?.translations]);
 
   const contextValue = {
     error,

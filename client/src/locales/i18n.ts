@@ -42,6 +42,10 @@ import translationNb from './nb/translation.json';
 import translationSl from './sl/translation.json';
 
 export const defaultNS = 'translation';
+type TranslationBundle = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is TranslationBundle =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const resources = {
   en: { translation: translationEn },
@@ -82,6 +86,45 @@ export const resources = {
   sl: { translation: translationSl },
   uk: { translation: translationUk },
 } as const;
+
+const mergeTranslations = (
+  base: TranslationBundle,
+  overrides: TranslationBundle,
+): TranslationBundle => {
+  const merged: TranslationBundle = { ...base };
+
+  Object.entries(overrides).forEach(([key, value]) => {
+    if (isRecord(value) && isRecord(base[key])) {
+      merged[key] = mergeTranslations(base[key] as TranslationBundle, value);
+      return;
+    }
+
+    merged[key] = value;
+  });
+
+  return merged;
+};
+
+export const applyTranslationOverrides = (
+  overrides?: Record<string, TranslationBundle | undefined>,
+) => {
+  if (!overrides) {
+    return;
+  }
+
+  Object.entries(overrides).forEach(([language, bundle]) => {
+    if (!bundle || !isRecord(bundle)) {
+      return;
+    }
+
+    const baseTranslation =
+      (resources as Record<string, { translation: TranslationBundle | undefined }>)[language]
+        ?.translation || (resources.en.translation as TranslationBundle);
+
+    const mergedTranslations = mergeTranslations(baseTranslation, bundle);
+    i18n.addResourceBundle(language, defaultNS, mergedTranslations, true, true);
+  });
+};
 
 i18n
   .use(LanguageDetector)
