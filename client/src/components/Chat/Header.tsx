@@ -4,14 +4,14 @@ import { useOutletContext } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
-import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
+import { PresetsMenu, HeaderNewChat, OpenSidebar, MarketplaceMenu } from './Menus';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useShowMarketplace } from '~/hooks';
 import { cn } from '~/utils';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -19,6 +19,7 @@ const defaultInterface = getConfigDefaults().interface;
 export default function Header() {
   const { data: startupConfig } = useGetStartupConfig();
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
+  const showAgentMarketplace = useShowMarketplace();
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
@@ -34,6 +35,9 @@ export default function Header() {
     permissionType: PermissionTypes.MULTI_CONVO,
     permission: Permissions.USE,
   });
+
+  // Show marketplace icon only if user has permission AND it's enabled in interface config
+  const shouldShowMarketplaceIcon = showAgentMarketplace && !!interfaceConfig.marketplaceIcon;
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
@@ -53,6 +57,7 @@ export default function Header() {
               >
                 <OpenSidebar setNavVisible={setNavVisible} className="max-md:hidden" />
                 <HeaderNewChat />
+                {shouldShowMarketplaceIcon && <MarketplaceMenu />}
               </motion.div>
             )}
           </AnimatePresence>

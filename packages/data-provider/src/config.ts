@@ -656,6 +656,7 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    marketplaceIcon: z.boolean().optional(),
   })
   .default({
     endpointsMenu: true,
@@ -695,6 +696,7 @@ export const interfaceSchema = z
     },
     fileSearch: true,
     fileCitations: true,
+    marketplaceIcon: false,
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
