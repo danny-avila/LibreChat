@@ -41,6 +41,7 @@ export const AppService = async (params?: {
   const ocr = loadOCRConfig(config.ocr);
   const webSearch = loadWebSearchConfig(config.webSearch);
   const memory = loadMemoryConfig(config.memory);
+  const scheduledTasks = config.scheduledTasks ?? configDefaults.scheduledTasks;
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = (config.fileStrategy ?? configDefaults.fileStrategy) as
@@ -73,6 +74,7 @@ export const AppService = async (params?: {
     paths,
     config,
     memory,
+    scheduledTasks,
     speech,
     balance,
     actions,
