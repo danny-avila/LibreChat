@@ -5,5 +5,6 @@ export * from './filter';
 export * from './mistral/crud';
 export * from './ocr';
 export * from './parse';
+export * from './rag';
 export * from './validation';
 export * from './text';

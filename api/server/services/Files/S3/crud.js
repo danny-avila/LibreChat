@@ -1,6 +1,6 @@
 const fs = require('fs');
 const fetch = require('node-fetch');
-const { initializeS3 } = require('@librechat/api');
+const { initializeS3, deleteRagFile } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -142,6 +142,9 @@ async function saveURLToS3({ userId, URL, fileName, basePath = defaultBasePath }
  * @returns {Promise<void>}
  */
 async function deleteFileFromS3(req, file) {
+  // Delete from RAG API if the file has embeddings
+  await deleteRagFile({ userId: req.user.id, file });
+
   const key = extractKeyFromS3Url(file.filepath);
   const params = { Bucket: bucketName, Key: key };
   if (!key.includes(req.user.id)) {
