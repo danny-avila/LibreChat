@@ -175,6 +175,13 @@ export const cancelMCPOAuth = (serverName: string) => {
   return `${BASE_URL}/api/mcp/oauth/cancel/${serverName}`;
 };
 
+const scheduledTasksRoot = `${BASE_URL}/api/scheduled-tasks`;
+
+export const scheduledTasks = () => `${scheduledTasksRoot}`;
+export const scheduledTaskById = (id: string) => `${scheduledTasksRoot}/${id}`;
+export const scheduledTaskRuns = (id: string) => `${scheduledTasksRoot}/${id}/runs`;
+export const runScheduledTask = (id: string) => `${scheduledTasksRoot}/${id}/run`;
+
 export const config = () => `${BASE_URL}/api/config`;
 
 export const prompts = () => `${BASE_URL}/api/prompts`;

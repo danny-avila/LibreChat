@@ -62,6 +62,9 @@ export enum QueryKeys {
   mcpServer = 'mcpServer',
   /* Active Jobs */
   activeJobs = 'activeJobs',
+  /* Scheduled Tasks */
+  scheduledTasks = 'scheduledTasks',
+  scheduledTaskRuns = 'scheduledTaskRuns',
 }
 
 // Dynamic query keys that require parameters
