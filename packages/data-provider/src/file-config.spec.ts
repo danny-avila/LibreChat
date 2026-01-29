@@ -826,6 +826,45 @@ describe('getEndpointFileConfig', () => {
       /** disabled should not be explicitly true */
       expect(result.disabled).not.toBe(true);
     });
+
+    it('should respect granular disable flags when provided', () => {
+      const fileConfig: FileConfig = {
+        ...baseFileConfig,
+        endpoints: {
+          ...baseFileConfig.endpoints,
+          [EModelEndpoint.openAI]: {
+            disableProviderUpload: true,
+            disableTextUpload: true,
+          },
+        },
+      };
+
+      const result = getEndpointFileConfig({
+        fileConfig,
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      expect(result.disableProviderUpload).toBe(true);
+      expect(result.disableTextUpload).toBe(true);
+    });
+
+    it('should set granular disable flags when endpoint is disabled', () => {
+      const merged = mergeFileConfig({
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            disabled: true,
+          },
+        },
+      });
+
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      expect(result.disableProviderUpload).toBe(true);
+      expect(result.disableTextUpload).toBe(true);
+    });
   });
 
   describe('partial config merging', () => {
