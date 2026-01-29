@@ -1,5 +1,5 @@
 import { Providers } from '@librechat/agents';
-import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'librechat-data-provider';
+import { isOpenAILikeProvider, isDocumentSupportedProvider, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type {
   AnthropicDocumentBlock,
@@ -9,6 +9,15 @@ import type {
 } from '~/types';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 import { validatePdf } from '~/files/validation';
+
+/**
+ * Check if we should use public URLs for S3/Azure files instead of base64
+ * When enabled, documents from S3/Azure will be sent as URLs instead of base64
+ */
+const usePublicUrlForBlobStorage =
+  process.env.S3_USE_PUBLIC_URL === 'true' || process.env.AZURE_USE_PUBLIC_URL === 'true';
+
+const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3]);
 
 /**
  * Processes and encodes document files for various providers
@@ -48,6 +57,32 @@ export async function encodeAndFormatDocuments(
       if (file.type !== 'application/pdf' || !isDocumentSupportedProvider(provider)) {
         return Promise.resolve(null);
       }
+
+      // Check if we should use public URL for S3/Azure files
+      // For Anthropic, we still need to download because it requires base64
+      const fileSource = (file.source ?? FileSources.local) as FileSources;
+      const usePublicUrl = blobStorageSources.has(fileSource) && usePublicUrlForBlobStorage
+        && provider !== Providers.ANTHROPIC; // Anthropic requires base64 for documents
+
+      if (usePublicUrl) {
+        // For S3/Azure files with public URL enabled, use the URL directly without downloading
+        console.log(`[encodeAndFormatDocuments] Using public URL for ${fileSource} file: ${file.filepath}`);
+        return Promise.resolve({
+          file,
+          content: null, // No base64 content
+          url: file.filepath, // Use the S3/Azure public URL
+          metadata: {
+            file_id: file.file_id,
+            temp_file_id: file.temp_file_id,
+            filepath: file.filepath,
+            source: file.source,
+            filename: file.filename,
+            type: file.type,
+          },
+        });
+      }
+
+      // Otherwise, download and convert to base64 (original behavior)
       return getFileStream(req, file, encodingMethods, getStrategyFunctions);
     }),
   );
@@ -61,8 +96,60 @@ export async function encodeAndFormatDocuments(
     const processed = settledResult.value;
     if (!processed) continue;
 
-    const { file, content, metadata } = processed;
+    const { file, content, url, metadata } = processed;
 
+    // If we have a URL (from S3/Azure public), use it directly
+    if (url && !content) {
+      console.log(`[encodeAndFormatDocuments] Using URL for document: ${url}`);
+
+      if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
+        result.documents.push({
+          type: 'media',
+          file_uri: url, // Google supports file_uri for media
+          mimeType: file.type,
+        });
+      } else if (isOpenAILikeProvider(provider) && provider != Providers.AZURE) {
+        // Use file_uri for OpenAI-like providers
+        result.documents.push({
+          type: 'file',
+          file: {
+            filename: file.filename,
+            file_uri: url,
+          },
+        });
+      } else if (useResponsesApi) {
+        result.documents.push({
+          type: 'input_file',
+          filename: file.filename,
+          file_uri: url,
+        });
+      } else if (provider === Providers.ANTHROPIC) {
+        // Fallback to downloading for Anthropic (requires base64)
+        console.log('[encodeAndFormatDocuments] Anthropic requires base64, downloading file...');
+        const downloaded = await getFileStream(req, file, encodingMethods, getStrategyFunctions);
+        if (downloaded?.content) {
+          const document: AnthropicDocumentBlock = {
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: 'application/pdf',
+              data: downloaded.content,
+            },
+            citations: { enabled: true },
+          };
+
+          if (file.filename) {
+            document.context = `File: "${file.filename}"`;
+          }
+
+          result.documents.push(document);
+        }
+      }
+      result.files.push(metadata);
+      continue;
+    }
+
+    // Original base64 handling (for downloaded files)
     if (!content || !file) {
       if (metadata) result.files.push(metadata);
       continue;

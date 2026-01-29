@@ -63,7 +63,8 @@ export interface AnthropicDocumentBlock {
 export interface GoogleDocumentBlock {
   type: 'media';
   mimeType: string;
-  data: string;
+  data?: string; // Base64 data (optional)
+  file_uri?: string; // Public URL for S3/Azure files (optional)
 }
 
 /** OpenAI file block format */
@@ -71,7 +72,8 @@ export interface OpenAIFileBlock {
   type: 'file';
   file: {
     filename: string;
-    file_data: string;
+    file_data?: string; // Base64 data (optional)
+    file_uri?: string; // Public URL for S3/Azure files (optional)
   };
 }
 
@@ -79,7 +81,8 @@ export interface OpenAIFileBlock {
 export interface OpenAIInputFileBlock {
   type: 'input_file';
   filename: string;
-  file_data: string;
+  file_data?: string; // Base64 data (optional)
+  file_uri?: string; // Public URL for S3/Azure files (optional)
 }
 
 export type DocumentBlock =
@@ -119,6 +122,7 @@ export interface AudioResult {
 export interface ProcessedFile {
   file: IMongoFile;
   content: string;
+  url?: string; // Optional URL for S3/Azure public files (when S3_USE_PUBLIC_URL is enabled)
   metadata: {
     file_id: string;
     temp_file_id?: string;

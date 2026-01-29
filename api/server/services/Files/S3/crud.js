@@ -14,6 +14,12 @@ const {
 const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';
 
+// Check if we should use public URLs (clean URLs without presigned parameters)
+const usePublicUrl = process.env.S3_USE_PUBLIC_URL === 'true';
+
+// Get the AWS region for constructing public URLs
+const awsRegion = process.env.AWS_REGION || 'us-east-1';
+
 let s3UrlExpirySeconds = 2 * 60; // 2 minutes
 let s3RefreshExpiryMs = null;
 
@@ -91,6 +97,14 @@ async function getS3URL({
   contentType = null,
 }) {
   const key = getS3Key(basePath, userId, fileName);
+
+  // If public URL is enabled, return clean S3 public URL without presigned parameters
+  if (usePublicUrl) {
+    // Clean public URL format: https://bucket.s3.region.amazonaws.com/key
+    return `https://${bucketName}.s3.${awsRegion}.amazonaws.com/${key}`;
+  }
+
+  // Otherwise, use presigned URL (original behavior)
   const params = { Bucket: bucketName, Key: key };
 
   // Add response headers if specified

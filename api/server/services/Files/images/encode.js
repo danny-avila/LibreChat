@@ -83,6 +83,18 @@ const base64Only = new Set([
 const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3]);
 
 /**
+ * Check if we should use public URLs for S3/Azure files instead of downloading and converting to base64.
+ * This is useful when:
+ * - S3/Azure files are publicly accessible
+ * - You want to reduce payload size (no base64 bloat)
+ * - AI models support image URLs
+ *
+ * Set S3_USE_PUBLIC_URL=true or AZURE_USE_PUBLIC_URL=true in .env to enable
+ */
+const usePublicUrlForBlobStorage =
+  process.env.S3_USE_PUBLIC_URL === 'true' || process.env.AZURE_USE_PUBLIC_URL === 'true';
+
+/**
  * Encodes and formats the given files.
  * @param {ServerRequest} req - The request object.
  * @param {Array<MongoFile>} files - The array of files to encode and format.
@@ -127,18 +139,30 @@ async function encodeAndFormat(req, files, params, mode) {
     }
 
     const preparePayload = encodingMethods[source].prepareImagePayload;
-    /* We need to fetch the image and convert it to base64 if we are using S3/Azure Blob storage. */
+    /* We need to fetch the image and convert it to base64 if we are using S3/Azure Blob storage.
+     * However, if usePublicUrlForBlobStorage is enabled, we'll use the URL directly instead of downloading.
+     * This is useful for S3/Azure files that are publicly accessible or when you want to reduce payload size.
+     */
     if (blobStorageSources.has(source)) {
-      try {
-        const downloadStream = encodingMethods[source].getDownloadStream;
-        let stream = await downloadStream(req, file.filepath);
-        let base64Data = await streamToBase64(stream);
-        stream = null;
-        promises.push([file, base64Data]);
-        base64Data = null;
+      if (usePublicUrlForBlobStorage) {
+        // Use the S3/Azure URL directly without downloading and converting to base64
+        // The URL should be publicly accessible or accessible to the AI model
+        logger.debug(`[encodeAndFormat] Using public URL for ${source} file: ${file.filepath}`);
+        promises.push([file, file.filepath]); // filepath contains the S3/Azure URL
         continue;
-      } catch (error) {
-        logger.error('Error processing image from blob storage:', error);
+      } else {
+        // Original behavior: download from S3/Azure and convert to base64
+        try {
+          const downloadStream = encodingMethods[source].getDownloadStream;
+          let stream = await downloadStream(req, file.filepath);
+          let base64Data = await streamToBase64(stream);
+          stream = null;
+          promises.push([file, base64Data]);
+          base64Data = null;
+          continue;
+        } catch (error) {
+          logger.error('Error processing image from blob storage:', error);
+        }
       }
     } else if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
       const [_file, imageURL] = await preparePayload(req, file);
