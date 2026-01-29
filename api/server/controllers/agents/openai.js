@@ -127,6 +127,7 @@ function sendErrorResponse(res, statusCode, message, type = 'invalid_request_err
  */
 const OpenAIChatCompletionController = async (req, res) => {
   const appConfig = req.config;
+  const requestStartTime = Date.now();
 
   // Validate request
   const validation = validateRequest(req.body);
@@ -160,6 +161,10 @@ const OpenAIChatCompletionController = async (req, res) => {
     requestId,
     model: agentId,
   };
+
+  logger.debug(
+    `[OpenAI API] Request ${requestId} started for agent ${agentId}, stream: ${request.stream}`,
+  );
 
   // Set up abort controller
   const abortController = new AbortController();
@@ -492,9 +497,11 @@ const OpenAIChatCompletionController = async (req, res) => {
     });
 
     // Finalize response
+    const duration = Date.now() - requestStartTime;
     if (isStreaming) {
       sendFinalChunk(handlerConfig);
       res.end();
+      logger.debug(`[OpenAI API] Request ${requestId} completed in ${duration}ms (streaming)`);
 
       // Wait for artifact processing after response ends (non-blocking)
       if (artifactPromises.length > 0) {
@@ -533,6 +540,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         usage,
       );
       res.json(response);
+      logger.debug(`[OpenAI API] Request ${requestId} completed in ${duration}ms (non-streaming)`);
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An error occurred';

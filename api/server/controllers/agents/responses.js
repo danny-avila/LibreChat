@@ -265,6 +265,8 @@ function convertMessagesToOutputItems(messages) {
  * @param {import('express').Response} res
  */
 const createResponse = async (req, res) => {
+  const requestStartTime = Date.now();
+
   // Validate request
   const validation = validateResponseRequest(req.body);
   if (isValidationFailure(validation)) {
@@ -294,6 +296,10 @@ const createResponse = async (req, res) => {
 
   // Create response context
   const context = createResponseContext(request, responseId);
+
+  logger.debug(
+    `[Responses API] Request ${responseId} started for agent ${agentId}, stream: ${isStreaming}`,
+  );
 
   // Set up abort controller
   const abortController = new AbortController();
@@ -497,6 +503,9 @@ const createResponse = async (req, res) => {
       finalizeStream();
       res.end();
 
+      const duration = Date.now() - requestStartTime;
+      logger.debug(`[Responses API] Request ${responseId} completed in ${duration}ms (streaming)`);
+
       // Save to database if store: true
       if (request.store === true) {
         try {
@@ -640,6 +649,11 @@ const createResponse = async (req, res) => {
       }
 
       res.json(response);
+
+      const duration = Date.now() - requestStartTime;
+      logger.debug(
+        `[Responses API] Request ${responseId} completed in ${duration}ms (non-streaming)`,
+      );
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An error occurred';
