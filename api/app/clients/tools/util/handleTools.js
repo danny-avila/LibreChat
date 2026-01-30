@@ -274,9 +274,16 @@ const loadTools = async ({
         if (toolContext) {
           toolContextMap[tool] = toolContext;
         }
+        // Get conversation_id for session isolation
+        let conversationId = options.req?.body?.conversationId;
+        if (!conversationId || conversationId === 'new') {
+          conversationId = options.req?._resumableStreamId || null;
+        }
         const CodeExecutionTool = createCodeExecutionTool({
           user_id: user,
           files,
+          conversation_id: conversationId,
+          entity_id: agent?.id || null,
           ...authValues,
         });
         CodeExecutionTool.apiKey = codeApiKey;
