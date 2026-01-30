@@ -166,7 +166,7 @@ endpoints:
       modelDisplayLabel: "AjraSakha"  # optional display label in UI
     - name: "vLLM-Qwen"
       apiKey: "vllm-2"
-      baseURL: "http://100.100.108.100:8081/v1"
+      baseURL: "http://100.100.108.43:9012/v1"
       models:
         default: ['Qwen/Qwen3-30B-A3B']
         fetch: true
