@@ -88,34 +88,49 @@ registration:
   - "annam.ai"
   - "vicharanashala.ai"
 
+# mcpServers:
+  # golden:
+  #   type: streamable-http # type can optionally be omitted
+  #   url: http://100.100.108.43:9006/mcp
+  #   timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+  #   initTimeout: 120000
+  # pop:
+  #   type: streamable-http # type can optionally be omitted
+  #   url: http://100.100.108.43:9002/mcp
+  #   timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+  #   initTimeout: 120000
+  # market:
+  #   type: streamable-http # type can optionally be omitted
+  #   url: http://100.100.108.43:9003/mcp
+  #   timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+  #   initTimeout: 120000
+  # weather:
+  #   type: streamable-http # type can optionally be omitted
+  #   url: http://100.100.108.43:9004/mcp
+  #   timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+  #   initTimeout: 120000
+  # faq-videos:
+  #   type: streamable-http # type can optionally be omitted
+  #   url: http://100.100.108.43:9005/mcp
+  #   timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+  #   initTimeout: 120000
+
 mcpServers:
   golden:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9006/mcp
+    url: http://100.100.108.43:9023/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
-  pop:
-    type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9002/mcp
-    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
+
   market:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9003/mcp
+    url: http://100.100.108.43:9022/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
   weather:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9004/mcp
+    url: http://100.100.108.28:9004/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
-  faq-videos:
-    type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9005/mcp
-    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
 
-
+    
 speech:
   stt:
     openai:
@@ -164,9 +179,9 @@ endpoints:
       modelDisplayLabel: "AjraSakha"  # optional display label in UI
     - name: "vLLM-Qwen3-1.7b"
       apiKey: "vllm-3"
-      baseURL: "http://100.100.108.27:8012/v1"
+      baseURL: "http://100.100.108.43:9012/v1"
       models:
-        default: ['Qwen/Qwen3-1.7B']
+        default: ['Qwen/Qwen3-30B-A3B']
         fetch: true
       titleConvo: true
       titleModel: "current_model"
