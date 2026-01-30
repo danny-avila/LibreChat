@@ -408,6 +408,18 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # Poe Example
+    - name: 'Poe'
+      apiKey: '${POE_API_KEY}'
+      baseURL: 'https://api.poe.com/v1'
+      models:
+        default: ['assistant']
+        fetch: true
+      titleConvo: true
+      titleModel: 'assistant'
+      dropParams: ['stop']
+      modelDisplayLabel: 'Poe'
+
     # Helicone Example
     - name: 'Helicone'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.

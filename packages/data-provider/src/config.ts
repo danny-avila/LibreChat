@@ -1032,6 +1032,7 @@ export enum KnownEndpoints {
   mlx = 'mlx',
   ollama = 'ollama',
   openrouter = 'openrouter',
+  poe = 'poe',
   perplexity = 'perplexity',
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
@@ -1043,6 +1044,7 @@ export enum KnownEndpoints {
 export enum FetchTokenConfig {
   openrouter = KnownEndpoints.openrouter,
   helicone = KnownEndpoints.helicone,
+  poe = KnownEndpoints.poe,
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [
@@ -1069,6 +1071,7 @@ export const alternateName = {
   [EModelEndpoint.bedrock]: 'AWS Bedrock',
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',
+  [KnownEndpoints.poe]: 'Poe',
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
   [KnownEndpoints.helicone]: 'Helicone',

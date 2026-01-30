@@ -84,7 +84,14 @@ describe('formatToolContent', () => {
   });
 
   describe('recognized providers - string providers', () => {
-    const stringProviders: t.Provider[] = ['openrouter', 'xai', 'deepseek', 'ollama', 'bedrock'];
+    const stringProviders: t.Provider[] = [
+      'openrouter',
+      'poe',
+      'xai',
+      'deepseek',
+      'ollama',
+      'bedrock',
+    ];
 
     stringProviders.forEach((provider) => {
       describe(`${provider} provider`, () => {
