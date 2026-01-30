@@ -313,15 +313,21 @@ async function resolveGroupsFromOverage(accessToken) {
       `[openidStrategy] Detected group overage, resolving groups via Microsoft Graph getMemberObjects: ${url}`,
     );
 
-    const response = await undici.fetch(url, {
+    const fetchOptions = {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ securityEnabledOnly: false }),
-    });
+    };
 
+    if (process.env.PROXY) {
+      const { ProxyAgent } = undici;
+      fetchOptions.dispatcher = new ProxyAgent(process.env.PROXY);
+    }
+
+    const response = await undici.fetch(url, fetchOptions);
     if (!response.ok) {
       logger.error(
         `[openidStrategy] Failed to resolve groups via Microsoft Graph getMemberObjects: HTTP ${response.status} ${response.statusText}`,
