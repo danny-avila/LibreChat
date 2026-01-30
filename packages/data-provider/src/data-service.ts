@@ -1052,3 +1052,33 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* API Registry */
+
+export const parseOpenAPISpec = (swaggerUrl: string): Promise<any> => {
+  return request.post(endpoints.apiRegistry.parse, { swaggerUrl });
+};
+
+export const getAPIRegistries = (): Promise<any> => {
+  return request.get(endpoints.apiRegistry.apis);
+};
+
+export const getAPIRegistry = (serverName: string): Promise<any> => {
+  return request.get(endpoints.apiRegistryServer(serverName));
+};
+
+export const createAPIRegistry = (data: any): Promise<any> => {
+  return request.post(endpoints.apiRegistry.apis, data);
+};
+
+export const updateAPIRegistry = (serverName: string, data: any): Promise<any> => {
+  return request.patch(endpoints.apiRegistryServer(serverName), data);
+};
+
+export const deleteAPIRegistry = (serverName: string): Promise<{ success: boolean }> => {
+  return request.delete(endpoints.apiRegistryServer(serverName));
+};
+
+export const getAPITools = (serverName: string): Promise<any> => {
+  return request.get(endpoints.apiRegistryTools(serverName));
+};

@@ -42,6 +42,7 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
+const { createAPITools, isAPIRegistryServer } = require('~/server/services/APIRegistry');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getRoleByName } = require('~/models/Role');
@@ -366,6 +367,32 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
         );
         continue;
       }
+
+      // Check if this is an API Registry server
+      if (isAPIRegistryServer(serverConfig)) {
+        // Handle API Registry tools separately
+        if (toolName === Constants.mcp_all) {
+          requestedMCPTools[serverName] = [
+            {
+              type: 'api_all',
+              serverName,
+              config: serverConfig,
+            },
+          ];
+        } else {
+          requestedMCPTools[serverName] = requestedMCPTools[serverName] || [];
+          requestedMCPTools[serverName].push({
+            type: 'api_single',
+            toolKey: tool,
+            toolName,
+            serverName,
+            config: serverConfig,
+          });
+        }
+        continue;
+      }
+
+      // Regular MCP server handling
       if (toolName === Constants.mcp_all) {
         requestedMCPTools[serverName] = [
           {
@@ -469,14 +496,35 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
         }
 
         /** Handle synchronous loading */
-        const mcpTool =
-          config.type === 'all'
-            ? await createMCPTools(mcpParams)
-            : await createMCPTool({
-                ...mcpParams,
-                availableTools,
-                toolKey: config.toolKey,
-              });
+        let mcpTool;
+        
+        if (config.type === 'api_all') {
+          // Load all API Registry tools
+          mcpTool = await createAPITools({
+            serverName: config.serverName,
+            userId: safeUser.id,
+            userMCPAuthMap,
+          });
+        } else if (config.type === 'api_single') {
+          // Load single API Registry tool
+          const allApiTools = await createAPITools({
+            serverName: config.serverName,
+            userId: safeUser.id,
+            userMCPAuthMap,
+          });
+          // Find the specific tool by name
+          mcpTool = allApiTools.find(t => t.name.includes(config.toolName));
+        } else if (config.type === 'all') {
+          // Regular MCP server - all tools
+          mcpTool = await createMCPTools(mcpParams);
+        } else {
+          // Regular MCP server - single tool
+          mcpTool = await createMCPTool({
+            ...mcpParams,
+            availableTools,
+            toolKey: config.toolKey,
+          });
+        }
 
         if (Array.isArray(mcpTool)) {
           loadedTools.push(...mcpTool);
@@ -485,7 +533,7 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
         } else {
           failedMCPServers.add(serverName);
           logger.warn(
-            `MCP tool creation failed for "${config.toolKey}", server may be unavailable or unauthenticated.`,
+            `Tool creation failed for "${config.toolKey || config.toolName}", server may be unavailable or unauthenticated.`,
           );
         }
       } catch (error) {
