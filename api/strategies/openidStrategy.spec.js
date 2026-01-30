@@ -391,7 +391,6 @@ describe('setupOpenId', () => {
         process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
 
         jwtDecode.mockReturnValue({
-          hasgroups: true,
           groups: groupsClaim,
           permissions: ['admin'],
         });
