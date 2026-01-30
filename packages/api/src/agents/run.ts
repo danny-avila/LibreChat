@@ -1,5 +1,10 @@
 import { Run, Providers } from '@librechat/agents';
-import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
+import {
+  providerEndpointMap,
+  KnownEndpoints,
+  type TSpecsConfig,
+  validateVisionModel,
+} from 'librechat-data-provider';
 import type {
   MultiAgentGraphConfig,
   OpenAIClientOptions,
@@ -27,6 +32,7 @@ export function getReasoningKey(
   agentEndpoint?: string | null,
 ): 'reasoning_content' | 'reasoning' {
   let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
+  
   if (provider === Providers.GOOGLE) {
     reasoningKey = 'reasoning';
   } else if (
@@ -40,7 +46,51 @@ export function getReasoningKey(
   ) {
     reasoningKey = 'reasoning';
   }
+  
   return reasoningKey;
+}
+
+/**
+ * Determines vision capability for an agent.
+ *
+ * Priority (manual specification wins over hardcoded list):
+ * 1. Explicit override (`agent.vision`) takes precedence
+ * 2. Spec-based: when agent has a `spec` and modelSpecs has that spec with vision set, use it
+ * 3. Auto-detection from model using `validateVisionModel()` (modelSpecs then hardcoded list)
+ *
+ * Model is resolved from `agent.model_parameters?.model` or `agent.model`.
+ *
+ * @param agent - The agent to check for vision capability
+ * @param modelSpecs - Optional modelSpecs configuration from librechat.yaml
+ * @param availableModels - Not used (kept for backwards compatibility)
+ * @returns true if the agent supports vision, false otherwise
+ */
+function determineVisionCapability(
+  agent: RunAgent,
+  modelSpecs?: TSpecsConfig,
+  availableModels?: string[]
+): boolean {
+  if (agent.vision !== undefined) {
+    return agent.vision;
+  }
+
+  const agentSpec = (agent as { spec?: string }).spec;
+  if (agentSpec != null && agentSpec !== '' && modelSpecs?.list?.length) {
+    const specByName = modelSpecs.list.find((s) => s.name === agentSpec);
+    if (specByName?.vision !== undefined) {
+      return specByName.vision === true;
+    }
+  }
+
+  const agentModel = (agent.model_parameters as { model?: string })?.model ?? agent.model;
+  if (!agentModel) {
+    return false;
+  }
+
+  return validateVisionModel({
+    model: agentModel,
+    modelSpecs,
+  });
 }
 
 type RunAgent = Omit<Agent, 'tools'> & {
@@ -71,6 +121,8 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
+  modelSpecs,
+  availableModels,
   streaming = true,
   streamUsage = true,
 }: {
@@ -81,6 +133,8 @@ export async function createRun({
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
   user?: IUser;
+  modelSpecs?: TSpecsConfig;
+  availableModels?: string[];
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -129,13 +183,35 @@ export async function createRun({
     /** Resolves issues with new OpenAI usage field */
     if (
       customProviders.has(agent.provider) ||
-      (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider)
+      (agent.provider === Providers.OPENAI &&
+        agent.endpoint != null &&
+        agent.endpoint !== agent.provider &&
+        agent.endpoint !== Providers.OPENAI)
     ) {
       llmConfig.streamUsage = false;
       llmConfig.usage = true;
     }
 
+    /**
+     * Only pass max_tokens/maxTokens when it has a valid value (number >= 1).
+     * Invalid or missing values are omitted so the provider uses its default.
+     */
+    const llmConfigRecord = llmConfig as unknown as Record<string, unknown>;
+    const rawMaxTokens = llmConfigRecord.maxTokens ?? llmConfigRecord.max_tokens;
+    const isValidMaxTokens =
+      typeof rawMaxTokens === 'number' &&
+      !Number.isNaN(rawMaxTokens) &&
+      rawMaxTokens >= 1;
+    if (isValidMaxTokens) {
+      llmConfigRecord.maxTokens = rawMaxTokens;
+    } else {
+      delete llmConfigRecord.maxTokens;
+    }
+    delete llmConfigRecord.max_tokens;
+
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
+    const visionCapability = determineVisionCapability(agent, modelSpecs, availableModels);
+
     const agentInput: AgentInputs = {
       provider,
       reasoningKey,
@@ -146,7 +222,9 @@ export async function createRun({
       instructions: systemContent,
       maxContextTokens: agent.maxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
+      vision: visionCapability,
     };
+    
     agentInputs.push(agentInput);
   };
 
