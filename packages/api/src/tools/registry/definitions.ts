@@ -6,8 +6,8 @@ import {
 
 /** Extended JSON Schema type that includes standard validation keywords */
 export type ExtendedJsonSchema = {
-  type?: 'string' | 'number' | 'integer' | 'float' | 'boolean' | 'array' | 'object';
-  enum?: string[];
+  type?: 'string' | 'number' | 'integer' | 'float' | 'boolean' | 'array' | 'object' | 'null';
+  enum?: (string | number | boolean | null)[];
   items?: ExtendedJsonSchema;
   properties?: Record<string, ExtendedJsonSchema>;
   required?: string[];
