@@ -70,12 +70,12 @@ const BookmarkTable = () => {
               <TooltipAnchor
                 description={localize('com_ui_bookmarks_new')}
                 side="bottom"
+                aria-label={localize('com_ui_bookmarks_new')}
                 render={
                   <Button
                     variant="outline"
                     size="icon"
                     className="shrink-0 bg-transparent"
-                    aria-label={localize('com_ui_bookmarks_new')}
                     onClick={() => setCreateOpen(true)}
                   >
                     <Plus className="size-4" aria-hidden="true" />
