@@ -693,20 +693,6 @@ async function loadAgentTools({
       loadAuthValues,
     });
 
-  /**
-   * For event-driven mode (definitionsOnly=true), return only serializable data.
-   * Tool instances will be created on-demand during ON_TOOL_EXECUTE events.
-   */
-  if (definitionsOnly) {
-    return {
-      toolRegistry,
-      userMCPAuthMap,
-      toolContextMap,
-      toolDefinitions,
-      hasDeferredTools,
-    };
-  }
-
   const agentTools = [];
   for (let i = 0; i < loadedTools.length; i++) {
     const tool = loadedTools[i];
@@ -955,6 +941,7 @@ async function loadToolsForExecution({
   }
 
   if (isPTC && toolRegistry) {
+    configurable.toolRegistry = toolRegistry;
     try {
       const authValues = await loadAuthValues({
         userId: req.user.id,
