@@ -12,7 +12,7 @@ type AnthropicReasoning = {
 
 type AnthropicInput = BedrockConverseInput & {
   additionalModelRequestFields: BedrockConverseInput['additionalModelRequestFields'] &
-    AnthropicReasoning;
+  AnthropicReasoning;
 };
 
 export const bedrockInputSchema = s.tConversationSchema
@@ -139,7 +139,12 @@ export const bedrockInputParser = s.tConversationSchema
       }
       // Only add anthropic_beta for Anthropic models
       if (typedData.model.includes('anthropic.')) {
-        additionalFields.anthropic_beta = ['output-128k-2025-02-19'];
+        const betaHeaders = ['output-128k-2025-02-19'];
+        // Add 1M context header for Claude Sonnet 4+ models
+        if (/anthropic\.claude-(?:sonnet-[4-9]|[4-9](?:\.\d+)?-sonnet)/.test(typedData.model)) {
+          betaHeaders.push('context-1m-2025-08-07');
+        }
+        additionalFields.anthropic_beta = betaHeaders;
       }
     } else if (additionalFields.thinking != null || additionalFields.thinkingBudget != null) {
       delete additionalFields.thinking;
