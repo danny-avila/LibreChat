@@ -236,6 +236,126 @@ describe('definitions.ts', () => {
         expect(fileSearchDef?.parameters?.properties).toHaveProperty('query');
         expect(fileSearchDef?.parameters?.required).toContain('query');
       });
+
+      it('should skip built-in tools without registry definitions', async () => {
+        mockIsBuiltInTool.mockImplementation((name) => name === 'unknown_tool');
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['unknown_tool'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const unknownDef = result.toolDefinitions.find((d) => d.name === 'unknown_tool');
+        expect(unknownDef).toBeUndefined();
+        expect(result.toolRegistry.has('unknown_tool')).toBe(false);
+      });
+
+      it('should include description and parameters in registry for built-in tools', async () => {
+        mockIsBuiltInTool.mockImplementation((name) => name === 'calculator');
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['calculator'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const registryEntry = result.toolRegistry.get('calculator');
+        expect(registryEntry).toBeDefined();
+        expect(registryEntry?.description).toBeDefined();
+        expect(registryEntry?.parameters).toBeDefined();
+        expect(registryEntry?.allowed_callers).toContain('direct');
+      });
+    });
+
+    describe('tool registry metadata', () => {
+      it('should include description and parameters in registry for action tools', async () => {
+        const mockActionDefs: ActionToolDefinition[] = [
+          {
+            name: 'getWeather_action_weather_com',
+            description: 'Get weather for a location',
+            parameters: {
+              type: 'object',
+              properties: {
+                city: { type: 'string', description: 'City name' },
+              },
+              required: ['city'],
+            },
+          },
+        ];
+
+        const mockGetActionToolDefinitions = jest.fn().mockResolvedValue(mockActionDefs);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['getWeather_action_weather---com'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+          getActionToolDefinitions: mockGetActionToolDefinitions,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const registryEntry = result.toolRegistry.get('getWeather_action_weather_com');
+        expect(registryEntry).toBeDefined();
+        expect(registryEntry?.description).toBe('Get weather for a location');
+        expect(registryEntry?.parameters).toBeDefined();
+        expect(registryEntry?.parameters?.properties).toHaveProperty('city');
+        expect(registryEntry?.allowed_callers).toContain('direct');
+      });
+
+      it('should handle action tools without parameters in registry', async () => {
+        const mockActionDefs: ActionToolDefinition[] = [
+          {
+            name: 'ping_action_api_com',
+            description: 'Ping the API',
+          },
+        ];
+
+        const mockGetActionToolDefinitions = jest.fn().mockResolvedValue(mockActionDefs);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['ping_action_api---com'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+          getActionToolDefinitions: mockGetActionToolDefinitions,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const registryEntry = result.toolRegistry.get('ping_action_api_com');
+        expect(registryEntry).toBeDefined();
+        expect(registryEntry?.description).toBe('Ping the API');
+        expect(registryEntry?.parameters).toBeUndefined();
+        expect(registryEntry?.allowed_callers).toContain('direct');
+      });
     });
   });
 });
