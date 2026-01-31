@@ -107,10 +107,13 @@ export async function loadToolDefinitions(
         continue;
       }
       const registryDef = getToolDefinition(toolName);
+      if (!registryDef) {
+        continue;
+      }
       builtInToolDefs.push({
         name: toolName,
-        description: registryDef?.description,
-        parameters: registryDef?.schema as JsonSchemaType | undefined,
+        description: registryDef.description,
+        parameters: registryDef.schema as JsonSchemaType | undefined,
       });
       continue;
     }
@@ -189,6 +192,8 @@ export async function loadToolDefinitions(
     if (!toolRegistry.has(actionDef.name)) {
       toolRegistry.set(actionDef.name, {
         name: actionDef.name,
+        description: actionDef.description,
+        parameters: actionDef.parameters,
         allowed_callers: ['direct'],
       });
     }
@@ -198,6 +203,8 @@ export async function loadToolDefinitions(
     if (!toolRegistry.has(builtInDef.name)) {
       toolRegistry.set(builtInDef.name, {
         name: builtInDef.name,
+        description: builtInDef.description,
+        parameters: builtInDef.parameters,
         allowed_callers: ['direct'],
       });
     }
