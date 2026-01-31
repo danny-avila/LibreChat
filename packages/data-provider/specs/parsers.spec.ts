@@ -184,7 +184,7 @@ describe('parseCompactConvo', () => {
     test('should strip iconURL from google endpoint conversation input', () => {
       const maliciousIconURL = 'https://tracking.example.com/spy.png';
       const conversation: Partial<TConversation> = {
-        model: 'gemini-pro',
+        model: 'gemini-2.5-flash',
         iconURL: maliciousIconURL,
         endpoint: EModelEndpoint.google,
       };
@@ -196,7 +196,7 @@ describe('parseCompactConvo', () => {
 
       expect(result).not.toBeNull();
       expect(result?.iconURL).toBeUndefined();
-      expect(result?.model).toBe('gemini-pro');
+      expect(result?.model).toBe('gemini-2.5-flash');
     });
 
     test('should strip iconURL from assistants endpoint conversation input', () => {

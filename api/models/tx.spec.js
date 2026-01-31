@@ -1164,11 +1164,6 @@ describe('Google Model Tests', () => {
     'gemini-2.0-flash-001',
     'gemini-2.0-flash-exp',
     'gemini-2.0-pro-exp-02-05',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-flash-thinking',
-    'gemini-1.5-pro-latest',
-    'gemini-1.5-pro-preview-0409',
-    'gemini-pro-vision',
     'gemini-1.0',
     'gemini-pro',
   ];
@@ -1208,11 +1203,6 @@ describe('Google Model Tests', () => {
       'gemini-2.0-flash-001': 'gemini-2.0-flash',
       'gemini-2.0-flash-exp': 'gemini-2.0-flash',
       'gemini-2.0-pro-exp-02-05': 'gemini-2.0',
-      'gemini-1.5-flash-8b': 'gemini-1.5-flash-8b',
-      'gemini-1.5-flash-thinking': 'gemini-1.5-flash',
-      'gemini-1.5-pro-latest': 'gemini-1.5',
-      'gemini-1.5-pro-preview-0409': 'gemini-1.5',
-      'gemini-pro-vision': 'gemini-pro-vision',
       'gemini-1.0': 'gemini',
       'gemini-pro': 'gemini',
     };
@@ -1225,8 +1215,8 @@ describe('Google Model Tests', () => {
 
   it('should handle model names with different formats', () => {
     const testCases = [
-      { input: 'google/gemini-pro', expected: 'gemini' },
-      { input: 'gemini-pro/google', expected: 'gemini' },
+      { input: 'google/gemini-2.5-flash', expected: 'gemini-2.5-flash' },
+      { input: 'gemini-2.5-flash/google', expected: 'gemini-2.5-flash' },
       { input: 'google/gemini-2.0-flash-lite', expected: 'gemini-2.0-flash-lite' },
     ];
 

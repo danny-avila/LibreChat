@@ -263,18 +263,6 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('gemini-2.0-pro-exp-02-05', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini-2.0'],
     );
-    expect(getModelMaxTokens('gemini-1.5-flash-8b', EModelEndpoint.google)).toBe(
-      maxTokensMap[EModelEndpoint.google]['gemini-1.5-flash-8b'],
-    );
-    expect(getModelMaxTokens('gemini-1.5-flash-thinking', EModelEndpoint.google)).toBe(
-      maxTokensMap[EModelEndpoint.google]['gemini-1.5-flash'],
-    );
-    expect(getModelMaxTokens('gemini-1.5-pro-latest', EModelEndpoint.google)).toBe(
-      maxTokensMap[EModelEndpoint.google]['gemini-1.5'],
-    );
-    expect(getModelMaxTokens('gemini-1.5-pro-preview-0409', EModelEndpoint.google)).toBe(
-      maxTokensMap[EModelEndpoint.google]['gemini-1.5'],
-    );
     expect(getModelMaxTokens('gemini-3', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini-3'],
     );
@@ -287,9 +275,7 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('gemini-2.5-flash-lite', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini-2.5-flash-lite'],
     );
-    expect(getModelMaxTokens('gemini-pro-vision', EModelEndpoint.google)).toBe(
-      maxTokensMap[EModelEndpoint.google]['gemini-pro-vision'],
-    );
+    // Test fallback patterns for unknown variants
     expect(getModelMaxTokens('gemini-1.0', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini'],
     );
