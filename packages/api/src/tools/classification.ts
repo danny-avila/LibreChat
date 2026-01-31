@@ -368,6 +368,8 @@ export interface BuildToolClassificationParams {
   agentToolOptions?: AgentToolOptions;
   /** Whether the deferred_tools capability is enabled (from agent config) */
   deferredToolsEnabled?: boolean;
+  /** When true, skip creating tool instances (for event-driven mode) */
+  definitionsOnly?: boolean;
   /** Function to load auth values (dependency injection) */
   loadAuthValues: (params: {
     userId: string;
@@ -453,10 +455,11 @@ export async function buildToolClassification(
   params: BuildToolClassificationParams,
 ): Promise<BuildToolClassificationResult> {
   const {
-    loadedTools,
     userId,
     agentId,
+    loadedTools,
     agentToolOptions,
+    definitionsOnly = false,
     deferredToolsEnabled = true,
     loadAuthValues,
   } = params;
@@ -537,11 +540,13 @@ export async function buildToolClassification(
 
   /** Tool search uses local mode (no API key needed) */
   if (hasDeferredTools) {
-    const toolSearchTool = createToolSearch({
-      mode: 'local',
-      toolRegistry,
-    });
-    additionalTools.push(toolSearchTool);
+    if (!definitionsOnly) {
+      const toolSearchTool = createToolSearch({
+        mode: 'local',
+        toolRegistry,
+      });
+      additionalTools.push(toolSearchTool);
+    }
 
     /** Add ToolSearch definition for event-driven mode */
     toolDefinitions.push({
@@ -559,6 +564,23 @@ export async function buildToolClassification(
 
   /** PTC requires CODE_API_KEY for sandbox execution */
   if (!hasProgrammaticTools) {
+    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
+  }
+
+  /** In definitions-only mode, add PTC definition without creating the tool instance */
+  if (definitionsOnly) {
+    toolDefinitions.push({
+      name: ProgrammaticToolCallingDefinition.name,
+      description: ProgrammaticToolCallingDefinition.description,
+      parameters: ProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
+    });
+    toolRegistry.set(ProgrammaticToolCallingDefinition.name, {
+      name: ProgrammaticToolCallingDefinition.name,
+      allowed_callers: ['direct'],
+    });
+    logger.debug(
+      `[buildToolClassification] PTC definition added for agent ${agentId} (definitions only)`,
+    );
     return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
   }
 

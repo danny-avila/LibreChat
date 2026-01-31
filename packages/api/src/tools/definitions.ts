@@ -182,6 +182,7 @@ export async function loadToolDefinitions(
     loadedTools,
     loadAuthValues,
     deferredToolsEnabled,
+    definitionsOnly: true,
     agentToolOptions: toolOptions,
   });
 
