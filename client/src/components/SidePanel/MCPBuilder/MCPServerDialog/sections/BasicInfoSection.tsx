@@ -50,7 +50,7 @@ export default function BasicInfoSection() {
                 message: localize('com_ui_mcp_title_invalid'),
               },
             })}
-            className={cn(errors.title && 'border-red-500 focus:border-red-500')}
+            className={cn(errors.title && 'border-border-destructive')}
           />
           {errors.title && <p className="text-text-destructive text-xs">{errors.title.message}</p>}
         </div>
