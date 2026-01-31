@@ -597,9 +597,9 @@ describe('getGoogleModels', () => {
   });
 
   it('returns models from GOOGLE_MODELS when set', () => {
-    process.env.GOOGLE_MODELS = 'gemini-pro, bard ';
+    process.env.GOOGLE_MODELS = 'gemini-2.5-flash, bard ';
     const models = getGoogleModels();
-    expect(models).toEqual(['gemini-pro', 'bard']);
+    expect(models).toEqual(['gemini-2.5-flash', 'bard']);
   });
 });
 

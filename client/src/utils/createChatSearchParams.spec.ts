@@ -215,13 +215,13 @@ describe('createChatSearchParams', () => {
     it('handles float parameter values correctly', () => {
       const result = createChatSearchParams({
         endpoint: EModelEndpoint.google,
-        model: 'gemini-pro',
+        model: 'gemini-2.5-flash',
         frequency_penalty: 0.25,
         temperature: 0.75,
       });
 
       expect(result.get('endpoint')).toBe(EModelEndpoint.google);
-      expect(result.get('model')).toBe('gemini-pro');
+      expect(result.get('model')).toBe('gemini-2.5-flash');
       expect(result.get('frequency_penalty')).toBe('0.25');
       expect(result.get('temperature')).toBe('0.75');
     });
@@ -229,13 +229,13 @@ describe('createChatSearchParams', () => {
     it('handles integer parameter values correctly', () => {
       const result = createChatSearchParams({
         endpoint: EModelEndpoint.google,
-        model: 'gemini-pro',
+        model: 'gemini-2.5-flash',
         topK: 40,
         maxOutputTokens: 2048,
       });
 
       expect(result.get('endpoint')).toBe(EModelEndpoint.google);
-      expect(result.get('model')).toBe('gemini-pro');
+      expect(result.get('model')).toBe('gemini-2.5-flash');
       expect(result.get('topK')).toBe('40');
       expect(result.get('maxOutputTokens')).toBe('2048');
     });
@@ -245,14 +245,14 @@ describe('createChatSearchParams', () => {
     it('handles preset objects correctly', () => {
       const preset: Partial<TPreset> = {
         endpoint: EModelEndpoint.google,
-        model: 'gemini-pro',
+        model: 'gemini-2.5-flash',
         temperature: 0.5,
         topP: 0.8,
       };
 
       const result = createChatSearchParams(preset as TPreset);
       expect(result.get('endpoint')).toBe(EModelEndpoint.google);
-      expect(result.get('model')).toBe('gemini-pro');
+      expect(result.get('model')).toBe('gemini-2.5-flash');
       expect(result.get('temperature')).toBe('0.5');
       expect(result.get('topP')).toBe('0.8');
     });
@@ -260,7 +260,7 @@ describe('createChatSearchParams', () => {
     it('returns only spec param when spec property is present', () => {
       const preset: Partial<TPreset> = {
         endpoint: EModelEndpoint.google,
-        model: 'gemini-pro',
+        model: 'gemini-2.5-flash',
         temperature: 0.5,
         spec: 'special_spec',
       };

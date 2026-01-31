@@ -150,9 +150,6 @@ const tokenValues = Object.assign(
     'gemma-2': { prompt: 0.01, completion: 0.03 }, // Base pattern (using gemma-2-9b pricing)
     'gemma-3': { prompt: 0.02, completion: 0.04 }, // Base pattern (using gemma-3n-e4b pricing)
     'gemma-3-27b': { prompt: 0.09, completion: 0.16 },
-    'gemini-1.5': { prompt: 2.5, completion: 10 },
-    'gemini-1.5-flash': { prompt: 0.15, completion: 0.6 },
-    'gemini-1.5-flash-8b': { prompt: 0.075, completion: 0.3 },
     'gemini-2.0': { prompt: 0.1, completion: 0.4 }, // Base pattern (using 2.0-flash pricing)
     'gemini-2.0-flash': { prompt: 0.1, completion: 0.4 },
     'gemini-2.0-flash-lite': { prompt: 0.075, completion: 0.3 },
@@ -162,8 +159,10 @@ const tokenValues = Object.assign(
     'gemini-2.5-pro': { prompt: 1.25, completion: 10 },
     'gemini-2.5-flash-image': { prompt: 0.15, completion: 30 },
     'gemini-3': { prompt: 2, completion: 12 },
+    'gemini-3-flash-preview': { prompt: 0.5, completion: 3 },
+    'gemini-3-pro-preview': { prompt: 2, completion: 12 },
+    'gemini-3-pro-image-preview': { prompt: 2, completion: 120 },
     'gemini-3-pro-image': { prompt: 2, completion: 120 },
-    'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
     grok: { prompt: 2.0, completion: 10.0 }, // Base pattern defaults to grok-2
     'grok-beta': { prompt: 5.0, completion: 15.0 },
     'grok-vision-beta': { prompt: 5.0, completion: 15.0 },

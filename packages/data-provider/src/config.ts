@@ -997,17 +997,17 @@ export const configSchema = z.object({
 export type DeepPartial<T> = T extends (infer U)[]
   ? DeepPartial<U>[]
   : T extends ReadonlyArray<infer U>
-    ? ReadonlyArray<DeepPartial<U>>
-    : // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      T extends Function
-      ? T
-      : T extends Date
-        ? T
-        : T extends object
-          ? {
-              [P in keyof T]?: DeepPartial<T[P]>;
-            }
-          : T;
+  ? ReadonlyArray<DeepPartial<U>>
+  : // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  T extends Function
+  ? T
+  : T extends Date
+  ? T
+  : T extends object
+  ? {
+    [P in keyof T]?: DeepPartial<T[P]>;
+  }
+  : T;
 
 export const getConfigDefaults = () => getSchemaDefaults(configSchema);
 export type TCustomConfig = DeepPartial<z.infer<typeof configSchema>>;
@@ -1179,6 +1179,10 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 3 Models
+    'gemini-3-flash-preview',
+    'gemini-3-pro-preview',
+    'gemini-3-pro-image-preview',
     // Gemini 2.5 Models
     'gemini-2.5-pro',
     'gemini-2.5-flash',
@@ -1259,11 +1263,8 @@ export const visionModels = [
   'gpt-4.5',
   'llava',
   'llava-13b',
-  'gemini-pro-vision',
-  'claude-3',
   'gemma',
   'gemini-exp',
-  'gemini-1.5',
   'gemini-2',
   'gemini-2.5',
   'gemini-3',

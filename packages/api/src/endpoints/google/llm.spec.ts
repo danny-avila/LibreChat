@@ -25,13 +25,13 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
       });
 
       expect(result.provider).toBe(Providers.GOOGLE);
       expect(result.llmConfig).toHaveProperty('apiKey', 'test-api-key');
-      expect(result.llmConfig).toHaveProperty('model', 'gemini-1.5-flash');
+      expect(result.llmConfig).toHaveProperty('model', 'gemini-2.5-flash');
       expect(result.llmConfig).toHaveProperty('maxRetries', 2);
       expect(result.tools).toEqual([]);
     });
@@ -43,7 +43,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-pro',
+          model: 'gemini-2.5-pro',
         },
       });
 
@@ -55,7 +55,7 @@ describe('getGoogleConfig', () => {
         'raw-api-key-string',
         {
           modelOptions: {
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.5-flash',
           },
         },
         true,
@@ -71,7 +71,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           temperature: 0.7,
           topP: 0.9,
           topK: 40,
@@ -90,7 +90,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           maxOutputTokens: 4096,
         },
       });
@@ -107,7 +107,7 @@ describe('getGoogleConfig', () => {
 
       // Simulating empty string from form - cast to any to bypass TypeScript
       const modelOptions = {
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         maxOutputTokens: '',
       };
 
@@ -124,7 +124,7 @@ describe('getGoogleConfig', () => {
       };
 
       const modelOptions = {
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         temperature: '',
       };
 
@@ -141,7 +141,7 @@ describe('getGoogleConfig', () => {
       };
 
       const modelOptions = {
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         topP: '',
       };
 
@@ -158,7 +158,7 @@ describe('getGoogleConfig', () => {
       };
 
       const modelOptions = {
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         topK: '',
       };
 
@@ -175,7 +175,7 @@ describe('getGoogleConfig', () => {
       };
 
       const modelOptions = {
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         temperature: 0.5,
         maxOutputTokens: '', // Empty string
         topP: 0.9,
@@ -199,7 +199,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           temperature: 0,
           topK: 0,
         },
@@ -222,7 +222,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-pro',
+          model: 'gemini-2.5-pro',
         },
       });
 
@@ -248,7 +248,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-pro',
+          model: 'gemini-2.5-pro',
         },
       });
 
@@ -265,7 +265,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-pro',
+          model: 'gemini-2.5-pro',
         },
       });
 
@@ -375,7 +375,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           web_search: true,
         },
       });
@@ -390,7 +390,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           web_search: false,
         },
       });
@@ -405,7 +405,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
         defaultParams: {
           web_search: true,
@@ -422,7 +422,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
         addParams: {
           web_search: true,
@@ -439,7 +439,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           web_search: true,
         },
         dropParams: ['web_search'],
@@ -457,7 +457,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
         defaultParams: {
           temperature: 0.5,
@@ -476,7 +476,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           temperature: 0.8,
         },
         defaultParams: {
@@ -494,7 +494,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
         defaultParams: {
           temperature: 0.5,
@@ -516,7 +516,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
         defaultParams: {
           temperature: 0.7,
@@ -537,7 +537,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           temperature: 0.7,
           topP: 0.9,
         },
@@ -555,7 +555,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           temperature: 0.7,
           topP: 0.9,
           topK: 40,
@@ -577,7 +577,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
         reverseProxyUrl: 'https://custom-proxy.example.com',
       });
@@ -592,7 +592,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
         reverseProxyUrl: 'https://custom-proxy.example.com',
         authHeader: true,
@@ -610,7 +610,7 @@ describe('getGoogleConfig', () => {
       expect(() => {
         getGoogleConfig(undefined, {
           modelOptions: {
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.5-flash',
           },
         });
       }).toThrow('Invalid credentials provided');
@@ -622,7 +622,7 @@ describe('getGoogleConfig', () => {
           {},
           {
             modelOptions: {
-              model: 'gemini-1.5-flash',
+              model: 'gemini-2.5-flash',
             },
           },
         );
@@ -633,7 +633,7 @@ describe('getGoogleConfig', () => {
       expect(() => {
         getGoogleConfig('invalid-json', {
           modelOptions: {
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.5-flash',
           },
         });
       }).toThrow('Error parsing string credentials');
@@ -684,7 +684,7 @@ describe('getGoogleConfig', () => {
       };
 
       const modelOptions = {
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         temperature: undefined,
         topP: null,
         topK: 0, // Should be preserved
@@ -720,7 +720,7 @@ describe('getSafetySettings', () => {
   });
 
   it('should return default safety settings', () => {
-    const settings = getSafetySettings('gemini-1.5-flash');
+    const settings = getSafetySettings('gemini-2.5-flash');
 
     expect(settings).toHaveLength(5);
     expect(settings).toContainEqual({
@@ -732,7 +732,7 @@ describe('getSafetySettings', () => {
   it('should return undefined when GOOGLE_EXCLUDE_SAFETY_SETTINGS is enabled', () => {
     process.env.GOOGLE_EXCLUDE_SAFETY_SETTINGS = 'true';
 
-    const settings = getSafetySettings('gemini-1.5-flash');
+    const settings = getSafetySettings('gemini-2.5-flash');
 
     expect(settings).toBeUndefined();
   });
@@ -740,7 +740,7 @@ describe('getSafetySettings', () => {
   it('should map OFF to BLOCK_NONE for Gemini 1.x models', () => {
     process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT = 'OFF';
 
-    const settings = getSafetySettings('gemini-1.5-flash');
+    const settings = getSafetySettings('gemini-2.5-flash');
 
     expect(settings).toContainEqual({
       category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
@@ -751,7 +751,7 @@ describe('getSafetySettings', () => {
   it('should use custom thresholds from environment variables', () => {
     process.env.GOOGLE_SAFETY_HATE_SPEECH = 'BLOCK_MEDIUM_AND_ABOVE';
 
-    const settings = getSafetySettings('gemini-1.5-flash');
+    const settings = getSafetySettings('gemini-2.5-flash');
 
     expect(settings).toContainEqual({
       category: 'HARM_CATEGORY_HATE_SPEECH',

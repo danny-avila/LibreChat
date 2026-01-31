@@ -74,9 +74,12 @@ const googleModels = {
   'gemma-3': 32768,
   'gemma-3-27b': 131072,
   gemini: 30720, // -2048 from max
-  'gemini-pro-vision': 12288,
+
   'gemini-exp': 2000000,
   'gemini-3': 1000000, // 1M input tokens, 64k output tokens
+  'gemini-3-flash-preview': 1048576, // 1M input, 65k output
+  'gemini-3-pro-preview': 1048576, // 1M input, 65k output (same as flash)
+  'gemini-3-pro-image-preview': 65536, // 65k input, 32k output
   'gemini-3-pro-image': 1000000,
   'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5-pro': 1000000,
@@ -86,9 +89,7 @@ const googleModels = {
   'gemini-2.0': 2000000,
   'gemini-2.0-flash': 1000000,
   'gemini-2.0-flash-lite': 1000000,
-  'gemini-1.5': 1000000,
-  'gemini-1.5-flash': 1000000,
-  'gemini-1.5-flash-8b': 1000000,
+
   'text-bison-32k': 32758, // -10 from max
   'chat-bison-32k': 32758, // -10 from max
   'code-bison-32k': 32758, // -10 from max

@@ -213,8 +213,8 @@ describe('anthropicSettings', () => {
         expect(reset('gpt-4')).toBe(8192);
       });
 
-      it('should return 8192 for gemini-pro', () => {
-        expect(reset('gemini-pro')).toBe(8192);
+      it('should return 8192 for gemini-2.5-flash', () => {
+        expect(reset('gemini-2.5-flash')).toBe(8192);
       });
     });
 
