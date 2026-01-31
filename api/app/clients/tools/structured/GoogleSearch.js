@@ -13,7 +13,7 @@ const googleSearchJsonSchema = {
       type: 'number',
       minimum: 1,
       maximum: 10,
-      description: 'The maximum number of search results to return. Defaults to 10.',
+      description: 'The maximum number of search results to return. Defaults to 5.',
     },
   },
   required: ['query'],
