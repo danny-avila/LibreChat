@@ -50,10 +50,10 @@ export const googleSearchSchema: ExtendedJsonSchema = {
       description: 'The search query string.',
     },
     max_results: {
-      type: 'number',
+      type: 'integer',
       minimum: 1,
       maximum: 10,
-      description: 'The maximum number of search results to return. Defaults to 10.',
+      description: 'The maximum number of search results to return. Defaults to 5.',
     },
   },
   required: ['query'],
