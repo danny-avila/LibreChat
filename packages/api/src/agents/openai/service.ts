@@ -38,6 +38,7 @@ import {
   createChunk,
   writeSSE,
 } from './handlers';
+import type { ToolExecuteOptions } from '../handlers';
 
 /**
  * Dependencies for the chat completion service
@@ -67,6 +68,8 @@ export interface ChatCompletionDependencies {
   createRun?: CreateRunFn;
   /** App config */
   appConfig?: AppConfig;
+  /** Tool execute options for event-driven tool execution */
+  toolExecuteOptions?: ToolExecuteOptions;
 }
 
 /**
@@ -438,7 +441,10 @@ export async function createAgentChatCompletion(
         : null;
 
     // Create event handlers
-    const eventHandlers = isStreaming && handlerConfig ? createOpenAIHandlers(handlerConfig) : {};
+    const eventHandlers =
+      isStreaming && handlerConfig
+        ? createOpenAIHandlers(handlerConfig, deps.toolExecuteOptions)
+        : {};
 
     // Convert messages to internal format
     const messages = convertMessages(request.messages);

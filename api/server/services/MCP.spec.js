@@ -53,7 +53,7 @@ jest.mock('@librechat/api', () => {
     },
     sendEvent: jest.fn(),
     normalizeServerName: jest.fn((name) => name),
-    convertWithResolvedRefs: jest.fn((params) => params),
+    resolveJsonSchemaRefs: jest.fn((params) => params),
     get isMCPDomainAllowed() {
       return mockIsMCPDomainAllowed;
     },
