@@ -12,7 +12,8 @@ import type {
   CompletionUsage,
   ToolCall,
 } from './types';
-import { createToolExecuteHandler, type ToolExecuteOptions } from '../handlers';
+import type { ToolExecuteOptions } from '~/agents/handlers';
+import { createToolExecuteHandler } from '~/agents/handlers';
 
 /**
  * Create a chat completion chunk in OpenAI format
