@@ -63,13 +63,13 @@ export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsPro
           <TooltipAnchor
             description={localize('com_ui_edit')}
             side="top"
+            aria-label={localize('com_ui_bookmarks_edit_label', { 0: bookmark.tag })}
             render={
               <Button
                 ref={editTriggerRef}
                 variant="ghost"
                 size="icon"
                 className="size-7"
-                aria-label={localize('com_ui_bookmarks_edit')}
                 onClick={() => setEditOpen(true)}
               >
                 <Pencil className="size-4" aria-hidden="true" />
@@ -85,13 +85,13 @@ export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsPro
           <TooltipAnchor
             description={localize('com_ui_delete')}
             side="top"
+            aria-label={localize('com_ui_bookmarks_delete_label', { 0: bookmark.tag })}
             render={
               <Button
                 ref={deleteTriggerRef}
                 variant="ghost"
                 size="icon"
                 className="size-7"
-                aria-label={localize('com_ui_bookmarks_delete')}
                 onClick={() => setDeleteOpen(true)}
               >
                 <Trash2 className="size-4" aria-hidden="true" />
