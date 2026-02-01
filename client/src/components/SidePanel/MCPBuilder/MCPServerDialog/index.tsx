@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { Copy, CopyCheck } from 'lucide-react';
 import {
-  OGDialog,
-  OGDialogTemplate,
-  OGDialogContent,
-  OGDialogHeader,
-  OGDialogTitle,
+  Label,
+  Input,
   Button,
-  TrashIcon,
   Spinner,
+  TrashIcon,
+  useToastContext,
+  OGDialog,
+  OGDialogTitle,
+  OGDialogHeader,
+  OGDialogFooter,
+  OGDialogContent,
+  OGDialogTemplate,
 } from '@librechat/client';
 import {
   SystemRoles,
@@ -16,10 +21,10 @@ import {
   PermissionBits,
   PermissionTypes,
 } from 'librechat-data-provider';
-import { GenericGrantAccessDialog } from '~/components/Sharing';
 import { useAuthContext, useHasAccess, useResourcePermissions, MCPServerDefinition } from '~/hooks';
-import { useLocalize } from '~/hooks';
+import { GenericGrantAccessDialog } from '~/components/Sharing';
 import { useMCPServerForm } from './hooks/useMCPServerForm';
+import { useLocalize, useCopyToClipboard } from '~/hooks';
 import MCPServerForm from './MCPServerForm';
 
 interface MCPServerDialogProps {
@@ -39,8 +44,10 @@ export default function MCPServerDialog({
 }: MCPServerDialogProps) {
   const localize = useLocalize();
   const { user } = useAuthContext();
+  const { showToast } = useToastContext();
 
   // State for dialogs
+  const [isCopying, setIsCopying] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRedirectUriDialog, setShowRedirectUriDialog] = useState(false);
   const [createdServerId, setCreatedServerId] = useState<string | null>(null);
@@ -99,6 +106,8 @@ export default function MCPServerDialog({
     ? `${window.location.origin}/api/mcp/${createdServerId}/oauth/callback`
     : '';
 
+  const copyLink = useCopyToClipboard({ text: redirectUri });
+
   return (
     <>
       {/* Delete confirmation dialog */}
@@ -107,12 +116,11 @@ export default function MCPServerDialog({
           title={localize('com_ui_delete_mcp_server')}
           className="w-11/12 max-w-md"
           description={localize('com_ui_mcp_server_delete_confirm', { 0: server?.serverName })}
-          selection={{
-            selectHandler: handleDelete,
-            selectClasses:
-              'bg-destructive text-white transition-all duration-200 hover:bg-destructive/80',
-            selectText: isDeleting ? <Spinner /> : localize('com_ui_delete'),
-          }}
+          selection={
+            <Button onClick={handleDelete} variant="destructive">
+              {isDeleting ? <Spinner /> : localize('com_ui_delete')}
+            </Button>
+          }
         />
       </OGDialog>
 
@@ -127,48 +135,50 @@ export default function MCPServerDialog({
           }
         }}
       >
-        <OGDialogContent className="w-full max-w-lg border-none bg-surface-primary text-text-primary">
-          <OGDialogHeader className="border-b border-border-light px-4 py-3">
+        <OGDialogContent showCloseButton={false} className="w-11/12 max-w-lg">
+          <OGDialogHeader>
             <OGDialogTitle>{localize('com_ui_mcp_server_created')}</OGDialogTitle>
           </OGDialogHeader>
-          <div className="space-y-4 p-4">
-            <p className="text-sm text-text-secondary">
-              {localize('com_ui_redirect_uri_instructions')}
-            </p>
-            <div className="rounded-lg border border-border-medium bg-surface-secondary p-3">
-              <label className="mb-2 block text-xs font-medium text-text-secondary">
-                {localize('com_ui_redirect_uri')}
-              </label>
+          <div className="space-y-4">
+            <Label className="text-sm">{localize('com_ui_redirect_uri_instructions')}</Label>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">{localize('com_ui_redirect_uri')}</Label>
               <div className="flex items-center gap-2">
-                <input
-                  className="flex-1 rounded border border-border-medium bg-surface-primary px-3 py-2 text-sm"
-                  value={redirectUri}
+                <Input
+                  type="text"
                   readOnly
+                  value={redirectUri}
+                  className="flex-1 text-text-secondary"
                 />
                 <Button
-                  onClick={() => {
-                    navigator.clipboard.writeText(redirectUri);
-                  }}
+                  size="icon"
                   variant="outline"
-                  className="whitespace-nowrap"
+                  onClick={() => {
+                    if (isCopying) return;
+                    showToast({ message: localize('com_ui_copied_to_clipboard') });
+                    copyLink(setIsCopying);
+                  }}
+                  disabled={isCopying}
+                  className="p-0"
+                  aria-label={localize('com_ui_copy_link')}
                 >
-                  {localize('com_ui_copy_link')}
+                  {isCopying ? <CopyCheck className="size-4" /> : <Copy className="size-4" />}
                 </Button>
               </div>
             </div>
-            <div className="flex justify-end">
+            <OGDialogFooter>
               <Button
+                variant="default"
                 onClick={() => {
                   setShowRedirectUriDialog(false);
                   onOpenChange(false);
                   setCreatedServerId(null);
                 }}
-                variant="submit"
-                className="text-white"
               >
                 {localize('com_ui_done')}
               </Button>
-            </div>
+            </OGDialogFooter>
           </div>
         </OGDialogContent>
       </OGDialog>
@@ -187,6 +197,7 @@ export default function MCPServerDialog({
                 })
               : undefined
           }
+          showCloseButton={false}
           className="w-11/12 md:max-w-3xl"
           main={<MCPServerForm formHook={formHook} />}
           footerClassName="sm:justify-between"
@@ -194,7 +205,6 @@ export default function MCPServerDialog({
             isEditMode ? (
               <div className="flex items-center gap-2">
                 <Button
-                  type="button"
                   variant="destructive"
                   size="sm"
                   aria-label={localize('com_ui_delete')}
@@ -216,10 +226,9 @@ export default function MCPServerDialog({
           buttons={
             <Button
               type="button"
-              variant="submit"
+              variant={isEditMode ? 'default' : 'submit'}
               onClick={onSubmit}
               disabled={isSubmitting}
-              className="text-white"
             >
               {isSubmitting ? (
                 <Spinner className="size-4" />
