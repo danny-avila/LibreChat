@@ -104,9 +104,9 @@ export default function MCPServerDialog({
       {/* Delete confirmation dialog */}
       <OGDialog open={showDeleteConfirm} onOpenChange={(isOpen) => setShowDeleteConfirm(isOpen)}>
         <OGDialogTemplate
-          title={localize('com_ui_delete')}
-          className="max-w-[450px]"
-          main={<p className="text-left text-sm">{localize('com_ui_mcp_server_delete_confirm')}</p>}
+          title={localize('com_ui_delete_mcp_server')}
+          className="w-11/12 max-w-md"
+          description={localize('com_ui_mcp_server_delete_confirm', { 0: server?.serverName })}
           selection={{
             selectHandler: handleDelete,
             selectClasses:
@@ -195,15 +195,13 @@ export default function MCPServerDialog({
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="destructive"
                   size="sm"
                   aria-label={localize('com_ui_delete')}
                   onClick={() => setShowDeleteConfirm(true)}
                   disabled={isSubmitting || isDeleting}
                 >
-                  <div className="flex w-full items-center justify-center gap-2 text-red-500">
-                    <TrashIcon />
-                  </div>
+                  <TrashIcon />
                 </Button>
                 {shouldShowShareButton && server && (
                   <GenericGrantAccessDialog
