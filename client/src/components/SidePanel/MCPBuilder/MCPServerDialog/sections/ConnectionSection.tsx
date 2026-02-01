@@ -15,13 +15,19 @@ export default function ConnectionSection() {
   return (
     <div className="space-y-1.5">
       <Label htmlFor="url" className="text-sm font-medium">
-        {localize('com_ui_mcp_url')} <span className="text-text-secondary">*</span>
+        {localize('com_ui_mcp_url')}{' '}
+        <span aria-hidden="true" className="text-text-secondary">
+          *
+        </span>
+        <span className="sr-only">{localize('com_ui_field_required')}</span>
       </Label>
       <Input
         id="url"
         type="url"
         autoComplete="off"
         placeholder={localize('com_ui_mcp_server_url_placeholder')}
+        aria-invalid={errors.url ? true : undefined}
+        aria-describedby={errors.url ? 'url-error' : undefined}
         {...register('url', {
           required: localize('com_ui_field_required'),
           validate: (value) => {
@@ -31,7 +37,11 @@ export default function ConnectionSection() {
         })}
         className={cn(errors.url && 'border-border-destructive')}
       />
-      {errors.url && <p className="text-xs text-text-destructive">{errors.url.message}</p>}
+      {errors.url && (
+        <p id="url-error" role="alert" className="text-xs text-text-destructive">
+          {errors.url.message}
+        </p>
+      )}
     </div>
   );
 }

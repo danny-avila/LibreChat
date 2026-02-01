@@ -37,12 +37,18 @@ export default function BasicInfoSection() {
         </div>
         <div className="w-full space-y-1.5 sm:flex-1">
           <Label htmlFor="mcp-title" className="text-sm font-medium">
-            {localize('com_ui_name')} <span className="text-text-secondary">*</span>
+            {localize('com_ui_name')}{' '}
+            <span aria-hidden="true" className="text-text-secondary">
+              *
+            </span>
+            <span className="sr-only">{localize('com_ui_field_required')}</span>
           </Label>
           <Input
             id="mcp-title"
             autoComplete="off"
             placeholder={localize('com_agents_mcp_name_placeholder')}
+            aria-invalid={errors.title ? true : undefined}
+            aria-describedby={errors.title ? 'mcp-title-error' : undefined}
             {...register('title', {
               required: localize('com_ui_field_required'),
               pattern: {
@@ -52,7 +58,11 @@ export default function BasicInfoSection() {
             })}
             className={cn(errors.title && 'border-border-destructive')}
           />
-          {errors.title && <p className="text-xs text-text-destructive">{errors.title.message}</p>}
+          {errors.title && (
+            <p id="mcp-title-error" role="alert" className="text-xs text-text-destructive">
+              {errors.title.message}
+            </p>
+          )}
         </div>
       </div>
 
@@ -64,7 +74,6 @@ export default function BasicInfoSection() {
         </Label>
         <Textarea
           id="mcp-description"
-          aria-label={localize('com_ui_description')}
           placeholder={localize('com_agents_mcp_description_placeholder')}
           {...register('description')}
         />
