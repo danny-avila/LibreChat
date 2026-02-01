@@ -217,11 +217,13 @@ export default function MCPServerDialog({
                 <Button
                   variant="destructive"
                   size="sm"
-                  aria-label={localize('com_ui_delete')}
+                  aria-label={localize('com_ui_delete_mcp_server_name', {
+                    0: server?.config?.title || server?.serverName || '',
+                  })}
                   onClick={() => setShowDeleteConfirm(true)}
                   disabled={isSubmitting || isDeleting}
                 >
-                  <TrashIcon />
+                  <TrashIcon aria-hidden="true" />
                 </Button>
                 {shouldShowShareButton && server && (
                   <GenericGrantAccessDialog
@@ -240,6 +242,11 @@ export default function MCPServerDialog({
               onClick={onSubmit}
               disabled={isSubmitting}
               aria-live="polite"
+              aria-label={
+                isSubmitting
+                  ? localize(isEditMode ? 'com_ui_updating' : 'com_ui_creating')
+                  : localize(isEditMode ? 'com_ui_update_mcp_server' : 'com_ui_create_mcp_server')
+              }
             >
               {isSubmitting ? (
                 <>
