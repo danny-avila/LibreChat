@@ -458,7 +458,7 @@ describe('MCPConnectionFactory', () => {
         } as t.SSEOptions,
       };
 
-      const mockOAuthStart = jest.fn();
+      const mockOAuthStart = jest.fn().mockResolvedValue(undefined);
 
       const oauthOptions = {
         useOAuth: true as const,
@@ -489,7 +489,6 @@ describe('MCPConnectionFactory', () => {
       mockFlowManager.createFlow.mockRejectedValue(new Error('Timeout expected'));
       mockFlowManager.deleteFlow.mockResolvedValue(true);
 
-      mockConnectionInstance.connect.mockRejectedValue(new Error('Connection failed'));
       mockConnectionInstance.isConnected.mockResolvedValue(false);
       mockConnectionInstance.disconnect = jest.fn().mockResolvedValue(undefined);
 
@@ -497,17 +496,24 @@ describe('MCPConnectionFactory', () => {
       mockConnectionInstance.on.mockImplementation((event, handler) => {
         if (event === 'oauthRequired') {
           oauthHandler = handler as (data: { serverUrl?: string }) => Promise<void>;
-          setTimeout(() => {
-            oauthHandler?.({ serverUrl: 'https://api.example.com' });
-          }, 10);
         }
         return mockConnectionInstance;
+      });
+
+      mockConnectionInstance.connect.mockImplementation(async () => {
+        if (oauthHandler) {
+          await oauthHandler({ serverUrl: 'https://api.example.com' });
+        }
+        throw new Error('OAuth required');
       });
 
       const result = await MCPConnectionFactory.discoverTools(basicOptions, oauthOptions);
 
       expect(result.connection).toBeNull();
       expect(result.tools).toBeNull();
+      expect(result.oauthRequired).toBe(true);
+      expect(result.oauthUrl).toBe('https://auth.example.com/authorize');
+      expect(mockOAuthStart).toHaveBeenCalledWith('https://auth.example.com/authorize');
     });
 
     it('should return null tools when discovery fails completely', async () => {

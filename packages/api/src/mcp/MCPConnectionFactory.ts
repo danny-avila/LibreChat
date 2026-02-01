@@ -140,6 +140,11 @@ export class MCPConnectionFactory {
         logger.info(
           `${this.logPrefix} [Discovery] Successfully discovered ${tools.length} tools without auth`,
         );
+        try {
+          await connection.disconnect();
+        } catch {
+          // Ignore cleanup errors
+        }
         return { tools, connection: null, oauthRequired, oauthUrl };
       }
     } catch (listError) {
@@ -148,6 +153,12 @@ export class MCPConnectionFactory {
 
     if (this.useOAuth) {
       connection.removeListener('oauthRequired', oauthHandler);
+    }
+
+    try {
+      await connection.disconnect();
+    } catch {
+      // Ignore cleanup errors
     }
 
     return { tools: null, connection: null, oauthRequired, oauthUrl };

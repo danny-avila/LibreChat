@@ -1,8 +1,8 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
-const { getMCPManager, getFlowStateManager } = require('~/config');
 const { updateMCPServerTools } = require('~/server/services/Config');
+const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -17,7 +17,7 @@ const { getLogStores } = require('~/cache');
  * @param {boolean} [params.forceNew]
  * @param {number} [params.connectionTimeout]
  * @param {FlowStateManager<any>} [params.flowManager]
- * @param {(authURL: string) => Promise<boolean>} [params.oauthStart]
+ * @param {(authURL: string) => Promise<void>} [params.oauthStart]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
 async function reinitMCPServer({

@@ -1,7 +1,6 @@
 const {
   sleep,
   EnvVar,
-  Constants,
   StepTypes,
   GraphEvents,
   createToolSearch,
@@ -22,6 +21,7 @@ const {
 const {
   Time,
   Tools,
+  Constants,
   CacheKeys,
   ErrorTypes,
   ContentTypes,
@@ -498,7 +498,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null }) 
       };
 
       const runStepData = {
-        runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
         id: stepId,
         type: StepTypes.TOOL_CALLS,
         index: 0,
@@ -619,7 +619,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null }) 
     },
   );
 
-  if (pendingOAuthServers.size > 0 && res) {
+  if (pendingOAuthServers.size > 0 && (res || streamId)) {
     const serverNames = Array.from(pendingOAuthServers);
     logger.info(
       `[Tool Definitions] OAuth required for ${serverNames.length} server(s): ${serverNames.join(', ')}. Emitting events and waiting.`,
