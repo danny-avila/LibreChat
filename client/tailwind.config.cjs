@@ -92,6 +92,7 @@ module.exports = {
         'text-secondary-alt': 'var(--text-secondary-alt)',
         'text-tertiary': 'var(--text-tertiary)',
         'text-warning': 'var(--text-warning)',
+        'text-destructive': 'var(--text-destructive)',
         'ring-primary': 'var(--ring-primary)',
         'header-primary': 'var(--header-primary)',
         'header-hover': 'var(--header-hover)',
