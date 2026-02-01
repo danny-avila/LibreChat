@@ -68,7 +68,7 @@ export default function TrustSection() {
         </Label>
       </div>
       {errors.trust && (
-        <p className="mt-2 text-xs text-red-500">{localize('com_ui_field_required')}</p>
+        <p className="mt-2 text-xs text-text-destructive">{localize('com_ui_field_required')}</p>
       )}
     </div>
   );

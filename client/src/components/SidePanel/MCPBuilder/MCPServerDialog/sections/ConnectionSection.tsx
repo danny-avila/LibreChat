@@ -29,9 +29,9 @@ export default function ConnectionSection() {
             return isValidUrl(normalized) || localize('com_ui_mcp_invalid_url');
           },
         })}
-        className={cn(errors.url && 'border-red-500 focus:border-red-500')}
+        className={cn(errors.url && 'border-border-destructive')}
       />
-      {errors.url && <p className="text-xs text-red-500">{errors.url.message}</p>}
+      {errors.url && <p className="text-xs text-text-destructive">{errors.url.message}</p>}
     </div>
   );
 }
