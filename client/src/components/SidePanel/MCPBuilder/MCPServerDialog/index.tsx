@@ -117,8 +117,15 @@ export default function MCPServerDialog({
           className="w-11/12 max-w-md"
           description={localize('com_ui_mcp_server_delete_confirm', { 0: server?.serverName })}
           selection={
-            <Button onClick={handleDelete} variant="destructive">
-              {isDeleting ? <Spinner /> : localize('com_ui_delete')}
+            <Button onClick={handleDelete} variant="destructive" aria-live="polite">
+              {isDeleting ? (
+                <>
+                  <Spinner aria-hidden="true" />
+                  <span className="sr-only">{localize('com_ui_deleting')}</span>
+                </>
+              ) : (
+                localize('com_ui_delete')
+              )}
             </Button>
           }
         />
@@ -140,12 +147,15 @@ export default function MCPServerDialog({
             <OGDialogTitle>{localize('com_ui_mcp_server_created')}</OGDialogTitle>
           </OGDialogHeader>
           <div className="space-y-4">
-            <Label className="text-sm">{localize('com_ui_redirect_uri_instructions')}</Label>
+            <p className="text-sm">{localize('com_ui_redirect_uri_instructions')}</p>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium">{localize('com_ui_redirect_uri')}</Label>
+              <Label htmlFor="redirect-uri-input" className="text-sm font-medium">
+                {localize('com_ui_redirect_uri')}
+              </Label>
               <div className="flex items-center gap-2">
                 <Input
+                  id="redirect-uri-input"
                   type="text"
                   readOnly
                   value={redirectUri}
@@ -229,9 +239,15 @@ export default function MCPServerDialog({
               variant={isEditMode ? 'default' : 'submit'}
               onClick={onSubmit}
               disabled={isSubmitting}
+              aria-live="polite"
             >
               {isSubmitting ? (
-                <Spinner className="size-4" />
+                <>
+                  <Spinner className="size-4" aria-hidden="true" />
+                  <span className="sr-only">
+                    {localize(isEditMode ? 'com_ui_updating' : 'com_ui_creating')}
+                  </span>
+                </>
               ) : (
                 localize(isEditMode ? 'com_ui_update' : 'com_ui_create')
               )}
