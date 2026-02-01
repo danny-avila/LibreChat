@@ -11,6 +11,7 @@ const {
   writeSSE,
   createRun,
   createChunk,
+  buildToolSet,
   sendFinalChunk,
   createSafeUser,
   validateRequest,
@@ -19,11 +20,12 @@ const {
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   createOpenAIContentAggregator,
+  createToolExecuteHandler,
   isChatCompletionValidationFailure,
 } = require('@librechat/api');
+const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { loadAgentTools } = require('~/server/services/ToolService');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
@@ -31,8 +33,10 @@ const db = require('~/models');
 /**
  * Creates a tool loader function for the agent.
  * @param {AbortSignal} signal - The abort signal
+ * @param {boolean} [definitionsOnly=true] - When true, returns only serializable
+ *   tool definitions without creating full tool instances (for event-driven mode)
  */
-function createToolLoader(signal) {
+function createToolLoader(signal, definitionsOnly = true) {
   return async function loadTools({
     req,
     res,
@@ -51,6 +55,7 @@ function createToolLoader(signal) {
         agent,
         signal,
         tool_resources,
+        definitionsOnly,
         streamId: null, // No resumable stream for OpenAI compat
       });
     } catch (error) {
@@ -123,6 +128,7 @@ function sendErrorResponse(res, statusCode, message, type = 'invalid_request_err
  */
 const OpenAIChatCompletionController = async (req, res) => {
   const appConfig = req.config;
+  const requestStartTime = Date.now();
 
   // Validate request
   const validation = validateRequest(req.body);
@@ -156,6 +162,10 @@ const OpenAIChatCompletionController = async (req, res) => {
     requestId,
     model: agentId,
   };
+
+  logger.debug(
+    `[OpenAI API] Request ${requestId} started for agent ${agentId}, stream: ${request.stream}`,
+  );
 
   // Set up abort controller
   const abortController = new AbortController();
@@ -239,19 +249,31 @@ const OpenAIChatCompletionController = async (req, res) => {
         }
       : null;
 
-    // We need custom handlers that stream in OpenAI format
     const collectedUsage = [];
     /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
     const artifactPromises = [];
 
-    // Create tool end callback for processing artifacts (images, file citations, code output)
     const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
-    // Convert messages to internal format
+    const toolExecuteOptions = {
+      loadTools: async (toolNames) => {
+        return loadToolsForExecution({
+          req,
+          res,
+          agent,
+          toolNames,
+          signal: abortController.signal,
+          toolRegistry: primaryConfig.toolRegistry,
+          userMCPAuthMap: primaryConfig.userMCPAuthMap,
+          tool_resources: primaryConfig.tool_resources,
+        });
+      },
+      toolEndCallback,
+    };
+
     const openaiMessages = convertMessages(request.messages);
 
-    // Format for agent
-    const toolSet = new Set((primaryConfig.tools ?? []).map((tool) => tool && tool.name));
+    const toolSet = buildToolSet(primaryConfig);
     const { messages: formattedMessages, indexTokenCountMap } = formatAgentMessages(
       openaiMessages,
       {},
@@ -425,6 +447,8 @@ const OpenAIChatCompletionController = async (req, res) => {
       on_chain_end: createHandler(),
       on_agent_update: createHandler(),
       on_custom_event: createHandler(),
+      // Event-driven tool execution handler
+      on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
     };
 
     // Create and run the agent
@@ -474,9 +498,11 @@ const OpenAIChatCompletionController = async (req, res) => {
     });
 
     // Finalize response
+    const duration = Date.now() - requestStartTime;
     if (isStreaming) {
       sendFinalChunk(handlerConfig);
       res.end();
+      logger.debug(`[OpenAI API] Request ${requestId} completed in ${duration}ms (streaming)`);
 
       // Wait for artifact processing after response ends (non-blocking)
       if (artifactPromises.length > 0) {
@@ -515,6 +541,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         usage,
       );
       res.json(response);
+      logger.debug(`[OpenAI API] Request ${requestId} completed in ${duration}ms (non-streaming)`);
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An error occurred';

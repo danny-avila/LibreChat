@@ -1,4 +1,3 @@
-const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -12,7 +11,7 @@ const {
   MCPOAuthHandler,
   isMCPDomainAllowed,
   normalizeServerName,
-  convertWithResolvedRefs,
+  resolveJsonSchemaRefs,
   GenerationJobManager,
 } = require('@librechat/api');
 const {
@@ -33,6 +32,16 @@ const { getGraphApiToken } = require('./GraphTokenService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
+
+function isEmptyObjectSchema(jsonSchema) {
+  return (
+    jsonSchema != null &&
+    typeof jsonSchema === 'object' &&
+    jsonSchema.type === 'object' &&
+    (jsonSchema.properties == null || Object.keys(jsonSchema.properties).length === 0) &&
+    !jsonSchema.additionalProperties
+  );
+}
 
 /**
  * @param {object} params
@@ -197,6 +206,9 @@ async function reconnectServer({
   userMCPAuthMap,
   streamId = null,
 }) {
+  logger.debug(
+    `[MCP][reconnectServer] serverName: ${serverName}, user: ${user?.id}, hasUserMCPAuthMap: ${!!userMCPAuthMap}`,
+  );
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${user.id}:${serverName}:${Date.now()}`;
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
@@ -429,13 +441,17 @@ function createToolInstance({
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
-  let schema = convertWithResolvedRefs(parameters, {
-    allowEmptyObject: !isGoogle,
-    transformOneOfAnyOf: true,
-  });
 
-  if (!schema) {
-    schema = z.object({ input: z.string().optional() });
+  let schema = parameters ? resolveJsonSchemaRefs(parameters) : null;
+
+  if (!schema || (isGoogle && isEmptyObjectSchema(schema))) {
+    schema = {
+      type: 'object',
+      properties: {
+        input: { type: 'string', description: 'Input for the tool' },
+      },
+      required: [],
+    };
   }
 
   const normalizedToolKey = `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
