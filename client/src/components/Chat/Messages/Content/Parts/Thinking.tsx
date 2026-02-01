@@ -1,4 +1,4 @@
-import { useState, useMemo, memo, useCallback, useRef, type MouseEvent } from 'react';
+import { useState, useMemo, memo, useCallback, useRef, useEffect, type MouseEvent } from 'react';
 import { useAtomValue } from 'jotai';
 import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
@@ -238,6 +238,9 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   const localize = useLocalize();
   const showThinking = useAtomValue(showThinkingAtom);
   const [isExpanded, setIsExpanded] = useState(showThinking);
+  useEffect(() => {
+    setIsExpanded(showThinking);
+  }, [showThinking]);
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
