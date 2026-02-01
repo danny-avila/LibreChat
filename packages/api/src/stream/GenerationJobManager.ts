@@ -238,6 +238,7 @@ class GenerationJobManagerClass {
       const currentRuntime = this.runtimeState.get(streamId);
       if (currentRuntime) {
         currentRuntime.syncSent = false;
+        currentRuntime.hasSubscriber = false;
         // Persist syncSent=false to Redis for cross-replica consistency
         this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
           logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
@@ -435,6 +436,7 @@ class GenerationJobManagerClass {
       const currentRuntime = this.runtimeState.get(streamId);
       if (currentRuntime) {
         currentRuntime.syncSent = false;
+        currentRuntime.hasSubscriber = false;
         // Persist syncSent=false to Redis
         this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
           logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
@@ -767,7 +769,6 @@ class GenerationJobManagerClass {
         for (const bufferedEvent of runtime.earlyEventBuffer) {
           onChunk(bufferedEvent);
         }
-        // Clear buffer after replay
         runtime.earlyEventBuffer = [];
       }
     }
@@ -822,7 +823,6 @@ class GenerationJobManagerClass {
     // Buffer early events if no subscriber yet (replay when first subscriber connects)
     if (!runtime.hasSubscriber) {
       runtime.earlyEventBuffer.push(event);
-      // Also emit to transport in case subscriber connects mid-flight
     }
 
     this.eventTransport.emitChunk(streamId, event);

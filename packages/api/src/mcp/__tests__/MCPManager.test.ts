@@ -4,6 +4,7 @@ import type { GraphTokenResolver } from '~/utils/graph';
 import type * as t from '~/mcp/types';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
@@ -48,6 +49,7 @@ jest.mock('~/mcp/registry/MCPServersInitializer', () => ({
 
 jest.mock('~/mcp/registry/MCPServerInspector');
 jest.mock('~/mcp/ConnectionsRepository');
+jest.mock('~/mcp/MCPConnectionFactory');
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
 
@@ -784,6 +786,141 @@ describe('MCPManager', () => {
         expect.objectContaining({
           Authorization: 'Bearer static-token',
         }),
+      );
+    });
+  });
+
+  describe('discoverServerTools', () => {
+    const mockTools = [
+      { name: 'tool1', description: 'First tool', inputSchema: { type: 'object' } },
+      { name: 'tool2', description: 'Second tool', inputSchema: { type: 'object' } },
+    ];
+
+    const mockConnection = {
+      isConnected: jest.fn().mockResolvedValue(true),
+      fetchTools: jest.fn().mockResolvedValue(mockTools),
+    } as unknown as MCPConnection;
+
+    beforeEach(() => {
+      (MCPConnectionFactory.discoverTools as jest.Mock) = jest.fn();
+    });
+
+    it('should return tools from existing app connection when available', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName });
+
+      expect(result.tools).toEqual(mockTools);
+      expect(result.oauthRequired).toBe(false);
+      expect(result.oauthUrl).toBeNull();
+      expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
+    });
+
+    it('should use MCPConnectionFactory.discoverTools when no app connection available', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'stdio',
+        command: 'test',
+        args: [],
+      });
+
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: mockTools,
+        connection: null,
+        oauthRequired: false,
+        oauthUrl: null,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName });
+
+      expect(result.tools).toEqual(mockTools);
+      expect(result.oauthRequired).toBe(false);
+      expect(MCPConnectionFactory.discoverTools).toHaveBeenCalled();
+    });
+
+    it('should return null tools when server config not found', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(null);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName });
+
+      expect(result.tools).toBeNull();
+      expect(result.oauthRequired).toBe(false);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Server config not found'),
+      );
+    });
+
+    it('should return OAuth info when server requires OAuth but no user provided', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://api.example.com',
+        requiresOAuth: true,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName });
+
+      expect(result.tools).toBeNull();
+      expect(result.oauthRequired).toBe(true);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('OAuth server requires user and flowManager'),
+      );
+    });
+
+    it('should discover tools with OAuth when user and flowManager provided', async () => {
+      const mockUser = { id: 'user123', email: 'test@example.com' } as unknown as IUser;
+      const mockFlowManager = {
+        createFlow: jest.fn(),
+        getFlowState: jest.fn(),
+        deleteFlow: jest.fn(),
+      };
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://api.example.com',
+        requiresOAuth: true,
+      });
+
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: mockTools,
+        connection: null,
+        oauthRequired: true,
+        oauthUrl: 'https://auth.example.com/authorize',
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({
+        serverName,
+        user: mockUser,
+        flowManager: mockFlowManager as unknown as t.ToolDiscoveryOptions['flowManager'],
+      });
+
+      expect(result.tools).toEqual(mockTools);
+      expect(result.oauthRequired).toBe(true);
+      expect(result.oauthUrl).toBe('https://auth.example.com/authorize');
+      expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName }),
+        expect.objectContaining({ user: mockUser, useOAuth: true }),
       );
     });
   });

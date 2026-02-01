@@ -1,6 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import type { TokenMethods } from '@librechat/data-schemas';
-import type { TUser } from 'librechat-data-provider';
+import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type * as t from '~/mcp/types';
@@ -27,7 +26,7 @@ const mockMCPConnection = MCPConnection as jest.MockedClass<typeof MCPConnection
 const mockMCPOAuthHandler = MCPOAuthHandler as jest.Mocked<typeof MCPOAuthHandler>;
 
 describe('MCPConnectionFactory', () => {
-  let mockUser: TUser;
+  let mockUser: IUser | undefined;
   let mockServerConfig: t.MCPOptions;
   let mockFlowManager: jest.Mocked<FlowStateManager<MCPOAuthTokens | null>>;
   let mockConnectionInstance: jest.Mocked<MCPConnection>;
@@ -37,7 +36,7 @@ describe('MCPConnectionFactory', () => {
     mockUser = {
       id: 'user123',
       email: 'test@example.com',
-    } as TUser;
+    } as IUser;
 
     mockServerConfig = {
       command: 'node',
@@ -275,7 +274,7 @@ describe('MCPConnectionFactory', () => {
         user: mockUser,
       };
 
-      const oauthOptions = {
+      const oauthOptions: t.OAuthConnectionOptions = {
         user: mockUser,
         useOAuth: true,
         returnOnOAuth: true,
@@ -422,6 +421,128 @@ describe('MCPConnectionFactory', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.stringContaining('OAuth required, stopping connection attempts'),
       );
+    });
+  });
+
+  describe('discoverTools static method', () => {
+    const mockTools = [
+      { name: 'tool1', description: 'First tool', inputSchema: { type: 'object' } },
+      { name: 'tool2', description: 'Second tool', inputSchema: { type: 'object' } },
+    ];
+
+    it('should discover tools from a successfully connected server', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      mockConnectionInstance.fetchTools = jest.fn().mockResolvedValue(mockTools);
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions);
+
+      expect(result.tools).toEqual(mockTools);
+      expect(result.oauthRequired).toBe(false);
+      expect(result.oauthUrl).toBeNull();
+      expect(result.connection).toBe(mockConnectionInstance);
+    });
+
+    it('should capture OAuth URL via oauthStart callback when OAuth is required', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: {
+          ...mockServerConfig,
+          url: 'https://api.example.com',
+          type: 'sse' as const,
+        } as t.SSEOptions,
+      };
+
+      const mockOAuthStart = jest.fn();
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser as unknown as IUser,
+        flowManager: mockFlowManager,
+        oauthStart: mockOAuthStart,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://auth.example.com/authorize',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'random-state',
+          clientInfo: { client_id: 'client123' },
+        },
+      };
+
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      mockFlowManager.createFlow.mockRejectedValue(new Error('Timeout expected'));
+      mockFlowManager.deleteFlow.mockResolvedValue(true);
+
+      mockConnectionInstance.connect.mockRejectedValue(new Error('Connection failed'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+      mockConnectionInstance.disconnect = jest.fn().mockResolvedValue(undefined);
+
+      let oauthHandler: ((data: { serverUrl?: string }) => Promise<void>) | undefined;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthHandler = handler as (data: { serverUrl?: string }) => Promise<void>;
+          setTimeout(() => {
+            oauthHandler?.({ serverUrl: 'https://api.example.com' });
+          }, 10);
+        }
+        return mockConnectionInstance;
+      });
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions, oauthOptions);
+
+      expect(result.connection).toBeNull();
+      expect(result.tools).toBeNull();
+    });
+
+    it('should return null tools when discovery fails completely', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.connect.mockRejectedValue(new Error('Connection failed'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+      mockConnectionInstance.disconnect = jest.fn().mockResolvedValue(undefined);
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions);
+
+      expect(result.tools).toBeNull();
+      expect(result.connection).toBeNull();
+      expect(result.oauthRequired).toBe(false);
+    });
+
+    it('should handle disconnect errors gracefully during cleanup', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.connect.mockRejectedValue(new Error('Connection failed'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+      mockConnectionInstance.disconnect = jest
+        .fn()
+        .mockRejectedValue(new Error('Disconnect failed'));
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions);
+
+      expect(result.tools).toBeNull();
+      expect(mockLogger.debug).toHaveBeenCalled();
     });
   });
 });

@@ -2,21 +2,27 @@ const {
   sleep,
   EnvVar,
   Constants,
+  StepTypes,
+  GraphEvents,
   createToolSearch,
   createProgrammaticToolCallingTool,
 } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
+  sendEvent,
   getToolkitKey,
   hasCustomUserVars,
   getUserMCPAuthMap,
   loadToolDefinitions,
+  GenerationJobManager,
   isActionDomainAllowed,
   buildToolClassification,
 } = require('@librechat/api');
 const {
+  Time,
   Tools,
+  CacheKeys,
   ErrorTypes,
   ContentTypes,
   imageGenTools,
@@ -45,6 +51,8 @@ const {
   getCachedTools,
   getMCPServerTools,
 } = require('~/server/services/Config');
+const { getFlowStateManager } = require('~/config');
+const { getLogStores } = require('~/cache');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -409,7 +417,9 @@ const isBuiltInTool = (toolName) =>
  *
  * @param {Object} params
  * @param {ServerRequest} params.req - The request object
+ * @param {ServerResponse} [params.res] - The response object for SSE events
  * @param {Object} params.agent - The agent configuration
+ * @param {string|null} [params.streamId] - Stream ID for resumable mode
  * @returns {Promise<{
  *   toolDefinitions?: import('@librechat/api').LCTool[];
  *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
@@ -417,7 +427,7 @@ const isBuiltInTool = (toolName) =>
  *   hasDeferredTools?: boolean;
  * }>}
  */
-async function loadToolDefinitionsWrapper({ req, agent }) {
+async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
   }
@@ -473,14 +483,72 @@ async function loadToolDefinitionsWrapper({ req, agent }) {
     });
   }
 
+  const flowsCache = getLogStores(CacheKeys.FLOWS);
+  const flowManager = getFlowStateManager(flowsCache);
+  const pendingOAuthServers = new Set();
+
+  const createOAuthEmitter = (serverName) => {
+    return async (authURL) => {
+      const flowId = `${req.user.id}:${serverName}:${Date.now()}`;
+      const stepId = 'step_oauth_login_' + serverName;
+      const toolCall = {
+        id: flowId,
+        name: serverName,
+        type: 'tool_call_chunk',
+      };
+
+      const runStepData = {
+        runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+        id: stepId,
+        type: StepTypes.TOOL_CALLS,
+        index: 0,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [toolCall],
+        },
+      };
+
+      const runStepDeltaData = {
+        id: stepId,
+        delta: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [{ ...toolCall, args: '' }],
+          auth: authURL,
+          expires_at: Date.now() + Time.TWO_MINUTES,
+        },
+      };
+
+      const runStepEvent = { event: GraphEvents.ON_RUN_STEP, data: runStepData };
+      const runStepDeltaEvent = { event: GraphEvents.ON_RUN_STEP_DELTA, data: runStepDeltaData };
+
+      if (streamId) {
+        GenerationJobManager.emitChunk(streamId, runStepEvent);
+        GenerationJobManager.emitChunk(streamId, runStepDeltaEvent);
+      } else if (res && !res.headersSent) {
+        sendEvent(res, runStepEvent);
+        sendEvent(res, runStepDeltaEvent);
+      } else {
+        logger.warn(
+          `[Tool Definitions] Cannot emit OAuth event for ${serverName}: no streamId and res not available`,
+        );
+      }
+    };
+  };
+
   const getOrFetchMCPServerTools = async (userId, serverName) => {
     const cached = await getMCPServerTools(userId, serverName);
     if (cached) {
       return cached;
     }
 
+    const oauthStart = async () => {
+      pendingOAuthServers.add(serverName);
+    };
+
     const result = await reinitMCPServer({
       user: req.user,
+      oauthStart,
+      flowManager,
       serverName,
       userMCPAuthMap,
     });
@@ -535,7 +603,7 @@ async function loadToolDefinitionsWrapper({ req, agent }) {
     return definitions;
   };
 
-  const { toolDefinitions, toolRegistry, hasDeferredTools } = await loadToolDefinitions(
+  let { toolDefinitions, toolRegistry, hasDeferredTools } = await loadToolDefinitions(
     {
       userId: req.user.id,
       agentId: agent.id,
@@ -550,6 +618,65 @@ async function loadToolDefinitionsWrapper({ req, agent }) {
       getActionToolDefinitions,
     },
   );
+
+  if (pendingOAuthServers.size > 0 && res) {
+    const serverNames = Array.from(pendingOAuthServers);
+    logger.info(
+      `[Tool Definitions] OAuth required for ${serverNames.length} server(s): ${serverNames.join(', ')}. Emitting events and waiting.`,
+    );
+
+    const oauthWaitPromises = serverNames.map(async (serverName) => {
+      try {
+        const result = await reinitMCPServer({
+          user: req.user,
+          serverName,
+          userMCPAuthMap,
+          flowManager,
+          returnOnOAuth: false,
+          oauthStart: createOAuthEmitter(serverName),
+          connectionTimeout: Time.TWO_MINUTES,
+        });
+
+        if (result?.availableTools) {
+          logger.info(`[Tool Definitions] OAuth completed for ${serverName}, tools available`);
+          return { serverName, success: true };
+        }
+        return { serverName, success: false };
+      } catch (error) {
+        logger.debug(`[Tool Definitions] OAuth wait failed for ${serverName}:`, error?.message);
+        return { serverName, success: false };
+      }
+    });
+
+    const results = await Promise.allSettled(oauthWaitPromises);
+    const successfulServers = results
+      .filter((r) => r.status === 'fulfilled' && r.value.success)
+      .map((r) => r.value.serverName);
+
+    if (successfulServers.length > 0) {
+      logger.info(
+        `[Tool Definitions] Reloading tools after OAuth for: ${successfulServers.join(', ')}`,
+      );
+      const reloadResult = await loadToolDefinitions(
+        {
+          userId: req.user.id,
+          agentId: agent.id,
+          tools: filteredTools,
+          toolOptions: agent.tool_options,
+          deferredToolsEnabled,
+        },
+        {
+          isBuiltInTool,
+          loadAuthValues,
+          getOrFetchMCPServerTools,
+          getActionToolDefinitions,
+        },
+      );
+      toolDefinitions = reloadResult.toolDefinitions;
+      toolRegistry = reloadResult.toolRegistry;
+      hasDeferredTools = reloadResult.hasDeferredTools;
+    }
+  }
 
   return {
     toolRegistry,
@@ -584,7 +711,7 @@ async function loadAgentTools({
   definitionsOnly = true,
 }) {
   if (definitionsOnly) {
-    return loadToolDefinitionsWrapper({ req, agent });
+    return loadToolDefinitionsWrapper({ req, res, agent, streamId });
   }
 
   if (!agent.tools || agent.tools.length === 0) {
