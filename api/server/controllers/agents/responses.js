@@ -13,6 +13,9 @@ const {
   buildToolSet,
   createSafeUser,
   initializeAgent,
+  getBalanceConfig,
+  recordCollectedUsage,
+  getTransactionsConfig,
   createToolExecuteHandler,
   // Responses API
   writeDone,
@@ -39,6 +42,7 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
+const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
@@ -403,6 +407,9 @@ const createResponse = async (req, res) => {
       const { handlers: responsesHandlers, finalizeStream } =
         createResponsesEventHandlers(handlerConfig);
 
+      // Collect usage for balance tracking
+      const collectedUsage = [];
+
       // Built-in handler for processing raw model stream chunks
       const chatModelStreamHandler = new ChatModelStreamHandler();
 
@@ -445,7 +452,15 @@ const createResponse = async (req, res) => {
         on_reasoning_delta: responsesHandlers.on_reasoning_delta,
         on_run_step: responsesHandlers.on_run_step,
         on_run_step_delta: responsesHandlers.on_run_step_delta,
-        on_chat_model_end: responsesHandlers.on_chat_model_end,
+        on_chat_model_end: {
+          handle: (event, data) => {
+            responsesHandlers.on_chat_model_end.handle(event, data);
+            const usage = data?.output?.usage_metadata;
+            if (usage) {
+              collectedUsage.push(usage);
+            }
+          },
+        },
         on_tool_end: new ToolEndHandler(toolEndCallback, logger),
         on_run_step_completed: { handle: () => {} },
         on_chain_stream: { handle: () => {} },
@@ -499,6 +514,24 @@ const createResponse = async (req, res) => {
         },
       });
 
+      // Record token usage against balance
+      const balanceConfig = getBalanceConfig(req.config);
+      const transactionsConfig = getTransactionsConfig(req.config);
+      recordCollectedUsage(
+        { spendTokens, spendStructuredTokens },
+        {
+          user: userId,
+          conversationId,
+          collectedUsage,
+          context: 'message',
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+          model: primaryConfig.model || agent.model_parameters?.model,
+        },
+      ).catch((err) => {
+        logger.error('[Responses API] Error recording usage:', err);
+      });
+
       // Finalize the stream
       finalizeStream();
       res.end();
@@ -539,6 +572,9 @@ const createResponse = async (req, res) => {
 
       const chatModelStreamHandler = new ChatModelStreamHandler();
 
+      // Collect usage for balance tracking
+      const collectedUsage = [];
+
       /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
       const artifactPromises = [];
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
@@ -569,7 +605,15 @@ const createResponse = async (req, res) => {
         on_reasoning_delta: aggregatorHandlers.on_reasoning_delta,
         on_run_step: aggregatorHandlers.on_run_step,
         on_run_step_delta: aggregatorHandlers.on_run_step_delta,
-        on_chat_model_end: aggregatorHandlers.on_chat_model_end,
+        on_chat_model_end: {
+          handle: (event, data) => {
+            aggregatorHandlers.on_chat_model_end.handle(event, data);
+            const usage = data?.output?.usage_metadata;
+            if (usage) {
+              collectedUsage.push(usage);
+            }
+          },
+        },
         on_tool_end: new ToolEndHandler(toolEndCallback, logger),
         on_run_step_completed: { handle: () => {} },
         on_chain_stream: { handle: () => {} },
@@ -619,6 +663,24 @@ const createResponse = async (req, res) => {
             logger.error(`[Responses API] Tool Error "${toolId}"`, error);
           },
         },
+      });
+
+      // Record token usage against balance
+      const balanceConfig = getBalanceConfig(req.config);
+      const transactionsConfig = getTransactionsConfig(req.config);
+      recordCollectedUsage(
+        { spendTokens, spendStructuredTokens },
+        {
+          user: userId,
+          conversationId,
+          collectedUsage,
+          context: 'message',
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+          model: primaryConfig.model || agent.model_parameters?.model,
+        },
+      ).catch((err) => {
+        logger.error('[Responses API] Error recording usage:', err);
       });
 
       if (artifactPromises.length > 0) {
