@@ -1,6 +1,15 @@
 import { useMemo } from 'react';
 import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
-import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote, FileText, LayoutDashboard } from 'lucide-react';
+import {
+  Database,
+  Bookmark,
+  Settings2,
+  ArrowRightToLine,
+  MessageSquareQuote,
+  FileText,
+  LayoutDashboard,
+  Megaphone,
+} from 'lucide-react';
 import {
   Permissions,
   EModelEndpoint,
@@ -31,6 +40,7 @@ export default function useSideNavLinks({
   endpointsConfig,
   openPDFBuilder,
   openDashboard,
+  openSocialDraft,
 }: {
   hidePanel: () => void;
   keyProvided: boolean;
@@ -40,6 +50,7 @@ export default function useSideNavLinks({
   endpointsConfig: TEndpointsConfig;
   openPDFBuilder?: () => void;
   openDashboard?: () => void;
+  openSocialDraft?: () => void;
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -69,7 +80,7 @@ export default function useSideNavLinks({
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
-    
+
     // PDF Builder - moved to top
     if (openPDFBuilder) {
       links.push({
@@ -89,6 +100,17 @@ export default function useSideNavLinks({
         icon: LayoutDashboard,
         onClick: openDashboard,
         id: 'dashboard',
+      });
+    }
+
+    // Start Social Draft (Command Center)
+    if (openSocialDraft) {
+      links.push({
+        title: 'com_sidepanel_social_draft',
+        label: '',
+        icon: Megaphone,
+        onClick: openSocialDraft,
+        id: 'social-draft',
       });
     }
 

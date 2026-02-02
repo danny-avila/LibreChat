@@ -244,7 +244,24 @@ class N8nToolService {
         },
       },
 
-      // ===== 5. GENERAL =====
+      // ===== 5. SOCIAL MEDIA AUTOMATION =====
+      wf_social_draft: {
+        name: 'Social Media Draft',
+        label: 'Social Media Draft',
+        description:
+          'Generate social media drafts from a raw idea (LinkedIn, X, Instagram, Farcaster).',
+        endpoint: '/webhook/librechat/social-draft',
+        profileTypes: ['ceo', 'employee', 'customer'],
+        parameters: {
+          type: 'object',
+          properties: {
+            rawIdea: { type: 'string', description: 'Raw idea or brief for the post' },
+          },
+          required: ['rawIdea'],
+        },
+      },
+
+      // ===== 6. GENERAL =====
       wf_doc_search: {
         name: 'search_documents',
         label: 'Document Search',

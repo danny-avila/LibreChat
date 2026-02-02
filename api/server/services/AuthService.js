@@ -245,6 +245,12 @@ const registerUser = async (user, additionalData = {}) => {
           endpoint: '/webhook/librechat/ticket-update',
           description: 'Update ticket status or details.',
         },
+        {
+          workflowId: 'wf_social_draft',
+          workflowName: 'Social Media Draft',
+          endpoint: '/webhook/librechat/social-draft',
+          description: 'Generate social media drafts from a raw idea.',
+        },
       ];
 
       await Profile.create({

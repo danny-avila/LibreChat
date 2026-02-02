@@ -22,6 +22,7 @@ import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 import { PDFBuilderModal } from '~/components/PDFBuilder';
 import { ProfileDashboardModal } from '~/components/Profile/ProfileDashboardModal';
+import { SocialDraftModal } from '~/components/SocialDraft';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -98,6 +99,8 @@ export default function Root() {
           <PDFBuilderModal />
           {/* Profile Dashboard Modal */}
           <ProfileDashboardModal />
+          {/* Start Social Draft Modal */}
+          <SocialDraftModal />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SetConvoProvider>
