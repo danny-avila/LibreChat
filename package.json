@@ -100,7 +100,6 @@
   },
   "homepage": "https://librechat.ai/",
   "devDependencies": {
-    "@rollup/rollup-win32-x64-msvc": "^4.22.4",
     "concurrently": "^8.2.2",
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",
