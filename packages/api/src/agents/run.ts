@@ -1,4 +1,4 @@
-import { Run, Providers } from '@librechat/agents';
+import { Run, Providers, Constants } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
 import type {
@@ -16,9 +16,6 @@ import type { IUser } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
-
-/** Tool search tool name constant */
-const TOOL_SEARCH_NAME = 'tool_search';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -91,7 +88,7 @@ export function extractDiscoveredToolsFromHistory(messages: BaseMessage[]): Set<
     }
 
     const name = (message as { name?: string }).name;
-    if (name !== TOOL_SEARCH_NAME) {
+    if (name !== Constants.TOOL_SEARCH) {
       continue;
     }
 
