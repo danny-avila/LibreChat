@@ -42,7 +42,6 @@ const localStorageAtoms = {
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
   centerFormOnLanding: atomWithLocalStorage('centerFormOnLanding', true),
   showFooter: atomWithLocalStorage('showFooter', true),
-  resumableStreams: atomWithLocalStorage('resumableStreams', true),
 
   // Commands settings
   atCommand: atomWithLocalStorage('atCommand', true),

@@ -13,30 +13,14 @@ export default function Footer({ className }: { className?: string }) {
   const termsOfService = config?.interface?.termsOfService;
 
   const privacyPolicyRender = privacyPolicy?.externalUrl != null && (
-    <a
-      className="text-text-secondary underline"
-      href={privacyPolicy.externalUrl}
-      target={privacyPolicy.openNewTab === true ? '_blank' : undefined}
-      rel="noreferrer"
-    >
+    <a className="text-text-secondary underline" href={privacyPolicy.externalUrl} rel="noreferrer">
       {localize('com_ui_privacy_policy')}
-      {privacyPolicy.openNewTab === true && (
-        <span className="sr-only">{' ' + localize('com_ui_opens_new_tab')}</span>
-      )}
     </a>
   );
 
   const termsOfServiceRender = termsOfService?.externalUrl != null && (
-    <a
-      className="text-text-secondary underline"
-      href={termsOfService.externalUrl}
-      target={termsOfService.openNewTab === true ? '_blank' : undefined}
-      rel="noreferrer"
-    >
+    <a className="text-text-secondary underline" href={termsOfService.externalUrl} rel="noreferrer">
       {localize('com_ui_terms_of_service')}
-      {termsOfService.openNewTab === true && (
-        <span className="sr-only">{' ' + localize('com_ui_opens_new_tab')}</span>
-      )}
     </a>
   );
 
@@ -67,12 +51,10 @@ export default function Footer({ className }: { className?: string }) {
               <a
                 className="text-text-secondary underline"
                 href={href}
-                target="_blank"
                 rel="noreferrer"
                 {...otherProps}
               >
                 {children}
-                <span className="sr-only">{' ' + localize('com_ui_opens_new_tab')}</span>
               </a>
             );
           },

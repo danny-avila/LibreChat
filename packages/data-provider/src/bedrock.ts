@@ -15,6 +15,36 @@ type AnthropicInput = BedrockConverseInput & {
     AnthropicReasoning;
 };
 
+/**
+ * Gets the appropriate anthropic_beta headers for Bedrock Anthropic models.
+ * Bedrock uses `anthropic_beta` (with underscore) in additionalModelRequestFields.
+ *
+ * @param model - The Bedrock model identifier (e.g., "anthropic.claude-sonnet-4-20250514-v1:0")
+ * @returns Array of beta header strings, or empty array if not applicable
+ */
+function getBedrockAnthropicBetaHeaders(model: string): string[] {
+  const betaHeaders: string[] = [];
+
+  const isClaudeThinkingModel =
+    model.includes('anthropic.claude-3-7-sonnet') ||
+    /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
+      model,
+    );
+
+  const isSonnet4PlusModel =
+    /anthropic\.claude-(?:sonnet-[4-9]|[4-9](?:\.\d+)?(?:-\d+)?-sonnet)/.test(model);
+
+  if (isClaudeThinkingModel) {
+    betaHeaders.push('output-128k-2025-02-19');
+  }
+
+  if (isSonnet4PlusModel) {
+    betaHeaders.push('context-1m-2025-08-07');
+  }
+
+  return betaHeaders;
+}
+
 export const bedrockInputSchema = s.tConversationSchema
   .pick({
     /* LibreChat params; optionType: 'conversation' */
@@ -137,7 +167,12 @@ export const bedrockInputParser = s.tConversationSchema
       if (additionalFields.thinking === true && additionalFields.thinkingBudget === undefined) {
         additionalFields.thinkingBudget = 2000;
       }
-      additionalFields.anthropic_beta = ['output-128k-2025-02-19'];
+      if (typedData.model.includes('anthropic.')) {
+        const betaHeaders = getBedrockAnthropicBetaHeaders(typedData.model);
+        if (betaHeaders.length > 0) {
+          additionalFields.anthropic_beta = betaHeaders;
+        }
+      }
     } else if (additionalFields.thinking != null || additionalFields.thinkingBudget != null) {
       delete additionalFields.thinking;
       delete additionalFields.thinkingBudget;
