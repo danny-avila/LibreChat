@@ -133,6 +133,7 @@
   "overrides": {
     "axios": "1.12.1",
     "elliptic": "^6.6.1",
+    "fast-xml-parser": "5.3.4",
     "form-data": "^4.0.4",
     "tslib": "^2.8.1",
     "mdast-util-gfm-autolink-literal": "2.0.0",
