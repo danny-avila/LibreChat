@@ -1,5 +1,5 @@
-import { CategoryIcon } from '~/components/Prompts';
 import { useLocalize, TranslationKeys } from '~/hooks';
+import { CategoryIcon } from '~/components/Prompts';
 import { useGetCategories } from '~/data-provider';
 
 const loadingCategories: { label: TranslationKeys; value: string }[] = [
