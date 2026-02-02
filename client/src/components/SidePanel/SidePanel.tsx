@@ -102,6 +102,8 @@ const SidePanel = ({
     setSocialDraftState({ isOpen: true });
   }, [setSocialDraftState]);
 
+  const showSocialDraft = import.meta.env.VITE_SOCIAL_MEDIA_AUTOMATION === 'true';
+
   const Links = useSideNavLinks({
     endpoint,
     hidePanel,
@@ -111,7 +113,7 @@ const SidePanel = ({
     endpointsConfig,
     openPDFBuilder,
     openDashboard,
-    openSocialDraft,
+    openSocialDraft: showSocialDraft ? openSocialDraft : undefined,
   });
 
   const toggleNavVisible = useCallback(() => {

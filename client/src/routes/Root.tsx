@@ -99,8 +99,8 @@ export default function Root() {
           <PDFBuilderModal />
           {/* Profile Dashboard Modal */}
           <ProfileDashboardModal />
-          {/* Start Social Draft Modal */}
-          <SocialDraftModal />
+          {/* Start Social Draft Modal (only when VITE_SOCIAL_MEDIA_AUTOMATION=true) */}
+          {import.meta.env.VITE_SOCIAL_MEDIA_AUTOMATION === 'true' && <SocialDraftModal />}
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SetConvoProvider>
