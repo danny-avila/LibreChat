@@ -45,7 +45,9 @@ if (process.env.S3_REFRESH_EXPIRY_MS !== null && process.env.S3_REFRESH_EXPIRY_M
 /**
  * Constructs the S3 key based on the base path, user ID, and file name.
  */
-const getS3Key = (basePath, userId, fileName) => `${basePath}/${userId}/${fileName}`;
+const getS3Key = (basePath, userId, fileName, temporary) => {
+  return `${temporary ? 'tmp/' : ''}${basePath}/${userId}/${fileName}`;
+};
 
 /**
  * Uploads a buffer to S3 and returns a signed URL.
@@ -55,16 +57,17 @@ const getS3Key = (basePath, userId, fileName) => `${basePath}/${userId}/${fileNa
  * @param {Buffer} params.buffer - The buffer containing file data.
  * @param {string} params.fileName - The file name to use in S3.
  * @param {string} [params.basePath='images'] - The base path in the bucket.
+ * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  * @returns {Promise<string>} Signed URL of the uploaded file.
  */
-async function saveBufferToS3({ userId, buffer, fileName, basePath = defaultBasePath }) {
-  const key = getS3Key(basePath, userId, fileName);
+async function saveBufferToS3({ userId, buffer, fileName, basePath = defaultBasePath, temporary }) {
+  const key = getS3Key(basePath, userId, fileName, temporary);
   const params = { Bucket: bucketName, Key: key, Body: buffer };
 
   try {
     const s3 = initializeS3();
     await s3.send(new PutObjectCommand(params));
-    return await getS3URL({ userId, fileName, basePath });
+    return await getS3URL({ userId, fileName, basePath, temporary });
   } catch (error) {
     logger.error('[saveBufferToS3] Error uploading buffer to S3:', error.message);
     throw error;
@@ -81,6 +84,7 @@ async function saveBufferToS3({ userId, buffer, fileName, basePath = defaultBase
  * @param {string} [params.basePath='images'] - The base path in the bucket.
  * @param {string} [params.customFilename] - Custom filename for Content-Disposition header (overrides extracted filename).
  * @param {string} [params.contentType] - Custom content type for the response.
+ * @param {boolean} [params.temporary] - If true, the file is temporary.
  * @returns {Promise<string>} A URL to access the S3 object
  */
 async function getS3URL({
@@ -89,8 +93,9 @@ async function getS3URL({
   basePath = defaultBasePath,
   customFilename = null,
   contentType = null,
+  temporary = false,
 }) {
-  const key = getS3Key(basePath, userId, fileName);
+  const key = getS3Key(basePath, userId, fileName, temporary);
   const params = { Bucket: bucketName, Key: key };
 
   // Add response headers if specified
@@ -198,14 +203,15 @@ async function deleteFileFromS3(req, file) {
  * @param {Express.Multer.File} params.file - The file object from Multer.
  * @param {string} params.file_id - Unique file identifier.
  * @param {string} [params.basePath='images'] - The base path in the bucket.
+ * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  * @returns {Promise<{ filepath: string, bytes: number }>}
  */
-async function uploadFileToS3({ req, file, file_id, basePath = defaultBasePath }) {
+async function uploadFileToS3({ req, file, file_id, basePath = defaultBasePath, temporary }) {
   try {
     const inputFilePath = file.path;
     const userId = req.user.id;
     const fileName = `${file_id}__${file.originalname}`;
-    const key = getS3Key(basePath, userId, fileName);
+    const key = getS3Key(basePath, userId, fileName, temporary);
 
     const stats = await fs.promises.stat(inputFilePath);
     const bytes = stats.size;
@@ -219,7 +225,7 @@ async function uploadFileToS3({ req, file, file_id, basePath = defaultBasePath }
     };
 
     await s3.send(new PutObjectCommand(uploadParams));
-    const fileURL = await getS3URL({ userId, fileName, basePath });
+    const fileURL = await getS3URL({ userId, fileName, basePath, temporary });
     return { filepath: fileURL, bytes };
   } catch (error) {
     logger.error('[uploadFileToS3] Error streaming file to S3:', error);
@@ -251,7 +257,7 @@ function extractKeyFromS3Url(fileUrlOrKey) {
   try {
     const url = new URL(fileUrlOrKey);
     return url.pathname.substring(1);
-  } catch (error) {
+  } catch (_) {
     const parts = fileUrlOrKey.split('/');
 
     if (parts.length >= 3 && !fileUrlOrKey.startsWith('http') && !fileUrlOrKey.startsWith('/')) {

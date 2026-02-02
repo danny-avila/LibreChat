@@ -410,7 +410,6 @@ describe('Code Process', () => {
             file_id: 'mock-uuid-1234',
             context: FileContext.execute_code,
           }),
-          true, // upsert flag
         );
       });
     });
