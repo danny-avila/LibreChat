@@ -1,13 +1,13 @@
-import {
-  getServerNameFromTool,
-  buildToolRegistryFromAgentOptions,
-  buildToolClassification,
-  agentHasDeferredTools,
-  agentHasProgrammaticTools,
-} from './classification';
-import type { LCToolRegistry } from './classification';
-import type { GenericTool } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
+import type { GenericTool } from '@librechat/agents';
+import type { LCToolRegistry } from './classification';
+import {
+  buildToolRegistryFromAgentOptions,
+  agentHasProgrammaticTools,
+  buildToolClassification,
+  getServerNameFromTool,
+  agentHasDeferredTools,
+} from './classification';
 
 describe('classification.ts', () => {
   describe('getServerNameFromTool', () => {
