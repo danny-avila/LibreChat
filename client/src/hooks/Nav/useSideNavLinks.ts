@@ -247,6 +247,7 @@ export default function useSideNavLinks({
     hidePanel,
     openPDFBuilder,
     openDashboard,
+    openSocialDraft,
     startupConfig,
   ]);
 
