@@ -35,7 +35,7 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
   const { getValues, setValue } = useFormContext<AgentForm>();
   const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
   const { agentsConfig } = useGetAgentsConfig();
-  const { deferredToolsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
+  const { deferredToolsEnabled, programmaticToolsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
 
   const {
     isToolDeferred,
@@ -225,45 +225,47 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                           </TooltipAnchor>
                         )}
 
-                        <TooltipAnchor
-                          description={
-                            allProgrammatic
-                              ? localize('com_ui_mcp_unprogrammatic_all')
-                              : localize('com_ui_mcp_programmatic_all')
-                          }
-                          side="top"
-                          role="button"
-                          tabIndex={isExpanded ? 0 : -1}
-                          aria-label={
-                            allProgrammatic
-                              ? localize('com_ui_mcp_unprogrammatic_all')
-                              : localize('com_ui_mcp_programmatic_all')
-                          }
-                          aria-pressed={allProgrammatic}
-                          className={cn(
-                            'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
-                            'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-                            isExpanded ? 'visible' : 'pointer-events-none invisible',
-                            allProgrammatic
-                              ? 'bg-violet-500/20 text-violet-500 hover:bg-violet-500/30'
-                              : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
-                          )}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleProgrammaticAll(tools);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
+                        {programmaticToolsEnabled && (
+                          <TooltipAnchor
+                            description={
+                              allProgrammatic
+                                ? localize('com_ui_mcp_unprogrammatic_all')
+                                : localize('com_ui_mcp_programmatic_all')
+                            }
+                            side="top"
+                            role="button"
+                            tabIndex={isExpanded ? 0 : -1}
+                            aria-label={
+                              allProgrammatic
+                                ? localize('com_ui_mcp_unprogrammatic_all')
+                                : localize('com_ui_mcp_programmatic_all')
+                            }
+                            aria-pressed={allProgrammatic}
+                            className={cn(
+                              'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
+                              'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                              isExpanded ? 'visible' : 'pointer-events-none invisible',
+                              allProgrammatic
+                                ? 'bg-violet-500/20 text-violet-500 hover:bg-violet-500/30'
+                                : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
+                            )}
+                            onClick={(e) => {
                               e.stopPropagation();
                               toggleProgrammaticAll(tools);
-                            }
-                          }}
-                        >
-                          <Code2
-                            className={cn('h-4 w-4', allProgrammatic && 'fill-violet-500/30')}
-                          />
-                        </TooltipAnchor>
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleProgrammaticAll(tools);
+                              }
+                            }}
+                          >
+                            <Code2
+                              className={cn('h-4 w-4', allProgrammatic && 'fill-violet-500/30')}
+                            />
+                          </TooltipAnchor>
+                        )}
 
                         <div className="flex items-center gap-1">
                           <AccordionPrimitive.Trigger asChild>
@@ -325,8 +327,9 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                   tool={tool}
                   isSelected={selectedTools.includes(tool.tool_id)}
                   isDeferred={deferredToolsEnabled && isToolDeferred(tool.tool_id)}
-                  isProgrammatic={isToolProgrammatic(tool.tool_id)}
+                  isProgrammatic={programmaticToolsEnabled && isToolProgrammatic(tool.tool_id)}
                   deferredToolsEnabled={deferredToolsEnabled}
+                  programmaticToolsEnabled={programmaticToolsEnabled}
                   onToggleSelect={() => toggleToolSelect(tool.tool_id)}
                   onToggleDefer={() => toggleToolDefer(tool.tool_id)}
                   onToggleProgrammatic={() => toggleToolProgrammatic(tool.tool_id)}

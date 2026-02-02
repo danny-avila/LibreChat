@@ -19,6 +19,7 @@ interface MCPToolItemProps {
   isDeferred: boolean;
   isProgrammatic: boolean;
   deferredToolsEnabled: boolean;
+  programmaticToolsEnabled: boolean;
   onToggleSelect: () => void;
   onToggleDefer: () => void;
   onToggleProgrammatic: () => void;
@@ -43,6 +44,7 @@ export default function MCPToolItem({
   isDeferred,
   isProgrammatic,
   deferredToolsEnabled,
+  programmaticToolsEnabled,
   onToggleSelect,
   onToggleDefer,
   onToggleProgrammatic,
@@ -126,21 +128,23 @@ export default function MCPToolItem({
                 </div>
               </DropdownMenuCheckboxItem>
             )}
-            <DropdownMenuCheckboxItem
-              checked={isProgrammatic}
-              onCheckedChange={onToggleProgrammatic}
-              className="cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <Code2 className="h-4 w-4 text-violet-500" />
-                <div className="flex flex-col">
-                  <span>{localize('com_ui_mcp_programmatic')}</span>
-                  <span className="text-xs text-text-tertiary">
-                    {localize('com_ui_mcp_click_to_programmatic')}
-                  </span>
+            {programmaticToolsEnabled && (
+              <DropdownMenuCheckboxItem
+                checked={isProgrammatic}
+                onCheckedChange={onToggleProgrammatic}
+                className="cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Code2 className="h-4 w-4 text-violet-500" />
+                  <div className="flex flex-col">
+                    <span>{localize('com_ui_mcp_programmatic')}</span>
+                    <span className="text-xs text-text-tertiary">
+                      {localize('com_ui_mcp_click_to_programmatic')}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </DropdownMenuCheckboxItem>
+              </DropdownMenuCheckboxItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
