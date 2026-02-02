@@ -75,6 +75,7 @@ export function buildToolRegistryFromAgentOptions(
       name,
       allowed_callers,
       defer_loading,
+      toolType: 'mcp',
     };
 
     if (description) {
@@ -82,6 +83,9 @@ export function buildToolRegistryFromAgentOptions(
     }
     if (parameters) {
       toolDef.parameters = parameters;
+    }
+    if (tool.serverName) {
+      toolDef.serverName = tool.serverName;
     }
 
     registry.set(name, toolDef);
