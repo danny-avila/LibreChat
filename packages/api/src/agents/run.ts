@@ -132,6 +132,7 @@ export function overrideDeferLoadingForDiscoveredTools(
 const customProviders = new Set([
   Providers.XAI,
   Providers.DEEPSEEK,
+  Providers.MOONSHOT,
   Providers.OPENROUTER,
   KnownEndpoints.ollama,
 ]);
