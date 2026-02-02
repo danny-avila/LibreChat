@@ -113,6 +113,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     loadTools: async (toolNames, agentId) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
+      logger.debug(`[ON_TOOL_EXECUTE] toolRegistry size: ${ctx.toolRegistry?.size ?? 'undefined'}`);
 
       const result = await loadToolsForExecution({
         req,
@@ -208,6 +209,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   /** Store primary agent's tool context for ON_TOOL_EXECUTE callback */
   logger.debug(`[initializeClient] Storing tool context for agentId: ${primaryConfig.id}`);
+  logger.debug(
+    `[initializeClient] toolRegistry size: ${primaryConfig.toolRegistry?.size ?? 'undefined'}`,
+  );
   agentToolContexts.set(primaryConfig.id, {
     agent: primaryAgent,
     toolRegistry: primaryConfig.toolRegistry,

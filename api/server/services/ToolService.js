@@ -4,6 +4,7 @@ const {
   StepTypes,
   GraphEvents,
   createToolSearch,
+  Constants: AgentConstants,
   createProgrammaticToolCallingTool,
 } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
@@ -1055,8 +1056,12 @@ async function loadToolsForExecution({
   const allLoadedTools = [];
   const configurable = { userMCPAuthMap };
 
-  const isToolSearch = toolNames.includes(Constants.TOOL_SEARCH);
-  const isPTC = toolNames.includes(Constants.PROGRAMMATIC_TOOL_CALLING);
+  const isToolSearch = toolNames.includes(AgentConstants.TOOL_SEARCH);
+  const isPTC = toolNames.includes(AgentConstants.PROGRAMMATIC_TOOL_CALLING);
+
+  logger.debug(
+    `[loadToolsForExecution] isToolSearch: ${isToolSearch}, toolRegistry: ${toolRegistry?.size ?? 'undefined'}`,
+  );
 
   if (isToolSearch && toolRegistry) {
     const toolSearchTool = createToolSearch({
@@ -1087,7 +1092,10 @@ async function loadToolsForExecution({
     }
   }
 
-  const specialToolNames = new Set([Constants.TOOL_SEARCH, Constants.PROGRAMMATIC_TOOL_CALLING]);
+  const specialToolNames = new Set([
+    AgentConstants.TOOL_SEARCH,
+    AgentConstants.PROGRAMMATIC_TOOL_CALLING,
+  ]);
 
   let ptcOrchestratedToolNames = [];
   if (isPTC && toolRegistry) {
@@ -1149,7 +1157,7 @@ async function loadToolsForExecution({
   if (isPTC && allLoadedTools.length > 0) {
     const ptcToolMap = new Map();
     for (const tool of allLoadedTools) {
-      if (tool.name && tool.name !== Constants.PROGRAMMATIC_TOOL_CALLING) {
+      if (tool.name && tool.name !== AgentConstants.PROGRAMMATIC_TOOL_CALLING) {
         ptcToolMap.set(tool.name, tool);
       }
     }
