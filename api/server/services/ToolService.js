@@ -524,7 +524,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null }) 
       if (streamId) {
         GenerationJobManager.emitChunk(streamId, runStepEvent);
         GenerationJobManager.emitChunk(streamId, runStepDeltaEvent);
-      } else if (res && !res.headersSent) {
+      } else if (res && !res.writableEnded) {
         sendEvent(res, runStepEvent);
         sendEvent(res, runStepDeltaEvent);
       } else {
