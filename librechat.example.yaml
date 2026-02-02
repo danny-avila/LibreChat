@@ -80,6 +80,24 @@ interface:
 
       By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
 
+  # External Links
+  externalLinks:
+    # Optional header text for the external links section (default: "Links")
+    header: "External Links"
+    links:
+    # Documentation & Resources
+    - title: "LibreChat Docs"
+      url: "https://www.librechat.ai/docs"
+    # Utilities
+    - title: "Markdown Editor"
+      url: "https://dillinger.io"
+    - title: "YAML Toolkit"
+      url: "https://yaml.im"
+    - title: "JSON Formatter"
+      url: "https://jsonformatter.org"
+    - title: "RegEx Tester"
+      url: "https://regex101.com"
+
   endpointsMenu: true
   modelSelect: true
   parameters: true

@@ -7,6 +7,7 @@ import {
   renderEndpoints,
   renderSearchResults,
   renderCustomGroups,
+  renderExternalLinks,
 } from './components';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
 import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
@@ -24,6 +25,8 @@ function ModelSelectorContent() {
     modelSpecs,
     mappedEndpoints,
     endpointsConfig,
+    externalLinks,
+    externalLinksHeader,
     // State
     searchValue,
     searchResults,
@@ -108,6 +111,7 @@ function ModelSelectorContent() {
             {renderEndpoints(mappedEndpoints ?? [])}
             {/* Render custom groups (specs with group field not matching any endpoint) */}
             {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
+            {renderExternalLinks(externalLinks, externalLinksHeader)}
           </>
         )}
       </Menu>
