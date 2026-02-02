@@ -13,6 +13,7 @@ import { useSidePanelContext } from '~/Providers';
 import { useSetRecoilState } from 'recoil';
 import { pdfBuilderState } from '~/store/pdfBuilder';
 import { profileDashboardState } from '~/store/profileDashboard';
+import { socialDraftState } from '~/store/socialDraft';
 import { cn } from '~/utils';
 import Nav from './Nav';
 
@@ -55,6 +56,7 @@ const SidePanel = ({
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const setPDFBuilderState = useSetRecoilState(pdfBuilderState);
   const setProfileDashboardState = useSetRecoilState(profileDashboardState);
+  const setSocialDraftState = useSetRecoilState(socialDraftState);
 
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
@@ -96,6 +98,10 @@ const SidePanel = ({
     setProfileDashboardState({ isOpen: true });
   }, [setProfileDashboardState]);
 
+  const openSocialDraft = useCallback(() => {
+    setSocialDraftState({ isOpen: true });
+  }, [setSocialDraftState]);
+
   const Links = useSideNavLinks({
     endpoint,
     hidePanel,
@@ -105,6 +111,7 @@ const SidePanel = ({
     endpointsConfig,
     openPDFBuilder,
     openDashboard,
+    openSocialDraft,
   });
 
   const toggleNavVisible = useCallback(() => {

@@ -39,6 +39,7 @@
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
+    "dev": "npx concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:experimental": "cross-env NODE_ENV=production node api/server/experimental.js",
     "backend:stop": "node config/stop-backend.js",
@@ -99,6 +100,8 @@
   },
   "homepage": "https://librechat.ai/",
   "devDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.22.4",
+    "concurrently": "^8.2.2",
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.3.1",
