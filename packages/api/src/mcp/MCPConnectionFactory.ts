@@ -63,7 +63,7 @@ export class MCPConnectionFactory {
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
-    let oauthUrl: string | null = null;
+    const oauthUrl: string | null = null;
     let oauthRequired = false;
 
     const oauthTokens = this.useOAuth ? await this.getOAuthTokens() : null;
@@ -74,36 +74,12 @@ export class MCPConnectionFactory {
       oauthTokens,
     });
 
-    const captureOAuthUrl = async (authURL: string) => {
-      oauthUrl = authURL;
-      oauthRequired = true;
-      if (this.oauthStart) {
-        await this.oauthStart(authURL);
-      }
-    };
-
-    const oauthHandler = async (data: { serverUrl?: string }) => {
+    const oauthHandler = async () => {
       logger.info(
-        `${this.logPrefix} [Discovery] OAuth required, capturing auth URL for tool listing`,
+        `${this.logPrefix} [Discovery] OAuth required; skipping URL generation in discovery mode`,
       );
       oauthRequired = true;
-
-      try {
-        const config = this.serverConfig;
-        const { authorizationUrl } = await MCPOAuthHandler.initiateOAuthFlow(
-          this.serverName,
-          data.serverUrl || '',
-          this.userId!,
-          config?.oauth_headers ?? {},
-          config?.oauth,
-        );
-
-        await captureOAuthUrl(authorizationUrl);
-        connection.emit('oauthFailed', new Error('OAuth flow initiated - discovery mode'));
-      } catch (error) {
-        logger.error(`${this.logPrefix} [Discovery] Failed to initiate OAuth flow`, error);
-        connection.emit('oauthFailed', new Error('OAuth initiation failed'));
-      }
+      connection.emit('oauthFailed', new Error('OAuth required during tool discovery'));
     };
 
     if (this.useOAuth) {

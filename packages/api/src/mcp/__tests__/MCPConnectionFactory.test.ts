@@ -448,7 +448,7 @@ describe('MCPConnectionFactory', () => {
       expect(result.connection).toBe(mockConnectionInstance);
     });
 
-    it('should capture OAuth URL via oauthStart callback when OAuth is required', async () => {
+    it('should detect OAuth required without generating URL in discovery mode', async () => {
       const basicOptions = {
         serverName: 'test-server',
         serverConfig: {
@@ -473,36 +473,20 @@ describe('MCPConnectionFactory', () => {
         },
       };
 
-      const mockFlowData = {
-        authorizationUrl: 'https://auth.example.com/authorize',
-        flowId: 'flow123',
-        flowMetadata: {
-          serverName: 'test-server',
-          userId: 'user123',
-          serverUrl: 'https://api.example.com',
-          state: 'random-state',
-          clientInfo: { client_id: 'client123' },
-        },
-      };
-
-      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
-      mockFlowManager.createFlow.mockRejectedValue(new Error('Timeout expected'));
-      mockFlowManager.deleteFlow.mockResolvedValue(true);
-
       mockConnectionInstance.isConnected.mockResolvedValue(false);
       mockConnectionInstance.disconnect = jest.fn().mockResolvedValue(undefined);
 
-      let oauthHandler: ((data: { serverUrl?: string }) => Promise<void>) | undefined;
+      let oauthHandler: (() => Promise<void>) | undefined;
       mockConnectionInstance.on.mockImplementation((event, handler) => {
         if (event === 'oauthRequired') {
-          oauthHandler = handler as (data: { serverUrl?: string }) => Promise<void>;
+          oauthHandler = handler as () => Promise<void>;
         }
         return mockConnectionInstance;
       });
 
       mockConnectionInstance.connect.mockImplementation(async () => {
         if (oauthHandler) {
-          await oauthHandler({ serverUrl: 'https://api.example.com' });
+          await oauthHandler();
         }
         throw new Error('OAuth required');
       });
@@ -512,8 +496,8 @@ describe('MCPConnectionFactory', () => {
       expect(result.connection).toBeNull();
       expect(result.tools).toBeNull();
       expect(result.oauthRequired).toBe(true);
-      expect(result.oauthUrl).toBe('https://auth.example.com/authorize');
-      expect(mockOAuthStart).toHaveBeenCalledWith('https://auth.example.com/authorize');
+      expect(result.oauthUrl).toBeNull();
+      expect(mockOAuthStart).not.toHaveBeenCalled();
     });
 
     it('should return null tools when discovery fails completely', async () => {

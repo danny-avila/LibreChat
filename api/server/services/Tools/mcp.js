@@ -107,12 +107,12 @@ async function reinitMCPServer({
             );
           }
 
-          if (discoveryResult.oauthUrl) {
+          if (discoveryResult.oauthUrl && !oauthUrl) {
             oauthUrl = discoveryResult.oauthUrl;
           }
         } catch (discoveryErr) {
           logger.debug(
-            `[MCP Reinitialize] Tool discovery failed for ${serverName}: ${discoveryErr.message}`,
+            `[MCP Reinitialize] Tool discovery failed for ${serverName}: ${discoveryErr?.message ?? String(discoveryErr)}`,
           );
         }
       } else {
