@@ -263,7 +263,8 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const defaultAgentCapabilities = [
-  AgentCapabilities.programmatic_tools,
+  // Commented as requires latest Code Interpreter API
+  // AgentCapabilities.programmatic_tools,
   AgentCapabilities.deferred_tools,
   AgentCapabilities.execute_code,
   AgentCapabilities.file_search,
