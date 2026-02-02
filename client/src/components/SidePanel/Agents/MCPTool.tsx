@@ -35,7 +35,9 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
   const { getValues, setValue } = useFormContext<AgentForm>();
   const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
   const { agentsConfig } = useGetAgentsConfig();
-  const { deferredToolsEnabled, programmaticToolsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
+  const { deferredToolsEnabled, programmaticToolsEnabled } = useAgentCapabilities(
+    agentsConfig?.capabilities,
+  );
 
   const {
     isToolDeferred,
