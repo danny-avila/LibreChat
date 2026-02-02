@@ -1,17 +1,16 @@
-import {
-  parseToolList,
-  toolMatchesPatterns,
-  getServerNameFromTool,
-  buildToolRegistryFromEnv,
-  buildToolRegistryFromAgentOptions,
-  buildToolClassification,
-  agentHasDeferredTools,
-  agentHasProgrammaticTools,
-  isAgentAllowedForClassification,
-} from './classification';
-import type { ToolDefinition, LCToolRegistry } from './classification';
-import type { GenericTool } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
+import type { GenericTool } from '@librechat/agents';
+import type { ToolDefinition, LCToolRegistry } from './classification';
+import {
+  buildToolRegistryFromAgentOptions,
+  agentHasProgrammaticTools,
+  buildToolRegistryFromEnv,
+  buildToolClassification,
+  getServerNameFromTool,
+  agentHasDeferredTools,
+  toolMatchesPatterns,
+  parseToolList,
+} from './classification';
 
 describe('classification.ts', () => {
   const originalEnv = process.env;
@@ -25,7 +24,6 @@ describe('classification.ts', () => {
     delete process.env.TOOL_DUAL_CONTEXT_EXCLUDE;
     delete process.env.TOOL_DEFERRED;
     delete process.env.TOOL_DEFERRED_EXCLUDE;
-    delete process.env.TOOL_CLASSIFICATION_AGENT_IDS;
     delete process.env.TOOL_CLASSIFICATION_FROM_ENV;
   });
 
@@ -270,27 +268,6 @@ describe('classification.ts', () => {
       ]);
 
       expect(agentHasProgrammaticTools(registry)).toBe(false);
-    });
-  });
-
-  describe('isAgentAllowedForClassification', () => {
-    it('should return true when TOOL_CLASSIFICATION_AGENT_IDS is not set', () => {
-      expect(isAgentAllowedForClassification('any-agent-id')).toBe(true);
-    });
-
-    it('should return true when agent is in allowed list', () => {
-      process.env.TOOL_CLASSIFICATION_AGENT_IDS = 'agent1,agent2,agent3';
-      expect(isAgentAllowedForClassification('agent2')).toBe(true);
-    });
-
-    it('should return false when agent is not in allowed list', () => {
-      process.env.TOOL_CLASSIFICATION_AGENT_IDS = 'agent1,agent2';
-      expect(isAgentAllowedForClassification('agent3')).toBe(false);
-    });
-
-    it('should return false when agentId is undefined and list is set', () => {
-      process.env.TOOL_CLASSIFICATION_AGENT_IDS = 'agent1';
-      expect(isAgentAllowedForClassification(undefined)).toBe(false);
     });
   });
 

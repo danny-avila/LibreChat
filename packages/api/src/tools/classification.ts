@@ -1,21 +1,17 @@
 /**
- * @fileoverview Utility functions for building tool registries from environment variables.
- * This is a temporary solution for tool classification until UI-based configuration is available.
+ * @fileoverview Utility functions for building tool registries.
+ * Supports both UI-based configuration (agent tool_options) and environment variable fallback.
  *
- * Environment Variables:
+ * Environment Variables (fallback when agent tool_options not configured):
  * - TOOL_PROGRAMMATIC_ONLY: Comma-separated tool names or server patterns (sys__all__sys_mcp_ServerName)
  * - TOOL_PROGRAMMATIC_ONLY_EXCLUDE: Comma-separated tool names to exclude from programmatic only
  * - TOOL_DUAL_CONTEXT: Comma-separated tool names or server patterns callable BOTH by LLM and PTC
  * - TOOL_DUAL_CONTEXT_EXCLUDE: Comma-separated tool names to exclude from dual context
  * - TOOL_DEFERRED: Comma-separated tool names or server patterns for deferred tools
  * - TOOL_DEFERRED_EXCLUDE: Comma-separated tool names to exclude from deferred
- * - TOOL_CLASSIFICATION_AGENT_IDS: Optional comma-separated agent IDs to restrict classification features
  *
  * Server patterns: Use `sys__all__sys_mcp_ServerName` to match all tools from an MCP server.
  * Example: `sys__all__sys_mcp_Google-Workspace` matches all Google Workspace tools.
- *
- * Agent restriction: If TOOL_CLASSIFICATION_AGENT_IDS is set, only those agents will get
- * PTC and tool search tools. If not set, all agents with matching tools get them.
  *
  * Smart enablement: PTC/tool search are only created if the agent has tools that actually
  * match the classification patterns. An agent with no programmatic/deferred tools won't
@@ -362,7 +358,7 @@ export interface BuildToolClassificationParams {
   loadedTools: GenericTool[];
   /** User ID for auth lookup */
   userId: string;
-  /** Agent ID (used to check if this agent should have classification features) */
+  /** Agent ID (used for logging and context) */
   agentId?: string;
   /** Per-tool configuration from the agent (takes precedence over env vars) */
   agentToolOptions?: AgentToolOptions;
@@ -387,24 +383,6 @@ export interface BuildToolClassificationResult {
   additionalTools: GenericTool[];
   /** Whether any tools have defer_loading enabled (precomputed for efficiency) */
   hasDeferredTools: boolean;
-}
-
-/**
- * Checks if an agent is allowed to have classification features based on TOOL_CLASSIFICATION_AGENT_IDS.
- * If TOOL_CLASSIFICATION_AGENT_IDS is not set, all agents are allowed (including when no agentId).
- * If set, requires agentId to be in the list.
- * @param agentId - The agent ID to check
- * @returns Whether the agent is allowed
- */
-export function isAgentAllowedForClassification(agentId?: string): boolean {
-  const allowedAgentIds = parseToolList(process.env.TOOL_CLASSIFICATION_AGENT_IDS);
-  if (allowedAgentIds.size === 0) {
-    return true;
-  }
-  if (!agentId) {
-    return false;
-  }
-  return allowedAgentIds.has(agentId);
 }
 
 /**
@@ -439,14 +417,13 @@ export function agentHasDeferredTools(toolRegistry: LCToolRegistry): boolean {
  * Builds the tool registry from MCP tools and conditionally creates PTC and tool search tools.
  *
  * This function:
- * 1. Checks if the agent is allowed for classification features (via TOOL_CLASSIFICATION_AGENT_IDS)
- * 2. Filters loaded tools for MCP tools
- * 3. Extracts tool definitions and builds the registry
+ * 1. Filters loaded tools for MCP tools
+ * 2. Extracts tool definitions and builds the registry
  *    - Uses agent's tool_options if provided (UI-based configuration)
  *    - Falls back to env vars for tools not configured at agent level
- * 4. Cleans up temporary mcpJsonSchema properties
- * 5. Creates PTC tool only if agent has tools configured for programmatic calling
- * 6. Creates tool search tool only if agent has deferred tools
+ * 3. Cleans up temporary mcpJsonSchema properties
+ * 4. Creates PTC tool only if agent has tools configured for programmatic calling
+ * 5. Creates tool search tool only if agent has deferred tools
  *
  * @param params - Parameters including loaded tools, userId, agentId, agentToolOptions, and dependencies
  * @returns Tool registry and any additional tools created
@@ -473,17 +450,6 @@ export async function buildToolClassification(
       toolRegistry: undefined,
       hasDeferredTools: false,
     };
-  }
-
-  /**
-   * Check if this agent is allowed to have advanced classification features (PTC, deferred tools).
-   * Even if not allowed, we still build basic tool definitions for event-driven execution.
-   */
-  const isAllowedForClassification = isAgentAllowedForClassification(agentId);
-  if (!isAllowedForClassification) {
-    logger.debug(
-      `[buildToolClassification] Agent ${agentId ?? 'undefined'} not allowed for classification, building basic definitions only`,
-    );
   }
 
   const mcpToolDefs = mcpTools.map(extractMCPToolDefinition);
@@ -521,14 +487,6 @@ export async function buildToolClassification(
 
   /** Build toolDefinitions array from registry (single pass, reused) */
   const toolDefinitions: LCTool[] = Array.from(toolRegistry.values());
-
-  /** Agent not allowed for classification - return basic definitions */
-  if (!isAllowedForClassification) {
-    logger.debug(
-      `[buildToolClassification] Agent ${agentId} not allowed for classification, returning basic definitions`,
-    );
-    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools: false };
-  }
 
   /** No programmatic or deferred tools - skip PTC/ToolSearch */
   if (!hasProgrammaticTools && !hasDeferredTools) {
