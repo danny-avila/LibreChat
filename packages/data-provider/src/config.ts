@@ -176,6 +176,7 @@ export enum Capabilities {
 
 export enum AgentCapabilities {
   hide_sequential_outputs = 'hide_sequential_outputs',
+  programmatic_tools = 'programmatic_tools',
   end_after_tools = 'end_after_tools',
   deferred_tools = 'deferred_tools',
   execute_code = 'execute_code',
@@ -262,6 +263,8 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const defaultAgentCapabilities = [
+  // Commented as requires latest Code Interpreter API
+  // AgentCapabilities.programmatic_tools,
   AgentCapabilities.deferred_tools,
   AgentCapabilities.execute_code,
   AgentCapabilities.file_search,
