@@ -81,7 +81,7 @@ export default function MCPToolItem({
       <span className="text-token-text-primary min-w-0 flex-1 select-none truncate">
         {tool.metadata.name}
       </span>
-      <div className="ml-2 flex shrink-0 items-center gap-1">
+      <div className="ml-2 flex shrink-0 items-center gap-1.5">
         {isDeferred && <Clock className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />}
         {isProgrammatic && <Code2 className="h-3.5 w-3.5 text-violet-500" aria-hidden="true" />}
         <DropdownMenu>
