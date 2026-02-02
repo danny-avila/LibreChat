@@ -16,16 +16,20 @@ const {
   createSafeUser,
   validateRequest,
   initializeAgent,
+  getBalanceConfig,
   createErrorResponse,
+  recordCollectedUsage,
+  getTransactionsConfig,
+  createToolExecuteHandler,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   createOpenAIContentAggregator,
-  createToolExecuteHandler,
   isChatCompletionValidationFailure,
 } = require('@librechat/api');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
+const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
@@ -495,6 +499,24 @@ const OpenAIChatCompletionController = async (req, res) => {
           logger.error(`[OpenAI API] Tool Error "${toolId}"`, error);
         },
       },
+    });
+
+    // Record token usage against balance
+    const balanceConfig = getBalanceConfig(appConfig);
+    const transactionsConfig = getTransactionsConfig(appConfig);
+    recordCollectedUsage(
+      { spendTokens, spendStructuredTokens },
+      {
+        user: userId,
+        conversationId,
+        collectedUsage,
+        context: 'message',
+        balance: balanceConfig,
+        transactions: transactionsConfig,
+        model: primaryConfig.model || agent.model_parameters?.model,
+      },
+    ).catch((err) => {
+      logger.error('[OpenAI API] Error recording usage:', err);
     });
 
     // Finalize response
