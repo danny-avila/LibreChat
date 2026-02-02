@@ -106,10 +106,6 @@ async function reinitMCPServer({
               `[MCP Reinitialize] Discovered ${tools.length} tools for ${serverName} without full auth`,
             );
           }
-
-          if (discoveryResult.oauthUrl && !oauthUrl) {
-            oauthUrl = discoveryResult.oauthUrl;
-          }
         } catch (discoveryErr) {
           logger.debug(
             `[MCP Reinitialize] Tool discovery failed for ${serverName}: ${discoveryErr?.message ?? String(discoveryErr)}`,
