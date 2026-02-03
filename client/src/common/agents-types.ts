@@ -1,6 +1,7 @@
 import { AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
 import type {
   AgentModelParameters,
+  AgentToolOptions,
   SupportContact,
   AgentProvider,
   GraphEdge,
@@ -33,6 +34,8 @@ export type AgentForm = {
   model: string | null;
   model_parameters: AgentModelParameters;
   tools?: string[];
+  /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
+  tool_options?: AgentToolOptions;
   provider?: AgentProvider | OptionWithIcon;
   /** @deprecated Use edges instead */
   agent_ids?: string[];

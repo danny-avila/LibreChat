@@ -176,7 +176,9 @@ export enum Capabilities {
 
 export enum AgentCapabilities {
   hide_sequential_outputs = 'hide_sequential_outputs',
+  programmatic_tools = 'programmatic_tools',
   end_after_tools = 'end_after_tools',
+  deferred_tools = 'deferred_tools',
   execute_code = 'execute_code',
   file_search = 'file_search',
   web_search = 'web_search',
@@ -211,6 +213,8 @@ export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
 export const bedrockEndpointSchema = baseEndpointSchema.merge(
   z.object({
     availableRegions: z.array(z.string()).optional(),
+    models: z.array(z.string()).optional(),
+    inferenceProfiles: z.record(z.string(), z.string()).optional(),
   }),
 );
 
@@ -259,6 +263,9 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const defaultAgentCapabilities = [
+  // Commented as requires latest Code Interpreter API
+  // AgentCapabilities.programmatic_tools,
+  AgentCapabilities.deferred_tools,
   AgentCapabilities.execute_code,
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,
@@ -656,6 +663,14 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    remoteAgents: z
+      .object({
+        use: z.boolean().optional(),
+        create: z.boolean().optional(),
+        share: z.boolean().optional(),
+        public: z.boolean().optional(),
+      })
+      .optional(),
   })
   .default({
     endpointsMenu: true,
@@ -695,6 +710,12 @@ export const interfaceSchema = z
     },
     fileSearch: true,
     fileCitations: true,
+    remoteAgents: {
+      use: false,
+      create: false,
+      share: false,
+      public: false,
+    },
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -981,7 +1002,7 @@ export const configSchema = z.object({
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.agents]: agentsEndpointSchema.optional(),
       [EModelEndpoint.custom]: customEndpointsSchema.optional(),
-      [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
+      [EModelEndpoint.bedrock]: bedrockEndpointSchema.optional(),
     })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
@@ -1434,6 +1455,10 @@ export enum CacheKeys {
    * Key for SAML session.
    */
   SAML_SESSION = 'SAML_SESSION',
+  /**
+   * Key for admin panel OAuth exchange codes (one-time-use, short TTL).
+   */
+  ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
 }
 
 /**
@@ -1750,6 +1775,8 @@ export enum Constants {
   LC_TRANSFER_TO_ = 'lc_transfer_to_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
+  /** Programmatic Tool Calling tool name */
+  PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_code',
 }
 
 export enum LocalStorageKeys {

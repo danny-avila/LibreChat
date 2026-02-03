@@ -1,6 +1,7 @@
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { Constants } from 'librechat-data-provider';
 import type { Agent, TEphemeralAgent } from 'librechat-data-provider';
+import type { LCTool } from '@librechat/agents';
 import type { Logger } from 'winston';
 import type { MCPManager } from '~/mcp/MCPManager';
 
@@ -11,27 +12,43 @@ import type { MCPManager } from '~/mcp/MCPManager';
 export type AgentWithTools = Pick<Agent, 'id'> &
   Partial<Omit<Agent, 'id' | 'tools'>> & {
     tools?: Array<DynamicStructuredTool | string>;
+    /** Serializable tool definitions for event-driven mode */
+    toolDefinitions?: LCTool[];
   };
 
 /**
- * Extracts unique MCP server names from an agent's tools.
- * @param agent - The agent with tools
+ * Extracts unique MCP server names from an agent's tools or tool definitions.
+ * Supports both full tool instances (tools) and serializable definitions (toolDefinitions).
+ * @param agent - The agent with tools and/or tool definitions
  * @returns Array of unique MCP server names
  */
 export function extractMCPServers(agent: AgentWithTools): string[] {
-  if (!agent?.tools?.length) {
-    return [];
-  }
   const mcpServers = new Set<string>();
-  for (let i = 0; i < agent.tools.length; i++) {
-    const tool = agent.tools[i];
-    if (tool instanceof DynamicStructuredTool && tool.name.includes(Constants.mcp_delimiter)) {
-      const serverName = tool.name.split(Constants.mcp_delimiter).pop();
-      if (serverName) {
-        mcpServers.add(serverName);
+
+  /** Check tool instances (non-event-driven mode) */
+  if (agent?.tools?.length) {
+    for (const tool of agent.tools) {
+      if (tool instanceof DynamicStructuredTool && tool.name.includes(Constants.mcp_delimiter)) {
+        const serverName = tool.name.split(Constants.mcp_delimiter).pop();
+        if (serverName) {
+          mcpServers.add(serverName);
+        }
       }
     }
   }
+
+  /** Check tool definitions (event-driven mode) */
+  if (agent?.toolDefinitions?.length) {
+    for (const toolDef of agent.toolDefinitions) {
+      if (toolDef.name?.includes(Constants.mcp_delimiter)) {
+        const serverName = toolDef.name.split(Constants.mcp_delimiter).pop();
+        if (serverName) {
+          mcpServers.add(serverName);
+        }
+      }
+    }
+  }
+
   return Array.from(mcpServers);
 }
 
