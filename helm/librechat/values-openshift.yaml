@@ -1,0 +1,144 @@
+# OpenShift deployment values for LibreChat-FIPS
+# Cluster: cluster-kbm2h.kbm2h.sandbox5350.opentlc.com
+
+replicaCount: 1
+
+global:
+  librechat:
+    existingSecretName: "librechat-credentials-env"
+    existingSecretApiKey: OPENAI_API_KEY
+    env:
+      - name: OPENROUTER_KEY
+        valueFrom:
+          secretKeyRef:
+            name: librechat-credentials-env
+            key: OPENROUTER_KEY
+      - name: VLLM_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: librechat-credentials-env
+            key: VLLM_API_KEY
+      - name: VLLM_API_URL
+        valueFrom:
+          secretKeyRef:
+            name: librechat-credentials-env
+            key: VLLM_API_URL
+      - name: ANTHROPIC_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: librechat-credentials-env
+            key: ANTHROPIC_API_KEY
+      - name: OPENAI_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: librechat-credentials-env
+            key: OPENAI_API_KEY
+
+librechat:
+  configEnv:
+    # DEBUG settings
+    DEBUG_PLUGINS: "true"
+    # Feature flags
+    ALLOW_REGISTRATION: "true"
+    ALLOW_SOCIAL_LOGIN: "false"
+    ALLOW_UNVERIFIED_EMAIL_LOGIN: "true"
+    # MongoDB connection (uses Helm chart internal service)
+    MONGO_URI: "mongodb://librechat-mongodb:27017/LibreChat"
+    # Meilisearch connection
+    MEILI_HOST: "http://librechat-meilisearch:7700"
+    # Domain settings (will be set after route is created)
+    DOMAIN_SERVER: "https://librechat-librechat-fips.apps.cluster-kbm2h.kbm2h.sandbox5350.opentlc.com"
+    DOMAIN_CLIENT: "https://librechat-librechat-fips.apps.cluster-kbm2h.kbm2h.sandbox5350.opentlc.com"
+
+  existingSecretName: "librechat-credentials-env"
+
+  # Reference existing ConfigMap with librechat.yaml
+  existingConfigYaml: "librechat-config"
+
+  imageVolume:
+    enabled: true
+    size: 10Gi
+    accessModes: ReadWriteOnce
+
+# RAG API disabled for initial deployment
+librechat-rag-api:
+  enabled: false
+
+image:
+  repository: danny-avila/librechat
+  registry: ghcr.io
+  pullPolicy: IfNotPresent
+  tag: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+# OpenShift security context - with anyuid SCC, use chart defaults
+podSecurityContext:
+  fsGroup: 1000
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 3080
+  targetPort: 3080
+  containerPort: 3080
+  annotations: {}
+
+# Disable Ingress - use OpenShift Route instead
+ingress:
+  enabled: false
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 3080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+
+# MongoDB configuration - with anyuid SCC, enable security contexts
+mongodb:
+  enabled: true
+  auth:
+    enabled: false
+  databases:
+    - LibreChat
+  image:
+    registry: docker.io
+    repository: bitnami/mongodb
+    tag: "latest"
+  persistence:
+    enabled: true
+    size: 8Gi
+
+# Meilisearch configuration - with anyuid SCC, use defaults
+meilisearch:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  image:
+    tag: "v1.7.3"
+  auth:
+    existingMasterKeySecret: "librechat-credentials-env"
