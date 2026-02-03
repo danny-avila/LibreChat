@@ -1,0 +1,42 @@
+{{- if .Values.litellm.enabled -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litellm-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: litellm
+    {{- include "accessllm.labels" . | nindent 4 }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: litellm-deployment-restarter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: litellm
+    {{- include "accessllm.labels" . | nindent 4 }}
+rules:
+- apiGroups: ["apps", "extensions"]
+  resources: ["deployments"]
+  verbs: ["get", "patch", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: litellm-restarter-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: litellm
+    {{- include "accessllm.labels" . | nindent 4 }}
+subjects:
+- kind: ServiceAccount
+  name: litellm-sa
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: litellm-deployment-restarter
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

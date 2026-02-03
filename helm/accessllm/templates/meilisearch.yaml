@@ -1,0 +1,68 @@
+{{- if .Values.meilisearch.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meilisearch
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: meilisearch
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: meilisearch
+  template:
+    metadata:
+      labels:
+        app: meilisearch
+    spec:
+      containers:
+      - name: meilisearch
+        image: {{ .Values.meilisearch.image }}
+        ports:
+        - containerPort: 7700
+        env:
+        - name: MEILI_NO_ANALYTICS
+          value: "true"
+        - name: MEILI_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: MEILI_MASTER_KEY
+        - name: MEILI_ENV
+          value: "production"
+        volumeMounts:
+        - name: meilisearch-storage
+          mountPath: /meili_data
+          subPath: meilisearch
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "50m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: meilisearch-storage
+        persistentVolumeClaim:
+          claimName: meilisearch-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meilisearch
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: meilisearch
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: meilisearch
+  ports:
+  - port: 7700
+    targetPort: 7700
+  type: ClusterIP
+{{- end }}

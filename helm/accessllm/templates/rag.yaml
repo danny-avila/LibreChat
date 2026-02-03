@@ -1,0 +1,78 @@
+{{- if .Values.rag.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: rag-api
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-api
+  template:
+    metadata:
+      labels:
+        app: rag-api
+    spec:
+      containers:
+      - name: rag-api
+        image: {{ .Values.rag.image }}
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DB_HOST
+          value: "vectordb"
+        - name: RAG_PORT
+          value: "8000"
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: POSTGRES_PASSWORD
+        - name: RAG_OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: RAG_OPENAI_API_KEY
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: JWT_SECRET
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "50m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: rag-api
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: rag-api
+  ports:
+  - port: 8000
+    targetPort: 8000
+  type: ClusterIP
+{{- end }}

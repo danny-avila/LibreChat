@@ -1,0 +1,46 @@
+---
+# Source: accessllm/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: librechat-ingress
+  namespace: librechat
+  labels:
+    helm.sh/chart: accessllm-0.1.0
+    app.kubernetes.io/name: accessllm
+    app.kubernetes.io/instance: accessllm
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 25m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - "accessllm.ca"
+        - "www.accessllm.ca"
+      secretName: librechat-tls
+  rules:
+    - host: "accessllm.ca"
+      http:
+        paths:
+          - path: /chat(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: librechat-api
+                port:
+                  number: 3080
+    - host: "www.accessllm.ca"
+      http:
+        paths:
+          - path: /chat(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: librechat-api
+                port:
+                  number: 3080

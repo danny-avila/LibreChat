@@ -1,0 +1,100 @@
+{{- if .Values.litellm.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: litellm
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: litellm
+  template:
+    metadata:
+      labels:
+        app: litellm
+    spec:
+      serviceAccountName: litellm-sa
+      containers:
+      - name: litellm
+        image: {{ .Values.litellm.image }}
+        args: ["--config", "/app/config.yaml", "--port", "8000"]
+        ports:
+        - containerPort: 8000
+        env:
+        - name: LITELLM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: LITELLM_MASTER_KEY
+        - name: LITELLM_SALT_KEY
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: LITELLM_SALT_KEY
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: POSTGRES_DB
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@vectordb:5432/$(POSTGRES_DB)"
+        - name: STORE_MODEL_IN_DB
+          value: "true"
+        volumeMounts:
+        - name: litellm-config
+          mountPath: /app/config.yaml
+          subPath: config.yaml
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "150m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      - name: models-watcher
+        image: alpine:3.20
+        command: ["/bin/sh", "/scripts/watch_models.sh"]
+        env:
+        - name: LITELLM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: LITELLM_MASTER_KEY
+        - name: LITELLM_MODELS_URL
+          value: "http://localhost:8000/v1/models"
+        - name: CHECK_EVERY
+          value: "15"
+        - name: NAMESPACE
+          value: {{ .Release.Namespace }}
+        - name: DEPLOYMENT
+          value: "librechat-api"
+        volumeMounts:
+        - name: litellm-config
+          mountPath: /scripts/watch_models.sh
+          subPath: watch_models.sh
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+      volumes:
+      - name: litellm-config
+        configMap:
+          name: litellm-config
+{{- end }}

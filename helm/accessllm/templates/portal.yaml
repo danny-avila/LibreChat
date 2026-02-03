@@ -1,0 +1,53 @@
+{{- if .Values.portal.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: accessllm-portal
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: accessllm-portal
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: accessllm-portal
+  template:
+    metadata:
+      labels:
+        app: accessllm-portal
+    spec:
+      containers:
+        - name: portal
+          image: {{ .Values.portal.image }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          resources:
+            {{- toYaml .Values.portal.resources | nindent 12 }}
+          volumeMounts:
+            - name: favicon-vol
+              mountPath: /usr/share/nginx/html/img/favicon.ico
+              subPath: favicon.ico
+      volumes:
+        - name: favicon-vol
+          configMap:
+            name: accessllm-portal-favicon
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: accessllm-portal
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: accessllm-portal
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: accessllm-portal
+  ports:
+    - protocol: TCP
+      port: {{ .Values.portal.service.port }}
+      targetPort: 80
+  type: {{ .Values.portal.service.type }}
+{{- end }}
