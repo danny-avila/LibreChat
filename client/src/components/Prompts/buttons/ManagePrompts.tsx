@@ -24,8 +24,7 @@ export default function ManagePrompts({ className }: { className?: string }) {
       variant="outline"
       className={cn(className, 'bg-transparent')}
       onClick={clickHandler}
-      aria-label="Manage Prompts"
-      role="button"
+      aria-label={localize('com_ui_manage')}
     >
       {localize('com_ui_manage')}
     </Button>

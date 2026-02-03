@@ -953,6 +953,7 @@
   "com_ui_edit_prompt_page": "Edit Prompt Page",
   "com_ui_editable_message": "Editable Message",
   "com_ui_editor_instructions": "Drag the image to reposition • Use zoom slider or buttons to adjust size",
+  "com_ui_editor_mode": "Editor mode",
   "com_ui_empty_category": "-",
   "com_ui_endpoint": "Endpoint",
   "com_ui_endpoint_menu": "LLM Endpoint Menu",

@@ -16,7 +16,7 @@ export default function BackToChat({ className }: { className?: string }) {
   return (
     <a
       className={cn(buttonVariants({ variant: 'outline' }), className)}
-      href="/"
+      href="/c/new"
       onClick={clickHandler}
     >
       <ArrowLeft className="icon-xs mr-2" aria-hidden="true" />
