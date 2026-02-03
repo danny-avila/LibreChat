@@ -60,6 +60,7 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
+const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { redactMessage } = require('~/config/parsers');
 const { findPluginAuthsByKeys } = require('~/models');
 /**
@@ -428,7 +429,7 @@ const isBuiltInTool = (toolName) =>
  *   hasDeferredTools?: boolean;
  * }>}
  */
-async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null }) {
+async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, tool_resources }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
   }
@@ -679,10 +680,38 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null }) 
     }
   }
 
+  // Prime execute_code files to generate toolContextMap for event-driven mode
+  /** @type {Record<string, string>} */
+  const toolContextMap = {};
+  const hasExecuteCode = filteredTools.includes(Tools.execute_code);
+
+  if (hasExecuteCode && tool_resources) {
+    try {
+      const authValues = await loadAuthValues({
+        userId: req.user.id,
+        authFields: [EnvVar.CODE_API_KEY],
+      });
+      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+
+      if (codeApiKey) {
+        const { toolContext } = await primeCodeFiles(
+          { req, tool_resources, agentId: agent.id },
+          codeApiKey,
+        );
+        if (toolContext) {
+          toolContextMap[Tools.execute_code] = toolContext;
+        }
+      }
+    } catch (error) {
+      logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
+    }
+  }
+
   return {
     toolRegistry,
     userMCPAuthMap,
     toolDefinitions,
+    toolContextMap,
     hasDeferredTools,
   };
 }
@@ -712,7 +741,7 @@ async function loadAgentTools({
   definitionsOnly = true,
 }) {
   if (definitionsOnly) {
-    return loadToolDefinitionsWrapper({ req, res, agent, streamId });
+    return loadToolDefinitionsWrapper({ req, res, agent, streamId, tool_resources });
   }
 
   if (!agent.tools || agent.tools.length === 0) {
@@ -1112,11 +1141,14 @@ async function loadToolsForExecution({
   const actionToolNames = allToolNamesToLoad.filter((name) => name.includes(actionDelimiter));
   const regularToolNames = allToolNamesToLoad.filter((name) => !name.includes(actionDelimiter));
 
+  /** @type {Record<string, unknown>} */
+  let regularToolContextMap = {};
+
   if (regularToolNames.length > 0) {
     const includesWebSearch = regularToolNames.includes(Tools.web_search);
     const webSearchCallbacks = includesWebSearch ? createOnSearchResults(res, streamId) : undefined;
 
-    const { loadedTools } = await loadTools({
+    const { loadedTools, toolContextMap: loadedToolContextMap } = await loadTools({
       agent,
       signal,
       userMCPAuthMap,
@@ -1139,6 +1171,9 @@ async function loadToolsForExecution({
 
     if (loadedTools) {
       allLoadedTools.push(...loadedTools);
+    }
+    if (loadedToolContextMap) {
+      regularToolContextMap = loadedToolContextMap;
     }
   }
 
@@ -1167,6 +1202,7 @@ async function loadToolsForExecution({
   return {
     configurable,
     loadedTools: allLoadedTools,
+    toolContextMap: regularToolContextMap,
   };
 }
 
