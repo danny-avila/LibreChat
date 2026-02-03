@@ -4,10 +4,10 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import supersub from 'remark-supersub';
 import { useRecoilValue } from 'recoil';
-import { EditIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
-import { SaveIcon, CrossIcon, TextareaAutosize } from '@librechat/client';
+import { EditIcon, FileText } from 'lucide-react';
+import { SaveIcon, CrossIcon, TextareaAutosize, Button, TooltipAnchor } from '@librechat/client';
 import { Controller, useFormContext, useFormState } from 'react-hook-form';
 import type { PluggableList } from 'unified';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
@@ -56,38 +56,44 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   return (
     <div className="flex max-h-[85vh] flex-col sm:max-h-[85vh]">
       <h2 className="sr-only">{localize('com_ui_control_bar')}</h2>
-      <div className="flex items-center justify-between rounded-t-xl border border-border-light py-1.5 pl-3 text-sm font-semibold text-text-primary sm:py-2 sm:pl-4 sm:text-base">
-        <span className="max-w-[200px] truncate sm:max-w-none">
-          {localize('com_ui_prompt_text')}
-        </span>
-        <div className="flex flex-shrink-0 flex-row items-center gap-3 sm:gap-6">
+      <header className="flex items-center justify-between rounded-t-xl border border-border-light bg-transparent p-2">
+        <div className="ml-1 flex items-center gap-2">
+          <FileText className="size-4 text-text-secondary" aria-hidden="true" />
+          <h3 className="text-sm font-semibold text-text-primary">
+            {localize('com_ui_prompt_text')}
+          </h3>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           {editorMode === PromptsEditorMode.ADVANCED && (
             <AlwaysMakeProd className="hidden sm:flex" />
           )}
           <VariablesDropdown fieldName={name} />
-          <button
-            type="button"
-            onClick={() => setIsEditing((prev) => !prev)}
-            aria-label={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
-            className="mr-1 rounded-lg p-1.5 sm:mr-2 sm:p-1"
-          >
-            <EditorIcon
-              className={cn(
-                'h-5 w-5 sm:h-6 sm:w-6',
-                isEditing ? 'p-[0.05rem]' : 'text-secondary-alt hover:text-text-primary',
-              )}
-            />
-          </button>
+          <TooltipAnchor
+            description={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
+            render={
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setIsEditing((prev) => !prev)}
+                aria-label={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
+                className="size-8 p-0 hover:bg-surface-tertiary"
+              >
+                <EditorIcon className="size-4 text-text-secondary" aria-hidden="true" />
+              </Button>
+            }
+          />
         </div>
-      </div>
+      </header>
       <div
         role="button"
+        aria-label={isEditing ? localize('com_ui_prompt_input') : localize('com_ui_edit')}
         className={cn(
-          'w-full flex-1 overflow-auto rounded-b-xl border border-border-light p-2 shadow-md transition-all duration-150 sm:p-4',
-          {
-            'cursor-pointer bg-surface-primary hover:bg-surface-secondary active:bg-surface-tertiary':
-              !isEditing,
-          },
+          'relative w-full flex-1 overflow-auto rounded-b-xl border border-t-0 border-border-light p-3 transition-all duration-200 sm:p-4',
+          isEditing
+            ? 'bg-surface-primary'
+            : 'cursor-pointer bg-surface-primary hover:bg-surface-secondary',
         )}
         onClick={() => !isEditing && setIsEditing(true)}
         onKeyDown={(e) => {
@@ -95,11 +101,8 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             !isEditing && setIsEditing(true);
           }
         }}
-        tabIndex={0}
+        tabIndex={isEditing ? -1 : 0}
       >
-        {!isEditing && (
-          <EditIcon className="icon-xl absolute inset-0 m-auto hidden h-6 w-6 text-text-primary opacity-25 group-hover:block sm:h-8 sm:w-8" />
-        )}
         <Controller
           name={name}
           control={control}
@@ -109,9 +112,9 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                 {...field}
                 // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
-                className="w-full resize-none overflow-y-auto rounded bg-transparent text-sm text-text-primary focus:outline-none sm:text-base"
-                minRows={3}
-                maxRows={14}
+                className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none sm:text-base"
+                minRows={4}
+                maxRows={16}
                 onBlur={() => setIsEditing(false)}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
@@ -119,28 +122,41 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                     setIsEditing(false);
                   }
                 }}
+                placeholder={localize('com_ui_prompt_input')}
                 aria-label={localize('com_ui_prompt_input')}
               />
             ) : (
               <div
-                className={cn('overflow-y-auto text-sm sm:text-base')}
-                style={{ minHeight: '4.5em', maxHeight: '21em', overflow: 'auto' }}
+                className="group/preview relative min-h-[6rem] overflow-y-auto text-sm sm:text-base"
+                style={{ maxHeight: '24rem' }}
               >
-                <ReactMarkdown
-                  remarkPlugins={[
+                {!field.value ? (
+                  <p className="italic text-text-tertiary">{localize('com_ui_click_to_edit')}</p>
+                ) : (
+                  <ReactMarkdown
+                    remarkPlugins={[
+                      /** @ts-ignore */
+                      supersub,
+                      remarkGfm,
+                      [remarkMath, { singleDollarTextMath: false }],
+                    ]}
                     /** @ts-ignore */
-                    supersub,
-                    remarkGfm,
-                    [remarkMath, { singleDollarTextMath: false }],
-                  ]}
-                  /** @ts-ignore */
-                  rehypePlugins={rehypePlugins}
-                  /** @ts-ignore */
-                  components={{ p: PromptVariableGfm, code: codeNoExecution }}
-                  className="markdown prose dark:prose-invert light my-1 w-full break-words text-text-primary"
-                >
-                  {field.value}
-                </ReactMarkdown>
+                    rehypePlugins={rehypePlugins}
+                    /** @ts-ignore */
+                    components={{ p: PromptVariableGfm, code: codeNoExecution }}
+                    className="markdown prose dark:prose-invert light w-full break-words text-text-primary"
+                  >
+                    {field.value}
+                  </ReactMarkdown>
+                )}
+                <div className="bg-surface-secondary/0 group-hover/preview:bg-surface-secondary/50 pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-all duration-200 group-hover/preview:opacity-100">
+                  <div className="flex items-center gap-2 rounded-lg bg-surface-primary px-3 py-1.5 shadow-md">
+                    <EditIcon className="size-4 text-text-secondary" aria-hidden="true" />
+                    <span className="text-sm font-medium text-text-secondary">
+                      {localize('com_ui_click_to_edit')}
+                    </span>
+                  </div>
+                </div>
               </div>
             )
           }

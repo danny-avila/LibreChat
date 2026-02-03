@@ -92,7 +92,7 @@ export default function PromptsView() {
                 closePanelRef={closePanelRef}
                 onClose={isSmallerScreen && isDetailView ? togglePanel : undefined}
               >
-                <div className="mt-1 flex flex-row items-center justify-between px-2 md:px-2">
+                <div className="mt-1 flex flex-row items-center justify-between px-2">
                   <FilterPrompts dropdownClassName="z-[100]" />
                 </div>
               </GroupSidePanel>

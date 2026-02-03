@@ -29,7 +29,7 @@ const PromptDetails = ({ group, showActions = true, onUsePrompt }: PromptDetails
 
   return (
     <article
-      className="flex max-h-[80vh] flex-col gap-3 p-1 sm:gap-4 sm:p-2"
+      className="flex max-h-[80vh] min-w-0 flex-col gap-3 overflow-hidden p-1 sm:gap-4 sm:p-2"
       aria-label={localize('com_ui_prompt_details', { name: group.name })}
     >
       <PromptDetailHeader group={group} />
