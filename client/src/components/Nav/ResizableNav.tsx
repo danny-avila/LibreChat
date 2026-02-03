@@ -2,7 +2,8 @@ import { useRef, useCallback, useEffect } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandleAlt } from '@librechat/client';
 import type { ContextType } from '~/common';
-import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
+import Nav, { NAV_WIDTH } from './Nav';
+import MobileNav from './MobileNav';
 
 interface ResizableNavProps {
   navVisible: boolean;
@@ -48,7 +49,9 @@ export default function ResizableNav({
           }
         }
 
-        localStorage.setItem('navVisible', JSON.stringify(newValue));
+        if (typeof value === 'boolean') {
+          localStorage.setItem('navVisible', JSON.stringify(newValue));
+        }
         return newValue;
       });
     },
@@ -87,10 +90,10 @@ export default function ResizableNav({
         collapsible={true}
         collapsedSize={0}
         onCollapse={() => {
-          setNavVisible(false);
+          handleSetNavVisible(false);
         }}
         onExpand={() => {
-          setNavVisible(true);
+          handleSetNavVisible(true);
         }}
       >
         <Nav navVisible={navVisible} setNavVisible={handleSetNavVisible} />
