@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { ShieldEllipsis } from 'lucide-react';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { OGDialog, OGDialogTemplate, Button, useToastContext } from '@librechat/client';
-import { AdminSettingsDialog } from '~/components/ui';
-import { useUpdatePromptPermissionsMutation } from '~/data-provider';
-import { useLocalize } from '~/hooks';
 import type { PermissionConfig } from '~/components/ui';
+import { useUpdatePromptPermissionsMutation } from '~/data-provider';
+import { AdminSettingsDialog } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 
 const permissions: PermissionConfig[] = [
   { permission: Permissions.USE, labelKey: 'com_ui_prompts_allow_use' },
@@ -44,7 +44,7 @@ const AdminSettings = () => {
       size="sm"
       variant="outline"
       aria-label={localize('com_ui_admin')}
-      className="mr-2 h-10 w-fit gap-1 border transition-all dark:bg-transparent dark:hover:bg-surface-tertiary sm:m-0"
+      className="mr-2 h-10 w-fit sm:m-0"
     >
       <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
       <span className="hidden sm:flex">{localize('com_ui_admin')}</span>
@@ -89,7 +89,6 @@ const AdminSettings = () => {
       menuId="prompt-role-dropdown"
       mutation={mutation}
       trigger={trigger}
-      dialogContentClassName="max-w-lg border-border-light bg-surface-primary text-text-primary lg:w-1/4"
       onPermissionConfirm={handlePermissionConfirm}
       confirmPermissions={[Permissions.USE]}
       extraContent={confirmDialog}
