@@ -38,7 +38,7 @@ export default function ListCard({
       aria-label={`${name} Prompt, ${category ? `${localize('com_ui_category')}: ${category}` : ''}`}
     >
       <div className="flex w-full justify-between gap-2">
-        <div className="flex min-w-0 flex-1 flex-row items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-row items-center gap-2 overflow-hidden">
           <CategoryIcon category={category} className="icon-md shrink-0" aria-hidden="true" />
           <Label
             id={`card-title-${name}`}

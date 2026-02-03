@@ -1,115 +1,146 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Button, Label, Input, EditIcon, SaveIcon } from '@librechat/client';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { Check, X } from 'lucide-react';
+import { Button, Input, Spinner } from '@librechat/client';
+import { useLocalize } from '~/hooks';
 
 type Props = {
   name?: string;
+  isLoading?: boolean;
   onSave: (newName: string) => void;
 };
 
-const PromptName: React.FC<Props> = ({ name, onSave }) => {
+const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
+  const localize = useLocalize();
   const inputRef = useRef<HTMLInputElement>(null);
-  const blurTimeoutRef = useRef<NodeJS.Timeout>();
+  const wasLoadingRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState(name);
 
-  const handleEditClick = () => {
-    setIsEditing(true);
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setNewName(e.target.value);
-  };
+  }, []);
 
-  const saveName = () => {
-    const savedName = newName?.trim();
-    onSave(savedName || '');
+  const handleCancel = useCallback(() => {
+    if (isLoading) {
+      return;
+    }
     setIsEditing(false);
-  };
+    setNewName(name);
+  }, [name, isLoading]);
 
-  const handleSaveClick: React.MouseEventHandler<HTMLButtonElement> = () => {
-    saveName();
-    clearTimeout(blurTimeoutRef.current);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
+  const saveName = useCallback(() => {
+    if (isLoading) {
+      return;
+    }
+    const savedName = newName?.trim();
+    if (savedName && savedName !== name) {
+      onSave(savedName);
+    } else {
       setIsEditing(false);
-      setNewName(name);
     }
-    if (e.key === 'Enter') {
-      saveName();
+  }, [newName, name, onSave, isLoading]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCancel();
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveName();
+      }
+    },
+    [handleCancel, saveName],
+  );
+
+  const handleTitleClick = useCallback(() => {
+    setIsEditing(true);
+  }, []);
+
+  const handleTitleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setIsEditing(true);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (isEditing) {
-      inputRef.current?.focus();
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
     }
   }, [isEditing]);
 
+  // Track loading state for detecting save completion
+  useEffect(() => {
+    wasLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  // Close editing when name updates after save (loading finished)
   useEffect(() => {
     setNewName(name);
+    if (wasLoadingRef.current) {
+      setIsEditing(false);
+      wasLoadingRef.current = false;
+    }
   }, [name]);
 
   return (
-    <div className="flex items-center">
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr auto',
-          alignItems: 'center',
-        }}
-        className="gap-2"
-      >
-        {isEditing ? (
-          <>
-            <Input
-              type="text"
-              value={newName ?? ''}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              ref={inputRef}
-              className="flex w-full max-w-none rounded-lg text-2xl font-bold transition duration-200"
-              style={{
-                whiteSpace: 'nowrap',
-                textOverflow: 'ellipsis',
-              }}
-            />
-
+    <div className="flex min-w-0 flex-1 items-center">
+      {isEditing ? (
+        <div className="mr-3 flex min-w-0 flex-1 items-center gap-1">
+          <Input
+            type="text"
+            value={newName ?? ''}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            ref={inputRef}
+            disabled={isLoading}
+            className="h-10 min-w-0 flex-1 rounded-lg border-border-medium px-3 text-xl font-bold text-text-primary disabled:opacity-70 sm:text-2xl"
+            aria-label={localize('com_ui_name')}
+          />
+          <div className="flex shrink-0 items-center gap-1">
             <Button
-              onClick={handleSaveClick}
+              type="button"
+              onClick={saveName}
               variant="ghost"
-              size="sm"
-              className="h-10 flex-shrink-0"
-              aria-label="Save prompt name"
+              size="icon"
+              disabled={isLoading}
+              className="size-10 p-0 text-text-secondary hover:text-text-primary disabled:opacity-50"
+              aria-label={isLoading ? localize('com_ui_loading') : localize('com_ui_save')}
             >
-              <SaveIcon className="icon-md" />
+              {isLoading ? (
+                <Spinner size={24} className="" />
+              ) : (
+                <Check className="size-6" aria-hidden="true" />
+              )}
             </Button>
-          </>
-        ) : (
-          <>
-            <Label
-              className="text-2xl font-bold"
-              style={{
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {newName}
-            </Label>
             <Button
-              onClick={handleEditClick}
+              type="button"
+              onClick={handleCancel}
               variant="ghost"
-              size="sm"
-              aria-label="Edit prompt name"
-              className="h-10 flex-shrink-0"
+              size="icon"
+              disabled={isLoading}
+              className="size-10 p-0 text-text-secondary hover:text-text-primary disabled:opacity-50"
+              aria-label={localize('com_ui_cancel')}
             >
-              <EditIcon className="icon-md" />
+              <X className="size-6" aria-hidden="true" />
             </Button>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={handleTitleClick}
+          onKeyDown={handleTitleKeyDown}
+          className="mr-3 min-w-0 flex-1 cursor-pointer rounded-lg px-1 py-1 text-left transition-colors duration-150 hover:bg-surface-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          aria-label={localize('com_ui_edit') + ' ' + localize('com_ui_name')}
+        >
+          <span className="ml-2 block truncate text-xl font-bold text-text-primary sm:text-2xl">
+            {newName}
+          </span>
+        </button>
+      )}
     </div>
   );
 };

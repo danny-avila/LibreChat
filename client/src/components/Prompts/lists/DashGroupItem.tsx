@@ -102,22 +102,22 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
       onKeyDown={handleKeyDown}
       aria-label={ariaLabel}
       className={cn(
-        'flex cursor-pointer items-center rounded-lg border border-border-light bg-transparent hover:bg-surface-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+        'flex cursor-pointer items-center overflow-hidden rounded-lg border border-border-light bg-transparent hover:bg-surface-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
         params.promptId === group._id && 'bg-surface-hover',
       )}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-2 p-3">
+      <div className="flex w-0 min-w-0 flex-1 items-center gap-2 overflow-hidden p-4">
         <CategoryIcon
           category={group.category ?? ''}
           className="icon-lg shrink-0"
           aria-hidden="true"
         />
-        <Label
-          className="text-md min-w-0 cursor-pointer truncate font-semibold text-text-primary"
+        <span
+          className="min-w-0 flex-1 cursor-pointer truncate text-base font-semibold text-text-primary"
           title={group.name}
         >
           {group.name}
-        </Label>
+        </span>
         {isGlobalGroup && (
           <EarthIcon
             className="icon-md shrink-0 text-green-400"

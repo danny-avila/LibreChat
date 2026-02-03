@@ -405,6 +405,7 @@ const PromptForm = () => {
                     <>
                       <PromptName
                         name={groupName}
+                        isLoading={updateGroupMutation.isLoading}
                         onSave={(value) => {
                           if (!canEdit || !group._id) {
                             return;
@@ -415,7 +416,6 @@ const PromptForm = () => {
                           });
                         }}
                       />
-                      <div className="flex-1" />
                       <Button
                         type="button"
                         variant="ghost"
