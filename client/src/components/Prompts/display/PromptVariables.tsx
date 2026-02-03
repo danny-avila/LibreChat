@@ -1,98 +1,184 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { Variable } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import { Separator } from '@librechat/client';
 import { specialVariables } from 'librechat-data-provider';
 import { cn, extractUniqueVariables } from '~/utils';
-import { CodeVariableGfm } from '../editor/Markdown';
 import { useLocalize } from '~/hooks';
 
 const specialVariableClasses =
-  'bg-amber-100 text-yellow-800 border-yellow-600 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90';
+  'bg-amber-100/80 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400';
 
-const components: {
-  [nodeType: string]: React.ElementType;
-} = { code: CodeVariableGfm };
+interface ParsedVariable {
+  name: string;
+  options: string[];
+  isDropdown: boolean;
+  isSpecial: boolean;
+}
 
-const PromptVariables = ({
-  promptText,
-  showInfo = true,
-}: {
-  promptText: string;
-  showInfo?: boolean;
-}) => {
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.04,
+      delayChildren: 0.05,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 8, scale: 0.95 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { duration: 0.2, ease: 'easeOut' },
+  },
+};
+
+const optionContainerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.03,
+      delayChildren: 0.05,
+    },
+  },
+};
+
+const optionVariants = {
+  hidden: { opacity: 0, scale: 0.85 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: { duration: 0.15, ease: 'easeOut' },
+  },
+};
+
+const parseVariable = (variable: string): ParsedVariable => {
+  const isSpecial = specialVariables[variable.toLowerCase()] != null;
+  if (isSpecial) {
+    return { name: variable.toLowerCase(), options: [], isDropdown: false, isSpecial: true };
+  }
+
+  const colonIndex = variable.indexOf(':');
+  if (colonIndex > 0) {
+    const name = variable.substring(0, colonIndex);
+    const optionsPart = variable.substring(colonIndex + 1);
+    const options = optionsPart.split('|').filter(Boolean);
+    if (options.length > 1) {
+      return { name, options, isDropdown: true, isSpecial: false };
+    }
+  }
+
+  return { name: variable, options: [], isDropdown: false, isSpecial: false };
+};
+
+const DropdownVariableCard = ({ parsed }: { parsed: ParsedVariable }) => {
+  const localize = useLocalize();
+
+  return (
+    <motion.div
+      variants={itemVariants}
+      className="bg-surface-tertiary/50 rounded-lg border border-border-light p-2.5"
+      role="listitem"
+      aria-label={localize('com_ui_variable_with_options', {
+        name: parsed.name,
+        count: parsed.options.length,
+      })}
+    >
+      <div className="mb-2 text-xs font-semibold text-text-primary">{parsed.name}</div>
+      <motion.div
+        className="flex flex-wrap gap-1.5"
+        variants={optionContainerVariants}
+        initial="hidden"
+        animate="visible"
+        role="list"
+        aria-label={localize('com_ui_available_options')}
+      >
+        {parsed.options.map((option, index) => (
+          <motion.span
+            key={index}
+            variants={optionVariants}
+            className="rounded-md bg-surface-secondary px-2 py-0.5 text-xs text-text-secondary"
+            role="listitem"
+          >
+            {option}
+          </motion.span>
+        ))}
+      </motion.div>
+    </motion.div>
+  );
+};
+
+const SimpleVariableChip = ({ parsed }: { parsed: ParsedVariable }) => (
+  <motion.span
+    variants={itemVariants}
+    className={cn(
+      'inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium',
+      parsed.isSpecial ? specialVariableClasses : 'bg-surface-tertiary text-text-primary',
+    )}
+    role="listitem"
+  >
+    <span className="max-w-32 truncate">{parsed.name}</span>
+  </motion.span>
+);
+
+const PromptVariables = ({ promptText }: { promptText: string }) => {
   const localize = useLocalize();
 
   const variables = useMemo(() => {
     return extractUniqueVariables(promptText || '');
   }, [promptText]);
 
+  const parsedVariables = useMemo(() => {
+    return variables.map(parseVariable);
+  }, [variables]);
+
+  const dropdownVariables = parsedVariables.filter((v) => v.isDropdown);
+  const simpleVariables = parsedVariables.filter((v) => !v.isDropdown);
+
+  if (variables.length === 0) {
+    return null;
+  }
+
   return (
-    <div className="rounded-xl border border-border-light bg-transparent shadow-md">
-      <header className="flex items-center gap-2 border-b border-border-light px-4 py-3">
-        <Variable className="h-5 w-5 text-text-secondary" aria-hidden="true" />
-        <h3 className="text-base font-semibold text-text-primary">
+    <div className="bg-surface-secondary/50 rounded-lg border border-border-light">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <Variable className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+        <span className="text-sm font-medium text-text-primary">
           {localize('com_ui_variables')}
-        </h3>
-      </header>
-      <div className="flex flex-col space-y-4 p-4">
-        {variables.length ? (
-          <div className="flex flex-wrap gap-2">
-            {variables.map((variable, index) => (
-              <span
-                className={cn(
-                  'rounded-full border border-border-light px-3 py-1 text-text-primary',
-                  specialVariables[variable.toLowerCase()] != null ? specialVariableClasses : '',
-                )}
-                key={index}
-              >
-                {specialVariables[variable.toLowerCase()] != null
-                  ? variable.toLowerCase()
-                  : variable}
-              </span>
+        </span>
+        <span className="rounded-full bg-surface-tertiary px-1.5 py-0.5 text-xs text-text-secondary">
+          {variables.length}
+        </span>
+      </div>
+
+      <motion.div
+        className="flex flex-col gap-3 border-t border-border-light px-3 py-3"
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        role="list"
+        aria-label={localize('com_ui_prompt_variables_list')}
+      >
+        {dropdownVariables.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {dropdownVariables.map((parsed, index) => (
+              <DropdownVariableCard key={`dropdown-${index}`} parsed={parsed} />
             ))}
           </div>
-        ) : (
-          <div className="text-sm text-text-secondary">
-            <ReactMarkdown components={components} className="markdown prose dark:prose-invert">
-              {localize('com_ui_variables_info')}
-            </ReactMarkdown>
-          </div>
         )}
-        {showInfo && (
-          <>
-            <Separator className="text-text-primary" />
-            <div className="space-y-4">
-              <div>
-                <span className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_special_variables')}
-                </span>
-                <span className="text-sm text-text-secondary">
-                  <ReactMarkdown
-                    components={components}
-                    className="markdown prose dark:prose-invert"
-                  >
-                    {localize('com_ui_special_variables_more_info')}
-                  </ReactMarkdown>
-                </span>
-              </div>
-              <div>
-                <span className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_dropdown_variables')}
-                </span>
-                <span className="break-words text-sm text-text-secondary">
-                  <ReactMarkdown
-                    components={components}
-                    className="markdown prose dark:prose-invert"
-                  >
-                    {localize('com_ui_dropdown_variables_info')}
-                  </ReactMarkdown>
-                </span>
-              </div>
-            </div>
-          </>
+
+        {simpleVariables.length > 0 && (
+          <motion.div className="flex flex-wrap gap-1.5" variants={itemVariants}>
+            {simpleVariables.map((parsed, index) => (
+              <SimpleVariableChip key={`simple-${index}`} parsed={parsed} />
+            ))}
+          </motion.div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 };
