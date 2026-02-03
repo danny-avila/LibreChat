@@ -43,6 +43,7 @@ const AdminSettings = () => {
     <Button
       size="sm"
       variant="outline"
+      aria-label={localize('com_ui_admin')}
       className="mr-2 h-10 w-fit gap-1 border transition-all dark:bg-transparent dark:hover:bg-surface-tertiary sm:m-0"
     >
       <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
