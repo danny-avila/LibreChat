@@ -9,12 +9,13 @@ import {
   PermissionTypes,
 } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
-import { useAuthContext, useHasAccess, useResourcePermissions } from '~/hooks';
+import { useAuthContext, useHasAccess, useLocalize, useResourcePermissions } from '~/hooks';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
 
 const SharePrompt = React.memo(
   ({ group, disabled }: { group?: TPromptGroup; disabled: boolean }) => {
     const { user } = useAuthContext();
+    const localize = useLocalize();
 
     // Check if user has permission to share prompts
     const hasAccessToSharePrompts = useHasAccess({
@@ -56,7 +57,7 @@ const SharePrompt = React.memo(
         <Button
           variant="default"
           size="sm"
-          aria-label="Share prompt"
+          aria-label={localize('com_ui_share')}
           className="h-10 w-10 border border-transparent bg-blue-500/90 p-0.5 transition-all hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-800"
           disabled={disabled}
         >

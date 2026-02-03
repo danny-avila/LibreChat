@@ -4,7 +4,6 @@ import {
   Button,
   OGDialog,
   OGDialogTrigger,
-  Label,
   TooltipAnchor,
   OGDialogTemplate,
 } from '@librechat/client';
@@ -50,18 +49,13 @@ const DeleteConfirmDialog = ({
         title={localize('com_ui_delete_prompt')}
         className="max-w-[450px]"
         main={
-          <>
-            <div className="flex w-full flex-col items-center gap-2">
-              <div className="grid w-full items-center gap-2">
-                <Label
-                  htmlFor="dialog-delete-confirm-prompt"
-                  className="text-left text-sm font-medium"
-                >
-                  {localize('com_ui_delete_confirm_prompt_version_var', { 0: name })}
-                </Label>
-              </div>
+          <div className="flex w-full flex-col items-center gap-2">
+            <div className="grid w-full items-center gap-2">
+              <p className="text-left text-sm font-medium">
+                {localize('com_ui_delete_confirm_prompt_version_var', { 0: name })}
+              </p>
             </div>
-          </>
+          </div>
         }
         selection={{
           selectHandler,
