@@ -167,13 +167,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     if (initializingAgents.has(agentId)) {
       // Wait for initialization to complete
       while (initializingAgents.has(agentId)) {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
       return agentConfigs.get(agentId) || null;
     }
 
     initializingAgents.add(agentId);
-    
+
     try {
       const agent = await getAgent({ id: agentId });
       if (!agent) {
@@ -221,19 +221,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       } else {
         userMCPAuthMap = config.userMCPAuthMap;
       }
-      
+
       // If replacing a stub, update the existing object IN PLACE
       // This ensures any references to the stub (like in the Run's agents array) see the changes
       if (existingConfig?._isStub) {
         Object.assign(existingConfig, config);
         delete existingConfig._isStub; // Remove stub flag
-        logger.info(`[initializeClient] Updated stub in-place with fully initialized agent: ${agentId}`);
+        logger.info(
+          `[initializeClient] Updated stub in-place with fully initialized agent: ${agentId}`,
+        );
       } else {
         // New agent, just set it
         agentConfigs.set(agentId, config);
         logger.info(`[initializeClient] Lazy-loaded handoff agent: ${agentId}`);
       }
-      
+
       return agent;
     } finally {
       initializingAgents.delete(agentId);
@@ -261,16 +263,16 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const discoveredAgentIds = new Set();
   /** @type {Map<string, Agent>} Store lightweight agent metadata for stubs */
   const agentMetadataMap = new Map();
-  
+
   while (agentsToProcess.size > 0) {
     const agentId = agentsToProcess.values().next().value;
     agentsToProcess.delete(agentId);
-    
+
     if (discoveredAgentIds.has(agentId)) {
       continue;
     }
     discoveredAgentIds.add(agentId);
-    
+
     try {
       // Fetch agent metadata to discover edges and create stubs
       const agent = await getAgent({ id: agentId });
@@ -281,10 +283,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         skippedAgentIds.add(agentId);
         continue;
       }
-      
+
       // Store metadata for stub creation
       agentMetadataMap.set(agentId, agent);
-      
+
       // Collect edges from this agent for the graph topology
       if (agent?.edges?.length) {
         collectEdges(agent.edges);
@@ -407,7 +409,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       throw new Error(`Failed to load handoff agent: ${agentId}`);
     }
     const config = agentConfigs.get(agentId);
-    
+
     // Important: Return the config which now has fully loaded tools
     // This ensures the LangGraph runtime gets the complete agent with tools
     return config;

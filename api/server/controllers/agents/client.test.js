@@ -2415,7 +2415,7 @@ describe('AgentClient - titleConvo', () => {
       // Should not throw when checking for stubs
       expect(() => {
         if (client.agentConfigs) {
-          for (const [agentId, agent] of client.agentConfigs.entries()) {
+          for (const [_agentId, agent] of client.agentConfigs.entries()) {
             if (agent._isStub) {
               // Process stub
             }

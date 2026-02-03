@@ -1048,11 +1048,13 @@ class AgentClient extends BaseClient {
               stubAgentIds.push(agentId);
             }
           }
-          
+
           if (stubAgentIds.length > 0) {
-            logger.info(`[AgentClient] Pre-loading ${stubAgentIds.length} stub agents before run creation: ${stubAgentIds.join(', ')}`);
+            logger.info(
+              `[AgentClient] Pre-loading ${stubAgentIds.length} stub agents before run creation: ${stubAgentIds.join(', ')}`,
+            );
             // Load all stubs in parallel for efficiency
-            await Promise.all(stubAgentIds.map(agentId => this.lazyLoadAgent(agentId)));
+            await Promise.all(stubAgentIds.map((agentId) => this.lazyLoadAgent(agentId)));
             logger.info(`[AgentClient] All stub agents loaded successfully`);
           }
         }
