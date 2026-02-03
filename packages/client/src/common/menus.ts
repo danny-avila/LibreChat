@@ -27,6 +27,8 @@ export interface MenuItemProps {
     | 'grid'
     | undefined;
   ariaControls?: string;
+  ariaLabel?: string;
+  ariaChecked?: boolean;
   ref?: React.Ref<any>;
   className?: string;
   render?:

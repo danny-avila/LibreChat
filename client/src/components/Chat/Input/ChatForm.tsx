@@ -258,7 +258,17 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             <FileFormChat conversation={conversation} />
             {endpoint && (
               <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
-                <div className="relative flex-1">
+                <div
+                  className="relative flex-1"
+                  style={
+                    isCollapsed
+                      ? {
+                          WebkitMaskImage: 'linear-gradient(to bottom, black 60%, transparent 90%)',
+                          maskImage: 'linear-gradient(to bottom, black 60%, transparent 90%)',
+                        }
+                      : undefined
+                  }
+                >
                   <TextareaAutosize
                     {...registerProps}
                     ref={(e) => {
@@ -290,16 +300,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                       'scrollbar-hover transition-[max-height] duration-200 disabled:cursor-not-allowed',
                     )}
                   />
-                  {isCollapsed && (
-                    <div
-                      className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 transition-all duration-200"
-                      style={{
-                        backdropFilter: 'blur(2px)',
-                        WebkitMaskImage: 'linear-gradient(to top, black 15%, transparent 75%)',
-                        maskImage: 'linear-gradient(to top, black 15%, transparent 75%)',
-                      }}
-                    />
-                  )}
                 </div>
                 <div className="flex flex-col items-start justify-start pr-2.5 pt-1.5">
                   <CollapseChat

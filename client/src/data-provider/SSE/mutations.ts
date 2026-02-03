@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { request } from 'librechat-data-provider';
+import { apiBaseUrl, request } from 'librechat-data-provider';
 
 export interface AbortStreamParams {
   /** The stream ID to abort (if known) */
@@ -23,7 +23,10 @@ export interface AbortStreamResponse {
  */
 export const abortStream = async (params: AbortStreamParams): Promise<AbortStreamResponse> => {
   console.log('[abortStream] Calling abort endpoint with params:', params);
-  const result = (await request.post('/api/agents/chat/abort', params)) as AbortStreamResponse;
+  const result = (await request.post(
+    `${apiBaseUrl()}/api/agents/chat/abort`,
+    params,
+  )) as AbortStreamResponse;
   console.log('[abortStream] Abort response:', result);
   return result;
 };

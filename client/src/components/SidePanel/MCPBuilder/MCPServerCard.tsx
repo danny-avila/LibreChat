@@ -30,7 +30,7 @@ export default function MCPServerCard({
 }: MCPServerCardProps) {
   const localize = useLocalize();
   const triggerRef = useRef<HTMLDivElement>(null);
-  const { initializeServer } = useMCPServerManager();
+  const { initializeServer, revokeOAuthForServer } = useMCPServerManager();
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const statusIconProps = getServerStatusIconProps(server.serverName);
@@ -50,7 +50,18 @@ export default function MCPServerCard({
   const canEdit = canCreateEditMCPs && canEditThisServer;
 
   const handleInitialize = () => {
+    /** If server has custom user vars and is not already connected, show config dialog first
+     *  This ensures users can enter credentials before initialization attempts
+     */
+    if (hasCustomUserVars && serverStatus?.connectionState !== 'connected') {
+      onConfigClick({ stopPropagation: () => {}, preventDefault: () => {} } as React.MouseEvent);
+      return;
+    }
     initializeServer(server.serverName);
+  };
+
+  const handleRevoke = () => {
+    revokeOAuthForServer(server.serverName);
   };
 
   const handleEditClick = (e: React.MouseEvent) => {
@@ -130,6 +141,7 @@ export default function MCPServerCard({
             onConfigClick={onConfigClick}
             onInitialize={handleInitialize}
             onCancel={onCancel}
+            onRevoke={handleRevoke}
           />
         </div>
       </div>

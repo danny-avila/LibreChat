@@ -2668,6 +2668,10 @@ html {
   color: var(--text-primary);
 }
 
+.account-settings-popover .select-item[data-active-item] {
+  box-shadow: 0 0 0 2px hsl(var(--ring));
+}
+
 .popover-ui[data-enter] {
   opacity: 1;
   scale: 1;

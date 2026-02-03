@@ -110,7 +110,7 @@ export default function FavoriteItem({
       tabIndex={0}
       aria-label={ariaLabel}
       className={cn(
-        'group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt',
+        'group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white',
         isPopoverActive ? 'bg-surface-active-alt' : '',
       )}
       onClick={handleClick}
@@ -136,6 +136,7 @@ export default function FavoriteItem({
           mountByState={true}
           isOpen={isPopoverActive}
           setIsOpen={setIsPopoverActive}
+          className="z-[125]"
           trigger={
             <Menu.MenuButton
               className={cn(

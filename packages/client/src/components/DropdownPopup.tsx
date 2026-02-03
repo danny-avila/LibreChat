@@ -148,6 +148,9 @@ const Menu: React.FC<MenuProps> = ({
               hideOnClick={item.hideOnClick}
               aria-haspopup={item.ariaHasPopup}
               aria-controls={item.ariaControls}
+              aria-label={item.ariaLabel}
+              aria-checked={item.ariaChecked}
+              {...(item.ariaChecked !== undefined ? { role: 'menuitemcheckbox' } : {})}
               onClick={(event) => {
                 event.preventDefault();
                 if (item.onClick) {

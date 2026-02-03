@@ -282,7 +282,7 @@ export default function FavoritesList({
                 role="button"
                 tabIndex={0}
                 aria-label={localize('com_agents_marketplace')}
-                className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
+                className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
                 onClick={handleAgentMarketplace}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
