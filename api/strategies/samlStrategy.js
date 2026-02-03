@@ -183,6 +183,7 @@ async function setupSaml() {
       idpCert: getCertificateContent(process.env.SAML_CERT),
       wantAssertionsSigned: process.env.SAML_USE_AUTHN_RESPONSE_SIGNED === 'true' ? false : true,
       wantAuthnResponseSigned: process.env.SAML_USE_AUTHN_RESPONSE_SIGNED === 'true' ? true : false,
+      disableRequestedAuthnContext: true,
     };
 
     passport.use(
