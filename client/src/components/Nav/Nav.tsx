@@ -277,7 +277,6 @@ const Nav = memo(
       );
     }
 
-    // Desktop: Rendered inside ResizablePanel in Root.tsx
     return (
       <div
         data-testid="nav"
