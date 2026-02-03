@@ -112,7 +112,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const toolExecuteOptions = {
     loadTools: async (toolNames, agentId) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
-      logger.info(`[ON_TOOL_EXECUTE] Loading tools for agentId: ${agentId}, toolNames: ${toolNames?.join(', ') || 'none'}`);
+      logger.info(
+        `[ON_TOOL_EXECUTE] Loading tools for agentId: ${agentId}, toolNames: ${toolNames?.join(', ') || 'none'}`,
+      );
       logger.info(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
       logger.info(`[ON_TOOL_EXECUTE] toolRegistry size: ${ctx.toolRegistry?.size ?? 'undefined'}`);
 
@@ -244,13 +246,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     if (initializingAgents.has(agentId)) {
       // Wait for initialization to complete
       while (initializingAgents.has(agentId)) {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
       return agentConfigs.get(agentId) || null;
     }
 
     initializingAgents.add(agentId);
-    
+
     try {
       const agent = await getAgent({ id: agentId });
       if (!agent) {
@@ -273,8 +275,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         throw new Error(validationResult.error?.message);
       }
 
-      logger.info(`[processAgent] Loading tools for handoff agent: ${agentId}, tools: ${agent.tools?.join(', ') || 'none'}`);
-      
+      logger.info(
+        `[processAgent] Loading tools for handoff agent: ${agentId}, tools: ${agent.tools?.join(', ') || 'none'}`,
+      );
+
       const config = await initializeAgent(
         {
           req,
@@ -299,7 +303,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         },
       );
-      
+
       logger.info(
         `[processAgent] Tool definitions loaded for ${agentId}: ${config.toolDefinitions?.length ?? 0} definitions, toolRegistry size: ${config.toolRegistry?.size ?? 'undefined'}`,
       );
@@ -311,23 +315,29 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
       // Determine which config object to use (existing stub or new config)
       let finalConfig;
-      
+
       // If replacing a stub, update the existing object IN PLACE
       // This ensures any references to the stub (like in the Run's agents array) see the changes
       if (existingConfig?._isStub) {
-        logger.info(`[initializeClient] Updating stub for ${agentId} with ${config.toolDefinitions?.length ?? 0} tool definitions`);
+        logger.info(
+          `[initializeClient] Updating stub for ${agentId} with ${config.toolDefinitions?.length ?? 0} tool definitions`,
+        );
         Object.assign(existingConfig, config);
         delete existingConfig._isStub; // Remove stub flag
         finalConfig = existingConfig;
-        logger.info(`[initializeClient] Updated stub in-place with fully initialized agent: ${agentId}`);
-        logger.info(`[initializeClient] Stub now has ${finalConfig.toolDefinitions?.length ?? 0} toolDefinitions`);
+        logger.info(
+          `[initializeClient] Updated stub in-place with fully initialized agent: ${agentId}`,
+        );
+        logger.info(
+          `[initializeClient] Stub now has ${finalConfig.toolDefinitions?.length ?? 0} toolDefinitions`,
+        );
       } else {
         // New agent, just set it
         agentConfigs.set(agentId, config);
         finalConfig = config;
         logger.info(`[initializeClient] Lazy-loaded handoff agent: ${agentId}`);
       }
-      
+
       /** Store handoff agent's tool context for ON_TOOL_EXECUTE callback */
       logger.info(`[initializeClient] Storing tool context for handoff agentId: ${agentId}`);
       logger.info(
@@ -339,7 +349,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         userMCPAuthMap: finalConfig.userMCPAuthMap,
         tool_resources: finalConfig.tool_resources,
       });
-      
+
       return agent;
     } finally {
       initializingAgents.delete(agentId);
@@ -367,16 +377,16 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const discoveredAgentIds = new Set();
   /** @type {Map<string, Agent>} Store lightweight agent metadata for stubs */
   const agentMetadataMap = new Map();
-  
+
   while (agentsToProcess.size > 0) {
     const agentId = agentsToProcess.values().next().value;
     agentsToProcess.delete(agentId);
-    
+
     if (discoveredAgentIds.has(agentId)) {
       continue;
     }
     discoveredAgentIds.add(agentId);
-    
+
     try {
       // Fetch agent metadata to discover edges and create stubs
       const agent = await getAgent({ id: agentId });
@@ -387,10 +397,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         skippedAgentIds.add(agentId);
         continue;
       }
-      
+
       // Store metadata for stub creation
       agentMetadataMap.set(agentId, agent);
-      
+
       // Collect edges from this agent for the graph topology
       if (agent?.edges?.length) {
         collectEdges(agent.edges);
@@ -540,7 +550,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       throw new Error(`Failed to load handoff agent: ${agentId}`);
     }
     const config = agentConfigs.get(agentId);
-    
+
     // Important: Return the config which now has fully loaded tools
     // This ensures the LangGraph runtime gets the complete agent with tools
     return config;
