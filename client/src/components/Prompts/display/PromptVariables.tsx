@@ -28,12 +28,14 @@ const PromptVariables = ({
   }, [promptText]);
 
   return (
-    <div className="rounded-xl border border-border-light bg-transparent p-4 shadow-md">
-      <h3 className="flex items-center gap-2 py-2 text-lg font-semibold text-text-primary">
-        <Variable className="icon-sm" aria-hidden="true" />
-        {localize('com_ui_variables')}
-      </h3>
-      <div className="flex flex-col space-y-4">
+    <div className="rounded-xl border border-border-light bg-transparent shadow-md">
+      <header className="flex items-center gap-2 border-b border-border-light px-4 py-3">
+        <Variable className="h-5 w-5 text-text-secondary" aria-hidden="true" />
+        <h3 className="text-base font-semibold text-text-primary">
+          {localize('com_ui_variables')}
+        </h3>
+      </header>
+      <div className="flex flex-col space-y-4 p-4">
         {variables.length ? (
           <div className="flex flex-wrap gap-2">
             {variables.map((variable, index) => (
@@ -57,30 +59,38 @@ const PromptVariables = ({
             </ReactMarkdown>
           </div>
         )}
-        <Separator className="my-3 text-text-primary" />
         {showInfo && (
-          <div className="space-y-4">
-            <div>
-              <span className="text-sm font-medium text-text-primary">
-                {localize('com_ui_special_variables')}
-              </span>
-              <span className="text-sm text-text-secondary">
-                <ReactMarkdown components={components} className="markdown prose dark:prose-invert">
-                  {localize('com_ui_special_variables_more_info')}
-                </ReactMarkdown>
-              </span>
+          <>
+            <Separator className="text-text-primary" />
+            <div className="space-y-4">
+              <div>
+                <span className="text-sm font-medium text-text-primary">
+                  {localize('com_ui_special_variables')}
+                </span>
+                <span className="text-sm text-text-secondary">
+                  <ReactMarkdown
+                    components={components}
+                    className="markdown prose dark:prose-invert"
+                  >
+                    {localize('com_ui_special_variables_more_info')}
+                  </ReactMarkdown>
+                </span>
+              </div>
+              <div>
+                <span className="text-sm font-medium text-text-primary">
+                  {localize('com_ui_dropdown_variables')}
+                </span>
+                <span className="break-words text-sm text-text-secondary">
+                  <ReactMarkdown
+                    components={components}
+                    className="markdown prose dark:prose-invert"
+                  >
+                    {localize('com_ui_dropdown_variables_info')}
+                  </ReactMarkdown>
+                </span>
+              </div>
             </div>
-            <div>
-              <span className="text-sm font-medium text-text-primary">
-                {localize('com_ui_dropdown_variables')}
-              </span>
-              <span className="break-words text-sm text-text-secondary">
-                <ReactMarkdown components={components} className="markdown prose dark:prose-invert">
-                  {localize('com_ui_dropdown_variables_info')}
-                </ReactMarkdown>
-              </span>
-            </div>
-          </div>
+          </>
         )}
       </div>
     </div>
