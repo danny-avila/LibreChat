@@ -27,8 +27,8 @@ cache: true
 
 # Custom interface configuration
 interface:
-  customFooter: 'CodeCan'
-  customWelcome: 'Welcome to CodeCan! Enjoy your experience.'
+  customFooter: 'CodeCan AI'
+  customWelcome: 'Welcome to CodeCan AI! Enjoy your experience.'
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.
