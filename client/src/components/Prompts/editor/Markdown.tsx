@@ -12,34 +12,54 @@ export const CodeVariableGfm: React.ElementType = ({ children }: { children: Rea
   );
 };
 
-const regex = /{{(.*?)}}/g;
-export const PromptVariableGfm = ({
-  children,
-}: {
-  children: React.ReactNode & React.ReactNode[];
-}) => {
-  const renderContent = (child: React.ReactNode) => {
-    if (typeof child === 'object' && child !== null) {
-      return child;
-    }
-    if (typeof child !== 'string') {
-      return child;
-    }
+const variableRegex = /{{(.*?)}}/g;
 
-    const parts = child.split(regex);
-    return parts.map((part, index) =>
-      index % 2 === 1 ? (
+const highlightVariables = (text: string): React.ReactNode[] => {
+  const parts = text.split(variableRegex);
+  return parts.map((part, index) => {
+    if (index % 2 === 1) {
+      return (
         <b
           key={index}
           className="ml-[0.5] rounded-lg bg-amber-100 p-[1px] font-medium text-yellow-800 dark:border-yellow-500/50 dark:bg-transparent dark:text-yellow-500/90"
         >
           {`{{${part}}}`}
         </b>
-      ) : (
-        part
-      ),
-    );
-  };
+      );
+    }
+    return part;
+  });
+};
 
-  return <p>{React.Children.map(children, (child) => renderContent(child))}</p>;
+const processChildren = (children: React.ReactNode): React.ReactNode => {
+  if (typeof children === 'string') {
+    return highlightVariables(children);
+  }
+
+  if (Array.isArray(children)) {
+    return children.map((child, index) => (
+      <React.Fragment key={index}>{processChildren(child)}</React.Fragment>
+    ));
+  }
+
+  if (React.isValidElement(children)) {
+    const element = children as React.ReactElement<{ children?: React.ReactNode }>;
+    if (element.props.children) {
+      return React.cloneElement(element, {
+        ...element.props,
+        children: processChildren(element.props.children),
+      });
+    }
+    return children;
+  }
+
+  return children;
+};
+
+export const PromptVariableGfm = ({
+  children,
+}: {
+  children: React.ReactNode & React.ReactNode[];
+}) => {
+  return <p>{processChildren(children)}</p>;
 };

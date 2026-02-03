@@ -1,12 +1,8 @@
 import { useMemo } from 'react';
-import { motion } from 'framer-motion';
-import { Variable } from 'lucide-react';
+import { Variable, Calendar, User, Clock, Globe, Sparkles, ChevronRight } from 'lucide-react';
 import { specialVariables } from 'librechat-data-provider';
-import { cn, extractUniqueVariables } from '~/utils';
+import { extractUniqueVariables } from '~/utils';
 import { useLocalize } from '~/hooks';
-
-const specialVariableClasses =
-  'bg-amber-100/80 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400';
 
 interface ParsedVariable {
   name: string;
@@ -15,45 +11,11 @@ interface ParsedVariable {
   isSpecial: boolean;
 }
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.04,
-      delayChildren: 0.05,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 8, scale: 0.95 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.2, ease: 'easeOut' },
-  },
-};
-
-const optionContainerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.03,
-      delayChildren: 0.05,
-    },
-  },
-};
-
-const optionVariants = {
-  hidden: { opacity: 0, scale: 0.85 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    transition: { duration: 0.15, ease: 'easeOut' },
-  },
+const specialVariableIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+  current_date: Calendar,
+  current_datetime: Clock,
+  current_user: User,
+  iso_datetime: Globe,
 };
 
 const parseVariable = (variable: string): ParsedVariable => {
@@ -79,50 +41,94 @@ const DropdownVariableCard = ({ parsed }: { parsed: ParsedVariable }) => {
   const localize = useLocalize();
 
   return (
-    <motion.div
-      variants={itemVariants}
-      className="bg-surface-tertiary/50 rounded-lg border border-border-light p-2.5"
+    <div
+      className="bg-surface-secondary/50 rounded-lg border border-border-light p-2.5 hover:bg-surface-secondary"
       role="listitem"
       aria-label={localize('com_ui_variable_with_options', {
         name: parsed.name,
         count: parsed.options.length,
       })}
     >
-      <div className="mb-2 text-xs font-semibold text-text-primary">{parsed.name}</div>
-      <motion.div
+      <div className="mb-2 flex items-center gap-2">
+        <div className="flex size-6 items-center justify-center rounded-md bg-surface-tertiary">
+          <ChevronRight className="size-3.5 text-text-secondary" aria-hidden="true" />
+        </div>
+        <span className="text-sm font-medium text-text-primary">{parsed.name}</span>
+        <span className="rounded-full bg-surface-tertiary px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">
+          {parsed.options.length} {localize('com_ui_options')}
+        </span>
+      </div>
+      <div
         className="flex flex-wrap gap-1.5"
-        variants={optionContainerVariants}
-        initial="hidden"
-        animate="visible"
         role="list"
         aria-label={localize('com_ui_available_options')}
       >
         {parsed.options.map((option, index) => (
-          <motion.span
+          <span
             key={index}
-            variants={optionVariants}
-            className="rounded-md bg-surface-secondary px-2 py-0.5 text-xs text-text-secondary"
+            className="rounded-md border border-border-light bg-surface-primary px-2 py-0.5 text-xs text-text-secondary transition-colors hover:bg-surface-secondary"
             role="listitem"
           >
             {option}
-          </motion.span>
+          </span>
         ))}
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
+  );
+};
+
+type TSpecialVarLabelKey =
+  | 'com_ui_special_var_current_date'
+  | 'com_ui_special_var_current_datetime'
+  | 'com_ui_special_var_current_user'
+  | 'com_ui_special_var_iso_datetime';
+
+const specialVariableLabels: Record<string, TSpecialVarLabelKey> = {
+  current_date: 'com_ui_special_var_current_date',
+  current_datetime: 'com_ui_special_var_current_datetime',
+  current_user: 'com_ui_special_var_current_user',
+  iso_datetime: 'com_ui_special_var_iso_datetime',
+};
+
+const specialVariableDescs: Record<string, string> = {
+  current_date: "Today's date and day of the week",
+  current_datetime: 'Local date and time in your timezone',
+  current_user: 'Your account display name',
+  iso_datetime: 'UTC datetime in ISO 8601 format',
+};
+
+const SpecialVariableChip = ({ parsed }: { parsed: ParsedVariable }) => {
+  const localize = useLocalize();
+  const Icon = specialVariableIcons[parsed.name] || Sparkles;
+  const labelKey = specialVariableLabels[parsed.name];
+  const description = specialVariableDescs[parsed.name];
+  const displayLabel = labelKey ? localize(labelKey) : parsed.name;
+
+  return (
+    <div
+      className="group flex items-start gap-2 rounded-lg border border-border-light bg-transparent p-2 hover:bg-surface-secondary"
+      role="listitem"
+      aria-label={displayLabel}
+    >
+      <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-tertiary">
+        <Icon className="size-3.5 text-text-secondary" aria-hidden="true" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <span className="text-xs font-medium text-text-primary">{displayLabel}</span>
+        {description && <p className="mt-0.5 text-[11px] text-text-secondary">{description}</p>}
+      </div>
+    </div>
   );
 };
 
 const SimpleVariableChip = ({ parsed }: { parsed: ParsedVariable }) => (
-  <motion.span
-    variants={itemVariants}
-    className={cn(
-      'inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium',
-      parsed.isSpecial ? specialVariableClasses : 'bg-surface-tertiary text-text-primary',
-    )}
+  <span
+    className="bg-surface-secondary/50 inline-flex items-center gap-1.5 rounded-lg border border-border-light px-2.5 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-tertiary"
     role="listitem"
   >
+    <Variable className="size-3 text-text-secondary" aria-hidden="true" />
     <span className="max-w-32 truncate">{parsed.name}</span>
-  </motion.span>
+  </span>
 );
 
 const PromptVariables = ({ promptText }: { promptText: string }) => {
@@ -137,48 +143,71 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
   }, [variables]);
 
   const dropdownVariables = parsedVariables.filter((v) => v.isDropdown);
-  const simpleVariables = parsedVariables.filter((v) => !v.isDropdown);
+  const specialVars = parsedVariables.filter((v) => v.isSpecial);
+  const simpleVariables = parsedVariables.filter((v) => !v.isDropdown && !v.isSpecial);
 
   if (variables.length === 0) {
     return null;
   }
 
   return (
-    <div className="bg-surface-secondary/50 rounded-lg border border-border-light">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <Variable className="h-4 w-4 text-text-secondary" aria-hidden="true" />
-        <span className="text-sm font-medium text-text-primary">
-          {localize('com_ui_variables')}
-        </span>
-        <span className="rounded-full bg-surface-tertiary px-1.5 py-0.5 text-xs text-text-secondary">
+    <div className="overflow-hidden rounded-xl border border-border-light bg-surface-primary">
+      <header className="flex items-center justify-between border-b border-border-light bg-header-primary px-3 py-1.5">
+        <div className="flex items-center gap-2">
+          <Variable className="size-4 text-text-secondary" aria-hidden="true" />
+          <h4 className="text-sm font-semibold text-text-primary">
+            {localize('com_ui_variables')}
+          </h4>
+        </div>
+        <span className="rounded-full bg-surface-tertiary px-2 py-0.5 text-xs font-medium tabular-nums text-text-secondary">
           {variables.length}
         </span>
-      </div>
+      </header>
 
-      <motion.div
-        className="flex flex-col gap-3 border-t border-border-light px-3 py-3"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
+      <div
+        className="flex flex-col gap-4 p-3"
         role="list"
         aria-label={localize('com_ui_prompt_variables_list')}
       >
+        {specialVars.length > 0 && (
+          <section aria-label={localize('com_ui_special_variables')}>
+            <h5 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+              {localize('com_ui_special_variables')}
+            </h5>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {specialVars.map((parsed, index) => (
+                <SpecialVariableChip key={`special-${index}`} parsed={parsed} />
+              ))}
+            </div>
+          </section>
+        )}
+
         {dropdownVariables.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {dropdownVariables.map((parsed, index) => (
-              <DropdownVariableCard key={`dropdown-${index}`} parsed={parsed} />
-            ))}
-          </div>
+          <section aria-label={localize('com_ui_dropdown_variables')}>
+            <h5 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+              {localize('com_ui_dropdown_variables')}
+            </h5>
+            <div className="flex flex-col gap-2">
+              {dropdownVariables.map((parsed, index) => (
+                <DropdownVariableCard key={`dropdown-${index}`} parsed={parsed} />
+              ))}
+            </div>
+          </section>
         )}
 
         {simpleVariables.length > 0 && (
-          <motion.div className="flex flex-wrap gap-1.5" variants={itemVariants}>
-            {simpleVariables.map((parsed, index) => (
-              <SimpleVariableChip key={`simple-${index}`} parsed={parsed} />
-            ))}
-          </motion.div>
+          <section aria-label={localize('com_ui_text_variables')}>
+            <h5 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+              {localize('com_ui_text_variables')}
+            </h5>
+            <div className="flex flex-wrap gap-2">
+              {simpleVariables.map((parsed, index) => (
+                <SimpleVariableChip key={`simple-${index}`} parsed={parsed} />
+              ))}
+            </div>
+          </section>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 };
