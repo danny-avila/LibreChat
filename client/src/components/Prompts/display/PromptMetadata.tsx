@@ -22,28 +22,28 @@ const PromptMetadata = ({ group }: PromptMetadataProps) => {
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-4 rounded-lg border border-border-light bg-surface-secondary p-3 text-sm text-text-secondary">
+    <div className="flex shrink-0 flex-wrap items-center gap-3 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-xs text-text-secondary">
       {hasAuthor && (
-        <div className="flex items-center gap-1.5">
-          <User className="h-4 w-4" aria-hidden="true" />
+        <div className="flex items-center gap-1">
+          <User className="h-3.5 w-3.5" aria-hidden="true" />
           <span>{group.authorName}</span>
         </div>
       )}
 
-      {hasAuthor && hasDate && <Separator orientation="vertical" className="h-4" />}
+      {hasAuthor && hasDate && <Separator orientation="vertical" className="h-3" />}
 
       {hasDate && (
-        <div className="flex items-center gap-1.5">
-          <Calendar className="h-4 w-4" aria-hidden="true" />
+        <div className="flex items-center gap-1">
+          <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
           <time dateTime={group.createdAt?.toString()}>{formattedDate}</time>
         </div>
       )}
 
-      {(hasAuthor || hasDate) && hasUsage && <Separator orientation="vertical" className="h-4" />}
+      {(hasAuthor || hasDate) && hasUsage && <Separator orientation="vertical" className="h-3" />}
 
       {hasUsage && (
-        <div className="flex items-center gap-1.5">
-          <BarChart3 className="h-4 w-4" aria-hidden="true" />
+        <div className="flex items-center gap-1">
+          <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
           <span>{localize('com_ui_used_count', { count: group.numberOfGenerations })}</span>
         </div>
       )}

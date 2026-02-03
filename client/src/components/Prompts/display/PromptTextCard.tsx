@@ -60,8 +60,8 @@ const PromptTextCard = ({ group }: PromptTextCardProps) => {
   }, [mainText, showToast, localize, isCopied]);
 
   return (
-    <div className="rounded-xl border border-border-light bg-transparent shadow-md">
-      <header className="flex items-center justify-between border-b border-border-light p-3">
+    <div className="flex h-full flex-col rounded-xl border border-border-light bg-transparent shadow-md">
+      <header className="flex shrink-0 items-center justify-between border-b border-border-light p-3">
         <div className="flex items-center gap-2">
           <FileText className="h-5 w-5 text-text-secondary" aria-hidden="true" />
           <h3 className="text-base font-semibold text-text-primary">
@@ -90,7 +90,7 @@ const PromptTextCard = ({ group }: PromptTextCardProps) => {
           }
         />
       </header>
-      <div className="max-h-96 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <ReactMarkdown
           remarkPlugins={[
             /** @ts-ignore */
@@ -106,7 +106,7 @@ const PromptTextCard = ({ group }: PromptTextCardProps) => {
           ]}
           /** @ts-ignore */
           components={{ p: PromptVariableGfm, code: codeNoExecution }}
-          className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 break-words"
+          className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 max-w-none break-words"
         >
           {mainText}
         </ReactMarkdown>

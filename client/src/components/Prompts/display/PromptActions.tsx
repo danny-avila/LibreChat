@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Play } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { Button } from '@librechat/client';
 import { replaceSpecialVars } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
@@ -45,16 +45,16 @@ const PromptActions = ({ group, onUsePrompt }: PromptActionsProps) => {
 
   return (
     <>
-      <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+      <div className="flex w-full gap-2 sm:justify-end sm:gap-3">
         <SharePrompt group={group} disabled={false} />
 
         <Button
           variant="submit"
           onClick={handleUsePrompt}
-          className="flex-1 gap-2 sm:max-w-xs"
+          className="flex-1 gap-2 sm:min-w-40 sm:flex-none"
           aria-label={localize('com_ui_use_prompt')}
         >
-          <Play className="h-4 w-4" aria-hidden="true" />
+          <Send className="h-4 w-4" aria-hidden="true" />
           {localize('com_ui_use_prompt')}
         </Button>
       </div>
