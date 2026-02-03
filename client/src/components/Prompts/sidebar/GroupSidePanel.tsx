@@ -55,7 +55,7 @@ export default function GroupSidePanel({
           />
         </div>
       )}
-      <div className="flex flex-1 flex-col gap-2 overflow-visible">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
         {children}
         <div className={cn('relative flex h-full flex-col', isChatRoute ? '' : 'px-2 md:px-0')}>
           <List
