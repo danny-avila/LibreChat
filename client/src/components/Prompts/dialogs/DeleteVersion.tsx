@@ -1,6 +1,5 @@
 import React, { useCallback } from 'react';
 import { Trash2 } from 'lucide-react';
-import { useDeletePrompt } from '~/data-provider';
 import {
   Button,
   OGDialog,
@@ -9,6 +8,7 @@ import {
   TooltipAnchor,
   OGDialogTemplate,
 } from '@librechat/client';
+import { useDeletePrompt } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 const DeleteConfirmDialog = ({
