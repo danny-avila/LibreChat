@@ -1,5 +1,6 @@
 import React from 'react';
 import { Share2Icon } from 'lucide-react';
+import { Button } from '@librechat/client';
 import {
   SystemRoles,
   Permissions,
@@ -7,7 +8,6 @@ import {
   PermissionBits,
   PermissionTypes,
 } from 'librechat-data-provider';
-import { Button } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useAuthContext, useHasAccess, useResourcePermissions } from '~/hooks';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
