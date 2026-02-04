@@ -1067,9 +1067,7 @@ describe('Claude Model Tests', () => {
 describe('Moonshot/Kimi Model Tests', () => {
   describe('getModelMaxTokens', () => {
     test('should return correct tokens for kimi-k2.5 (multi-modal)', () => {
-      expect(getModelMaxTokens('kimi-k2.5')).toBe(
-        maxTokensMap[EModelEndpoint.openAI]['kimi-k2.5'],
-      );
+      expect(getModelMaxTokens('kimi-k2.5')).toBe(maxTokensMap[EModelEndpoint.openAI]['kimi-k2.5']);
       expect(getModelMaxTokens('kimi-k2.5-latest')).toBe(
         maxTokensMap[EModelEndpoint.openAI]['kimi-k2.5'],
       );
