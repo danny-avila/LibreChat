@@ -24,6 +24,12 @@ export function deleteUser(): Promise<s.TPreset> {
   return request.delete(endpoints.deleteUser());
 }
 
+export function changePassword(
+  payload: m.TChangePasswordRequest,
+): Promise<m.TChangePasswordResponse> {
+  return request.patch(endpoints.changePassword(), payload);
+}
+
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
   return request.get(endpoints.shareMessages(shareId));
 }

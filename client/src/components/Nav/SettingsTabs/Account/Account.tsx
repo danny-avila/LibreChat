@@ -1,9 +1,6 @@
 import React from 'react';
-import DisplayUsernameMessages from './DisplayUsernameMessages';
+import ChangePassword from './ChangePassword';
 import DeleteAccount from './DeleteAccount';
-import Avatar from './Avatar';
-import EnableTwoFactorItem from './TwoFactorAuthentication';
-import BackupCodesItem from './BackupCodesItem';
 import { useAuthContext } from '~/hooks';
 
 function Account() {
@@ -11,23 +8,10 @@ function Account() {
 
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
-      <div className="pb-3">
-        <DisplayUsernameMessages />
-      </div>
-      <div className="pb-3">
-        <Avatar />
-      </div>
       {user?.provider === 'local' && (
-        <>
-          <div className="pb-3">
-            <EnableTwoFactorItem />
-          </div>
-          {user?.twoFactorEnabled && (
-            <div className="pb-3">
-              <BackupCodesItem />
-            </div>
-          )}
-        </>
+        <div className="pb-3">
+          <ChangePassword />
+        </div>
       )}
       <div className="pb-3">
         <DeleteAccount />

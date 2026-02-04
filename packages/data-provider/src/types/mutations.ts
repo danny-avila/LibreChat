@@ -45,6 +45,15 @@ export type PresetDeleteResponse = {
   deletedCount: number;
 };
 
+export type TChangePasswordRequest = {
+  currentPassword: string;
+  newPassword: string;
+};
+
+export type TChangePasswordResponse = {
+  updated: boolean;
+};
+
 export type UpdatePresetOptions = MutationOptions<types.TPreset, types.TPreset>;
 
 export type DeletePresetOptions = MutationOptions<PresetDeleteResponse, types.TPreset | undefined>;

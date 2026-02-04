@@ -57,10 +57,10 @@ const useHandleKeyUp = ({
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
 
-  // Get the current state of command toggles
-  const atCommandEnabled = useRecoilValue(store.atCommand);
-  const plusCommandEnabled = useRecoilValue(store.plusCommand);
-  const slashCommandEnabled = useRecoilValue(store.slashCommand);
+  // Commands are disabled in this UI configuration
+  const atCommandEnabled = false;
+  const plusCommandEnabled = false;
+  const slashCommandEnabled = false;
 
   const handleAtCommand = useCallback(() => {
     if (atCommandEnabled && shouldTriggerCommand(textAreaRef, '@')) {

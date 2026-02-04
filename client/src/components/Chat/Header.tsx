@@ -17,6 +17,7 @@ const defaultInterface = getConfigDefaults().interface;
 export default function Header() {
   const { data: startupConfig } = useGetStartupConfig();
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
+  const allowEndpointSwitching = false;
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
@@ -64,7 +65,7 @@ export default function Header() {
                   : ''
             }`}
           >
-            <ModelSelector startupConfig={startupConfig} />
+            {allowEndpointSwitching && <ModelSelector startupConfig={startupConfig} />}
             {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
             {hasAccessToBookmarks === true && <BookmarkMenu />}
             {hasAccessToMultiConvo === true && <AddMultiConvo />}

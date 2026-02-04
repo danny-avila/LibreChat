@@ -87,6 +87,15 @@ export const useDeleteUserMutation = (
   });
 };
 
+export const useChangePasswordMutation = (
+  options?: t.MutationOptions<t.TChangePasswordResponse, t.TChangePasswordRequest>,
+): UseMutationResult<t.TChangePasswordResponse, unknown, t.TChangePasswordRequest, unknown> => {
+  return useMutation([MutationKeys.changePassword], {
+    mutationFn: (payload: t.TChangePasswordRequest) => dataService.changePassword(payload),
+    ...(options || {}),
+  });
+};
+
 export const useEnableTwoFactorMutation = (): UseMutationResult<
   t.TEnable2FAResponse,
   unknown,

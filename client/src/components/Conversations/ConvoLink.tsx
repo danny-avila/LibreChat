@@ -7,7 +7,6 @@ interface ConvoLinkProps {
   onRename: () => void;
   isSmallScreen: boolean;
   localize: (key: any, options?: any) => string;
-  children: React.ReactNode;
 }
 
 const ConvoLink: React.FC<ConvoLinkProps> = ({
@@ -16,19 +15,17 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
   onRename,
   isSmallScreen,
   localize,
-  children,
 }) => {
   return (
     <div
       className={cn(
-        'flex grow items-center gap-2 overflow-hidden rounded-lg px-2',
+        'flex grow items-center overflow-hidden rounded-lg px-2',
         isActiveConvo ? 'bg-surface-active-alt' : '',
       )}
       title={title ?? undefined}
       aria-current={isActiveConvo ? 'page' : undefined}
       style={{ width: '100%' }}
     >
-      {children}
       <div
         className="relative flex-1 grow overflow-hidden whitespace-nowrap"
         style={{ textOverflow: 'clip' }}

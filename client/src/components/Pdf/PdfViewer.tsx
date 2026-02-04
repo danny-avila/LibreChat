@@ -55,10 +55,9 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
     >
       <header className="flex items-center justify-between border-b border-white/20 px-4 py-2 text-white">
         <div className="flex items-center gap-3 text-sm">
-          {title ? <span className="font-semibold">{title}</span> : <span>PDF Viewer</span>}
           {numPages ? (
             <span className="text-white/70">
-              Page {pageNumber} / {numPages}
+              {pageNumber}/{numPages}
             </span>
           ) : null}
         </div>
@@ -86,20 +85,19 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
             type="button"
             onClick={zoomOut}
             disabled={scale <= MIN_SCALE}
-            className="flex items-center gap-1 rounded px-2 py-1 transition hover:bg-white/10 disabled:opacity-40"
+            className="flex items-center rounded px-2 py-1 transition hover:bg-white/10 disabled:opacity-40"
             aria-label="Zoom out"
           >
-            <Minus size={14} /> Zoom
+            <Minus size={14} />
           </button>
-          <span className="text-xs text-white/70">{Math.round(scale * 100)}%</span>
           <button
             type="button"
             onClick={zoomIn}
             disabled={scale >= MAX_SCALE}
-            className="flex items-center gap-1 rounded px-2 py-1 transition hover:bg-white/10 disabled:opacity-40"
+            className="flex items-center rounded px-2 py-1 transition hover:bg-white/10 disabled:opacity-40"
             aria-label="Zoom in"
           >
-            <Plus size={14} /> Zoom
+            <Plus size={14} />
           </button>
           <button
             type="button"

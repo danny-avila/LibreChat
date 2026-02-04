@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const { logger, webSearchKeys } = require('@librechat/data-schemas');
 const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-provider');
 const {
@@ -59,7 +60,7 @@ const getUserController = async (req, res) => {
 
 const getTermsStatusController = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user.id).select('+password');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -80,6 +81,52 @@ const acceptTermsController = async (req, res) => {
   } catch (error) {
     logger.error('Error accepting terms:', error);
     res.status(500).json({ message: 'Error accepting terms' });
+  }
+};
+
+const changePasswordController = async (req, res) => {
+  const { currentPassword, newPassword } = req.body ?? {};
+
+  if (req.user?.provider !== 'local') {
+    return res
+      .status(403)
+      .json({ message: 'Password updates are only available for local accounts.' });
+  }
+
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+    return res.status(400).json({ message: 'Current and new passwords are required.' });
+  }
+
+  const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
+  const minLength = !Number.isNaN(minPasswordLength) && minPasswordLength > 0 ? minPasswordLength : 8;
+
+  if (newPassword.length < minLength || newPassword.length > 128) {
+    return res
+      .status(400)
+      .json({ message: `Password must be between ${minLength} and 128 characters.` });
+  }
+
+  if (currentPassword === newPassword) {
+    return res.status(400).json({ message: 'New password must be different from current password.' });
+  }
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user || !user.password) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const isValid = bcrypt.compareSync(currentPassword, user.password);
+    if (!isValid) {
+      return res.status(401).json({ message: 'Current password is incorrect.' });
+    }
+
+    const hash = bcrypt.hashSync(newPassword, 10);
+    await updateUser(req.user.id, { password: hash });
+    return res.status(200).json({ updated: true });
+  } catch (error) {
+    logger.error('Error changing password:', error);
+    return res.status(500).json({ message: 'Failed to change password.' });
   }
 };
 
@@ -390,6 +437,7 @@ module.exports = {
   getUserController,
   getTermsStatusController,
   acceptTermsController,
+  changePasswordController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,
