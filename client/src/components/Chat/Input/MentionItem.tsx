@@ -1,12 +1,10 @@
-import React, { useCallback, useRef } from 'react';
+import React from 'react';
 import { Clock4 } from 'lucide-react';
 import { cn } from '~/utils';
 
-type ButtonEvent = React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>;
-
 export interface MentionItemProps {
   name: string;
-  onClick: (e: ButtonEvent) => void;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   index: number;
   type?: 'prompt' | 'mention' | 'add-convo';
   icon?: React.ReactNode;
@@ -25,35 +23,12 @@ export default function MentionItem({
   style,
   type = 'mention',
 }: MentionItemProps) {
-  const touchHandled = useRef(false);
-
-  const handleTouchEnd = useCallback(
-    (e: React.TouchEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      touchHandled.current = true;
-      onClick(e);
-    },
-    [onClick],
-  );
-
-  const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      if (touchHandled.current) {
-        touchHandled.current = false;
-        return;
-      }
-      onClick(e);
-    },
-    [onClick],
-  );
-
   return (
     <button
       type="button"
       style={style}
       tabIndex={index}
-      onClick={handleClick}
-      onTouchEnd={handleTouchEnd}
+      onClick={onClick}
       id={`${type}-item-${index}`}
       className="w-full touch-manipulation"
     >
