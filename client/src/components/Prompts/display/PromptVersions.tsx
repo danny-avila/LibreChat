@@ -80,10 +80,15 @@ const VersionCard = ({
   return (
     <div className="relative flex items-stretch">
       {/* Timeline connector */}
-      <div className="relative flex w-6 shrink-0 flex-col items-center pt-3">
+      <div className="relative flex w-6 shrink-0 justify-center">
+        {/* Vertical line - extends through mb-2 gap + mt-3 to reach next circle */}
+        {index < totalVersions - 1 && (
+          <div className="absolute -bottom-5 top-0 w-0.5 bg-border-light" />
+        )}
+        {/* Circle marker - mt-3 aligns with card title (card has p-3) */}
         <div
           className={cn(
-            'z-10 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+            'relative z-10 mt-3 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
             getTimelineConnectorClasses(isSelected, isProduction),
           )}
         >
@@ -93,7 +98,6 @@ const VersionCard = ({
             <Circle className="size-2" fill="currentColor" />
           )}
         </div>
-        {index < totalVersions - 1 && <div className="w-0.5 flex-1 bg-border-light" />}
       </div>
 
       {/* Card content */}
