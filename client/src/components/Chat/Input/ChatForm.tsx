@@ -25,6 +25,7 @@ import FileFormChat from './Files/FileFormChat';
 import { cn, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
+import SocialDraftCommand from './SocialDraftCommand';
 import AudioRecorder from './AudioRecorder';
 import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
@@ -240,6 +241,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             />
           )}
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
+          <SocialDraftCommand index={index} textAreaRef={textAreaRef} />
           <div
             onClick={handleContainerClick}
             className={cn(

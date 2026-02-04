@@ -277,6 +277,15 @@ const startServer = async () => {
     console.log('[SKIP] Profile routes (error loading)');
   }
 
+  // Social drafts (n8n HITL – store drafts + resumeUrl for approval)
+  try {
+    const socialDraftsRoutes = require('./routes/socialDrafts');
+    app.use('/api/social-drafts', socialDraftsRoutes);
+    console.log('[OK] Social drafts routes loaded');
+  } catch (e) {
+    console.warn('[SKIP] Social drafts routes (error loading):', e.message);
+  }
+
   // Admin route (CEO-only user management)
   try {
     const adminRoutes = require('./routes/admin');
