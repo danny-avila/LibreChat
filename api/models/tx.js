@@ -2,9 +2,39 @@ const { matchModelName, findMatchingPattern } = require('@librechat/api');
 const defaultRate = 6;
 
 /**
+ * Token Pricing Configuration
+ *
+ * IMPORTANT: Key Ordering for Pattern Matching
+ * ============================================
+ * The `findMatchingPattern` function iterates through object keys in REVERSE order
+ * (last-defined keys are checked first) and uses `modelName.includes(key)` for matching.
+ *
+ * This means:
+ * 1. BASE PATTERNS must be defined FIRST (e.g., "kimi", "moonshot")
+ * 2. SPECIFIC PATTERNS must be defined AFTER their base patterns (e.g., "kimi-k2", "kimi-k2.5")
+ *
+ * Example ordering for Kimi models:
+ *   kimi: { prompt: 0.6, completion: 2.5 },       // Base pattern - checked last
+ *   'kimi-k2': { prompt: 0.6, completion: 2.5 },  // More specific - checked before "kimi"
+ *   'kimi-k2.5': { prompt: 0.6, completion: 3.0 }, // Most specific - checked first
+ *
+ * Why this matters:
+ * - Model name "kimi-k2.5" contains both "kimi" and "kimi-k2" as substrings
+ * - If "kimi" were checked first, it would incorrectly match and return wrong pricing
+ * - By defining specific patterns AFTER base patterns, they're checked first in reverse iteration
+ *
+ * This applies to BOTH `tokenValues` and `cacheTokenValues` objects.
+ *
+ * When adding new model families:
+ * 1. Define the base/generic pattern first
+ * 2. Define increasingly specific patterns after
+ * 3. Ensure no pattern is a substring of another that should match differently
+ */
+
+/**
  * AWS Bedrock pricing
  * source: https://aws.amazon.com/bedrock/pricing/
- * */
+ */
 const bedrockValues = {
   // Basic llama2 patterns (base defaults to smallest variant)
   llama2: { prompt: 0.75, completion: 1.0 },
