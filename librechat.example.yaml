@@ -32,6 +32,10 @@ interface:
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.
   fileSearch: true
+  # Set whether file search is enabled by default in new conversations (default: false)
+  # When enabled, users won't need to manually toggle file search on for each conversation
+  # Users can still toggle it off, and their preference will be remembered per conversation
+  fileSearchDefaultEnabled: false
   # Privacy policy settings
   privacyPolicy:
     externalUrl: 'https://librechat.ai/privacy-policy'

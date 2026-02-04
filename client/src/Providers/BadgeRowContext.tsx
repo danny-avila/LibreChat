@@ -9,6 +9,7 @@ import {
   useCodeApiKeyForm,
   useToolToggle,
 } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import { getTimestampedValue, setTimestamp } from '~/utils/timestamps';
 import { ephemeralAgentByConvoId } from '~/store';
 
@@ -48,9 +49,12 @@ export default function BadgeRowProvider({
   const lastKeyRef = useRef<string>('');
   const hasInitializedRef = useRef(false);
   const { agentsConfig } = useGetAgentsConfig();
+  const { data: startupConfig } = useGetStartupConfig();
   const key = conversationId ?? Constants.NEW_CONVO;
 
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(key));
+
+  const interfaceConfig = startupConfig?.interface;
 
   /** Initialize ephemeralAgent from localStorage on mount and when conversation changes */
   useEffect(() => {
@@ -113,7 +117,8 @@ export default function BadgeRowProvider({
       const finalValues = {
         [Tools.execute_code]: initialValues[Tools.execute_code] ?? false,
         [Tools.web_search]: initialValues[Tools.web_search] ?? false,
-        [Tools.file_search]: initialValues[Tools.file_search] ?? false,
+        [Tools.file_search]:
+          initialValues[Tools.file_search] ?? interfaceConfig?.fileSearchDefaultEnabled ?? false,
         [AgentCapabilities.artifacts]: initialValues[AgentCapabilities.artifacts] ?? false,
       };
 
@@ -138,7 +143,7 @@ export default function BadgeRowProvider({
         }
       });
     }
-  }, [key, isSubmitting, setEphemeralAgent]);
+  }, [key, isSubmitting, setEphemeralAgent, interfaceConfig]);
 
   /** CodeInterpreter hooks */
   const codeApiKeyForm = useCodeApiKeyForm({});
