@@ -50,6 +50,7 @@ const {
   getCachedTools,
 } = require('~/server/services/Config');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
+const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
@@ -679,9 +680,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     }
   }
 
-  // Prime execute_code files to generate toolContextMap for event-driven mode
   /** @type {Record<string, string>} */
   const toolContextMap = {};
+  const hasFileSearch = filteredTools.includes(Tools.file_search);
   const hasExecuteCode = filteredTools.includes(Tools.execute_code);
 
   if (hasExecuteCode && tool_resources) {
@@ -706,11 +707,26 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     }
   }
 
+  if (hasFileSearch && tool_resources) {
+    try {
+      const { toolContext } = await primeSearchFiles({
+        req,
+        tool_resources,
+        agentId: agent.id,
+      });
+      if (toolContext) {
+        toolContextMap[Tools.file_search] = toolContext;
+      }
+    } catch (error) {
+      logger.error('[loadToolDefinitionsWrapper] Error priming search files:', error);
+    }
+  }
+
   return {
     toolRegistry,
     userMCPAuthMap,
-    toolDefinitions,
     toolContextMap,
+    toolDefinitions,
     hasDeferredTools,
   };
 }
