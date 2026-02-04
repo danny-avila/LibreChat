@@ -81,13 +81,7 @@ function ChatView({ index = 0 }: { index?: number }) {
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
-            <div className="flex h-full w-full flex-col">
-              <div className="hidden px-4 pb-3 pt-[max(env(safe-area-inset-top),16px)] text-lg font-semibold text-text-primary md:block">
-                {ASSISTANT_DISPLAY_NAME}
-              </div>
-              <div className="hidden px-4 pb-2 text-sm text-text-secondary md:block">
-                Answers are limited to the Ontario Building Code and include page-cited references.
-              </div>
+              <div className="flex h-full w-full flex-col">
               <>
                 <div
                   className={cn(
