@@ -47,7 +47,8 @@ Restart `npm run dev` after changing `.env`. Then proceed to Phase A below.
 |---|-----------|------|-----|
 | **1** | **Multi-platform generation** | Receive raw text from LibreChat; route to LLMs (GPT-4/Claude) to produce optimized drafts for LinkedIn, X, Instagram, Farcaster. | Each platform needs its own “voice” and format. |
 | **2** | **Stateful HITL** | After drafts are generated, workflow **stops** and sends a preview to the user. It **only continues** to “Post” when an explicit approval signal is received. | Brand safety: no content hits public APIs without human verification. |
-| **3** | **Direct API distribution** | Final nodes push **approved** content to LinkedIn, X, Instagram (OAuth2, error handling, rate limits). | Zero manual upload. |
+| **3** | **Direct API distribution (incl. Postiz)** | Final nodes push **approved** content to LinkedIn, X, Instagram (OAuth2, error handling, rate limits), optionally via **Postiz** for scheduling/analytics. | Zero manual upload + leverage existing social tooling. |
+| **4** | **Seamless LibreChat UX & history** | Embed social automation into the main `/new` chat flow and left sidebar, with “Previous social drafts” / “Approved drafts” so users can resume and approve later. | Feels like a native part of LibreChat; supports revisiting drafts. |
 
 ---
 
@@ -87,11 +88,12 @@ Restart `npm run dev` after changing `.env`. Then proceed to Phase A below.
 
 | Step | Task | Status | Notes |
 |------|------|--------|-------|
-| C1 | **Introduce Wait** – After generating drafts, **do not** respond to the Webhook yet. Use n8n **Wait** node (e.g. “Wait for webhook” or “Wait” with a resume URL). The workflow execution will pause and get an `executionId` / `resumeUrl`. | ⬜ Todo | |
-| C2 | **Expose drafts to user** – Store drafts + `executionId`/`resumeUrl` somewhere the user can see them (e.g. return a “pending” response with a link, or store in DB and show in LibreChat). User sees: “Drafts ready – Approve or Reject.” | ⬜ Todo | |
-| C3 | **Approval webhook** – Create a second webhook (e.g. `librechat/social-approve`) that receives `{ executionId, approved: true|false, selectedPlatforms?: [...] }`. Use n8n’s “Resume Wait” or call the stored resume URL so the paused execution continues. | ⬜ Todo | |
-| C4 | **Branch on approval** – After resume, IF approved → go to “Post” branch; IF rejected → end workflow (optional: respond with “Rejected”). No content must reach LinkedIn/X/Instagram without approval. | ⬜ Todo | |
-| C5 | **Test HITL** – Full run: trigger from LibreChat → drafts generated → workflow paused → call approval webhook → workflow resumes and (for now) just logs “Would post” or returns success. | ⬜ Todo | |
+| C1 | **Introduce Wait** – After generating drafts, **do not** respond to the Webhook yet. Use n8n **Wait** node (e.g. “Wait for webhook” or “Wait” with a resume URL). The workflow execution will pause and get an `executionId` / `resumeUrl`. | ✅ Done | Wait node added after Code node; execution now pauses and shows a resume URL. |
+| C2 | **Expose drafts to user** – Store drafts + `executionId`/`resumeUrl` somewhere the user can see them (e.g. return a “pending” response with a link, or store in DB and show in LibreChat). User sees: “Drafts ready – Approve or Reject.” | ✅ Done | POST /api/social-drafts saves to MongoDB; n8n calls it before Wait; returns draftId. UI to list/approve pending drafts next. |
+| C3 | **Approval webhook** – Create a second webhook (e.g. `librechat/social-approve`) that receives `{ executionId, approved: true|false, selectedPlatforms?: [...] }`. Use n8n’s “Resume Wait” or call the stored resume URL so the paused execution continues. | ✅ Done | POST /api/social-drafts/:id/approve calls resumeUrl with query params (draftId, approved, selectedPlatforms). |
+| C4 | **Branch on approval** – After resume, IF approved → go to “Post” branch; IF rejected → end workflow (optional: respond with “Rejected”). No content must reach LinkedIn/X/Instagram without approval. | ✅ Done | Single If condition (approved === true); True → placeholder, False → rejected. |
+| C5 | **Test HITL** – Full run: trigger from LibreChat → drafts generated → workflow paused → call approval webhook → workflow resumes and (for now) just logs “Would post” or returns success. | ✅ Done | User confirmed flow works. |
+| C6 | **Embed HITL into main chat & history** – Design UX so social automation can be triggered from the main `/new` chat interface without disrupting existing flows, and add left-sidebar sections such as “Previous social drafts” / “Approved drafts” so users can revisit and approve older drafts. | ✅ Done | Added `/social-draft` command in ChatForm; added `SocialDraftsNav` component in sidebar showing pending/approved drafts (gated by `VITE_SOCIAL_MEDIA_AUTOMATION`). |
 
 ### Phase D – Direct API distribution (after 48h milestone)
 
@@ -101,6 +103,7 @@ Restart `npm run dev` after changing `.env`. Then proceed to Phase A below.
 | D2 | **Post nodes** – Add HTTP Request or native nodes to post approved content to each platform. Map draft fields to the required API payloads. | ⬜ Todo | |
 | D3 | **Error handling & retries** – Use n8n’s retry/error handling and respect rate limits (backoff, optional queue). | ⬜ Todo | |
 | D4 | **E2E test** – Approve one draft → confirm it appears on the target platform (or in sandbox). | ⬜ Todo | |
+| D5 | **Integrate Postiz** – Decide how Postiz fits: e.g. n8n posts to Postiz (queue/schedule) instead of directly to each platform, so LibreChat can benefit from Postiz scheduling/analytics. Implement and test the Postiz integration path. | ⬜ Todo | Align Postiz usage with existing or planned infra. |
 
 ---
 
@@ -121,8 +124,10 @@ Use this section to note what you did and when. Copy the table and add rows as y
 ## 6. Decisions & open questions
 
 - **Modular vs single workflow:** TBD – e.g. one workflow with branches vs separate sub-workflows per platform.
-- **Where to show drafts in LibreChat:** Dedicated UI – sidebar link “Start Social Draft” opens a modal; modal displays drafts when n8n returns them.
+- **Where to show drafts in LibreChat:** Dedicated UI – sidebar link “Start Social Draft” opens a modal; modal displays drafts when n8n returns them. Phase C will also explore embedding into the main `/new` chat interface.
+- **Sidebar history for drafts:** TBD – design of “Previous social drafts” / “Approved drafts” sections (data model, where drafts are stored, how they’re retrieved and resumed).
 - **Wait implementation:** TBD – n8n “Wait for Webhook” vs external DB + resume URL; document once chosen.
+- **Postiz integration strategy:** TBD – whether Postiz sits in front of or behind n8n (e.g. n8n → Postiz → platforms), and which features we rely on (scheduling, analytics, multi-account management).
 
 ---
 
@@ -146,4 +151,4 @@ Full contract: **`SOCIAL_AUTOMATION_PAYLOAD.md`**.
 
 ---
 
-*Last updated: 2025-01-29. Phase B complete; next: Phase C (HITL).*
+*Last updated: 2026-02-02. Phase B complete; next: Phase C (HITL, incl. chat embedding & history), then Phase D (Postiz + direct posting).*

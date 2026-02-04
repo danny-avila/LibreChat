@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+/* eslint-disable i18next/no-literal-string */
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { socialDraftState } from '~/store/socialDraft';
@@ -13,6 +14,27 @@ const PLATFORM_LABELS: Record<string, string> = {
   facebook: 'Facebook',
   farcaster: 'Farcaster',
 };
+
+export type SocialDraftRecord = {
+  _id: string;
+  userId: string;
+  drafts: Record<string, string>;
+  resumeUrl: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rawIdea?: string;
+  ideaId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** First 5 words from the first non-empty draft text, for list preview */
+export function getDraftPreview(drafts: Record<string, string>, maxWords = 5): string {
+  const firstText = Object.values(drafts).find((t) => t?.trim());
+  if (!firstText?.trim()) return '—';
+  const words = firstText.trim().split(/\s+/);
+  const snippet = words.slice(0, maxWords).join(' ');
+  return words.length > maxWords ? `${snippet}…` : snippet;
+}
 
 /** Normalize n8n response into { linkedin?, x?, instagram?, facebook?, ... } */
 function getDraftsFromResponse(data: any): Record<string, string> {
@@ -43,12 +65,103 @@ export default function SocialDraftModal() {
   const [rawIdea, setRawIdea] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string> | null>(null);
+  const [pendingDrafts, setPendingDrafts] = useState<SocialDraftRecord[]>([]);
+  const [loadingPending, setLoadingPending] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [viewingDraftId, setViewingDraftId] = useState<string | null>(null);
+  const [pollingForDraft, setPollingForDraft] = useState(false);
+  const pendingCountRef = useRef(0);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { showToast } = useToastContext();
   const localize = useLocalize();
   const { token, isAuthenticated } = useAuthContext();
 
+  const fetchPendingDrafts = useCallback(
+    async (onFetched?: (list: SocialDraftRecord[]) => void, silent = false) => {
+      if (!token) return;
+      if (!silent) setLoadingPending(true);
+      try {
+        const res = await fetch('/api/social-drafts?status=pending', {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
+        });
+        const data = await res.json();
+        const list = data.success && Array.isArray(data.drafts) ? data.drafts : [];
+        // During polling, don't replace with empty list—n8n may not have saved the new draft yet
+        setPendingDrafts((prev) => {
+          if (silent && list.length === 0) return prev;
+          return list;
+        });
+        onFetched?.(list);
+      } catch {
+        // During polling (silent), keep previous list so we don't wipe the UI on transient errors
+        if (!silent) {
+          setPendingDrafts([]);
+        }
+        onFetched?.([]);
+      } finally {
+        if (!silent) setLoadingPending(false);
+      }
+    },
+    [token],
+  );
+
+  useEffect(() => {
+    if (state.isOpen && isAuthenticated && token) {
+      fetchPendingDrafts();
+    }
+  }, [state.isOpen, isAuthenticated, token, fetchPendingDrafts]);
+
+  // Clear polling when modal closes or unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+      setPollingForDraft(false);
+    };
+  }, [state.isOpen]);
+
+  const handleApprove = async (draft: SocialDraftRecord, approved: boolean) => {
+    if (!token) return;
+    setApprovingId(draft._id);
+    try {
+      const platforms = approved
+        ? Object.keys(draft.drafts).filter((k) => draft.drafts[k]?.trim())
+        : [];
+      const res = await fetch(`/api/social-drafts/${draft._id}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify({ approved, selectedPlatforms: platforms }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast({
+          message: approved ? 'Draft approved; workflow resumed.' : 'Draft rejected.',
+          status: 'success',
+        });
+        await fetchPendingDrafts();
+      } else {
+        throw new Error(data.error || 'Request failed');
+      }
+    } catch (err: unknown) {
+      showToast({
+        message: err instanceof Error ? err.message : 'Approve/reject failed',
+        status: 'error',
+      });
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
   const close = () => {
     setDrafts(null);
+    setViewingDraftId(null);
     setState({ isOpen: false });
   };
 
@@ -91,8 +204,34 @@ export default function SocialDraftModal() {
           setDrafts(parsed);
           showToast({ message: 'Drafts ready.', status: 'success' });
         } else {
-          showToast({ message: 'Drafts generated. No content to display yet.', status: 'info' });
-          close();
+          showToast({
+            message: 'Draft is being generated; it will appear in Pending drafts below.',
+            status: 'success',
+          });
+          pendingCountRef.current = pendingDrafts.length;
+          setPollingForDraft(true);
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          const POLL_INTERVAL_MS = 2500;
+          const POLL_MAX_MS = 45000;
+          const start = Date.now();
+          const checkNewDraft = (list: SocialDraftRecord[]) => {
+            if (list.length > pendingCountRef.current) {
+              if (pollingRef.current) clearInterval(pollingRef.current);
+              pollingRef.current = null;
+              setPollingForDraft(false);
+              showToast({ message: 'Your draft is ready.', status: 'success' });
+            }
+          };
+          fetchPendingDrafts(checkNewDraft, true);
+          pollingRef.current = setInterval(() => {
+            if (Date.now() - start >= POLL_MAX_MS) {
+              if (pollingRef.current) clearInterval(pollingRef.current);
+              pollingRef.current = null;
+              setPollingForDraft(false);
+              return;
+            }
+            fetchPendingDrafts(checkNewDraft, true);
+          }, POLL_INTERVAL_MS);
         }
       } else {
         throw new Error(data.error?.message || data.error || 'Execution failed');
@@ -110,7 +249,7 @@ export default function SocialDraftModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-xl dark:bg-surface-primary-alt">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-xl dark:bg-surface-primary-alt">
         <div className="flex items-center justify-between border-b border-border-light p-4 dark:border-border-medium">
           <h3 className="text-lg font-bold text-text-primary">
             {showResults ? 'Your drafts' : localize('com_sidepanel_social_draft')}
@@ -180,6 +319,142 @@ export default function SocialDraftModal() {
             </div>
           ) : (
             <>
+              {(pendingDrafts.length > 0 || pollingForDraft) && (
+                <div className="mb-6">
+                  {pollingForDraft && (
+                    <p className="mb-2 text-sm text-green-600 dark:text-green-400">
+                      Draft is being generated; it will appear in Pending drafts below.
+                    </p>
+                  )}
+                  <h4 className="mb-2 text-sm font-semibold text-black">
+                    Pending drafts (approve to resume workflow)
+                  </h4>
+                  {loadingPending && !pollingForDraft ? (
+                    <p className="text-sm text-text-secondary">Loading…</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {pendingDrafts.map((d) => (
+                        <li
+                          key={d._id}
+                          className="rounded-lg border border-border-light bg-surface-primary p-3 dark:border-border-medium dark:bg-surface-secondary"
+                        >
+                          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                            <span className="max-w-[70%] truncate text-sm font-medium text-black">
+                              {getDraftPreview(d.drafts, 15)}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setViewingDraftId((id) => (id === d._id ? null : d._id))
+                                }
+                                className="rounded p-1.5 text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                                title="View details"
+                                aria-label="View draft details"
+                              >
+                                <svg
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  aria-hidden
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                  />
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                                  />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={approvingId === d._id}
+                                onClick={() => handleApprove(d, true)}
+                                className="rounded bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                              >
+                                {approvingId === d._id ? '…' : 'Approve'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={approvingId === d._id}
+                                onClick={() => handleApprove(d, false)}
+                                className="rounded border border-border-medium px-2 py-1 text-xs font-medium text-text-primary hover:bg-surface-hover disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-text-secondary">
+                            {new Date(d.createdAt).toLocaleString()} ·{' '}
+                            {Object.keys(d.drafts)
+                              .filter((k) => d.drafts[k])
+                              .join(', ') || '—'}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {viewingDraftId &&
+                    (() => {
+                      const draft = pendingDrafts.find((d) => d._id === viewingDraftId);
+                      if (!draft) return null;
+                      return (
+                        <div className="mt-4 rounded-lg border border-border-medium bg-surface-secondary p-4 dark:bg-surface-primary">
+                          <div className="mb-3 flex items-center justify-between">
+                            <h5 className="text-sm font-semibold text-text-primary">
+                              Draft details
+                            </h5>
+                            <button
+                              type="button"
+                              onClick={() => setViewingDraftId(null)}
+                              className="rounded p-1 text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                              aria-label="Close details"
+                            >
+                              <svg
+                                className="h-5 w-5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M6 18L18 6M6 6l12 12"
+                                />
+                              </svg>
+                            </button>
+                          </div>
+                          <div className="max-h-64 space-y-3 overflow-y-auto">
+                            {Object.entries(draft.drafts).map(
+                              ([platform, text]) =>
+                                text?.trim() && (
+                                  <div
+                                    key={platform}
+                                    className="rounded border border-border-light bg-surface-primary p-3 dark:border-border-medium"
+                                  >
+                                    <span className="mb-1 block text-xs font-semibold text-text-primary">
+                                      {PLATFORM_LABELS[platform] ?? platform}
+                                    </span>
+                                    <p className="whitespace-pre-wrap text-sm text-text-secondary">
+                                      {text}
+                                    </p>
+                                  </div>
+                                ),
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                </div>
+              )}
               <p className="mb-4 text-sm text-text-secondary">
                 Enter your raw idea. n8n will generate drafts for LinkedIn, X, Instagram, Facebook,
                 and more.
