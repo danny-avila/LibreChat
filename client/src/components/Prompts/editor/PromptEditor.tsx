@@ -6,9 +6,9 @@ import supersub from 'remark-supersub';
 import { useRecoilValue } from 'recoil';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
-import { EditIcon, FileText } from 'lucide-react';
-import { SaveIcon, CrossIcon, TextareaAutosize, Button, TooltipAnchor } from '@librechat/client';
-import { Controller, useFormContext, useFormState } from 'react-hook-form';
+import { EditIcon, FileText, Check } from 'lucide-react';
+import { Controller, useFormContext } from 'react-hook-form';
+import { TextareaAutosize, Button, TooltipAnchor } from '@librechat/client';
 import type { PluggableList } from 'unified';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import AlwaysMakeProd from '../buttons/AlwaysMakeProd';
@@ -31,15 +31,10 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   const localize = useLocalize();
   const { control } = useFormContext();
   const editorMode = useRecoilValue(promptsEditorMode);
-  const { dirtyFields } = useFormState({ control: control });
-  const { prompt } = dirtyFields as { prompt?: string };
 
   const EditorIcon = useMemo(() => {
-    if (isEditing && prompt?.length == null) {
-      return CrossIcon;
-    }
-    return isEditing ? SaveIcon : EditIcon;
-  }, [isEditing, prompt]);
+    return isEditing ? Check : EditIcon;
+  }, [isEditing]);
 
   const rehypePlugins: PluggableList = [
     [rehypeKatex],

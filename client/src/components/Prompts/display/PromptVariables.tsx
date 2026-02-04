@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
-import { Variable, Calendar, User, Clock, Globe, Sparkles, ChevronRight } from 'lucide-react';
+import { Variable, ChevronRight } from 'lucide-react';
 import { specialVariables } from 'librechat-data-provider';
+import type { TSpecialVarLabel } from 'librechat-data-provider';
+import { getSpecialVariableIcon } from '~/components/Prompts/utils';
 import { extractUniqueVariables } from '~/utils';
 import { useLocalize } from '~/hooks';
 
@@ -10,13 +12,6 @@ interface ParsedVariable {
   isDropdown: boolean;
   isSpecial: boolean;
 }
-
-const specialVariableIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  current_date: Calendar,
-  current_datetime: Clock,
-  current_user: User,
-  iso_datetime: Globe,
-};
 
 const parseVariable = (variable: string): ParsedVariable => {
   const isSpecial = specialVariables[variable.toLowerCase()] != null;
@@ -77,32 +72,13 @@ const DropdownVariableCard = ({ parsed }: { parsed: ParsedVariable }) => {
   );
 };
 
-type TSpecialVarLabelKey =
-  | 'com_ui_special_var_current_date'
-  | 'com_ui_special_var_current_datetime'
-  | 'com_ui_special_var_current_user'
-  | 'com_ui_special_var_iso_datetime';
-
-const specialVariableLabels: Record<string, TSpecialVarLabelKey> = {
-  current_date: 'com_ui_special_var_current_date',
-  current_datetime: 'com_ui_special_var_current_datetime',
-  current_user: 'com_ui_special_var_current_user',
-  iso_datetime: 'com_ui_special_var_iso_datetime',
-};
-
-const specialVariableDescs: Record<string, string> = {
-  current_date: "Today's date and day of the week",
-  current_datetime: 'Local date and time in your timezone',
-  current_user: 'Your account display name',
-  iso_datetime: 'UTC datetime in ISO 8601 format',
-};
-
 const SpecialVariableChip = ({ parsed }: { parsed: ParsedVariable }) => {
   const localize = useLocalize();
-  const Icon = specialVariableIcons[parsed.name] || Sparkles;
-  const labelKey = specialVariableLabels[parsed.name];
-  const description = specialVariableDescs[parsed.name];
-  const displayLabel = labelKey ? localize(labelKey) : parsed.name;
+  const Icon = getSpecialVariableIcon(parsed.name);
+  const labelKey = `com_ui_special_var_${parsed.name}` as TSpecialVarLabel;
+  const descKey = `com_ui_special_var_desc_${parsed.name}`;
+  const displayLabel = localize(labelKey);
+  const description = localize(descKey);
 
   return (
     <div
@@ -151,15 +127,15 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border-light bg-surface-primary">
-      <header className="flex items-center justify-between border-b border-border-light bg-header-primary px-3 py-1.5">
+    <div className="overflow-hidden rounded-xl border border-border-light">
+      <header className="flex items-center justify-between border-b border-border-light p-3">
         <div className="flex items-center gap-2">
           <Variable className="size-4 text-text-secondary" aria-hidden="true" />
           <h4 className="text-sm font-semibold text-text-primary">
             {localize('com_ui_variables')}
           </h4>
         </div>
-        <span className="rounded-full bg-surface-tertiary px-2 py-0.5 text-xs font-medium tabular-nums text-text-secondary">
+        <span className="flex size-6 items-center justify-center rounded-full bg-surface-tertiary text-xs font-medium tabular-nums text-text-secondary">
           {variables.length}
         </span>
       </header>
