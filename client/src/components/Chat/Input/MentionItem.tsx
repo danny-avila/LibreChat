@@ -49,6 +49,7 @@ export default function MentionItem({
 
   return (
     <button
+      type="button"
       style={style}
       tabIndex={index}
       onClick={handleClick}
