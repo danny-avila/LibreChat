@@ -1,9 +1,10 @@
 import type Keyv from 'keyv';
 import { fromPairs } from 'lodash';
+import { logger } from '@librechat/data-schemas';
+import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
+import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { standardCache, keyvRedisClient } from '~/cache';
-import { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { BaseRegistryCache } from './BaseRegistryCache';
-import { IServerConfigsRepositoryInterface } from '../ServerConfigsRepositoryInterface';
 
 /**
  * Redis-backed implementation of MCP server configurations cache for distributed deployments.
@@ -64,6 +65,7 @@ export class ServerConfigsCacheRedis
       throw new Error('Redis client with scanIterator not available.');
     }
 
+    const startTime = Date.now();
     const pattern = `*${this.cache.namespace}:*`;
 
     const keys: string[] = [];
@@ -72,6 +74,7 @@ export class ServerConfigsCacheRedis
     }
 
     if (keys.length === 0) {
+      logger.debug(`[ServerConfigsCacheRedis] getAll(${this.namespace}): no keys found`);
       return {};
     }
 
@@ -89,6 +92,11 @@ export class ServerConfigsCacheRedis
         entries.push([keyNames[i], config]);
       }
     }
+
+    const elapsed = Date.now() - startTime;
+    logger.debug(
+      `[ServerConfigsCacheRedis] getAll(${this.namespace}): fetched ${entries.length} configs in ${elapsed}ms`,
+    );
 
     return fromPairs(entries);
   }
