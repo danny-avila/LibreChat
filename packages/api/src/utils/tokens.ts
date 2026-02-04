@@ -134,6 +134,42 @@ const deepseekModels = {
   'deepseek.r1': 128000,
 };
 
+const moonshotModels = {
+  // Base patterns (check last due to reverse iteration)
+  kimi: 262144,
+  moonshot: 131072,
+  // kimi-k2 series (specific patterns)
+  'kimi-latest': 128000,
+  'kimi-k2': 262144,
+  'kimi-k2.5': 262144,
+  'kimi-k2-turbo': 262144,
+  'kimi-k2-turbo-preview': 262144,
+  'kimi-k2-0905': 262144,
+  'kimi-k2-0905-preview': 262144,
+  'kimi-k2-0711': 131072,
+  'kimi-k2-0711-preview': 131072,
+  'kimi-k2-thinking': 262144,
+  'kimi-k2-thinking-turbo': 262144,
+  // moonshot-v1 series (specific patterns)
+  'moonshot-v1': 131072,
+  'moonshot-v1-auto': 131072,
+  'moonshot-v1-8k': 8192,
+  'moonshot-v1-8k-vision': 8192,
+  'moonshot-v1-8k-vision-preview': 8192,
+  'moonshot-v1-32k': 32768,
+  'moonshot-v1-32k-vision': 32768,
+  'moonshot-v1-32k-vision-preview': 32768,
+  'moonshot-v1-128k': 131072,
+  'moonshot-v1-128k-vision': 131072,
+  'moonshot-v1-128k-vision-preview': 131072,
+  // Bedrock moonshot models
+  'moonshot.kimi': 262144,
+  'moonshot.kimi-k2': 262144,
+  'moonshot.kimi-k2.5': 262144,
+  'moonshot.kimi-k2-thinking': 262144,
+  'moonshot.kimi-k2-0711': 131072,
+};
+
 const metaModels = {
   // Basic patterns
   llama3: 8000,
@@ -248,6 +284,7 @@ const bedrockModels = {
   ...mistralModels,
   ...cohereModels,
   ...deepseekModels,
+  ...moonshotModels,
   ...metaModels,
   ...ai21Models,
   ...amazonModels,
@@ -279,8 +316,6 @@ const aggregateModels = {
   ...bedrockModels,
   ...xAIModels,
   ...qwenModels,
-  // misc.
-  kimi: 131000,
   // GPT-OSS
   'gpt-oss': 131000,
   'gpt-oss:20b': 131000,

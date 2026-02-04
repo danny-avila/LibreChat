@@ -80,6 +80,11 @@ const bedrockValues = {
   'nova-pro': { prompt: 0.8, completion: 3.2 },
   'nova-premier': { prompt: 2.5, completion: 12.5 },
   'deepseek.r1': { prompt: 1.35, completion: 5.4 },
+  // Moonshot/Kimi models on Bedrock
+  'moonshot.kimi': { prompt: 0.6, completion: 2.5 },
+  'moonshot.kimi-k2': { prompt: 0.6, completion: 2.5 },
+  'moonshot.kimi-k2.5': { prompt: 0.6, completion: 3.0 },
+  'moonshot.kimi-k2-thinking': { prompt: 0.6, completion: 2.5 },
 };
 
 /**
@@ -189,7 +194,31 @@ const tokenValues = Object.assign(
     'pixtral-large': { prompt: 2.0, completion: 6.0 },
     'mistral-large': { prompt: 2.0, completion: 6.0 },
     'mixtral-8x22b': { prompt: 0.65, completion: 0.65 },
-    kimi: { prompt: 0.14, completion: 2.49 }, // Base pattern (using kimi-k2 pricing)
+    // Moonshot/Kimi models (base patterns first, specific patterns last for correct matching)
+    kimi: { prompt: 0.6, completion: 2.5 }, // Base pattern
+    moonshot: { prompt: 2.0, completion: 5.0 }, // Base pattern (using 128k pricing)
+    'kimi-latest': { prompt: 0.2, completion: 2.0 }, // Uses 8k/32k/128k pricing dynamically
+    'kimi-k2': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2.5': { prompt: 0.6, completion: 3.0 },
+    'kimi-k2-turbo': { prompt: 1.15, completion: 8.0 },
+    'kimi-k2-turbo-preview': { prompt: 1.15, completion: 8.0 },
+    'kimi-k2-0905': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2-0905-preview': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2-0711': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2-0711-preview': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2-thinking': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2-thinking-turbo': { prompt: 1.15, completion: 8.0 },
+    'moonshot-v1': { prompt: 2.0, completion: 5.0 },
+    'moonshot-v1-auto': { prompt: 2.0, completion: 5.0 },
+    'moonshot-v1-8k': { prompt: 0.2, completion: 2.0 },
+    'moonshot-v1-8k-vision': { prompt: 0.2, completion: 2.0 },
+    'moonshot-v1-8k-vision-preview': { prompt: 0.2, completion: 2.0 },
+    'moonshot-v1-32k': { prompt: 1.0, completion: 3.0 },
+    'moonshot-v1-32k-vision': { prompt: 1.0, completion: 3.0 },
+    'moonshot-v1-32k-vision-preview': { prompt: 1.0, completion: 3.0 },
+    'moonshot-v1-128k': { prompt: 2.0, completion: 5.0 },
+    'moonshot-v1-128k-vision': { prompt: 2.0, completion: 5.0 },
+    'moonshot-v1-128k-vision-preview': { prompt: 2.0, completion: 5.0 },
     // GPT-OSS models (specific sizes)
     'gpt-oss:20b': { prompt: 0.05, completion: 0.2 },
     'gpt-oss-20b': { prompt: 0.05, completion: 0.2 },
@@ -255,6 +284,18 @@ const cacheTokenValues = {
   deepseek: { write: 0.28, read: 0.028 },
   'deepseek-chat': { write: 0.28, read: 0.028 },
   'deepseek-reasoner': { write: 0.28, read: 0.028 },
+  // Moonshot/Kimi models - cache hit: $0.15/1M (k2) or $0.10/1M (k2.5), cache miss: $0.60/1M
+  kimi: { write: 0.6, read: 0.15 },
+  'kimi-k2': { write: 0.6, read: 0.15 },
+  'kimi-k2.5': { write: 0.6, read: 0.1 },
+  'kimi-k2-turbo': { write: 1.15, read: 0.15 },
+  'kimi-k2-turbo-preview': { write: 1.15, read: 0.15 },
+  'kimi-k2-0905': { write: 0.6, read: 0.15 },
+  'kimi-k2-0905-preview': { write: 0.6, read: 0.15 },
+  'kimi-k2-0711': { write: 0.6, read: 0.15 },
+  'kimi-k2-0711-preview': { write: 0.6, read: 0.15 },
+  'kimi-k2-thinking': { write: 0.6, read: 0.15 },
+  'kimi-k2-thinking-turbo': { write: 1.15, read: 0.15 },
 };
 
 /**

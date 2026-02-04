@@ -881,6 +881,193 @@ describe('Deepseek Model Tests', () => {
   });
 });
 
+describe('Moonshot/Kimi Model Tests - Pricing', () => {
+  describe('Kimi Models', () => {
+    it('should return correct pricing for kimi base pattern', () => {
+      expect(getMultiplier({ model: 'kimi', tokenType: 'prompt' })).toBe(
+        tokenValues['kimi'].prompt,
+      );
+      expect(getMultiplier({ model: 'kimi', tokenType: 'completion' })).toBe(
+        tokenValues['kimi'].completion,
+      );
+    });
+
+    it('should return correct pricing for kimi-k2.5', () => {
+      expect(getMultiplier({ model: 'kimi-k2.5', tokenType: 'prompt' })).toBe(
+        tokenValues['kimi-k2.5'].prompt,
+      );
+      expect(getMultiplier({ model: 'kimi-k2.5', tokenType: 'completion' })).toBe(
+        tokenValues['kimi-k2.5'].completion,
+      );
+    });
+
+    it('should return correct pricing for kimi-k2 series', () => {
+      expect(getMultiplier({ model: 'kimi-k2', tokenType: 'prompt' })).toBe(
+        tokenValues['kimi-k2'].prompt,
+      );
+      expect(getMultiplier({ model: 'kimi-k2', tokenType: 'completion' })).toBe(
+        tokenValues['kimi-k2'].completion,
+      );
+    });
+
+    it('should return correct pricing for kimi-k2-turbo (higher pricing)', () => {
+      expect(getMultiplier({ model: 'kimi-k2-turbo', tokenType: 'prompt' })).toBe(
+        tokenValues['kimi-k2-turbo'].prompt,
+      );
+      expect(getMultiplier({ model: 'kimi-k2-turbo', tokenType: 'completion' })).toBe(
+        tokenValues['kimi-k2-turbo'].completion,
+      );
+    });
+
+    it('should return correct pricing for kimi-k2-thinking models', () => {
+      expect(getMultiplier({ model: 'kimi-k2-thinking', tokenType: 'prompt' })).toBe(
+        tokenValues['kimi-k2-thinking'].prompt,
+      );
+      expect(getMultiplier({ model: 'kimi-k2-thinking', tokenType: 'completion' })).toBe(
+        tokenValues['kimi-k2-thinking'].completion,
+      );
+      expect(getMultiplier({ model: 'kimi-k2-thinking-turbo', tokenType: 'prompt' })).toBe(
+        tokenValues['kimi-k2-thinking-turbo'].prompt,
+      );
+      expect(getMultiplier({ model: 'kimi-k2-thinking-turbo', tokenType: 'completion' })).toBe(
+        tokenValues['kimi-k2-thinking-turbo'].completion,
+      );
+    });
+
+    it('should handle Kimi model variations with provider prefixes', () => {
+      const modelVariations = ['openrouter/kimi-k2', 'openrouter/kimi-k2.5', 'openrouter/kimi'];
+
+      modelVariations.forEach((model) => {
+        const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
+        const completionMultiplier = getMultiplier({ model, tokenType: 'completion' });
+        expect(promptMultiplier).toBe(tokenValues['kimi'].prompt);
+        expect([tokenValues['kimi'].completion, tokenValues['kimi-k2.5'].completion]).toContain(
+          completionMultiplier,
+        );
+      });
+    });
+  });
+
+  describe('Moonshot Models', () => {
+    it('should return correct pricing for moonshot base pattern (128k pricing)', () => {
+      expect(getMultiplier({ model: 'moonshot', tokenType: 'prompt' })).toBe(
+        tokenValues['moonshot'].prompt,
+      );
+      expect(getMultiplier({ model: 'moonshot', tokenType: 'completion' })).toBe(
+        tokenValues['moonshot'].completion,
+      );
+    });
+
+    it('should return correct pricing for moonshot-v1-8k', () => {
+      expect(getMultiplier({ model: 'moonshot-v1-8k', tokenType: 'prompt' })).toBe(
+        tokenValues['moonshot-v1-8k'].prompt,
+      );
+      expect(getMultiplier({ model: 'moonshot-v1-8k', tokenType: 'completion' })).toBe(
+        tokenValues['moonshot-v1-8k'].completion,
+      );
+    });
+
+    it('should return correct pricing for moonshot-v1-32k', () => {
+      expect(getMultiplier({ model: 'moonshot-v1-32k', tokenType: 'prompt' })).toBe(
+        tokenValues['moonshot-v1-32k'].prompt,
+      );
+      expect(getMultiplier({ model: 'moonshot-v1-32k', tokenType: 'completion' })).toBe(
+        tokenValues['moonshot-v1-32k'].completion,
+      );
+    });
+
+    it('should return correct pricing for moonshot-v1-128k', () => {
+      expect(getMultiplier({ model: 'moonshot-v1-128k', tokenType: 'prompt' })).toBe(
+        tokenValues['moonshot-v1-128k'].prompt,
+      );
+      expect(getMultiplier({ model: 'moonshot-v1-128k', tokenType: 'completion' })).toBe(
+        tokenValues['moonshot-v1-128k'].completion,
+      );
+    });
+
+    it('should return correct pricing for moonshot-v1 vision models', () => {
+      expect(getMultiplier({ model: 'moonshot-v1-8k-vision', tokenType: 'prompt' })).toBe(
+        tokenValues['moonshot-v1-8k-vision'].prompt,
+      );
+      expect(getMultiplier({ model: 'moonshot-v1-8k-vision', tokenType: 'completion' })).toBe(
+        tokenValues['moonshot-v1-8k-vision'].completion,
+      );
+      expect(getMultiplier({ model: 'moonshot-v1-32k-vision', tokenType: 'prompt' })).toBe(
+        tokenValues['moonshot-v1-32k-vision'].prompt,
+      );
+      expect(getMultiplier({ model: 'moonshot-v1-32k-vision', tokenType: 'completion' })).toBe(
+        tokenValues['moonshot-v1-32k-vision'].completion,
+      );
+      expect(getMultiplier({ model: 'moonshot-v1-128k-vision', tokenType: 'prompt' })).toBe(
+        tokenValues['moonshot-v1-128k-vision'].prompt,
+      );
+      expect(getMultiplier({ model: 'moonshot-v1-128k-vision', tokenType: 'completion' })).toBe(
+        tokenValues['moonshot-v1-128k-vision'].completion,
+      );
+    });
+  });
+
+  describe('Kimi Cache Multipliers', () => {
+    it('should return correct cache multipliers for kimi-k2 models', () => {
+      expect(getCacheMultiplier({ model: 'kimi', cacheType: 'write' })).toBe(
+        cacheTokenValues['kimi'].write,
+      );
+      expect(getCacheMultiplier({ model: 'kimi', cacheType: 'read' })).toBe(
+        cacheTokenValues['kimi'].read,
+      );
+    });
+
+    it('should return correct cache multipliers for kimi-k2.5 (lower read price)', () => {
+      expect(getCacheMultiplier({ model: 'kimi-k2.5', cacheType: 'write' })).toBe(
+        cacheTokenValues['kimi-k2.5'].write,
+      );
+      expect(getCacheMultiplier({ model: 'kimi-k2.5', cacheType: 'read' })).toBe(
+        cacheTokenValues['kimi-k2.5'].read,
+      );
+    });
+
+    it('should return correct cache multipliers for kimi-k2-turbo', () => {
+      expect(getCacheMultiplier({ model: 'kimi-k2-turbo', cacheType: 'write' })).toBe(
+        cacheTokenValues['kimi-k2-turbo'].write,
+      );
+      expect(getCacheMultiplier({ model: 'kimi-k2-turbo', cacheType: 'read' })).toBe(
+        cacheTokenValues['kimi-k2-turbo'].read,
+      );
+    });
+
+    it('should handle Kimi cache multipliers with model variations', () => {
+      const modelVariations = ['openrouter/kimi-k2', 'openrouter/kimi'];
+
+      modelVariations.forEach((model) => {
+        const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
+        const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+        expect(writeMultiplier).toBe(cacheTokenValues['kimi'].write);
+        expect(readMultiplier).toBe(cacheTokenValues['kimi'].read);
+      });
+    });
+  });
+
+  describe('Bedrock Moonshot Models', () => {
+    it('should return correct pricing for Bedrock moonshot models', () => {
+      expect(getMultiplier({ model: 'moonshot.kimi', tokenType: 'prompt' })).toBe(
+        tokenValues['moonshot.kimi'].prompt,
+      );
+      expect(getMultiplier({ model: 'moonshot.kimi', tokenType: 'completion' })).toBe(
+        tokenValues['moonshot.kimi'].completion,
+      );
+      expect(getMultiplier({ model: 'moonshot.kimi-k2', tokenType: 'prompt' })).toBe(
+        tokenValues['moonshot.kimi-k2'].prompt,
+      );
+      expect(getMultiplier({ model: 'moonshot.kimi-k2.5', tokenType: 'prompt' })).toBe(
+        tokenValues['moonshot.kimi-k2.5'].prompt,
+      );
+      expect(getMultiplier({ model: 'moonshot.kimi-k2.5', tokenType: 'completion' })).toBe(
+        tokenValues['moonshot.kimi-k2.5'].completion,
+      );
+    });
+  });
+});
+
 describe('Qwen3 Model Tests', () => {
   describe('Qwen3 Base Models', () => {
     it('should return correct pricing for qwen3 base pattern', () => {
