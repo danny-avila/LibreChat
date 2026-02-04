@@ -374,9 +374,6 @@ endpoints:
       # Summary Model: Specify the model to use if summarization is enabled.
       # summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
 
-      # Force Prompt setting: If true, sends a `prompt` parameter instead of `messages`.
-      # forcePrompt: false
-
       # The label displayed for the AI model in messages.
       modelDisplayLabel: 'Mistral' # Default is "AI" when not set.
 
@@ -436,7 +433,6 @@ endpoints:
       titleModel: 'current_model'
       summarize: false
       summaryModel: 'current_model'
-      forcePrompt: false
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 
