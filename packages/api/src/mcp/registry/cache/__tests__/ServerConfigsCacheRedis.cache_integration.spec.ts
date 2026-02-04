@@ -270,9 +270,9 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
     });
   });
 
-  describe('getAll MGET optimization', () => {
-    it('should handle many configs efficiently with MGET batching', async () => {
-      const testCache = new ServerConfigsCacheRedis('mget-test', false);
+  describe('getAll parallel fetching', () => {
+    it('should handle many configs efficiently with parallel fetching', async () => {
+      const testCache = new ServerConfigsCacheRedis('parallel-test', false);
       const configCount = 20;
 
       for (let i = 0; i < configCount; i++) {
@@ -388,9 +388,6 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
       }
 
       expect(elapsed).toBeLessThan(maxAllowedMs);
-      console.log(
-        `[PERF] ${concurrentRequests} concurrent getAll() with ${configCount} configs: ${elapsed}ms`,
-      );
     });
   });
 });

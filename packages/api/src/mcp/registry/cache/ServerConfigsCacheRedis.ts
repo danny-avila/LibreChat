@@ -13,6 +13,8 @@ import { BaseRegistryCache } from './BaseRegistryCache';
  * Supports optional leader-only write operations to prevent race conditions during initialization.
  * Data persists across server restarts and is accessible from any instance in the cluster.
  */
+const BATCH_SIZE = 100;
+
 export class ServerConfigsCacheRedis
   extends BaseRegistryCache
   implements IServerConfigsRepositoryInterface
@@ -83,13 +85,22 @@ export class ServerConfigsCacheRedis
       return key.substring(lastColonIndex + 1);
     });
 
-    const configs = await Promise.all(keyNames.map((keyName) => this.cache.get(keyName)));
-
     const entries: Array<[string, ParsedServerConfig]> = [];
-    for (let i = 0; i < keyNames.length; i++) {
-      const config = configs[i] as ParsedServerConfig | undefined;
-      if (config) {
-        entries.push([keyNames[i], config]);
+
+    for (let i = 0; i < keyNames.length; i += BATCH_SIZE) {
+      const batchEnd = Math.min(i + BATCH_SIZE, keyNames.length);
+      const promises: Promise<ParsedServerConfig | undefined>[] = [];
+
+      for (let j = i; j < batchEnd; j++) {
+        promises.push(this.cache.get(keyNames[j]));
+      }
+
+      const configs = await Promise.all(promises);
+
+      for (let j = 0; j < configs.length; j++) {
+        if (configs[j]) {
+          entries.push([keyNames[i + j], configs[j]!]);
+        }
       }
     }
 

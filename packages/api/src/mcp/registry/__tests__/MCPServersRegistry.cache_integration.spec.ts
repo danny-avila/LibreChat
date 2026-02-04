@@ -254,7 +254,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
 
       const results = await Promise.all(promises);
 
-      expect(cacheRepoGetAllSpy.mock.calls.length).toBeLessThanOrEqual(2);
+      expect(cacheRepoGetAllSpy.mock.calls.length).toBe(1);
 
       for (const result of results) {
         expect(Object.keys(result).length).toBe(3);
@@ -277,7 +277,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
         registry.getAllServerConfigs('user1'),
       ]);
 
-      expect(cacheRepoGetAllSpy.mock.calls.length).toBeLessThanOrEqual(3);
+      expect(cacheRepoGetAllSpy.mock.calls.length).toBe(2);
 
       expect(Object.keys(result1)).toContain('shared_server');
       expect(Object.keys(result2)).toContain('shared_server');
