@@ -38,31 +38,29 @@ const {
   defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
-
-const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 const {
   createActionTool,
   decryptMetadata,
   loadActionSets,
   domainParser,
 } = require('./ActionService');
-const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const {
   getEndpointsConfig,
-  getCachedTools,
   getMCPServerTools,
+  getCachedTools,
 } = require('~/server/services/Config');
-const { getFlowStateManager } = require('~/config');
-const { getLogStores } = require('~/cache');
+const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
+const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
-const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { redactMessage } = require('~/config/parsers');
 const { findPluginAuthsByKeys } = require('~/models');
+const { getFlowStateManager } = require('~/config');
+const { getLogStores } = require('~/cache');
 /**
  * Processes the required actions by calling the appropriate tools and returning the outputs.
  * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
@@ -588,6 +586,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
       const { functionSignatures } = openapiToFunction(validationResult.spec, true);
 
+      const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
       for (const sig of functionSignatures) {
         const toolName = `${sig.name}${actionDelimiter}${normalizedDomain}`;
         if (!actionToolNames.some((name) => name.replace(domainSeparatorRegex, '_') === toolName)) {
@@ -1142,13 +1141,11 @@ async function loadToolsForExecution({
   const regularToolNames = allToolNamesToLoad.filter((name) => !name.includes(actionDelimiter));
 
   /** @type {Record<string, unknown>} */
-  let regularToolContextMap = {};
-
   if (regularToolNames.length > 0) {
     const includesWebSearch = regularToolNames.includes(Tools.web_search);
     const webSearchCallbacks = includesWebSearch ? createOnSearchResults(res, streamId) : undefined;
 
-    const { loadedTools, toolContextMap: loadedToolContextMap } = await loadTools({
+    const { loadedTools } = await loadTools({
       agent,
       signal,
       userMCPAuthMap,
@@ -1158,10 +1155,10 @@ async function loadToolsForExecution({
       options: {
         req,
         res,
+        tool_resources,
         processFileURL,
         uploadImageBuffer,
         returnMetadata: true,
-        tool_resources,
         [Tools.web_search]: webSearchCallbacks,
       },
       webSearch: appConfig?.webSearch,
@@ -1171,9 +1168,6 @@ async function loadToolsForExecution({
 
     if (loadedTools) {
       allLoadedTools.push(...loadedTools);
-    }
-    if (loadedToolContextMap) {
-      regularToolContextMap = loadedToolContextMap;
     }
   }
 
@@ -1202,7 +1196,6 @@ async function loadToolsForExecution({
   return {
     configurable,
     loadedTools: allLoadedTools,
-    toolContextMap: regularToolContextMap,
   };
 }
 
@@ -1306,6 +1299,7 @@ async function loadActionToolsForExecution({
 
     const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
       processedActionSets.get(currentDomain);
+    const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
     const normalizedDomain = currentDomain.replace(domainSeparatorRegex, '_');
     const functionName = toolName.replace(`${actionDelimiter}${normalizedDomain}`, '');
     const functionSig = functionSignatures.find((sig) => sig.name === functionName);
