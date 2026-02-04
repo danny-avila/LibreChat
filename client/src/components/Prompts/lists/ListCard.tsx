@@ -1,6 +1,6 @@
 import React from 'react';
 import { Label } from '@librechat/client';
-import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
+import CategoryIcon from '../utils/CategoryIcon';
 import { useLocalize } from '~/hooks';
 
 export default function ListCard({
@@ -9,12 +9,14 @@ export default function ListCard({
   snippet,
   onClick,
   children,
+  icon,
 }: {
   category: string;
   name: string;
   snippet: string;
   onClick?: React.MouseEventHandler<HTMLDivElement | HTMLButtonElement>;
   children?: React.ReactNode;
+  icon?: React.ReactNode;
 }) {
   const localize = useLocalize();
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement | HTMLButtonElement>) => {
@@ -36,15 +38,16 @@ export default function ListCard({
       aria-label={`${name} Prompt, ${category ? `${localize('com_ui_category')}: ${category}` : ''}`}
     >
       <div className="flex w-full justify-between gap-2">
-        <div className="flex flex-row gap-2">
-          <CategoryIcon category={category} className="icon-md" aria-hidden="true" />
+        <div className="flex min-w-0 flex-1 flex-row items-center gap-2">
+          <CategoryIcon category={category} className="icon-md shrink-0" aria-hidden="true" />
           <Label
             id={`card-title-${name}`}
-            className="break-word select-none text-balance text-sm font-semibold text-text-primary"
+            className="min-w-0 select-none truncate text-sm font-semibold text-text-primary"
             title={name}
           >
             {name}
           </Label>
+          {icon}
         </div>
         <div>{children}</div>
       </div>

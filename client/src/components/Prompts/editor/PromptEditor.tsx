@@ -11,7 +11,7 @@ import { SaveIcon, CrossIcon, TextareaAutosize } from '@librechat/client';
 import { Controller, useFormContext, useFormState } from 'react-hook-form';
 import type { PluggableList } from 'unified';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
-import AlwaysMakeProd from '~/components/Prompts/Groups/AlwaysMakeProd';
+import AlwaysMakeProd from '../buttons/AlwaysMakeProd';
 import VariablesDropdown from './VariablesDropdown';
 import { PromptVariableGfm } from './Markdown';
 import { PromptsEditorMode } from '~/common';
