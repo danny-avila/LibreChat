@@ -26,20 +26,18 @@ const DeleteConfirmDialog = ({
       <OGDialogTrigger asChild>
         <TooltipAnchor
           description={localize('com_ui_delete')}
-          side="top"
+          side="bottom"
           render={
             <Button
-              variant="outline"
-              size="sm"
+              variant="destructive"
+              size="icon"
               aria-label={localize('com_ui_delete')}
-              className="h-9 gap-2 border-border-medium text-text-primary hover:border-red-500 hover:bg-red-500/10 hover:text-red-500"
               disabled={disabled}
               onClick={(e) => {
                 e.stopPropagation();
               }}
             >
               <Trash2 className="size-4" aria-hidden="true" />
-              <span>{localize('com_ui_delete')}</span>
             </Button>
           }
         />
