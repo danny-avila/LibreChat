@@ -60,25 +60,34 @@ export class ServerConfigsCacheRedis
   }
 
   public async getAll(): Promise<Record<string, ParsedServerConfig>> {
-    // Use Redis SCAN iterator directly (non-blocking, production-ready)
-    // Note: Keyv uses a single colon ':' between namespace and key, even if GLOBAL_PREFIX_SEPARATOR is '::'
-    const pattern = `*${this.cache.namespace}:*`;
-    const entries: Array<[string, ParsedServerConfig]> = [];
-
-    // Use scanIterator from Redis client
-    if (keyvRedisClient && 'scanIterator' in keyvRedisClient) {
-      for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
-        // Extract the actual key name (last part after final colon)
-        // Full key format: "prefix::namespace:keyName"
-        const lastColonIndex = key.lastIndexOf(':');
-        const keyName = key.substring(lastColonIndex + 1);
-        const config = (await this.cache.get(keyName)) as ParsedServerConfig | undefined;
-        if (config) {
-          entries.push([keyName, config]);
-        }
-      }
-    } else {
+    if (!keyvRedisClient || !('scanIterator' in keyvRedisClient)) {
       throw new Error('Redis client with scanIterator not available.');
+    }
+
+    const pattern = `*${this.cache.namespace}:*`;
+
+    const keys: string[] = [];
+    for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
+      keys.push(key);
+    }
+
+    if (keys.length === 0) {
+      return {};
+    }
+
+    const keyNames = keys.map((key) => {
+      const lastColonIndex = key.lastIndexOf(':');
+      return key.substring(lastColonIndex + 1);
+    });
+
+    const configs = await Promise.all(keyNames.map((keyName) => this.cache.get(keyName)));
+
+    const entries: Array<[string, ParsedServerConfig]> = [];
+    for (let i = 0; i < keyNames.length; i++) {
+      const config = configs[i] as ParsedServerConfig | undefined;
+      if (config) {
+        entries.push([keyNames[i], config]);
+      }
     }
 
     return fromPairs(entries);
