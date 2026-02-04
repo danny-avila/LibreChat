@@ -42,6 +42,7 @@ export type InitializedAgent = Agent & {
   maxContextTokens: number;
   useLegacyContent: boolean;
   resendFiles: boolean;
+  tool_resources?: AgentToolResources;
   userMCPAuthMap?: Record<string, Record<string, string>>;
   /** Tool map for ToolNode to use when executing tools (required for PTC) */
   toolMap?: ToolMap;
@@ -402,15 +403,16 @@ export async function initializeAgent(
 
   const initializedAgent: InitializedAgent = {
     ...agent,
-    tools: (tools ?? []) as GenericTool[] & string[],
-    attachments: finalAttachments,
     resendFiles,
-    userMCPAuthMap,
     toolRegistry,
+    tool_resources,
+    userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
+    tools: (tools ?? []) as GenericTool[] & string[],
     maxContextTokens: Math.round((agentMaxContextNum - maxOutputTokensNum) * 0.9),
   };
 

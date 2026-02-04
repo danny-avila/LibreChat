@@ -1,3 +1,5 @@
+const { logger } = require('@librechat/data-schemas');
+const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
   sleep,
   EnvVar,
@@ -7,8 +9,6 @@ const {
   Constants: AgentConstants,
   createProgrammaticToolCallingTool,
 } = require('@librechat/agents');
-const { logger } = require('@librechat/data-schemas');
-const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
   sendEvent,
   getToolkitKey,
@@ -38,22 +38,20 @@ const {
   defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
-
-const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 const {
   createActionTool,
   decryptMetadata,
   loadActionSets,
   domainParser,
 } = require('./ActionService');
-const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const {
   getEndpointsConfig,
-  getCachedTools,
   getMCPServerTools,
+  getCachedTools,
 } = require('~/server/services/Config');
-const { getFlowStateManager } = require('~/config');
-const { getLogStores } = require('~/cache');
+const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
+const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
+const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -62,6 +60,8 @@ const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { findPluginAuthsByKeys } = require('~/models');
+const { getFlowStateManager } = require('~/config');
+const { getLogStores } = require('~/cache');
 /**
  * Processes the required actions by calling the appropriate tools and returning the outputs.
  * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
@@ -428,7 +428,7 @@ const isBuiltInTool = (toolName) =>
  *   hasDeferredTools?: boolean;
  * }>}
  */
-async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null }) {
+async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, tool_resources }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
   }
@@ -587,6 +587,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null }) 
 
       const { functionSignatures } = openapiToFunction(validationResult.spec, true);
 
+      const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
       for (const sig of functionSignatures) {
         const toolName = `${sig.name}${actionDelimiter}${normalizedDomain}`;
         if (!actionToolNames.some((name) => name.replace(domainSeparatorRegex, '_') === toolName)) {
@@ -679,9 +680,52 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null }) 
     }
   }
 
+  /** @type {Record<string, string>} */
+  const toolContextMap = {};
+  const hasFileSearch = filteredTools.includes(Tools.file_search);
+  const hasExecuteCode = filteredTools.includes(Tools.execute_code);
+
+  if (hasExecuteCode && tool_resources) {
+    try {
+      const authValues = await loadAuthValues({
+        userId: req.user.id,
+        authFields: [EnvVar.CODE_API_KEY],
+      });
+      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+
+      if (codeApiKey) {
+        const { toolContext } = await primeCodeFiles(
+          { req, tool_resources, agentId: agent.id },
+          codeApiKey,
+        );
+        if (toolContext) {
+          toolContextMap[Tools.execute_code] = toolContext;
+        }
+      }
+    } catch (error) {
+      logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
+    }
+  }
+
+  if (hasFileSearch && tool_resources) {
+    try {
+      const { toolContext } = await primeSearchFiles({
+        req,
+        tool_resources,
+        agentId: agent.id,
+      });
+      if (toolContext) {
+        toolContextMap[Tools.file_search] = toolContext;
+      }
+    } catch (error) {
+      logger.error('[loadToolDefinitionsWrapper] Error priming search files:', error);
+    }
+  }
+
   return {
     toolRegistry,
     userMCPAuthMap,
+    toolContextMap,
     toolDefinitions,
     hasDeferredTools,
   };
@@ -712,7 +756,7 @@ async function loadAgentTools({
   definitionsOnly = true,
 }) {
   if (definitionsOnly) {
-    return loadToolDefinitionsWrapper({ req, res, agent, streamId });
+    return loadToolDefinitionsWrapper({ req, res, agent, streamId, tool_resources });
   }
 
   if (!agent.tools || agent.tools.length === 0) {
@@ -1112,6 +1156,7 @@ async function loadToolsForExecution({
   const actionToolNames = allToolNamesToLoad.filter((name) => name.includes(actionDelimiter));
   const regularToolNames = allToolNamesToLoad.filter((name) => !name.includes(actionDelimiter));
 
+  /** @type {Record<string, unknown>} */
   if (regularToolNames.length > 0) {
     const includesWebSearch = regularToolNames.includes(Tools.web_search);
     const webSearchCallbacks = includesWebSearch ? createOnSearchResults(res, streamId) : undefined;
@@ -1126,10 +1171,10 @@ async function loadToolsForExecution({
       options: {
         req,
         res,
+        tool_resources,
         processFileURL,
         uploadImageBuffer,
         returnMetadata: true,
-        tool_resources,
         [Tools.web_search]: webSearchCallbacks,
       },
       webSearch: appConfig?.webSearch,
@@ -1270,6 +1315,7 @@ async function loadActionToolsForExecution({
 
     const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
       processedActionSets.get(currentDomain);
+    const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
     const normalizedDomain = currentDomain.replace(domainSeparatorRegex, '_');
     const functionName = toolName.replace(`${actionDelimiter}${normalizedDomain}`, '');
     const functionSig = functionSignatures.find((sig) => sig.name === functionName);
