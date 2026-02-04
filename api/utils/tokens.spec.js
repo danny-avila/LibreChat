@@ -1064,44 +1064,149 @@ describe('Claude Model Tests', () => {
   });
 });
 
-describe('Kimi Model Tests', () => {
+describe('Moonshot/Kimi Model Tests', () => {
   describe('getModelMaxTokens', () => {
-    test('should return correct tokens for Kimi models', () => {
-      expect(getModelMaxTokens('kimi')).toBe(131000);
-      expect(getModelMaxTokens('kimi-k2')).toBe(131000);
-      expect(getModelMaxTokens('kimi-vl')).toBe(131000);
+    test('should return correct tokens for kimi-k2.5 (multi-modal)', () => {
+      expect(getModelMaxTokens('kimi-k2.5')).toBe(maxTokensMap[EModelEndpoint.openAI]['kimi-k2.5']);
+      expect(getModelMaxTokens('kimi-k2.5-latest')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2.5'],
+      );
     });
 
-    test('should return correct tokens for Kimi models with provider prefix', () => {
-      expect(getModelMaxTokens('moonshotai/kimi-k2')).toBe(131000);
-      expect(getModelMaxTokens('moonshotai/kimi')).toBe(131000);
-      expect(getModelMaxTokens('moonshotai/kimi-vl')).toBe(131000);
+    test('should return correct tokens for kimi-k2 series models', () => {
+      expect(getModelMaxTokens('kimi')).toBe(maxTokensMap[EModelEndpoint.openAI]['kimi']);
+      expect(getModelMaxTokens('kimi-k2')).toBe(maxTokensMap[EModelEndpoint.openAI]['kimi-k2']);
+      expect(getModelMaxTokens('kimi-k2-turbo')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2-turbo'],
+      );
+      expect(getModelMaxTokens('kimi-k2-turbo-preview')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2-turbo-preview'],
+      );
+      expect(getModelMaxTokens('kimi-k2-0905')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2-0905'],
+      );
+      expect(getModelMaxTokens('kimi-k2-0905-preview')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2-0905-preview'],
+      );
+      expect(getModelMaxTokens('kimi-k2-thinking')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2-thinking'],
+      );
+      expect(getModelMaxTokens('kimi-k2-thinking-turbo')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2-thinking-turbo'],
+      );
     });
 
-    test('should handle partial matches for Kimi models', () => {
-      expect(getModelMaxTokens('kimi-k2-latest')).toBe(131000);
-      expect(getModelMaxTokens('kimi-vl-preview')).toBe(131000);
-      expect(getModelMaxTokens('kimi-2024')).toBe(131000);
+    test('should return correct tokens for kimi-k2-0711 (smaller context)', () => {
+      expect(getModelMaxTokens('kimi-k2-0711')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2-0711'],
+      );
+      expect(getModelMaxTokens('kimi-k2-0711-preview')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2-0711-preview'],
+      );
+    });
+
+    test('should return correct tokens for kimi-latest', () => {
+      expect(getModelMaxTokens('kimi-latest')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-latest'],
+      );
+    });
+
+    test('should return correct tokens for moonshot-v1 series models', () => {
+      expect(getModelMaxTokens('moonshot')).toBe(maxTokensMap[EModelEndpoint.openAI]['moonshot']);
+      expect(getModelMaxTokens('moonshot-v1')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1'],
+      );
+      expect(getModelMaxTokens('moonshot-v1-auto')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-auto'],
+      );
+      expect(getModelMaxTokens('moonshot-v1-8k')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-8k'],
+      );
+      expect(getModelMaxTokens('moonshot-v1-8k-vision')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-8k-vision'],
+      );
+      expect(getModelMaxTokens('moonshot-v1-8k-vision-preview')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-8k-vision-preview'],
+      );
+      expect(getModelMaxTokens('moonshot-v1-32k')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-32k'],
+      );
+      expect(getModelMaxTokens('moonshot-v1-32k-vision')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-32k-vision'],
+      );
+      expect(getModelMaxTokens('moonshot-v1-32k-vision-preview')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-32k-vision-preview'],
+      );
+      expect(getModelMaxTokens('moonshot-v1-128k')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-128k'],
+      );
+      expect(getModelMaxTokens('moonshot-v1-128k-vision')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-128k-vision'],
+      );
+      expect(getModelMaxTokens('moonshot-v1-128k-vision-preview')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-128k-vision-preview'],
+      );
+    });
+
+    test('should return correct tokens for Bedrock moonshot models', () => {
+      expect(getModelMaxTokens('moonshot.kimi', EModelEndpoint.bedrock)).toBe(
+        maxTokensMap[EModelEndpoint.bedrock]['moonshot.kimi'],
+      );
+      expect(getModelMaxTokens('moonshot.kimi-k2', EModelEndpoint.bedrock)).toBe(
+        maxTokensMap[EModelEndpoint.bedrock]['moonshot.kimi-k2'],
+      );
+      expect(getModelMaxTokens('moonshot.kimi-k2.5', EModelEndpoint.bedrock)).toBe(
+        maxTokensMap[EModelEndpoint.bedrock]['moonshot.kimi-k2.5'],
+      );
+      expect(getModelMaxTokens('moonshot.kimi-k2-thinking', EModelEndpoint.bedrock)).toBe(
+        maxTokensMap[EModelEndpoint.bedrock]['moonshot.kimi-k2-thinking'],
+      );
+      expect(getModelMaxTokens('moonshot.kimi-k2-0711', EModelEndpoint.bedrock)).toBe(
+        maxTokensMap[EModelEndpoint.bedrock]['moonshot.kimi-k2-0711'],
+      );
+    });
+
+    test('should handle Moonshot/Kimi models with provider prefixes', () => {
+      expect(getModelMaxTokens('openrouter/kimi-k2')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2'],
+      );
+      expect(getModelMaxTokens('openrouter/kimi-k2.5')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2.5'],
+      );
+      expect(getModelMaxTokens('openrouter/kimi-k2-turbo')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['kimi-k2-turbo'],
+      );
+      expect(getModelMaxTokens('openrouter/moonshot-v1-128k')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['moonshot-v1-128k'],
+      );
     });
   });
 
   describe('matchModelName', () => {
     test('should match exact Kimi model names', () => {
       expect(matchModelName('kimi')).toBe('kimi');
-      expect(matchModelName('kimi-k2')).toBe('kimi');
-      expect(matchModelName('kimi-vl')).toBe('kimi');
+      expect(matchModelName('kimi-k2')).toBe('kimi-k2');
+      expect(matchModelName('kimi-k2.5')).toBe('kimi-k2.5');
+      expect(matchModelName('kimi-k2-turbo')).toBe('kimi-k2-turbo');
+      expect(matchModelName('kimi-k2-0711')).toBe('kimi-k2-0711');
+    });
+
+    test('should match moonshot model names', () => {
+      expect(matchModelName('moonshot')).toBe('moonshot');
+      expect(matchModelName('moonshot-v1-8k')).toBe('moonshot-v1-8k');
+      expect(matchModelName('moonshot-v1-32k')).toBe('moonshot-v1-32k');
+      expect(matchModelName('moonshot-v1-128k')).toBe('moonshot-v1-128k');
     });
 
     test('should match Kimi model variations with provider prefix', () => {
-      expect(matchModelName('moonshotai/kimi')).toBe('kimi');
-      expect(matchModelName('moonshotai/kimi-k2')).toBe('kimi');
-      expect(matchModelName('moonshotai/kimi-vl')).toBe('kimi');
+      expect(matchModelName('openrouter/kimi')).toBe('kimi');
+      expect(matchModelName('openrouter/kimi-k2')).toBe('kimi-k2');
+      expect(matchModelName('openrouter/kimi-k2.5')).toBe('kimi-k2.5');
     });
 
     test('should match Kimi model variations with suffixes', () => {
-      expect(matchModelName('kimi-k2-latest')).toBe('kimi');
-      expect(matchModelName('kimi-vl-preview')).toBe('kimi');
-      expect(matchModelName('kimi-2024')).toBe('kimi');
+      expect(matchModelName('kimi-k2-latest')).toBe('kimi-k2');
+      expect(matchModelName('kimi-k2.5-preview')).toBe('kimi-k2.5');
     });
   });
 });

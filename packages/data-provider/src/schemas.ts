@@ -38,6 +38,7 @@ export enum Providers {
   MISTRALAI = 'mistralai',
   MISTRAL = 'mistral',
   DEEPSEEK = 'deepseek',
+  MOONSHOT = 'moonshot',
   OPENROUTER = 'openrouter',
   XAI = 'xai',
 }
@@ -56,6 +57,7 @@ export const documentSupportedProviders = new Set<string>([
   Providers.MISTRALAI,
   Providers.MISTRAL,
   Providers.DEEPSEEK,
+  Providers.MOONSHOT,
   Providers.OPENROUTER,
   Providers.XAI,
 ]);
@@ -67,6 +69,7 @@ const openAILikeProviders = new Set<string>([
   Providers.MISTRALAI,
   Providers.MISTRAL,
   Providers.DEEPSEEK,
+  Providers.MOONSHOT,
   Providers.OPENROUTER,
   Providers.XAI,
 ]);
