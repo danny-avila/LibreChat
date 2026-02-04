@@ -80,10 +80,8 @@ export class ServerConfigsCacheRedis
       return {};
     }
 
-    const keyNames = keys.map((key) => {
-      const lastColonIndex = key.lastIndexOf(':');
-      return key.substring(lastColonIndex + 1);
-    });
+    /** Extract keyName from full Redis key format: "prefix::namespace:keyName" */
+    const keyNames = keys.map((key) => key.substring(key.lastIndexOf(':') + 1));
 
     const entries: Array<[string, ParsedServerConfig]> = [];
 
