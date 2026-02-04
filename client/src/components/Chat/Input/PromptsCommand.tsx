@@ -48,7 +48,7 @@ const PopoverContainer = memo(
   },
 );
 
-const ROW_HEIGHT = 40;
+const ROW_HEIGHT = 44;
 
 function PromptsCommand({
   index,

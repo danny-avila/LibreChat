@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Clock4 } from 'lucide-react';
 import { cn } from '~/utils';
 
@@ -23,17 +23,40 @@ export default function MentionItem({
   style,
   type = 'mention',
 }: MentionItemProps) {
+  const touchHandled = useRef(false);
+
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      touchHandled.current = true;
+      onClick(e as unknown as React.MouseEvent<HTMLButtonElement>);
+    },
+    [onClick],
+  );
+
+  const handleClick = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (touchHandled.current) {
+        touchHandled.current = false;
+        return;
+      }
+      onClick(e);
+    },
+    [onClick],
+  );
+
   return (
     <button
       tabIndex={index}
-      onClick={onClick}
+      onClick={handleClick}
+      onTouchEnd={handleTouchEnd}
       id={`${type}-item-${index}`}
-      className="w-full"
+      className="w-full touch-manipulation"
       style={style}
     >
       <div
         className={cn(
-          'text-token-text-primary bg-token-main-surface-secondary group flex h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-surface-secondary',
+          'text-token-text-primary bg-token-main-surface-secondary group flex min-h-[44px] items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-surface-secondary active:bg-surface-active',
           isActive === true ? 'bg-surface-active' : 'bg-transparent',
         )}
       >
