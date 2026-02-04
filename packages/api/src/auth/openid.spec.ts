@@ -1,7 +1,7 @@
 import { ErrorTypes } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
-import { findOpenIDUser } from './openid';
+import { findOpenIDUser, extractCNFromDN, normalizeRoles } from './openid';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -432,5 +432,121 @@ describe('findOpenIDUser', () => {
         }),
       ).rejects.toThrow('Database error');
     });
+  });
+});
+
+describe('extractCNFromDN', () => {
+  it('should extract CN from a standard LDAP DN', () => {
+    expect(extractCNFromDN('CN=MY-GROUP,OU=groups,O=company,C=FR')).toBe('MY-GROUP');
+  });
+
+  it('should extract CN case-insensitively', () => {
+    expect(extractCNFromDN('cn=my-group,ou=groups,o=company')).toBe('my-group');
+    expect(extractCNFromDN('Cn=Mixed-Case,OU=test')).toBe('Mixed-Case');
+  });
+
+  it('should return simple role names unchanged', () => {
+    expect(extractCNFromDN('simple-role')).toBe('simple-role');
+    expect(extractCNFromDN('admin')).toBe('admin');
+    expect(extractCNFromDN('MY-APP-USERS')).toBe('MY-APP-USERS');
+  });
+
+  it('should handle escaped commas in DN values', () => {
+    expect(extractCNFromDN('CN=Group\\, Inc,OU=groups,O=company')).toBe('Group, Inc');
+  });
+
+  it('should handle other escaped characters in DN values', () => {
+    expect(extractCNFromDN('CN=Test\\+Group,OU=groups')).toBe('Test+Group');
+    expect(extractCNFromDN('CN=Name\\=Value,OU=groups')).toBe('Name=Value');
+  });
+
+  it('should return empty string for non-string inputs', () => {
+    expect(extractCNFromDN(null)).toBe('');
+    expect(extractCNFromDN(undefined)).toBe('');
+    expect(extractCNFromDN(123)).toBe('');
+    expect(extractCNFromDN({})).toBe('');
+    expect(extractCNFromDN([])).toBe('');
+  });
+
+  it('should return empty string for empty input', () => {
+    expect(extractCNFromDN('')).toBe('');
+  });
+
+  it('should return DN unchanged when no CN component at start', () => {
+    expect(extractCNFromDN('OU=groups,O=company,C=FR')).toBe('OU=groups,O=company,C=FR');
+  });
+
+  it('should return original string for empty CN value', () => {
+    expect(extractCNFromDN('CN=,OU=test')).toBe('CN=,OU=test');
+  });
+
+  it('should extract whitespace-only CN value', () => {
+    expect(extractCNFromDN('CN= ,OU=test')).toBe(' ');
+    expect(extractCNFromDN('CN=  ,OU=test')).toBe('  ');
+  });
+});
+
+describe('normalizeRoles', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should normalize a single string role', () => {
+    expect(normalizeRoles('simple-role')).toEqual(['simple-role']);
+  });
+
+  it('should normalize a single DN string role', () => {
+    expect(normalizeRoles('CN=MY-GROUP,OU=groups,O=company')).toEqual(['MY-GROUP']);
+  });
+
+  it('should normalize an array of simple roles', () => {
+    expect(normalizeRoles(['admin', 'user', 'guest'])).toEqual(['admin', 'user', 'guest']);
+  });
+
+  it('should normalize an array of DN format roles', () => {
+    expect(
+      normalizeRoles([
+        'CN=MY-APP-USERS,OU=group,O=company,C=FR',
+        'CN=MY-APP-ADMINS,OU=group,O=company,C=FR',
+      ]),
+    ).toEqual(['MY-APP-USERS', 'MY-APP-ADMINS']);
+  });
+
+  it('should normalize an array with mixed DN and simple formats', () => {
+    expect(normalizeRoles(['simple-role', 'CN=DN-Role,OU=groups', 'another-simple'])).toEqual([
+      'simple-role',
+      'DN-Role',
+      'another-simple',
+    ]);
+  });
+
+  it('should filter out empty strings from array results', () => {
+    expect(normalizeRoles([null, 'valid-role', undefined, 'CN=Group,OU=test'])).toEqual([
+      'valid-role',
+      'Group',
+    ]);
+  });
+
+  it('should return empty array and log warning for unexpected types', () => {
+    expect(normalizeRoles(null)).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Unexpected roles format'));
+
+    jest.clearAllMocks();
+    expect(normalizeRoles(undefined)).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Unexpected roles format'));
+
+    jest.clearAllMocks();
+    expect(normalizeRoles(123)).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Unexpected roles format'));
+
+    jest.clearAllMocks();
+    expect(normalizeRoles({ role: 'admin' })).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Unexpected roles format'));
+  });
+
+  it('should return empty array for empty array input without warning', () => {
+    jest.clearAllMocks();
+    expect(normalizeRoles([])).toEqual([]);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });
