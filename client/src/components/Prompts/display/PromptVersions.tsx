@@ -1,83 +1,60 @@
 import React from 'react';
-import { format } from 'date-fns';
-import { Layers3, Crown, Zap } from 'lucide-react';
-import { Tag, TooltipAnchor, Label } from '@librechat/client';
+import { formatDistanceToNow } from 'date-fns';
+import { Zap, Circle, CheckCircle2 } from 'lucide-react';
+import { TooltipAnchor } from '@librechat/client';
 import type { TPrompt, TPromptGroup } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-const CombinedStatusIcon = ({ description }: { description: string }) => (
-  <TooltipAnchor
-    description={description}
-    aria-label={description}
-    render={
-      <div className="flex items-center justify-center">
-        <Crown className="h-4 w-4 text-amber-500" />
-      </div>
-    }
-  ></TooltipAnchor>
-);
-
-const VersionTags = ({ tags }: { tags: string[] }) => {
-  const localize = useLocalize();
-  const isLatestAndProduction = tags.includes('latest') && tags.includes('production');
-
-  if (isLatestAndProduction) {
-    return (
-      <span className="absolute bottom-3 right-3">
-        <CombinedStatusIcon description={localize('com_ui_latest_production_version')} />
-      </span>
-    );
-  }
+const VersionBadge = ({
+  type,
+  tooltip,
+  label,
+}: {
+  type: 'latest' | 'production';
+  tooltip: string;
+  label: string;
+}) => {
+  const isProduction = type === 'production';
 
   return (
-    <span className="flex gap-1 text-sm">
-      {tags.map((tag, i) => (
-        <TooltipAnchor
-          description={
-            tag === 'production'
-              ? localize('com_ui_currently_production')
-              : localize('com_ui_latest_version')
-          }
-          key={`${tag}-${i}`}
-          aria-label={
-            tag === 'production'
-              ? localize('com_ui_currently_production')
-              : localize('com_ui_latest_version')
-          }
-          render={
-            <Tag
-              label={tag}
-              className={cn(
-                'w-24 justify-center border border-transparent',
-                tag === 'production'
-                  ? 'bg-green-100 text-green-700 dark:border-green-400 dark:bg-transparent dark:text-green-400'
-                  : 'bg-blue-100 text-blue-700 dark:border-blue-400 dark:bg-transparent dark:text-blue-400',
-              )}
-              labelClassName="flex items-center m-0 justify-center gap-1"
-              LabelNode={(() => {
-                if (tag === 'production') {
-                  return (
-                    <div className="flex items-center">
-                      <span className="slow-pulse size-2 rounded-full bg-green-400" />
-                    </div>
-                  );
-                }
-                if (tag === 'latest') {
-                  return (
-                    <div className="flex items-center">
-                      <Zap className="size-4" />
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-            />
-          }
-        ></TooltipAnchor>
-      ))}
-    </span>
+    <TooltipAnchor
+      description={tooltip}
+      side="left"
+      render={
+        <span
+          className={cn(
+            'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+            isProduction
+              ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
+              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400',
+          )}
+        >
+          {isProduction ? (
+            <>
+              <span className="slow-pulse size-1.5 rounded-full bg-green-500" />
+              <span>{label}</span>
+            </>
+          ) : (
+            <>
+              <Zap className="size-3" />
+              <span>{label}</span>
+            </>
+          )}
+        </span>
+      }
+    />
   );
+};
+
+const getTimelineConnectorClasses = (isSelected: boolean, isProduction: boolean) => {
+  if (isSelected) {
+    return 'border-green-500 bg-green-500 text-white';
+  }
+  if (isProduction) {
+    return 'border-green-400 bg-surface-primary text-green-500';
+  }
+  return 'border-border-medium bg-surface-primary text-text-secondary';
 };
 
 const VersionCard = ({
@@ -86,54 +63,89 @@ const VersionCard = ({
   isSelected,
   totalVersions,
   onClick,
-  authorName,
-  tags,
+  isLatest,
+  isProduction,
 }: {
   prompt: TPrompt;
   index: number;
   isSelected: boolean;
   totalVersions: number;
   onClick: () => void;
-  authorName?: string;
-  tags: string[];
+  isLatest: boolean;
+  isProduction: boolean;
 }) => {
   const localize = useLocalize();
+  const versionNumber = totalVersions - index;
 
   return (
-    <button
-      type="button"
-      className={cn(
-        'group relative w-full rounded-lg border border-border-light p-4 transition-all duration-300',
-        isSelected
-          ? 'bg-surface-secondary shadow-xl ring-2 ring-gray-400'
-          : 'bg-surface-primary shadow-sm hover:bg-surface-secondary',
-      )}
-      onClick={onClick}
-      aria-selected={isSelected}
-      role="tab"
-      aria-label={localize('com_ui_version_var', { 0: `${totalVersions - index}` })}
-    >
-      <div className="flex flex-col gap-2">
-        <div className="flex items-start justify-between lg:flex-col xl:flex-row">
-          <h3 className="font-bold text-text-primary">
-            {localize('com_ui_version_var', { 0: `${totalVersions - index}` })}
-          </h3>
-          <time className="text-xs text-text-secondary" dateTime={prompt.createdAt}>
-            {format(new Date(prompt.createdAt), 'yyyy-MM-dd HH:mm')}
-          </time>
-        </div>
-
-        <div className="flex items-center gap-1 lg:flex-col xl:flex-row">
-          {authorName && (
-            <Label className="text-left text-xs text-text-secondary">
-              {localize('com_ui_by_author', { 0: authorName })}
-            </Label>
+    <div className="relative flex items-stretch">
+      {/* Timeline connector */}
+      <div className="relative flex w-6 shrink-0 flex-col items-center pt-3">
+        <div
+          className={cn(
+            'z-10 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+            getTimelineConnectorClasses(isSelected, isProduction),
           )}
-
-          {tags.length > 0 && <VersionTags tags={tags} />}
+        >
+          {isSelected ? (
+            <CheckCircle2 className="size-3" />
+          ) : (
+            <Circle className="size-2" fill="currentColor" />
+          )}
         </div>
+        {index < totalVersions - 1 && <div className="w-0.5 flex-1 bg-border-light" />}
       </div>
-    </button>
+
+      {/* Card content */}
+      <button
+        type="button"
+        className={cn(
+          'group mb-2 ml-2 flex flex-1 flex-col rounded-lg border p-3 text-left',
+          isSelected
+            ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/20'
+            : 'border-border-light bg-surface-primary hover:border-border-medium hover:bg-surface-hover',
+        )}
+        onClick={onClick}
+        aria-selected={isSelected}
+        role="tab"
+        aria-label={localize('com_ui_version_var', { 0: `${versionNumber}` })}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={cn(
+              'text-sm font-semibold',
+              isSelected ? 'text-green-700 dark:text-green-400' : 'text-text-primary',
+            )}
+          >
+            {localize('com_ui_version_var', { 0: versionNumber })}
+          </span>
+          <div className="flex items-center gap-1">
+            {isProduction && (
+              <VersionBadge
+                type="production"
+                tooltip={localize('com_ui_currently_production')}
+                label={localize('com_ui_live')}
+              />
+            )}
+            {isLatest && !isProduction && (
+              <VersionBadge
+                type="latest"
+                tooltip={localize('com_ui_latest_version')}
+                label={localize('com_ui_latest')}
+              />
+            )}
+          </div>
+        </div>
+
+        <time
+          className="mt-1 text-xs text-text-secondary"
+          dateTime={prompt.createdAt}
+          title={new Date(prompt.createdAt).toLocaleString()}
+        >
+          {formatDistanceToNow(new Date(prompt.createdAt), { addSuffix: true })}
+        </time>
+      </button>
+    </div>
   );
 };
 
@@ -148,44 +160,26 @@ const PromptVersions = ({
   selectionIndex: number;
   setSelectionIndex: React.Dispatch<React.SetStateAction<number>>;
 }) => {
-  const localize = useLocalize();
-
   return (
-    <section className="my-6" aria-label="Prompt Versions">
-      <header className="mb-6">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-text-primary">
-          <Layers3 className="h-5 w-5 text-green-500" />
-          {localize('com_ui_versions')}
-        </h2>
-      </header>
+    <div className="flex flex-col" role="tablist" aria-label="Version history">
+      {prompts.map((prompt: TPrompt, index: number) => {
+        const isLatest = index === 0;
+        const isProduction = prompt._id === group?.productionId;
 
-      <div className="flex flex-col gap-3" role="tablist" aria-label="Version history">
-        {prompts.map((prompt: TPrompt, index: number) => {
-          const tags: string[] = [];
-
-          if (index === 0) {
-            tags.push('latest');
-          }
-
-          if (prompt._id === group?.productionId) {
-            tags.push('production');
-          }
-
-          return (
-            <VersionCard
-              key={prompt._id}
-              prompt={prompt}
-              index={index}
-              isSelected={index === selectionIndex}
-              totalVersions={prompts.length}
-              onClick={() => setSelectionIndex(index)}
-              authorName={group?.authorName}
-              tags={tags}
-            />
-          );
-        })}
-      </div>
-    </section>
+        return (
+          <VersionCard
+            key={prompt._id}
+            prompt={prompt}
+            index={index}
+            isSelected={index === selectionIndex}
+            totalVersions={prompts.length}
+            onClick={() => setSelectionIndex(index)}
+            isLatest={isLatest}
+            isProduction={isProduction}
+          />
+        );
+      })}
+    </div>
   );
 };
 

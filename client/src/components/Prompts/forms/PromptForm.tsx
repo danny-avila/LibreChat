@@ -109,20 +109,30 @@ const VersionsPanel = React.memo(
           </div>
         )}
         <div className="flex-1 overflow-y-auto px-4 py-3">
-          {isLoadingPrompts
-            ? Array.from({ length: 6 }).map((_, index: number) => (
-                <div key={index} className="my-2">
-                  <Skeleton className="h-[72px] w-full" />
-                </div>
-              ))
-            : prompts.length > 0 && (
-                <PromptVersions
-                  group={group}
-                  prompts={prompts}
-                  selectionIndex={selectionIndex}
-                  setSelectionIndex={setSelectionIndex}
-                />
-              )}
+          {isLoadingPrompts &&
+            Array.from({ length: 6 }).map((_, index: number) => (
+              <div key={index} className="my-2">
+                <Skeleton className="h-[72px] w-full" />
+              </div>
+            ))}
+          {!isLoadingPrompts && prompts.length > 0 && (
+            <>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-medium text-text-secondary">
+                  {localize('com_ui_versions')}
+                </h2>
+                <span className="flex size-5 items-center justify-center rounded-full bg-surface-tertiary text-xs font-medium text-text-secondary">
+                  {prompts.length}
+                </span>
+              </div>
+              <PromptVersions
+                group={group}
+                prompts={prompts}
+                selectionIndex={selectionIndex}
+                setSelectionIndex={setSelectionIndex}
+              />
+            </>
+          )}
         </div>
       </div>
     );
