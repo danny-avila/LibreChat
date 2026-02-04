@@ -1,6 +1,6 @@
 import React from 'react';
 import { Share2Icon } from 'lucide-react';
-import { Button } from '@librechat/client';
+import { Button, TooltipAnchor } from '@librechat/client';
 import {
   SystemRoles,
   Permissions,
@@ -54,15 +54,20 @@ const SharePrompt = React.memo(
         resourceType={ResourceType.PROMPTGROUP}
         disabled={disabled}
       >
-        <Button
-          variant="default"
-          size="sm"
-          aria-label={localize('com_ui_share')}
-          className="h-10 w-10 border border-transparent bg-blue-500/90 p-0.5 transition-all hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-800"
-          disabled={disabled}
-        >
-          <Share2Icon className="size-5 cursor-pointer text-white" aria-hidden="true" />
-        </Button>
+        <TooltipAnchor
+          description={localize('com_ui_share')}
+          side="bottom"
+          render={
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label={localize('com_ui_share')}
+              disabled={disabled}
+            >
+              <Share2Icon className="size-4" aria-hidden="true" />
+            </Button>
+          }
+        />
       </GenericGrantAccessDialog>
     );
   },

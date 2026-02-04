@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Check, X } from 'lucide-react';
-import { Button, Input, Spinner } from '@librechat/client';
+import { Check, X, Pencil } from 'lucide-react';
+import { Button, Input, Spinner, TooltipAnchor } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 type Props = {
@@ -88,7 +88,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
   return (
     <div className="flex min-w-0 flex-1 items-center">
       {isEditing ? (
-        <div className="mr-3 flex min-w-0 flex-1 items-center gap-1">
+        <div className="mr-3 flex min-w-0 flex-1 items-center gap-2">
           <Input
             type="text"
             value={newName ?? ''}
@@ -96,36 +96,46 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
             onKeyDown={handleKeyDown}
             ref={inputRef}
             disabled={isLoading}
-            className="h-10 min-w-0 flex-1 rounded-lg border-border-medium px-3 text-xl font-bold text-text-primary disabled:opacity-70 sm:text-2xl"
+            className="h-10 min-w-0 flex-1 rounded-lg border border-border-medium bg-surface-primary px-3 text-xl font-semibold text-text-primary transition-colors focus:border-border-heavy disabled:opacity-60 sm:text-2xl"
             aria-label={localize('com_ui_name')}
           />
           <div className="flex shrink-0 items-center gap-1">
-            <Button
-              type="button"
-              onClick={saveName}
-              variant="ghost"
-              size="icon"
-              disabled={isLoading}
-              className="size-10 p-0 text-text-secondary hover:text-text-primary disabled:opacity-50"
-              aria-label={isLoading ? localize('com_ui_loading') : localize('com_ui_save')}
-            >
-              {isLoading ? (
-                <Spinner size={24} className="" />
-              ) : (
-                <Check className="size-6" aria-hidden="true" />
-              )}
-            </Button>
-            <Button
-              type="button"
-              onClick={handleCancel}
-              variant="ghost"
-              size="icon"
-              disabled={isLoading}
-              className="size-10 p-0 text-text-secondary hover:text-text-primary disabled:opacity-50"
-              aria-label={localize('com_ui_cancel')}
-            >
-              <X className="size-6" aria-hidden="true" />
-            </Button>
+            <TooltipAnchor
+              description={isLoading ? localize('com_ui_loading') : localize('com_ui_save')}
+              side="bottom"
+              render={
+                <Button
+                  type="button"
+                  onClick={saveName}
+                  variant="submit"
+                  size="icon"
+                  disabled={isLoading}
+                  aria-label={isLoading ? localize('com_ui_loading') : localize('com_ui_save')}
+                >
+                  {isLoading ? (
+                    <Spinner size={16} className="text-white" />
+                  ) : (
+                    <Check className="size-4" aria-hidden="true" />
+                  )}
+                </Button>
+              }
+            />
+            <TooltipAnchor
+              description={localize('com_ui_cancel')}
+              side="bottom"
+              render={
+                <Button
+                  type="button"
+                  onClick={handleCancel}
+                  variant="outline"
+                  size="icon"
+                  disabled={isLoading}
+                  aria-label={localize('com_ui_cancel')}
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </Button>
+              }
+            />
           </div>
         </div>
       ) : (
@@ -133,12 +143,16 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
           type="button"
           onClick={handleTitleClick}
           onKeyDown={handleTitleKeyDown}
-          className="mr-3 min-w-0 flex-1 cursor-pointer rounded-lg px-1 py-1 text-left transition-colors duration-150 hover:bg-surface-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          className="group mr-3 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={localize('com_ui_edit') + ' ' + localize('com_ui_name')}
         >
-          <span className="ml-2 block truncate text-xl font-bold text-text-primary sm:text-2xl">
+          <span className="block truncate text-xl font-semibold text-text-primary sm:text-2xl">
             {newName}
           </span>
+          <Pencil
+            className="size-4 shrink-0 text-text-tertiary opacity-0 transition-opacity group-hover:opacity-100"
+            aria-hidden="true"
+          />
         </button>
       )}
     </div>

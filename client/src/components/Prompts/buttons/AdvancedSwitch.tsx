@@ -1,4 +1,7 @@
+import { useCallback, useMemo } from 'react';
+import { Sparkles, Layers } from 'lucide-react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
+import { Radio } from '@librechat/client';
 import { PromptsEditorMode } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -10,57 +13,39 @@ const AdvancedSwitch = () => {
   const [mode, setMode] = useRecoilState(promptsEditorMode);
   const setAlwaysMakeProd = useSetRecoilState(alwaysMakeProd);
 
+  const options = useMemo(
+    () => [
+      {
+        value: PromptsEditorMode.SIMPLE,
+        label: localize('com_ui_simple'),
+        icon: <Sparkles className="size-3.5" />,
+      },
+      {
+        value: PromptsEditorMode.ADVANCED,
+        label: localize('com_ui_advanced'),
+        icon: <Layers className="size-3.5" />,
+      },
+    ],
+    [localize],
+  );
+
+  const handleChange = useCallback(
+    (value: string) => {
+      if (value === PromptsEditorMode.SIMPLE) {
+        setAlwaysMakeProd(true);
+      }
+      setMode(value as PromptsEditorMode);
+    },
+    [setMode, setAlwaysMakeProd],
+  );
+
   return (
-    <div
-      role="group"
-      aria-label={localize('com_ui_editor_mode')}
-      className="relative flex h-10 items-center justify-center rounded-xl border border-border-light bg-surface-primary transition-all duration-300"
-    >
-      <div className="relative flex w-48 items-stretch md:w-64">
-        <div
-          className="absolute rounded-lg bg-surface-hover shadow-lg transition-all duration-300 ease-in-out"
-          style={{
-            top: '1px',
-            left: mode === PromptsEditorMode.SIMPLE ? '2px' : 'calc(50% + 2px)',
-            width: 'calc(50% - 4px)',
-            height: 'calc(100% - 2px)',
-          }}
-        />
-
-        {/* Simple Mode Button */}
-        <button
-          type="button"
-          onClick={() => {
-            setAlwaysMakeProd(true);
-            setMode(PromptsEditorMode.SIMPLE);
-          }}
-          aria-pressed={mode === PromptsEditorMode.SIMPLE}
-          aria-label={localize('com_ui_simple')}
-          className={`relative z-10 flex-1 rounded-xl px-3 py-2 text-sm transition-all duration-300 md:px-6 ${
-            mode === PromptsEditorMode.SIMPLE
-              ? 'font-bold text-text-primary'
-              : 'text-text-secondary hover:text-text-primary'
-          }`}
-        >
-          <span className="relative">{localize('com_ui_simple')}</span>
-        </button>
-
-        {/* Advanced Mode Button */}
-        <button
-          type="button"
-          onClick={() => setMode(PromptsEditorMode.ADVANCED)}
-          aria-pressed={mode === PromptsEditorMode.ADVANCED}
-          aria-label={localize('com_ui_advanced')}
-          className={`relative z-10 flex-1 rounded-xl px-3 py-2 text-sm transition-all duration-300 md:px-6 ${
-            mode === PromptsEditorMode.ADVANCED
-              ? 'font-bold text-text-primary'
-              : 'text-text-secondary hover:text-text-primary'
-          }`}
-        >
-          <span className="relative">{localize('com_ui_advanced')}</span>
-        </button>
-      </div>
-    </div>
+    <Radio
+      options={options}
+      value={mode}
+      onChange={handleChange}
+      className="border border-border-light"
+    />
   );
 };
 

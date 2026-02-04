@@ -38,111 +38,78 @@ import PromptName from '../fields/PromptName';
 import Command from '../fields/Command';
 import store from '~/store';
 
-interface RightPanelProps {
+interface VersionsPanelProps {
   group: TPromptGroup;
   prompts: TPrompt[];
   selectedPrompt: any;
   selectionIndex: number;
-  selectedPromptId?: string;
   isLoadingPrompts: boolean;
   canEdit: boolean;
   setSelectionIndex: React.Dispatch<React.SetStateAction<number>>;
 }
 
-const RightPanel = React.memo(
+const VersionsPanel = React.memo(
   ({
     group,
     prompts,
     selectedPrompt,
-    selectedPromptId,
     isLoadingPrompts,
     canEdit,
     selectionIndex,
     setSelectionIndex,
-  }: RightPanelProps) => {
+  }: VersionsPanelProps) => {
     const localize = useLocalize();
-    const { showToast } = useToastContext();
-    const editorMode = useRecoilValue(store.promptsEditorMode);
-    const hasShareAccess = useHasAccess({
-      permissionType: PermissionTypes.PROMPTS,
-      permission: Permissions.SHARE,
-    });
-
-    const updateGroupMutation = useUpdatePromptGroup({
-      onError: () => {
-        showToast({
-          status: 'error',
-          message: localize('com_ui_prompt_update_error'),
-        });
-      },
-    });
-
     const makeProductionMutation = useMakePromptProduction();
 
     const groupId = group?._id || '';
-    const groupName = group?.name || '';
-    const groupCategory = group?.category || '';
     const isLoadingGroup = !group;
+    const isProductionVersion = selectedPrompt?._id === group?.productionId;
 
     return (
       <div
-        className="h-full w-full overflow-y-auto bg-surface-primary px-4"
+        className="flex h-full w-full flex-col overflow-hidden bg-surface-primary"
         style={{ maxHeight: 'calc(100vh - 100px)' }}
       >
-        <div className="mb-2 flex flex-col lg:flex-row lg:items-center lg:justify-center lg:gap-x-2 xl:flex-row xl:space-y-0">
-          <CategorySelector
-            currentCategory={groupCategory}
-            onValueChange={
-              canEdit
-                ? (value) =>
-                    updateGroupMutation.mutate({
-                      id: groupId,
-                      payload: { name: groupName, category: value },
-                    })
-                : undefined
-            }
-          />
-          <div className="mt-2 flex flex-row items-center justify-center gap-x-2 lg:mt-0">
-            {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
-            {editorMode === PromptsEditorMode.ADVANCED && canEdit && (
-              <Button
-                variant="submit"
-                size="sm"
-                aria-label="Make prompt production"
-                className="h-10 w-10 border border-transparent p-0.5 transition-all"
-                onClick={() => {
-                  if (!selectedPrompt) {
-                    console.warn('No prompt is selected');
-                    return;
-                  }
-                  const { _id: promptVersionId = '', prompt } = selectedPrompt;
-                  makeProductionMutation.mutate({
-                    id: promptVersionId,
-                    groupId,
-                    productionPrompt: { prompt },
-                  });
-                }}
-                disabled={
-                  isLoadingGroup ||
-                  !selectedPrompt ||
-                  selectedPrompt._id === group?.productionId ||
-                  makeProductionMutation.isLoading ||
-                  !canEdit
+        {canEdit && (
+          <div className="shrink-0 border-b border-border-light px-4 py-3">
+            <Button
+              variant="submit"
+              size="sm"
+              aria-label={localize('com_ui_make_production')}
+              className={cn(
+                'w-full gap-2 transition-all duration-200',
+                isProductionVersion &&
+                  'border border-green-500/30 bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-950/30 dark:text-green-400 dark:hover:bg-green-950/50',
+              )}
+              onClick={() => {
+                if (!selectedPrompt) {
+                  console.warn('No prompt is selected');
+                  return;
                 }
-              >
-                <Rocket className="size-5 cursor-pointer text-white" aria-hidden="true" />
-              </Button>
-            )}
-            <DeleteVersion
-              promptId={selectedPromptId}
-              groupId={groupId}
-              promptName={groupName}
-              disabled={isLoadingGroup}
-            />
+                const { _id: promptVersionId = '', prompt } = selectedPrompt;
+                makeProductionMutation.mutate({
+                  id: promptVersionId,
+                  groupId,
+                  productionPrompt: { prompt },
+                });
+              }}
+              disabled={
+                isLoadingGroup ||
+                !selectedPrompt ||
+                isProductionVersion ||
+                makeProductionMutation.isLoading ||
+                !canEdit
+              }
+            >
+              <Rocket className="size-4" aria-hidden="true" />
+              <span className="text-sm font-medium">
+                {isProductionVersion ? localize('com_ui_production') : localize('com_ui_deploy')}
+              </span>
+            </Button>
           </div>
-        </div>
-        {editorMode === PromptsEditorMode.ADVANCED &&
-          (isLoadingPrompts
+        )}
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          {isLoadingPrompts
             ? Array.from({ length: 6 }).map((_, index: number) => (
                 <div key={index} className="my-2">
                   <Skeleton className="h-[72px] w-full" />
@@ -155,13 +122,52 @@ const RightPanel = React.memo(
                   selectionIndex={selectionIndex}
                   setSelectionIndex={setSelectionIndex}
                 />
-              ))}
+              )}
+        </div>
       </div>
     );
   },
 );
 
-RightPanel.displayName = 'RightPanel';
+VersionsPanel.displayName = 'VersionsPanel';
+
+interface HeaderActionsProps {
+  group: TPromptGroup;
+  canEdit: boolean;
+  selectedPromptId?: string;
+  onCategoryChange?: (value: string) => void;
+}
+
+const HeaderActions = React.memo(
+  ({ group, canEdit, selectedPromptId, onCategoryChange }: HeaderActionsProps) => {
+    const hasShareAccess = useHasAccess({
+      permissionType: PermissionTypes.PROMPTS,
+      permission: Permissions.SHARE,
+    });
+
+    const groupId = group?._id || '';
+    const groupCategory = group?.category || '';
+    const isLoadingGroup = !group;
+
+    return (
+      <div className="flex items-center gap-2">
+        <CategorySelector
+          currentCategory={groupCategory}
+          onValueChange={canEdit ? onCategoryChange : undefined}
+        />
+        {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
+        <DeleteVersion
+          promptId={selectedPromptId}
+          groupId={groupId}
+          promptName={group?.name || ''}
+          disabled={isLoadingGroup}
+        />
+      </div>
+    );
+  },
+);
+
+HeaderActions.displayName = 'HeaderActions';
 
 const PromptForm = () => {
   const params = useParams();
@@ -359,6 +365,19 @@ const PromptForm = () => {
     [group, updateGroupMutation.mutate, debouncedUpdateCommand],
   );
 
+  const handleCategoryChange = useCallback(
+    (value: string) => {
+      if (!group?._id) {
+        return;
+      }
+      updateGroupMutation.mutate({
+        id: group._id,
+        payload: { name: group.name, category: value },
+      });
+    },
+    [group?._id, group?.name, updateGroupMutation],
+  );
+
   if (initialLoad) {
     return <SkeletonForm />;
   }
@@ -398,50 +417,65 @@ const PromptForm = () => {
           >
             <div className="flex h-full">
               <div className="flex-1 overflow-hidden px-4">
-                <div className="mb-4 flex items-center gap-2 text-text-primary">
+                {/* Header: Title + Actions */}
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   {isLoadingGroup ? (
-                    <Skeleton className="mb-1 flex h-10 w-32 font-bold sm:text-xl md:mb-0 md:h-12 md:text-2xl" />
+                    <Skeleton className="h-10 w-48 font-bold sm:text-xl md:h-12 md:text-2xl" />
                   ) : (
                     <>
-                      <PromptName
-                        name={groupName}
-                        isLoading={updateGroupMutation.isLoading}
-                        onSave={(value) => {
-                          if (!canEdit || !group._id) {
-                            return;
-                          }
-                          updateGroupMutation.mutate({
-                            id: group._id,
-                            payload: { name: value },
-                          });
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="h-10 w-10 border border-border-light p-0 lg:hidden"
-                        onClick={() => setShowSidePanel(true)}
-                        aria-label={localize('com_endpoint_open_menu')}
-                      >
-                        <Menu className="size-5" aria-hidden="true" />
-                      </Button>
-                      <div className="hidden lg:block">
-                        {editorMode === PromptsEditorMode.SIMPLE && (
-                          <RightPanel
-                            group={group}
-                            prompts={prompts}
-                            selectedPrompt={selectedPrompt}
-                            selectionIndex={selectionIndex}
-                            selectedPromptId={selectedPromptId}
-                            isLoadingPrompts={isLoadingPrompts}
-                            canEdit={canEdit}
-                            setSelectionIndex={setSelectionIndex}
-                          />
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <PromptName
+                          name={groupName}
+                          isLoading={updateGroupMutation.isLoading}
+                          onSave={(value) => {
+                            if (!canEdit || !group._id) {
+                              return;
+                            }
+                            updateGroupMutation.mutate({
+                              id: group._id,
+                              payload: { name: value },
+                            });
+                          }}
+                        />
+                        {editorMode === PromptsEditorMode.ADVANCED && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0 lg:hidden"
+                            onClick={() => setShowSidePanel(true)}
+                            aria-label={localize('com_ui_versions')}
+                          >
+                            <Menu className="mr-1.5 size-4" aria-hidden="true" />
+                            <span>{localize('com_ui_versions')}</span>
+                          </Button>
                         )}
+                      </div>
+                      <div className="hidden shrink-0 sm:block">
+                        <HeaderActions
+                          group={group}
+                          canEdit={canEdit}
+                          selectedPromptId={selectedPromptId}
+                          onCategoryChange={handleCategoryChange}
+                        />
                       </div>
                     </>
                   )}
                 </div>
+
+                {/* Mobile Actions Row */}
+                {!isLoadingGroup && (
+                  <div className="mb-4 sm:hidden">
+                    <HeaderActions
+                      group={group}
+                      canEdit={canEdit}
+                      selectedPromptId={selectedPromptId}
+                      onCategoryChange={handleCategoryChange}
+                    />
+                  </div>
+                )}
+
+                {/* Main Editor Content */}
                 {isLoadingPrompts ? (
                   <Skeleton className="h-96" aria-live="polite" />
                 ) : (
@@ -466,14 +500,14 @@ const PromptForm = () => {
                 )}
               </div>
 
+              {/* Versions Sidebar - Advanced Mode Only */}
               {editorMode === PromptsEditorMode.ADVANCED && (
-                <div className="hidden w-1/4 border-l border-border-light lg:block">
-                  <RightPanel
+                <div className="hidden w-72 shrink-0 border-l border-border-light lg:block xl:w-80">
+                  <VersionsPanel
                     group={group}
                     prompts={prompts}
                     selectionIndex={selectionIndex}
                     selectedPrompt={selectedPrompt}
-                    selectedPromptId={selectedPromptId}
                     isLoadingPrompts={isLoadingPrompts}
                     canEdit={canEdit}
                     setSelectionIndex={setSelectionIndex}
@@ -483,10 +517,11 @@ const PromptForm = () => {
             </div>
           </div>
 
+          {/* Mobile Overlay */}
           <button
             type="button"
             className={cn(
-              'absolute inset-0 z-40 cursor-default',
+              'absolute inset-0 z-40 cursor-default bg-black/20',
               showSidePanel ? 'opacity-100' : 'pointer-events-none opacity-0',
             )}
             style={{ transition: 'opacity 0.3s ease-in-out' }}
@@ -495,6 +530,8 @@ const PromptForm = () => {
             tabIndex={showSidePanel ? 0 : -1}
             aria-label={localize('com_ui_close_menu')}
           />
+
+          {/* Mobile Versions Panel */}
           <div
             className="absolute inset-y-0 right-0 z-50 lg:hidden"
             style={{
@@ -504,21 +541,33 @@ const PromptForm = () => {
             }}
             role="dialog"
             aria-modal="true"
-            aria-label="Mobile navigation panel"
+            aria-label={localize('com_ui_versions')}
           >
-            <div className="h-full">
-              <div className="h-full overflow-auto">
-                <RightPanel
-                  group={group}
-                  prompts={prompts}
-                  selectionIndex={selectionIndex}
-                  selectedPrompt={selectedPrompt}
-                  selectedPromptId={selectedPromptId}
-                  isLoadingPrompts={isLoadingPrompts}
-                  canEdit={canEdit}
-                  setSelectionIndex={setSelectionIndex}
-                />
+            <div className="h-full bg-surface-primary shadow-xl">
+              <div className="flex items-center justify-between border-b border-border-light px-4 py-3">
+                <h2 className="text-lg font-semibold text-text-primary">
+                  {localize('com_ui_versions')}
+                </h2>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowSidePanel(false)}
+                  aria-label={localize('com_ui_close')}
+                >
+                  <span className="sr-only">{localize('com_ui_close')}</span>
+                  &times;
+                </Button>
               </div>
+              <VersionsPanel
+                group={group}
+                prompts={prompts}
+                selectionIndex={selectionIndex}
+                selectedPrompt={selectedPrompt}
+                isLoadingPrompts={isLoadingPrompts}
+                canEdit={canEdit}
+                setSelectionIndex={setSelectionIndex}
+              />
             </div>
           </div>
         </div>
