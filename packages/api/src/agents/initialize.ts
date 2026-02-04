@@ -403,16 +403,16 @@ export async function initializeAgent(
 
   const initializedAgent: InitializedAgent = {
     ...agent,
-    tools: (tools ?? []) as GenericTool[] & string[],
-    attachments: finalAttachments,
     resendFiles,
+    toolRegistry,
     tool_resources,
     userMCPAuthMap,
-    toolRegistry,
     toolDefinitions,
     hasDeferredTools,
+    attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
+    tools: (tools ?? []) as GenericTool[] & string[],
     maxContextTokens: Math.round((agentMaxContextNum - maxOutputTokensNum) * 0.9),
   };
 
