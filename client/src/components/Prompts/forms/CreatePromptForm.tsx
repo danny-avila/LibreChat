@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button, TextareaAutosize, Input } from '@librechat/client';
 import { useForm, Controller, FormProvider } from 'react-hook-form';
@@ -117,7 +118,7 @@ const CreatePromptForm = ({
                     {...field}
                     id="prompt-name"
                     type="text"
-                    className="peer mr-2 w-full border border-border-medium p-2 text-2xl text-text-primary"
+                    className="peer mr-2 w-full border border-border-light p-2 text-2xl text-text-primary"
                     placeholder=" "
                     tabIndex={0}
                     aria-label={localize('com_ui_prompt_name')}
@@ -143,12 +144,19 @@ const CreatePromptForm = ({
           </div>
         </div>
         <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">
-          <div>
-            <h2 className="flex items-center justify-between rounded-t-lg border border-border-medium py-2 pl-4 pr-1 text-base font-semibold dark:text-gray-200">
-              <span>{localize('com_ui_prompt_text')}*</span>
-              <VariablesDropdown fieldName="prompt" className="mr-2" />
-            </h2>
-            <div className="min-h-32 rounded-b-lg border border-border-medium p-4 transition-all duration-150">
+          <div className="flex flex-col">
+            <header className="flex items-center justify-between rounded-t-xl border border-border-light bg-transparent p-2">
+              <div className="ml-1 flex items-center gap-2">
+                <FileText className="size-4 text-text-secondary" aria-hidden="true" />
+                <h2 className="text-sm font-semibold text-text-primary">
+                  {localize('com_ui_prompt_text')}*
+                </h2>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <VariablesDropdown fieldName="prompt" />
+              </div>
+            </header>
+            <div className="min-h-32 rounded-b-xl border border-t-0 border-border-light p-3 sm:p-4">
               <Controller
                 name="prompt"
                 control={control}
@@ -157,15 +165,18 @@ const CreatePromptForm = ({
                   <div>
                     <TextareaAutosize
                       {...field}
-                      className="w-full rounded border border-border-medium px-2 py-1 focus:outline-none dark:bg-transparent dark:text-gray-200"
-                      minRows={6}
+                      className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none sm:text-base"
+                      minRows={4}
+                      maxRows={16}
                       tabIndex={0}
+                      placeholder={localize('com_ui_prompt_input')}
                       aria-label={localize('com_ui_prompt_input_field')}
                     />
                     <div
-                      className={`mt-1 text-sm text-red-500 ${
-                        errors.prompt ? 'visible h-auto' : 'invisible h-0'
-                      }`}
+                      className={cn(
+                        'mt-1 text-sm text-red-500',
+                        errors.prompt ? 'visible h-auto' : 'invisible h-0',
+                      )}
                     >
                       {errors.prompt ? errors.prompt.message : ' '}
                     </div>

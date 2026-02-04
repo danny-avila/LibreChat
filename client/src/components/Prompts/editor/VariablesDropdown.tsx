@@ -1,51 +1,16 @@
 import { useState, useId, useMemo } from 'react';
-import { ChevronDown, Calendar, User, Clock, Globe, Check, Sparkles } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
 import { useFormContext } from 'react-hook-form';
 import { DropdownPopup } from '@librechat/client';
+import { specialVariables } from 'librechat-data-provider';
+import { ChevronDown, Check, Sparkles } from 'lucide-react';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
+import { getSpecialVariableIcon } from '~/components/Prompts/utils';
 import { extractUniqueVariables } from '~/utils';
 import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
-interface VariableConfig {
-  key: string;
-  label: TSpecialVarLabel;
-  value: string;
-  icon: React.ComponentType<{ className?: string }>;
-  description: string;
-}
-
-const variableConfigs: VariableConfig[] = [
-  {
-    key: 'current_date',
-    label: 'com_ui_special_var_current_date',
-    value: '{{current_date}}',
-    icon: Calendar,
-    description: "Today's date and day of the week",
-  },
-  {
-    key: 'current_datetime',
-    label: 'com_ui_special_var_current_datetime',
-    value: '{{current_datetime}}',
-    icon: Clock,
-    description: 'Local date and time in your timezone',
-  },
-  {
-    key: 'current_user',
-    label: 'com_ui_special_var_current_user',
-    value: '{{current_user}}',
-    icon: User,
-    description: 'Your account display name',
-  },
-  {
-    key: 'iso_datetime',
-    label: 'com_ui_special_var_iso_datetime',
-    value: '{{iso_datetime}}',
-    icon: Globe,
-    description: 'UTC datetime in ISO 8601 format',
-  },
-];
+const variableKeys = Object.keys(specialVariables) as Array<keyof typeof specialVariables>;
 
 interface VariablesDropdownProps {
   fieldName?: string;
@@ -70,29 +35,32 @@ export default function VariablesDropdown({
     return new Set(vars.map((v) => v.toLowerCase()));
   }, [promptText]);
 
-  const handleAddVariable = (config: VariableConfig) => {
+  const handleAddVariable = (key: string) => {
     const currentText = getValues(fieldName) || '';
     const spacer = currentText.length > 0 ? '\n\n' : '';
-    const prefix = localize(config.label);
-    setValue(fieldName, currentText + spacer + prefix + ': ' + config.value, { shouldDirty: true });
+    const labelKey = `com_ui_special_var_${key}` as TSpecialVarLabel;
+    const prefix = localize(labelKey);
+    setValue(fieldName, `${currentText}${spacer}${prefix}: {{${key}}}`, { shouldDirty: true });
     setIsMenuOpen(false);
     const announcement = localize('com_ui_special_variable_added', { 0: prefix });
     announcePolite({ message: announcement, isStatus: true });
   };
 
-  const items = variableConfigs.map((config) => {
-    const isUsed = usedVariables.has(config.key);
-    const Icon = config.icon;
+  const items = variableKeys.map((key) => {
+    const isUsed = usedVariables.has(key);
+    const Icon = getSpecialVariableIcon(key);
+    const labelKey = `com_ui_special_var_${key}` as TSpecialVarLabel;
+    const descKey = `com_ui_special_var_desc_${key}`;
 
     const iconClass = isUsed
       ? 'bg-surface-tertiary text-text-tertiary'
       : 'bg-surface-tertiary text-text-secondary';
 
-    const labelClass = isUsed ? 'text-text-tertiary' : 'text-text-primary';
+    const labelClass = isUsed ? 'text-text-secondary' : 'text-text-primary';
 
     return {
-      label: localize(config.label),
-      onClick: () => handleAddVariable(config),
+      label: localize(labelKey),
+      onClick: () => handleAddVariable(key),
       disabled: isUsed,
       icon: <Icon className="size-4" />,
       render: (
@@ -107,15 +75,15 @@ export default function VariablesDropdown({
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <span className={`text-sm font-medium ${labelClass}`}>{localize(config.label)}</span>
-            <p className="mt-0.5 text-xs text-text-tertiary">{config.description}</p>
+            <span className={`text-sm font-medium ${labelClass}`}>{localize(labelKey)}</span>
+            <p className="mt-0.5 text-xs text-text-secondary">{localize(descKey)}</p>
           </div>
         </div>
       ),
     };
   });
 
-  const usedCount = variableConfigs.filter((c) => usedVariables.has(c.key)).length;
+  const usedCount = variableKeys.filter((key) => usedVariables.has(key)).length;
 
   const buttonClass = isMenuOpen
     ? 'border-border-heavy bg-surface-tertiary text-text-primary'
