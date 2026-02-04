@@ -42,12 +42,12 @@ export default function MCPToolItem({
   tool,
   isSelected,
   isDeferred,
+  onToggleDefer,
+  onToggleSelect,
   isProgrammatic,
+  onToggleProgrammatic,
   deferredToolsEnabled,
   programmaticToolsEnabled,
-  onToggleSelect,
-  onToggleDefer,
-  onToggleProgrammatic,
 }: MCPToolItemProps) {
   const localize = useLocalize();
   const hasOptions = isDeferred || isProgrammatic;
@@ -104,10 +104,10 @@ export default function MCPToolItem({
           <DropdownMenuContent
             align="end"
             side="left"
-            className="w-64"
+            className="w-80"
             onClick={(e) => e.stopPropagation()}
           >
-            <DropdownMenuLabel className="text-xs font-normal text-text-secondary">
+            <DropdownMenuLabel className="text-xs font-normal text-text-primary">
               {tool.metadata.description || localize('com_ui_mcp_no_description')}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -121,7 +121,7 @@ export default function MCPToolItem({
                   <Clock className="h-4 w-4 text-amber-500" />
                   <div className="flex flex-col">
                     <span>{localize('com_ui_mcp_defer_loading')}</span>
-                    <span className="text-xs text-text-tertiary">
+                    <span className="text-xs text-text-secondary">
                       {localize('com_ui_mcp_click_to_defer')}
                     </span>
                   </div>
@@ -138,7 +138,7 @@ export default function MCPToolItem({
                   <Code2 className="h-4 w-4 text-violet-500" />
                   <div className="flex flex-col">
                     <span>{localize('com_ui_mcp_programmatic')}</span>
-                    <span className="text-xs text-text-tertiary">
+                    <span className="text-xs text-text-secondary">
                       {localize('com_ui_mcp_click_to_programmatic')}
                     </span>
                   </div>
