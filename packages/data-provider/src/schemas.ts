@@ -309,7 +309,7 @@ export const openAISettings = {
 
 export const googleSettings = {
   model: {
-    default: 'gemini-1.5-flash-latest' as const,
+    default: 'gemini-2.5-flash' as const,
   },
   maxOutputTokens: {
     min: 1 as const,
@@ -610,11 +610,11 @@ export type TAttachmentMetadata = {
 export type TAttachment =
   | (TFile & TAttachmentMetadata)
   | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
-      expiresAt: number;
-    } & TAttachmentMetadata)
+    expiresAt: number;
+  } & TAttachmentMetadata)
   | (Partial<Pick<TFile, 'filename' | 'filepath'>> &
-      Pick<TFile, 'conversationId'> &
-      TAttachmentMetadata);
+    Pick<TFile, 'conversationId'> &
+    TAttachmentMetadata);
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
