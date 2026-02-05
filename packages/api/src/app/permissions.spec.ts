@@ -963,8 +963,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: false,
-        [Permissions.SHARE_PUBLIC]: false,
+        // SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
@@ -1004,8 +1003,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
-        [Permissions.SHARE_PUBLIC]: true,
+        // SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
@@ -1460,11 +1458,10 @@ describe('updateInterfacePermissions - permissions', () => {
     );
 
     // Explicitly configured permissions should be updated
+    // SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
       [Permissions.CREATE]: true,
-      [Permissions.SHARE]: false,
-      [Permissions.SHARE_PUBLIC]: false,
     });
     expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
     expect(userCall[1][PermissionTypes.MARKETPLACE]).toEqual({ [Permissions.USE]: true });
@@ -1785,12 +1782,10 @@ describe('updateInterfacePermissions - permissions', () => {
     );
     // Memory permissions should be updated even though they already exist
     expect(userCall[1][PermissionTypes.MEMORIES]).toEqual(expectedMemoryPermissions);
-    // Prompts should be updated (explicitly configured)
+    // Prompts should be updated (explicitly configured) - SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
       [Permissions.CREATE]: true,
-      [Permissions.SHARE]: false,
-      [Permissions.SHARE_PUBLIC]: false,
     });
     // Bookmarks should be updated (explicitly configured)
     expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
@@ -1801,11 +1796,10 @@ describe('updateInterfacePermissions - permissions', () => {
     );
     // Memory permissions should be updated even though they already exist
     expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual(expectedMemoryPermissions);
+    // SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
     expect(adminCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
       [Permissions.CREATE]: true,
-      [Permissions.SHARE]: true,
-      [Permissions.SHARE_PUBLIC]: true,
     });
     expect(adminCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
 

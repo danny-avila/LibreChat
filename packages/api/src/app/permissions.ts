@@ -182,16 +182,21 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.CREATE],
           true,
         ),
-        [Permissions.SHARE]: getPermissionValue(
-          getConfigShare(loadedInterface.prompts),
-          defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE],
-          promptsDefaultShare,
-        ),
-        [Permissions.SHARE_PUBLIC]: getPermissionValue(
-          getConfigPublic(loadedInterface.prompts),
-          defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE_PUBLIC],
-          promptsDefaultPublic,
-        ),
+        ...(typeof interfaceConfig?.prompts === 'object' ||
+        !existingPermissions?.[PermissionTypes.PROMPTS]
+          ? {
+              [Permissions.SHARE]: getPermissionValue(
+                getConfigShare(loadedInterface.prompts),
+                defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE],
+                promptsDefaultShare,
+              ),
+              [Permissions.SHARE_PUBLIC]: getPermissionValue(
+                getConfigPublic(loadedInterface.prompts),
+                defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE_PUBLIC],
+                promptsDefaultPublic,
+              ),
+            }
+          : {}),
       },
       [PermissionTypes.BOOKMARKS]: {
         [Permissions.USE]: getPermissionValue(
@@ -247,16 +252,21 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.AGENTS]?.[Permissions.CREATE],
           true,
         ),
-        [Permissions.SHARE]: getPermissionValue(
-          getConfigShare(loadedInterface.agents),
-          defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE],
-          agentsDefaultShare,
-        ),
-        [Permissions.SHARE_PUBLIC]: getPermissionValue(
-          getConfigPublic(loadedInterface.agents),
-          defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE_PUBLIC],
-          agentsDefaultPublic,
-        ),
+        ...(typeof interfaceConfig?.agents === 'object' ||
+        !existingPermissions?.[PermissionTypes.AGENTS]
+          ? {
+              [Permissions.SHARE]: getPermissionValue(
+                getConfigShare(loadedInterface.agents),
+                defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE],
+                agentsDefaultShare,
+              ),
+              [Permissions.SHARE_PUBLIC]: getPermissionValue(
+                getConfigPublic(loadedInterface.agents),
+                defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE_PUBLIC],
+                agentsDefaultPublic,
+              ),
+            }
+          : {}),
       },
       [PermissionTypes.TEMPORARY_CHAT]: {
         [Permissions.USE]: getPermissionValue(
@@ -328,16 +338,22 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.CREATE],
           defaults.mcpServers?.create,
         ),
-        [Permissions.SHARE]: getPermissionValue(
-          loadedInterface.mcpServers?.share,
-          defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE],
-          defaults.mcpServers?.share,
-        ),
-        [Permissions.SHARE_PUBLIC]: getPermissionValue(
-          loadedInterface.mcpServers?.public,
-          defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE_PUBLIC],
-          defaults.mcpServers?.public,
-        ),
+        ...((typeof interfaceConfig?.mcpServers === 'object' &&
+          ('share' in interfaceConfig.mcpServers || 'public' in interfaceConfig.mcpServers)) ||
+        !existingPermissions?.[PermissionTypes.MCP_SERVERS]
+          ? {
+              [Permissions.SHARE]: getPermissionValue(
+                loadedInterface.mcpServers?.share,
+                defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE],
+                defaults.mcpServers?.share,
+              ),
+              [Permissions.SHARE_PUBLIC]: getPermissionValue(
+                loadedInterface.mcpServers?.public,
+                defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE_PUBLIC],
+                defaults.mcpServers?.public,
+              ),
+            }
+          : {}),
       },
       [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: getPermissionValue(
@@ -350,16 +366,22 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.CREATE],
           defaults.remoteAgents?.create,
         ),
-        [Permissions.SHARE]: getPermissionValue(
-          loadedInterface.remoteAgents?.share,
-          defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE],
-          defaults.remoteAgents?.share,
-        ),
-        [Permissions.SHARE_PUBLIC]: getPermissionValue(
-          loadedInterface.remoteAgents?.public,
-          defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE_PUBLIC],
-          defaults.remoteAgents?.public,
-        ),
+        ...((typeof interfaceConfig?.remoteAgents === 'object' &&
+          ('share' in interfaceConfig.remoteAgents || 'public' in interfaceConfig.remoteAgents)) ||
+        !existingPermissions?.[PermissionTypes.REMOTE_AGENTS]
+          ? {
+              [Permissions.SHARE]: getPermissionValue(
+                loadedInterface.remoteAgents?.share,
+                defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE],
+                defaults.remoteAgents?.share,
+              ),
+              [Permissions.SHARE_PUBLIC]: getPermissionValue(
+                loadedInterface.remoteAgents?.public,
+                defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE_PUBLIC],
+                defaults.remoteAgents?.public,
+              ),
+            }
+          : {}),
       },
     };
 
