@@ -526,8 +526,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       const runStepDeltaEvent = { event: GraphEvents.ON_RUN_STEP_DELTA, data: runStepDeltaData };
 
       if (streamId) {
-        GenerationJobManager.emitChunk(streamId, runStepEvent);
-        GenerationJobManager.emitChunk(streamId, runStepDeltaEvent);
+        await GenerationJobManager.emitChunk(streamId, runStepEvent);
+        await GenerationJobManager.emitChunk(streamId, runStepDeltaEvent);
       } else if (res && !res.writableEnded) {
         sendEvent(res, runStepEvent);
         sendEvent(res, runStepDeltaEvent);

@@ -152,13 +152,15 @@ function checkIfLastAgent(last_agent_id, langgraph_node) {
 
 /**
  * Helper to emit events either to res (standard mode) or to job emitter (resumable mode).
+ * In Redis mode, awaits the emit to guarantee event ordering (critical for streaming deltas).
  * @param {ServerResponse} res - The server response object
  * @param {string | null} streamId - The stream ID for resumable mode, or null for standard mode
  * @param {Object} eventData - The event data to send
+ * @returns {Promise<void>}
  */
-function emitEvent(res, streamId, eventData) {
+async function emitEvent(res, streamId, eventData) {
   if (streamId) {
-    GenerationJobManager.emitChunk(streamId, eventData);
+    await GenerationJobManager.emitChunk(streamId, eventData);
   } else {
     sendEvent(res, eventData);
   }
@@ -206,18 +208,18 @@ function getDefaultHandlers({
        * @param {StreamEventData} data - The event data.
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data, metadata) => {
+      handle: async (event, data, metadata) => {
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         } else {
           const agentName = metadata?.name ?? 'Agent';
           const isToolCall = data?.stepDetails.type === StepTypes.TOOL_CALLS;
           const action = isToolCall ? 'performing a task...' : 'thinking...';
-          emitEvent(res, streamId, {
+          await emitEvent(res, streamId, {
             event: 'on_agent_update',
             data: {
               runId: metadata?.run_id,
@@ -235,13 +237,13 @@ function getDefaultHandlers({
        * @param {StreamEventData} data - The event data.
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data, metadata) => {
+      handle: async (event, data, metadata) => {
         if (data?.delta.type === StepTypes.TOOL_CALLS) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         }
         aggregateContent({ event, data });
       },
@@ -253,13 +255,13 @@ function getDefaultHandlers({
        * @param {StreamEventData & { result: ToolEndData }} data - The event data.
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data, metadata) => {
+      handle: async (event, data, metadata) => {
         if (data?.result != null) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         }
         aggregateContent({ event, data });
       },
@@ -271,11 +273,11 @@ function getDefaultHandlers({
        * @param {StreamEventData} data - The event data.
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data, metadata) => {
+      handle: async (event, data, metadata) => {
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         }
         aggregateContent({ event, data });
       },
@@ -287,11 +289,11 @@ function getDefaultHandlers({
        * @param {StreamEventData} data - The event data.
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: (event, data, metadata) => {
+      handle: async (event, data, metadata) => {
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
-          emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, { event, data });
         }
         aggregateContent({ event, data });
       },
@@ -307,6 +309,7 @@ function getDefaultHandlers({
 
 /**
  * Helper to write attachment events either to res or to job emitter.
+ * Note: Attachments are not order-sensitive like deltas, so fire-and-forget is acceptable.
  * @param {ServerResponse} res - The server response object
  * @param {string | null} streamId - The stream ID for resumable mode, or null for standard mode
  * @param {Object} attachment - The attachment data
