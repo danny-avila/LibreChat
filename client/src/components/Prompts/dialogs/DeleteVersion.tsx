@@ -49,7 +49,7 @@ const DeleteConfirmDialog = ({
         main={
           <div className="flex w-full flex-col items-center gap-2">
             <div className="grid w-full items-center gap-2">
-              <p className="text-left text-sm font-medium">
+              <p className="text-left text-sm text-text-primary">
                 {localize('com_ui_delete_confirm_prompt_version_var', { 0: name })}
               </p>
             </div>
