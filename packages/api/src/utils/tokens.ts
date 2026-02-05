@@ -123,6 +123,7 @@ const anthropicModels = {
   'claude-4': 200000,
   'claude-opus-4': 200000,
   'claude-opus-4-5': 200000,
+  'claude-opus-4-6': 200000,
 };
 
 const deepseekModels = {
@@ -331,6 +332,7 @@ const anthropicMaxOutputs = {
   'claude-sonnet-4': 64000,
   'claude-opus-4': 32000,
   'claude-opus-4-5': 64000,
+  'claude-opus-4-6': 64000,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
   'claude-3.7-sonnet': 128000,
