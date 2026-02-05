@@ -5,27 +5,27 @@ import TokenCreditsItem from './TokenCreditsItem';
 import AutoRefillSettings from './AutoRefillSettings';
 
 const PACKS = [
-  { id: 1, label: '1 Pack (5,000,000 tokens) - ₱250', price: 250 },
-  { id: 2, label: '2 Packs (10M tokens) - ₱450 (Save ₱50)', price: 450 },
-  { id: 3, label: '3 Packs (15M tokens) - ₱600 (Save ₱150)', price: 600 },
-  { id: 4, label: '4 Packs (20M tokens) - ₱720 (Save ₱280)', price: 720 },
-  { id: 5, label: '5 Packs (25M tokens) - ₱850 (Save ₱400)', price: 850 },
+  { id: 1, label: '1 Pack (5,000,000 tokens) - ₱250', price: 250, tokens: '5M' },
+  { id: 2, label: '2 Packs (10M tokens) - ₱450 (Save ₱50)', price: 450, tokens: '10M' },
+  { id: 3, label: '3 Packs (15M tokens) - ₱600 (Save ₱150)', price: 600, tokens: '15M' },
+  { id: 4, label: '4 Packs (20M tokens) - ₱720 (Save ₱280)', price: 720, tokens: '20M' },
+  { id: 5, label: '5 Packs (25M tokens) - ₱850 (Save ₱400)', price: 850, tokens: '25M' },
 ];
 
 function Balance() {
   const localize = useLocalize();
-  // We pull 'user' here to get the 'id' and 'email' for your webhook
   const { user, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
 
-  const [selectedId, setSelectedId] = useState(1);
-  const selectedPack = PACKS.find(p => p.id === selectedId) || PACKS[0];
+  const [selectedId, setSelectedId] = useState(2);
+  const selectedPack = PACKS.find((p) => p.id === selectedId) || PACKS[0];
 
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && !!startupConfig?.balance?.enabled,
   });
   const balanceData = balanceQuery.data;
 
+  // Preserve all fields for the Auto-Refill logic
   const {
     tokenCredits = 0,
     autoRefillEnabled = false,
@@ -41,21 +41,24 @@ function Balance() {
     refillIntervalUnit !== undefined &&
     refillIntervalValue !== undefined;
 
+  // Use fallback to ensure userId is captured for MongoDB
+  const userId = user?.id || user?._id || '';
+
   return (
     <div className="flex flex-col gap-4 p-4 text-sm text-text-primary">
-      {/* Current Balance Display */}
+      {/* 1. Balance Display */}
       <TokenCreditsItem tokenCredits={tokenCredits} />
 
-      {/* --- RECONSTRUCTED TOP-UP BOX --- */}
-      <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-5 shadow-sm">
-        <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">
-          Ryan's Lab Refill
+      {/* 2. Top-up Section (Matches your MongoDB 'test.balances' logic) */}
+      <div className="rounded-xl border border-white/10 bg-[#171717] p-6 shadow-lg">
+        <label className="mb-3 block text-sm font-bold text-white">
+          Choose Token Pack
         </label>
         
         <select
           value={selectedId}
           onChange={(e) => setSelectedId(Number(e.target.value))}
-          className="mb-4 w-full rounded-lg border-2 border-blue-500 bg-background p-3 text-sm font-bold text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="mb-5 w-full rounded-lg border border-blue-500 bg-[#0d0d0d] p-3 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           {PACKS.map((pack) => (
             <option key={pack.id} value={pack.id}>
@@ -64,28 +67,26 @@ function Balance() {
           ))}
         </select>
 
-        {/* CRITICAL FIXES HERE: 
-          1. We use 'quantity' (not qty) to match your: const { email, quantity } = req.query;
-          2. We use 'userId' to match your webhook: const userId = metadata.userId;
-        */}
         <a
-          href={`https://pay.ryanslab.space/pay?email=${encodeURIComponent(user?.email || '')}&quantity=${selectedId}&userId=${user?.id}`}
+          href={`https://pay.ryanslab.space/pay?email=${encodeURIComponent(user?.email || '')}&quantity=${selectedId}&userId=${userId}`}
           target="_blank"
           rel="noreferrer"
-          className="flex w-full flex-col items-center justify-center gap-1 rounded-lg bg-blue-600 py-3 font-bold text-white hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-500/20"
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#3da37a] py-3 text-sm font-bold text-white transition-all hover:bg-[#46b98b] active:scale-[0.98]"
         >
-          <span className="text-base">Top Up {selectedId * 5}M Tokens</span>
-          <span className="text-xs opacity-80 underline">Confirm Payment: ₱{selectedPack.price}</span>
+          <span>⚡</span>
+          Top Up {selectedPack.tokens} Tokens (₱{selectedPack.price})
         </a>
 
-        <p className="mt-3 text-center text-[9px] font-medium text-text-secondary italic">
-          Credits will be added to: <span className="font-bold">{user?.email}</span>
-        </p>
+        <div className="mt-3 flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-tight text-gray-500">
+          <span>✨ SECURE CHECKOUT</span>
+          <span>•</span>
+          <span>CREDITS APPLY INSTANTLY</span>
+        </div>
       </div>
 
-      <hr className="border-border-medium" />
+      <hr className="border-white/5" />
 
-      {/* Auto-refill logic */}
+      {/* 3. Auto-refill logic (Restored exactly as per your original file) */}
       {autoRefillEnabled ? (
         hasValidRefillSettings ? (
           <AutoRefillSettings
@@ -95,12 +96,12 @@ function Balance() {
             refillIntervalValue={refillIntervalValue}
           />
         ) : (
-          <div className="text-sm text-red-600 font-medium">
+          <div className="text-sm text-red-600">
             {localize('com_nav_balance_auto_refill_error')}
           </div>
         )
       ) : (
-        <div className="text-sm text-gray-500 italic">
+        <div className="text-sm text-gray-600">
           {localize('com_nav_balance_auto_refill_disabled')}
         </div>
       )}
