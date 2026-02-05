@@ -115,12 +115,11 @@ export class RedisEventTransport implements IEventTransport {
     });
   }
 
-  /** Get next sequence number for a stream */
+  /** Get next sequence number for a stream (0-indexed) */
   private getNextSequence(streamId: string): number {
     const current = this.sequenceCounters.get(streamId) ?? 0;
-    const next = current + 1;
-    this.sequenceCounters.set(streamId, next);
-    return next;
+    this.sequenceCounters.set(streamId, current + 1);
+    return current;
   }
 
   /** Reset sequence counter for a stream */
@@ -163,7 +162,7 @@ export class RedisEventTransport implements IEventTransport {
 
   /**
    * Handle terminal events (done/error) with sequence-based ordering.
-   * Flushes any pending chunks before delivering the terminal event.
+   * Buffers the terminal event and delivers after all preceding chunks arrive.
    */
   private handleTerminalEvent(
     streamId: string,
@@ -180,12 +179,13 @@ export class RedisEventTransport implements IEventTransport {
       return;
     }
 
-    if (buffer.pending.size > 0 || seq > buffer.nextSeq) {
-      buffer.pending.set(seq, message);
-      this.forceFlushBuffer(streamId, streamState);
-    } else {
+    if (seq === buffer.nextSeq) {
       this.deliverMessage(streamState, message);
       buffer.nextSeq++;
+      this.flushPendingMessages(streamId, streamState);
+    } else {
+      buffer.pending.set(seq, message);
+      this.scheduleFlushTimeout(streamId, streamState);
     }
   }
 
@@ -343,7 +343,7 @@ export class RedisEventTransport implements IEventTransport {
         allSubscribersLeftCallbacks: [],
         abortCallbacks: [],
         reorderBuffer: {
-          nextSeq: 1,
+          nextSeq: 0,
           pending: new Map(),
           flushTimeout: null,
         },
@@ -482,7 +482,7 @@ export class RedisEventTransport implements IEventTransport {
         allSubscribersLeftCallbacks: [callback],
         abortCallbacks: [],
         reorderBuffer: {
-          nextSeq: 1,
+          nextSeq: 0,
           pending: new Map(),
           flushTimeout: null,
         },
@@ -522,7 +522,7 @@ export class RedisEventTransport implements IEventTransport {
         allSubscribersLeftCallbacks: [],
         abortCallbacks: [],
         reorderBuffer: {
-          nextSeq: 1,
+          nextSeq: 0,
           pending: new Map(),
           flushTimeout: null,
         },

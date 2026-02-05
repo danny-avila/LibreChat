@@ -243,7 +243,7 @@ describe('RedisEventTransport Integration Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Simulate streaming tool call arguments like: {"code": "# First line\n..."
-      const argChunks = ['{"code"', '": "', '# First', ' line', '\\n', '..."', '}'];
+      const argChunks = ['{"code"', ': "', '# First', ' line', '\\n', '..."', '}'];
 
       for (const chunk of argChunks) {
         await transport.emitChunk(streamId, {
@@ -342,9 +342,9 @@ describe('RedisEventTransport Integration Tests', () => {
 
       const channel = `stream:{${streamId}}:events`;
 
-      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 1, data: { index: 0 } }));
-      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 3, data: { index: 2 } }));
-      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 2, data: { index: 1 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 0, data: { index: 0 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 2, data: { index: 2 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 1, data: { index: 1 } }));
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -383,15 +383,15 @@ describe('RedisEventTransport Integration Tests', () => {
 
       const channel = `stream:{${streamId}}:events`;
 
-      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 3, data: { index: 2 } }));
-      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 5, data: { index: 4 } }));
-      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 4, data: { index: 3 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 2, data: { index: 2 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 4, data: { index: 4 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 3, data: { index: 3 } }));
 
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(receivedEvents).toEqual([]);
 
-      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 1, data: { index: 0 } }));
-      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 2, data: { index: 1 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 0, data: { index: 0 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 1, data: { index: 1 } }));
 
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(receivedEvents).toEqual([0, 1, 2, 3, 4]);
@@ -431,8 +431,8 @@ describe('RedisEventTransport Integration Tests', () => {
 
       const channel = `stream:{${streamId}}:events`;
 
-      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 3, data: { index: 2 } }));
-      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 4, data: { index: 3 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 2, data: { index: 2 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 3, data: { index: 3 } }));
 
       expect(receivedEvents).toEqual([]);
 
@@ -506,12 +506,12 @@ describe('RedisEventTransport Integration Tests', () => {
 
       transport.subscribe(streamId, {
         onChunk: (event: unknown) => {
-          const e = event as { data?: { msg?: string } };
-          receivedEvents.push(e.data?.msg ?? 'unknown');
+          const e = event as { msg?: string };
+          receivedEvents.push(e.msg ?? 'unknown');
         },
         onDone: (event: unknown) => {
-          const e = event as { data?: { msg?: string } };
-          receivedEvents.push(`done:${e.data?.msg ?? 'finished'}`);
+          const e = event as { msg?: string };
+          receivedEvents.push(`done:${e.msg ?? 'finished'}`);
           doneReceived = true;
         },
       });
@@ -559,8 +559,8 @@ describe('RedisEventTransport Integration Tests', () => {
 
       transport.subscribe(streamId, {
         onChunk: (event: unknown) => {
-          const e = event as { data?: { msg?: string } };
-          receivedEvents.push(e.data?.msg ?? 'unknown');
+          const e = event as { msg?: string };
+          receivedEvents.push(e.msg ?? 'unknown');
         },
         onError: (error: string) => {
           receivedEvents.push(`error:${error}`);
