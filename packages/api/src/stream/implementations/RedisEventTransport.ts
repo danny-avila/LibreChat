@@ -22,9 +22,29 @@ const EventTypes = {
 
 interface PubSubMessage {
   type: (typeof EventTypes)[keyof typeof EventTypes];
+  /** Sequence number for ordering (critical for Redis Cluster) */
+  seq?: number;
   data?: unknown;
   error?: string;
 }
+
+/**
+ * Reorder buffer state for a stream subscription.
+ * Handles out-of-order message delivery in Redis Cluster mode.
+ */
+interface ReorderBuffer {
+  /** Next expected sequence number */
+  nextSeq: number;
+  /** Buffered messages waiting for earlier sequences */
+  pending: Map<number, PubSubMessage>;
+  /** Timeout handle for flushing stale messages */
+  flushTimeout: ReturnType<typeof setTimeout> | null;
+}
+
+/** Max time (ms) to wait for out-of-order messages before force-flushing */
+const REORDER_TIMEOUT_MS = 500;
+/** Max messages to buffer before force-flushing (prevents memory issues) */
+const MAX_BUFFER_SIZE = 100;
 
 /**
  * Subscriber state for a stream
@@ -42,6 +62,8 @@ interface StreamSubscribers {
   allSubscribersLeftCallbacks: Array<() => void>;
   /** Abort callbacks - called when abort signal is received from any replica */
   abortCallbacks: Array<() => void>;
+  /** Reorder buffer for handling out-of-order delivery in Redis Cluster */
+  reorderBuffer: ReorderBuffer;
 }
 
 /**
@@ -74,6 +96,8 @@ export class RedisEventTransport implements IEventTransport {
   private subscribedChannels = new Set<string>();
   /** Counter for generating unique subscriber IDs */
   private subscriberIdCounter = 0;
+  /** Sequence counters per stream for publishing (ensures ordered delivery in cluster mode) */
+  private sequenceCounters = new Map<string, number>();
 
   /**
    * Create a new Redis event transport.
@@ -91,12 +115,23 @@ export class RedisEventTransport implements IEventTransport {
     });
   }
 
+  /** Get next sequence number for a stream */
+  private getNextSequence(streamId: string): number {
+    const current = this.sequenceCounters.get(streamId) ?? 0;
+    const next = current + 1;
+    this.sequenceCounters.set(streamId, next);
+    return next;
+  }
+
+  /** Reset sequence counter for a stream */
+  private resetSequence(streamId: string): void {
+    this.sequenceCounters.delete(streamId);
+  }
+
   /**
-   * Handle incoming pub/sub message
+   * Handle incoming pub/sub message with reordering support for Redis Cluster
    */
   private handleMessage(channel: string, message: string): void {
-    // Extract streamId from channel name: stream:{streamId}:events
-    // Use regex to extract the hash tag content
     const match = channel.match(/^stream:\{([^}]+)\}:events$/);
     if (!match) {
       return;
@@ -111,35 +146,138 @@ export class RedisEventTransport implements IEventTransport {
     try {
       const parsed = JSON.parse(message) as PubSubMessage;
 
-      for (const [, handlers] of streamState.handlers) {
-        switch (parsed.type) {
-          case EventTypes.CHUNK:
-            handlers.onChunk(parsed.data);
-            break;
-          case EventTypes.DONE:
-            handlers.onDone?.(parsed.data);
-            break;
-          case EventTypes.ERROR:
-            handlers.onError?.(parsed.error ?? 'Unknown error');
-            break;
-          case EventTypes.ABORT:
-            // Abort is handled at stream level, not per-handler
-            break;
-        }
-      }
-
-      // Handle abort signals at stream level (not per-handler)
-      if (parsed.type === EventTypes.ABORT) {
-        for (const callback of streamState.abortCallbacks) {
-          try {
-            callback();
-          } catch (err) {
-            logger.error(`[RedisEventTransport] Error in abort callback:`, err);
-          }
-        }
+      if (parsed.type === EventTypes.CHUNK && parsed.seq != null) {
+        this.handleOrderedChunk(streamId, streamState, parsed);
+      } else {
+        this.deliverMessage(streamState, parsed);
       }
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to parse message:`, err);
+    }
+  }
+
+  /**
+   * Handle chunk messages with sequence-based reordering.
+   * Buffers out-of-order messages and delivers them in sequence.
+   */
+  private handleOrderedChunk(
+    streamId: string,
+    streamState: StreamSubscribers,
+    message: PubSubMessage,
+  ): void {
+    const buffer = streamState.reorderBuffer;
+    const seq = message.seq!;
+
+    if (seq === buffer.nextSeq) {
+      this.deliverMessage(streamState, message);
+      buffer.nextSeq++;
+
+      this.flushPendingMessages(streamId, streamState);
+    } else if (seq > buffer.nextSeq) {
+      buffer.pending.set(seq, message);
+
+      if (buffer.pending.size >= MAX_BUFFER_SIZE) {
+        logger.warn(`[RedisEventTransport] Buffer overflow for stream ${streamId}, force-flushing`);
+        this.forceFlushBuffer(streamId, streamState);
+      } else {
+        this.scheduleFlushTimeout(streamId, streamState);
+      }
+    }
+  }
+
+  /** Deliver consecutive pending messages */
+  private flushPendingMessages(streamId: string, streamState: StreamSubscribers): void {
+    const buffer = streamState.reorderBuffer;
+
+    while (buffer.pending.has(buffer.nextSeq)) {
+      const message = buffer.pending.get(buffer.nextSeq)!;
+      buffer.pending.delete(buffer.nextSeq);
+      this.deliverMessage(streamState, message);
+      buffer.nextSeq++;
+    }
+
+    if (buffer.pending.size === 0 && buffer.flushTimeout) {
+      clearTimeout(buffer.flushTimeout);
+      buffer.flushTimeout = null;
+    }
+  }
+
+  /** Force-flush all pending messages in order (used on timeout or overflow) */
+  private forceFlushBuffer(streamId: string, streamState: StreamSubscribers): void {
+    const buffer = streamState.reorderBuffer;
+
+    if (buffer.flushTimeout) {
+      clearTimeout(buffer.flushTimeout);
+      buffer.flushTimeout = null;
+    }
+
+    if (buffer.pending.size === 0) {
+      return;
+    }
+
+    const sortedSeqs = [...buffer.pending.keys()].sort((a, b) => a - b);
+    const skipped = sortedSeqs[0] - buffer.nextSeq;
+
+    if (skipped > 0) {
+      logger.warn(
+        `[RedisEventTransport] Stream ${streamId}: skipping ${skipped} missing messages (seq ${buffer.nextSeq}-${sortedSeqs[0] - 1})`,
+      );
+    }
+
+    for (const seq of sortedSeqs) {
+      const message = buffer.pending.get(seq)!;
+      buffer.pending.delete(seq);
+      this.deliverMessage(streamState, message);
+    }
+
+    buffer.nextSeq = sortedSeqs[sortedSeqs.length - 1] + 1;
+  }
+
+  /** Schedule a timeout to force-flush if gaps aren't filled */
+  private scheduleFlushTimeout(streamId: string, streamState: StreamSubscribers): void {
+    const buffer = streamState.reorderBuffer;
+
+    if (buffer.flushTimeout) {
+      return;
+    }
+
+    buffer.flushTimeout = setTimeout(() => {
+      buffer.flushTimeout = null;
+      if (buffer.pending.size > 0) {
+        logger.warn(
+          `[RedisEventTransport] Stream ${streamId}: timeout waiting for seq ${buffer.nextSeq}, force-flushing ${buffer.pending.size} messages`,
+        );
+        this.forceFlushBuffer(streamId, streamState);
+      }
+    }, REORDER_TIMEOUT_MS);
+  }
+
+  /** Deliver a message to all handlers */
+  private deliverMessage(streamState: StreamSubscribers, message: PubSubMessage): void {
+    for (const [, handlers] of streamState.handlers) {
+      switch (message.type) {
+        case EventTypes.CHUNK:
+          handlers.onChunk(message.data);
+          break;
+        case EventTypes.DONE:
+          handlers.onDone?.(message.data);
+          break;
+        case EventTypes.ERROR:
+          handlers.onError?.(message.error ?? 'Unknown error');
+          break;
+        case EventTypes.ABORT:
+          break;
+      }
+    }
+
+    if (message.type === EventTypes.ABORT) {
+      for (const callback of streamState.abortCallbacks) {
+        try {
+          callback();
+        } catch (err) {
+          logger.error(`[RedisEventTransport] Error in abort callback:`, err);
+        }
+      }
     }
   }
 
@@ -167,6 +305,11 @@ export class RedisEventTransport implements IEventTransport {
         handlers: new Map(),
         allSubscribersLeftCallbacks: [],
         abortCallbacks: [],
+        reorderBuffer: {
+          nextSeq: 1,
+          pending: new Map(),
+          flushTimeout: null,
+        },
       });
     }
 
@@ -195,6 +338,11 @@ export class RedisEventTransport implements IEventTransport {
 
         // If last subscriber left, unsubscribe from Redis and notify
         if (state.count === 0) {
+          // Clear any pending flush timeout
+          if (state.reorderBuffer.flushTimeout) {
+            clearTimeout(state.reorderBuffer.flushTimeout);
+          }
+
           this.subscriber.unsubscribe(channel).catch((err) => {
             logger.error(`[RedisEventTransport] Failed to unsubscribe from ${channel}:`, err);
           });
@@ -217,14 +365,18 @@ export class RedisEventTransport implements IEventTransport {
 
   /**
    * Publish a chunk event to all subscribers across all instances.
+   * Includes sequence number for ordered delivery in Redis Cluster mode.
    */
-  emitChunk(streamId: string, event: unknown): void {
+  async emitChunk(streamId: string, event: unknown): Promise<void> {
     const channel = CHANNELS.events(streamId);
-    const message: PubSubMessage = { type: EventTypes.CHUNK, data: event };
+    const seq = this.getNextSequence(streamId);
+    const message: PubSubMessage = { type: EventTypes.CHUNK, seq, data: event };
 
-    this.publisher.publish(channel, JSON.stringify(message)).catch((err) => {
+    try {
+      await this.publisher.publish(channel, JSON.stringify(message));
+    } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish chunk:`, err);
-    });
+    }
   }
 
   /**
@@ -282,6 +434,11 @@ export class RedisEventTransport implements IEventTransport {
         handlers: new Map(),
         allSubscribersLeftCallbacks: [callback],
         abortCallbacks: [],
+        reorderBuffer: {
+          nextSeq: 1,
+          pending: new Map(),
+          flushTimeout: null,
+        },
       });
     }
   }
@@ -317,6 +474,11 @@ export class RedisEventTransport implements IEventTransport {
         handlers: new Map(),
         allSubscribersLeftCallbacks: [],
         abortCallbacks: [],
+        reorderBuffer: {
+          nextSeq: 1,
+          pending: new Map(),
+          flushTimeout: null,
+        },
       };
       this.streams.set(streamId, state);
     }
@@ -347,11 +509,19 @@ export class RedisEventTransport implements IEventTransport {
     const state = this.streams.get(streamId);
 
     if (state) {
+      // Clear flush timeout
+      if (state.reorderBuffer.flushTimeout) {
+        clearTimeout(state.reorderBuffer.flushTimeout);
+      }
       // Clear all handlers and callbacks
       state.handlers.clear();
       state.allSubscribersLeftCallbacks = [];
       state.abortCallbacks = [];
+      state.reorderBuffer.pending.clear();
     }
+
+    // Reset sequence counter for this stream
+    this.resetSequence(streamId);
 
     // Unsubscribe from Redis channel
     if (this.subscribedChannels.has(channel)) {
@@ -368,6 +538,13 @@ export class RedisEventTransport implements IEventTransport {
    * Destroy all resources.
    */
   destroy(): void {
+    // Clear all flush timeouts
+    for (const [, state] of this.streams) {
+      if (state.reorderBuffer.flushTimeout) {
+        clearTimeout(state.reorderBuffer.flushTimeout);
+      }
+    }
+
     // Unsubscribe from all channels
     for (const channel of this.subscribedChannels) {
       this.subscriber.unsubscribe(channel).catch(() => {
@@ -377,6 +554,7 @@ export class RedisEventTransport implements IEventTransport {
 
     this.subscribedChannels.clear();
     this.streams.clear();
+    this.sequenceCounters.clear();
 
     // Note: Don't close Redis connections - they may be shared
     logger.info('[RedisEventTransport] Destroyed');

@@ -789,8 +789,11 @@ class GenerationJobManagerClass {
    *
    * If no subscriber has connected yet, buffers the event for replay when they do.
    * This ensures early events (like 'created') aren't lost due to race conditions.
+   *
+   * In Redis mode, awaits the publish to guarantee event ordering.
+   * This is critical for streaming deltas (tool args, message content) to arrive in order.
    */
-  emitChunk(streamId: string, event: t.ServerSentEvent): void {
+  async emitChunk(streamId: string, event: t.ServerSentEvent): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (!runtime || runtime.abortController.signal.aborted) {
       return;
@@ -799,7 +802,7 @@ class GenerationJobManagerClass {
     // Track user message from created event
     this.trackUserMessage(streamId, event);
 
-    // For Redis mode, persist chunk for later reconstruction
+    // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
       // The SSE event structure is { event: string, data: unknown, ... }
       // The aggregator expects { event: string, data: unknown } where data is the payload
@@ -825,7 +828,8 @@ class GenerationJobManagerClass {
       runtime.earlyEventBuffer.push(event);
     }
 
-    this.eventTransport.emitChunk(streamId, event);
+    // Await the transport emit - critical for Redis mode to maintain event order
+    await this.eventTransport.emitChunk(streamId, event);
   }
 
   /**

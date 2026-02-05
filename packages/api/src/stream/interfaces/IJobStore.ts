@@ -296,8 +296,8 @@ export interface IEventTransport {
     },
   ): { unsubscribe: () => void };
 
-  /** Publish a chunk event */
-  emitChunk(streamId: string, event: unknown): void;
+  /** Publish a chunk event - returns Promise in Redis mode for ordered delivery */
+  emitChunk(streamId: string, event: unknown): void | Promise<void>;
 
   /** Publish a done event */
   emitDone(streamId: string, event: unknown): void;

@@ -53,9 +53,9 @@ function isEmptyObjectSchema(jsonSchema) {
 function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
   /**
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  return function (authURL) {
+  return async function (authURL) {
     /** @type {{ id: string; delta: AgentToolCallDelta }} */
     const data = {
       id: stepId,
@@ -68,7 +68,7 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
     };
     const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
     if (streamId) {
-      GenerationJobManager.emitChunk(streamId, eventData);
+      await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
       sendEvent(res, eventData);
     }
@@ -83,9 +83,10 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
  * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
  * @param {number} [params.index]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
+ * @returns {() => Promise<void>}
  */
 function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = null }) {
-  return function () {
+  return async function () {
     /** @type {import('@librechat/agents').RunStep} */
     const data = {
       runId: runId ?? Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
@@ -99,7 +100,7 @@ function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = 
     };
     const eventData = { event: GraphEvents.ON_RUN_STEP, data };
     if (streamId) {
-      GenerationJobManager.emitChunk(streamId, eventData);
+      await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
       sendEvent(res, eventData);
     }
@@ -147,7 +148,7 @@ function createOAuthEnd({ res, stepId, toolCall, streamId = null }) {
     };
     const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
     if (streamId) {
-      GenerationJobManager.emitChunk(streamId, eventData);
+      await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
       sendEvent(res, eventData);
     }
