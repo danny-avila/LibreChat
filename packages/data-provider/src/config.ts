@@ -1115,6 +1115,7 @@ const sharedAnthropicModels = [
   'claude-opus-4-1',
   'claude-opus-4-1-20250805',
   'claude-opus-4-5',
+  'claude-opus-4-6',
   'claude-sonnet-4-20250514',
   'claude-sonnet-4-0',
   'claude-opus-4-20250514',
