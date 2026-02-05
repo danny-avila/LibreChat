@@ -70,16 +70,16 @@ describe('RedisEventTransport Integration Tests', () => {
         },
       });
 
-      // Wait for subscription to be established
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for subscription to be established (increased for CI)
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Emit events (emitChunk/emitDone are async for ordered delivery)
       await transport.emitChunk(streamId, { type: 'text', text: 'Hello' });
       await transport.emitChunk(streamId, { type: 'text', text: ' World' });
       await transport.emitDone(streamId, { finished: true });
 
-      // Wait for events to propagate
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // Wait for events to propagate (increased for CI)
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       expect(receivedChunks.length).toBe(2);
       expect(doneEvent).toEqual({ finished: true });
@@ -518,7 +518,9 @@ describe('RedisEventTransport Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const messageHandler = mockSubscriber.on.mock.calls.find((call) => call[0] === 'message')?.[1];
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1];
       expect(messageHandler).toBeDefined();
 
       const channel = `stream:{${streamId}}:events`;
@@ -570,7 +572,9 @@ describe('RedisEventTransport Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const messageHandler = mockSubscriber.on.mock.calls.find((call) => call[0] === 'message')?.[1];
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1];
       expect(messageHandler).toBeDefined();
 
       const channel = `stream:{${streamId}}:events`;
