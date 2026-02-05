@@ -29,7 +29,7 @@ export default function TrustSection() {
               aria-describedby={
                 errors.trust ? 'trust-description trust-error' : 'trust-description'
               }
-              aria-invalid={errors.trust ? true : undefined}
+              aria-invalid={errors.trust ? 'true' : 'false'}
               aria-required="true"
               className="mt-0.5"
             />

@@ -47,7 +47,7 @@ export default function BasicInfoSection() {
             id="mcp-title"
             autoComplete="off"
             placeholder={localize('com_agents_mcp_name_placeholder')}
-            aria-invalid={errors.title ? true : undefined}
+            aria-invalid={errors.title ? 'true' : 'false'}
             aria-describedby={errors.title ? 'mcp-title-error' : undefined}
             {...register('title', {
               required: localize('com_ui_field_required'),

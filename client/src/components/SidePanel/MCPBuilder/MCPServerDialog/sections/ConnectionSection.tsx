@@ -26,7 +26,7 @@ export default function ConnectionSection() {
         type="url"
         autoComplete="off"
         placeholder={localize('com_ui_mcp_server_url_placeholder')}
-        aria-invalid={errors.url ? true : undefined}
+        aria-invalid={errors.url ? 'true' : 'false'}
         aria-describedby={errors.url ? 'url-error' : undefined}
         {...register('url', {
           required: localize('com_ui_field_required'),
