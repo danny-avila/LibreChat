@@ -397,11 +397,8 @@ export const anthropicSettings = {
       return DEFAULT_MAX_OUTPUT;
     },
     set: (value: number, modelName: string) => {
-      if (/claude-opus[-.]?4[-.]?6/.test(modelName)) {
-        if (value > ANTHROPIC_MAX_OUTPUT) {
-          return ANTHROPIC_MAX_OUTPUT;
-        }
-        return value;
+      if (/claude-opus[-.]?4[-.]?6/.test(modelName) && value > ANTHROPIC_MAX_OUTPUT) {
+        return ANTHROPIC_MAX_OUTPUT;
       }
 
       if (/claude-(?:sonnet|haiku)[-.]?[4-9]/.test(modelName) && value > CLAUDE_4_64K_MAX_OUTPUT) {
