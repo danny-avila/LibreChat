@@ -3,6 +3,93 @@
 > 记录 E2B Data Analyst Agent 的每日开发进展、问题解决和关键决策。
 
 
+## 2026-02-05 (周三)
+
+### 🚀 流式体验优化与 Prompt 增强
+**Git Commit**: feat(e2b): Optimize streaming, multi-file handling and language consistency
+
+### 主要工作
+1. **多文件处理逻辑优化** 📁
+   - **问题**: 用户上传多个文件后，提出通用问题（如"加载数据"、"运行EDA"）时，LLM 只处理第一个文件，忽略其他文件
+   - **修复**: 修改 System Prompt 添加 Multi-File Policy
+   - **实现**: 
+     ```
+     - **Multi-File Policy**: If multiple files are available and the user's 
+       request is general (e.g., "load data", "run EDA"), you **MUST load and 
+       preview ALL files** to provide a complete overview. Do not arbitrarily 
+       select just one.
+     ```
+   - **效果**: LLM 现在会加载并预览所有可用文件，提供完整的数据概览
+
+2. **语言一致性问题修复** 🌐
+   - **问题**: LLM 在分析过程中语言不一致，中文提问时部分内容输出英文
+   - **修复**: 修改 System Prompt 添加 Absolute Language Consistency 规则
+   - **实现**:
+     ```
+     6. **Absolute Language Consistency**: You MUST detect the user's language 
+        and use it EXCLUSIVELY for all parts of your response (Plan, Thoughts, 
+        Interpretations, and Summary). Never switch languages.
+     ```
+   - **效果**: 确保从计划、思考、解释到总结全程使用用户语言
+
+3. **流式输出体验优化** ⚡ (未完全解决)
+   - **问题**: TOOL_CALL 事件流式输出延迟，前端在代码执行完成后才收到 PENDING 和 COMPLETED 事件
+   - **现象**: 前端在 10 秒后同时收到两个事件，导致"正在分析"瞬间出现又消失
+   - **尝试修复**:
+     - ✅ 后端改为发送 `sync` 事件（匹配 Azure Assistant 实现）
+     - ✅ 在所有 TOOL_CALL 事件后添加 `res.flush()`，强制刷新缓冲区
+     - ⏳ 撤销了前端的临时修改（ContentParts.tsx, useEventHandlers.ts）
+   - **效果**: HTTP 压缩中间件现在立即发送事件，但仍需进一步测试验证
+
+4. **Loading Dot 消失问题调查** 🔍 (未解决)
+   - **问题**: 第二次对话时，loading dots (正在加载) 消失，用户无法判断系统状态
+   - **分析**: 
+     - 前端依赖 `isLatestMessage` 状态来显示 loading 动画
+     - `createdHandler` 调用 `resetLatestMessage()` 但未设置新值
+     - 导致 `isLatestMessage` 为 false → `effectiveIsSubmitting` 为 false → 无 loading
+   - **尝试方案**:
+     - 方案 A: 修改前端逻辑（已撤销）
+     - 方案 B: 改用 `sync` 事件匹配 Azure 实现（已实现，待测试）
+   - **待验证**: 需要重新测试第二次对话是否正常显示 loading 和 stop button
+
+### 技术细节
+- **文件修改**:
+  1. `api/server/services/Agents/e2bAgent/prompts.js` (+2 行)
+     - 添加 Multi-File Policy 和 Absolute Language Consistency
+  2. `api/server/routes/e2bAssistants/controller.js` (+14 行, -4 行)
+     - 从 `created` 事件改为 `sync` 事件（匹配 Azure）
+     - 添加 requestMessage 和 responseMessage 结构
+  3. `api/server/services/Agents/e2bAgent/index.js` (+57 行, -22 行)
+     - 在所有 TOOL_CALL 事件后添加 `res.flush()`
+     - 统一事件格式（使用 `{ type, [type]: {...} }` 嵌套结构）
+     - 移除单步执行限制和自动继续逻辑
+     - 添加无效 file_ids 清理逻辑
+
+- **事件格式对比**:
+  | 实现 | 事件类型 | Handler | setShowStopButton |
+  |------|---------|---------|-------------------|
+  | Azure | `sync` | syncHandler | ✅ Line 337 |
+  | E2B (旧) | `created` | createdHandler | ❌ 缺失 |
+  | E2B (新) | `sync` | syncHandler | ✅ 复用 Azure |
+
+### 验证结果
+- ✅ Multi-File Policy: Prompt 已更新
+- ✅ Language Consistency: Prompt 已更新
+- ✅ res.flush() 添加: 所有 TOOL_CALL 事件后都有 flush
+- ✅ sync 事件: 后端已改为发送 sync 事件
+- ⏳ Loading Dot: 待重新构建并测试
+- ⏳ Stop Button: 待重新构建并测试
+
+### 遗留问题
+1. 🔲 需要重新测试第二次对话的 loading 显示
+2. 🔲 需要验证 stop button 是否正常出现
+3. 🔲 需要确认流式输出是否真正实时（不再有 10 秒延迟）
+
+### 工作时长
+约 3 小时（问题分析 + 代码修改 + Git 准备）
+
+---
+
 ## 2026-01-27 (周二)
 
 ### 🔐 数据库连接安全加固与 CRUD 完善

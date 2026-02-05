@@ -476,6 +476,8 @@ const chat = async (req, res) => {
     const assistant_id = req.params.assistant_id || req.body.assistant_id;
     const { text, conversationId, parentMessageId, files, messageId } = req.body;
     
+    logger.info(`[E2B Chat] ⭐ Chat function started - assistant=${assistant_id}, conversation=${conversationId}`);
+    
     if (!assistant_id) {
       return res.status(400).json({ error: 'Assistant ID is required' });
     }
@@ -517,14 +519,24 @@ const chat = async (req, res) => {
       files: files || [], // CRITICAL: Include files so they're saved to DB and visible in frontend
     };
 
-    // Send created event (like other endpoints)
-    sendEvent(res, { 
-      message: userMessage, 
-      created: true 
+    // Send sync event (matching Azure Assistant implementation)
+    sendEvent(res, {
+      sync: true,
+      conversationId,
+      requestMessage: userMessage,
+      responseMessage: {
+        user: req.user.id,
+        messageId: responseMessageId,
+        parentMessageId: userMessageId,
+        conversationId,
+        model: assistant_id,
+      },
     });
     
-    // FLUSH: Ensure the created event is sent immediately
+    // FLUSH: Ensure the sync event is sent immediately
     if (res.flush) res.flush();
+    
+    logger.info(`[E2B Assistant] Sent SYNC event for message ${userMessageId}`);
 
     // CRITICAL: Save conversation FIRST (before messages)
     // This ensures conversation exists in DB so saveMessage won't fail validation

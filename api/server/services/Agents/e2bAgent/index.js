@@ -69,7 +69,7 @@ class E2BDataAnalystAgent {
           this.assistant.e2b_sandbox_template || 'xed696qfsyzpaei3ulh5',
           this.userId,
           this.conversationId,
-          this.assistant // ✨ Fix: Pass full assistant object to include data_sources
+          this.assistant.e2b_config
         );
         
         // CRITICAL: After creating new sandbox, check if we need to restore files
@@ -158,6 +158,54 @@ class E2BDataAnalystAgent {
           logger.info(`[E2BAgent] Calling contextManager.updateUploadedFiles with:`, JSON.stringify(uploadedFiles.map(f => ({ filename: f.filename, size: f.size, type: f.type }))));
           this.contextManager.updateUploadedFiles(uploadedFiles);
           logger.info(`[E2BAgent] Context Manager updated. Current state:`, JSON.stringify(this.contextManager.getSummary()));
+        }
+        
+        // CRITICAL: Clean up invalid file_ids from assistant configuration
+        // If some files failed to sync (e.g., deleted from DB), remove them from tool_resources
+        if (uploadedFiles.length < uniqueFileIds.length) {
+          const syncedFileIds = new Set(uploadedFiles.map(f => f.file_id));
+          const invalidFileIds = uniqueFileIds.filter(id => !syncedFileIds.has(id));
+          
+          if (invalidFileIds.length > 0) {
+            logger.warn(`[E2BAgent] Found ${invalidFileIds.length} invalid file IDs that failed to sync: ${invalidFileIds.join(', ')}`);
+            logger.info(`[E2BAgent] Removing invalid file IDs from assistant configuration...`);
+            
+            try {
+              const { updateE2BAssistantDoc } = require('~/models/E2BAssistant');
+              
+              // Update tool_resources.code_interpreter.file_ids
+              if (this.assistant?.tool_resources?.code_interpreter?.file_ids) {
+                const cleanedToolResourceFileIds = this.assistant.tool_resources.code_interpreter.file_ids
+                  .filter(id => !invalidFileIds.includes(id));
+                
+                this.assistant.tool_resources.code_interpreter.file_ids = cleanedToolResourceFileIds;
+                logger.info(`[E2BAgent] Cleaned tool_resources.code_interpreter.file_ids: ${cleanedToolResourceFileIds.length} valid files`);
+              }
+              
+              // Update root file_ids (V1 style)
+              if (this.assistant?.file_ids && Array.isArray(this.assistant.file_ids)) {
+                const cleanedRootFileIds = this.assistant.file_ids
+                  .filter(id => !invalidFileIds.includes(id));
+                
+                this.assistant.file_ids = cleanedRootFileIds;
+                logger.info(`[E2BAgent] Cleaned root file_ids: ${cleanedRootFileIds.length} valid files`);
+              }
+              
+              // Persist changes to database
+              await updateE2BAssistantDoc(
+                { id: this.assistant.id, author: this.userId },
+                { 
+                  tool_resources: this.assistant.tool_resources,
+                  file_ids: this.assistant.file_ids 
+                }
+              );
+              
+              logger.info(`[E2BAgent] ✓ Successfully removed ${invalidFileIds.length} invalid file IDs from database`);
+            } catch (cleanupError) {
+              logger.error(`[E2BAgent] Failed to clean up invalid file IDs:`, cleanupError);
+              // Don't throw - continue with valid files
+            }
+          }
         }
       } else {
         logger.info(`[E2BAgent] No files to sync (neither attachments nor assistant persistent files)`);
@@ -370,17 +418,6 @@ class E2BDataAnalystAgent {
             if (!message.tool_calls || message.tool_calls.length === 0) {
               // finish_reason 为 'stop' 表示 LLM 认为对话已完成（例如简单问答）
               if (message.finish_reason === 'stop') {
-                // ✨ 自动继续逻辑：如果任务已开始（有中间步骤）但没有明确结束（无 complete_task），强制继续
-                if (intermediateSteps.length > 0 && !hasCompleteTask && iteration < this.maxIterations) {
-                   logger.info(`[E2BAgent] LLM stopped without complete_task. Auto-continuing...`);
-                   messages.push({
-                     role: 'user', 
-                     content: "Please continue with the next step of your plan. If you are finished, use the `complete_task` tool."
-                   });
-                   // 跳出 retry 循环，让外层循环继续下一次迭代
-                   break; 
-                }
-
                 logger.info(`[E2BAgent] No tool calls and finish_reason is 'stop' - LLM completed the response. Exiting loop.`);
                 shouldExitMainLoop = true;
                 break; // Exit immediately
@@ -392,13 +429,7 @@ class E2BDataAnalystAgent {
             }
 
             // 5. 执行工具调用 (ReAct 模式)
-            // ✨ 强制策略：每次迭代只执行第一个工具调用 (Streaming Mode)
-            const toolCallsToExecute = message.tool_calls.slice(0, 1);
-            if (message.tool_calls.length > 1) {
-              logger.warn(`[E2BAgent] LLM returned ${message.tool_calls.length} tool calls in streaming mode. Enforcing single-step execution.`);
-            }
-
-            for (const toolCall of toolCallsToExecute) {
+            for (const toolCall of message.tool_calls) {
               const { id, function: func } = toolCall;
               const name = func.name;
               const args = JSON.parse(func.arguments);
@@ -413,31 +444,52 @@ class E2BDataAnalystAgent {
                 toolCallIndex = this.getContentIndex();
                 const argsString = JSON.stringify(args);
                 
-                // 构造初始 Tool Call Part
-                const pendingToolCallPart = {
-                  type: ContentTypes.TOOL_CALL,
-                  [ContentTypes.TOOL_CALL]: {
-                    id: id,
-                    name: name,
-                    args: argsString,
-                    input: args.code || argsString,
-                    output: '', // 暂时为空
-                    progress: 0.1, // 表示开始执行
-                    startTime: Date.now(),
-                  },
+                // 构造初始 Tool Call 对象
+                const pendingToolCall = {
+                  id: id,
+                  name: name,
+                  args: argsString,
+                  input: args.code || argsString,
+                  output: '', // 暂时为空
+                  progress: 0.1, // 表示开始执行
+                  startTime: Date.now(),
                 };
                 
-                // 占位并发送
-                this.contentParts[toolCallIndex] = pendingToolCallPart;
+                // 占位到 contentParts
+                this.contentParts[toolCallIndex] = {
+                  type: ContentTypes.TOOL_CALL,
+                  [ContentTypes.TOOL_CALL]: pendingToolCall,
+                };
                 
+                // 按照 Azure Assistant 的格式发送事件
                 const pendingEvent = {
-                  ...pendingToolCallPart,
                   index: toolCallIndex,
+                  type: ContentTypes.TOOL_CALL,
+                  [ContentTypes.TOOL_CALL]: pendingToolCall,
                   messageId: this.responseMessageId,
                   conversationId: this.conversationId,
                 };
                 
+                // 🐛 调试：打印完整事件结构
+                logger.info(`[E2BAgent] 📤 Pending event structure: ${JSON.stringify({
+                  index: pendingEvent.index,
+                  type: pendingEvent.type,
+                  has_tool_call: 'tool_call' in pendingEvent,
+                  tool_call_id: pendingEvent.tool_call?.id,
+                  tool_call_name: pendingEvent.tool_call?.name,
+                  tool_call_progress: pendingEvent.tool_call?.progress,
+                  messageId: pendingEvent.messageId,
+                  conversationId: pendingEvent.conversationId,
+                })}`);
+                
+                // 🐛 检查 sendEvent 底层实现
+                logger.info(`[E2BAgent] 📤 Full pending event keys: ${Object.keys(pendingEvent).join(', ')}`);
+                
                 sendEvent(this.res, pendingEvent);
+                // FLUSH: Critical for real-time streaming when compression is enabled
+                if (this.res.flush) {
+                  this.res.flush();
+                }
                 logger.info(`[E2BAgent] Sent PENDING TOOL_CALL event (index=${toolCallIndex})`);
                 
                 // ✨ 通知 controller 切断当前 TEXT part，确保 UI 顺序正确
@@ -480,37 +532,45 @@ class E2BDataAnalystAgent {
                 logger.info(`[E2BAgent] TOOL_CALL args: ${argsString.substring(0, 150)}...`);
                 
                 // result 是 observation 对象，已包含 stdout/stderr
-                const output = result.stdout || result.stderr || '';
+                let output = result.stdout || result.stderr || '';
                 
-                const completedToolCallPart = {
-                  type: ContentTypes.TOOL_CALL,
-                  [ContentTypes.TOOL_CALL]: {
-                    id: id,
-                    name: name,
-                    args: argsString,
-                    input: args.code || argsString,
-                    output: output,
-                    progress: 1.0, // 完成
-                    startTime: startTime,       // ✨ 前端计时器
-                    elapsedTime: elapsedTime,   // ✨ 实际执行时间（毫秒）
-                  },
+                // ✨ 如果是恢复后的成功执行，添加恢复提示
+                if (result._recovery_note) {
+                  output = '✅ ' + result._recovery_note + '\n\n' + output;
+                  logger.info(`[E2BAgent] Code execution succeeded after sandbox recovery`);
+                }
+                
+                const completedToolCall = {
+                  id: id,
+                  name: name,
+                  args: argsString,
+                  input: args.code || argsString,
+                  output: output,
+                  progress: 1.0, // 完成
+                  startTime: startTime,       // ✨ 前端计时器
+                  elapsedTime: elapsedTime,   // ✨ 实际执行时间（毫秒）
                 };
                 
-                // 更新内容并再次发送事件
-                this.contentParts[toolCallIndex] = completedToolCallPart;
+                // 更新 contentParts
+                this.contentParts[toolCallIndex] = {
+                  type: ContentTypes.TOOL_CALL,
+                  [ContentTypes.TOOL_CALL]: completedToolCall,
+                };
                 
+                // 按照 Azure Assistant 的格式发送事件
                 const completedEvent = {
-                  ...completedToolCallPart,
                   index: toolCallIndex,
+                  type: ContentTypes.TOOL_CALL,
+                  [ContentTypes.TOOL_CALL]: completedToolCall,
                   messageId: this.responseMessageId,
                   conversationId: this.conversationId,
                 };
                 
-                // 🐛 调试：打印完整的事件对象
-                logger.info(`[E2BAgent] 📤 completedEvent.tool_call has startTime: ${completedEvent.tool_call.startTime}`);
-                logger.info(`[E2BAgent] 📤 completedEvent.tool_call has elapsedTime: ${completedEvent.tool_call.elapsedTime}`);
-                
                 sendEvent(this.res, completedEvent);
+                // FLUSH: Critical for real-time streaming
+                if (this.res.flush) {
+                  this.res.flush();
+                }
                 logger.info(`[E2BAgent] Sent COMPLETED TOOL_CALL event (index=${toolCallIndex}, output=${output.length} chars)`);
                 logger.info(`[E2BAgent] 🕒 Timer data sent: startTime=${startTime}, elapsedTime=${elapsedTime}ms`);
 
@@ -521,43 +581,56 @@ class E2BDataAnalystAgent {
                   // 注释掉：因为在 pending 阶段已经切断过了，不需要重复切断空 part
                 }
               } else if (name === 'execute_code' && !result.success) {
-                logger.info(`[E2BAgent] Code execution FAILED - LLM will retry`);
+                logger.info(`[E2BAgent] Code execution FAILED - Updating frontend status`);
                 
                 // ✨ 关键修复：即使失败，也要更新前端状态，防止 Infinite Loading
-                if (toolCallIndex !== -1) {
-                    const argsString = JSON.stringify(args);
-                    const output = result.stderr || result.error || 'Execution failed';
-                    
-                    const failedToolCallPart = {
-                        type: ContentTypes.TOOL_CALL,
-                        [ContentTypes.TOOL_CALL]: {
-                            id: id,
-                            name: name,
-                            args: argsString,
-                            input: args.code || argsString,
-                            output: output,
-                            progress: 1.0, // 标记为完成，停止 loading
-                            startTime: startTime,
-                            elapsedTime: Date.now() - startTime,
-                        },
-                    };
+                if (onToken && toolCallIndex !== -1) {
+                  const argsString = JSON.stringify(args);
+                  
+                  // Check if it's a recoverable sandbox timeout error
+                  const isRecovering = result._recovery_note || 
+                                      (result.error && result.error.includes('Sandbox expired'));
+                  
+                  const output = isRecovering 
+                    ? '🔄 沙箱已超时，正在自动恢复并重试...\n' + (result.stdout || result.stderr || '')
+                    : (result.stderr || result.error || '执行失败');
+                  
+                  const failedToolCall = {
+                    id: id,
+                    name: name,
+                    args: argsString,
+                    input: args.code || argsString,
+                    output: output,
+                    progress: isRecovering ? 0.5 : 1.0, // 恢复中显示 50%，失败显示 100%
+                    startTime: startTime,
+                    elapsedTime: Date.now() - startTime,
+                  };
 
-                    this.contentParts[toolCallIndex] = failedToolCallPart;
+                  this.contentParts[toolCallIndex] = {
+                    type: ContentTypes.TOOL_CALL,
+                    [ContentTypes.TOOL_CALL]: failedToolCall,
+                  };
 
-                    const failedEvent = {
-                        ...failedToolCallPart,
-                        index: toolCallIndex,
-                        messageId: this.responseMessageId,
-                        conversationId: this.conversationId,
-                    };
+                  // 按照 Azure Assistant 的格式发送事件
+                  const failedEvent = {
+                    index: toolCallIndex,
+                    type: ContentTypes.TOOL_CALL,
+                    [ContentTypes.TOOL_CALL]: failedToolCall,
+                    messageId: this.responseMessageId,
+                    conversationId: this.conversationId,
+                  };
 
-                    sendEvent(this.res, failedEvent);
-                    logger.info(`[E2BAgent] Sent FAILED TOOL_CALL event to stop loading (index=${toolCallIndex})`);
-                    
-                    // 确保切断 Text Part，为 LLM 的解释或重试做准备
-                    if (this.startNewTextPart) {
-                      this.startNewTextPart();
-                    }
+                  sendEvent(this.res, failedEvent);
+                  // FLUSH: Critical for real-time streaming
+                  if (this.res.flush) {
+                    this.res.flush();
+                  }
+                  logger.info(`[E2BAgent] Sent ${isRecovering ? 'RECOVERING' : 'FAILED'} TOOL_CALL event (index=${toolCallIndex})`);
+                  
+                  // 确保切断 Text Part，为 LLM 的解释或重试做准备
+                  if (this.startNewTextPart) {
+                    this.startNewTextPart();
+                  }
                 }
               }
 
