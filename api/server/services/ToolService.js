@@ -568,6 +568,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const definitions = [];
     const allowedDomains = appConfig?.actions?.allowedDomains;
+    const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
     for (const action of actionSets) {
       const domain = await domainParser(action.metadata.domain, true);
@@ -590,7 +591,6 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
       const { functionSignatures } = openapiToFunction(validationResult.spec, true);
 
-      const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
       for (const sig of functionSignatures) {
         const toolName = `${sig.name}${actionDelimiter}${normalizedDomain}`;
         if (!actionToolNames.some((name) => name.replace(domainSeparatorRegex, '_') === toolName)) {
