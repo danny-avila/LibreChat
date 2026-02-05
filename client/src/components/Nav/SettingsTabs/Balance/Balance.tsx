@@ -4,26 +4,17 @@ import { useAuthContext, useLocalize } from '~/hooks';
 import TokenCreditsItem from './TokenCreditsItem';
 import AutoRefillSettings from './AutoRefillSettings';
 
-const PACKS = [
-  { id: 1, label: '1 Pack (5M tokens) - ₱250', price: 250 },
-  { id: 2, label: '2 Packs (10M tokens) - ₱450', price: 450 },
-  { id: 3, label: '3 Packs (15M tokens) - ₱600', price: 600 },
-  { id: 4, label: '4 Packs (20M tokens) - ₱720', price: 720 },
-  { id: 5, label: '5 Packs (25M tokens) - ₱850', price: 850 },
-];
-
 function Balance() {
   const localize = useLocalize();
-  const { user, isAuthenticated } = useAuthContext();
+  const { isAuthenticated, user } = useAuthContext(); 
   const { data: startupConfig } = useGetStartupConfig();
-  const [quantity, setQuantity] = useState(1);
 
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && !!startupConfig?.balance?.enabled,
   });
   const balanceData = balanceQuery.data;
 
-  // 📝 DEBUG LOG: Check this in your Browser Console (F12)
+  // 📝 DEBUG LOG: Helpful for verifying if the data update reached the frontend
   useEffect(() => {
     if (balanceData) {
       console.log('📊 UI Balance Data Received:', balanceData);
@@ -45,89 +36,105 @@ function Balance() {
     refillIntervalUnit !== undefined &&
     refillIntervalValue !== undefined;
 
-  // 🔄 REFRESH: Force-fetches the latest data from MongoDB
+  const [quantity, setQuantity] = useState(2);
+
+  const getPrice = (qty: number) => {
+    const prices = { 1: 250, 2: 450, 3: 600, 4: 720, 5: 850 };
+    return prices[qty as keyof typeof prices] || 250;
+  };
+
+  /**
+   * 🛒 HANDLE PURCHASE
+   * Now passes quantity, email, AND userId to match your PayMongo server perfectly.
+   */
+  const handlePurchase = () => {
+    const userEmail = user?.email || ''; 
+    const userId = user?.id || user?._id || '';
+
+    if (!userEmail) {
+      alert("Error: No email found. Please ensure you are logged in.");
+      return;
+    }
+
+    // This URL matches your index.js requirements for quantity, email, and userId metadata
+    const paymentUrl = `https://pay.ryanslab.space/pay?quantity=${quantity}&email=${encodeURIComponent(userEmail)}&userId=${userId}`;
+    
+    window.open(paymentUrl, '_blank');
+  };
+
   const handleRefresh = () => {
     console.log('🔄 Manually refreshing balance...');
     balanceQuery.refetch();
   };
 
-  const handlePurchase = () => {
-    const userId = user?.id || user?._id || '';
-    const email = encodeURIComponent(user?.email || '');
-    // Using the exact format from your previous version + email for safety
-    window.open(
-      `https://pay.ryanslab.space/pay?quantity=${quantity}&userId=${userId}&email=${email}`, 
-      '_blank'
-    );
-  };
-
-  const selectedPack = PACKS.find(p => p.id === quantity) || PACKS[0];
-
   return (
     <div className="flex flex-col gap-4 p-4 text-sm text-text-primary">
-      {/* 1. Balance Display & Manual Refresh */}
+      {/* Balance Display & Refresh Button */}
       <div className="flex items-center justify-between">
         <TokenCreditsItem tokenCredits={tokenCredits} />
         <button 
           onClick={handleRefresh}
-          className="rounded-md bg-surface-hover p-2 hover:bg-surface-tertiary transition-colors"
+          disabled={balanceQuery.isFetching}
+          className="p-2 hover:bg-surface-tertiary rounded-full transition-colors text-text-tertiary disabled:opacity-50"
           title="Refresh Balance"
         >
-          🔄
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            width="16" 
+            height="16" 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor" 
+            strokeWidth="2" 
+            strokeLinecap="round" 
+            strokeLinejoin="round"
+            className={balanceQuery.isFetching ? "animate-spin" : ""}
+          >
+            <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+          </svg>
         </button>
       </div>
 
-      {/* 2. Top-up Section */}
-      <div className="rounded-xl border border-white/10 bg-[#171717] p-6 shadow-lg">
-        <label className="mb-3 block text-sm font-bold text-white uppercase tracking-wider">
-          Token Top-Up
-        </label>
-        
-        <select
-          value={quantity}
-          onChange={(e) => setQuantity(Number(e.target.value))}
-          className="mb-5 w-full rounded-lg border border-blue-500 bg-[#0d0d0d] p-3 text-sm font-medium text-white"
-        >
-          {PACKS.map((pack) => (
-            <option key={pack.id} value={pack.id}>{pack.label}</option>
-          ))}
-        </select>
+      {/* Top-up Selection Box */}
+      <div className="mt-2">
+        <div className="bg-surface-secondary rounded-xl p-4 border border-border-light shadow-sm">
+          <h3 className="font-semibold mb-2 text-text-primary">Choose Token Pack</h3>
 
-        <button
-          onClick={handlePurchase}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#3da37a] py-3 text-sm font-bold text-white transition-all hover:bg-[#46b98b] active:scale-[0.98]"
-        >
-          <span>⚡</span>
-          Pay ₱{selectedPack.price} and Top Up
-        </button>
+          <select 
+            value={quantity}
+            onChange={(e) => setQuantity(parseInt(e.target.value))}
+            className="w-full p-3 rounded-lg border border-border-light bg-surface-primary text-text-primary mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="1">1 Pack (5,000,000 tokens) - ₱250</option>
+            <option value="2">2 Packs (10M tokens) - ₱450 (Save ₱50)</option>
+            <option value="3">3 Packs (15M tokens) - ₱600 (Save ₱150)</option>
+            <option value="4">4 Packs (20M tokens) - ₱720 (Save ₱280)</option>
+            <option value="5">5 Packs (25M tokens) - ₱850 (Save ₱400)</option>
+          </select>
 
-        <div className="mt-3 flex items-center justify-center gap-1 text-[10px] font-bold text-gray-500">
-          <span>SECURE CHECKOUT</span>
-          <span>•</span>
-          <span>USER ID: {user?.id || 'NOT_FOUND'}</span>
+          <button
+            onClick={handlePurchase}
+            className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-bold text-white transition-all hover:bg-emerald-700 active:scale-95 flex items-center justify-center shadow-md"
+          >
+            <span className="mr-2">⚡</span> 
+            Top Up {quantity * 5}M Tokens (₱{getPrice(quantity)})
+          </button>
+
+          <p className="mt-2 text-[10px] text-text-tertiary text-center uppercase tracking-wider font-medium">
+            ✨ Secure checkout • Credits apply instantly
+          </p>
         </div>
       </div>
 
-      <hr className="border-white/5" />
+      <hr className="border-border-medium" />
 
-      {/* 3. Auto-refill Logic */}
-      {autoRefillEnabled ? (
+      {/* Auto-Refill Logic - Correctly uses the Restored Props */}
+      {autoRefillEnabled && (
         hasValidRefillSettings ? (
-          <AutoRefillSettings
-            lastRefill={lastRefill}
-            refillAmount={refillAmount}
-            refillIntervalUnit={refillIntervalUnit}
-            refillIntervalValue={refillIntervalValue}
-          />
+          <AutoRefillSettings {...{lastRefill, refillAmount, refillIntervalUnit, refillIntervalValue}} />
         ) : (
-          <div className="text-sm text-red-600 font-medium">
-            {localize('com_nav_balance_auto_refill_error')}
-          </div>
+          <div className="text-sm text-red-600">{localize('com_nav_balance_auto_refill_error')}</div>
         )
-      ) : (
-        <div className="text-sm text-gray-600 italic">
-          {localize('com_nav_balance_auto_refill_disabled')}
-        </div>
       )}
     </div>
   );
