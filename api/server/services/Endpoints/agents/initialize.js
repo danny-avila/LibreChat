@@ -3,10 +3,11 @@ const { createContentAggregator } = require('@librechat/agents');
 const {
   initializeAgent,
   validateAgentModel,
-  getCustomEndpointConfig,
-  createSequentialChainEdges,
   createEdgeCollector,
   filterOrphanedEdges,
+  GenerationJobManager,
+  getCustomEndpointConfig,
+  createSequentialChainEdges,
 } = require('@librechat/api');
 const {
   EModelEndpoint,
@@ -313,6 +314,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     maxContextTokens: primaryConfig.maxContextTokens,
     endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
   });
+
+  if (streamId) {
+    GenerationJobManager.setCollectedUsage(streamId, collectedUsage);
+  }
 
   return { client, userMCPAuthMap };
 };

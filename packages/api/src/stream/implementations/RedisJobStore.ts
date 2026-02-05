@@ -1,9 +1,14 @@
 import { logger } from '@librechat/data-schemas';
 import { createContentAggregator } from '@librechat/agents';
-import type { IJobStore, SerializableJobData, JobStatus } from '~/stream/interfaces/IJobStore';
 import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
+import type {
+  SerializableJobData,
+  UsageMetadata,
+  IJobStore,
+  JobStatus,
+} from '~/stream/interfaces/IJobStore';
 
 /**
  * Key prefixes for Redis storage.
@@ -89,6 +94,13 @@ export class RedisJobStore implements IJobStore {
    * Uses WeakRef to allow garbage collection when graph is no longer needed.
    */
   private localGraphCache = new Map<string, WeakRef<StandardGraph>>();
+
+  /**
+   * Local cache for collectedUsage arrays.
+   * Generation happens on a single instance, so collectedUsage is only available locally.
+   * For cross-replica abort, the abort handler falls back to text-based token counting.
+   */
+  private localCollectedUsageCache = new Map<string, UsageMetadata[]>();
 
   /** Cleanup interval in ms (1 minute) */
   private cleanupIntervalMs = 60000;
@@ -227,6 +239,7 @@ export class RedisJobStore implements IJobStore {
   async deleteJob(streamId: string): Promise<void> {
     // Clear local caches
     this.localGraphCache.delete(streamId);
+    this.localCollectedUsageCache.delete(streamId);
 
     // Note: userJobs cleanup is handled lazily via self-healing in getActiveJobIdsByUser
     // In cluster mode, separate runningJobs (global) from stream-specific keys (same slot)
@@ -290,6 +303,7 @@ export class RedisJobStore implements IJobStore {
       if (!job) {
         await this.redis.srem(KEYS.runningJobs, streamId);
         this.localGraphCache.delete(streamId);
+        this.localCollectedUsageCache.delete(streamId);
         cleaned++;
         continue;
       }
@@ -298,6 +312,7 @@ export class RedisJobStore implements IJobStore {
       if (job.status !== 'running') {
         await this.redis.srem(KEYS.runningJobs, streamId);
         this.localGraphCache.delete(streamId);
+        this.localCollectedUsageCache.delete(streamId);
         cleaned++;
         continue;
       }
@@ -382,6 +397,7 @@ export class RedisJobStore implements IJobStore {
     }
     // Clear local caches
     this.localGraphCache.clear();
+    this.localCollectedUsageCache.clear();
     // Don't close the Redis connection - it's shared
     logger.info('[RedisJobStore] Destroyed');
   }
@@ -406,9 +422,26 @@ export class RedisJobStore implements IJobStore {
    * No-op for Redis - content parts are reconstructed from chunks.
    * Metadata (agentId, groupId) is embedded directly on content parts by the agent runtime.
    */
-  setContentParts(_streamId: string, _contentParts: Agents.MessageContentComplex[]): void {
+  setContentParts(): void {
     // Content parts are reconstructed from chunks during getContentParts
     // No separate storage needed
+  }
+
+  /**
+   * Store collectedUsage reference in local cache.
+   * This is used for abort handling to spend tokens for all models.
+   * Note: Only available on the generating instance; cross-replica abort uses fallback.
+   */
+  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void {
+    this.localCollectedUsageCache.set(streamId, collectedUsage);
+  }
+
+  /**
+   * Get collected usage for a job.
+   * Only available if this is the generating instance.
+   */
+  getCollectedUsage(streamId: string): UsageMetadata[] {
+    return this.localCollectedUsageCache.get(streamId) ?? [];
   }
 
   /**
@@ -528,6 +561,7 @@ export class RedisJobStore implements IJobStore {
   clearContentState(streamId: string): void {
     // Clear local caches immediately
     this.localGraphCache.delete(streamId);
+    this.localCollectedUsageCache.delete(streamId);
 
     // Fire and forget - async cleanup for Redis
     this.clearContentStateAsync(streamId).catch((err) => {
