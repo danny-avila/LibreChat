@@ -1815,4 +1815,122 @@ describe('updateInterfacePermissions - permissions', () => {
       }),
     });
   });
+
+  it('should preserve existing SHARE/SHARE_PUBLIC values when using boolean config (regression test)', async () => {
+    // This test ensures that when `agents: true` (boolean) is configured,
+    // existing SHARE and SHARE_PUBLIC permissions are NOT reset to defaults.
+    // See: https://github.com/danny-avila/LibreChat/issues/XXXX
+
+    // Mock existing permissions where SHARE and SHARE_PUBLIC were enabled by user
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: true, // User enabled this via admin panel
+          [Permissions.SHARE_PUBLIC]: true, // User enabled this via admin panel
+        },
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: true,
+        },
+      },
+    });
+
+    // Config uses boolean (not object), simulating `agents: true` in librechat.yaml
+    const config = {
+      interface: {
+        agents: true, // Boolean config - should only update USE, not reset SHARE/SHARE_PUBLIC
+        prompts: true, // Boolean config - should only update USE, not reset SHARE/SHARE_PUBLIC
+      },
+    };
+    const configDefaults = {
+      interface: {
+        agents: true,
+        prompts: true,
+      },
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    // CRITICAL: When using boolean config and permissions already exist,
+    // SHARE and SHARE_PUBLIC should NOT be in the update payload.
+    // This means they will be preserved in the database (not reset to defaults).
+    expect(userCall[1][PermissionTypes.AGENTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      // SHARE and SHARE_PUBLIC intentionally omitted - preserves existing DB values
+    });
+    expect(userCall[1][PermissionTypes.AGENTS]).not.toHaveProperty(Permissions.SHARE);
+    expect(userCall[1][PermissionTypes.AGENTS]).not.toHaveProperty(Permissions.SHARE_PUBLIC);
+
+    expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      // SHARE and SHARE_PUBLIC intentionally omitted - preserves existing DB values
+    });
+    expect(userCall[1][PermissionTypes.PROMPTS]).not.toHaveProperty(Permissions.SHARE);
+    expect(userCall[1][PermissionTypes.PROMPTS]).not.toHaveProperty(Permissions.SHARE_PUBLIC);
+  });
+
+  it('should include SHARE/SHARE_PUBLIC when using object config (explicit configuration)', async () => {
+    // When using object config like `agents: { share: true }`, SHARE/SHARE_PUBLIC SHOULD be updated
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    const config = {
+      interface: {
+        agents: {
+          use: true,
+          share: true, // Explicitly setting SHARE
+          public: true, // Explicitly setting SHARE_PUBLIC
+        },
+      },
+    };
+    const configDefaults = {
+      interface: {
+        agents: {
+          use: true,
+          share: false,
+          public: false,
+        },
+      },
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    // When object config is used, SHARE and SHARE_PUBLIC SHOULD be included
+    expect(userCall[1][PermissionTypes.AGENTS]).toHaveProperty(Permissions.SHARE, true);
+    expect(userCall[1][PermissionTypes.AGENTS]).toHaveProperty(Permissions.SHARE_PUBLIC, true);
+  });
 });
