@@ -284,6 +284,196 @@ describe('definitions.ts', () => {
       });
     });
 
+    describe('MCP tool definitions with server name variants', () => {
+      it('should load MCP tools with underscored server names (server_one)', async () => {
+        const mockServerTools = {
+          list_items_mcp_server_one: {
+            function: {
+              name: 'list_items_mcp_server_one',
+              description: 'List all items from server',
+              parameters: {
+                type: 'object',
+                properties: {
+                  limit: { type: 'number', description: 'Max items to return' },
+                },
+              },
+            },
+          },
+          get_item_mcp_server_one: {
+            function: {
+              name: 'get_item_mcp_server_one',
+              description: 'Get a specific item',
+              parameters: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', description: 'Item ID' },
+                },
+                required: ['id'],
+              },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['sys__all__sys_mcp_server_one'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledWith('user-123', 'server_one');
+        expect(result.toolDefinitions).toHaveLength(2);
+
+        const listItemsDef = result.toolDefinitions.find(
+          (d) => d.name === 'list_items_mcp_server_one',
+        );
+        expect(listItemsDef).toBeDefined();
+        expect(listItemsDef?.description).toBe('List all items from server');
+
+        const getItemDef = result.toolDefinitions.find((d) => d.name === 'get_item_mcp_server_one');
+        expect(getItemDef).toBeDefined();
+        expect(getItemDef?.description).toBe('Get a specific item');
+      });
+
+      it('should load MCP tools with hyphenated server names (server-one)', async () => {
+        const mockServerTools = {
+          'list_items_mcp_server-one': {
+            function: {
+              name: 'list_items_mcp_server-one',
+              description: 'List all items from server',
+              parameters: {
+                type: 'object',
+                properties: {
+                  limit: { type: 'number', description: 'Max items to return' },
+                },
+              },
+            },
+          },
+          'get_item_mcp_server-one': {
+            function: {
+              name: 'get_item_mcp_server-one',
+              description: 'Get a specific item',
+              parameters: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', description: 'Item ID' },
+                },
+                required: ['id'],
+              },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['sys__all__sys_mcp_server-one'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledWith('user-123', 'server-one');
+        expect(result.toolDefinitions).toHaveLength(2);
+
+        const listItemsDef = result.toolDefinitions.find(
+          (d) => d.name === 'list_items_mcp_server-one',
+        );
+        expect(listItemsDef).toBeDefined();
+        expect(listItemsDef?.description).toBe('List all items from server');
+
+        const getItemDef = result.toolDefinitions.find((d) => d.name === 'get_item_mcp_server-one');
+        expect(getItemDef).toBeDefined();
+        expect(getItemDef?.description).toBe('Get a specific item');
+      });
+
+      it('should handle individual MCP tool lookup with hyphenated server name', async () => {
+        const mockServerTools = {
+          'list_items_mcp_server-one': {
+            function: {
+              name: 'list_items_mcp_server-one',
+              description: 'List all items from server',
+              parameters: {
+                type: 'object',
+                properties: {},
+              },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['list_items_mcp_server-one'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledWith('user-123', 'server-one');
+        expect(result.toolDefinitions).toHaveLength(1);
+        expect(result.toolDefinitions[0].name).toBe('list_items_mcp_server-one');
+      });
+
+      it('should include hyphenated server name tools in registry with correct serverName', async () => {
+        const mockServerTools = {
+          'list_items_mcp_my-server': {
+            function: {
+              name: 'list_items_mcp_my-server',
+              description: 'List items',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['sys__all__sys_mcp_my-server'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(result.toolDefinitions).toHaveLength(1);
+        expect(result.toolRegistry.size).toBeGreaterThan(0);
+
+        const toolDef = result.toolDefinitions[0];
+        expect(toolDef.name).toBe('list_items_mcp_my-server');
+        expect((toolDef as { serverName?: string }).serverName).toBe('my-server');
+      });
+    });
+
     describe('tool registry metadata', () => {
       it('should include description and parameters in registry for action tools', async () => {
         const mockActionDefs: ActionToolDefinition[] = [
