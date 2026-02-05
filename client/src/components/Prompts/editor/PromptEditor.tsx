@@ -3,7 +3,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import supersub from 'remark-supersub';
-import { useRecoilValue } from 'recoil';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import { EditIcon, FileText, Check } from 'lucide-react';
@@ -11,15 +10,10 @@ import { Controller, useFormContext } from 'react-hook-form';
 import { TextareaAutosize, Button, TooltipAnchor } from '@librechat/client';
 import type { PluggableList } from 'unified';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
-import AlwaysMakeProd from '../buttons/AlwaysMakeProd';
 import VariablesDropdown from './VariablesDropdown';
 import { PromptVariableGfm } from './Markdown';
-import { PromptsEditorMode } from '~/common';
 import { cn, langSubset } from '~/utils';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
-
-const { promptsEditorMode } = store;
 
 type Props = {
   name: string;
@@ -30,7 +24,6 @@ type Props = {
 const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   const localize = useLocalize();
   const { control } = useFormContext();
-  const editorMode = useRecoilValue(promptsEditorMode);
 
   const EditorIcon = useMemo(() => {
     return isEditing ? Check : EditIcon;
@@ -59,9 +52,6 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
           </h3>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {editorMode === PromptsEditorMode.ADVANCED && (
-            <AlwaysMakeProd className="hidden sm:flex" />
-          )}
           <VariablesDropdown fieldName={name} />
           <TooltipAnchor
             description={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
