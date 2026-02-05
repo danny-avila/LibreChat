@@ -26,10 +26,12 @@ type PartProps = {
   showCursor: boolean;
   isCreatedByUser: boolean;
   attachments?: TAttachment[];
+  endpoint?: string;
+  model?: string;
 };
 
 const Part = memo(
-  ({ part, isSubmitting, attachments, isLast, showCursor, isCreatedByUser }: PartProps) => {
+  ({ part, isSubmitting, attachments, isLast, showCursor, isCreatedByUser, endpoint, model }: PartProps) => {
     if (!part) {
       return null;
     }
@@ -73,7 +75,7 @@ const Part = memo(
       }
       return (
         <Container>
-          <Text text={text} isCreatedByUser={isCreatedByUser} showCursor={showCursor} />
+          <Text text={text} isCreatedByUser={isCreatedByUser} showCursor={showCursor} endpoint={endpoint} model={model} />
         </Container>
       );
     } else if (part.type === ContentTypes.THINK) {
@@ -185,7 +187,7 @@ const Part = memo(
           if (isSubmitting && showCursor) {
             return (
               <Container>
-                <Text text={''} isCreatedByUser={isCreatedByUser} showCursor={showCursor} />
+                <Text text={''} isCreatedByUser={isCreatedByUser} showCursor={showCursor} endpoint={endpoint} model={model} />
               </Container>
             );
           }
