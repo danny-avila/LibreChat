@@ -17,6 +17,8 @@ const {
   loadToolDefinitions,
   GenerationJobManager,
   isActionDomainAllowed,
+  buildWebSearchContext,
+  buildImageToolContext,
   buildToolClassification,
 } = require('@librechat/api');
 const {
@@ -28,6 +30,7 @@ const {
   ContentTypes,
   imageGenTools,
   EModelEndpoint,
+  EToolResources,
   actionDelimiter,
   ImageVisionTool,
   openapiToFunction,
@@ -682,8 +685,13 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
+  const hasWebSearch = filteredTools.includes(Tools.web_search);
   const hasFileSearch = filteredTools.includes(Tools.file_search);
   const hasExecuteCode = filteredTools.includes(Tools.execute_code);
+
+  if (hasWebSearch) {
+    toolContextMap[Tools.web_search] = buildWebSearchContext();
+  }
 
   if (hasExecuteCode && tool_resources) {
     try {
@@ -719,6 +727,34 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       }
     } catch (error) {
       logger.error('[loadToolDefinitionsWrapper] Error priming search files:', error);
+    }
+  }
+
+  const imageFiles = tool_resources?.[EToolResources.image_edit]?.files ?? [];
+  if (imageFiles.length > 0) {
+    const hasOaiImageGen = filteredTools.includes('image_gen_oai');
+    const hasGeminiImageGen = filteredTools.includes('gemini_image_gen');
+
+    if (hasOaiImageGen) {
+      const toolContext = buildImageToolContext({
+        imageFiles,
+        toolName: `${EToolResources.image_edit}_oai`,
+        contextDescription: 'image editing',
+      });
+      if (toolContext) {
+        toolContextMap.image_edit_oai = toolContext;
+      }
+    }
+
+    if (hasGeminiImageGen) {
+      const toolContext = buildImageToolContext({
+        imageFiles,
+        toolName: 'gemini_image_gen',
+        contextDescription: 'image context',
+      });
+      if (toolContext) {
+        toolContextMap.gemini_image_gen = toolContext;
+      }
     }
   }
 
