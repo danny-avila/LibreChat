@@ -338,10 +338,12 @@ export class RedisEventTransport implements IEventTransport {
 
         // If last subscriber left, unsubscribe from Redis and notify
         if (state.count === 0) {
-          // Clear any pending flush timeout
+          // Clear any pending flush timeout and buffered messages
           if (state.reorderBuffer.flushTimeout) {
             clearTimeout(state.reorderBuffer.flushTimeout);
+            state.reorderBuffer.flushTimeout = null;
           }
+          state.reorderBuffer.pending.clear();
 
           this.subscriber.unsubscribe(channel).catch((err) => {
             logger.error(`[RedisEventTransport] Failed to unsubscribe from ${channel}:`, err);
@@ -512,6 +514,7 @@ export class RedisEventTransport implements IEventTransport {
       // Clear flush timeout
       if (state.reorderBuffer.flushTimeout) {
         clearTimeout(state.reorderBuffer.flushTimeout);
+        state.reorderBuffer.flushTimeout = null;
       }
       // Clear all handlers and callbacks
       state.handlers.clear();
@@ -538,11 +541,13 @@ export class RedisEventTransport implements IEventTransport {
    * Destroy all resources.
    */
   destroy(): void {
-    // Clear all flush timeouts
+    // Clear all flush timeouts and buffered messages
     for (const [, state] of this.streams) {
       if (state.reorderBuffer.flushTimeout) {
         clearTimeout(state.reorderBuffer.flushTimeout);
+        state.reorderBuffer.flushTimeout = null;
       }
+      state.reorderBuffer.pending.clear();
     }
 
     // Unsubscribe from all channels
