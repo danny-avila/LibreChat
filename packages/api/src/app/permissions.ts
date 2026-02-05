@@ -146,21 +146,28 @@ export async function updateInterfacePermissions({
     };
 
     // Helper to extract value from boolean or object config
-    const getConfigUse = (
-      config: boolean | { use?: boolean; share?: boolean; public?: boolean } | undefined,
-    ) => (typeof config === 'boolean' ? config : config?.use);
-    const getConfigShare = (
-      config: boolean | { use?: boolean; share?: boolean; public?: boolean } | undefined,
-    ) => (typeof config === 'boolean' ? undefined : config?.share);
-    const getConfigPublic = (
-      config: boolean | { use?: boolean; share?: boolean; public?: boolean } | undefined,
-    ) => (typeof config === 'boolean' ? undefined : config?.public);
+    type PermissionConfig =
+      | boolean
+      | { use?: boolean; create?: boolean; share?: boolean; public?: boolean }
+      | undefined;
+    const getConfigUse = (config: PermissionConfig) =>
+      typeof config === 'boolean' ? config : config?.use;
+    const getConfigCreate = (config: PermissionConfig) =>
+      typeof config === 'boolean' ? undefined : config?.create;
+    const getConfigShare = (config: PermissionConfig) =>
+      typeof config === 'boolean' ? undefined : config?.share;
+    const getConfigPublic = (config: PermissionConfig) =>
+      typeof config === 'boolean' ? undefined : config?.public;
 
-    // Get default use values (for backward compat when config is boolean)
+    // Get default values (for backward compat when config is boolean)
     const promptsDefaultUse =
       typeof defaults.prompts === 'boolean' ? defaults.prompts : defaults.prompts?.use;
     const agentsDefaultUse =
       typeof defaults.agents === 'boolean' ? defaults.agents : defaults.agents?.use;
+    const promptsDefaultCreate =
+      typeof defaults.prompts === 'object' ? defaults.prompts?.create : undefined;
+    const agentsDefaultCreate =
+      typeof defaults.agents === 'object' ? defaults.agents?.create : undefined;
     const promptsDefaultShare =
       typeof defaults.prompts === 'object' ? defaults.prompts?.share : undefined;
     const agentsDefaultShare =
@@ -178,9 +185,9 @@ export async function updateInterfacePermissions({
           promptsDefaultUse,
         ),
         [Permissions.CREATE]: getPermissionValue(
-          undefined,
+          getConfigCreate(loadedInterface.prompts),
           defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.CREATE],
-          true,
+          promptsDefaultCreate ?? true,
         ),
         ...(typeof interfaceConfig?.prompts === 'object' ||
         !existingPermissions?.[PermissionTypes.PROMPTS]
@@ -248,9 +255,9 @@ export async function updateInterfacePermissions({
           agentsDefaultUse,
         ),
         [Permissions.CREATE]: getPermissionValue(
-          undefined,
+          getConfigCreate(loadedInterface.agents),
           defaultPerms[PermissionTypes.AGENTS]?.[Permissions.CREATE],
-          true,
+          agentsDefaultCreate ?? true,
         ),
         ...(typeof interfaceConfig?.agents === 'object' ||
         !existingPermissions?.[PermissionTypes.AGENTS]

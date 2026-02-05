@@ -628,6 +628,7 @@ export const interfaceSchema = z
         z.boolean(),
         z.object({
           use: z.boolean().optional(),
+          create: z.boolean().optional(),
           share: z.boolean().optional(),
           public: z.boolean().optional(),
         }),
@@ -638,6 +639,7 @@ export const interfaceSchema = z
         z.boolean(),
         z.object({
           use: z.boolean().optional(),
+          create: z.boolean().optional(),
           share: z.boolean().optional(),
           public: z.boolean().optional(),
         }),
@@ -681,11 +683,13 @@ export const interfaceSchema = z
     memories: true,
     prompts: {
       use: true,
+      create: true,
       share: false,
       public: false,
     },
     agents: {
       use: true,
+      create: true,
       share: false,
       public: false,
     },
