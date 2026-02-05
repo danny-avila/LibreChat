@@ -9,12 +9,12 @@ function Balance() {
   const { isAuthenticated, user } = useAuthContext(); 
   const { data: startupConfig } = useGetStartupConfig();
 
+  // This query looks at the 'balances' collection in MongoDB
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && !!startupConfig?.balance?.enabled,
   });
   const balanceData = balanceQuery.data;
 
-  // 📝 DEBUG LOG: Helpful for verifying if the data update reached the frontend
   useEffect(() => {
     if (balanceData) {
       console.log('📊 UI Balance Data Received:', balanceData);
@@ -36,7 +36,7 @@ function Balance() {
     refillIntervalUnit !== undefined &&
     refillIntervalValue !== undefined;
 
-  const [quantity, setQuantity] = useState(2);
+  const [quantity, setQuantity] = useState(1);
 
   const getPrice = (qty: number) => {
     const prices = { 1: 250, 2: 450, 3: 600, 4: 720, 5: 850 };
@@ -45,31 +45,34 @@ function Balance() {
 
   /**
    * 🛒 HANDLE PURCHASE
-   * Now passes quantity, email, AND userId to match your PayMongo server perfectly.
+   * Sends the email to your PayMongo server.
+   * Your server will use this email to find the '_id' in the 'users' folder,
+   * then update the 'tokenCredits' in the 'balances' folder.
    */
   const handlePurchase = () => {
     const userEmail = user?.email || ''; 
-    const userId = user?.id || user?._id || '';
 
     if (!userEmail) {
-      alert("Error: No email found. Please ensure you are logged in.");
+      alert("Error: No email found in your profile. Please check your settings.");
       return;
     }
 
-    // This URL matches your index.js requirements for quantity, email, and userId metadata
-    const paymentUrl = `https://pay.ryanslab.space/pay?quantity=${quantity}&email=${encodeURIComponent(userEmail)}&userId=${userId}`;
+    // This URL triggers the logic in your index.js
+    const paymentUrl = `https://pay.ryanslab.space/pay?quantity=${quantity}&email=${encodeURIComponent(userEmail)}`;
     
     window.open(paymentUrl, '_blank');
   };
 
+  // 🔄 REFRESH: This is crucial. After the user pays in the other tab, 
+  // they click this to pull the new 'tokenCredits' from the 'balances' folder.
   const handleRefresh = () => {
-    console.log('🔄 Manually refreshing balance...');
+    console.log('🔄 Manually refreshing balance from MongoDB...');
     balanceQuery.refetch();
   };
 
   return (
     <div className="flex flex-col gap-4 p-4 text-sm text-text-primary">
-      {/* Balance Display & Refresh Button */}
+      {/* Balance Display & Refresh */}
       <div className="flex items-center justify-between">
         <TokenCreditsItem tokenCredits={tokenCredits} />
         <button 
@@ -80,14 +83,8 @@ function Balance() {
         >
           <svg 
             xmlns="http://www.w3.org/2000/svg" 
-            width="16" 
-            height="16" 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2" 
-            strokeLinecap="round" 
-            strokeLinejoin="round"
+            width="18" height="18" viewBox="0 0 24 24" fill="none" 
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
             className={balanceQuery.isFetching ? "animate-spin" : ""}
           >
             <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
@@ -95,40 +92,39 @@ function Balance() {
         </button>
       </div>
 
-      {/* Top-up Selection Box */}
+      {/* Top-up Selection */}
       <div className="mt-2">
-        <div className="bg-surface-secondary rounded-xl p-4 border border-border-light shadow-sm">
-          <h3 className="font-semibold mb-2 text-text-primary">Choose Token Pack</h3>
+        <div className="bg-surface-secondary rounded-xl p-5 border border-border-light shadow-sm">
+          <h3 className="font-bold mb-3 text-text-primary uppercase text-[10px] tracking-widest">Token Refill</h3>
 
           <select 
             value={quantity}
             onChange={(e) => setQuantity(parseInt(e.target.value))}
-            className="w-full p-3 rounded-lg border border-border-light bg-surface-primary text-text-primary mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full p-3 rounded-lg border border-border-light bg-surface-primary text-text-primary mb-4 outline-none focus:ring-2 focus:ring-emerald-500"
           >
-            <option value="1">1 Pack (5,000,000 tokens) - ₱250</option>
-            <option value="2">2 Packs (10M tokens) - ₱450 (Save ₱50)</option>
-            <option value="3">3 Packs (15M tokens) - ₱600 (Save ₱150)</option>
-            <option value="4">4 Packs (20M tokens) - ₱720 (Save ₱280)</option>
-            <option value="5">5 Packs (25M tokens) - ₱850 (Save ₱400)</option>
+            <option value="1">1 Pack (5M tokens) - ₱250</option>
+            <option value="2">2 Packs (10M tokens) - ₱450</option>
+            <option value="3">3 Packs (15M tokens) - ₱600</option>
+            <option value="4">4 Packs (20M tokens) - ₱720</option>
+            <option value="5">5 Packs (25M tokens) - ₱850</option>
           </select>
 
           <button
             onClick={handlePurchase}
-            className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-bold text-white transition-all hover:bg-emerald-700 active:scale-95 flex items-center justify-center shadow-md"
+            className="w-full rounded-lg bg-emerald-600 py-3 font-bold text-white transition-all hover:bg-emerald-700 active:scale-95 flex items-center justify-center shadow-md"
           >
-            <span className="mr-2">⚡</span> 
-            Top Up {quantity * 5}M Tokens (₱{getPrice(quantity)})
+            ⚡ Top Up {quantity * 5}M Tokens (₱{getPrice(quantity)})
           </button>
-
-          <p className="mt-2 text-[10px] text-text-tertiary text-center uppercase tracking-wider font-medium">
-            ✨ Secure checkout • Credits apply instantly
+          
+          <p className="mt-3 text-center text-[10px] text-text-tertiary italic">
+            Refilling for: {user?.email}
           </p>
         </div>
       </div>
 
       <hr className="border-border-medium" />
 
-      {/* Auto-Refill Logic - Correctly uses the Restored Props */}
+      {/* Auto-Refill logic stays untouched */}
       {autoRefillEnabled && (
         hasValidRefillSettings ? (
           <AutoRefillSettings {...{lastRefill, refillAmount, refillIntervalUnit, refillIntervalValue}} />
