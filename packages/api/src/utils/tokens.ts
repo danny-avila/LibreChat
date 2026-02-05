@@ -123,7 +123,7 @@ const anthropicModels = {
   'claude-4': 200000,
   'claude-opus-4': 200000,
   'claude-opus-4-5': 200000,
-  'claude-opus-4-6': 1000000,
+  'claude-opus-4-6': 200000, // Default 200K, extendable to 1M with beta flag 'context-1m-2025-08-07'
 };
 
 const deepseekModels = {

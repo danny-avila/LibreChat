@@ -52,6 +52,10 @@ function getClaudeHeaders(
     return {
       'anthropic-beta': 'context-1m-2025-08-07',
     };
+  } else if (/claude-opus[-.]?4[-.]?6/.test(model)) {
+    return {
+      'anthropic-beta': 'context-1m-2025-08-07',
+    };
   }
 
   return undefined;
