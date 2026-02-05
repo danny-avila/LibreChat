@@ -117,15 +117,13 @@ export default function MCPServerDialog({
           className="w-11/12 max-w-md"
           description={localize('com_ui_mcp_server_delete_confirm', { 0: server?.serverName })}
           selection={
-            <Button onClick={handleDelete} variant="destructive" aria-live="polite">
-              {isDeleting ? (
-                <>
-                  <Spinner aria-hidden="true" />
-                  <span className="sr-only">{localize('com_ui_deleting')}</span>
-                </>
-              ) : (
-                localize('com_ui_delete')
-              )}
+            <Button
+              onClick={handleDelete}
+              variant="destructive"
+              aria-live="polite"
+              aria-label={isDeleting ? localize('com_ui_deleting') : localize('com_ui_delete')}
+            >
+              {isDeleting ? <Spinner aria-hidden="true" /> : localize('com_ui_delete')}
             </Button>
           }
         />
@@ -249,12 +247,7 @@ export default function MCPServerDialog({
               }
             >
               {isSubmitting ? (
-                <>
-                  <Spinner className="size-4" aria-hidden="true" />
-                  <span className="sr-only">
-                    {localize(isEditMode ? 'com_ui_updating' : 'com_ui_creating')}
-                  </span>
-                </>
+                <Spinner className="size-4" aria-hidden="true" />
               ) : (
                 localize(isEditMode ? 'com_ui_update' : 'com_ui_create')
               )}

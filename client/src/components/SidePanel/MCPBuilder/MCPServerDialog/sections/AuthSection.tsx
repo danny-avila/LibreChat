@@ -166,7 +166,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
                 aria-invalid={errors.auth?.oauth_client_id ? true : undefined}
                 {...register('auth.oauth_client_id', { required: !isEditMode })}
-                className={cn(errors.auth?.oauth_client_id && 'border-red-500')}
+                className={cn(errors.auth?.oauth_client_id && 'border-border-destructive')}
               />
             </div>
             <div className="space-y-1.5">
@@ -186,7 +186,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
                 aria-invalid={errors.auth?.oauth_client_secret ? true : undefined}
                 {...register('auth.oauth_client_secret', { required: !isEditMode })}
-                className={cn(errors.auth?.oauth_client_secret && 'border-red-500')}
+                className={cn(errors.auth?.oauth_client_secret && 'border-border-destructive')}
               />
             </div>
           </div>
