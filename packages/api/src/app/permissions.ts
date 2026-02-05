@@ -189,7 +189,8 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.CREATE],
           promptsDefaultCreate ?? true,
         ),
-        ...(typeof interfaceConfig?.prompts === 'object' ||
+        ...((typeof interfaceConfig?.prompts === 'object' &&
+          ('share' in interfaceConfig.prompts || 'public' in interfaceConfig.prompts)) ||
         !existingPermissions?.[PermissionTypes.PROMPTS]
           ? {
               [Permissions.SHARE]: getPermissionValue(
@@ -259,7 +260,8 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.AGENTS]?.[Permissions.CREATE],
           agentsDefaultCreate ?? true,
         ),
-        ...(typeof interfaceConfig?.agents === 'object' ||
+        ...((typeof interfaceConfig?.agents === 'object' &&
+          ('share' in interfaceConfig.agents || 'public' in interfaceConfig.agents)) ||
         !existingPermissions?.[PermissionTypes.AGENTS]
           ? {
               [Permissions.SHARE]: getPermissionValue(

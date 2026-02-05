@@ -1819,7 +1819,6 @@ describe('updateInterfacePermissions - permissions', () => {
   it('should preserve existing SHARE/SHARE_PUBLIC values when using boolean config (regression test)', async () => {
     // This test ensures that when `agents: true` (boolean) is configured,
     // existing SHARE and SHARE_PUBLIC permissions are NOT reset to defaults.
-    // See: https://github.com/danny-avila/LibreChat/issues/XXXX
 
     // Mock existing permissions where SHARE and SHARE_PUBLIC were enabled by user
     mockGetRoleByName.mockResolvedValue({
@@ -1929,8 +1928,86 @@ describe('updateInterfacePermissions - permissions', () => {
       (call) => call[0] === SystemRoles.USER,
     );
 
-    // When object config is used, SHARE and SHARE_PUBLIC SHOULD be included
+    // When object config is used with explicit share/public, they SHOULD be included
     expect(userCall[1][PermissionTypes.AGENTS]).toHaveProperty(Permissions.SHARE, true);
     expect(userCall[1][PermissionTypes.AGENTS]).toHaveProperty(Permissions.SHARE_PUBLIC, true);
+  });
+
+  it('should preserve SHARE/SHARE_PUBLIC when using object config without share/public keys', async () => {
+    // When using object config like `agents: { use: true, create: false }` WITHOUT share/public,
+    // existing SHARE and SHARE_PUBLIC should be preserved (not reset to defaults)
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: true, // User enabled this via admin panel
+          [Permissions.SHARE_PUBLIC]: true, // User enabled this via admin panel
+        },
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: true,
+        },
+      },
+    });
+
+    const config = {
+      interface: {
+        agents: {
+          use: true,
+          create: false, // Only setting use and create, NOT share/public
+        },
+        prompts: {
+          use: true,
+          create: false, // Only setting use and create, NOT share/public
+        },
+      },
+    };
+    const configDefaults = {
+      interface: {
+        agents: {
+          use: true,
+          create: true,
+          share: false,
+          public: false,
+        },
+        prompts: {
+          use: true,
+          create: true,
+          share: false,
+          public: false,
+        },
+      },
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    // AGENTS: use and create should be updated, but SHARE/SHARE_PUBLIC should NOT be in payload
+    expect(userCall[1][PermissionTypes.AGENTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: false,
+    });
+    expect(userCall[1][PermissionTypes.AGENTS]).not.toHaveProperty(Permissions.SHARE);
+    expect(userCall[1][PermissionTypes.AGENTS]).not.toHaveProperty(Permissions.SHARE_PUBLIC);
+
+    // PROMPTS: same behavior
+    expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: false,
+    });
+    expect(userCall[1][PermissionTypes.PROMPTS]).not.toHaveProperty(Permissions.SHARE);
+    expect(userCall[1][PermissionTypes.PROMPTS]).not.toHaveProperty(Permissions.SHARE_PUBLIC);
   });
 });
