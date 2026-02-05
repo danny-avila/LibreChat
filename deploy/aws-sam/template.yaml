@@ -1,0 +1,1401 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Scalable LibreChat deployment on AWS using ECS Fargate'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Existing VPC ID to deploy into
+  
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: List of existing public subnet IDs for the load balancer (minimum 2 in different AZs)
+  
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: List of existing private subnet IDs for ECS tasks and databases (minimum 2 in different AZs)
+  
+  LibreChatImage:
+    Type: String
+    Default: librechat/librechat:latest
+    Description: LibreChat Docker image custom build
+  
+  DomainName:
+    Type: String
+    Default: ""
+    Description: Domain name for LibreChat (optional)
+  
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM certificate ARN for HTTPS (optional)
+  
+  BedrockAccessKeyId:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: "(Deprecated) AWS Access Key ID for Bedrock; use BedrockCredentialsSecretArn instead"
+  
+  BedrockSecretAccessKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: "(Deprecated) AWS Secret Access Key for Bedrock; use BedrockCredentialsSecretArn instead"
+  
+  BedrockCredentialsSecretArn:
+    Type: String
+    Default: ""
+    Description: Secrets Manager ARN for Bedrock credentials JSON (accessKeyId, secretAccessKey); preferred over BedrockAccessKeyId/BedrockSecretAccessKey
+  
+  EnableSSO:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Enable SSO authentication with Cognito
+  
+  CognitoUserPoolId:
+    Type: String
+    Default: ""
+    Description: Cognito User Pool ID for SSO (required if EnableSSO is true)
+  
+  OpenIdClientId:
+    Type: String
+    Default: ""
+    Description: OpenID Client ID from Cognito App Client (required if EnableSSO is true)
+  
+  OpenIdClientSecret:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: "(Deprecated) OpenID Client Secret; use OpenIdClientSecretArn instead when EnableSSO is true"
+  
+  OpenIdClientSecretArn:
+    Type: String
+    Default: ""
+    Description: Secrets Manager ARN for OpenID client secret string (preferred when EnableSSO is true)
+  
+  OpenIdScope:
+    Type: String
+    Default: "openid profile email"
+    Description: OpenID scope for authentication
+  
+  OpenIdButtonLabel:
+    Type: String
+    Default: "Sign in with SSO"
+    Description: Label for the SSO login button
+  
+  OpenIdImageUrl:
+    Type: String
+    Default: ""
+    Description: Image URL for the SSO login button (optional)
+  
+  OpenIdNameClaim:
+    Type: String
+    Default: "name"
+    Description: Claim attribute for user name
+  
+  OpenIdEmailClaim:
+    Type: String
+    Default: "email"
+    Description: Claim attribute for user email
+  
+  HelpAndFaqUrl:
+    Type: String
+    Default: ""
+    Description: Help and FAQ URL (use '/' to disable button)
+  
+  CreateNATGateway:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Create NAT Gateways for internet connectivity in private subnets
+
+  CreateSecretsManagerVPCEndpoint:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Create Secrets Manager VPC endpoint in this stack. Set to false when deploying multiple stacks (dev/staging/prod) in the same VPC so the first stack's endpoint (with private DNS) is reused.
+
+  ExistingSecretsManagerEndpointSecurityGroupId:
+    Type: String
+    Default: ""
+    Description: When CreateSecretsManagerVPCEndpoint is false, the security group ID of the existing Secrets Manager VPC endpoint (so this stack's ECS tasks can be allowed to reach it). The deploy script sets this automatically.
+
+  # Optional MCP secrets (one secret per MCP; created by deploy script)
+  MCPCongressSecretArn:
+    Type: String
+    Default: ""
+    Description: Secrets Manager ARN for MCP Congress token (optional)
+  MCPEasternTimeSecretArn:
+    Type: String
+    Default: ""
+    Description: Secrets Manager ARN for MCP Eastern Time token (optional)
+  MCPPennkeyLookupSecretArn:
+    Type: String
+    Default: ""
+    Description: Secrets Manager ARN for MCP Pennkey Lookup token (optional)
+
+Conditions:
+  HasDomain: !Not [!Equals [!Ref DomainName, ""]]
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, ""]]
+  EnableSSO: !Equals [!Ref EnableSSO, "true"]
+  HasHelpUrl: !Not [!Equals [!Ref HelpAndFaqUrl, ""]]
+  CreateNATGateway: !Equals [!Ref CreateNATGateway, "true"]
+  CreateSecretsManagerVPCEndpoint: !Equals [!Ref CreateSecretsManagerVPCEndpoint, "true"]
+  HasMCPCongressSecret: !Not [!Equals [!Ref MCPCongressSecretArn, ""]]
+  HasMCPEasternTimeSecret: !Not [!Equals [!Ref MCPEasternTimeSecretArn, ""]]
+  HasMCPPennkeyLookupSecret: !Not [!Equals [!Ref MCPPennkeyLookupSecretArn, ""]]
+  UseBedrockCredentialsSecret: !Not [!Equals [!Ref BedrockCredentialsSecretArn, ""]]
+  UseOpenIdClientSecretArn: !And [!Equals [!Ref EnableSSO, "true"], !Not [!Equals [!Ref OpenIdClientSecretArn, ""]]]
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: python3.11
+
+Resources:
+  # NAT Gateway Resources (Conditional)
+  NATGateway1EIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateNATGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-nat-eip-1
+
+  NATGateway2EIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateNATGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-nat-eip-2
+
+  NATGateway1:
+    Type: AWS::EC2::NatGateway
+    Condition: CreateNATGateway
+    Properties:
+      AllocationId: !GetAtt NATGateway1EIP.AllocationId
+      SubnetId: !Select [0, !Ref PublicSubnetIds]
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-nat-gateway-1
+
+  NATGateway2:
+    Type: AWS::EC2::NatGateway
+    Condition: CreateNATGateway
+    Properties:
+      AllocationId: !GetAtt NATGateway2EIP.AllocationId
+      SubnetId: !Select [1, !Ref PublicSubnetIds]
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-nat-gateway-2
+
+  # Route Tables for Private Subnets (Conditional)
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateNATGateway
+    Properties:
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-rt-1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateNATGateway
+    Properties:
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-rt-2
+
+  # Default Routes to NAT Gateways
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Condition: CreateNATGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway1
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Condition: CreateNATGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway2
+
+  # Associate Route Tables with Private Subnets
+  PrivateSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateNATGateway
+    Properties:
+      SubnetId: !Select [0, !Ref PrivateSubnetIds]
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateNATGateway
+    Properties:
+      SubnetId: !Select [1, !Ref PrivateSubnetIds]
+      RouteTableId: !Ref PrivateRouteTable2
+
+  # Security Groups
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Application Load Balancer
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-alb-sg
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ECS tasks
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3080
+          ToPort: 3080
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-ecs-sg
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for databases
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          SourceSecurityGroupId: !Ref ECSSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref ECSSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-db-sg
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda functions
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: 10.0.0.0/8
+          Description: NFS access to EFS (private subnets)
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS access for S3 API calls
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-lambda-sg
+
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EFS file system
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref ECSSecurityGroup
+          Description: NFS access from ECS tasks
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          Description: NFS access from Lambda functions
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-efs-sg
+
+  # VPC endpoint security group for Secrets Manager (so ECS tasks in private subnet can inject secrets)
+  # Only created when this stack owns the Secrets Manager VPC endpoint (first stack in VPC).
+  SecretsManagerEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateSecretsManagerVPCEndpoint
+    Properties:
+      GroupDescription: Security group for Secrets Manager VPC endpoint
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref ECSSecurityGroup
+          Description: HTTPS from ECS tasks for secret injection
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-secretsmanager-endpoint-sg
+
+  # VPC interface endpoint for Secrets Manager (required for ECS secret injection in private subnets).
+  # Only one endpoint per VPC can have private DNS; set CreateSecretsManagerVPCEndpoint=false for additional stacks in the same VPC.
+  SecretsManagerVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateSecretsManagerVPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.secretsmanager'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds:
+        - !Ref SecretsManagerEndpointSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-secretsmanager-endpoint
+
+  # When reusing an existing Secrets Manager VPC endpoint, add this stack's ECS SG to its SG before ECS Service starts
+  SecretsManagerEndpointEcsAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: EC2SecurityGroupIngress
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:DescribeSecurityGroups
+                Resource: "*"
+
+  SecretsManagerEndpointEcsAccessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-secretsmanager-endpoint-ecs-access
+      CodeUri: src/secretsmanager_endpoint_ecs_access/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 60
+      MemorySize: 128
+      Role: !GetAtt SecretsManagerEndpointEcsAccessRole.Arn
+
+  SecretsManagerEndpointEcsAccessPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SecretsManagerEndpointEcsAccessFunction
+      Action: lambda:InvokeFunction
+      Principal: cloudformation.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+  SecretsManagerEndpointEcsAccess:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: ECSSecurityGroup
+    Properties:
+      ServiceToken: !GetAtt SecretsManagerEndpointEcsAccessFunction.Arn
+      EndpointSecurityGroupId: !Ref ExistingSecretsManagerEndpointSecurityGroupId
+      EcsSecurityGroupId: !Ref ECSSecurityGroup
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-alb
+      Scheme: internet-facing
+      Type: application
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-alb
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-tg
+      Port: 3080
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 60
+      HealthCheckTimeoutSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 6
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: !If [HasCertificate, 443, 80]
+      Protocol: !If [HasCertificate, HTTPS, HTTP]
+      Certificates: !If
+        - HasCertificate
+        - - CertificateArn: !Ref CertificateArn
+        - !Ref AWS::NoValue
+
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${AWS::StackName}-cluster
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 4
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  # ECS Task Definition
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-task
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: 1024
+      Memory: 2048
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      TaskRoleArn: !Ref ECSTaskRole
+      Volumes:
+        - Name: config-volume
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EFSFileSystem
+            RootDirectory: /lambda
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: librechat
+          Image: !Ref LibreChatImage
+          PortMappings:
+            - ContainerPort: 3080
+              Protocol: tcp
+          MountPoints:
+            - SourceVolume: config-volume
+              ContainerPath: /app/config
+              ReadOnly: true
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+            - Name: MONGO_URI
+              Value: !Sub 
+                - mongodb://librechat:{{resolve:secretsmanager:${DocumentDBPassword}:SecretString:password}}@${MongoHost}:27017/LibreChat?ssl=true&tlsAllowInvalidCertificates=true&authSource=admin&retryWrites=false
+                - MongoHost: !GetAtt DocumentDBCluster.Endpoint
+                  DocumentDBPassword: !Ref DocumentDBPassword
+            - Name: USE_REDIS
+              Value: "true"
+            - Name: REDIS_URI
+              Value: !Sub 
+                - rediss://${RedisHost}:6379  # Changed from redis:// to rediss://
+                - RedisHost: !GetAtt ElastiCacheReplicationGroup.PrimaryEndPoint.Address
+            # For ElastiCache with TLS
+            - Name: REDIS_USE_ALTERNATIVE_DNS_LOOKUP
+              Value: "true"
+            - Name: REDIS_KEY_PREFIX_VAR
+              Value: "AWS_EXECUTION_ENV"  # or use static prefix
+            - Name: NODE_TLS_REJECT_UNAUTHORIZED
+              Value: "1"
+            # AWS Configuration (uses credentials from Secrets Manager)
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            # AWS Bedrock Configuration (keys in Secrets when BedrockCredentialsSecretArn set; else plain below)
+            - Name: BEDROCK_AWS_DEFAULT_REGION
+              Value: !Ref AWS::Region
+            - !If
+              - UseBedrockCredentialsSecret
+              - !Ref AWS::NoValue
+              - Name: BEDROCK_AWS_ACCESS_KEY_ID
+                Value: !Ref BedrockAccessKeyId
+            - !If
+              - UseBedrockCredentialsSecret
+              - !Ref AWS::NoValue
+              - Name: BEDROCK_AWS_SECRET_ACCESS_KEY
+                Value: !Ref BedrockSecretAccessKey
+            - Name: BEDROCK_AWS_MODELS
+              Value: "us.anthropic.claude-opus-4-20250514-v1:0,us.anthropic.claude-3-7-sonnet-20250219-v1:0,us.cohere.embed-v4:0,us.anthropic.claude-haiku-4-5-20251001-v1:0,us.anthropic.claude-sonnet-4-20250514-v1:0,us.anthropic.claude-opus-4-5-20251101-v1:0,us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+              # Value: "us.anthropic.claude-opus-4-20250514-v1:0,us.anthropic.claude-3-7-sonnet-20250219-v1:0,us.cohere.embed-v4:0,us.anthropic.claude-haiku-4-5-20251001-v1:0,us.anthropic.claude-sonnet-4-20250514-v1:0,us.anthropic.claude-opus-4-5-20251101-v1:0,us.anthropic.claude-sonnet-4-5-20250929-v1:0,us.anthropic.claude-opus-4-1-20250805-v1:0"
+            # S3 Storage Credentials (in Secrets when Bedrock secret; else plain below)
+            - !If
+              - UseBedrockCredentialsSecret
+              - !Ref AWS::NoValue
+              - Name: AWS_ACCESS_KEY_ID
+                Value: !Ref BedrockAccessKeyId
+            - !If
+              - UseBedrockCredentialsSecret
+              - !Ref AWS::NoValue
+              - Name: AWS_SECRET_ACCESS_KEY
+                Value: !Ref BedrockSecretAccessKey
+            - Name: AWS_BUCKET_NAME
+              Value: !Sub ${AWS::StackName}-files-${AWS::AccountId}
+            # LibreChat config file path
+            - Name: CONFIG_PATH
+              Value: "/app/config/librechat.yaml"
+            #### APP CONFIG SETTINGS ####
+            # Allow new user registration
+            - Name: ALLOW_REGISTRATION
+              Value: "false"
+            # Help and Faq URL -  If empty or commented, the button is enabled. To disable the Help and FAQ button, set to "/".
+            - Name: HELP_AND_FAQ_URL
+              Value: !If [HasHelpUrl, !Ref HelpAndFaqUrl, "https://www.google.edu"]
+            # Cache settings
+            - Name: CACHE
+              Value: "true"
+            - Name: ALLOW_SOCIAL_LOGIN
+              Value: !If [EnableSSO, "true", "false"]
+            - Name: ALLOW_SOCIAL_REGISTRATION
+              Value: !If [EnableSSO, "true", "false"]
+            - Name: DOMAIN_CLIENT
+              Value: !If [HasDomain, !Sub "https://${DomainName}", !Sub "https://${ApplicationLoadBalancer.DNSName}"]
+            - Name: DOMAIN_SERVER
+              Value: !If [HasDomain, !Sub "https://${DomainName}", !Sub "https://${ApplicationLoadBalancer.DNSName}"]
+            - Name: DEBUG_OPENID_REQUESTS
+              Value: "false"
+            - Name: DEBUG_OPENID
+              Value: "false"
+            - Name: DEBUG_DOMAIN_VALIDATION
+              Value: "false"
+            - Name: DEBUG_OAUTH_ERRORS
+              Value: "false"
+            - Name: DEBUG_SESSION_MESSAGES
+              Value: "false"
+            - Name: BYPASS_DOMAIN_CHECK
+              Value: "false"
+            # SSO Configuration (conditional)
+            - !If
+              - EnableSSO
+              - Name: OPENID_CLIENT_ID
+                Value: !Ref OpenIdClientId
+              - !Ref AWS::NoValue
+            # OPENID_CLIENT_SECRET in Secrets section when UseOpenIdClientSecretArn; else plain in Environment below
+            - !If
+              - EnableSSO
+              - Name: OPENID_ISSUER
+                Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}"
+              - !Ref AWS::NoValue
+            - !If
+              - EnableSSO
+              - Name: OPENID_SCOPE
+                Value: !Ref OpenIdScope
+              - !Ref AWS::NoValue
+            - !If
+              - EnableSSO
+              - Name: OPENID_CALLBACK_URL
+                Value: "/oauth/openid/callback"
+              - !Ref AWS::NoValue
+            - !If
+              - EnableSSO
+              - Name: OPENID_BUTTON_LABEL
+                Value: !Ref OpenIdButtonLabel
+              - !Ref AWS::NoValue
+            - !If
+              - EnableSSO
+              - Name: OPENID_IMAGE_URL
+                Value: !Ref OpenIdImageUrl
+              - !Ref AWS::NoValue
+            # OPENID_SESSION_SECRET in Secrets section
+            - !If
+              - EnableSSO
+              - Name: OPENID_GENERATE_NONCE
+                Value: "true"
+              - !Ref AWS::NoValue
+            - !If
+              - EnableSSO
+              - Name: OPENID_NAME_CLAIM
+                Value: !Ref OpenIdNameClaim
+              - !Ref AWS::NoValue
+            - !If
+              - EnableSSO
+              - Name: OPENID_EMAIL_CLAIM
+                Value: !Ref OpenIdEmailClaim
+              - !Ref AWS::NoValue
+            - Name: ALLOW_EMAIL_LOGIN
+              Value: !If [EnableSSO, "false", "true"]
+            # Session configuration to prevent conflicts
+            - Name: SESSION_EXPIRY
+              Value: "900000"
+            - Name: REFRESH_TOKEN_EXPIRY
+              Value: "604800000"
+            # Redis session configuration for multi-container deployments
+            - Name: SESSION_STORE
+              Value: "redis"
+            - Name: REDIS_SESSION_STORE
+              Value: "true"
+            # Debug (production-safe defaults)
+            - Name: DEBUG_LOGGING
+              Value: "false"
+            - Name: DEBUG_CONSOLE
+              Value: "false"
+            - Name: CONSOLE_JSON
+              Value: "true"
+            # OPENID_CLIENT_SECRET (plain only when not using secret ARN)
+            - !If
+              - EnableSSO
+              - !If
+                - UseOpenIdClientSecretArn
+                - !Ref AWS::NoValue
+                - Name: OPENID_CLIENT_SECRET
+                  Value: !Ref OpenIdClientSecret
+              - !Ref AWS::NoValue
+          Secrets:
+            - Name: JWT_SECRET
+              ValueFrom: !Ref JWTSecret
+            - Name: JWT_REFRESH_SECRET
+              ValueFrom: !Ref JWTRefreshSecret
+            - Name: CREDS_KEY
+              ValueFrom: !Ref CredsKey
+            - Name: CREDS_IV
+              ValueFrom: !Ref CredsIV
+            - !If
+              - EnableSSO
+              - Name: OPENID_SESSION_SECRET
+                ValueFrom: !Ref OpenIdSessionSecret
+              - !Ref AWS::NoValue
+            - !If
+              - UseBedrockCredentialsSecret
+              - Name: BEDROCK_AWS_ACCESS_KEY_ID
+                ValueFrom: !Sub '${BedrockCredentialsSecretArn}:accessKeyId::'
+              - !Ref AWS::NoValue
+            - !If
+              - UseBedrockCredentialsSecret
+              - Name: BEDROCK_AWS_SECRET_ACCESS_KEY
+                ValueFrom: !Sub '${BedrockCredentialsSecretArn}:secretAccessKey::'
+              - !Ref AWS::NoValue
+            - !If
+              - UseBedrockCredentialsSecret
+              - Name: AWS_ACCESS_KEY_ID
+                ValueFrom: !Sub '${BedrockCredentialsSecretArn}:accessKeyId::'
+              - !Ref AWS::NoValue
+            - !If
+              - UseBedrockCredentialsSecret
+              - Name: AWS_SECRET_ACCESS_KEY
+                ValueFrom: !Sub '${BedrockCredentialsSecretArn}:secretAccessKey::'
+              - !Ref AWS::NoValue
+            - !If
+              - UseOpenIdClientSecretArn
+              - Name: OPENID_CLIENT_SECRET
+                ValueFrom: !Ref OpenIdClientSecretArn
+              - !Ref AWS::NoValue
+            - !If
+              - HasMCPCongressSecret
+              - Name: MCP_CONGRESS_TOKEN
+                ValueFrom: !Ref MCPCongressSecretArn
+              - !Ref AWS::NoValue
+            - !If
+              - HasMCPEasternTimeSecret
+              - Name: MCP_EASTERN_TIME_TOKEN
+                ValueFrom: !Ref MCPEasternTimeSecretArn
+              - !Ref AWS::NoValue
+            - !If
+              - HasMCPPennkeyLookupSecret
+              - Name: MCP_PENNKEY_LOOKUP_TOKEN
+                ValueFrom: !Ref MCPPennkeyLookupSecretArn
+              - !Ref AWS::NoValue
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: librechat
+
+  # ECS Service
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ALBListener
+      - SecretsManagerEndpointEcsAccess
+    Properties:
+      ServiceName: !Sub ${AWS::StackName}-service
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: 2
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+          Subnets: !Ref PrivateSubnetIds
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: librechat
+          ContainerPort: 3080
+          TargetGroupArn: !Ref ALBTargetGroup
+      HealthCheckGracePeriodSeconds: 300
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 50
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      EnableExecuteCommand: true
+
+  # Auto Scaling
+  ECSAutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 20
+      MinCapacity: 1
+      ResourceId: !Sub service/${ECSCluster}/${ECSService.Name}
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  ECSAutoScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub ${AWS::StackName}-scaling-policy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ECSAutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: 70.0
+        ScaleOutCooldown: 300
+        ScaleInCooldown: 300
+
+  # DocumentDB (MongoDB-compatible)
+  DocumentDBSubnetGroup:
+    Type: AWS::DocDB::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for DocumentDB
+      SubnetIds: !Ref PrivateSubnetIds
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-docdb-subnet-group
+
+  DocumentDBCluster:
+    Type: AWS::DocDB::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub ${AWS::StackName}-docdb
+      MasterUsername: librechat
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DocumentDBPassword}:SecretString:password}}'
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: "03:00-04:00"
+      PreferredMaintenanceWindow: "sun:04:00-sun:05:00"
+      DBSubnetGroupName: !Ref DocumentDBSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DatabaseSecurityGroup
+      StorageEncrypted: true
+      DeletionProtection: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-docdb
+
+  DocumentDBInstance1:
+    Type: AWS::DocDB::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref DocumentDBCluster
+      DBInstanceIdentifier: !Sub ${AWS::StackName}-docdb-1
+      DBInstanceClass: db.t3.medium
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-docdb-1
+
+  DocumentDBInstance2:
+    Type: AWS::DocDB::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref DocumentDBCluster
+      DBInstanceIdentifier: !Sub ${AWS::StackName}-docdb-2
+      DBInstanceClass: db.t3.medium
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-docdb-2
+
+  # ElastiCache Redis
+  ElastiCacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Subnet group for ElastiCache
+      SubnetIds: !Ref PrivateSubnetIds
+
+  ElastiCacheReplicationGroup:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      ReplicationGroupId: !Sub ${AWS::StackName}-redis
+      ReplicationGroupDescription: Redis cluster for LibreChat
+      CacheNodeType: cache.t3.micro
+      NumCacheClusters: 2
+      Engine: redis
+      EngineVersion: 7.0
+      Port: 6379
+      CacheSubnetGroupName: !Ref ElastiCacheSubnetGroup
+      SecurityGroupIds:
+        - !Ref DatabaseSecurityGroup
+      AtRestEncryptionEnabled: true
+      TransitEncryptionEnabled: true
+      MultiAZEnabled: true
+      AutomaticFailoverEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-redis
+
+  # EFS File System for Configuration Files
+  EFSFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-config-efs
+
+  EFSMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Select [0, !Ref PrivateSubnetIds]
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  EFSMountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Select [1, !Ref PrivateSubnetIds]
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  # EFS Access Point for Lambda function
+  EFSAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      PosixUser:
+        Uid: 1000
+        Gid: 1000
+      RootDirectory:
+        Path: /lambda
+        CreationInfo:
+          OwnerUid: 1000
+          OwnerGid: 1000
+          Permissions: 755
+      AccessPointTags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-lambda-access-point
+
+  # Secrets Manager
+  DocumentDBPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}/docdb/password
+      Description: DocumentDB master password
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "librechat"}'
+        GenerateStringKey: 'password'
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\ ''`~!#$%^&*()+={}[]|:;<>?,'
+
+  JWTSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}/jwt/secret
+      Description: JWT secret for LibreChat
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludeCharacters: '"@/\'
+
+  JWTRefreshSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}/jwt/refresh-secret
+      Description: JWT refresh secret for LibreChat
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludeCharacters: '"@/\'
+
+  CredsKey:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}/creds/key
+      Description: Credentials encryption key for LibreChat
+      GenerateSecretString:
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+
+  CredsIV:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}/creds/iv
+      Description: Credentials encryption IV for LibreChat
+      GenerateSecretString:
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+
+  OpenIdSessionSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: EnableSSO
+    Properties:
+      Name: !Sub ${AWS::StackName}/openid/session-secret
+      Description: OpenID session secret for LibreChat SSO
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludeCharacters: '"@/\'
+
+
+  # IAM Roles
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref DocumentDBPassword
+                  - !Ref JWTSecret
+                  - !Ref JWTRefreshSecret
+                  - !Ref CredsKey
+                  - !Ref CredsIV
+                  - !If [HasMCPCongressSecret, !Ref MCPCongressSecretArn, !Ref AWS::NoValue]
+                  - !If [HasMCPEasternTimeSecret, !Ref MCPEasternTimeSecretArn, !Ref AWS::NoValue]
+                  - !If [HasMCPPennkeyLookupSecret, !Ref MCPPennkeyLookupSecretArn, !Ref AWS::NoValue]
+                  - !If [UseBedrockCredentialsSecret, !Ref BedrockCredentialsSecretArn, !Ref AWS::NoValue]
+                  - !If [UseOpenIdClientSecretArn, !Ref OpenIdClientSecretArn, !Ref AWS::NoValue]
+        - !If
+          - EnableSSO
+          - PolicyName: SSOSecretsManagerAccess
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - secretsmanager:GetSecretValue
+                  Resource:
+                    - !Ref OpenIdSessionSecret
+          - !Ref AWS::NoValue
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub 
+                  - "${BucketArn}/*"
+                  - BucketArn: !GetAtt S3Bucket.Arn
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt S3Bucket.Arn
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:ListFoundationModels
+                  - bedrock:GetFoundationModel
+                Resource: "*"
+        - PolicyName: EFSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: !Sub 
+                  - "arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:file-system/${FileSystemId}"
+                  - FileSystemId: !Ref EFSFileSystem
+
+  # Mount Target Waiter Lambda Role
+  MountTargetWaiterLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: EFSDescribeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:DescribeMountTargets
+                Resource: "*"
+
+  # Config Manager Lambda Role
+  ConfigManagerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: S3ConfigAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub 
+                  - "${BucketArn}/configs/*"
+                  - BucketArn: !GetAtt S3Bucket.Arn
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt S3Bucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix: "configs/*"
+        - PolicyName: EFSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: !Sub 
+                  - "arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:file-system/${FileSystemId}"
+                  - FileSystemId: !Ref EFSFileSystem
+
+  # Lambda permission for CloudFormation to invoke Config Manager
+  ConfigManagerLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ConfigManagerFunction
+      Action: lambda:InvokeFunction
+      Principal: cloudformation.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+  # S3 Bucket for file storage and configuration
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-files-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  # Mount Target Waiter Lambda Function
+  MountTargetWaiterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-mount-target-waiter
+      CodeUri: src/mount_target_waiter/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 360
+      MemorySize: 256
+      Role: !GetAtt MountTargetWaiterLambdaRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref MountTargetWaiterLogGroup
+
+  # Config Manager Lambda Function
+  ConfigManagerFunction:
+    Type: AWS::Serverless::Function
+    DependsOn:
+      - MountTargetWaiterTrigger
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-config-manager
+      CodeUri: src/config_manager/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 300
+      MemorySize: 512
+      Role: !GetAtt ConfigManagerLambdaRole.Arn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref PrivateSubnetIds
+      FileSystemConfigs:
+        - Arn: !Sub 
+            - "arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:access-point/${AccessPointId}"
+            - AccessPointId: !Ref EFSAccessPoint
+          LocalMountPath: /mnt/efs
+      Environment:
+        Variables:
+          EFS_MOUNT_PATH: /mnt/efs
+          S3_BUCKET_NAME: !Ref S3Bucket
+      Events:
+        # This function will be invoked by CloudFormation custom resource
+        # No direct events needed here
+      LoggingConfig:
+        LogGroup: !Ref ConfigManagerLogGroup
+
+  # CloudWatch Log Group for Mount Target Waiter Lambda
+  MountTargetWaiterLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-mount-target-waiter
+      RetentionInDays: 30
+
+  # CloudWatch Log Group for Config Manager Lambda
+  ConfigManagerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-config-manager
+      RetentionInDays: 30
+
+  # Custom Resource to wait for mount targets to be ready
+  MountTargetWaiterTrigger:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - EFSMountTarget1
+      - EFSMountTarget2
+      - EFSAccessPoint
+    Properties:
+      ServiceToken: !GetAtt MountTargetWaiterFunction.Arn
+      FileSystemId: !Ref EFSFileSystem
+
+  # Lambda permission for CloudFormation to invoke Mount Target Waiter
+  MountTargetWaiterLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref MountTargetWaiterFunction
+      Action: lambda:InvokeFunction
+      Principal: cloudformation.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+  # Custom Resource to trigger Config Manager Lambda
+  ConfigManagerTrigger:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - EFSMountTarget1
+      - EFSMountTarget2
+      - EFSAccessPoint
+    Properties:
+      ServiceToken: !GetAtt ConfigManagerFunction.Arn
+      S3Bucket: !Ref S3Bucket
+      S3Key: configs/librechat.yaml
+      EFSFileSystemId: !Ref EFSFileSystem
+      # Force update on every deployment by including timestamp-like value
+      DeploymentId: !Sub "${AWS::StackName}-${AWS::Region}-config"
+
+  # CloudWatch Log Group
+  CloudWatchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${AWS::StackName}
+      RetentionInDays: 30
+
+Outputs:
+  LoadBalancerURL:
+    Description: URL of the Application Load Balancer
+    Value: !Sub 
+      - ${Protocol}://${DNSName}
+      - Protocol: !If [HasCertificate, https, http]
+        DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub ${AWS::StackName}-LoadBalancerURL
+
+  DocumentDBEndpoint:
+    Description: DocumentDB cluster endpoint
+    Value: !GetAtt DocumentDBCluster.Endpoint
+    Export:
+      Name: !Sub ${AWS::StackName}-DocumentDBEndpoint
+
+  RedisEndpoint:
+    Description: Redis cluster endpoint
+    Value: !GetAtt ElastiCacheReplicationGroup.PrimaryEndPoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-RedisEndpoint
+
+  S3BucketName:
+    Description: S3 bucket for file storage
+    Value: !Ref S3Bucket
+    Export:
+      Name: !Sub ${AWS::StackName}-S3Bucket
+
+  ECSClusterName:
+    Description: ECS cluster name
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub ${AWS::StackName}-ECSCluster
+
+  ECSServiceName:
+    Description: ECS service name
+    Value: !GetAtt ECSService.Name
+    Export:
+      Name: !Sub ${AWS::StackName}-ECSService
+
+  EFSFileSystemId:
+    Description: EFS file system ID for configuration files
+    Value: !Ref EFSFileSystem
+    Export:
+      Name: !Sub ${AWS::StackName}-EFSFileSystemId
+
+  EFSAccessPointId:
+    Description: EFS Access Point ID for Lambda function
+    Value: !Ref EFSAccessPoint
+    Export:
+      Name: !Sub ${AWS::StackName}-EFSAccessPointId
+
+  ConfigManagerFunctionArn:
+    Description: Config Manager Lambda function ARN
+    Value: !GetAtt ConfigManagerFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-ConfigManagerFunctionArn
+
+  ConfigDeploymentStatus:
+    Description: Status of configuration file deployment to EFS
+    Value: !GetAtt ConfigManagerTrigger.FileSize
+    Export:
+      Name: !Sub ${AWS::StackName}-ConfigDeploymentStatus
+
+  SSOEnabled:
+    Description: Whether SSO authentication is enabled
+    Value: !Ref EnableSSO
+    Export:
+      Name: !Sub ${AWS::StackName}-SSOEnabled
+
+  CognitoIssuerURL:
+    Condition: EnableSSO
+    Description: Cognito OpenID Issuer URL
+    Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}"
+    Export:
+      Name: !Sub ${AWS::StackName}-CognitoIssuerURL
+
+  CallbackURL:
+    Condition: EnableSSO
+    Description: OAuth callback URL for Cognito configuration
+    Value: !Sub 
+      - "${BaseURL}/oauth/openid/callback"
+      - BaseURL: !If 
+          - HasDomain
+          - !Sub "https://${DomainName}"
+          - !Sub "https://${ApplicationLoadBalancer.DNSName}"
+    Export:
+      Name: !Sub ${AWS::StackName}-CallbackURL
+
+  NATGatewayEnabled:
+    Description: Whether NAT Gateways were created for internet connectivity
+    Value: !Ref CreateNATGateway
+    Export:
+      Name: !Sub ${AWS::StackName}-NATGatewayEnabled
+
+  NATGateway1Id:
+    Condition: CreateNATGateway
+    Description: NAT Gateway 1 ID
+    Value: !Ref NATGateway1
+    Export:
+      Name: !Sub ${AWS::StackName}-NATGateway1Id
+
+  NATGateway2Id:
+    Condition: CreateNATGateway
+    Description: NAT Gateway 2 ID
+    Value: !Ref NATGateway2
+    Export:
+      Name: !Sub ${AWS::StackName}-NATGateway2Id
+
+  NATGateway1EIP:
+    Condition: CreateNATGateway
+    Description: NAT Gateway 1 Elastic IP
+    Value: !Ref NATGateway1EIP
+    Export:
+      Name: !Sub ${AWS::StackName}-NATGateway1EIP
+
+  NATGateway2EIP:
+    Condition: CreateNATGateway
+    Description: NAT Gateway 2 Elastic IP
+    Value: !Ref NATGateway2EIP
+    Export:
+      Name: !Sub ${AWS::StackName}-NATGateway2EIP
+
+  foo:
+    Value: "bar bar"
