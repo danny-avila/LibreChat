@@ -14,8 +14,7 @@ function Balance() {
   });
   const balanceData = balanceQuery.data;
 
-  // 📝 DEBUG LOG: Check this in your Browser Console (F12)
-  // 📝 DEBUG LOG: Helpful for verifying if the data update reached the frontend
+  // 📝 DEBUG LOG: Check if data reaches the UI
   useEffect(() => {
     if (balanceData) {
       console.log('📊 UI Balance Data Received:', balanceData);
@@ -46,31 +45,26 @@ function Balance() {
 
   /**
    * 🛒 HANDLE PURCHASE
-   * Switched from userId to email to ensure a more reliable database lookup.
-   * Passes the email to the payment server which then maps it to the correct Mongo _id.
+   * FIXED: Now combines everything into ONE window.open call.
+   * This ensures the PayMongo session gets the email AND userId correctly.
    */
   const handlePurchase = () => {
-    const userId = user?.id || '';
-    // Use the production URL for your payment server
-    window.open(
-      `https://pay.ryanslab.space/pay?quantity=${quantity}&userId=${userId}`, 
-      '_blank'
-    );
     const userEmail = user?.email || ''; 
+    const userId = user?.id || user?._id || '';
 
     if (!userEmail) {
       alert("Error: No email found. Please ensure you are logged in.");
       return;
     }
 
-    // Pass email and quantity. encodeURIComponent ensures special characters in emails don't break the URL.
-    const paymentUrl = `https://pay.ryanslab.space/pay?quantity=${quantity}&email=${encodeURIComponent(userEmail)}`;
+    // Combine email, quantity, and userId into a single URL
+    const paymentUrl = `https://pay.ryanslab.space/pay?quantity=${quantity}&email=${encodeURIComponent(userEmail)}&userId=${userId}`;
     
+    // Open only ONE tab
     window.open(paymentUrl, '_blank');
   };
 
-  // 🔄 REFRESH: Force-fetches the latest data from MongoDB
-  // 🔄 REFRESH: Manually trigger a re-fetch of the balance from the database
+  // 🔄 REFRESH: Manually trigger a re-fetch after payment
   const handleRefresh = () => {
     console.log('🔄 Manually refreshing balance...');
     balanceQuery.refetch();
@@ -105,7 +99,7 @@ function Balance() {
 
       <div className="mt-2">
         <div className="bg-surface-secondary rounded-xl p-4 border border-border-light shadow-sm">
-          <h3 className="font-semibold mb-2 text-text-primary">Choose Token Pack</h3>
+          <h3 className="font-semibold mb-2 text-text-primary uppercase text-xs tracking-wider">Choose Token Pack</h3>
 
           <select 
             value={quantity}
@@ -113,10 +107,10 @@ function Balance() {
             className="w-full p-3 rounded-lg border border-border-light bg-surface-primary text-text-primary mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="1">1 Pack (5,000,000 tokens) - ₱250</option>
-            <option value="2">2 Packs (10M tokens) - ₱450 (Save ₱50)</option>
-            <option value="3">3 Packs (15M tokens) - ₱600 (Save ₱150)</option>
-            <option value="4">4 Packs (20M tokens) - ₱720 (Save ₱280)</option>
-            <option value="5">5 Packs (25M tokens) - ₱850 (Save ₱400)</option>
+            <option value="2">2 Packs (10M tokens) - ₱450</option>
+            <option value="3">3 Packs (15M tokens) - ₱600</option>
+            <option value="4">4 Packs (20M tokens) - ₱720</option>
+            <option value="5">5 Packs (25M tokens) - ₱850</option>
           </select>
 
           <button
