@@ -1045,6 +1045,7 @@ export interface AdminUser {
   username?: string;
   name?: string;
   role: string;
+  groups?: string[];
   provider?: string;
   createdAt: string;
   emailVerified?: boolean;
@@ -1090,6 +1091,13 @@ export function updateUserRole(
   role: string,
 ): Promise<{ message: string; user: AdminUser }> {
   return request.patch(endpoints.adminUpdateUserRole(userId), { role });
+}
+
+export function updateUserGroups(
+  userId: string,
+  groups: string[],
+): Promise<{ message: string; user: AdminUser }> {
+  return request.patch(endpoints.adminUpdateUserGroups(userId), { groups });
 }
 
 export function deleteUserByAdmin(userId: string): Promise<{ message: string }> {

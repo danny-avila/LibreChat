@@ -3,6 +3,7 @@ const {
   listUsersController,
   createAdminUserController,
   updateUserRoleController,
+  updateUserGroupsController,
   deleteUserByAdminController,
   listAllConversationsController,
   getConversationMessagesController,
@@ -35,6 +36,13 @@ router.post('/users', createAdminUserController);
  * @access Admin only
  */
 router.patch('/users/:userId/role', updateUserRoleController);
+
+/**
+ * @route PATCH /api/admin/users/:userId/groups
+ * @desc Update user groups (add user to multiple groups)
+ * @access Admin only
+ */
+router.patch('/users/:userId/groups', updateUserGroupsController);
 
 /**
  * @route DELETE /api/admin/users/:userId

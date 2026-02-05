@@ -36,8 +36,21 @@ export * from './keys';
 export * from './headers-helpers';
 export { loginPage, registerPage, apiBaseUrl } from './api-endpoints';
 export { default as request } from './request';
-export { dataService };
 import * as dataService from './data-service';
+export { dataService };
+/* Admin types re-export */
+export type {
+  TAdminUser,
+  TAdminUsersResponse,
+  TCreateAdminUserRequest,
+  TCreateAdminUserResponse,
+  TAdminConversation,
+  TAdminConversationUser,
+  TAdminConversationsResponse,
+  TAdminConversationMessagesResponse,
+  TAdminGroup,
+  TAdminGroupsResponse,
+} from './data-service';
 /* general helpers */
 export * from './utils';
 export * from './actions';

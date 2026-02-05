@@ -27,7 +27,7 @@ const listUsersController = async (req, res) => {
     }
 
     const users = await User.find(query)
-      .select('email username name role provider createdAt emailVerified avatar')
+      .select('email username name role groups provider createdAt emailVerified avatar')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum)
@@ -115,6 +115,7 @@ const createAdminUserController = async (req, res) => {
 
 /**
  * Update user role (admin only)
+ * Supports system roles (ADMIN, USER) and custom group names
  * @param {object} req - Express Request
  * @param {object} res - Express Response
  */
@@ -123,9 +124,9 @@ const updateUserRoleController = async (req, res) => {
     const { userId } = req.params;
     const { role } = req.body;
 
-    // Validate role
-    if (!role || ![SystemRoles.ADMIN, SystemRoles.USER].includes(role)) {
-      return res.status(400).json({ message: 'Invalid role. Must be ADMIN or USER' });
+    // Validate role - allow system roles and custom group names
+    if (!role || typeof role !== 'string' || role.trim().length === 0) {
+      return res.status(400).json({ message: 'Invalid role. Role cannot be empty' });
     }
 
     // Prevent admin from changing their own role
@@ -133,8 +134,8 @@ const updateUserRoleController = async (req, res) => {
       return res.status(403).json({ message: 'You cannot change your own role' });
     }
 
-    const user = await User.findByIdAndUpdate(userId, { role }, { new: true }).select(
-      'email username name role',
+    const user = await User.findByIdAndUpdate(userId, { role: role.trim() }, { new: true }).select(
+      'email username name role groups',
     );
 
     if (!user) {
@@ -146,6 +147,46 @@ const updateUserRoleController = async (req, res) => {
   } catch (error) {
     logger.error('[updateUserRoleController] Error updating user role:', error);
     res.status(500).json({ message: 'Error updating user role' });
+  }
+};
+
+/**
+ * Update user groups (admin only)
+ * Allows adding user to multiple groups
+ * @param {object} req - Express Request
+ * @param {object} res - Express Response
+ */
+const updateUserGroupsController = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { groups } = req.body;
+
+    // Validate groups - must be an array of strings
+    if (!groups || !Array.isArray(groups)) {
+      return res.status(400).json({ message: 'Invalid groups. Groups must be an array' });
+    }
+
+    // Filter out empty strings and trim values
+    const validGroups = groups.filter((g) => typeof g === 'string' && g.trim().length > 0).map((g) => g.trim());
+
+    // Prevent admin from changing their own groups
+    if (userId === req.user.id) {
+      return res.status(403).json({ message: 'You cannot change your own groups' });
+    }
+
+    const user = await User.findByIdAndUpdate(userId, { groups: validGroups }, { new: true }).select(
+      'email username name role groups',
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    logger.info(`[updateUserGroupsController] User groups updated: ${user.email} to [${validGroups.join(', ')}]`);
+    res.status(200).json({ message: 'User groups updated successfully', user });
+  } catch (error) {
+    logger.error('[updateUserGroupsController] Error updating user groups:', error);
+    res.status(500).json({ message: 'Error updating user groups' });
   }
 };
 
@@ -301,6 +342,12 @@ const getConversationMessagesController = async (req, res) => {
       .sort({ createdAt: 1 })
       .lean();
 
+    // Debug log to check what messages are being returned
+    logger.info(`[getConversationMessagesController] Found ${messages.length} messages for conversation ${conversationId}`);
+    messages.forEach((msg, idx) => {
+      logger.info(`[getConversationMessagesController] Message ${idx}: isCreatedByUser=${msg.isCreatedByUser}, hasContent=${!!msg.content}, hasText=${!!msg.text}`);
+    });
+
     res.status(200).json({
       conversation: {
         ...conversation,
@@ -314,11 +361,164 @@ const getConversationMessagesController = async (req, res) => {
   }
 };
 
+// In-memory storage for custom groups (in production, use a database collection)
+let customGroups = [];
+
+/**
+ * List all custom groups (admin only)
+ * @param {object} req - Express Request
+ * @param {object} res - Express Response
+ */
+const listGroupsController = async (req, res) => {
+  try {
+    // Get groups from config or in-memory storage
+    // Also get unique groups from users' groups array
+    const systemRoles = [SystemRoles.ADMIN, SystemRoles.USER];
+    
+    // Get all unique groups from users' groups array
+    const usersWithGroups = await User.distinct('groups');
+    const customGroupsFromUsers = usersWithGroups.filter(
+      (group) => group && !systemRoles.includes(group),
+    );
+
+    // Merge custom groups with groups found in users
+    const allGroups = [...new Set([...customGroups, ...customGroupsFromUsers])];
+
+    res.status(200).json({
+      groups: allGroups.map((name) => ({ name })),
+      systemRoles: systemRoles,
+    });
+  } catch (error) {
+    logger.error('[listGroupsController] Error listing groups:', error);
+    res.status(500).json({ message: 'Error listing groups' });
+  }
+};
+
+/**
+ * Create a new custom group (admin only)
+ * @param {object} req - Express Request
+ * @param {object} res - Express Response
+ */
+const createGroupController = async (req, res) => {
+  try {
+    const { name } = req.body;
+
+    // Validate group name
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ message: 'Group name is required' });
+    }
+
+    const groupName = name.trim();
+
+    // Check if it's a system role
+    if ([SystemRoles.ADMIN, SystemRoles.USER].includes(groupName.toUpperCase())) {
+      return res.status(400).json({ message: 'Cannot create a group with a system role name' });
+    }
+
+    // Check if group already exists
+    if (customGroups.includes(groupName)) {
+      return res.status(409).json({ message: 'Group already exists' });
+    }
+
+    customGroups.push(groupName);
+
+    logger.info(`[createGroupController] Group created: ${groupName}`);
+    res.status(201).json({ message: 'Group created successfully', group: { name: groupName } });
+  } catch (error) {
+    logger.error('[createGroupController] Error creating group:', error);
+    res.status(500).json({ message: 'Error creating group' });
+  }
+};
+
+/**
+ * Delete a custom group (admin only)
+ * @param {object} req - Express Request
+ * @param {object} res - Express Response
+ */
+const deleteGroupController = async (req, res) => {
+  try {
+    const { groupName } = req.params;
+
+    // Decode the group name (in case it has special characters)
+    const decodedName = decodeURIComponent(groupName);
+
+    // Check if it's a system role
+    if ([SystemRoles.ADMIN, SystemRoles.USER].includes(decodedName.toUpperCase())) {
+      return res.status(400).json({ message: 'Cannot delete a system role' });
+    }
+
+    // Remove from custom groups
+    customGroups = customGroups.filter((g) => g !== decodedName);
+
+    // Optionally: Remove this group from all users' groups array
+    const { resetUsers } = req.query;
+    if (resetUsers === 'true') {
+      // Pull the group from all users' groups arrays
+      await User.updateMany(
+        { groups: decodedName },
+        { $pull: { groups: decodedName } }
+      );
+      logger.info(`[deleteGroupController] Removed group ${decodedName} from all users`);
+    }
+
+    logger.info(`[deleteGroupController] Group deleted: ${decodedName}`);
+    res.status(200).json({ message: 'Group deleted successfully' });
+  } catch (error) {
+    logger.error('[deleteGroupController] Error deleting group:', error);
+    res.status(500).json({ message: 'Error deleting group' });
+  }
+};
+
+/**
+ * Get users by group/role (admin only)
+ * @param {object} req - Express Request
+ * @param {object} res - Express Response
+ */
+const getUsersByGroupController = async (req, res) => {
+  try {
+    const { groupName } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const decodedName = decodeURIComponent(groupName);
+
+    // Query users where groups array contains the specified group
+    const users = await User.find({ groups: decodedName })
+      .select('email username name role groups provider createdAt emailVerified avatar')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean();
+
+    const total = await User.countDocuments({ groups: decodedName });
+
+    res.status(200).json({
+      users,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
+  } catch (error) {
+    logger.error('[getUsersByGroupController] Error getting users by group:', error);
+    res.status(500).json({ message: 'Error getting users by group' });
+  }
+};
+
 module.exports = {
   listUsersController,
   createAdminUserController,
   updateUserRoleController,
+  updateUserGroupsController,
   deleteUserByAdminController,
   listAllConversationsController,
   getConversationMessagesController,
+  listGroupsController,
+  createGroupController,
+  deleteGroupController,
+  getUsersByGroupController,
 };

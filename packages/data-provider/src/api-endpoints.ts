@@ -350,6 +350,8 @@ export const adminUsers = (params?: { page?: number; limit?: number; search?: st
 export const adminCreateUser = () => `${BASE_URL}/api/admin/users`;
 export const adminUpdateUserRole = (userId: string) =>
   `${BASE_URL}/api/admin/users/${userId}/role`;
+export const adminUpdateUserGroups = (userId: string) =>
+  `${BASE_URL}/api/admin/users/${userId}/groups`;
 export const adminDeleteUser = (userId: string) => `${BASE_URL}/api/admin/users/${userId}`;
 
 export const adminConversations = (params?: {

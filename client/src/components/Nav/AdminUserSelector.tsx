@@ -45,6 +45,14 @@ const AdminUserSelector: React.FC<AdminUserSelectorProps> = memo(({ onUserSelect
 
   // Check if current user is admin
   const isAdmin = currentUser?.role === SystemRoles.ADMIN;
+  
+  // Component mount logging
+  useEffect(() => {
+    console.log('[AdminUserSelector] Component mounted');
+    console.log('[AdminUserSelector] Current user:', currentUser);
+    console.log('[AdminUserSelector] isAdmin:', isAdmin);
+    console.log('[AdminUserSelector] SystemRoles.ADMIN:', SystemRoles.ADMIN);
+  }, []);
 
   // Debounce search
   useEffect(() => {
@@ -55,12 +63,29 @@ const AdminUserSelector: React.FC<AdminUserSelectorProps> = memo(({ onUserSelect
   }, [search]);
 
   // Fetch users
-  const { data, isLoading } = useQuery<AdminUsersResponse>({
+  const { data, isLoading, error, isError } = useQuery<AdminUsersResponse>({
     queryKey: ['adminUsersSelector', debouncedSearch],
-    queryFn: () => dataService.getAdminUsers({ limit: 50, search: debouncedSearch }),
+    queryFn: () => {
+      console.log('[AdminUserSelector] Fetching users with search:', debouncedSearch);
+      return dataService.getAdminUsers({ limit: 50, search: debouncedSearch });
+    },
     enabled: isAdmin && isOpen,
     staleTime: 30000,
+    retry: 1,
   });
+
+  // Debug logging
+  useEffect(() => {
+    console.log('[AdminUserSelector] State:', {
+      isAdmin,
+      isOpen,
+      isLoading,
+      hasData: !!data,
+      userCount: data?.users.length,
+      isError,
+      error: (error as Error)?.message,
+    });
+  }, [isAdmin, isOpen, isLoading, data, isError, error]);
 
   const handleUserSelect = useCallback(
     (user: AdminUser) => {
@@ -79,13 +104,24 @@ const AdminUserSelector: React.FC<AdminUserSelectorProps> = memo(({ onUserSelect
   }, [setSelectedUser, setIsAdminViewMode, onUserSelect]);
 
   const handleToggleOpen = useCallback(() => {
-    setIsOpen((prev) => !prev);
-  }, []);
+    console.log('[AdminUserSelector] Button clicked!');
+    console.log('[AdminUserSelector] Current isOpen:', isOpen);
+    setIsOpen((prev) => {
+      const newValue = !prev;
+      console.log('[AdminUserSelector] Setting isOpen to:', newValue);
+      return newValue;
+    });
+  }, [isOpen]);
 
   // Don't render if not admin
   if (!isAdmin) {
+    console.log('[AdminUserSelector] Not rendering - user is not admin');
+    console.log('[AdminUserSelector] currentUser?.role:', currentUser?.role);
+    console.log('[AdminUserSelector] SystemRoles.ADMIN:', SystemRoles.ADMIN);
     return null;
   }
+
+  console.log('[AdminUserSelector] Rendering component');
 
   return (
     <div className="relative w-full">
@@ -150,6 +186,10 @@ const AdminUserSelector: React.FC<AdminUserSelectorProps> = memo(({ onUserSelect
             {isLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="h-4 w-4" />
+              </div>
+            ) : isError ? (
+              <div className="py-4 text-center text-xs text-red-500">
+                加载用户失败: {(error as Error)?.message || '未知错误'}
               </div>
             ) : data?.users.length === 0 ? (
               <div className="py-4 text-center text-xs text-text-secondary">未找到用户</div>
