@@ -73,10 +73,10 @@ describe('RedisEventTransport Integration Tests', () => {
       // Wait for subscription to be established
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Emit events (emitChunk is now async for ordered delivery)
+      // Emit events (emitChunk/emitDone are async for ordered delivery)
       await transport.emitChunk(streamId, { type: 'text', text: 'Hello' });
       await transport.emitChunk(streamId, { type: 'text', text: ' World' });
-      transport.emitDone(streamId, { finished: true });
+      await transport.emitDone(streamId, { finished: true });
 
       // Wait for events to propagate
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -485,6 +485,109 @@ describe('RedisEventTransport Integration Tests', () => {
 
       transport.destroy();
     });
+
+    test('should deliver done event after all pending chunks (terminal event ordering)', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = {
+        publish: jest.fn().mockResolvedValue(1),
+      };
+      const mockSubscriber = {
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+        on: jest.fn(),
+      };
+
+      const transport = new RedisEventTransport(mockPublisher as never, mockSubscriber as never);
+      const streamId = `terminal-order-${Date.now()}`;
+
+      const receivedEvents: string[] = [];
+      let doneReceived = false;
+
+      transport.subscribe(streamId, {
+        onChunk: (event: unknown) => {
+          const e = event as { data?: { msg?: string } };
+          receivedEvents.push(e.data?.msg ?? 'unknown');
+        },
+        onDone: (event: unknown) => {
+          const e = event as { data?: { msg?: string } };
+          receivedEvents.push(`done:${e.data?.msg ?? 'finished'}`);
+          doneReceived = true;
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const messageHandler = mockSubscriber.on.mock.calls.find((call) => call[0] === 'message')?.[1];
+      expect(messageHandler).toBeDefined();
+
+      const channel = `stream:{${streamId}}:events`;
+
+      // Simulate out-of-order delivery in Redis Cluster:
+      // Done event (seq=3) arrives before chunk seq=2
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 0, data: { msg: 'chunk-0' } }));
+      messageHandler(channel, JSON.stringify({ type: 'done', seq: 3, data: { msg: 'complete' } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 2, data: { msg: 'chunk-2' } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 1, data: { msg: 'chunk-1' } }));
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Done event should be delivered AFTER all chunks despite arriving early
+      expect(doneReceived).toBe(true);
+      expect(receivedEvents).toEqual(['chunk-0', 'chunk-1', 'chunk-2', 'done:complete']);
+
+      transport.destroy();
+    });
+
+    test('should deliver error event after all pending chunks (terminal event ordering)', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = {
+        publish: jest.fn().mockResolvedValue(1),
+      };
+      const mockSubscriber = {
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+        on: jest.fn(),
+      };
+
+      const transport = new RedisEventTransport(mockPublisher as never, mockSubscriber as never);
+      const streamId = `terminal-error-${Date.now()}`;
+
+      const receivedEvents: string[] = [];
+      let errorReceived: string | undefined;
+
+      transport.subscribe(streamId, {
+        onChunk: (event: unknown) => {
+          const e = event as { data?: { msg?: string } };
+          receivedEvents.push(e.data?.msg ?? 'unknown');
+        },
+        onError: (error: string) => {
+          receivedEvents.push(`error:${error}`);
+          errorReceived = error;
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const messageHandler = mockSubscriber.on.mock.calls.find((call) => call[0] === 'message')?.[1];
+      expect(messageHandler).toBeDefined();
+
+      const channel = `stream:{${streamId}}:events`;
+
+      // Simulate out-of-order delivery: error arrives before final chunks
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 0, data: { msg: 'chunk-0' } }));
+      messageHandler(channel, JSON.stringify({ type: 'error', seq: 2, error: 'Something failed' }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 1, data: { msg: 'chunk-1' } }));
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Error event should be delivered AFTER all preceding chunks
+      expect(errorReceived).toBe('Something failed');
+      expect(receivedEvents).toEqual(['chunk-0', 'chunk-1', 'error:Something failed']);
+
+      transport.destroy();
+    });
   });
 
   describe('Subscriber Management', () => {
@@ -595,7 +698,7 @@ describe('RedisEventTransport Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      transport.emitError(streamId, 'Test error message');
+      await transport.emitError(streamId, 'Test error message');
 
       await new Promise((resolve) => setTimeout(resolve, 200));
 

@@ -582,7 +582,7 @@ describe('GenerationJobManager Integration Tests', () => {
         conversation: { conversationId: streamId },
         responseMessage: { text: 'Hello world' },
       };
-      GenerationJobManager.emitDone(streamId, finalEventData as never);
+      await GenerationJobManager.emitDone(streamId, finalEventData as never);
 
       await new Promise((resolve) => setTimeout(resolve, 200));
 
@@ -1086,7 +1086,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const errorMessage = '{ "type": "INPUT_LENGTH", "info": "234856 / 172627" }';
 
       // Emit error (no subscribers yet - simulates race condition)
-      GenerationJobManager.emitError(streamId, errorMessage);
+      await GenerationJobManager.emitError(streamId, errorMessage);
 
       // Wait for async job store update
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -1152,7 +1152,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const errorMessage = '{ "type": "INPUT_LENGTH", "info": "234856 / 172627" }';
 
       // Simulate race condition: error occurs before client connects
-      GenerationJobManager.emitError(streamId, errorMessage);
+      await GenerationJobManager.emitError(streamId, errorMessage);
       await GenerationJobManager.completeJob(streamId, errorMessage);
 
       // Wait for async operations
@@ -1201,7 +1201,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const errorMessage = 'Error should take priority';
 
       // Emit error and complete with error
-      GenerationJobManager.emitError(streamId, errorMessage);
+      await GenerationJobManager.emitError(streamId, errorMessage);
       await GenerationJobManager.completeJob(streamId, errorMessage);
 
       await new Promise((resolve) => setTimeout(resolve, 50));

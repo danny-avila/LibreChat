@@ -662,7 +662,7 @@ class GenerationJobManagerClass {
       runtime.finalEvent = abortFinalEvent;
     }
 
-    this.eventTransport.emitDone(streamId, abortFinalEvent);
+    await this.eventTransport.emitDone(streamId, abortFinalEvent);
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
 
@@ -1039,7 +1039,7 @@ class GenerationJobManagerClass {
    * Emit a done event.
    * Persists finalEvent to Redis for cross-replica access.
    */
-  emitDone(streamId: string, event: t.ServerSentEvent): void {
+  async emitDone(streamId: string, event: t.ServerSentEvent): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (runtime) {
       runtime.finalEvent = event;
@@ -1048,7 +1048,7 @@ class GenerationJobManagerClass {
     this.jobStore.updateJob(streamId, { finalEvent: JSON.stringify(event) }).catch((err) => {
       logger.error(`[GenerationJobManager] Failed to persist finalEvent:`, err);
     });
-    this.eventTransport.emitDone(streamId, event);
+    await this.eventTransport.emitDone(streamId, event);
   }
 
   /**
@@ -1056,7 +1056,7 @@ class GenerationJobManagerClass {
    * Stores the error for late-connecting subscribers (race condition where error
    * occurs before client connects to SSE stream).
    */
-  emitError(streamId: string, error: string): void {
+  async emitError(streamId: string, error: string): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (runtime) {
       runtime.errorEvent = error;
@@ -1065,7 +1065,7 @@ class GenerationJobManagerClass {
     this.jobStore.updateJob(streamId, { error }).catch((err) => {
       logger.error(`[GenerationJobManager] Failed to persist error:`, err);
     });
-    this.eventTransport.emitError(streamId, error);
+    await this.eventTransport.emitError(streamId, error);
   }
 
   /**

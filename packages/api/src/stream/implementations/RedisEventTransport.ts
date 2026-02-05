@@ -148,11 +148,44 @@ export class RedisEventTransport implements IEventTransport {
 
       if (parsed.type === EventTypes.CHUNK && parsed.seq != null) {
         this.handleOrderedChunk(streamId, streamState, parsed);
+      } else if (
+        (parsed.type === EventTypes.DONE || parsed.type === EventTypes.ERROR) &&
+        parsed.seq != null
+      ) {
+        this.handleTerminalEvent(streamId, streamState, parsed);
       } else {
         this.deliverMessage(streamState, parsed);
       }
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to parse message:`, err);
+    }
+  }
+
+  /**
+   * Handle terminal events (done/error) with sequence-based ordering.
+   * Flushes any pending chunks before delivering the terminal event.
+   */
+  private handleTerminalEvent(
+    streamId: string,
+    streamState: StreamSubscribers,
+    message: PubSubMessage,
+  ): void {
+    const buffer = streamState.reorderBuffer;
+    const seq = message.seq!;
+
+    if (seq < buffer.nextSeq) {
+      logger.debug(
+        `[RedisEventTransport] Dropping duplicate terminal event for stream ${streamId}: seq=${seq}, expected=${buffer.nextSeq}`,
+      );
+      return;
+    }
+
+    if (buffer.pending.size > 0 || seq > buffer.nextSeq) {
+      buffer.pending.set(seq, message);
+      this.forceFlushBuffer(streamId, streamState);
+    } else {
+      this.deliverMessage(streamState, message);
+      buffer.nextSeq++;
     }
   }
 
@@ -182,6 +215,10 @@ export class RedisEventTransport implements IEventTransport {
       } else {
         this.scheduleFlushTimeout(streamId, streamState);
       }
+    } else {
+      logger.debug(
+        `[RedisEventTransport] Dropping duplicate/old message for stream ${streamId}: seq=${seq}, expected=${buffer.nextSeq}`,
+      );
     }
   }
 
@@ -383,26 +420,34 @@ export class RedisEventTransport implements IEventTransport {
 
   /**
    * Publish a done event to all subscribers.
+   * Includes sequence number to ensure delivery after all chunks.
    */
-  emitDone(streamId: string, event: unknown): void {
+  async emitDone(streamId: string, event: unknown): Promise<void> {
     const channel = CHANNELS.events(streamId);
-    const message: PubSubMessage = { type: EventTypes.DONE, data: event };
+    const seq = this.getNextSequence(streamId);
+    const message: PubSubMessage = { type: EventTypes.DONE, seq, data: event };
 
-    this.publisher.publish(channel, JSON.stringify(message)).catch((err) => {
+    try {
+      await this.publisher.publish(channel, JSON.stringify(message));
+    } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish done:`, err);
-    });
+    }
   }
 
   /**
    * Publish an error event to all subscribers.
+   * Includes sequence number to ensure delivery after all chunks.
    */
-  emitError(streamId: string, error: string): void {
+  async emitError(streamId: string, error: string): Promise<void> {
     const channel = CHANNELS.events(streamId);
-    const message: PubSubMessage = { type: EventTypes.ERROR, error };
+    const seq = this.getNextSequence(streamId);
+    const message: PubSubMessage = { type: EventTypes.ERROR, seq, error };
 
-    this.publisher.publish(channel, JSON.stringify(message)).catch((err) => {
+    try {
+      await this.publisher.publish(channel, JSON.stringify(message));
+    } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish error:`, err);
-    });
+    }
   }
 
   /**
