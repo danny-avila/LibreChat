@@ -58,7 +58,7 @@ export default function List({
               <ChatGroupItem key={group._id} group={group} instanceProjectId={instanceProjectId} />
             ))
           ) : (
-            <div className="space-y-2 px-2">
+            <div className="space-y-2 px-0 md:px-2">
               {groups.map((group) => (
                 <DashGroupItem
                   key={group._id}

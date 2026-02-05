@@ -113,7 +113,7 @@ const CreatePromptForm = ({
               control={control}
               rules={{ required: localize('com_ui_prompt_name_required') }}
               render={({ field }) => (
-                <div className="relative mb-1 flex flex-col md:mb-0">
+                <div className="relative mb-1 flex w-full flex-col sm:w-auto md:mb-0">
                   <Input
                     {...field}
                     id="prompt-name"
@@ -125,7 +125,7 @@ const CreatePromptForm = ({
                   />
                   <label
                     htmlFor="prompt-name"
-                    className="pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded bg-white px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75 dark:bg-gray-850"
+                    className="pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded bg-surface-primary px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
                   >
                     {localize('com_ui_prompt_name')}*
                   </label>
@@ -194,6 +194,7 @@ const CreatePromptForm = ({
           <div className="mt-4 flex justify-end">
             <Button
               aria-label={localize('com_ui_create_prompt')}
+              className="w-full sm:w-auto"
               tabIndex={0}
               type="submit"
               disabled={!isDirty || isSubmitting || !isValid}

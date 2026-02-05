@@ -66,5 +66,5 @@ export default function CategoryIcon({
   if (!IconComponent) {
     return null;
   }
-  return <IconComponent className={cn(colorClass, className)} aria-hidden="true" />;
+  return <IconComponent className={cn('size-4', colorClass, className)} aria-hidden="true" />;
 }
