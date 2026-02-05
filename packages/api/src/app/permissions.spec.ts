@@ -962,8 +962,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        // SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
+        // CREATE/SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
@@ -1002,8 +1001,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
-        // SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
+        // CREATE/SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
@@ -1458,10 +1456,9 @@ describe('updateInterfacePermissions - permissions', () => {
     );
 
     // Explicitly configured permissions should be updated
-    // SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
+    // CREATE/SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.CREATE]: true,
     });
     expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
     expect(userCall[1][PermissionTypes.MARKETPLACE]).toEqual({ [Permissions.USE]: true });
@@ -1782,10 +1779,9 @@ describe('updateInterfacePermissions - permissions', () => {
     );
     // Memory permissions should be updated even though they already exist
     expect(userCall[1][PermissionTypes.MEMORIES]).toEqual(expectedMemoryPermissions);
-    // Prompts should be updated (explicitly configured) - SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
+    // Prompts should be updated (explicitly configured) - CREATE/SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.CREATE]: true,
     });
     // Bookmarks should be updated (explicitly configured)
     expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
@@ -1796,10 +1792,9 @@ describe('updateInterfacePermissions - permissions', () => {
     );
     // Memory permissions should be updated even though they already exist
     expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual(expectedMemoryPermissions);
-    // SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
+    // CREATE/SHARE/SHARE_PUBLIC not included since prompts: true is boolean and PROMPTS already exists
     expect(adminCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.CREATE]: true,
     });
     expect(adminCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
 
@@ -1865,21 +1860,21 @@ describe('updateInterfacePermissions - permissions', () => {
     );
 
     // CRITICAL: When using boolean config and permissions already exist,
-    // SHARE and SHARE_PUBLIC should NOT be in the update payload.
+    // only USE should be updated. CREATE, SHARE, and SHARE_PUBLIC should NOT be in the update payload.
     // This means they will be preserved in the database (not reset to defaults).
     expect(userCall[1][PermissionTypes.AGENTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.CREATE]: true,
-      // SHARE and SHARE_PUBLIC intentionally omitted - preserves existing DB values
+      // CREATE, SHARE, and SHARE_PUBLIC intentionally omitted - preserves existing DB values
     });
+    expect(userCall[1][PermissionTypes.AGENTS]).not.toHaveProperty(Permissions.CREATE);
     expect(userCall[1][PermissionTypes.AGENTS]).not.toHaveProperty(Permissions.SHARE);
     expect(userCall[1][PermissionTypes.AGENTS]).not.toHaveProperty(Permissions.SHARE_PUBLIC);
 
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
-      [Permissions.CREATE]: true,
-      // SHARE and SHARE_PUBLIC intentionally omitted - preserves existing DB values
+      // CREATE, SHARE, and SHARE_PUBLIC intentionally omitted - preserves existing DB values
     });
+    expect(userCall[1][PermissionTypes.PROMPTS]).not.toHaveProperty(Permissions.CREATE);
     expect(userCall[1][PermissionTypes.PROMPTS]).not.toHaveProperty(Permissions.SHARE);
     expect(userCall[1][PermissionTypes.PROMPTS]).not.toHaveProperty(Permissions.SHARE_PUBLIC);
   });

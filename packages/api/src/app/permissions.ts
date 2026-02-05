@@ -184,11 +184,16 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.USE],
           promptsDefaultUse,
         ),
-        [Permissions.CREATE]: getPermissionValue(
-          getConfigCreate(loadedInterface.prompts),
-          defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.CREATE],
-          promptsDefaultCreate ?? true,
-        ),
+        ...((typeof interfaceConfig?.prompts === 'object' && 'create' in interfaceConfig.prompts) ||
+        !existingPermissions?.[PermissionTypes.PROMPTS]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                getConfigCreate(loadedInterface.prompts),
+                defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.CREATE],
+                promptsDefaultCreate ?? true,
+              ),
+            }
+          : {}),
         ...((typeof interfaceConfig?.prompts === 'object' &&
           ('share' in interfaceConfig.prompts || 'public' in interfaceConfig.prompts)) ||
         !existingPermissions?.[PermissionTypes.PROMPTS]
@@ -255,11 +260,16 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.AGENTS]?.[Permissions.USE],
           agentsDefaultUse,
         ),
-        [Permissions.CREATE]: getPermissionValue(
-          getConfigCreate(loadedInterface.agents),
-          defaultPerms[PermissionTypes.AGENTS]?.[Permissions.CREATE],
-          agentsDefaultCreate ?? true,
-        ),
+        ...((typeof interfaceConfig?.agents === 'object' && 'create' in interfaceConfig.agents) ||
+        !existingPermissions?.[PermissionTypes.AGENTS]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                getConfigCreate(loadedInterface.agents),
+                defaultPerms[PermissionTypes.AGENTS]?.[Permissions.CREATE],
+                agentsDefaultCreate ?? true,
+              ),
+            }
+          : {}),
         ...((typeof interfaceConfig?.agents === 'object' &&
           ('share' in interfaceConfig.agents || 'public' in interfaceConfig.agents)) ||
         !existingPermissions?.[PermissionTypes.AGENTS]
