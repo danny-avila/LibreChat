@@ -79,8 +79,8 @@ describe('anthropicSettings', () => {
         expect(reset('claude-opus-4-5')).toBe(64000);
       });
 
-      it('should return 64K for claude-opus-4-6', () => {
-        expect(reset('claude-opus-4-6')).toBe(64000);
+      it('should return 128K for claude-opus-4-6', () => {
+        expect(reset('claude-opus-4-6')).toBe(128000);
       });
 
       it('should return 64K for claude-opus-4-7', () => {
@@ -99,8 +99,8 @@ describe('anthropicSettings', () => {
         expect(reset('claude-opus-4.5')).toBe(64000);
       });
 
-      it('should return 64K for claude-opus-4.6', () => {
-        expect(reset('claude-opus-4.6')).toBe(64000);
+      it('should return 128K for claude-opus-4.6', () => {
+        expect(reset('claude-opus-4.6')).toBe(128000);
       });
     });
 
@@ -157,8 +157,8 @@ describe('anthropicSettings', () => {
         expect(reset('claude-opus-4-5-20250420')).toBe(64000);
       });
 
-      it('should return 64K for claude-opus-4-6-20260101', () => {
-        expect(reset('claude-opus-4-6-20260101')).toBe(64000);
+      it('should return 128K for claude-opus-4-6-20260101', () => {
+        expect(reset('claude-opus-4-6-20260101')).toBe(128000);
       });
 
       it('should return 32K for claude-opus-4-1-20250805', () => {
@@ -278,8 +278,16 @@ describe('anthropicSettings', () => {
         expect(set(50000, 'claude-opus-4-5')).toBe(50000);
       });
 
-      it('should cap at 64K for claude-opus-4-6', () => {
-        expect(set(80000, 'claude-opus-4-6')).toBe(64000);
+      it('should cap at 128K for claude-opus-4-6 when value exceeds', () => {
+        expect(set(150000, 'claude-opus-4-6')).toBe(128000);
+      });
+
+      it('should allow 80K for claude-opus-4-6', () => {
+        expect(set(80000, 'claude-opus-4-6')).toBe(80000);
+      });
+
+      it('should allow 128K for claude-opus-4-6', () => {
+        expect(set(128000, 'claude-opus-4-6')).toBe(128000);
       });
 
       it('should cap at 64K for claude-opus-5', () => {
