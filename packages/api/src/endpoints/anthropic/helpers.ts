@@ -1,51 +1,13 @@
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
-import { EModelEndpoint, anthropicSettings, AnthropicEffort } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  AnthropicEffort,
+  anthropicSettings,
+  supportsContext1m,
+  supportsAdaptiveThinking,
+} from 'librechat-data-provider';
 import { matchModelName } from '~/utils/tokens';
-
-/** Opus 4.6+, Opus 5+, Sonnet 5+ support adaptive thinking with effort control */
-function supportsAdaptiveThinking(model: string): boolean {
-  const opusMatch = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
-  if (opusMatch) {
-    const major = parseInt(opusMatch[1], 10);
-    const minor = opusMatch[2] != null ? parseInt(opusMatch[2], 10) : 0;
-    if (major > 4 || (major === 4 && minor >= 6)) {
-      return true;
-    }
-  }
-
-  const sonnetMatch = model.match(/claude-sonnet[-.]?(\d+)/);
-  if (sonnetMatch) {
-    const major = parseInt(sonnetMatch[1], 10);
-    if (major >= 5) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/** Sonnet 4+, Opus 4.6+, Opus 5+ qualify for the context-1m beta header */
-function supportsContext1m(model: string): boolean {
-  const sonnetMatch = model.match(/claude-sonnet[-.]?(\d+)/);
-  if (sonnetMatch) {
-    const major = parseInt(sonnetMatch[1], 10);
-    if (major >= 4) {
-      return true;
-    }
-  }
-
-  const opusMatch = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
-  if (opusMatch) {
-    const major = parseInt(opusMatch[1], 10);
-    const minor = opusMatch[2] != null ? parseInt(opusMatch[2], 10) : 0;
-    if (major > 4 || (major === 4 && minor >= 6)) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 /**
  * @param {string} modelName
@@ -118,10 +80,8 @@ function configureReasoning(
   const modelName = updatedOptions.model ?? '';
 
   if (extendedOptions.thinking && modelName && supportsAdaptiveThinking(modelName)) {
-    updatedOptions.thinking = { type: 'adaptive' } as unknown as {
-      type: 'enabled';
-      budget_tokens: number;
-    };
+    /** Cast needed until @librechat/agents ThinkingConfig type includes adaptive */
+    (updatedOptions as Record<string, unknown>).thinking = { type: 'adaptive' };
 
     const effort = extendedOptions.effort;
     if (effort && effort !== AnthropicEffort.unset) {

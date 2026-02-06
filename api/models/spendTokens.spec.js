@@ -906,4 +906,116 @@ describe('spendTokens', () => {
       expect(balance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
     });
   });
+
+  describe('inputTokenCount Normalization', () => {
+    it('should normalize negative promptTokens to zero for inputTokenCount', async () => {
+      await Balance.create({
+        user: userId,
+        tokenCredits: 100000000,
+      });
+
+      const txData = {
+        user: userId,
+        conversationId: 'test-negative-prompt',
+        model: 'claude-opus-4-6',
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens: -500, completionTokens: 100 });
+
+      const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+
+      const completionTx = transactions.find((t) => t.tokenType === 'completion');
+      const promptTx = transactions.find((t) => t.tokenType === 'prompt');
+
+      expect(Math.abs(promptTx.rawAmount)).toBe(0);
+      expect(completionTx.rawAmount).toBe(-100);
+
+      const standardCompletionRate = tokenValues['claude-opus-4-6'].completion;
+      expect(completionTx.rate).toBe(standardCompletionRate);
+    });
+
+    it('should use normalized inputTokenCount for premium threshold check on completion', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-6';
+      const promptTokens = 250000;
+      const completionTokens = 500;
+
+      const txData = {
+        user: userId,
+        conversationId: 'test-normalized-premium',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens, completionTokens });
+
+      const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+      const completionTx = transactions.find((t) => t.tokenType === 'completion');
+      const promptTx = transactions.find((t) => t.tokenType === 'prompt');
+
+      const premiumPromptRate = premiumTokenValues[model].prompt;
+      const premiumCompletionRate = premiumTokenValues[model].completion;
+      expect(promptTx.rate).toBe(premiumPromptRate);
+      expect(completionTx.rate).toBe(premiumCompletionRate);
+    });
+
+    it('should keep inputTokenCount as zero when promptTokens is zero', async () => {
+      await Balance.create({
+        user: userId,
+        tokenCredits: 100000000,
+      });
+
+      const txData = {
+        user: userId,
+        conversationId: 'test-zero-prompt',
+        model: 'claude-opus-4-6',
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens: 0, completionTokens: 100 });
+
+      const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+      const completionTx = transactions.find((t) => t.tokenType === 'completion');
+      const promptTx = transactions.find((t) => t.tokenType === 'prompt');
+
+      expect(Math.abs(promptTx.rawAmount)).toBe(0);
+
+      const standardCompletionRate = tokenValues['claude-opus-4-6'].completion;
+      expect(completionTx.rate).toBe(standardCompletionRate);
+    });
+
+    it('should not trigger premium pricing with negative promptTokens on premium model', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-6';
+      const txData = {
+        user: userId,
+        conversationId: 'test-negative-no-premium',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens: -300000, completionTokens: 500 });
+
+      const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+      const completionTx = transactions.find((t) => t.tokenType === 'completion');
+
+      const standardCompletionRate = tokenValues[model].completion;
+      expect(completionTx.rate).toBe(standardCompletionRate);
+    });
+  });
 });

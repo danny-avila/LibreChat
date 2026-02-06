@@ -1,4 +1,117 @@
-import { bedrockInputParser, bedrockOutputParser } from '../src/bedrock';
+import {
+  supportsAdaptiveThinking,
+  bedrockOutputParser,
+  bedrockInputParser,
+  supportsContext1m,
+} from '../src/bedrock';
+
+describe('supportsAdaptiveThinking', () => {
+  test('should return true for claude-opus-4-6', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4-6')).toBe(true);
+  });
+
+  test('should return true for claude-opus-4.6', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4.6')).toBe(true);
+  });
+
+  test('should return true for claude-opus-4-7 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4-7')).toBe(true);
+  });
+
+  test('should return true for claude-opus-5 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-opus-5')).toBe(true);
+  });
+
+  test('should return true for claude-opus-9 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-opus-9')).toBe(true);
+  });
+
+  test('should return true for claude-sonnet-5 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-5')).toBe(true);
+  });
+
+  test('should return true for claude-sonnet-6 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-6')).toBe(true);
+  });
+
+  test('should return false for claude-opus-4-5', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4-5')).toBe(false);
+  });
+
+  test('should return false for claude-opus-4', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4')).toBe(false);
+  });
+
+  test('should return false for claude-opus-4-0', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4-0')).toBe(false);
+  });
+
+  test('should return false for claude-sonnet-4-5', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4-5')).toBe(false);
+  });
+
+  test('should return false for claude-sonnet-4', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4')).toBe(false);
+  });
+
+  test('should return false for claude-3-7-sonnet', () => {
+    expect(supportsAdaptiveThinking('claude-3-7-sonnet')).toBe(false);
+  });
+
+  test('should return false for unrelated model', () => {
+    expect(supportsAdaptiveThinking('gpt-4o')).toBe(false);
+  });
+
+  test('should handle Bedrock model ID with prefix stripping', () => {
+    expect(supportsAdaptiveThinking('anthropic.claude-opus-4-6-v1:0')).toBe(true);
+  });
+
+  test('should handle cross-region Bedrock model ID', () => {
+    expect(supportsAdaptiveThinking('us.anthropic.claude-opus-4-6-v1')).toBe(true);
+  });
+});
+
+describe('supportsContext1m', () => {
+  test('should return true for claude-sonnet-4', () => {
+    expect(supportsContext1m('claude-sonnet-4')).toBe(true);
+  });
+
+  test('should return true for claude-sonnet-4-5', () => {
+    expect(supportsContext1m('claude-sonnet-4-5')).toBe(true);
+  });
+
+  test('should return true for claude-sonnet-5 (future)', () => {
+    expect(supportsContext1m('claude-sonnet-5')).toBe(true);
+  });
+
+  test('should return true for claude-opus-4-6', () => {
+    expect(supportsContext1m('claude-opus-4-6')).toBe(true);
+  });
+
+  test('should return true for claude-opus-5 (future)', () => {
+    expect(supportsContext1m('claude-opus-5')).toBe(true);
+  });
+
+  test('should return false for claude-opus-4-5', () => {
+    expect(supportsContext1m('claude-opus-4-5')).toBe(false);
+  });
+
+  test('should return false for claude-opus-4', () => {
+    expect(supportsContext1m('claude-opus-4')).toBe(false);
+  });
+
+  test('should return false for claude-3-7-sonnet', () => {
+    expect(supportsContext1m('claude-3-7-sonnet')).toBe(false);
+  });
+
+  test('should return false for claude-sonnet-3', () => {
+    expect(supportsContext1m('claude-sonnet-3')).toBe(false);
+  });
+
+  test('should return false for unrelated model', () => {
+    expect(supportsContext1m('gpt-4o')).toBe(false);
+  });
+});
 
 describe('bedrockInputParser', () => {
   describe('Model Matching for Reasoning Configuration', () => {
@@ -323,6 +436,48 @@ describe('bedrockInputParser', () => {
       const amrf = output.additionalModelRequestFields as Record<string, unknown>;
       expect(amrf.thinking).toEqual({ type: 'adaptive' });
       expect(amrf.output_config).toEqual({ effort: 'low' });
+    });
+
+    test('should use adaptive default maxTokens (16000) over maxOutputTokens for adaptive models', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+      }) as Record<string, unknown>;
+      parsed.maxOutputTokens = undefined;
+      (parsed as Record<string, unknown>).maxTokens = undefined;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      expect(output.maxTokens).toBe(16000);
+    });
+
+    test('should use enabled default maxTokens (8192) for non-adaptive thinking models', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+      }) as Record<string, unknown>;
+      parsed.maxOutputTokens = undefined;
+      (parsed as Record<string, unknown>).maxTokens = undefined;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      expect(output.maxTokens).toBe(8192);
+    });
+
+    test('should use default thinking budget (2000) when no custom budget is set', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-3-7-sonnet',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      const thinking = amrf.thinking as { type: string; budget_tokens: number };
+      expect(thinking.budget_tokens).toBe(2000);
+    });
+
+    test('should override default thinking budget with custom value', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-3-7-sonnet',
+        thinkingBudget: 5000,
+        maxTokens: 8192,
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      const thinking = amrf.thinking as { type: string; budget_tokens: number };
+      expect(thinking.budget_tokens).toBe(5000);
     });
 
     test('should remove additionalModelRequestFields when thinking disabled and no other fields', () => {

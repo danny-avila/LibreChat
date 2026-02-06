@@ -138,9 +138,6 @@ const updateBalance = async ({ user, incrementValue, setValues }) => {
 
 /** Method to calculate and set the tokenValue for a transaction */
 function calculateTokenValue(txn) {
-  if (!txn.valueKey || !txn.tokenType) {
-    txn.tokenValue = txn.rawAmount;
-  }
   const { valueKey, tokenType, model, endpointTokenConfig, inputTokenCount } = txn;
   const multiplier = Math.abs(
     getMultiplier({ valueKey, tokenType, model, endpointTokenConfig, inputTokenCount }),

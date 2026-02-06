@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import * as s from './schemas';
 
+const DEFAULT_ENABLED_MAX_TOKENS = 8192;
+const DEFAULT_ADAPTIVE_MAX_TOKENS = 16000;
+const DEFAULT_THINKING_BUDGET = 2000;
+
 type ThinkingConfig = { type: 'enabled'; budget_tokens: number } | { type: 'adaptive' };
 
 type AnthropicReasoning = {
@@ -14,7 +18,7 @@ type AnthropicInput = BedrockConverseInput & {
 };
 
 /** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 5+) */
-function supportsAdaptiveThinking(model: string): boolean {
+export function supportsAdaptiveThinking(model: string): boolean {
   const opusMatch = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
   if (opusMatch) {
     const major = parseInt(opusMatch[1], 10);
@@ -27,6 +31,26 @@ function supportsAdaptiveThinking(model: string): boolean {
   if (sonnetMatch) {
     const major = parseInt(sonnetMatch[1], 10);
     if (major >= 5) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Checks if a model qualifies for the context-1m beta header (Sonnet 4+, Opus 4.6+, Opus 5+) */
+export function supportsContext1m(model: string): boolean {
+  const sonnetMatch = model.match(/claude-sonnet[-.]?(\d+)/);
+  if (sonnetMatch) {
+    const major = parseInt(sonnetMatch[1], 10);
+    if (major >= 4) {
+      return true;
+    }
+  }
+  const opusMatch = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
+  if (opusMatch) {
+    const major = parseInt(opusMatch[1], 10);
+    const minor = opusMatch[2] != null ? parseInt(opusMatch[2], 10) : 0;
+    if (major > 4 || (major === 4 && minor >= 6)) {
       return true;
     }
   }
@@ -203,7 +227,7 @@ export const bedrockInputParser = s.tConversationSchema
         }
 
         if (additionalFields.thinking === true && additionalFields.thinkingBudget === undefined) {
-          additionalFields.thinkingBudget = 2000;
+          additionalFields.thinkingBudget = DEFAULT_THINKING_BUDGET;
         }
         delete additionalFields.effort;
       }
@@ -257,11 +281,13 @@ function configureThinking(data: AnthropicInput): AnthropicInput {
   const thinking = updatedData.additionalModelRequestFields?.thinking;
 
   if (thinking === true) {
-    updatedData.maxTokens = updatedData.maxTokens ?? updatedData.maxOutputTokens ?? 8192;
+    updatedData.maxTokens =
+      updatedData.maxTokens ?? updatedData.maxOutputTokens ?? DEFAULT_ENABLED_MAX_TOKENS;
     delete updatedData.maxOutputTokens;
     const thinkingConfig: ThinkingConfig = {
       type: 'enabled',
-      budget_tokens: updatedData.additionalModelRequestFields?.thinkingBudget ?? 2000,
+      budget_tokens:
+        updatedData.additionalModelRequestFields?.thinkingBudget ?? DEFAULT_THINKING_BUDGET,
     };
 
     if (thinkingConfig.budget_tokens > updatedData.maxTokens) {
@@ -274,7 +300,8 @@ function configureThinking(data: AnthropicInput): AnthropicInput {
     thinking != null &&
     (thinking as { type: string }).type === 'adaptive'
   ) {
-    updatedData.maxTokens = updatedData.maxTokens ?? updatedData.maxOutputTokens ?? 16000;
+    updatedData.maxTokens =
+      updatedData.maxTokens ?? updatedData.maxOutputTokens ?? DEFAULT_ADAPTIVE_MAX_TOKENS;
     delete updatedData.maxOutputTokens;
     delete updatedData.additionalModelRequestFields!.thinkingBudget;
   }

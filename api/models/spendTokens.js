@@ -24,13 +24,14 @@ const spendTokens = async (txData, tokenUsage) => {
     },
   );
   let prompt, completion;
+  const normalizedPromptTokens = Math.max(promptTokens ?? 0, 0);
   try {
     if (promptTokens !== undefined) {
       prompt = await createTransaction({
         ...txData,
         tokenType: 'prompt',
-        rawAmount: promptTokens === 0 ? 0 : -Math.max(promptTokens, 0),
-        inputTokenCount: promptTokens,
+        rawAmount: promptTokens === 0 ? 0 : -normalizedPromptTokens,
+        inputTokenCount: normalizedPromptTokens,
       });
     }
 
@@ -39,7 +40,7 @@ const spendTokens = async (txData, tokenUsage) => {
         ...txData,
         tokenType: 'completion',
         rawAmount: completionTokens === 0 ? 0 : -Math.max(completionTokens, 0),
-        inputTokenCount: promptTokens,
+        inputTokenCount: normalizedPromptTokens,
       });
     }
 
