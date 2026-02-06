@@ -1,3 +1,4 @@
+/** Note: No hard-coded values should be used in this file. */
 const { maxTokensMap } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const {
@@ -5,8 +6,10 @@ const {
   tokenValues,
   getValueKey,
   getMultiplier,
+  getPremiumRate,
   cacheTokenValues,
   getCacheMultiplier,
+  premiumTokenValues,
 } = require('./tx');
 
 describe('getValueKey', () => {
@@ -1875,6 +1878,201 @@ describe('Claude Model Tests', () => {
         cacheTokenValues[expectedKey].read,
       );
     });
+  });
+
+  it('should return correct prompt and completion rates for Claude Opus 4.6', () => {
+    expect(getMultiplier({ model: 'claude-opus-4-6', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-opus-4-6'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-opus-4-6', tokenType: 'completion' })).toBe(
+      tokenValues['claude-opus-4-6'].completion,
+    );
+  });
+
+  it('should handle Claude Opus 4.6 model name variations', () => {
+    const modelVariations = [
+      'claude-opus-4-6',
+      'claude-opus-4-6-20250801',
+      'claude-opus-4-6-latest',
+      'anthropic/claude-opus-4-6',
+      'claude-opus-4-6/anthropic',
+      'claude-opus-4-6-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-opus-4-6');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-opus-4-6'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-opus-4-6'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Opus 4.6', () => {
+    expect(getCacheMultiplier({ model: 'claude-opus-4-6', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-opus-4-6'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-opus-4-6', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-opus-4-6'].read,
+    );
+  });
+
+  it('should handle Claude Opus 4.6 cache rates with model name variations', () => {
+    const modelVariations = [
+      'claude-opus-4-6',
+      'claude-opus-4-6-20250801',
+      'claude-opus-4-6-latest',
+      'anthropic/claude-opus-4-6',
+      'claude-opus-4-6/anthropic',
+      'claude-opus-4-6-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+        cacheTokenValues['claude-opus-4-6'].write,
+      );
+      expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+        cacheTokenValues['claude-opus-4-6'].read,
+      );
+    });
+  });
+});
+
+describe('Premium Token Pricing', () => {
+  const premiumModel = 'claude-opus-4-6';
+  const premiumEntry = premiumTokenValues[premiumModel];
+  const { threshold } = premiumEntry;
+  const belowThreshold = threshold - 1;
+  const aboveThreshold = threshold + 1;
+  const wellAboveThreshold = threshold * 2;
+
+  it('should have premium pricing defined for claude-opus-4-6', () => {
+    expect(premiumEntry).toBeDefined();
+    expect(premiumEntry.threshold).toBeDefined();
+    expect(premiumEntry.prompt).toBeDefined();
+    expect(premiumEntry.completion).toBeDefined();
+    expect(premiumEntry.prompt).toBeGreaterThan(tokenValues[premiumModel].prompt);
+    expect(premiumEntry.completion).toBeGreaterThan(tokenValues[premiumModel].completion);
+  });
+
+  it('should return null from getPremiumRate when inputTokenCount is below threshold', () => {
+    expect(getPremiumRate(premiumModel, 'prompt', belowThreshold)).toBeNull();
+    expect(getPremiumRate(premiumModel, 'completion', belowThreshold)).toBeNull();
+    expect(getPremiumRate(premiumModel, 'prompt', threshold)).toBeNull();
+  });
+
+  it('should return premium rate from getPremiumRate when inputTokenCount exceeds threshold', () => {
+    expect(getPremiumRate(premiumModel, 'prompt', aboveThreshold)).toBe(premiumEntry.prompt);
+    expect(getPremiumRate(premiumModel, 'completion', aboveThreshold)).toBe(
+      premiumEntry.completion,
+    );
+    expect(getPremiumRate(premiumModel, 'prompt', wellAboveThreshold)).toBe(premiumEntry.prompt);
+  });
+
+  it('should return null from getPremiumRate when inputTokenCount is undefined or null', () => {
+    expect(getPremiumRate(premiumModel, 'prompt', undefined)).toBeNull();
+    expect(getPremiumRate(premiumModel, 'prompt', null)).toBeNull();
+  });
+
+  it('should return null from getPremiumRate for models without premium pricing', () => {
+    expect(getPremiumRate('claude-opus-4-5', 'prompt', wellAboveThreshold)).toBeNull();
+    expect(getPremiumRate('claude-sonnet-4', 'prompt', wellAboveThreshold)).toBeNull();
+    expect(getPremiumRate('gpt-4o', 'prompt', wellAboveThreshold)).toBeNull();
+  });
+
+  it('should return standard rate from getMultiplier when inputTokenCount is below threshold', () => {
+    expect(
+      getMultiplier({
+        model: premiumModel,
+        tokenType: 'prompt',
+        inputTokenCount: belowThreshold,
+      }),
+    ).toBe(tokenValues[premiumModel].prompt);
+    expect(
+      getMultiplier({
+        model: premiumModel,
+        tokenType: 'completion',
+        inputTokenCount: belowThreshold,
+      }),
+    ).toBe(tokenValues[premiumModel].completion);
+  });
+
+  it('should return premium rate from getMultiplier when inputTokenCount exceeds threshold', () => {
+    expect(
+      getMultiplier({
+        model: premiumModel,
+        tokenType: 'prompt',
+        inputTokenCount: aboveThreshold,
+      }),
+    ).toBe(premiumEntry.prompt);
+    expect(
+      getMultiplier({
+        model: premiumModel,
+        tokenType: 'completion',
+        inputTokenCount: aboveThreshold,
+      }),
+    ).toBe(premiumEntry.completion);
+  });
+
+  it('should return standard rate from getMultiplier when inputTokenCount is exactly at threshold', () => {
+    expect(
+      getMultiplier({ model: premiumModel, tokenType: 'prompt', inputTokenCount: threshold }),
+    ).toBe(tokenValues[premiumModel].prompt);
+  });
+
+  it('should return premium rate from getMultiplier when inputTokenCount is one above threshold', () => {
+    expect(
+      getMultiplier({ model: premiumModel, tokenType: 'prompt', inputTokenCount: aboveThreshold }),
+    ).toBe(premiumEntry.prompt);
+  });
+
+  it('should not apply premium pricing to models without premium entries', () => {
+    expect(
+      getMultiplier({
+        model: 'claude-opus-4-5',
+        tokenType: 'prompt',
+        inputTokenCount: wellAboveThreshold,
+      }),
+    ).toBe(tokenValues['claude-opus-4-5'].prompt);
+    expect(
+      getMultiplier({
+        model: 'claude-sonnet-4',
+        tokenType: 'prompt',
+        inputTokenCount: wellAboveThreshold,
+      }),
+    ).toBe(tokenValues['claude-sonnet-4'].prompt);
+  });
+
+  it('should use standard rate when inputTokenCount is not provided', () => {
+    expect(getMultiplier({ model: premiumModel, tokenType: 'prompt' })).toBe(
+      tokenValues[premiumModel].prompt,
+    );
+    expect(getMultiplier({ model: premiumModel, tokenType: 'completion' })).toBe(
+      tokenValues[premiumModel].completion,
+    );
+  });
+
+  it('should apply premium pricing through getMultiplier with valueKey path', () => {
+    const valueKey = getValueKey(premiumModel);
+    expect(getMultiplier({ valueKey, tokenType: 'prompt', inputTokenCount: aboveThreshold })).toBe(
+      premiumEntry.prompt,
+    );
+    expect(
+      getMultiplier({ valueKey, tokenType: 'completion', inputTokenCount: aboveThreshold }),
+    ).toBe(premiumEntry.completion);
+  });
+
+  it('should apply standard pricing through getMultiplier with valueKey path when below threshold', () => {
+    const valueKey = getValueKey(premiumModel);
+    expect(getMultiplier({ valueKey, tokenType: 'prompt', inputTokenCount: belowThreshold })).toBe(
+      tokenValues[premiumModel].prompt,
+    );
+    expect(
+      getMultiplier({ valueKey, tokenType: 'completion', inputTokenCount: belowThreshold }),
+    ).toBe(tokenValues[premiumModel].completion);
   });
 });
 

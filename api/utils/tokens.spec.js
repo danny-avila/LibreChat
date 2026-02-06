@@ -1,3 +1,4 @@
+/** Note: No hard-coded values should be used in this file. */
 const { EModelEndpoint } = require('librechat-data-provider');
 const {
   maxTokensMap,
@@ -1060,6 +1061,58 @@ describe('Claude Model Tests', () => {
       const isSonnet = model.includes('sonnet');
       const expectedModel = isSonnet ? 'claude-sonnet-4' : 'claude-opus-4';
       expect(matchModelName(model, EModelEndpoint.anthropic)).toBe(expectedModel);
+    });
+  });
+
+  it('should return correct context length for Claude Opus 4.6 (1M)', () => {
+    expect(getModelMaxTokens('claude-opus-4-6', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-6'],
+    );
+    expect(getModelMaxTokens('claude-opus-4-6')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-6'],
+    );
+    expect(maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-6']).toBe(1000000);
+  });
+
+  it('should return correct max output tokens for Claude Opus 4.6 (128K)', () => {
+    const { getModelMaxOutputTokens } = require('@librechat/api');
+    expect(getModelMaxOutputTokens('claude-opus-4-6', EModelEndpoint.anthropic)).toBe(
+      maxOutputTokensMap[EModelEndpoint.anthropic]['claude-opus-4-6'],
+    );
+    expect(maxOutputTokensMap[EModelEndpoint.anthropic]['claude-opus-4-6']).toBe(128000);
+  });
+
+  it('should handle Claude Opus 4.6 model name variations', () => {
+    const modelVariations = [
+      'claude-opus-4-6',
+      'claude-opus-4-6-20250801',
+      'claude-opus-4-6-latest',
+      'anthropic/claude-opus-4-6',
+      'claude-opus-4-6/anthropic',
+      'claude-opus-4-6-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const modelKey = findMatchingPattern(model, maxTokensMap[EModelEndpoint.anthropic]);
+      expect(modelKey).toBe('claude-opus-4-6');
+      expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toBe(
+        maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-6'],
+      );
+    });
+  });
+
+  it('should match model names correctly for Claude Opus 4.6', () => {
+    const modelVariations = [
+      'claude-opus-4-6',
+      'claude-opus-4-6-20250801',
+      'claude-opus-4-6-latest',
+      'anthropic/claude-opus-4-6',
+      'claude-opus-4-6/anthropic',
+      'claude-opus-4-6-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-opus-4-6');
     });
   });
 });

@@ -141,8 +141,10 @@ function calculateTokenValue(txn) {
   if (!txn.valueKey || !txn.tokenType) {
     txn.tokenValue = txn.rawAmount;
   }
-  const { valueKey, tokenType, model, endpointTokenConfig } = txn;
-  const multiplier = Math.abs(getMultiplier({ valueKey, tokenType, model, endpointTokenConfig }));
+  const { valueKey, tokenType, model, endpointTokenConfig, inputTokenCount } = txn;
+  const multiplier = Math.abs(
+    getMultiplier({ valueKey, tokenType, model, endpointTokenConfig, inputTokenCount }),
+  );
   txn.rate = multiplier;
   txn.tokenValue = txn.rawAmount * multiplier;
   if (txn.context && txn.tokenType === 'completion' && txn.context === 'incomplete') {
@@ -166,6 +168,7 @@ async function createAutoRefillTransaction(txData) {
   }
   const transaction = new Transaction(txData);
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
+  transaction.inputTokenCount = txData.inputTokenCount;
   calculateTokenValue(transaction);
   await transaction.save();
 
@@ -200,6 +203,7 @@ async function createTransaction(_txData) {
 
   const transaction = new Transaction(txData);
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
+  transaction.inputTokenCount = txData.inputTokenCount;
   calculateTokenValue(transaction);
 
   await transaction.save();
@@ -231,10 +235,9 @@ async function createStructuredTransaction(_txData) {
     return;
   }
 
-  const transaction = new Transaction({
-    ...txData,
-    endpointTokenConfig: txData.endpointTokenConfig,
-  });
+  const transaction = new Transaction(txData);
+  transaction.endpointTokenConfig = txData.endpointTokenConfig;
+  transaction.inputTokenCount = txData.inputTokenCount;
 
   calculateStructuredTokenValue(transaction);
 
@@ -266,10 +269,15 @@ function calculateStructuredTokenValue(txn) {
     return;
   }
 
-  const { model, endpointTokenConfig } = txn;
+  const { model, endpointTokenConfig, inputTokenCount } = txn;
 
   if (txn.tokenType === 'prompt') {
-    const inputMultiplier = getMultiplier({ tokenType: 'prompt', model, endpointTokenConfig });
+    const inputMultiplier = getMultiplier({
+      tokenType: 'prompt',
+      model,
+      endpointTokenConfig,
+      inputTokenCount,
+    });
     const writeMultiplier =
       getCacheMultiplier({ cacheType: 'write', model, endpointTokenConfig }) ?? inputMultiplier;
     const readMultiplier =
@@ -304,7 +312,12 @@ function calculateStructuredTokenValue(txn) {
 
     txn.rawAmount = -totalPromptTokens;
   } else if (txn.tokenType === 'completion') {
-    const multiplier = getMultiplier({ tokenType: txn.tokenType, model, endpointTokenConfig });
+    const multiplier = getMultiplier({
+      tokenType: txn.tokenType,
+      model,
+      endpointTokenConfig,
+      inputTokenCount,
+    });
     txn.rate = Math.abs(multiplier);
     txn.tokenValue = -Math.abs(txn.rawAmount) * multiplier;
     txn.rawAmount = -Math.abs(txn.rawAmount);
