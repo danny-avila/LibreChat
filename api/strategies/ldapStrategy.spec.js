@@ -8,12 +8,14 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-jest.mock('@librechat/api', () => ({
-  // isEnabled used for TLS flags
-  isEnabled: jest.fn(() => false),
-  isEmailDomainAllowed: jest.fn(() => true),
-  getBalanceConfig: jest.fn(() => ({ enabled: false })),
-}));
+jest.mock('@librechat/api', () => {
+  const actual = jest.requireActual('@librechat/api');
+  return {
+    ...actual,
+    isEmailDomainAllowed: jest.fn(() => true),
+    getBalanceConfig: jest.fn(() => ({ enabled: false })),
+  };
+});
 
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
@@ -64,6 +66,7 @@ describe('ldapStrategy', () => {
     delete process.env.LDAP_EMAIL;
     delete process.env.LDAP_TLS_REJECT_UNAUTHORIZED;
     delete process.env.LDAP_STARTTLS;
+    delete process.env.LDAP_ALLOW_ACCOUNT_LINKING;
 
     // Default model/domain mocks
     findUser.mockReset().mockResolvedValue(null);
@@ -179,5 +182,60 @@ describe('ldapStrategy', () => {
     const { user, info } = await callVerify(userinfo);
     expect(user).toBe(false);
     expect(info).toEqual({ message: 'Email domain not allowed' });
+  });
+
+  it('should link account when LDAP_ALLOW_ACCOUNT_LINKING is true', async () => {
+    process.env.LDAP_ALLOW_ACCOUNT_LINKING = 'true';
+
+    // Re-init strategy with new env
+    jest.isolateModules(() => {
+      require('./ldapStrategy');
+    });
+
+    const existing = {
+      _id: 'u1',
+      email: 'first@example.com',
+      provider: 'openid',
+      openidId: 'openid_123',
+    };
+    findUser.mockResolvedValue(existing);
+
+    const userinfo = {
+      uid: 'uid123',
+      mail: 'first@example.com',
+      givenName: 'Alice',
+      cn: 'Alice Doe',
+    };
+
+    const { user } = await callVerify(userinfo);
+
+    expect(updateUser).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({
+        provider: 'ldap',
+        ldapId: 'uid123',
+        email: 'first@example.com',
+      }),
+    );
+    expect(user.provider).toBe('ldap');
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('should still block login when LDAP_ALLOW_ACCOUNT_LINKING is not set', async () => {
+    findUser.mockResolvedValue({ _id: 'u1', email: 'first@example.com', provider: 'openid' });
+
+    const userinfo = {
+      uid: 'uid123',
+      mail: 'first@example.com',
+      givenName: 'Alice',
+      cn: 'Alice Doe',
+    };
+
+    const { user, info } = await callVerify(userinfo);
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: ErrorTypes.AUTH_FAILED });
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(createUser).not.toHaveBeenCalled();
   });
 });

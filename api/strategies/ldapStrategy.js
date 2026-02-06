@@ -91,12 +91,18 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
 
     let user = await findUser({ ldapId });
     if (user && user.provider !== 'ldap') {
-      logger.info(
-        `[ldapStrategy] User ${user.email} already exists with provider ${user.provider}`,
-      );
-      return done(null, false, {
-        message: ErrorTypes.AUTH_FAILED,
-      });
+      if (isEnabled(process.env.LDAP_ALLOW_ACCOUNT_LINKING)) {
+        logger.info(
+          `[ldapStrategy] Account linking: user ${user.email} migrating from "${user.provider}" to ldap`,
+        );
+      } else {
+        logger.info(
+          `[ldapStrategy] User ${user.email} already exists with provider ${user.provider}`,
+        );
+        return done(null, false, {
+          message: ErrorTypes.AUTH_FAILED,
+        });
+      }
     }
 
     const fullNameAttributes = LDAP_FULL_NAME && LDAP_FULL_NAME.split(',');
