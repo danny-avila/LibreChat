@@ -80,8 +80,7 @@ function configureReasoning(
   const modelName = updatedOptions.model ?? '';
 
   if (extendedOptions.thinking && modelName && supportsAdaptiveThinking(modelName)) {
-    /** Cast needed until @librechat/agents ThinkingConfig type includes adaptive */
-    (updatedOptions as Record<string, unknown>).thinking = { type: 'adaptive' };
+    updatedOptions.thinking = { type: 'adaptive' };
 
     const effort = extendedOptions.effort;
     if (effort && effort !== AnthropicEffort.unset) {
