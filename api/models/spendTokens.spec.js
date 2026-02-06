@@ -1017,5 +1017,46 @@ describe('spendTokens', () => {
       const standardCompletionRate = tokenValues[model].completion;
       expect(completionTx.rate).toBe(standardCompletionRate);
     });
+
+    it('should normalize negative structured token values to zero in spendStructuredTokens', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-6';
+      const txData = {
+        user: userId,
+        conversationId: 'test-negative-structured',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      const tokenUsage = {
+        promptTokens: { input: -100, write: 50, read: -30 },
+        completionTokens: -200,
+      };
+
+      await spendStructuredTokens(txData, tokenUsage);
+
+      const transactions = await Transaction.find({
+        user: userId,
+        conversationId: 'test-negative-structured',
+      }).sort({ tokenType: 1 });
+
+      const completionTx = transactions.find((t) => t.tokenType === 'completion');
+      const promptTx = transactions.find((t) => t.tokenType === 'prompt');
+
+      expect(Math.abs(promptTx.inputTokens)).toBe(0);
+      expect(promptTx.writeTokens).toBe(-50);
+      expect(Math.abs(promptTx.readTokens)).toBe(0);
+
+      expect(Math.abs(completionTx.rawAmount)).toBe(0);
+
+      const standardRate = tokenValues[model].completion;
+      expect(completionTx.rate).toBe(standardRate);
+    });
   });
 });
