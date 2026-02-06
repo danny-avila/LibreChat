@@ -795,6 +795,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   bedrock.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  anthropic.effort,
   librechat.fileTokenLimit,
 ];
 
@@ -852,6 +853,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   bedrock.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  anthropic.effort,
   librechat.fileTokenLimit,
 ];
 

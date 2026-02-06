@@ -1,10 +1,8 @@
 import { z } from 'zod';
 import * as s from './schemas';
 
-type ThinkingConfig = {
-  type: 'enabled';
-  budget_tokens: number;
-};
+type ThinkingConfig = { type: 'enabled'; budget_tokens: number } | { type: 'adaptive' };
+
 type AnthropicReasoning = {
   thinking?: ThinkingConfig | boolean;
   thinkingBudget?: number;
@@ -14,6 +12,26 @@ type AnthropicInput = BedrockConverseInput & {
   additionalModelRequestFields: BedrockConverseInput['additionalModelRequestFields'] &
     AnthropicReasoning;
 };
+
+/** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 5+) */
+function supportsAdaptiveThinking(model: string): boolean {
+  const opusMatch = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
+  if (opusMatch) {
+    const major = parseInt(opusMatch[1], 10);
+    const minor = opusMatch[2] != null ? parseInt(opusMatch[2], 10) : 0;
+    if (major > 4 || (major === 4 && minor >= 6)) {
+      return true;
+    }
+  }
+  const sonnetMatch = model.match(/claude-sonnet[-.]?(\d+)/);
+  if (sonnetMatch) {
+    const major = parseInt(sonnetMatch[1], 10);
+    if (major >= 5) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Gets the appropriate anthropic_beta headers for Bedrock Anthropic models.
@@ -38,7 +56,7 @@ function getBedrockAnthropicBetaHeaders(model: string): string[] {
     betaHeaders.push('output-128k-2025-02-19');
   }
 
-  if (isSonnet4PlusModel) {
+  if (isSonnet4PlusModel || supportsAdaptiveThinking(model)) {
     betaHeaders.push('context-1m-2025-08-07');
   }
 
@@ -67,6 +85,7 @@ export const bedrockInputSchema = s.tConversationSchema
     stop: true,
     thinking: true,
     thinkingBudget: true,
+    effort: true,
     promptCache: true,
     /* Catch-all fields */
     topK: true,
@@ -75,10 +94,11 @@ export const bedrockInputSchema = s.tConversationSchema
   .transform((obj) => {
     if ((obj as AnthropicInput).additionalModelRequestFields?.thinking != null) {
       const _obj = obj as AnthropicInput;
-      obj.thinking = !!_obj.additionalModelRequestFields.thinking;
+      const thinking = _obj.additionalModelRequestFields.thinking;
+      obj.thinking = !!thinking;
       obj.thinkingBudget =
-        typeof _obj.additionalModelRequestFields.thinking === 'object'
-          ? (_obj.additionalModelRequestFields.thinking as ThinkingConfig)?.budget_tokens
+        typeof thinking === 'object' && 'budget_tokens' in thinking
+          ? thinking.budget_tokens
           : undefined;
       delete obj.additionalModelRequestFields;
     }
@@ -109,6 +129,7 @@ export const bedrockInputParser = s.tConversationSchema
     stop: true,
     thinking: true,
     thinkingBudget: true,
+    effort: true,
     promptCache: true,
     /* Catch-all fields */
     topK: true,
@@ -157,18 +178,38 @@ export const bedrockInputParser = s.tConversationSchema
           typedData.model,
         ))
     ) {
-      if (additionalFields.thinking === undefined) {
-        additionalFields.thinking = true;
-      } else if (additionalFields.thinking === false) {
-        delete additionalFields.thinking;
-        delete additionalFields.thinkingBudget;
+      const isAdaptive = supportsAdaptiveThinking(typedData.model as string);
+
+      if (isAdaptive) {
+        if (additionalFields.thinking === false) {
+          delete additionalFields.thinking;
+          delete additionalFields.thinkingBudget;
+        } else {
+          additionalFields.thinking = { type: 'adaptive' };
+          delete additionalFields.thinkingBudget;
+
+          const effort = additionalFields.effort;
+          if (effort && typeof effort === 'string' && effort !== '') {
+            additionalFields.output_config = { effort };
+          }
+        }
+        delete additionalFields.effort;
+      } else {
+        if (additionalFields.thinking === undefined) {
+          additionalFields.thinking = true;
+        } else if (additionalFields.thinking === false) {
+          delete additionalFields.thinking;
+          delete additionalFields.thinkingBudget;
+        }
+
+        if (additionalFields.thinking === true && additionalFields.thinkingBudget === undefined) {
+          additionalFields.thinkingBudget = 2000;
+        }
+        delete additionalFields.effort;
       }
 
-      if (additionalFields.thinking === true && additionalFields.thinkingBudget === undefined) {
-        additionalFields.thinkingBudget = 2000;
-      }
-      if (typedData.model.includes('anthropic.')) {
-        const betaHeaders = getBedrockAnthropicBetaHeaders(typedData.model);
+      if ((typedData.model as string).includes('anthropic.')) {
+        const betaHeaders = getBedrockAnthropicBetaHeaders(typedData.model as string);
         if (betaHeaders.length > 0) {
           additionalFields.anthropic_beta = betaHeaders;
         }
@@ -176,6 +217,7 @@ export const bedrockInputParser = s.tConversationSchema
     } else if (additionalFields.thinking != null || additionalFields.thinkingBudget != null) {
       delete additionalFields.thinking;
       delete additionalFields.thinkingBudget;
+      delete additionalFields.effort;
     }
 
     /** Default promptCache for claude and nova models, if not defined */
@@ -212,20 +254,31 @@ export const bedrockInputParser = s.tConversationSchema
  */
 function configureThinking(data: AnthropicInput): AnthropicInput {
   const updatedData = { ...data };
-  if (updatedData.additionalModelRequestFields?.thinking === true) {
+  const thinking = updatedData.additionalModelRequestFields?.thinking;
+
+  if (thinking === true) {
     updatedData.maxTokens = updatedData.maxTokens ?? updatedData.maxOutputTokens ?? 8192;
     delete updatedData.maxOutputTokens;
-    const thinkingConfig: AnthropicReasoning['thinking'] = {
+    const thinkingConfig: ThinkingConfig = {
       type: 'enabled',
-      budget_tokens: updatedData.additionalModelRequestFields.thinkingBudget ?? 2000,
+      budget_tokens: updatedData.additionalModelRequestFields?.thinkingBudget ?? 2000,
     };
 
     if (thinkingConfig.budget_tokens > updatedData.maxTokens) {
       thinkingConfig.budget_tokens = Math.floor(updatedData.maxTokens * 0.9);
     }
-    updatedData.additionalModelRequestFields.thinking = thinkingConfig;
-    delete updatedData.additionalModelRequestFields.thinkingBudget;
+    updatedData.additionalModelRequestFields!.thinking = thinkingConfig;
+    delete updatedData.additionalModelRequestFields!.thinkingBudget;
+  } else if (
+    typeof thinking === 'object' &&
+    thinking != null &&
+    (thinking as { type: string }).type === 'adaptive'
+  ) {
+    updatedData.maxTokens = updatedData.maxTokens ?? updatedData.maxOutputTokens ?? 16000;
+    delete updatedData.maxOutputTokens;
+    delete updatedData.additionalModelRequestFields!.thinkingBudget;
   }
+
   return updatedData;
 }
 
@@ -268,8 +321,8 @@ export const bedrockOutputParser = (data: Record<string, unknown>) => {
   }
 
   result = configureThinking(result as AnthropicInput);
-  // Remove additionalModelRequestFields from the result if it doesn't thinking config
-  if ((result as AnthropicInput).additionalModelRequestFields?.thinking == null) {
+  const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+  if (!amrf || Object.keys(amrf).length === 0) {
     delete result.additionalModelRequestFields;
   }
 
