@@ -12,7 +12,7 @@ import useMentions from '~/hooks/Input/useMentions';
 import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
 
-const ROW_HEIGHT = 40;
+const ROW_HEIGHT = 44;
 
 export default function Mention({
   conversation,

@@ -198,8 +198,15 @@ export const codeTypeMapping: { [key: string]: string } = {
   ts: 'application/typescript', // .ts - TypeScript source
   tar: 'application/x-tar', // .tar - Tar archive
   zip: 'application/zip', // .zip - ZIP archive
+  txt: 'text/plain', // .txt - Plain text file
   log: 'text/plain', // .log - Log file
+  csv: 'text/csv', // .csv - Comma-separated values
   tsv: 'text/tab-separated-values', // .tsv - Tab-separated values
+  json: 'application/json', // .json - JSON file
+  xml: 'application/xml', // .xml - XML file
+  html: 'text/html', // .html - HTML file
+  htm: 'text/html', // .htm - HTML file
+  css: 'text/css', // .css - CSS file
   yml: 'application/yaml', // .yml - YAML
   yaml: 'application/yaml', // .yaml - YAML
   sql: 'application/sql', // .sql - SQL (IANA registered)
