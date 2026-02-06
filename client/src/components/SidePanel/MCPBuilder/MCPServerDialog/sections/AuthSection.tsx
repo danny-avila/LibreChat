@@ -164,10 +164,22 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
                 id="oauth_client_id"
                 autoComplete="off"
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
-                aria-invalid={errors.auth?.oauth_client_id ? true : undefined}
+                aria-invalid={errors.auth?.oauth_client_id ? 'true' : 'false'}
+                aria-describedby={
+                  errors.auth?.oauth_client_id ? 'oauth-client-id-error' : undefined
+                }
                 {...register('auth.oauth_client_id', { required: !isEditMode })}
                 className={cn(errors.auth?.oauth_client_id && 'border-border-destructive')}
               />
+              {errors.auth?.oauth_client_id && (
+                <p
+                  id="oauth-client-id-error"
+                  role="alert"
+                  className="text-xs text-text-destructive"
+                >
+                  {localize('com_ui_field_required')}
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="oauth_client_secret" className="text-sm font-medium">
@@ -184,10 +196,22 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
               <SecretInput
                 id="oauth_client_secret"
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
-                aria-invalid={errors.auth?.oauth_client_secret ? true : undefined}
+                aria-invalid={errors.auth?.oauth_client_secret ? 'true' : 'false'}
+                aria-describedby={
+                  errors.auth?.oauth_client_secret ? 'oauth-client-secret-error' : undefined
+                }
                 {...register('auth.oauth_client_secret', { required: !isEditMode })}
                 className={cn(errors.auth?.oauth_client_secret && 'border-border-destructive')}
               />
+              {errors.auth?.oauth_client_secret && (
+                <p
+                  id="oauth-client-secret-error"
+                  role="alert"
+                  className="text-xs text-text-destructive"
+                >
+                  {localize('com_ui_field_required')}
+                </p>
+              )}
             </div>
           </div>
 

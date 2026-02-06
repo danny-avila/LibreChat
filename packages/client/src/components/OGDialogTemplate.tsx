@@ -95,7 +95,7 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
         disabled={isLoading}
         className={`${
           selectClasses ?? defaultSelect
-        } flex h-10 items-center justify-center rounded-lg border-none px-4 py-2 text-sm disabled:opacity-80`}
+        } flex h-10 items-center justify-center rounded-lg border-none px-4 py-2 text-sm disabled:opacity-80 max-sm:order-first max-sm:w-full sm:order-none`}
       >
         {isLoading === true ? (
           <Spinner className="size-4 text-text-primary" />
