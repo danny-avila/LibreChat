@@ -12,12 +12,14 @@ export async function findOpenIDUser({
   email,
   idOnTheSource,
   strategyName = 'openid',
+  allowAccountLinking = false,
 }: {
   openidId: string;
   findUser: UserMethods['findUser'];
   email?: string;
   idOnTheSource?: string;
   strategyName?: string;
+  allowAccountLinking?: boolean;
 }): Promise<{ user: IUser | null; error: string | null; migration: boolean }> {
   const primaryConditions = [];
 
@@ -41,6 +43,14 @@ export async function findOpenIDUser({
 
     // If user found by email, check if they're allowed to use OpenID provider
     if (user && user.provider && user.provider !== 'openid') {
+      if (allowAccountLinking) {
+        logger.info(
+          `[${strategyName}] Account linking: user ${user.email} migrating from "${user.provider}" to OpenID`,
+        );
+        user.provider = 'openid';
+        user.openidId = openidId;
+        return { user, error: null, migration: true };
+      }
       logger.warn(
         `[${strategyName}] Attempted OpenID login by user ${user.email}, was registered with "${user.provider}" provider`,
       );
