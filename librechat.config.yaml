@@ -190,6 +190,25 @@ endpoints:
       summaryModel: "current_model"
       forcePrompt: false
       modelDisplayLabel: "AjraSakha Qwen3 1.7b"  # optional display label in UI
+     
+fileConfig:
+  endpoints:
+    default:
+      ocr:
+        limit: 1  # Max files per upload
+        supportedMimeTypes:
+          - "image/jpeg"
+          - "image/png"
+          - "image/webp"
+          - "image/gif"
+          # Add other types your Python model supports (e.g., pdf if you add support later)
+
+# Your existing OCR block is correct:
+ocr:
+   strategy: "mistral_ocr"
+   apiKey: "no-key-required"
+   baseURL: "http://100.100.108.43:8029/v1"
+   mistralModel: "mistral-ocr-latest"
 
 modelSpecs:
   enforce: true
