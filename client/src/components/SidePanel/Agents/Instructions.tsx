@@ -1,5 +1,5 @@
 import React, { useState, useId } from 'react';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, Sparkles } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
 import { DropdownPopup } from '@librechat/client';
 import { specialVariables } from 'librechat-data-provider';
@@ -8,6 +8,8 @@ import type { TSpecialVarLabel } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
+import usePromptRefinement from '~/hooks/Agents/usePromptRefinement';
+import RefinementDialog from './PromptRefinement/RefinementDialog';
 
 const inputClass = cn(
   defaultTextProps,
@@ -29,9 +31,19 @@ export default function Instructions() {
   const menuId = useId();
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
-  const { control, setValue, getValues } = methods;
+  const { control, setValue, getValues, watch } = methods;
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const agentId = watch('id');
+  const currentInstructions = watch('instructions');
+
+  const { isDialogOpen, isRefining, openDialog, closeDialog, handleRefine } = usePromptRefinement({
+    agentId: agentId || '',
+    currentInstructions: currentInstructions || '',
+    onSuccess: (refinedInstructions) => {
+      setValue('instructions', refinedInstructions);
+    },
+  });
 
   const handleAddVariable = (label: TSpecialVarLabel, value: string) => {
     const currentInstructions = getValues('instructions') || '';
@@ -47,7 +59,19 @@ export default function Instructions() {
         <label className="text-token-text-primary flex-grow font-medium" htmlFor="instructions">
           {localize('com_ui_instructions')}
         </label>
-        <div className="ml-auto" title="Add variables to instructions">
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openDialog}
+            disabled={!currentInstructions || isRefining}
+            className="flex h-7 items-center gap-1 rounded-md border-2 border-red-500 bg-red-50 px-2 py-0 text-sm text-red-700 font-semibold transition-colors duration-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            title={localize('com_ui_refine_instructions') + ' [TESTING - RED HIGHLIGHT]'}
+            aria-label="Refine instructions with AI"
+          >
+            <Sparkles className="mr-1 h-3 w-3 text-red-600" aria-hidden={true} />
+            {localize('com_ui_refine')}
+          </button>
+          <div title="Add variables to instructions">
           <DropdownPopup
             portal={true}
             mountByState={true}
@@ -72,8 +96,15 @@ export default function Instructions() {
             menuId={menuId}
             className="z-30"
           />
+          </div>
         </div>
       </div>
+      <RefinementDialog
+        isOpen={isDialogOpen}
+        onClose={closeDialog}
+        onRefine={handleRefine}
+        isLoading={isRefining}
+      />
       <Controller
         name="instructions"
         control={control}

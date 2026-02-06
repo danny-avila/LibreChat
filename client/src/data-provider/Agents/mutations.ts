@@ -403,6 +403,42 @@ export const useRevertAgentVersionMutation = (
   );
 };
 
+/**
+ * Hook for refining an agent's system prompt using AI
+ */
+export const useRefineAgentPromptMutation = (
+  options?: t.MutationOptions,
+): UseMutationResult<
+  { refined_instructions: string },
+  Error,
+  { agent_id: string; current_instructions: string; refinement_request: string }
+> => {
+  return useMutation(
+    ({
+      agent_id,
+      current_instructions,
+      refinement_request,
+    }: {
+      agent_id: string;
+      current_instructions: string;
+      refinement_request: string;
+    }) => {
+      return dataService.refineAgentPrompt({
+        agent_id,
+        current_instructions,
+        refinement_request,
+      });
+    },
+    {
+      onMutate: (variables) => options?.onMutate?.(variables),
+      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onSuccess: (data, variables, context) => {
+        return options?.onSuccess?.(data, variables, context);
+      },
+    },
+  );
+};
+
 export const invalidateAgentMarketplaceQueries = (queryClient: QueryClient) => {
   queryClient.invalidateQueries([QueryKeys.marketplaceAgents]);
 };

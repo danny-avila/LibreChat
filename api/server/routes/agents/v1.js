@@ -6,6 +6,7 @@ const v1 = require('~/server/controllers/agents/v1');
 const { getRoleByName } = require('~/models/Role');
 const actions = require('./actions');
 const tools = require('./tools');
+const refinePrompt = require('./refinePrompt');
 
 const router = express.Router();
 const avatar = express.Router();
@@ -154,6 +155,25 @@ router.post(
     resourceIdParam: 'id',
   }),
   v1.revertAgentVersion,
+);
+
+/**
+ * Refines an agent's system prompt using AI.
+ * @route POST /agents/:id/refine-prompt
+ * @param {string} req.params.id - Agent identifier.
+ * @param {string} req.body.current_instructions - Current system prompt.
+ * @param {string} req.body.refinement_request - User's refinement request.
+ * @returns {Object} 200 - { refined_instructions: string }
+ */
+router.use(
+  '/:id/refine-prompt',
+  checkGlobalAgentShare,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'id',
+  }),
+  configMiddleware,
+  refinePrompt,
 );
 
 /**
