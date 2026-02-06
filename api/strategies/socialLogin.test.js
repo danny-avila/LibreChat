@@ -21,13 +21,11 @@ jest.mock('./process', () => ({
   handleExistingUser: jest.fn(),
 }));
 
-jest.mock('@librechat/api', () => {
-  const actual = jest.requireActual('@librechat/api');
-  return {
-    ...actual,
-    isEmailDomainAllowed: jest.fn().mockReturnValue(true),
-  };
-});
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  isEnabled: jest.requireActual('@librechat/api').isEnabled,
+  isEmailDomainAllowed: jest.fn().mockReturnValue(true),
+}));
 
 jest.mock('~/models', () => ({
   findUser: jest.fn(),

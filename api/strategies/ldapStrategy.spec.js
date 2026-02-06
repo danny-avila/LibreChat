@@ -8,14 +8,12 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-jest.mock('@librechat/api', () => {
-  const actual = jest.requireActual('@librechat/api');
-  return {
-    ...actual,
-    isEmailDomainAllowed: jest.fn(() => true),
-    getBalanceConfig: jest.fn(() => ({ enabled: false })),
-  };
-});
+jest.mock('@librechat/api', () => ({
+  // isEnabled used for TLS flags and account linking
+  isEnabled: jest.requireActual('@librechat/api').isEnabled,
+  isEmailDomainAllowed: jest.fn(() => true),
+  getBalanceConfig: jest.fn(() => ({ enabled: false })),
+}));
 
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
