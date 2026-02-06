@@ -38,6 +38,7 @@ export enum Providers {
   MISTRALAI = 'mistralai',
   MISTRAL = 'mistral',
   DEEPSEEK = 'deepseek',
+  MOONSHOT = 'moonshot',
   OPENROUTER = 'openrouter',
   XAI = 'xai',
 }
@@ -56,6 +57,7 @@ export const documentSupportedProviders = new Set<string>([
   Providers.MISTRALAI,
   Providers.MISTRAL,
   Providers.DEEPSEEK,
+  Providers.MOONSHOT,
   Providers.OPENROUTER,
   Providers.XAI,
 ]);
@@ -67,6 +69,7 @@ const openAILikeProviders = new Set<string>([
   Providers.MISTRALAI,
   Providers.MISTRAL,
   Providers.DEEPSEEK,
+  Providers.MOONSHOT,
   Providers.OPENROUTER,
   Providers.XAI,
 ]);
@@ -94,10 +97,11 @@ export enum BedrockProviders {
   Amazon = 'amazon',
   Anthropic = 'anthropic',
   Cohere = 'cohere',
+  DeepSeek = 'deepseek',
   Meta = 'meta',
   MistralAI = 'mistral',
+  Moonshot = 'moonshot',
   StabilityAI = 'stability',
-  DeepSeek = 'deepseek',
 }
 
 export const getModelKey = (endpoint: EModelEndpoint | string, model: string) => {
@@ -224,6 +228,7 @@ export const defaultAgentFormValues = {
   model: '',
   model_parameters: {},
   tools: [],
+  tool_options: {},
   provider: {},
   projectIds: [],
   edges: [],

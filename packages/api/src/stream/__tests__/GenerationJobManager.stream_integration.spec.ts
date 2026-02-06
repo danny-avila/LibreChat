@@ -134,12 +134,12 @@ describe('GenerationJobManager Integration Tests', () => {
       // Wait for first subscriber to be registered
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      // Emit chunks (emitChunk takes { event, data } format)
-      GenerationJobManager.emitChunk(streamId, {
+      // Emit chunks (emitChunk takes { event, data } format, now async for Redis ordering)
+      await GenerationJobManager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { type: 'text', text: 'Hello' },
       });
-      GenerationJobManager.emitChunk(streamId, {
+      await GenerationJobManager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { type: 'text', text: ' world' },
       });
@@ -219,8 +219,8 @@ describe('GenerationJobManager Integration Tests', () => {
       await GenerationJobManager.createJob(streamId, 'user-1');
 
       // Emit chunks (these should be persisted to Redis)
-      // emitChunk takes { event, data } format
-      GenerationJobManager.emitChunk(streamId, {
+      // emitChunk takes { event, data } format, now async for Redis ordering
+      await GenerationJobManager.emitChunk(streamId, {
         event: 'on_run_step',
         data: {
           id: 'step-1',
@@ -229,14 +229,14 @@ describe('GenerationJobManager Integration Tests', () => {
           stepDetails: { type: 'message_creation' },
         },
       });
-      GenerationJobManager.emitChunk(streamId, {
+      await GenerationJobManager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: {
           id: 'step-1',
           delta: { content: { type: 'text', text: 'Persisted ' } },
         },
       });
-      GenerationJobManager.emitChunk(streamId, {
+      await GenerationJobManager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: {
           id: 'step-1',
@@ -276,8 +276,8 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `redis-abort-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
 
-      // Emit some content (emitChunk takes { event, data } format)
-      GenerationJobManager.emitChunk(streamId, {
+      // Emit some content (emitChunk takes { event, data } format, now async)
+      await GenerationJobManager.emitChunk(streamId, {
         event: 'on_run_step',
         data: {
           id: 'step-1',
@@ -286,7 +286,7 @@ describe('GenerationJobManager Integration Tests', () => {
           stepDetails: { type: 'message_creation' },
         },
       });
-      GenerationJobManager.emitChunk(streamId, {
+      await GenerationJobManager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: {
           id: 'step-1',
@@ -582,10 +582,9 @@ describe('GenerationJobManager Integration Tests', () => {
         conversation: { conversationId: streamId },
         responseMessage: { text: 'Hello world' },
       };
-      GenerationJobManager.emitDone(streamId, finalEventData as never);
+      await GenerationJobManager.emitDone(streamId, finalEventData as never);
 
-      // Wait for async Redis update
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Verify finalEvent is in Redis
       const jobStore = services.jobStore;
@@ -794,6 +793,543 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await GenerationJobManager.destroy();
       await jobStore.destroy();
+    });
+  });
+
+  describe('Sequential Event Ordering (Redis)', () => {
+    /**
+     * These tests verify that events are delivered in strict sequential order
+     * when using Redis mode. This is critical because:
+     * 1. LLM streaming tokens must arrive in order for coherent output
+     * 2. Tool call argument deltas must be concatenated in order
+     * 3. Run step events must precede their deltas
+     *
+     * The fix: emitChunk now awaits Redis publish to ensure ordered delivery.
+     */
+    test('should maintain strict order for rapid sequential emits', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { createStreamServices } = await import('../createStreamServices');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      const streamId = `order-rapid-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const receivedIndices: number[] = [];
+
+      const subscription = await GenerationJobManager.subscribe(streamId, (event) => {
+        const data = event as { event: string; data: { index: number } };
+        if (data.event === 'test') {
+          receivedIndices.push(data.data.index);
+        }
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Emit 30 events rapidly - with await, they must arrive in order
+      for (let i = 0; i < 30; i++) {
+        await GenerationJobManager.emitChunk(streamId, {
+          event: 'test',
+          data: { index: i },
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Verify all events arrived in correct order
+      expect(receivedIndices.length).toBe(30);
+      for (let i = 0; i < 30; i++) {
+        expect(receivedIndices[i]).toBe(i);
+      }
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+    });
+
+    test('should maintain order for tool call argument deltas', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { createStreamServices } = await import('../createStreamServices');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      const streamId = `tool-args-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const receivedArgs: string[] = [];
+
+      const subscription = await GenerationJobManager.subscribe(streamId, (event) => {
+        const data = event as {
+          event: string;
+          data: { delta: { tool_calls: { args: string }[] } };
+        };
+        if (data.event === 'on_run_step_delta') {
+          receivedArgs.push(data.data.delta.tool_calls[0].args);
+        }
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Simulate streaming JSON args: {"code": "print('hello')"}
+      const argChunks = ['{"', 'code', '": "', 'print', "('", 'hello', "')", '"}'];
+
+      for (const chunk of argChunks) {
+        await GenerationJobManager.emitChunk(streamId, {
+          event: 'on_run_step_delta',
+          data: {
+            id: 'step-1',
+            delta: {
+              type: 'tool_calls',
+              tool_calls: [{ index: 0, args: chunk }],
+            },
+          },
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // This was the original bug - args would arrive scrambled without await
+      expect(receivedArgs).toEqual(argChunks);
+      expect(receivedArgs.join('')).toBe(`{"code": "print('hello')"}`);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+    });
+
+    test('should maintain order: on_run_step before on_run_step_delta', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { createStreamServices } = await import('../createStreamServices');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      const streamId = `step-order-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const receivedEvents: string[] = [];
+
+      const subscription = await GenerationJobManager.subscribe(streamId, (event) => {
+        const data = event as { event: string };
+        receivedEvents.push(data.event);
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Emit in correct order: step first, then deltas
+      await GenerationJobManager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: { id: 'step-1', type: 'tool_calls', index: 0 },
+      });
+
+      await GenerationJobManager.emitChunk(streamId, {
+        event: 'on_run_step_delta',
+        data: { id: 'step-1', delta: { type: 'tool_calls', tool_calls: [{ args: '{' }] } },
+      });
+
+      await GenerationJobManager.emitChunk(streamId, {
+        event: 'on_run_step_delta',
+        data: { id: 'step-1', delta: { type: 'tool_calls', tool_calls: [{ args: '}' }] } },
+      });
+
+      await GenerationJobManager.emitChunk(streamId, {
+        event: 'on_run_step_completed',
+        data: { id: 'step-1', result: { content: '{}' } },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Verify ordering: step -> deltas -> completed
+      expect(receivedEvents).toEqual([
+        'on_run_step',
+        'on_run_step_delta',
+        'on_run_step_delta',
+        'on_run_step_completed',
+      ]);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+    });
+
+    test('should not block other streams when awaiting emitChunk', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { createStreamServices } = await import('../createStreamServices');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      const streamId1 = `concurrent-1-${Date.now()}`;
+      const streamId2 = `concurrent-2-${Date.now()}`;
+
+      await GenerationJobManager.createJob(streamId1, 'user-1');
+      await GenerationJobManager.createJob(streamId2, 'user-2');
+
+      const stream1Events: number[] = [];
+      const stream2Events: number[] = [];
+
+      const sub1 = await GenerationJobManager.subscribe(streamId1, (event) => {
+        const data = event as { event: string; data: { index: number } };
+        if (data.event === 'test') {
+          stream1Events.push(data.data.index);
+        }
+      });
+
+      const sub2 = await GenerationJobManager.subscribe(streamId2, (event) => {
+        const data = event as { event: string; data: { index: number } };
+        if (data.event === 'test') {
+          stream2Events.push(data.data.index);
+        }
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Emit to both streams concurrently (simulating two LLM responses)
+      const emitPromises: Promise<void>[] = [];
+      for (let i = 0; i < 10; i++) {
+        emitPromises.push(
+          GenerationJobManager.emitChunk(streamId1, { event: 'test', data: { index: i } }),
+        );
+        emitPromises.push(
+          GenerationJobManager.emitChunk(streamId2, { event: 'test', data: { index: i * 100 } }),
+        );
+      }
+      await Promise.all(emitPromises);
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Each stream should have all events, in order within their stream
+      expect(stream1Events.length).toBe(10);
+      expect(stream2Events.length).toBe(10);
+
+      // Verify each stream's internal order
+      for (let i = 0; i < 10; i++) {
+        expect(stream1Events[i]).toBe(i);
+        expect(stream2Events[i]).toBe(i * 100);
+      }
+
+      sub1?.unsubscribe();
+      sub2?.unsubscribe();
+      await GenerationJobManager.destroy();
+    });
+  });
+
+  describe('Error Preservation for Late Subscribers', () => {
+    /**
+     * These tests verify the fix for the race condition where errors
+     * (like INPUT_LENGTH) occur before the SSE client connects.
+     *
+     * Problem: Error → emitError → completeJob → job deleted → client connects → 404
+     * Fix: Store error, don't delete job immediately, send error to late subscriber
+     */
+
+    test('should store error in emitError for late-connecting subscribers', async () => {
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+      GenerationJobManager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+
+      await GenerationJobManager.initialize();
+
+      const streamId = `error-store-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const errorMessage = '{ "type": "INPUT_LENGTH", "info": "234856 / 172627" }';
+
+      // Emit error (no subscribers yet - simulates race condition)
+      await GenerationJobManager.emitError(streamId, errorMessage);
+
+      // Wait for async job store update
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Verify error is stored in job store
+      const job = await GenerationJobManager.getJob(streamId);
+      expect(job?.error).toBe(errorMessage);
+
+      await GenerationJobManager.destroy();
+    });
+
+    test('should NOT delete job immediately when completeJob is called with error', async () => {
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+      GenerationJobManager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: true, // Default behavior
+      });
+
+      await GenerationJobManager.initialize();
+
+      const streamId = `error-no-delete-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const errorMessage = 'Test error message';
+
+      // Complete with error
+      await GenerationJobManager.completeJob(streamId, errorMessage);
+
+      // Job should still exist (not deleted)
+      const hasJob = await GenerationJobManager.hasJob(streamId);
+      expect(hasJob).toBe(true);
+
+      // Job should have error status
+      const job = await GenerationJobManager.getJob(streamId);
+      expect(job?.status).toBe('error');
+      expect(job?.error).toBe(errorMessage);
+
+      await GenerationJobManager.destroy();
+    });
+
+    test('should send stored error to late-connecting subscriber', async () => {
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+      GenerationJobManager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: true,
+      });
+
+      await GenerationJobManager.initialize();
+
+      const streamId = `error-late-sub-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const errorMessage = '{ "type": "INPUT_LENGTH", "info": "234856 / 172627" }';
+
+      // Simulate race condition: error occurs before client connects
+      await GenerationJobManager.emitError(streamId, errorMessage);
+      await GenerationJobManager.completeJob(streamId, errorMessage);
+
+      // Wait for async operations
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Now client connects (late subscriber)
+      let receivedError: string | undefined;
+      const subscription = await GenerationJobManager.subscribe(
+        streamId,
+        () => {}, // onChunk
+        () => {}, // onDone
+        (error) => {
+          receivedError = error;
+        }, // onError
+      );
+
+      expect(subscription).not.toBeNull();
+
+      // Wait for setImmediate in subscribe to fire
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Late subscriber should receive the stored error
+      expect(receivedError).toBe(errorMessage);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+    });
+
+    test('should prioritize error status over finalEvent in subscribe', async () => {
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+      GenerationJobManager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+
+      await GenerationJobManager.initialize();
+
+      const streamId = `error-priority-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      const errorMessage = 'Error should take priority';
+
+      // Emit error and complete with error
+      await GenerationJobManager.emitError(streamId, errorMessage);
+      await GenerationJobManager.completeJob(streamId, errorMessage);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Subscribe and verify error is received (not a done event)
+      let receivedError: string | undefined;
+      let receivedDone = false;
+
+      const subscription = await GenerationJobManager.subscribe(
+        streamId,
+        () => {},
+        () => {
+          receivedDone = true;
+        },
+        (error) => {
+          receivedError = error;
+        },
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Error should be received, not done
+      expect(receivedError).toBe(errorMessage);
+      expect(receivedDone).toBe(false);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+    });
+
+    test('should handle error preservation in Redis mode (cross-replica)', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { createStreamServices } = await import('../createStreamServices');
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+
+      // === Replica A: Creates job and emits error ===
+      const replicaAJobStore = new RedisJobStore(ioredisClient);
+      await replicaAJobStore.initialize();
+
+      const streamId = `redis-error-${Date.now()}`;
+      const errorMessage = '{ "type": "INPUT_LENGTH", "info": "234856 / 172627" }';
+
+      await replicaAJobStore.createJob(streamId, 'user-1');
+      await replicaAJobStore.updateJob(streamId, {
+        status: 'error',
+        error: errorMessage,
+        completedAt: Date.now(),
+      });
+
+      // === Replica B: Fresh manager receives client connection ===
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure({
+        ...services,
+        cleanupOnComplete: false,
+      });
+      await GenerationJobManager.initialize();
+
+      // Client connects to Replica B (job created on Replica A)
+      let receivedError: string | undefined;
+      const subscription = await GenerationJobManager.subscribe(
+        streamId,
+        () => {},
+        () => {},
+        (error) => {
+          receivedError = error;
+        },
+      );
+
+      expect(subscription).not.toBeNull();
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Error should be loaded from Redis and sent to subscriber
+      expect(receivedError).toBe(errorMessage);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+      await replicaAJobStore.destroy();
+    });
+
+    test('error jobs should be cleaned up by periodic cleanup after TTL', async () => {
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+      // Use a very short TTL for testing
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 100 });
+
+      GenerationJobManager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: true,
+      });
+
+      await GenerationJobManager.initialize();
+
+      const streamId = `error-cleanup-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      // Complete with error
+      await GenerationJobManager.completeJob(streamId, 'Test error');
+
+      // Job should exist immediately after error
+      let hasJob = await GenerationJobManager.hasJob(streamId);
+      expect(hasJob).toBe(true);
+
+      // Wait for TTL to expire
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Trigger cleanup
+      await jobStore.cleanup();
+
+      // Job should be cleaned up after TTL
+      hasJob = await GenerationJobManager.hasJob(streamId);
+      expect(hasJob).toBe(false);
+
+      await GenerationJobManager.destroy();
     });
   });
 

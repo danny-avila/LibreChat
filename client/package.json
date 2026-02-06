@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.8.2-rc2",
+  "version": "v0.8.2",
   "description": "",
   "type": "module",
   "scripts": {
@@ -77,7 +77,7 @@
     "jotai": "^2.12.5",
     "js-cookie": "^3.0.5",
     "librechat-data-provider": "*",
-    "lodash": "^4.17.21",
+    "lodash": "^4.17.23",
     "lucide-react": "^0.394.0",
     "match-sorter": "^8.1.0",
     "mermaid": "^11.12.2",
@@ -96,7 +96,7 @@
     "react-lazy-load-image-component": "^1.6.0",
     "react-markdown": "^9.0.1",
     "react-resizable-panels": "^3.0.6",
-    "react-router-dom": "^6.11.2",
+    "react-router-dom": "^6.30.3",
     "react-speech-recognition": "^3.10.0",
     "react-textarea-autosize": "^8.4.0",
     "react-transition-group": "^4.4.5",

@@ -1,4 +1,3 @@
-const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -12,7 +11,7 @@ const {
   MCPOAuthHandler,
   isMCPDomainAllowed,
   normalizeServerName,
-  convertWithResolvedRefs,
+  resolveJsonSchemaRefs,
   GenerationJobManager,
 } = require('@librechat/api');
 const {
@@ -29,9 +28,20 @@ const {
   getMCPManager,
 } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
+const { getGraphApiToken } = require('./GraphTokenService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
+
+function isEmptyObjectSchema(jsonSchema) {
+  return (
+    jsonSchema != null &&
+    typeof jsonSchema === 'object' &&
+    jsonSchema.type === 'object' &&
+    (jsonSchema.properties == null || Object.keys(jsonSchema.properties).length === 0) &&
+    !jsonSchema.additionalProperties
+  );
+}
 
 /**
  * @param {object} params
@@ -43,9 +53,9 @@ const { getLogStores } = require('~/cache');
 function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
   /**
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  return function (authURL) {
+  return async function (authURL) {
     /** @type {{ id: string; delta: AgentToolCallDelta }} */
     const data = {
       id: stepId,
@@ -58,7 +68,7 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
     };
     const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
     if (streamId) {
-      GenerationJobManager.emitChunk(streamId, eventData);
+      await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
       sendEvent(res, eventData);
     }
@@ -73,9 +83,10 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
  * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
  * @param {number} [params.index]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
+ * @returns {() => Promise<void>}
  */
 function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = null }) {
-  return function () {
+  return async function () {
     /** @type {import('@librechat/agents').RunStep} */
     const data = {
       runId: runId ?? Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
@@ -89,7 +100,7 @@ function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = 
     };
     const eventData = { event: GraphEvents.ON_RUN_STEP, data };
     if (streamId) {
-      GenerationJobManager.emitChunk(streamId, eventData);
+      await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
       sendEvent(res, eventData);
     }
@@ -137,7 +148,7 @@ function createOAuthEnd({ res, stepId, toolCall, streamId = null }) {
     };
     const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
     if (streamId) {
-      GenerationJobManager.emitChunk(streamId, eventData);
+      await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
       sendEvent(res, eventData);
     }
@@ -196,6 +207,9 @@ async function reconnectServer({
   userMCPAuthMap,
   streamId = null,
 }) {
+  logger.debug(
+    `[MCP][reconnectServer] serverName: ${serverName}, user: ${user?.id}, hasUserMCPAuthMap: ${!!userMCPAuthMap}`,
+  );
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${user.id}:${serverName}:${Date.now()}`;
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
@@ -428,13 +442,17 @@ function createToolInstance({
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
-  let schema = convertWithResolvedRefs(parameters, {
-    allowEmptyObject: !isGoogle,
-    transformOneOfAnyOf: true,
-  });
 
-  if (!schema) {
-    schema = z.object({ input: z.string().optional() });
+  let schema = parameters ? resolveJsonSchemaRefs(parameters) : null;
+
+  if (!schema || (isGoogle && isEmptyObjectSchema(schema))) {
+    schema = {
+      type: 'object',
+      properties: {
+        input: { type: 'string', description: 'Input for the tool' },
+      },
+      required: [],
+    };
   }
 
   const normalizedToolKey = `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
@@ -501,6 +519,7 @@ function createToolInstance({
         },
         oauthStart,
         oauthEnd,
+        graphTokenResolver: getGraphApiToken,
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
@@ -548,6 +567,7 @@ function createToolInstance({
   });
   toolInstance.mcp = true;
   toolInstance.mcpRawServerName = serverName;
+  toolInstance.mcpJsonSchema = parameters;
   return toolInstance;
 }
 
