@@ -40,6 +40,7 @@ export default function Message(props: TMessageProps) {
 
   const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const ModelNameDisplay = useRecoilValue<boolean>(store.ModelNameDisplay);
   const { children, messageId = null, isCreatedByUser } = message ?? {};
 
   const name = useMemo(() => {
@@ -76,6 +77,17 @@ export default function Message(props: TMessageProps) {
   );
 
   const { hasParallelContent } = useContentMetadata(message);
+
+  const displayModel = useMemo(() => {
+    if (!ModelNameDisplay || isCreatedByUser) {
+      return '';
+    }
+    const resolvedModel = agent?.model ?? assistant?.model ?? message?.model ?? '';
+    if (!resolvedModel || resolvedModel === name) {
+      return '';
+    }
+    return resolvedModel;
+  }, [ModelNameDisplay, isCreatedByUser, message?.model, agent, assistant, name]);
 
   if (!message) {
     return null;
@@ -126,6 +138,11 @@ export default function Message(props: TMessageProps) {
               {!hasParallelContent && (
                 <h2 className={cn('select-none font-semibold text-text-primary', fontSize)}>
                   {name}
+                  {displayModel && (
+                    <span className="ml-2 text-xs font-normal text-text-secondary">
+                      {displayModel}
+                    </span>
+                  )}
                 </h2>
               )}
               <div className="flex flex-col gap-1">
