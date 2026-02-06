@@ -415,7 +415,7 @@ const getMultiplier = ({
     if (premiumRate != null) {
       return premiumRate;
     }
-    return tokenValues[valueKey][tokenType] ?? defaultRate;
+    return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
   }
 
   if (!tokenType || !model) {
