@@ -69,6 +69,30 @@ describe('supportsAdaptiveThinking', () => {
   test('should handle cross-region Bedrock model ID', () => {
     expect(supportsAdaptiveThinking('us.anthropic.claude-opus-4-6-v1')).toBe(true);
   });
+
+  test('should return true for claude-4-6-opus (alternate naming)', () => {
+    expect(supportsAdaptiveThinking('claude-4-6-opus')).toBe(true);
+  });
+
+  test('should return true for anthropic.claude-4-6-opus (alternate naming)', () => {
+    expect(supportsAdaptiveThinking('anthropic.claude-4-6-opus')).toBe(true);
+  });
+
+  test('should return true for claude-5-sonnet (alternate naming)', () => {
+    expect(supportsAdaptiveThinking('claude-5-sonnet')).toBe(true);
+  });
+
+  test('should return true for anthropic.claude-5-sonnet (alternate naming)', () => {
+    expect(supportsAdaptiveThinking('anthropic.claude-5-sonnet')).toBe(true);
+  });
+
+  test('should return false for claude-4-5-opus (alternate naming, below threshold)', () => {
+    expect(supportsAdaptiveThinking('claude-4-5-opus')).toBe(false);
+  });
+
+  test('should return false for claude-4-sonnet (alternate naming, below threshold)', () => {
+    expect(supportsAdaptiveThinking('claude-4-sonnet')).toBe(false);
+  });
 });
 
 describe('supportsContext1m', () => {
@@ -110,6 +134,26 @@ describe('supportsContext1m', () => {
 
   test('should return false for unrelated model', () => {
     expect(supportsContext1m('gpt-4o')).toBe(false);
+  });
+
+  test('should return true for claude-4-sonnet (alternate naming)', () => {
+    expect(supportsContext1m('claude-4-sonnet')).toBe(true);
+  });
+
+  test('should return true for claude-5-sonnet (alternate naming)', () => {
+    expect(supportsContext1m('claude-5-sonnet')).toBe(true);
+  });
+
+  test('should return true for claude-4-6-opus (alternate naming)', () => {
+    expect(supportsContext1m('claude-4-6-opus')).toBe(true);
+  });
+
+  test('should return false for claude-3-sonnet (alternate naming, below threshold)', () => {
+    expect(supportsContext1m('claude-3-sonnet')).toBe(false);
+  });
+
+  test('should return false for claude-4-5-opus (alternate naming, below threshold)', () => {
+    expect(supportsContext1m('claude-4-5-opus')).toBe(false);
   });
 });
 
@@ -359,6 +403,20 @@ describe('bedrockInputParser', () => {
       ]);
     });
 
+    test('should preserve effort when thinking=false for adaptive models', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        thinking: false,
+        effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toBeUndefined();
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.output_config).toEqual({ effort: 'high' });
+      expect(additionalFields.effort).toBeUndefined();
+    });
+
     test('should strip effort for non-adaptive thinking models', () => {
       const input = {
         model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
@@ -486,6 +544,79 @@ describe('bedrockInputParser', () => {
       }) as Record<string, unknown>;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
       expect(output.additionalModelRequestFields).toBeUndefined();
+    });
+  });
+
+  describe('Model switching cleanup', () => {
+    test('should strip anthropic_beta when switching from Anthropic to non-Anthropic model', () => {
+      const staleConversationData = {
+        model: 'openai.gpt-oss-120b-1:0',
+        promptCache: true,
+        additionalModelRequestFields: {
+          anthropic_beta: ['output-128k-2025-02-19', 'context-1m-2025-08-07'],
+          thinking: { type: 'adaptive' },
+          output_config: { effort: 'high' },
+        },
+      };
+      const result = bedrockInputParser.parse(staleConversationData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.anthropic_beta).toBeUndefined();
+      expect(amrf?.thinking).toBeUndefined();
+      expect(amrf?.output_config).toBeUndefined();
+      expect(result.promptCache).toBeUndefined();
+    });
+
+    test('should strip promptCache when switching from Claude to non-Claude/Nova model', () => {
+      const staleConversationData = {
+        model: 'deepseek.deepseek-r1',
+        promptCache: true,
+      };
+      const result = bedrockInputParser.parse(staleConversationData) as Record<string, unknown>;
+      expect(result.promptCache).toBeUndefined();
+    });
+
+    test('should preserve promptCache for Claude models', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-4-20250514-v1:0',
+        promptCache: true,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      expect(result.promptCache).toBe(true);
+    });
+
+    test('should preserve promptCache for Nova models', () => {
+      const input = {
+        model: 'amazon.nova-pro-v1:0',
+        promptCache: true,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      expect(result.promptCache).toBe(true);
+    });
+
+    test('should strip stale thinking config from additionalModelRequestFields for non-Anthropic models', () => {
+      const staleConversationData = {
+        model: 'moonshot.kimi-k2-0711-thinking',
+        additionalModelRequestFields: {
+          thinking: { type: 'enabled', budget_tokens: 2000 },
+          thinkingBudget: 2000,
+          anthropic_beta: ['output-128k-2025-02-19'],
+        },
+      };
+      const result = bedrockInputParser.parse(staleConversationData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.anthropic_beta).toBeUndefined();
+      expect(amrf?.thinking).toBeUndefined();
+      expect(amrf?.thinkingBudget).toBeUndefined();
+    });
+
+    test('should not strip anthropic_beta when staying on an Anthropic model', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.anthropic_beta).toBeDefined();
+      expect(Array.isArray(amrf.anthropic_beta)).toBe(true);
     });
   });
 });

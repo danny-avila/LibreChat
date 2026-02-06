@@ -17,42 +17,60 @@ type AnthropicInput = BedrockConverseInput & {
     AnthropicReasoning;
 };
 
+/** Extracts opus major/minor version from both naming formats */
+function parseOpusVersion(model: string): { major: number; minor: number } | null {
+  const nameFirst = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
+  if (nameFirst) {
+    return {
+      major: parseInt(nameFirst[1], 10),
+      minor: nameFirst[2] != null ? parseInt(nameFirst[2], 10) : 0,
+    };
+  }
+  const numFirst = model.match(/claude-(\d+)(?:[-.](\d+))?-opus/);
+  if (numFirst) {
+    return {
+      major: parseInt(numFirst[1], 10),
+      minor: numFirst[2] != null ? parseInt(numFirst[2], 10) : 0,
+    };
+  }
+  return null;
+}
+
+/** Extracts sonnet major version from both naming formats */
+function parseSonnetVersion(model: string): number | null {
+  const nameFirst = model.match(/claude-sonnet[-.]?(\d+)/);
+  if (nameFirst) {
+    return parseInt(nameFirst[1], 10);
+  }
+  const numFirst = model.match(/claude-(\d+)(?:[-.]?\d+)?-sonnet/);
+  if (numFirst) {
+    return parseInt(numFirst[1], 10);
+  }
+  return null;
+}
+
 /** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 5+) */
 export function supportsAdaptiveThinking(model: string): boolean {
-  const opusMatch = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
-  if (opusMatch) {
-    const major = parseInt(opusMatch[1], 10);
-    const minor = opusMatch[2] != null ? parseInt(opusMatch[2], 10) : 0;
-    if (major > 4 || (major === 4 && minor >= 6)) {
-      return true;
-    }
+  const opus = parseOpusVersion(model);
+  if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 6))) {
+    return true;
   }
-  const sonnetMatch = model.match(/claude-sonnet[-.]?(\d+)/);
-  if (sonnetMatch) {
-    const major = parseInt(sonnetMatch[1], 10);
-    if (major >= 5) {
-      return true;
-    }
+  const sonnet = parseSonnetVersion(model);
+  if (sonnet != null && sonnet >= 5) {
+    return true;
   }
   return false;
 }
 
 /** Checks if a model qualifies for the context-1m beta header (Sonnet 4+, Opus 4.6+, Opus 5+) */
 export function supportsContext1m(model: string): boolean {
-  const sonnetMatch = model.match(/claude-sonnet[-.]?(\d+)/);
-  if (sonnetMatch) {
-    const major = parseInt(sonnetMatch[1], 10);
-    if (major >= 4) {
-      return true;
-    }
+  const sonnet = parseSonnetVersion(model);
+  if (sonnet != null && sonnet >= 4) {
+    return true;
   }
-  const opusMatch = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
-  if (opusMatch) {
-    const major = parseInt(opusMatch[1], 10);
-    const minor = opusMatch[2] != null ? parseInt(opusMatch[2], 10) : 0;
-    if (major > 4 || (major === 4 && minor >= 6)) {
-      return true;
-    }
+  const opus = parseOpusVersion(model);
+  if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 6))) {
+    return true;
   }
   return false;
 }
@@ -205,19 +223,19 @@ export const bedrockInputParser = s.tConversationSchema
       const isAdaptive = supportsAdaptiveThinking(typedData.model as string);
 
       if (isAdaptive) {
+        const effort = additionalFields.effort;
+        if (effort && typeof effort === 'string' && effort !== '') {
+          additionalFields.output_config = { effort };
+        }
+        delete additionalFields.effort;
+
         if (additionalFields.thinking === false) {
           delete additionalFields.thinking;
           delete additionalFields.thinkingBudget;
         } else {
           additionalFields.thinking = { type: 'adaptive' };
           delete additionalFields.thinkingBudget;
-
-          const effort = additionalFields.effort;
-          if (effort && typeof effort === 'string' && effort !== '') {
-            additionalFields.output_config = { effort };
-          }
         }
-        delete additionalFields.effort;
       } else {
         if (additionalFields.thinking === undefined) {
           additionalFields.thinking = true;
@@ -238,19 +256,41 @@ export const bedrockInputParser = s.tConversationSchema
           additionalFields.anthropic_beta = betaHeaders;
         }
       }
-    } else if (additionalFields.thinking != null || additionalFields.thinkingBudget != null) {
+    } else {
       delete additionalFields.thinking;
       delete additionalFields.thinkingBudget;
       delete additionalFields.effort;
+      delete additionalFields.output_config;
+      delete additionalFields.anthropic_beta;
+    }
+
+    const isAnthropicModel =
+      typeof typedData.model === 'string' && typedData.model.includes('anthropic.');
+
+    /** Strip stale anthropic_beta from previously-persisted additionalModelRequestFields */
+    if (
+      !isAnthropicModel &&
+      typeof typedData.additionalModelRequestFields === 'object' &&
+      typedData.additionalModelRequestFields != null
+    ) {
+      const amrf = typedData.additionalModelRequestFields as Record<string, unknown>;
+      delete amrf.anthropic_beta;
+      delete amrf.thinking;
+      delete amrf.thinkingBudget;
+      delete amrf.effort;
+      delete amrf.output_config;
     }
 
     /** Default promptCache for claude and nova models, if not defined */
     if (
       typeof typedData.model === 'string' &&
-      (typedData.model.includes('claude') || typedData.model.includes('nova')) &&
-      typedData.promptCache === undefined
+      (typedData.model.includes('claude') || typedData.model.includes('nova'))
     ) {
-      typedData.promptCache = true;
+      if (typedData.promptCache === undefined) {
+        typedData.promptCache = true;
+      }
+    } else if (typedData.promptCache === true) {
+      typedData.promptCache = undefined;
     }
 
     if (Object.keys(additionalFields).length > 0) {
