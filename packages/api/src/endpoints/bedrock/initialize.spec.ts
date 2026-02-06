@@ -618,7 +618,7 @@ describe('initializeBedrock', () => {
     it('should configure adaptive thinking with default maxTokens for Opus 4.6', async () => {
       const params = createMockParams({
         model_parameters: {
-          model: 'anthropic.claude-opus-4-6-v1:0',
+          model: 'anthropic.claude-opus-4-6-v1',
         },
       });
 
@@ -635,7 +635,7 @@ describe('initializeBedrock', () => {
     it('should pass effort via output_config for Opus 4.6', async () => {
       const params = createMockParams({
         model_parameters: {
-          model: 'anthropic.claude-opus-4-6-v1:0',
+          model: 'anthropic.claude-opus-4-6-v1',
           effort: 'medium',
         },
       });
@@ -650,7 +650,7 @@ describe('initializeBedrock', () => {
     it('should respect user-provided maxTokens for Opus 4.6', async () => {
       const params = createMockParams({
         model_parameters: {
-          model: 'anthropic.claude-opus-4-6-v1:0',
+          model: 'anthropic.claude-opus-4-6-v1',
           maxTokens: 32000,
         },
       });
@@ -694,7 +694,7 @@ describe('initializeBedrock', () => {
     it('should not include output_config when effort is empty', async () => {
       const params = createMockParams({
         model_parameters: {
-          model: 'anthropic.claude-opus-4-6-v1:0',
+          model: 'anthropic.claude-opus-4-6-v1',
           effort: '',
         },
       });
