@@ -613,4 +613,113 @@ describe('initializeBedrock', () => {
       expect(result.llmConfig).toHaveProperty('applicationInferenceProfile', inferenceProfileArn);
     });
   });
+
+  describe('Opus 4.6 Adaptive Thinking', () => {
+    it('should configure adaptive thinking with default maxTokens for Opus 4.6', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'anthropic.claude-opus-4-6-v1',
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
+
+      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(result.llmConfig.maxTokens).toBe(16000);
+      expect(amrf.anthropic_beta).toEqual(
+        expect.arrayContaining(['output-128k-2025-02-19', 'context-1m-2025-08-07']),
+      );
+    });
+
+    it('should pass effort via output_config for Opus 4.6', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'anthropic.claude-opus-4-6-v1',
+          effort: 'medium',
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
+
+      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.output_config).toEqual({ effort: 'medium' });
+    });
+
+    it('should respect user-provided maxTokens for Opus 4.6', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'anthropic.claude-opus-4-6-v1',
+          maxTokens: 32000,
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(result.llmConfig.maxTokens).toBe(32000);
+    });
+
+    it('should handle cross-region Opus 4.6 model IDs', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'us.anthropic.claude-opus-4-6-v1',
+          effort: 'low',
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
+
+      expect(result.llmConfig).toHaveProperty('model', 'us.anthropic.claude-opus-4-6-v1');
+      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.output_config).toEqual({ effort: 'low' });
+    });
+
+    it('should use enabled thinking for non-adaptive models (Sonnet 4.5)', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
+
+      expect(amrf.thinking).toEqual({ type: 'enabled', budget_tokens: 2000 });
+      expect(amrf.output_config).toBeUndefined();
+      expect(result.llmConfig.maxTokens).toBe(8192);
+    });
+
+    it('should not include output_config when effort is empty', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'anthropic.claude-opus-4-6-v1',
+          effort: '',
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
+
+      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.output_config).toBeUndefined();
+    });
+
+    it('should strip effort for non-adaptive models', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'anthropic.claude-opus-4-1-20250805-v1:0',
+          effort: 'high',
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
+
+      expect(amrf.thinking).toEqual({ type: 'enabled', budget_tokens: 2000 });
+      expect(amrf.output_config).toBeUndefined();
+      expect(amrf.effort).toBeUndefined();
+    });
+  });
 });

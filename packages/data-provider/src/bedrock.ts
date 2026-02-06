@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import * as s from './schemas';
 
-type ThinkingConfig = {
-  type: 'enabled';
-  budget_tokens: number;
-};
+const DEFAULT_ENABLED_MAX_TOKENS = 8192;
+const DEFAULT_ADAPTIVE_MAX_TOKENS = 16000;
+const DEFAULT_THINKING_BUDGET = 2000;
+
+type ThinkingConfig = { type: 'enabled'; budget_tokens: number } | { type: 'adaptive' };
+
 type AnthropicReasoning = {
   thinking?: ThinkingConfig | boolean;
   thinkingBudget?: number;
@@ -14,6 +16,64 @@ type AnthropicInput = BedrockConverseInput & {
   additionalModelRequestFields: BedrockConverseInput['additionalModelRequestFields'] &
     AnthropicReasoning;
 };
+
+/** Extracts opus major/minor version from both naming formats */
+function parseOpusVersion(model: string): { major: number; minor: number } | null {
+  const nameFirst = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
+  if (nameFirst) {
+    return {
+      major: parseInt(nameFirst[1], 10),
+      minor: nameFirst[2] != null ? parseInt(nameFirst[2], 10) : 0,
+    };
+  }
+  const numFirst = model.match(/claude-(\d+)(?:[-.](\d+))?-opus/);
+  if (numFirst) {
+    return {
+      major: parseInt(numFirst[1], 10),
+      minor: numFirst[2] != null ? parseInt(numFirst[2], 10) : 0,
+    };
+  }
+  return null;
+}
+
+/** Extracts sonnet major version from both naming formats */
+function parseSonnetVersion(model: string): number | null {
+  const nameFirst = model.match(/claude-sonnet[-.]?(\d+)/);
+  if (nameFirst) {
+    return parseInt(nameFirst[1], 10);
+  }
+  const numFirst = model.match(/claude-(\d+)(?:[-.]?\d+)?-sonnet/);
+  if (numFirst) {
+    return parseInt(numFirst[1], 10);
+  }
+  return null;
+}
+
+/** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 5+) */
+export function supportsAdaptiveThinking(model: string): boolean {
+  const opus = parseOpusVersion(model);
+  if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 6))) {
+    return true;
+  }
+  const sonnet = parseSonnetVersion(model);
+  if (sonnet != null && sonnet >= 5) {
+    return true;
+  }
+  return false;
+}
+
+/** Checks if a model qualifies for the context-1m beta header (Sonnet 4+, Opus 4.6+, Opus 5+) */
+export function supportsContext1m(model: string): boolean {
+  const sonnet = parseSonnetVersion(model);
+  if (sonnet != null && sonnet >= 4) {
+    return true;
+  }
+  const opus = parseOpusVersion(model);
+  if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 6))) {
+    return true;
+  }
+  return false;
+}
 
 /**
  * Gets the appropriate anthropic_beta headers for Bedrock Anthropic models.
@@ -38,7 +98,7 @@ function getBedrockAnthropicBetaHeaders(model: string): string[] {
     betaHeaders.push('output-128k-2025-02-19');
   }
 
-  if (isSonnet4PlusModel) {
+  if (isSonnet4PlusModel || supportsAdaptiveThinking(model)) {
     betaHeaders.push('context-1m-2025-08-07');
   }
 
@@ -67,6 +127,7 @@ export const bedrockInputSchema = s.tConversationSchema
     stop: true,
     thinking: true,
     thinkingBudget: true,
+    effort: true,
     promptCache: true,
     /* Catch-all fields */
     topK: true,
@@ -75,10 +136,11 @@ export const bedrockInputSchema = s.tConversationSchema
   .transform((obj) => {
     if ((obj as AnthropicInput).additionalModelRequestFields?.thinking != null) {
       const _obj = obj as AnthropicInput;
-      obj.thinking = !!_obj.additionalModelRequestFields.thinking;
+      const thinking = _obj.additionalModelRequestFields.thinking;
+      obj.thinking = !!thinking;
       obj.thinkingBudget =
-        typeof _obj.additionalModelRequestFields.thinking === 'object'
-          ? (_obj.additionalModelRequestFields.thinking as ThinkingConfig)?.budget_tokens
+        typeof thinking === 'object' && 'budget_tokens' in thinking
+          ? thinking.budget_tokens
           : undefined;
       delete obj.additionalModelRequestFields;
     }
@@ -109,6 +171,7 @@ export const bedrockInputParser = s.tConversationSchema
     stop: true,
     thinking: true,
     thinkingBudget: true,
+    effort: true,
     promptCache: true,
     /* Catch-all fields */
     topK: true,
@@ -157,34 +220,77 @@ export const bedrockInputParser = s.tConversationSchema
           typedData.model,
         ))
     ) {
-      if (additionalFields.thinking === undefined) {
-        additionalFields.thinking = true;
-      } else if (additionalFields.thinking === false) {
-        delete additionalFields.thinking;
-        delete additionalFields.thinkingBudget;
+      const isAdaptive = supportsAdaptiveThinking(typedData.model as string);
+
+      if (isAdaptive) {
+        const effort = additionalFields.effort;
+        if (effort && typeof effort === 'string' && effort !== '') {
+          additionalFields.output_config = { effort };
+        }
+        delete additionalFields.effort;
+
+        if (additionalFields.thinking === false) {
+          delete additionalFields.thinking;
+          delete additionalFields.thinkingBudget;
+        } else {
+          additionalFields.thinking = { type: 'adaptive' };
+          delete additionalFields.thinkingBudget;
+        }
+      } else {
+        if (additionalFields.thinking === undefined) {
+          additionalFields.thinking = true;
+        } else if (additionalFields.thinking === false) {
+          delete additionalFields.thinking;
+          delete additionalFields.thinkingBudget;
+        }
+
+        if (additionalFields.thinking === true && additionalFields.thinkingBudget === undefined) {
+          additionalFields.thinkingBudget = DEFAULT_THINKING_BUDGET;
+        }
+        delete additionalFields.effort;
       }
 
-      if (additionalFields.thinking === true && additionalFields.thinkingBudget === undefined) {
-        additionalFields.thinkingBudget = 2000;
-      }
-      if (typedData.model.includes('anthropic.')) {
-        const betaHeaders = getBedrockAnthropicBetaHeaders(typedData.model);
+      if ((typedData.model as string).includes('anthropic.')) {
+        const betaHeaders = getBedrockAnthropicBetaHeaders(typedData.model as string);
         if (betaHeaders.length > 0) {
           additionalFields.anthropic_beta = betaHeaders;
         }
       }
-    } else if (additionalFields.thinking != null || additionalFields.thinkingBudget != null) {
+    } else {
       delete additionalFields.thinking;
       delete additionalFields.thinkingBudget;
+      delete additionalFields.effort;
+      delete additionalFields.output_config;
+      delete additionalFields.anthropic_beta;
+    }
+
+    const isAnthropicModel =
+      typeof typedData.model === 'string' && typedData.model.includes('anthropic.');
+
+    /** Strip stale anthropic_beta from previously-persisted additionalModelRequestFields */
+    if (
+      !isAnthropicModel &&
+      typeof typedData.additionalModelRequestFields === 'object' &&
+      typedData.additionalModelRequestFields != null
+    ) {
+      const amrf = typedData.additionalModelRequestFields as Record<string, unknown>;
+      delete amrf.anthropic_beta;
+      delete amrf.thinking;
+      delete amrf.thinkingBudget;
+      delete amrf.effort;
+      delete amrf.output_config;
     }
 
     /** Default promptCache for claude and nova models, if not defined */
     if (
       typeof typedData.model === 'string' &&
-      (typedData.model.includes('claude') || typedData.model.includes('nova')) &&
-      typedData.promptCache === undefined
+      (typedData.model.includes('claude') || typedData.model.includes('nova'))
     ) {
-      typedData.promptCache = true;
+      if (typedData.promptCache === undefined) {
+        typedData.promptCache = true;
+      }
+    } else if (typedData.promptCache === true) {
+      typedData.promptCache = undefined;
     }
 
     if (Object.keys(additionalFields).length > 0) {
@@ -212,20 +318,34 @@ export const bedrockInputParser = s.tConversationSchema
  */
 function configureThinking(data: AnthropicInput): AnthropicInput {
   const updatedData = { ...data };
-  if (updatedData.additionalModelRequestFields?.thinking === true) {
-    updatedData.maxTokens = updatedData.maxTokens ?? updatedData.maxOutputTokens ?? 8192;
+  const thinking = updatedData.additionalModelRequestFields?.thinking;
+
+  if (thinking === true) {
+    updatedData.maxTokens =
+      updatedData.maxTokens ?? updatedData.maxOutputTokens ?? DEFAULT_ENABLED_MAX_TOKENS;
     delete updatedData.maxOutputTokens;
-    const thinkingConfig: AnthropicReasoning['thinking'] = {
+    const thinkingConfig: ThinkingConfig = {
       type: 'enabled',
-      budget_tokens: updatedData.additionalModelRequestFields.thinkingBudget ?? 2000,
+      budget_tokens:
+        updatedData.additionalModelRequestFields?.thinkingBudget ?? DEFAULT_THINKING_BUDGET,
     };
 
     if (thinkingConfig.budget_tokens > updatedData.maxTokens) {
       thinkingConfig.budget_tokens = Math.floor(updatedData.maxTokens * 0.9);
     }
-    updatedData.additionalModelRequestFields.thinking = thinkingConfig;
-    delete updatedData.additionalModelRequestFields.thinkingBudget;
+    updatedData.additionalModelRequestFields!.thinking = thinkingConfig;
+    delete updatedData.additionalModelRequestFields!.thinkingBudget;
+  } else if (
+    typeof thinking === 'object' &&
+    thinking != null &&
+    (thinking as { type: string }).type === 'adaptive'
+  ) {
+    updatedData.maxTokens =
+      updatedData.maxTokens ?? updatedData.maxOutputTokens ?? DEFAULT_ADAPTIVE_MAX_TOKENS;
+    delete updatedData.maxOutputTokens;
+    delete updatedData.additionalModelRequestFields!.thinkingBudget;
   }
+
   return updatedData;
 }
 
@@ -268,8 +388,8 @@ export const bedrockOutputParser = (data: Record<string, unknown>) => {
   }
 
   result = configureThinking(result as AnthropicInput);
-  // Remove additionalModelRequestFields from the result if it doesn't thinking config
-  if ((result as AnthropicInput).additionalModelRequestFields?.thinking == null) {
+  const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+  if (!amrf || Object.keys(amrf).length === 0) {
     delete result.additionalModelRequestFields;
   }
 
