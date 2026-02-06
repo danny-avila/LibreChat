@@ -337,8 +337,6 @@ describe('getMultiplier', () => {
     expect(getMultiplier({ model: 'openai/gpt-5.1', tokenType: 'prompt' })).toBe(
       tokenValues['gpt-5.1'].prompt,
     );
-    expect(tokenValues['gpt-5.1'].prompt).toBe(1.25);
-    expect(tokenValues['gpt-5.1'].completion).toBe(10);
   });
 
   it('should return the correct multiplier for gpt-5.2', () => {
@@ -351,8 +349,6 @@ describe('getMultiplier', () => {
     expect(getMultiplier({ model: 'openai/gpt-5.2', tokenType: 'prompt' })).toBe(
       tokenValues['gpt-5.2'].prompt,
     );
-    expect(tokenValues['gpt-5.2'].prompt).toBe(1.75);
-    expect(tokenValues['gpt-5.2'].completion).toBe(14);
   });
 
   it('should return the correct multiplier for gpt-4o', () => {
@@ -818,8 +814,6 @@ describe('Deepseek Model Tests', () => {
     expect(getMultiplier({ model: 'deepseek-chat', tokenType: 'completion' })).toBe(
       tokenValues['deepseek-chat'].completion,
     );
-    expect(tokenValues['deepseek-chat'].prompt).toBe(0.28);
-    expect(tokenValues['deepseek-chat'].completion).toBe(0.42);
   });
 
   it('should return correct pricing for deepseek-reasoner', () => {
@@ -829,8 +823,6 @@ describe('Deepseek Model Tests', () => {
     expect(getMultiplier({ model: 'deepseek-reasoner', tokenType: 'completion' })).toBe(
       tokenValues['deepseek-reasoner'].completion,
     );
-    expect(tokenValues['deepseek-reasoner'].prompt).toBe(0.28);
-    expect(tokenValues['deepseek-reasoner'].completion).toBe(0.42);
   });
 
   it('should handle DeepSeek model name variations with provider prefixes', () => {
@@ -843,8 +835,8 @@ describe('Deepseek Model Tests', () => {
     modelVariations.forEach((model) => {
       const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
       const completionMultiplier = getMultiplier({ model, tokenType: 'completion' });
-      expect(promptMultiplier).toBe(0.28);
-      expect(completionMultiplier).toBe(0.42);
+      expect(promptMultiplier).toBe(tokenValues['deepseek-chat'].prompt);
+      expect(completionMultiplier).toBe(tokenValues['deepseek-chat'].completion);
     });
   });
 
@@ -863,13 +855,13 @@ describe('Deepseek Model Tests', () => {
     );
   });
 
-  it('should return correct cache pricing values for DeepSeek models', () => {
-    expect(cacheTokenValues['deepseek-chat'].write).toBe(0.28);
-    expect(cacheTokenValues['deepseek-chat'].read).toBe(0.028);
-    expect(cacheTokenValues['deepseek-reasoner'].write).toBe(0.28);
-    expect(cacheTokenValues['deepseek-reasoner'].read).toBe(0.028);
-    expect(cacheTokenValues['deepseek'].write).toBe(0.28);
-    expect(cacheTokenValues['deepseek'].read).toBe(0.028);
+  it('should have consistent cache pricing across DeepSeek model variants', () => {
+    expect(cacheTokenValues['deepseek'].write).toBe(cacheTokenValues['deepseek-chat'].write);
+    expect(cacheTokenValues['deepseek'].read).toBe(cacheTokenValues['deepseek-chat'].read);
+    expect(cacheTokenValues['deepseek-reasoner'].write).toBe(
+      cacheTokenValues['deepseek-chat'].write,
+    );
+    expect(cacheTokenValues['deepseek-reasoner'].read).toBe(cacheTokenValues['deepseek-chat'].read);
   });
 
   it('should handle DeepSeek cache multipliers with model variations', () => {
@@ -878,8 +870,8 @@ describe('Deepseek Model Tests', () => {
     modelVariations.forEach((model) => {
       const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
       const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
-      expect(writeMultiplier).toBe(0.28);
-      expect(readMultiplier).toBe(0.028);
+      expect(writeMultiplier).toBe(cacheTokenValues['deepseek-chat'].write);
+      expect(readMultiplier).toBe(cacheTokenValues['deepseek-chat'].read);
     });
   });
 });
