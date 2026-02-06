@@ -123,7 +123,7 @@ export default function MCPServerDialog({
               aria-live="polite"
               aria-label={isDeleting ? localize('com_ui_deleting') : localize('com_ui_delete')}
             >
-              {isDeleting ? <Spinner aria-hidden="true" /> : localize('com_ui_delete')}
+              {isDeleting ? <Spinner /> : localize('com_ui_delete')}
             </Button>
           }
         />
@@ -247,7 +247,7 @@ export default function MCPServerDialog({
               }
             >
               {isSubmitting ? (
-                <Spinner className="size-4" aria-hidden="true" />
+                <Spinner className="size-4" />
               ) : (
                 localize(isEditMode ? 'com_ui_update' : 'com_ui_create')
               )}
