@@ -152,7 +152,7 @@ describe('createToolExecuteHandler', () => {
       }
     });
 
-    it('does not affect non-code-execution tools', async () => {
+    it('does not pass session context to non-code-execution tools', async () => {
       const capturedConfigs: Record<string, unknown>[] = [];
       const handler = createHandler(capturedConfigs, ['web_search']);
 
@@ -171,7 +171,8 @@ describe('createToolExecuteHandler', () => {
       await invokeHandler(handler, toolCalls);
 
       expect(capturedConfigs).toHaveLength(1);
-      expect(capturedConfigs[0].session_id).toBe('should-be-ignored');
+      expect(capturedConfigs[0].session_id).toBeUndefined();
+      expect(capturedConfigs[0]._injected_files).toBeUndefined();
     });
   });
 });

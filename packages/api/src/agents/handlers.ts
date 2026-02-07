@@ -85,7 +85,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 turn: tc.turn,
               };
 
-              if (tc.codeSessionContext) {
+              if (
+                tc.codeSessionContext &&
+                (tc.name === Constants.EXECUTE_CODE ||
+                  tc.name === Constants.PROGRAMMATIC_TOOL_CALLING)
+              ) {
                 toolCallConfig.session_id = tc.codeSessionContext.session_id;
                 if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
                   toolCallConfig._injected_files = tc.codeSessionContext.files;
