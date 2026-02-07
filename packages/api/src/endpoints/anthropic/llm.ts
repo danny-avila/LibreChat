@@ -7,7 +7,12 @@ import type {
   AnthropicConfigOptions,
   AnthropicCredentials,
 } from '~/types/anthropic';
-import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from './helpers';
+import {
+  supportsAdaptiveThinking,
+  checkPromptCacheSupport,
+  configureReasoning,
+  getClaudeHeaders,
+} from './helpers';
 import {
   createAnthropicVertexClient,
   isAnthropicVertexCredentials,
@@ -83,15 +88,14 @@ function getLLMConfig(
     promptCache: options.modelOptions?.promptCache ?? anthropicSettings.promptCache.default,
     thinkingBudget:
       options.modelOptions?.thinkingBudget ?? anthropicSettings.thinkingBudget.default,
+    effort: options.modelOptions?.effort ?? anthropicSettings.effort.default,
   };
 
-  /** Couldn't figure out a way to still loop through the object while deleting the overlapping keys when porting this
-   * over from javascript, so for now they are being deleted manually until a better way presents itself.
-   */
   if (options.modelOptions) {
     delete options.modelOptions.thinking;
     delete options.modelOptions.promptCache;
     delete options.modelOptions.thinkingBudget;
+    delete options.modelOptions.effort;
   } else {
     throw new Error('No modelOptions provided');
   }
@@ -145,10 +149,33 @@ function getLLMConfig(
 
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
-  if (!/claude-3[-.]7/.test(mergedOptions.model)) {
-    requestOptions.topP = mergedOptions.topP;
-    requestOptions.topK = mergedOptions.topK;
-  } else if (requestOptions.thinking == null) {
+  if (supportsAdaptiveThinking(mergedOptions.model)) {
+    if (
+      systemOptions.effort &&
+      (systemOptions.effort as string) !== '' &&
+      !requestOptions.invocationKwargs?.output_config
+    ) {
+      requestOptions.invocationKwargs = {
+        ...requestOptions.invocationKwargs,
+        output_config: { effort: systemOptions.effort },
+      };
+    }
+  } else {
+    if (
+      requestOptions.thinking != null &&
+      (requestOptions.thinking as unknown as { type: string }).type === 'adaptive'
+    ) {
+      delete requestOptions.thinking;
+    }
+    if (requestOptions.invocationKwargs?.output_config) {
+      delete requestOptions.invocationKwargs.output_config;
+    }
+  }
+
+  const hasActiveThinking = requestOptions.thinking != null;
+  const isThinkingModel =
+    /claude-3[-.]7/.test(mergedOptions.model) || supportsAdaptiveThinking(mergedOptions.model);
+  if (!isThinkingModel || !hasActiveThinking) {
     requestOptions.topP = mergedOptions.topP;
     requestOptions.topK = mergedOptions.topK;
   }

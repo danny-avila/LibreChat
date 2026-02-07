@@ -174,6 +174,7 @@ const tokenValues = Object.assign(
     'claude-haiku-4-5': { prompt: 1, completion: 5 },
     'claude-opus-4': { prompt: 15, completion: 75 },
     'claude-opus-4-5': { prompt: 5, completion: 25 },
+    'claude-opus-4-6': { prompt: 5, completion: 25 },
     'claude-sonnet-4': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
     'command-r-plus': { prompt: 3, completion: 15 },
@@ -310,6 +311,7 @@ const cacheTokenValues = {
   'claude-sonnet-4': { write: 3.75, read: 0.3 },
   'claude-opus-4': { write: 18.75, read: 1.5 },
   'claude-opus-4-5': { write: 6.25, read: 0.5 },
+  'claude-opus-4-6': { write: 6.25, read: 0.5 },
   // DeepSeek models - cache hit: $0.028/1M, cache miss: $0.28/1M
   deepseek: { write: 0.28, read: 0.028 },
   'deepseek-chat': { write: 0.28, read: 0.028 },
@@ -326,6 +328,15 @@ const cacheTokenValues = {
   'kimi-k2-0711-preview': { write: 0.6, read: 0.15 },
   'kimi-k2-thinking': { write: 0.6, read: 0.15 },
   'kimi-k2-thinking-turbo': { write: 1.15, read: 0.15 },
+};
+
+/**
+ * Premium (tiered) pricing for models whose rates change based on prompt size.
+ * Each entry specifies the token threshold and the rates that apply above it.
+ * @type {Object.<string, {threshold: number, prompt: number, completion: number}>}
+ */
+const premiumTokenValues = {
+  'claude-opus-4-6': { threshold: 200000, prompt: 10, completion: 37.5 },
 };
 
 /**
@@ -384,15 +395,27 @@ const getValueKey = (model, endpoint) => {
  * @param {string} [params.model] - The model name to derive the value key from if not provided.
  * @param {string} [params.endpoint] - The endpoint name to derive the value key from if not provided.
  * @param {EndpointTokenConfig} [params.endpointTokenConfig] - The token configuration for the endpoint.
+ * @param {number} [params.inputTokenCount] - Total input token count for tiered pricing.
  * @returns {number} The multiplier for the given parameters, or a default value if not found.
  */
-const getMultiplier = ({ valueKey, tokenType, model, endpoint, endpointTokenConfig }) => {
+const getMultiplier = ({
+  model,
+  valueKey,
+  endpoint,
+  tokenType,
+  inputTokenCount,
+  endpointTokenConfig,
+}) => {
   if (endpointTokenConfig) {
     return endpointTokenConfig?.[model]?.[tokenType] ?? defaultRate;
   }
 
   if (valueKey && tokenType) {
-    return tokenValues[valueKey][tokenType] ?? defaultRate;
+    const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
+    if (premiumRate != null) {
+      return premiumRate;
+    }
+    return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
   }
 
   if (!tokenType || !model) {
@@ -404,8 +427,31 @@ const getMultiplier = ({ valueKey, tokenType, model, endpoint, endpointTokenConf
     return defaultRate;
   }
 
-  // If we got this far, and values[tokenType] is undefined somehow, return a rough average of default multipliers
+  const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
+  if (premiumRate != null) {
+    return premiumRate;
+  }
+
   return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
+};
+
+/**
+ * Checks if premium (tiered) pricing applies and returns the premium rate.
+ * Each model defines its own threshold in `premiumTokenValues`.
+ * @param {string} valueKey
+ * @param {string} tokenType
+ * @param {number} [inputTokenCount]
+ * @returns {number|null}
+ */
+const getPremiumRate = (valueKey, tokenType, inputTokenCount) => {
+  if (inputTokenCount == null) {
+    return null;
+  }
+  const premiumEntry = premiumTokenValues[valueKey];
+  if (!premiumEntry || inputTokenCount <= premiumEntry.threshold) {
+    return null;
+  }
+  return premiumEntry[tokenType] ?? null;
 };
 
 /**
@@ -444,8 +490,10 @@ const getCacheMultiplier = ({ valueKey, cacheType, model, endpoint, endpointToke
 
 module.exports = {
   tokenValues,
+  premiumTokenValues,
   getValueKey,
   getMultiplier,
+  getPremiumRate,
   getCacheMultiplier,
   defaultRate,
   cacheTokenValues,
