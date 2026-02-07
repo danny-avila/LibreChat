@@ -183,7 +183,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     user: string;
   }): Promise<IMongoFile> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndUpdate(
+    const result = await File.findOneAndUpdate(
       {
         filename: data.filename,
         conversationId: data.conversationId,
@@ -191,7 +191,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
       },
       { $setOnInsert: { file_id: data.file_id, user: data.user } },
       { upsert: true, new: true },
-    ).lean() as unknown as IMongoFile;
+    ).lean();
+    if (!result) {
+      throw new Error(
+        `[claimCodeFile] Failed to claim file "${data.filename}" for conversation ${data.conversationId}`,
+      );
+    }
+    return result as IMongoFile;
   }
 
   /**

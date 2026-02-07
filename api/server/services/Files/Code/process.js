@@ -130,14 +130,15 @@ const processCodeOutput = async ({
      * Uses $setOnInsert so concurrent calls for the same filename converge on
      * a single record instead of creating duplicates (TOCTOU race fix).
      */
+    const newFileId = v4();
     const claimed = await claimCodeFile({
       filename: name,
       conversationId,
-      file_id: v4(),
+      file_id: newFileId,
       user: req.user.id,
     });
     const file_id = claimed.file_id;
-    const isUpdate = claimed.usage != null && claimed.usage > 0;
+    const isUpdate = file_id !== newFileId;
 
     if (isUpdate) {
       logger.debug(
