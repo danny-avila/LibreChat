@@ -1,8 +1,11 @@
-const { EModelEndpoint, maxTokensMap, maxOutputTokensMap } = require('librechat-data-provider');
+/** Note: No hard-coded values should be used in this file. */
+const { EModelEndpoint } = require('librechat-data-provider');
 const {
+  maxTokensMap,
   matchModelName,
   processModelData,
   getModelMaxTokens,
+  maxOutputTokensMap,
   findMatchingPattern,
 } = require('@librechat/api');
 
