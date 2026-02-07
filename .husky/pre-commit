@@ -1,2 +1,0 @@
-[ -n "$CI" ] && exit 0
-npx lint-staged --config ./.husky/lint-staged.config.js

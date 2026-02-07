@@ -1,0 +1,29 @@
+{{- if and .Values.portal.enabled .Values.portal.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: accessllm-portal
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: accessllm-portal
+    {{- include "accessllm.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.portal.ingress.annotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+  - hosts:
+    - {{ .Values.portal.ingress.host | quote }}
+    secretName: accessllm-portal-tls
+  rules:
+  - host: {{ .Values.portal.ingress.host | quote }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: accessllm-portal
+            port:
+              number: {{ .Values.portal.service.port }}
+{{- end }}

@@ -16,13 +16,14 @@ spec:
       annotations:
         checksum/config: {{ include (print .Template.BasePath "/librechat-yaml-configmap.yaml") . | sha256sum }}
         checksum/env: {{ include (print .Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secrets: {{ include (print .Template.BasePath "/secrets.yaml") . | sha256sum }}
       labels:
         app: librechat-api
     spec:
       initContainers:
       - name: fix-permissions
         image: busybox
-        command: ["sh", "-c", "chown -R 1000:1000 /data"]
+        command: ["sh", "-c", "chown -R 1000:1000 /data && chmod -R 777 /data"]
         volumeMounts:
         - name: data-volume
           mountPath: /data
@@ -33,7 +34,7 @@ spec:
         - -c
         - |
           echo "Waiting for LiteLLM at http://litellm:8000/v1/models ..."
-          until curl -sf -H "Authorization: Bearer $(LITELLM_MASTER_KEY)" http://litellm:8000/v1/models >/dev/null 2>&1; do
+          until curl -sf -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" http://litellm:8000/v1/models >/dev/null 2>&1; do
             echo "LiteLLM not ready, waiting..."
             sleep 2
           done

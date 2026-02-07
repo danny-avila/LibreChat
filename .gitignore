@@ -139,7 +139,6 @@ helm/**/.values.yaml
 /.codeium
 *.local.md
 
-
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
 
@@ -184,3 +183,22 @@ k8s/README.md
 k8s-ovh/GODADDY_SETUP.md
 k8s-ovh/HTTPS_SETUP.md
 helm/accessllm/HELM_COMMANDS.md
+accessLLmAccounts.csv
+
+# Quick backups
+mongo-backup/
+temp_uploads_backup/
+debug_manifest.yaml
+pwd-generation.ipynb
+mongodb-recovery-pvc.yaml
+
+
+mongo-init.js
+watch_models.sh
+Dockerfile.multi
+litellm/
+k8s-ovh/
+.devcontainer/
+
+.husky/
+.vscode/

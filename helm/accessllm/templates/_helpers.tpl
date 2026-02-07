@@ -49,3 +49,11 @@ Selector labels
 app.kubernetes.io/name: {{ include "accessllm.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+RAG Selector labels
+*/}}
+{{- define "accessllm.ragSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "accessllm.name" . }}-rag
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

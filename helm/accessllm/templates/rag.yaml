@@ -47,6 +47,11 @@ spec:
             secretKeyRef:
               name: librechat-secrets
               key: RAG_OPENAI_API_KEY
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: JWT_SECRET
         resources:
           requests:
             memory: "256Mi"

@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: librechat-uploads
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-cinder-high-speed
+  resources:
+    requests:
+      storage: 10Gi
+---
+{{- if .Values.mongodb.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-cinder-high-speed
+  resources:
+    requests:
+      storage: {{ .Values.mongodb.persistence.size }}
+{{- end }}
+---
+{{- if .Values.meilisearch.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: meilisearch-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-cinder-high-speed
+  resources:
+    requests:
+      storage: {{ .Values.meilisearch.persistence.size }}
+{{- end }}
+---
+{{- if .Values.vectordb.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vectordb-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-cinder-high-speed
+  resources:
+    requests:
+      storage: {{ .Values.vectordb.persistence.size }}
+{{- end }}

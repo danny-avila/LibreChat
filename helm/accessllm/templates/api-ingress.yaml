@@ -1,0 +1,38 @@
+{{- if .Values.apiIngress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "accessllm.fullname" . }}-api-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "accessllm.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.apiIngress.annotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.apiIngress.className }}
+  {{- if .Values.apiIngress.tls }}
+  tls:
+    {{- range .Values.apiIngress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.apiIngress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: librechat-api
+                port:
+                  number: 3080
+          {{- end }}
+    {{- end }}
+{{- end }}

@@ -4,14 +4,13 @@ metadata:
   name: librechat-api
   namespace: {{ .Release.Namespace }}
   labels:
-    app: librechat-api
     {{- include "accessllm.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  type: ClusterIP
   ports:
-  - port: {{ .Values.service.port }}
-    targetPort: 3080
-    protocol: TCP
-    name: http
+    - port: 3080
+      targetPort: 3080
+      protocol: TCP
+      name: http
   selector:
     app: librechat-api

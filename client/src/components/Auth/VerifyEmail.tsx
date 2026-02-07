@@ -58,14 +58,16 @@ function RequestPasswordReset() {
     resendEmailMutation.mutate({ email });
   };
 
+  const handleVerify = () => {
+    verifyEmailMutation.mutate({ email, token });
+  };
+
   useEffect(() => {
     if (verificationStatus || verifyEmailMutation.isLoading) {
       return;
     }
 
-    if (token && email) {
-      verifyEmailMutation.mutate({ email, token });
-    } else {
+    if (!token || !email) {
       if (email) {
         setHeaderText(localize('com_auth_email_verification_failed_token_missing') + ' 😢');
       } else {
@@ -74,7 +76,7 @@ function RequestPasswordReset() {
       setShowResendLink(true);
       setVerificationStatus(true);
     }
-  }, [token, email, verificationStatus, verifyEmailMutation]);
+  }, [token, email, verificationStatus, verifyEmailMutation, localize]);
 
   const VerificationSuccess = () => (
     <div className="flex flex-col items-center justify-center">
@@ -104,10 +106,21 @@ function RequestPasswordReset() {
   const VerificationInProgress = () => (
     <div className="flex flex-col items-center justify-center">
       <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
-        {localize('com_auth_email_verification_in_progress')}
+        {verifyEmailMutation.isLoading
+          ? localize('com_auth_email_verification_in_progress')
+          : 'Please click to verify your email.'}
       </h1>
       <div className="mt-4 flex justify-center">
-        <Spinner className="h-8 w-8 text-green-500" />
+        {verifyEmailMutation.isLoading ? (
+          <Spinner className="h-8 w-8 text-green-500" />
+        ) : (
+          <button
+            onClick={handleVerify}
+            className="rounded bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-600"
+          >
+            Verify Email
+          </button>
+        )}
       </div>
     </div>
   );

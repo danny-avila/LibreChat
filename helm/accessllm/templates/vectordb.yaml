@@ -9,6 +9,8 @@ metadata:
     {{- include "accessllm.labels" . | nindent 4 }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: vectordb
@@ -23,11 +25,6 @@ spec:
         ports:
         - containerPort: 5432
         env:
-        - name: POSTGRES_DB
-          valueFrom:
-            secretKeyRef:
-              name: librechat-secrets
-              key: POSTGRES_DB
         - name: POSTGRES_USER
           valueFrom:
             secretKeyRef:
@@ -38,17 +35,22 @@ spec:
             secretKeyRef:
               name: librechat-secrets
               key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: POSTGRES_DB
         volumeMounts:
         - name: vectordb-storage
           mountPath: /var/lib/postgresql/data
-          subPath: postgres
+          subPath: data
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "50m"
+            memory: "512Mi"
+            cpu: "100m"
           limits:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "2Gi"
+            cpu: "1000m"
       volumes:
       - name: vectordb-storage
         persistentVolumeClaim:
@@ -66,7 +68,7 @@ spec:
   selector:
     app: vectordb
   ports:
-  - port: 5432
+  - protocol: TCP
+    port: 5432
     targetPort: 5432
-  type: ClusterIP
 {{- end }}

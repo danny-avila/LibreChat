@@ -17,6 +17,7 @@ spec:
       labels:
         app: litellm
     spec:
+      serviceAccountName: litellm-sa
       containers:
       - name: litellm
         image: {{ .Values.litellm.image }}
@@ -60,10 +61,38 @@ spec:
         resources:
           requests:
             memory: "512Mi"
-            cpu: "150m"
+            cpu: "200m"
           limits:
             memory: "2Gi"
             cpu: "1000m"
+      - name: models-watcher
+        image: alpine:3.20
+        command: ["/bin/sh", "/scripts/watch_models.sh"]
+        env:
+        - name: LITELLM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: LITELLM_MASTER_KEY
+        - name: LITELLM_MODELS_URL
+          value: "http://localhost:8000/v1/models"
+        - name: CHECK_EVERY
+          value: "15"
+        - name: NAMESPACE
+          value: {{ .Release.Namespace }}
+        - name: DEPLOYMENT
+          value: "librechat-api"
+        volumeMounts:
+        - name: litellm-config
+          mountPath: /scripts/watch_models.sh
+          subPath: watch_models.sh
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
       volumes:
       - name: litellm-config
         configMap:

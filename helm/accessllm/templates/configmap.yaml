@@ -6,19 +6,11 @@ metadata:
   labels:
     {{- include "accessllm.labels" . | nindent 4 }}
 data:
-  {{- range $key, $value := .Values.config }}
-  {{ $key }}: {{ $value | quote }}
+  {{- range $key, $val := .Values.config }}
+  {{ $key }}: {{ $val | quote }}
   {{- end }}
-  # Dynamic values based on other services
-  MONGO_URI: "mongodb://$(MONGO_ROOT_USER):$(MONGO_ROOT_PASS)@mongodb:27017/LibreChat?authSource=LibreChat"
-  DB_HOST: "vectordb"
-  VECTOR_DB_TYPE: "pgvector"
-  DEBUG_PGVECTOR_QUERIES: "true"
-  SEARCH: "true"
+  HOST: "0.0.0.0"
+  PORT: "{{ .Values.service.port }}"
   MEILI_HOST: "http://meilisearch:7700"
-  MEILI_NO_ANALYTICS: "true"
   RAG_PORT: "8000"
   RAG_API_URL: "http://rag-api:8000"
-  LITELLM_MODELS_URL: "http://litellm:8000/v1/models"
-  DATABASE_URL: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@vectordb:5432/$(POSTGRES_DB)"
-  STORE_MODEL_IN_DB: "True"
