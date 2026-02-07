@@ -1,0 +1,74 @@
+{{- if .Values.vectordb.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vectordb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: vectordb
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vectordb
+  template:
+    metadata:
+      labels:
+        app: vectordb
+    spec:
+      containers:
+      - name: vectordb
+        image: {{ .Values.vectordb.image }}
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: librechat-secrets
+              key: POSTGRES_DB
+        volumeMounts:
+        - name: vectordb-storage
+          mountPath: /var/lib/postgresql/data
+          subPath: data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      volumes:
+      - name: vectordb-storage
+        persistentVolumeClaim:
+          claimName: vectordb-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vectordb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: vectordb
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: vectordb
+  ports:
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+{{- end }}

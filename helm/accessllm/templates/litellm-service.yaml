@@ -1,0 +1,18 @@
+{{- if .Values.litellm.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: litellm
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: litellm
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP
+{{- end }}
