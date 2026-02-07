@@ -358,9 +358,13 @@ class BaseClient {
           createdAt: new Date().toISOString(),
         };
         const existingContent = Array.isArray(message.content) ? message.content : [];
-        const existingSummaryIndex = existingContent.findIndex(
-          (part) => part?.type === ContentTypes.SUMMARY,
-        );
+        let existingSummaryIndex = -1;
+        for (let index = existingContent.length - 1; index >= 0; index--) {
+          if (existingContent[index]?.type === ContentTypes.SUMMARY) {
+            existingSummaryIndex = index;
+            break;
+          }
+        }
         if (existingSummaryIndex >= 0) {
           existingContent[existingSummaryIndex] = summaryContentBlock;
         } else {

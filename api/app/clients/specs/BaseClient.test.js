@@ -523,6 +523,54 @@ describe('BaseClient', () => {
     });
   });
 
+  describe('handleTokenCountMap', () => {
+    it('should update the last summary content block when multiple summary blocks exist', async () => {
+      const updateMessageInDatabaseSpy = jest
+        .spyOn(TestClient, 'updateMessageInDatabase')
+        .mockResolvedValue(undefined);
+
+      const targetMessage = {
+        messageId: 'assistant-message-1',
+        content: [
+          { type: 'summary', text: 'old-summary-1', tokenCount: 10 },
+          { type: 'text', text: 'middle' },
+          { type: 'summary', text: 'old-summary-2', tokenCount: 20 },
+        ],
+      };
+      const trailingUserMessage = {
+        messageId: 'user-message-1',
+        content: 'latest user message',
+      };
+
+      TestClient.currentMessages = [targetMessage, trailingUserMessage];
+
+      await TestClient.handleTokenCountMap({
+        summaryMessage: {
+          messageId: targetMessage.messageId,
+          content: 'new-summary',
+          tokenCount: 77,
+        },
+        [targetMessage.messageId]: 123,
+      });
+
+      expect(updateMessageInDatabaseSpy).toHaveBeenCalledTimes(1);
+      const updateArg = updateMessageInDatabaseSpy.mock.calls[0][0];
+      expect(updateArg.content[0]).toEqual({
+        type: 'summary',
+        text: 'old-summary-1',
+        tokenCount: 10,
+      });
+      expect(updateArg.content[2]).toEqual(
+        expect.objectContaining({
+          type: 'summary',
+          text: 'new-summary',
+          tokenCount: 77,
+        }),
+      );
+      expect(updateArg.content[2].createdAt).toBeDefined();
+    });
+  });
+
   describe('sendMessage', () => {
     test('sendMessage should return a response message', async () => {
       const expectedResult = expect.objectContaining({
