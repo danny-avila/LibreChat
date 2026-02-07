@@ -197,3 +197,4 @@ mongo-init.js
 watch_models.sh
 Dockerfile.multi
 litellm/
+k8s-ovh/
