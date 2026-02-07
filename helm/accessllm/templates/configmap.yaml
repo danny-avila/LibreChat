@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: librechat-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "accessllm.labels" . | nindent 4 }}
+data:
+  {{- range $key, $val := .Values.config }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}
+  HOST: "0.0.0.0"
+  PORT: "{{ .Values.service.port }}"
+  MEILI_HOST: "http://meilisearch:7700"
+  RAG_PORT: "8000"
+  RAG_API_URL: "http://rag-api:8000"

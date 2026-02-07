@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: librechat-yaml-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "accessllm.labels" . | nindent 4 }}
+data:
+  librechat.yaml: |
+    {{- .Values.librechatYaml | nindent 4 }}
