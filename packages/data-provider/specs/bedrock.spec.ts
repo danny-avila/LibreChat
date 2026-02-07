@@ -455,14 +455,14 @@ describe('bedrockInputParser', () => {
   });
 
   describe('bedrockOutputParser with configureThinking', () => {
-    test('should preserve adaptive thinking config and set default maxTokens', () => {
+    test('should preserve adaptive thinking config without setting default maxTokens', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-opus-4-6-v1',
       }) as Record<string, unknown>;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
       const amrf = output.additionalModelRequestFields as Record<string, unknown>;
       expect(amrf.thinking).toEqual({ type: 'adaptive' });
-      expect(output.maxTokens).toBe(16000);
+      expect(output.maxTokens).toBeUndefined();
       expect(output.maxOutputTokens).toBeUndefined();
     });
 
@@ -473,6 +473,16 @@ describe('bedrockInputParser', () => {
       }) as Record<string, unknown>;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
       expect(output.maxTokens).toBe(32000);
+    });
+
+    test('should use maxOutputTokens as maxTokens for adaptive model when maxTokens is not set', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        maxOutputTokens: 24000,
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      expect(output.maxTokens).toBe(24000);
+      expect(output.maxOutputTokens).toBeUndefined();
     });
 
     test('should convert thinking=true to enabled config for non-adaptive models', () => {
@@ -496,14 +506,14 @@ describe('bedrockInputParser', () => {
       expect(amrf.output_config).toEqual({ effort: 'low' });
     });
 
-    test('should use adaptive default maxTokens (16000) over maxOutputTokens for adaptive models', () => {
+    test('should not set maxTokens for adaptive models when neither maxTokens nor maxOutputTokens are provided', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-opus-4-6-v1',
       }) as Record<string, unknown>;
       parsed.maxOutputTokens = undefined;
       (parsed as Record<string, unknown>).maxTokens = undefined;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
-      expect(output.maxTokens).toBe(16000);
+      expect(output.maxTokens).toBeUndefined();
     });
 
     test('should use enabled default maxTokens (8192) for non-adaptive thinking models', () => {

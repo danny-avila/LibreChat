@@ -2,7 +2,6 @@ import { z } from 'zod';
 import * as s from './schemas';
 
 const DEFAULT_ENABLED_MAX_TOKENS = 8192;
-const DEFAULT_ADAPTIVE_MAX_TOKENS = 16000;
 const DEFAULT_THINKING_BUDGET = 2000;
 
 type ThinkingConfig = { type: 'enabled'; budget_tokens: number } | { type: 'adaptive' };
@@ -340,8 +339,9 @@ function configureThinking(data: AnthropicInput): AnthropicInput {
     thinking != null &&
     (thinking as { type: string }).type === 'adaptive'
   ) {
-    updatedData.maxTokens =
-      updatedData.maxTokens ?? updatedData.maxOutputTokens ?? DEFAULT_ADAPTIVE_MAX_TOKENS;
+    if (updatedData.maxTokens == null && updatedData.maxOutputTokens != null) {
+      updatedData.maxTokens = updatedData.maxOutputTokens;
+    }
     delete updatedData.maxOutputTokens;
     delete updatedData.additionalModelRequestFields!.thinkingBudget;
   }
