@@ -1108,6 +1108,7 @@ class AgentClient extends BaseClient {
         titlePrompt: endpointConfig?.titlePrompt,
         titlePromptTemplate: endpointConfig?.titlePromptTemplate,
         chainOptions: {
+          runName: 'TitleRun',
           signal: abortController.signal,
           callbacks: [
             {
