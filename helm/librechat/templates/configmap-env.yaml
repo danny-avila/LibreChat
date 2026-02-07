@@ -24,7 +24,10 @@ data:
   {{- if not $securityDisabled }}
     {{- $opensearchProto = "https" }}
   {{- end }}
-  OPENSEARCH_HOST: "{{ $opensearchProto }}://{{ .Release.Name }}-opensearch-cluster-master.{{ .Release.Namespace | lower }}.svc.cluster.local:9200"
+  {{- $osClusterName := .Values.opensearch.clusterName | default "opensearch-cluster" }}
+  {{- $osNodeGroup := .Values.opensearch.nodeGroup | default "master" }}
+  {{- $osMasterService := .Values.opensearch.masterService | default (printf "%s-%s" $osClusterName $osNodeGroup) }}
+  OPENSEARCH_HOST: "{{ $opensearchProto }}://{{ $osMasterService }}.{{ .Release.Namespace | lower }}.svc.cluster.local:9200"
   {{- end }}
   {{- if not (dig "configEnv" "OPENSEARCH_INSECURE" "" .Values.librechat) }}
   OPENSEARCH_INSECURE: "true"
