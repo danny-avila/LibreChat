@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { Button, OGDialog, OGDialogTemplate } from '@librechat/client';
+import { Globe } from 'lucide-react';
+import {
+  Button,
+  OGDialog,
+  OGDialogClose,
+  OGDialogTitle,
+  OGDialogFooter,
+  OGDialogHeader,
+  OGDialogContent,
+} from '@librechat/client';
 import {
   AuthType,
   RerankerTypes,
@@ -183,84 +192,86 @@ export default function ApiKeyDialog({
       triggerRef={triggerRef}
       triggerRefs={triggerRefs}
     >
-      <OGDialogTemplate
-        className="w-11/12 sm:w-[500px]"
-        title=""
-        main={
-          <>
-            <div className="mb-4 text-center font-medium">{localize('com_ui_web_search')}</div>
-            <form onSubmit={handleSubmit(onSubmit)}>
-              {/* Provider Section */}
-              {providerAuthType !== AuthType.SYSTEM_DEFINED && (
-                <InputSection
-                  title={localize('com_ui_web_search_provider')}
-                  selectedKey={selectedProvider}
-                  onSelectionChange={handleProviderChange}
-                  dropdownOptions={providerOptions}
-                  showDropdown={!config?.webSearch?.searchProvider}
-                  register={register}
-                  dropdownOpen={dropdownOpen.provider}
-                  setDropdownOpen={(open) =>
-                    setDropdownOpen((prev) => ({ ...prev, provider: open }))
-                  }
-                  dropdownKey="provider"
-                />
-              )}
+      <OGDialogContent
+        showCloseButton={false}
+        className="w-11/12 max-w-lg border-none bg-surface-primary"
+      >
+        <OGDialogHeader className="gap-2 py-2">
+          <div className="flex items-center justify-center gap-2">
+            <div className="flex size-10 items-center justify-center rounded-full bg-blue-500/10">
+              <Globe className="size-5 text-blue-500" aria-hidden="true" />
+            </div>
+          </div>
+          <OGDialogTitle className="text-center text-lg font-semibold">
+            {localize('com_ui_web_search')}
+          </OGDialogTitle>
+        </OGDialogHeader>
 
-              {/* Scraper Section */}
-              {scraperAuthType !== AuthType.SYSTEM_DEFINED && (
-                <InputSection
-                  title={localize('com_ui_web_search_scraper')}
-                  selectedKey={selectedScraper}
-                  onSelectionChange={handleScraperChange}
-                  dropdownOptions={scraperOptions}
-                  showDropdown={!config?.webSearch?.scraperProvider}
-                  register={register}
-                  dropdownOpen={dropdownOpen.scraper}
-                  setDropdownOpen={(open) =>
-                    setDropdownOpen((prev) => ({ ...prev, scraper: open }))
-                  }
-                  dropdownKey="scraper"
-                />
-              )}
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {providerAuthType !== AuthType.SYSTEM_DEFINED && (
+            <InputSection
+              title={localize('com_ui_web_search_provider')}
+              selectedKey={selectedProvider}
+              onSelectionChange={handleProviderChange}
+              dropdownOptions={providerOptions}
+              showDropdown={!config?.webSearch?.searchProvider}
+              register={register}
+              dropdownOpen={dropdownOpen.provider}
+              setDropdownOpen={(open) => setDropdownOpen((prev) => ({ ...prev, provider: open }))}
+              dropdownKey="provider"
+            />
+          )}
 
-              {/* Reranker Section */}
-              {rerankerAuthType !== AuthType.SYSTEM_DEFINED && (
-                <InputSection
-                  title={localize('com_ui_web_search_reranker')}
-                  selectedKey={selectedReranker}
-                  onSelectionChange={handleRerankerChange}
-                  dropdownOptions={rerankerOptions}
-                  showDropdown={!config?.webSearch?.rerankerType}
-                  register={register}
-                  dropdownOpen={dropdownOpen.reranker}
-                  setDropdownOpen={(open) =>
-                    setDropdownOpen((prev) => ({ ...prev, reranker: open }))
-                  }
-                  dropdownKey="reranker"
-                />
-              )}
-            </form>
-          </>
-        }
-        selection={{
-          selectHandler: handleSubmit(onSubmit),
-          selectClasses: 'bg-green-500 hover:bg-green-600 text-white',
-          selectText: localize('com_ui_save'),
-        }}
-        buttons={
-          isToolAuthenticated && (
+          {scraperAuthType !== AuthType.SYSTEM_DEFINED && (
+            <InputSection
+              title={localize('com_ui_web_search_scraper')}
+              selectedKey={selectedScraper}
+              onSelectionChange={handleScraperChange}
+              dropdownOptions={scraperOptions}
+              showDropdown={!config?.webSearch?.scraperProvider}
+              register={register}
+              dropdownOpen={dropdownOpen.scraper}
+              setDropdownOpen={(open) => setDropdownOpen((prev) => ({ ...prev, scraper: open }))}
+              dropdownKey="scraper"
+            />
+          )}
+
+          {rerankerAuthType !== AuthType.SYSTEM_DEFINED && (
+            <InputSection
+              title={localize('com_ui_web_search_reranker')}
+              selectedKey={selectedReranker}
+              onSelectionChange={handleRerankerChange}
+              dropdownOptions={rerankerOptions}
+              showDropdown={!config?.webSearch?.rerankerType}
+              register={register}
+              dropdownOpen={dropdownOpen.reranker}
+              setDropdownOpen={(open) => setDropdownOpen((prev) => ({ ...prev, reranker: open }))}
+              dropdownKey="reranker"
+            />
+          )}
+        </form>
+
+        <OGDialogFooter>
+          <OGDialogClose asChild>
+            <Button variant="outline" className="h-10">
+              {localize('com_ui_cancel')}
+            </Button>
+          </OGDialogClose>
+          {isToolAuthenticated && (
             <Button
+              variant="destructive"
               onClick={onRevoke}
-              className="bg-red-500 text-white hover:bg-red-600"
+              className="h-10"
               aria-label={localize('com_ui_revoke')}
             >
               {localize('com_ui_revoke')}
             </Button>
-          )
-        }
-        showCancelButton={true}
-      />
+          )}
+          <Button variant="submit" onClick={handleSubmit(onSubmit)} className="h-10">
+            {localize('com_ui_save')}
+          </Button>
+        </OGDialogFooter>
+      </OGDialogContent>
     </OGDialog>
   );
 }
