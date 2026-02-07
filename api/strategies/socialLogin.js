@@ -45,7 +45,9 @@ const socialLogin =
         await handleExistingUser(existingUser, avatarUrl, appConfig, email);
         return cb(null, existingUser);
       } else if (existingUser) {
-        const allowLinking = isEnabled(process.env[`${provider.toUpperCase()}_ALLOW_ACCOUNT_LINKING`]);
+        const allowLinking = isEnabled(
+          process.env[`${provider.toUpperCase()}_ALLOW_ACCOUNT_LINKING`],
+        );
         if (allowLinking) {
           logger.info(
             `[${provider}Login] Account linking: user ${email} migrating from "${existingUser.provider}" to ${provider}`,

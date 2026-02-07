@@ -336,10 +336,13 @@ describe('socialLogin', () => {
       );
 
       /** Verify success callback */
-      expect(callback).toHaveBeenCalledWith(null, expect.objectContaining({
-        provider: 'google',
-        googleId: googleId,
-      }));
+      expect(callback).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          provider: 'google',
+          googleId: googleId,
+        }),
+      );
 
       /** Verify info log about account linking */
       expect(logger.info).toHaveBeenCalledWith(
