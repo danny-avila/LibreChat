@@ -199,3 +199,6 @@ Dockerfile.multi
 litellm/
 k8s-ovh/
 .devcontainer/
+
+.husky/
+.vscode/
