@@ -1,8 +1,8 @@
 [
   {
-    "name": "Traversaal",
+    "name": "Ryan's Lab",
     "pluginKey": "traversaal_search",
-    "description": "Traversaal is a robust search API tailored for LLM Agents. Get an API key here: https://api.traversaal.ai",
+    "description": "AI Lab by Ryan",
     "icon": "https://traversaal.ai/favicon.ico",
     "authConfig": [
       {
