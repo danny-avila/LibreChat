@@ -947,6 +947,22 @@ export const memorySchema = z.object({
 
 export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
 
+export const summarizationTriggerSchema = z.object({
+  type: z.string(),
+  value: z.number().positive(),
+});
+
+export const summarizationConfigSchema = z.object({
+  enabled: z.boolean().optional().default(false),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  parameters: z.record(z.any()).optional(),
+  trigger: summarizationTriggerSchema.optional(),
+  prompt: z.string().optional(),
+});
+
+export type SummarizationConfig = DeepPartial<z.infer<typeof summarizationConfigSchema>>;
+
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
 export const configSchema = z.object({
@@ -955,6 +971,7 @@ export const configSchema = z.object({
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
+  summarization: summarizationConfigSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),

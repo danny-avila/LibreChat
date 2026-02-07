@@ -13,9 +13,17 @@ import type {
   LCTool,
 } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
-import type { Agent } from 'librechat-data-provider';
+import type { Agent, SummarizationConfig } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
+
+type RuntimeSummarizationConfig = {
+  enabled?: boolean;
+  trigger?: {
+    type: string;
+    value: number;
+  };
+};
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -169,6 +177,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /** Optional per-agent summarization overrides */
+  summarization?: SummarizationConfig;
 };
 
 /**
@@ -196,6 +206,7 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
+  summarizationConfig,
   streaming = true,
   streamUsage = true,
 }: {
@@ -208,6 +219,7 @@ export async function createRun({
   user?: IUser;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
+  summarizationConfig?: SummarizationConfig;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -228,6 +240,9 @@ export async function createRun({
 
   const agentInputs: AgentInputs[] = [];
   const buildAgentContext = (agent: RunAgent) => {
+    const resolvedSummarizationConfig = (agent.summarization ??
+      summarizationConfig) as RuntimeSummarizationConfig | undefined;
+
     const provider =
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
@@ -313,6 +328,12 @@ export async function createRun({
       maxContextTokens: agent.maxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
       discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
+      summarizationEnabled: resolvedSummarizationConfig?.enabled === true,
+      summarizationConfig: resolvedSummarizationConfig
+        ? {
+            trigger: resolvedSummarizationConfig.trigger,
+          }
+        : undefined,
     };
     agentInputs.push(agentInput);
   };

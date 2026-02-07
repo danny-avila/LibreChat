@@ -521,6 +521,21 @@ export type ContentPart = (
 
 export type TextData = (Text & PartMetadata) | undefined;
 
+export type SummaryContentPart = {
+  type: ContentTypes.SUMMARY;
+  text: string;
+  tokenCount: number;
+  summaryVersion?: number;
+  rangeHash?: string;
+  model?: string;
+  provider?: string;
+  createdAt?: string;
+  boundary?: {
+    messageId: string;
+    contentIndex: number;
+  };
+};
+
 export type TMessageContentParts =
   | ({
       type: ContentTypes.ERROR;
@@ -545,6 +560,7 @@ export type TMessageContentParts =
         PartMetadata;
     } & ContentMetadata)
   | ({ type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata } & ContentMetadata)
+  | (SummaryContentPart & ContentMetadata)
   | (Agents.AgentUpdate & ContentMetadata)
   | (Agents.MessageContentImageUrl & ContentMetadata)
   | (Agents.MessageContentVideoUrl & ContentMetadata)
