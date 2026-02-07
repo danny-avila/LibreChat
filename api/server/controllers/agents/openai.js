@@ -12,12 +12,14 @@ const {
   validateRequest,
   initializeAgent,
   getBalanceConfig,
+  createSummarizeFn,
   createErrorResponse,
   recordCollectedUsage,
   getTransactionsConfig,
-  createToolExecuteHandler,
   createSummarizeHandler,
+  createToolExecuteHandler,
   createDeferredPersistSummary,
+  resolveSummarizationLLMConfig,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   createOpenAIContentAggregator,
@@ -26,11 +28,8 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
+const { getProviderConfig } = require('~/server/services/Endpoints');
 const db = require('~/models');
-
-const summarizeNotConfigured = async () => {
-  throw new Error('Summarization client is not configured');
-};
 
 /**
  * Creates a tool loader function for the agent.
@@ -274,19 +273,59 @@ const OpenAIChatCompletionController = async (req, res) => {
     };
 
     const summarizationConfig = appConfig?.summarization;
-    const summarizeHandler =
-      summarizationConfig?.enabled === true
-        ? createSummarizeHandler({
-            customPrompt: summarizationConfig.prompt,
-            summarize: summarizeNotConfigured,
-            persistSummary: createDeferredPersistSummary(),
-            onStatusChange: async (status) => {
-              if (isStreaming && !res.writableEnded) {
-                res.write(`event: on_summarize_status\ndata: ${JSON.stringify(status)}\n\n`);
-              }
-            },
-          })
-        : null;
+    let summarizeHandler = null;
+    if (summarizationConfig?.enabled === true) {
+      try {
+        const globalConfig = summarizationConfig;
+        const resolveConfig = (agentIdParam) =>
+          resolveSummarizationLLMConfig({ agentId: agentIdParam, globalConfig });
+        const getProviderOptions = async (resolved) => {
+          const { getOptions, overrideProvider } = getProviderConfig({
+            provider: resolved.provider,
+            appConfig,
+          });
+          const options = await getOptions({
+            req,
+            endpoint: resolved.provider,
+            model_parameters: { model: resolved.model, ...resolved.parameters },
+            db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+          });
+          const provider = options.provider ?? overrideProvider ?? resolved.provider;
+          const clientOptions = { ...options.llmConfig };
+          if (options.configOptions) {
+            clientOptions.configuration = options.configOptions;
+          }
+          delete clientOptions.maxTokens;
+          return { provider, clientOptions, model: resolved.model };
+        };
+        const summarize = createSummarizeFn({
+          resolveConfig,
+          getProviderOptions,
+          onUsage: (usage) => {
+            collectedUsage.push({
+              input_tokens: usage.input_tokens ?? 0,
+              output_tokens: usage.output_tokens ?? 0,
+              total_tokens: usage.total_tokens ?? 0,
+            });
+          },
+        });
+        summarizeHandler = createSummarizeHandler({
+          customPrompt: globalConfig.prompt,
+          summarize,
+          persistSummary: createDeferredPersistSummary(),
+          onStatusChange: async (status) => {
+            if (isStreaming && !res.writableEnded) {
+              res.write(`event: on_summarize_status\ndata: ${JSON.stringify(status)}\n\n`);
+            }
+          },
+        });
+      } catch (error) {
+        logger.error(
+          '[OpenAI API] Failed to configure summarization, continuing without it',
+          error,
+        );
+      }
+    }
 
     const openaiMessages = convertMessages(request.messages);
 

@@ -952,6 +952,14 @@ export const summarizationTriggerSchema = z.object({
   value: z.number().positive(),
 });
 
+export const summarizationAgentOverrideSchema = z.object({
+  enabled: z.boolean().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  parameters: z.record(z.any()).optional(),
+  prompt: z.string().optional(),
+});
+
 export const summarizationConfigSchema = z.object({
   enabled: z.boolean().optional().default(false),
   provider: z.string().optional(),
@@ -959,6 +967,7 @@ export const summarizationConfigSchema = z.object({
   parameters: z.record(z.any()).optional(),
   trigger: summarizationTriggerSchema.optional(),
   prompt: z.string().optional(),
+  agents: z.record(summarizationAgentOverrideSchema).optional(),
 });
 
 export type SummarizationConfig = DeepPartial<z.infer<typeof summarizationConfigSchema>>;

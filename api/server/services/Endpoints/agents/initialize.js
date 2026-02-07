@@ -2,12 +2,14 @@ const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
   initializeAgent,
+  createSummarizeFn,
   validateAgentModel,
   createEdgeCollector,
   filterOrphanedEdges,
   GenerationJobManager,
   getCustomEndpointConfig,
   createSequentialChainEdges,
+  resolveSummarizationLLMConfig,
 } = require('@librechat/api');
 const {
   EModelEndpoint,
@@ -21,6 +23,7 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { getProviderConfig } = require('~/server/services/Endpoints');
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
 const { logViolation } = require('~/cache');
@@ -131,12 +134,56 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolEndCallback,
   };
 
-  const summarizationOptions = appConfig?.summarization?.enabled
-    ? {
+  let summarizationOptions = null;
+  if (appConfig?.summarization?.enabled) {
+    try {
+      const globalConfig = appConfig.summarization;
+      const resolveConfig = (agentId) => resolveSummarizationLLMConfig({ agentId, globalConfig });
+
+      const getProviderOptions = async (resolved) => {
+        const { getOptions, overrideProvider } = getProviderConfig({
+          provider: resolved.provider,
+          appConfig,
+        });
+        const options = await getOptions({
+          req,
+          endpoint: resolved.provider,
+          model_parameters: { model: resolved.model, ...resolved.parameters },
+          db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+        });
+        const provider = options.provider ?? overrideProvider ?? resolved.provider;
+        const clientOptions = { ...options.llmConfig };
+        if (options.configOptions) {
+          clientOptions.configuration = options.configOptions;
+        }
+        delete clientOptions.maxTokens;
+        return { provider, clientOptions, model: resolved.model };
+      };
+
+      const summarize = createSummarizeFn({
+        resolveConfig,
+        getProviderOptions,
+        onUsage: (usage) => {
+          collectedUsage.push({
+            input_tokens: usage.input_tokens ?? 0,
+            output_tokens: usage.output_tokens ?? 0,
+            total_tokens: usage.total_tokens ?? 0,
+          });
+        },
+      });
+
+      summarizationOptions = {
         enabled: true,
-        prompt: appConfig.summarization.prompt,
-      }
-    : null;
+        prompt: globalConfig.prompt,
+        summarize,
+      };
+    } catch (error) {
+      logger.error(
+        '[initializeClient] Failed to configure summarization, continuing without it',
+        error,
+      );
+    }
+  }
 
   const eventHandlers = getDefaultHandlers({
     res,

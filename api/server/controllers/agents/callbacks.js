@@ -15,10 +15,6 @@ const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
-const summarizeNotConfigured = async () => {
-  throw new Error('Summarization client is not configured');
-};
-
 class ModelEndHandler {
   /**
    * @param {Array<UsageMetadata>} collectedUsage
@@ -255,7 +251,7 @@ function getDefaultHandlers({
   if (summarizationOptions?.enabled === true) {
     handlers[GraphEvents.ON_SUMMARIZE] = createSummarizeHandler({
       customPrompt: summarizationOptions.prompt,
-      summarize: summarizationOptions.summarize ?? summarizeNotConfigured,
+      summarize: summarizationOptions.summarize,
       persistSummary: summarizationOptions.persistSummary ?? createDeferredPersistSummary(),
       onStatusChange: async (status) => {
         await emitEvent(res, streamId, {

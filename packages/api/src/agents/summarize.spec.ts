@@ -1,9 +1,23 @@
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
-import type { SummarizeResult } from '@librechat/agents';
+import type { SummarizeResult, Providers } from '@librechat/agents';
+
+const mockInvoke = jest.fn();
+const mockChatModelClass = jest.fn().mockImplementation(() => ({
+  invoke: mockInvoke,
+}));
+jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
+  getChatModelClass: () => mockChatModelClass,
+}));
+
 import {
   buildSummarizationPrompt,
   createSummarizeHandler,
+  createSummarizeFn,
+  resolveSummarizationLLMConfig,
   type SummarizationStatus,
+  type SummarizationUsage,
+  type GetProviderOptionsFn,
 } from './summarize';
 
 describe('buildSummarizationPrompt', () => {
@@ -16,6 +30,216 @@ describe('buildSummarizationPrompt', () => {
     expect(prompt).toContain('Custom summary prompt');
     expect(prompt).toContain('Human: Hello');
     expect(prompt).toContain('AI: Hi there');
+  });
+
+  it('uses default prompt when none provided', () => {
+    const prompt = buildSummarizationPrompt([new HumanMessage('Hello')]);
+    expect(prompt).toContain('context continuity');
+    expect(prompt).toContain('Human: Hello');
+  });
+});
+
+describe('resolveSummarizationLLMConfig', () => {
+  it('returns defaults when no config provided', () => {
+    const resolved = resolveSummarizationLLMConfig({ agentId: 'agent_1' });
+    expect(resolved.provider).toBe('openAI');
+    expect(resolved.model).toBe('gpt-4.1-mini');
+    expect(resolved.parameters).toMatchObject({ temperature: 0.3 });
+    expect(resolved.enabled).toBe(true);
+  });
+
+  it('uses global config over defaults', () => {
+    const resolved = resolveSummarizationLLMConfig({
+      agentId: 'agent_1',
+      globalConfig: {
+        enabled: true,
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        parameters: { temperature: 0.2 },
+        prompt: 'Custom global',
+      },
+    });
+    expect(resolved.provider).toBe('anthropic');
+    expect(resolved.model).toBe('claude-sonnet-4-5');
+    expect(resolved.parameters.temperature).toBe(0.2);
+    expect(resolved.prompt).toBe('Custom global');
+  });
+
+  it('uses agent runtime config as fallback for provider/model', () => {
+    const resolved = resolveSummarizationLLMConfig({
+      agentId: 'agent_1',
+      globalConfig: { enabled: true },
+      agentRuntimeConfig: { provider: 'google', model: 'gemini-2.5-flash' },
+    });
+    expect(resolved.provider).toBe('google');
+    expect(resolved.model).toBe('gemini-2.5-flash');
+  });
+
+  it('per-agent override takes highest precedence', () => {
+    const resolved = resolveSummarizationLLMConfig({
+      agentId: 'agent_special',
+      globalConfig: {
+        enabled: true,
+        provider: 'openAI',
+        model: 'gpt-4.1-mini',
+        agents: {
+          agent_special: {
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-5',
+            prompt: 'Agent-specific prompt',
+          },
+        },
+      },
+      agentRuntimeConfig: { provider: 'google', model: 'gemini-2.5-flash' },
+    });
+    expect(resolved.provider).toBe('anthropic');
+    expect(resolved.model).toBe('claude-sonnet-4-5');
+    expect(resolved.prompt).toBe('Agent-specific prompt');
+  });
+
+  it('per-agent override can disable summarization', () => {
+    const resolved = resolveSummarizationLLMConfig({
+      agentId: 'agent_disabled',
+      globalConfig: {
+        enabled: true,
+        provider: 'openAI',
+        agents: {
+          agent_disabled: { enabled: false },
+        },
+      },
+    });
+    expect(resolved.enabled).toBe(false);
+  });
+});
+
+describe('createSummarizeFn', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockInvoke.mockResolvedValue({
+      content: 'Summary of the conversation',
+      usage_metadata: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+    });
+  });
+
+  it('invokes model and returns response with usage metadata', async () => {
+    const usages: SummarizationUsage[] = [];
+    const resolveConfig = () => ({
+      enabled: true,
+      provider: 'openAI',
+      model: 'gpt-4.1-mini',
+      parameters: { temperature: 0.3 },
+    });
+    const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
+      provider: resolved.provider as Providers,
+      clientOptions: { model: resolved.model },
+      model: resolved.model,
+    });
+
+    const fn = createSummarizeFn({
+      resolveConfig,
+      getProviderOptions,
+      onUsage: (u) => {
+        usages.push(u);
+      },
+    });
+
+    const result = await fn({
+      prompt: 'Summarize this',
+      agentId: 'agent_1',
+      context: [new HumanMessage('Recent')],
+      messagesToRefine: [new HumanMessage('Old')],
+      remainingContextTokens: 100,
+    });
+
+    expect(result.text).toBe('Summary of the conversation');
+    expect(result.tokenCount).toBe(50);
+    expect(result.model).toBe('gpt-4.1-mini');
+    expect(result.provider).toBe('openAI');
+    expect(usages).toHaveLength(1);
+    expect(usages[0]).toMatchObject({
+      type: 'summarization',
+      input_tokens: 100,
+      output_tokens: 50,
+    });
+  });
+
+  it('falls back to character estimate when no usage metadata', async () => {
+    mockInvoke.mockResolvedValue({ content: 'Short summary' });
+    const resolveConfig = () => ({
+      enabled: true,
+      provider: 'openAI',
+      model: 'gpt-4.1-mini',
+      parameters: {},
+    });
+    const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
+      provider: resolved.provider as Providers,
+      clientOptions: { model: resolved.model },
+      model: resolved.model,
+    });
+
+    const fn = createSummarizeFn({ resolveConfig, getProviderOptions });
+    const result = await fn({
+      prompt: 'Summarize',
+      agentId: 'agent_1',
+      context: [],
+      messagesToRefine: [],
+      remainingContextTokens: 100,
+    });
+
+    expect(result.tokenCount).toBe(Math.ceil('Short summary'.length / 3.5));
+  });
+
+  it('caches model per agentId/provider/model key', async () => {
+    const resolveConfig = () => ({
+      enabled: true,
+      provider: 'openAI',
+      model: 'gpt-4.1-mini',
+      parameters: {},
+    });
+    const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
+      provider: resolved.provider as Providers,
+      clientOptions: { model: resolved.model },
+      model: resolved.model,
+    });
+
+    const fn = createSummarizeFn({ resolveConfig, getProviderOptions });
+    const params = {
+      prompt: 'Summarize',
+      agentId: 'agent_1',
+      context: [],
+      messagesToRefine: [],
+      remainingContextTokens: 100,
+    };
+
+    await fn(params);
+    await fn(params);
+
+    expect(mockChatModelClass).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws when agent summarization is disabled', async () => {
+    const resolveConfig = () => ({
+      enabled: false,
+      provider: 'openAI',
+      model: 'gpt-4.1-mini',
+      parameters: {},
+    });
+    const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
+      provider: resolved.provider as Providers,
+      clientOptions: { model: resolved.model },
+      model: resolved.model,
+    });
+
+    const fn = createSummarizeFn({ resolveConfig, getProviderOptions });
+    await expect(
+      fn({
+        prompt: 'Summarize',
+        agentId: 'agent_disabled',
+        context: [],
+        messagesToRefine: [],
+        remainingContextTokens: 100,
+      }),
+    ).rejects.toThrow('disabled');
   });
 });
 
