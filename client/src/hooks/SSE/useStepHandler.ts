@@ -12,6 +12,7 @@ import type {
   PartMetadata,
   ContentMetadata,
   EventSubmission,
+  SummarizationStatus,
   TMessageContentParts,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
@@ -36,6 +37,7 @@ type TStepEvent = {
     | Agents.AgentUpdate
     | Agents.RunStep
     | Agents.ToolEndEvent
+    | SummarizationStatus
     | {
         runId?: string;
         message: string;
@@ -582,7 +584,7 @@ export default function useStepHandler({
           setMessages(updatedMessages);
         }
       } else if (event === 'on_summarize_status') {
-        const statusData = data as { status: string; agentId?: string; error?: string };
+        const statusData = data as SummarizationStatus;
         if (statusData.status === 'started') {
           announcePolite({ message: 'Summarizing context...', isStatus: true });
         } else if (statusData.status === 'completed') {

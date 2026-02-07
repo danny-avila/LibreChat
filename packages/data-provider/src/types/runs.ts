@@ -25,3 +25,10 @@ export enum ToolCallTypes {
   /* Agents Tool Call */
   TOOL_CALL = 'tool_call',
 }
+
+export type SummarizationStatus = {
+  status: 'started' | 'completed' | 'failed';
+  agentId: string;
+  error?: string;
+  persistence?: 'persisted' | 'deferred' | 'skipped';
+};

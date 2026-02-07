@@ -1,13 +1,7 @@
 import { getBufferString } from '@langchain/core/messages';
-import type { BaseMessage } from '@langchain/core/messages';
 import type { EventHandler, SummarizeRequest, SummarizeResult } from '@librechat/agents';
-
-export type SummarizationStatus = {
-  status: 'started' | 'completed' | 'failed';
-  agentId: string;
-  error?: string;
-  persistence?: 'persisted' | 'deferred' | 'skipped';
-};
+import type { SummarizationStatus } from 'librechat-data-provider';
+import type { BaseMessage } from '@langchain/core/messages';
 
 export type SummarizationResponse = {
   text: string;
