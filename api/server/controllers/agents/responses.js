@@ -12,6 +12,8 @@ const {
   recordCollectedUsage,
   getTransactionsConfig,
   createToolExecuteHandler,
+  createSummarizeHandler,
+  createDeferredPersistSummary,
   // Responses API
   writeDone,
   buildResponse,
@@ -37,6 +39,10 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const db = require('~/models');
+
+const summarizeNotConfigured = async () => {
+  throw new Error('Summarization client is not configured');
+};
 
 /** @type {import('@librechat/api').AppConfig | null} */
 let appConfig = null;
@@ -277,6 +283,7 @@ const createResponse = async (req, res) => {
   const request = validation.request;
   const agentId = request.model;
   const isStreaming = request.stream === true;
+  const summarizationConfig = req.config?.summarization;
 
   // Look up the agent
   const agent = await db.getAgent({ id: agentId });
@@ -434,6 +441,20 @@ const createResponse = async (req, res) => {
         toolEndCallback,
       };
 
+      const summarizeHandler =
+        summarizationConfig?.enabled === true
+          ? createSummarizeHandler({
+              customPrompt: summarizationConfig.prompt,
+              summarize: summarizeNotConfigured,
+              persistSummary: createDeferredPersistSummary(),
+              onStatusChange: async (status) => {
+                if (actuallyStreaming && !res.writableEnded) {
+                  res.write(`event: on_summarize_status\ndata: ${JSON.stringify(status)}\n\n`);
+                }
+              },
+            })
+          : null;
+
       // Combine handlers
       const handlers = {
         on_message_delta: responsesHandlers.on_message_delta,
@@ -456,6 +477,7 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+        ...(summarizeHandler ? { on_summarize: summarizeHandler } : {}),
       };
 
       // Create and run the agent
@@ -467,6 +489,7 @@ const createResponse = async (req, res) => {
         messages: formattedMessages,
         indexTokenCountMap,
         runId: responseId,
+        summarizationConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
@@ -581,6 +604,15 @@ const createResponse = async (req, res) => {
         toolEndCallback,
       };
 
+      const summarizeHandler =
+        summarizationConfig?.enabled === true
+          ? createSummarizeHandler({
+              customPrompt: summarizationConfig.prompt,
+              summarize: summarizeNotConfigured,
+              persistSummary: createDeferredPersistSummary(),
+            })
+          : null;
+
       const handlers = {
         on_message_delta: aggregatorHandlers.on_message_delta,
         on_reasoning_delta: aggregatorHandlers.on_reasoning_delta,
@@ -602,6 +634,7 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+        ...(summarizeHandler ? { on_summarize: summarizeHandler } : {}),
       };
 
       const userId = req.user?.id ?? 'api-user';
@@ -612,6 +645,7 @@ const createResponse = async (req, res) => {
         messages: formattedMessages,
         indexTokenCountMap,
         runId: responseId,
+        summarizationConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {

@@ -4,6 +4,8 @@ const { Constants, EnvVar, GraphEvents, ToolEndHandler } = require('@librechat/a
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
   sendEvent,
+  createSummarizeHandler,
+  createDeferredPersistSummary,
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
@@ -12,6 +14,10 @@ const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { saveBase64Image } = require('~/server/services/Files/process');
+
+const summarizeNotConfigured = async () => {
+  throw new Error('Summarization client is not configured');
+};
 
 class ModelEndHandler {
   /**
@@ -133,6 +139,7 @@ function getDefaultHandlers({
   collectedUsage,
   streamId = null,
   toolExecuteOptions = null,
+  summarizationOptions = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -243,6 +250,20 @@ function getDefaultHandlers({
 
   if (toolExecuteOptions) {
     handlers[GraphEvents.ON_TOOL_EXECUTE] = createToolExecuteHandler(toolExecuteOptions);
+  }
+
+  if (summarizationOptions?.enabled === true) {
+    handlers[GraphEvents.ON_SUMMARIZE] = createSummarizeHandler({
+      customPrompt: summarizationOptions.prompt,
+      summarize: summarizationOptions.summarize ?? summarizeNotConfigured,
+      persistSummary: summarizationOptions.persistSummary ?? createDeferredPersistSummary(),
+      onStatusChange: async (status) => {
+        await emitEvent(res, streamId, {
+          event: 'on_summarize_status',
+          data: status,
+        });
+      },
+    });
   }
 
   return handlers;

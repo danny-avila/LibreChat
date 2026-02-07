@@ -858,6 +858,7 @@ class AgentClient extends BaseClient {
           messages,
           indexTokenCountMap,
           runId: this.responseMessageId,
+          summarizationConfig: appConfig?.summarization,
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
           requestBody: config.configurable.requestBody,

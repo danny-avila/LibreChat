@@ -16,6 +16,8 @@ const {
   recordCollectedUsage,
   getTransactionsConfig,
   createToolExecuteHandler,
+  createSummarizeHandler,
+  createDeferredPersistSummary,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   createOpenAIContentAggregator,
@@ -25,6 +27,10 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const db = require('~/models');
+
+const summarizeNotConfigured = async () => {
+  throw new Error('Summarization client is not configured');
+};
 
 /**
  * Creates a tool loader function for the agent.
@@ -267,6 +273,21 @@ const OpenAIChatCompletionController = async (req, res) => {
       toolEndCallback,
     };
 
+    const summarizationConfig = appConfig?.summarization;
+    const summarizeHandler =
+      summarizationConfig?.enabled === true
+        ? createSummarizeHandler({
+            customPrompt: summarizationConfig.prompt,
+            summarize: summarizeNotConfigured,
+            persistSummary: createDeferredPersistSummary(),
+            onStatusChange: async (status) => {
+              if (isStreaming && !res.writableEnded) {
+                res.write(`event: on_summarize_status\ndata: ${JSON.stringify(status)}\n\n`);
+              }
+            },
+          })
+        : null;
+
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
@@ -435,6 +456,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       on_custom_event: createHandler(),
       // Event-driven tool execution handler
       on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+      ...(summarizeHandler ? { on_summarize: summarizeHandler } : {}),
     };
 
     // Create and run the agent
@@ -448,6 +470,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       messages: formattedMessages,
       indexTokenCountMap,
       runId: requestId,
+      summarizationConfig,
       signal: abortController.signal,
       customHandlers: handlers,
       requestBody: {

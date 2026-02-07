@@ -131,9 +131,17 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolEndCallback,
   };
 
+  const summarizationOptions = appConfig?.summarization?.enabled
+    ? {
+        enabled: true,
+        prompt: appConfig.summarization.prompt,
+      }
+    : null;
+
   const eventHandlers = getDefaultHandlers({
     res,
     toolExecuteOptions,
+    summarizationOptions,
     aggregateContent,
     toolEndCallback,
     collectedUsage,
