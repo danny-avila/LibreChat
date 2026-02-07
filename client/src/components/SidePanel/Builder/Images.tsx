@@ -1,5 +1,7 @@
 import { useRef } from 'react';
 import * as Popover from '@radix-ui/react-popover';
+import { FileInput } from '@librechat/client';
+import { useLocalize } from '~/hooks';
 
 export function NoImage() {
   return (
@@ -87,6 +89,7 @@ export function AvatarMenu({
   handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const localize = useLocalize();
 
   const onItemClick = () => {
     if (fileInputRef.current) {
@@ -108,7 +111,7 @@ export function AvatarMenu({
           data-orientation="vertical"
           onClick={onItemClick}
         >
-          Upload Photo
+          {localize('com_ui_upload_image')}
         </div>
         {/* <Popover.Close
           role="menuitem"
@@ -118,10 +121,9 @@ export function AvatarMenu({
         >
           Use DALL·E
         </Popover.Close> */}
-        <input
-          accept="image/png,.png,image/jpeg,.jpg,.jpeg,image/gif,.gif,image/webp,.webp"
+        <FileInput
+          acceptTypes={['image']}
           multiple={false}
-          type="file"
           style={{ display: 'none' }}
           onChange={handleFileChange}
           ref={fileInputRef}
