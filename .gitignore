@@ -191,3 +191,8 @@ temp_uploads_backup/
 debug_manifest.yaml
 pwd-generation.ipynb
 mongodb-recovery-pvc.yaml
+
+
+mongo-init.js
+watch_models.sh
+Dockerfile.multi
