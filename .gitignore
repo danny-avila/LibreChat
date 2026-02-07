@@ -198,6 +198,7 @@ watch_models.sh
 Dockerfile.multi
 litellm/
 k8s-ovh/
+k8s-local/
 .devcontainer/
 
 .husky/
