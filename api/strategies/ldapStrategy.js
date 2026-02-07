@@ -136,6 +136,25 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       return done(null, false, { message: 'Email domain not allowed' });
     }
 
+    if (!user && mail) {
+      const existingUser = await findUser({ email: mail.trim() });
+      if (existingUser) {
+        if (isEnabled(process.env.LDAP_ALLOW_ACCOUNT_LINKING)) {
+          logger.info(
+            `[ldapStrategy] Account linking: user ${mail} migrating from "${existingUser.provider}" to ldap`,
+          );
+          user = existingUser;
+        } else {
+          logger.info(
+            `[ldapStrategy] User ${mail} already exists with provider ${existingUser.provider}`,
+          );
+          return done(null, false, {
+            message: ErrorTypes.AUTH_FAILED,
+          });
+        }
+      }
+    }
+
     if (!user) {
       const isFirstRegisteredUser = (await countUsers()) === 0;
       const role = isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER;

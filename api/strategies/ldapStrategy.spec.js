@@ -236,4 +236,68 @@ describe('ldapStrategy', () => {
     expect(updateUser).not.toHaveBeenCalled();
     expect(createUser).not.toHaveBeenCalled();
   });
+
+  it('should link by email when user was never on LDAP and LDAP_ALLOW_ACCOUNT_LINKING is true', async () => {
+    process.env.LDAP_ALLOW_ACCOUNT_LINKING = 'true';
+
+    jest.isolateModules(() => {
+      require('./ldapStrategy');
+    });
+
+    const existing = {
+      _id: 'u1',
+      email: 'alice@example.com',
+      provider: 'openid',
+      openidId: 'openid_123',
+    };
+
+    // First call (by ldapId) returns null, second call (by email) returns existing user
+    findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existing);
+
+    const userinfo = {
+      uid: 'uid456',
+      mail: 'alice@example.com',
+      givenName: 'Alice',
+      cn: 'Alice Doe',
+    };
+
+    const { user } = await callVerify(userinfo);
+
+    expect(findUser).toHaveBeenNthCalledWith(1, { ldapId: 'uid456' });
+    expect(findUser).toHaveBeenNthCalledWith(2, { email: 'alice@example.com' });
+    expect(updateUser).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({
+        provider: 'ldap',
+        ldapId: 'uid456',
+        email: 'alice@example.com',
+      }),
+    );
+    expect(user.provider).toBe('ldap');
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('should block by email when user was never on LDAP and LDAP_ALLOW_ACCOUNT_LINKING is not set', async () => {
+    const existing = {
+      _id: 'u1',
+      email: 'alice@example.com',
+      provider: 'openid',
+    };
+
+    // First call (by ldapId) returns null, second call (by email) returns existing user
+    findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existing);
+
+    const userinfo = {
+      uid: 'uid456',
+      mail: 'alice@example.com',
+      givenName: 'Alice',
+      cn: 'Alice Doe',
+    };
+
+    const { user, info } = await callVerify(userinfo);
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: ErrorTypes.AUTH_FAILED });
+    expect(createUser).not.toHaveBeenCalled();
+  });
 });
