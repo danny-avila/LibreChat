@@ -1,6 +1,0 @@
-# Namespace: Creates an isolated environment for all LibreChat resources
-# This keeps your app separate from other apps in the cluster
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: librechat  # All resources will be created in this namespace

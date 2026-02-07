@@ -202,3 +202,4 @@ k8s-ovh/
 
 .husky/
 .vscode/
+k8s-local/
