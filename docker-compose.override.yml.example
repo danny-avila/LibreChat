@@ -102,6 +102,47 @@
 #     ports:
 #       - 7700:7700
 
+# # USE OPENSEARCH INSTEAD OF MEILISEARCH
+# # 1. Disable MeiliSearch above (add it to the "donotstart" profile)
+# # 2. Set in .env: SEARCH=true, SEARCH_PROVIDER=opensearch, OPENSEARCH_HOST=http://opensearch-node1:9200, OPENSEARCH_INSECURE=true
+#   opensearch-node1:
+#     image: opensearchproject/opensearch:3.4.0
+#     container_name: opensearch-node1
+#     environment:
+#       - cluster.name=opensearch-cluster
+#       - node.name=opensearch-node1
+#       - discovery.type=single-node
+#       - bootstrap.memory_lock=true
+#       - DISABLE_SECURITY_PLUGIN=true
+#       - DISABLE_INSTALL_DEMO_CONFIG=true
+#       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+#     ulimits:
+#       memlock:
+#         soft: -1
+#         hard: -1
+#       nofile:
+#         soft: 65536
+#         hard: 65536
+#     volumes:
+#       - opensearch-data:/usr/share/opensearch/data
+#     ports:
+#       - 9200:9200
+
+# # USE TYPESENSE INSTEAD OF MEILISEARCH
+# # 1. Disable MeiliSearch above (add it to the "donotstart" profile)
+# # 2. Set in .env: SEARCH=true, SEARCH_PROVIDER=typesense, TYPESENSE_HOST=http://typesense:8108, TYPESENSE_API_KEY=xyz
+#   typesense:
+#     image: typesense/typesense:30.1
+#     container_name: typesense
+#     environment:
+#       - TYPESENSE_DATA_DIR=/data
+#       - TYPESENSE_API_KEY=xyz
+#       - TYPESENSE_ENABLE_CORS=true
+#     volumes:
+#       - typesense-data:/data
+#     ports:
+#       - 8108:8108
+
 # # USE RAG API IMAGE WITH LOCAL EMBEDDINGS SUPPORT
 #  rag_api:
 #    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
@@ -179,3 +220,8 @@
 #      - POSTGRES_DB=postgres
 #    volumes:
 #      - ./postgres:/var/lib/postgresql/data
+
+# # VOLUMES FOR ALTERNATIVE SEARCH BACKENDS (uncomment if using OpenSearch or Typesense above)
+# volumes:
+#   opensearch-data:
+#   typesense-data:
