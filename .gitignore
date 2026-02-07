@@ -184,3 +184,10 @@ k8s-ovh/GODADDY_SETUP.md
 k8s-ovh/HTTPS_SETUP.md
 helm/accessllm/HELM_COMMANDS.md
 accessLLmAccounts.csv
+
+# Quick backups
+mongo-backup/
+temp_uploads_backup/
+debug_manifest.yaml
+pwd-generation.ipynb
+mongodb-recovery-pvc.yaml
