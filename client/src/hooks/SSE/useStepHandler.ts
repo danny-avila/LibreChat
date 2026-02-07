@@ -586,12 +586,12 @@ export default function useStepHandler({
       } else if (event === 'on_summarize_status') {
         const statusData = data as SummarizationStatus;
         if (statusData.status === 'started') {
-          announcePolite({ message: 'Summarizing context...', isStatus: true });
+          announcePolite({ message: 'summarize_started', isStatus: true });
         } else if (statusData.status === 'completed') {
-          announcePolite({ message: 'Context summarized', isStatus: true });
+          announcePolite({ message: 'summarize_completed', isStatus: true });
         } else if (statusData.status === 'failed') {
           announcePolite({
-            message: 'Summarization failed, continuing with available context',
+            message: 'summarize_failed',
             isStatus: true,
           });
         }
