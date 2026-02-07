@@ -85,6 +85,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 turn: tc.turn,
               };
 
+              if (tc.codeSessionContext) {
+                toolCallConfig.session_id = tc.codeSessionContext.session_id;
+                if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
+                  toolCallConfig._injected_files = tc.codeSessionContext.files;
+                }
+              }
+
               if (tc.name === Constants.PROGRAMMATIC_TOOL_CALLING) {
                 const toolRegistry = mergedConfigurable?.toolRegistry as LCToolRegistry | undefined;
                 const ptcToolMap = mergedConfigurable?.ptcToolMap as
