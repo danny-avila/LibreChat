@@ -323,6 +323,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     openidId: claims.sub || userinfo.sub,
     idOnTheSource: claims.oid || userinfo.oid,
     strategyName: 'openidStrategy',
+    allowAccountLinking: isEnabled(process.env.OPENID_ALLOW_ACCOUNT_LINKING),
   });
   let user = result.user;
   const error = result.error;
