@@ -48,7 +48,7 @@ const socialLogin =
         const allowLinking = isEnabled(
           process.env[`${provider.toUpperCase()}_ALLOW_ACCOUNT_LINKING`],
         );
-        if (allowLinking) {
+        if (allowLinking && id && typeof id === 'string') {
           logger.info(
             `[${provider}Login] Account linking: user ${email} migrating from "${existingUser.provider}" to ${provider}`,
           );
