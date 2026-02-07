@@ -56,6 +56,10 @@ export enum PermissionTypes {
    * Type for MCP Server Permissions
    */
   MCP_SERVERS = 'MCP_SERVERS',
+  /**
+   * Type for Remote Agent (API) Permissions
+   */
+  REMOTE_AGENTS = 'REMOTE_AGENTS',
 }
 
 /**
@@ -157,6 +161,14 @@ export const mcpServersPermissionsSchema = z.object({
 });
 export type TMcpServersPermissions = z.infer<typeof mcpServersPermissionsSchema>;
 
+export const remoteAgentsPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(false),
+  [Permissions.CREATE]: z.boolean().default(false),
+  [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
+});
+export type TRemoteAgentsPermissions = z.infer<typeof remoteAgentsPermissionsSchema>;
+
 // Define a single permissions schema that holds all permission types.
 export const permissionsSchema = z.object({
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
@@ -172,4 +184,5 @@ export const permissionsSchema = z.object({
   [PermissionTypes.FILE_SEARCH]: fileSearchPermissionsSchema,
   [PermissionTypes.FILE_CITATIONS]: fileCitationsPermissionsSchema,
   [PermissionTypes.MCP_SERVERS]: mcpServersPermissionsSchema,
+  [PermissionTypes.REMOTE_AGENTS]: remoteAgentsPermissionsSchema,
 });
