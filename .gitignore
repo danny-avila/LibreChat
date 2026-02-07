@@ -196,3 +196,4 @@ mongodb-recovery-pvc.yaml
 mongo-init.js
 watch_models.sh
 Dockerfile.multi
+litellm/
