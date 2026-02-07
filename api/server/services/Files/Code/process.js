@@ -147,10 +147,11 @@ const processCodeOutput = async ({
 
     if (isImage) {
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
-      const versionSuffix = usage > 1 ? `_v${usage}` : '';
-      const _file = await convertImage(req, buffer, 'high', `${file_id}${versionSuffix}${fileExt}`);
+      const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
+      const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
       const file = {
         ..._file,
+        filepath,
         file_id,
         messageId,
         usage,

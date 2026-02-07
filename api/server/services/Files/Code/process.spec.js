@@ -202,7 +202,7 @@ describe('Code Process', () => {
         expect(result.filename).toBe('chart.png');
       });
 
-      it('should update existing image file with versioned filename', async () => {
+      it('should update existing image file with cache-busted filepath', async () => {
         const imageParams = { ...baseParams, name: 'chart.png' };
         mockClaimCodeFile.mockResolvedValue({
           file_id: 'existing-img-id',
@@ -212,7 +212,7 @@ describe('Code Process', () => {
 
         const imageBuffer = Buffer.alloc(500);
         axios.mockResolvedValue({ data: imageBuffer });
-        convertImage.mockResolvedValue({ filepath: '/uploads/img_v2.webp' });
+        convertImage.mockResolvedValue({ filepath: '/images/user-123/existing-img-id.webp' });
 
         const result = await processCodeOutput(imageParams);
 
@@ -220,10 +220,11 @@ describe('Code Process', () => {
           mockReq,
           imageBuffer,
           'high',
-          'existing-img-id_v2.png',
+          'existing-img-id.png',
         );
         expect(result.file_id).toBe('existing-img-id');
         expect(result.usage).toBe(2);
+        expect(result.filepath).toMatch(/^\/images\/user-123\/existing-img-id\.webp\?v=\d+$/);
         expect(logger.debug).toHaveBeenCalledWith(
           expect.stringContaining('Updating existing file'),
         );
