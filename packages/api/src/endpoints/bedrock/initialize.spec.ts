@@ -615,7 +615,7 @@ describe('initializeBedrock', () => {
   });
 
   describe('Opus 4.6 Adaptive Thinking', () => {
-    it('should configure adaptive thinking with default maxTokens for Opus 4.6', async () => {
+    it('should configure adaptive thinking with no default maxTokens for Opus 4.6', async () => {
       const params = createMockParams({
         model_parameters: {
           model: 'anthropic.claude-opus-4-6-v1',
@@ -626,7 +626,7 @@ describe('initializeBedrock', () => {
       const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
 
       expect(amrf.thinking).toEqual({ type: 'adaptive' });
-      expect(result.llmConfig.maxTokens).toBe(16000);
+      expect(result.llmConfig.maxTokens).toBeUndefined();
       expect(amrf.anthropic_beta).toEqual(
         expect.arrayContaining(['output-128k-2025-02-19', 'context-1m-2025-08-07']),
       );
