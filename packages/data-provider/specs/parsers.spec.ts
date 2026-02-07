@@ -1,6 +1,8 @@
-import { replaceSpecialVars, parseCompactConvo } from '../src/parsers';
+import { replaceSpecialVars, parseCompactConvo, parseTextParts } from '../src/parsers';
 import { specialVariables } from '../src/config';
 import { EModelEndpoint } from '../src/schemas';
+import { ContentTypes } from '../src/types/runs';
+import type { TMessageContentParts } from '../src/types/assistants';
 import type { TUser, TConversation } from '../src/types';
 
 // Mock dayjs module with consistent date/time values regardless of environment
@@ -141,7 +143,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('gpt-4');
     });
 
@@ -159,7 +161,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.agent_id).toBe('agent_123');
     });
 
@@ -177,7 +179,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('claude-3-opus');
     });
 
@@ -195,7 +197,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('gemini-pro');
     });
 
@@ -213,7 +215,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.assistant_id).toBe('asst_123');
     });
 
@@ -234,7 +236,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('gpt-4');
       expect(result?.temperature).toBe(0.7);
       expect(result?.top_p).toBe(0.9);
@@ -254,8 +256,94 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('gpt-4');
     });
+  });
+});
+
+describe('parseTextParts', () => {
+  test('should concatenate text parts', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'Hello' },
+      { type: ContentTypes.TEXT, text: 'World' },
+    ];
+    expect(parseTextParts(parts)).toBe('Hello World');
+  });
+
+  test('should handle text parts with object-style text values', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: { value: 'structured text' } },
+    ];
+    expect(parseTextParts(parts)).toBe('structured text');
+  });
+
+  test('should include think parts by default', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'Answer:' },
+      { type: ContentTypes.THINK, think: 'reasoning step' },
+    ];
+    expect(parseTextParts(parts)).toBe('Answer: reasoning step');
+  });
+
+  test('should skip think parts when skipReasoning is true', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.THINK, think: 'internal reasoning' },
+      { type: ContentTypes.TEXT, text: 'visible answer' },
+    ];
+    expect(parseTextParts(parts, true)).toBe('visible answer');
+  });
+
+  test('should skip non-text/think part types', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'before' },
+      { type: ContentTypes.IMAGE_FILE } as TMessageContentParts,
+      { type: ContentTypes.TEXT, text: 'after' },
+    ];
+    expect(parseTextParts(parts)).toBe('before after');
+  });
+
+  test('should handle undefined elements in the content parts array', () => {
+    const parts: Array<TMessageContentParts | undefined> = [
+      { type: ContentTypes.TEXT, text: 'first' },
+      undefined,
+      { type: ContentTypes.TEXT, text: 'third' },
+    ];
+    expect(parseTextParts(parts)).toBe('first third');
+  });
+
+  test('should handle multiple consecutive undefined elements', () => {
+    const parts: Array<TMessageContentParts | undefined> = [
+      undefined,
+      undefined,
+      { type: ContentTypes.TEXT, text: 'only text' },
+      undefined,
+    ];
+    expect(parseTextParts(parts)).toBe('only text');
+  });
+
+  test('should handle an array of all undefined elements', () => {
+    const parts: Array<TMessageContentParts | undefined> = [undefined, undefined, undefined];
+    expect(parseTextParts(parts)).toBe('');
+  });
+
+  test('should handle parts with missing type property', () => {
+    const parts: Array<TMessageContentParts | undefined> = [
+      { text: 'no type field' } as unknown as TMessageContentParts,
+      { type: ContentTypes.TEXT, text: 'valid' },
+    ];
+    expect(parseTextParts(parts)).toBe('valid');
+  });
+
+  test('should return empty string for empty array', () => {
+    expect(parseTextParts([])).toBe('');
+  });
+
+  test('should not add extra spaces when parts already have spacing', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'Hello ' },
+      { type: ContentTypes.TEXT, text: 'World' },
+    ];
+    expect(parseTextParts(parts)).toBe('Hello World');
   });
 });
