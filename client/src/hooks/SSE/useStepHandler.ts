@@ -581,6 +581,18 @@ export default function useStepHandler({
 
           setMessages(updatedMessages);
         }
+      } else if (event === 'on_summarize_status') {
+        const statusData = data as { status: string; agentId?: string; error?: string };
+        if (statusData.status === 'started') {
+          announcePolite({ message: 'Summarizing context...', isStatus: true });
+        } else if (statusData.status === 'completed') {
+          announcePolite({ message: 'Context summarized', isStatus: true });
+        } else if (statusData.status === 'failed') {
+          announcePolite({
+            message: 'Summarization failed, continuing with available context',
+            isStatus: true,
+          });
+        }
       }
 
       return () => {

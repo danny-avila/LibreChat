@@ -350,6 +350,23 @@ class BaseClient {
 
         update.summary = tokenCountMap.summaryMessage.content;
         update.summaryTokenCount = tokenCountMap.summaryMessage.tokenCount;
+
+        const summaryContentBlock = {
+          type: ContentTypes.SUMMARY,
+          text: tokenCountMap.summaryMessage.content,
+          tokenCount: tokenCountMap.summaryMessage.tokenCount,
+          createdAt: new Date().toISOString(),
+        };
+        const existingContent = Array.isArray(message.content) ? message.content : [];
+        const existingSummaryIndex = existingContent.findIndex(
+          (part) => part?.type === ContentTypes.SUMMARY,
+        );
+        if (existingSummaryIndex >= 0) {
+          existingContent[existingSummaryIndex] = summaryContentBlock;
+        } else {
+          existingContent.push(summaryContentBlock);
+        }
+        update.content = existingContent;
       }
 
       if (message.tokenCount && !update.summaryTokenCount) {
@@ -908,10 +925,24 @@ class BaseClient {
       return _messages;
     }
 
-    // Find the latest message with a 'summary' property
     for (let i = _messages.length - 1; i >= 0; i--) {
-      if (_messages[i]?.summary) {
-        this.previous_summary = _messages[i];
+      const msg = _messages[i];
+      if (!msg) {
+        continue;
+      }
+
+      const summaryBlock = BaseClient.findSummaryContentBlock(msg);
+      if (summaryBlock) {
+        this.previous_summary = {
+          ...msg,
+          summary: summaryBlock.text,
+          summaryTokenCount: summaryBlock.tokenCount,
+        };
+        break;
+      }
+
+      if (msg.summary) {
+        this.previous_summary = msg;
         break;
       }
     }
@@ -1015,6 +1046,20 @@ class BaseClient {
     await db.updateMessage(this.options?.req?.user?.id, message);
   }
 
+  /** Finds the last summary content block in a message's content array (last-summary-wins) */
+  static findSummaryContentBlock(message) {
+    if (!Array.isArray(message?.content)) {
+      return null;
+    }
+    let lastSummary = null;
+    for (const part of message.content) {
+      if (part?.type === ContentTypes.SUMMARY && part.text) {
+        lastSummary = part;
+      }
+    }
+    return lastSummary;
+  }
+
   /**
    * Iterate through messages, building an array based on the parentMessageId.
    *
@@ -1069,20 +1114,29 @@ class BaseClient {
         break;
       }
 
-      if (summary && message.summary) {
-        message.role = 'system';
-        message.text = message.summary;
-      }
-
-      if (summary && message.summaryTokenCount) {
-        message.tokenCount = message.summaryTokenCount;
+      let hasSummary = false;
+      if (summary) {
+        const summaryBlock = BaseClient.findSummaryContentBlock(message);
+        if (summaryBlock) {
+          message.role = 'system';
+          message.text = summaryBlock.text;
+          message.tokenCount = summaryBlock.tokenCount;
+          hasSummary = true;
+        } else if (message.summary) {
+          message.role = 'system';
+          message.text = message.summary;
+          if (message.summaryTokenCount) {
+            message.tokenCount = message.summaryTokenCount;
+          }
+          hasSummary = true;
+        }
       }
 
       const shouldMap = mapMethod != null && (mapCondition != null ? mapCondition(message) : true);
       const processedMessage = shouldMap ? mapMethod(message) : message;
       orderedMessages.push(processedMessage);
 
-      if (summary && message.summary) {
+      if (hasSummary) {
         break;
       }
 
