@@ -820,6 +820,7 @@ export enum OCRStrategy {
   CUSTOM_OCR = 'custom_ocr',
   AZURE_MISTRAL_OCR = 'azure_mistral_ocr',
   VERTEXAI_MISTRAL_OCR = 'vertexai_mistral_ocr',
+  DOCUMENT_PARSER = 'document_parser',
 }
 
 export enum SearchCategories {
