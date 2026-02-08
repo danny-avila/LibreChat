@@ -38,7 +38,6 @@ const MarkdownLite = memo(
               ]}
               /** @ts-ignore */
               rehypePlugins={rehypePlugins}
-              // linkTarget="_new"
               components={
                 {
                   code: codeExecution ? code : codeNoExecution,
