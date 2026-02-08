@@ -377,7 +377,7 @@ async function performSync(flowManager, flowId, flowType) {
 
       if (settingsUpdated || unindexedMessages > syncThreshold) {
         logger.info(`[indexSync] Starting message sync (${unindexedMessages} unindexed)`);
-        await Message.syncWithMeili();
+        await (Message.syncWithSearch || Message.syncWithMeili).call(Message);
         messagesSync = true;
       } else if (unindexedMessages > 0) {
         logger.info(
@@ -403,7 +403,7 @@ async function performSync(flowManager, flowId, flowType) {
       const unindexedConvos = convoCount - convosIndexed;
       if (settingsUpdated || unindexedConvos > syncThreshold) {
         logger.info(`[indexSync] Starting convos sync (${unindexedConvos} unindexed)`);
-        await Conversation.syncWithMeili();
+        await (Conversation.syncWithSearch || Conversation.syncWithMeili).call(Conversation);
         convosSync = true;
       } else if (unindexedConvos > 0) {
         logger.info(
@@ -453,8 +453,9 @@ async function indexSync() {
   });
 
   // Use a unique flow ID for the sync operation
-  const flowId = 'meili-index-sync';
-  const flowType = 'MEILI_SYNC';
+  const providerType = detectSearchProvider ? detectSearchProvider() : 'meilisearch';
+  const flowId = `search-index-sync-${providerType}`;
+  const flowType = 'SEARCH_SYNC';
 
   try {
     // This will only execute the handler if no other instance is running the sync
@@ -479,8 +480,8 @@ async function indexSync() {
       logger.debug('[indexSync] Creating indices...');
       currentTimeout = setTimeout(async () => {
         try {
-          await Message.syncWithMeili();
-          await Conversation.syncWithMeili();
+          await (Message.syncWithSearch || Message.syncWithMeili).call(Message);
+          await (Conversation.syncWithSearch || Conversation.syncWithMeili).call(Conversation);
         } catch (err) {
           logger.error('[indexSync] Trouble creating indices, try restarting the server.', err);
         }

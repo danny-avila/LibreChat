@@ -74,7 +74,11 @@ export interface SchemaWithSearchMethods extends Model<DocumentWithSearchIndex> 
 const searchEnabled = process.env.SEARCH != null && process.env.SEARCH.toLowerCase() === 'true';
 
 const searchConfigured = (() => {
-  if (process.env.SEARCH_PROVIDER?.toLowerCase() === 'opensearch' || process.env.OPENSEARCH_HOST) {
+  const provider = process.env.SEARCH_PROVIDER?.toLowerCase();
+  if (provider === 'opensearch' || process.env.OPENSEARCH_HOST) {
+    return true;
+  }
+  if (provider === 'typesense' || (process.env.TYPESENSE_HOST && process.env.TYPESENSE_API_KEY)) {
     return true;
   }
   return process.env.MEILI_HOST != null && process.env.MEILI_MASTER_KEY != null;

@@ -62,6 +62,10 @@ export class TypesenseProvider implements SearchProvider {
   private node: string;
   private apiKey: string;
   private connectionTimeoutMs: number;
+  /** Maps index name → primary key field name (e.g. 'convos' → 'conversationId') */
+  private primaryKeyMap: Map<string, string> = new Map();
+  /** Maps index name → list of string field names for query_by */
+  private searchableFieldsMap: Map<string, string[]> = new Map();
 
   constructor(options: TypesenseProviderOptions) {
     if (!options.node) {
@@ -115,6 +119,36 @@ export class TypesenseProvider implements SearchProvider {
   }
 
   /**
+   * Prepare a document for Typesense by mapping the primary key to the `id` field.
+   * Typesense requires every document to have a string `id` field.
+   */
+  private prepareDocument(collectionName: string, doc: SearchHit): SearchHit {
+    const primaryKey = this.primaryKeyMap.get(collectionName);
+    if (!primaryKey) {
+      return doc;
+    }
+
+    const prepared: SearchHit = { ...doc };
+
+    // Map primaryKey value → Typesense `id` field
+    if (prepared[primaryKey] !== undefined && primaryKey !== 'id') {
+      prepared['id'] = String(prepared[primaryKey]);
+    }
+
+    // Ensure all values are Typesense-compatible (strings, numbers, booleans, arrays)
+    for (const [key, value] of Object.entries(prepared)) {
+      if (value === null || value === undefined) {
+        delete prepared[key];
+      } else if (typeof value === 'object' && !Array.isArray(value)) {
+        // Typesense doesn't support nested objects — stringify them
+        prepared[key] = JSON.stringify(value);
+      }
+    }
+
+    return prepared;
+  }
+
+  /**
    * Import documents using Typesense's JSONL import endpoint.
    * This is more efficient than individual document creation.
    */
@@ -129,7 +163,8 @@ export class TypesenseProvider implements SearchProvider {
       'X-TYPESENSE-API-KEY': this.apiKey,
     };
 
-    const bodyStr = documents.map((doc) => JSON.stringify(doc)).join('\n');
+    const preparedDocs = documents.map((doc) => this.prepareDocument(collectionName, doc));
+    const bodyStr = preparedDocs.map((doc) => JSON.stringify(doc)).join('\n');
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.connectionTimeoutMs * 2);
@@ -143,14 +178,26 @@ export class TypesenseProvider implements SearchProvider {
       });
 
       const text = await response.text();
+
+      if (!response.ok) {
+        logger.error(
+          `[TypesenseProvider] Import to ${collectionName} failed with HTTP ${response.status}: ${text}`,
+        );
+        return;
+      }
+
       // Response is JSONL — one result per line
       const lines = text.trim().split('\n');
       let errorCount = 0;
+      const errors: string[] = [];
       for (const line of lines) {
         try {
-          const result = JSON.parse(line) as { success: boolean; error?: string };
+          const result = JSON.parse(line) as { success: boolean; error?: string; document?: string };
           if (!result.success) {
             errorCount++;
+            if (result.error && errors.length < 3) {
+              errors.push(result.error);
+            }
           }
         } catch {
           // Skip unparseable lines
@@ -158,7 +205,7 @@ export class TypesenseProvider implements SearchProvider {
       }
       if (errorCount > 0) {
         logger.error(
-          `[TypesenseProvider] Import to ${collectionName}: ${errorCount}/${documents.length} failures`,
+          `[TypesenseProvider] Import to ${collectionName}: ${errorCount}/${documents.length} failures. Sample errors: ${errors.join('; ')}`,
         );
       }
     } finally {
@@ -181,6 +228,20 @@ export class TypesenseProvider implements SearchProvider {
   }
 
   async createIndex(indexName: string, primaryKey: string): Promise<void> {
+    // Track the primary key for this index so we can map it to `id` later
+    this.primaryKeyMap.set(indexName, primaryKey);
+
+    // Define searchable string fields based on the index type
+    // These are the fields that have meiliIndex: true in the mongoose schemas
+    let stringFields: string[];
+    if (indexName === 'messages') {
+      stringFields = ['messageId', 'conversationId', 'user', 'sender', 'text'];
+    } else {
+      // convos
+      stringFields = ['conversationId', 'title', 'user'];
+    }
+    this.searchableFieldsMap.set(indexName, stringFields);
+
     try {
       // Check if collection exists
       const { status } = await this.request(
@@ -196,22 +257,47 @@ export class TypesenseProvider implements SearchProvider {
     }
 
     try {
-      // Typesense requires explicit schema. We create a flexible schema
-      // with auto-detection for unknown fields.
+      // Typesense requires explicit schema with typed fields.
+      // The `id` field is Typesense's built-in primary key (always string).
+      // We define explicit string fields for searchable content, plus a
+      // catch-all `.*` auto field for any additional dynamic attributes.
+      const fields: TypesenseField[] = [];
+
+      // Add explicit string fields (excluding 'id' which is built-in)
+      for (const field of stringFields) {
+        if (field !== 'id') {
+          fields.push({
+            name: field,
+            type: 'string',
+            optional: true,
+            ...(field === 'user' ? { facet: true } : {}),
+          });
+        }
+      }
+
+      // Add tags field for convos
+      if (indexName === 'convos') {
+        fields.push({ name: 'tags', type: 'string[]', optional: true });
+      }
+
+      // Catch-all field for any other dynamic attributes
+      fields.push({ name: '.*', type: 'auto' });
+
       const schema: TypesenseCollectionSchema = {
         name: indexName,
-        fields: [
-          { name: primaryKey, type: 'string' },
-          { name: 'user', type: 'string', facet: true, optional: true },
-          // Catch-all field for dynamic attributes
-          { name: '.*', type: 'auto' },
-        ],
+        fields,
       };
 
-      await this.request('POST', '/collections', schema);
-      logger.info(`[TypesenseProvider] Created collection: ${indexName}`);
+      const { status, data } = await this.request('POST', '/collections', schema);
+      if (status >= 200 && status < 300) {
+        logger.info(`[TypesenseProvider] Created collection: ${indexName}`);
+      } else {
+        logger.error(
+          `[TypesenseProvider] Failed to create collection ${indexName}: HTTP ${status} - ${JSON.stringify(data)}`,
+        );
+      }
     } catch (error) {
-      logger.debug(`[TypesenseProvider] Collection ${indexName} may already exist:`, error);
+      logger.error(`[TypesenseProvider] Error creating collection ${indexName}:`, error);
     }
   }
 
@@ -335,6 +421,8 @@ export class TypesenseProvider implements SearchProvider {
 
   async getDocument(indexName: string, documentId: string): Promise<SearchHit | null> {
     try {
+      // In Typesense, documents are retrieved by their `id` field.
+      // We mapped primaryKey → id during import, so use documentId directly.
       const { status, data } = await this.request(
         'GET',
         `/collections/${encodeURIComponent(indexName)}/documents/${encodeURIComponent(documentId)}`,
@@ -348,17 +436,37 @@ export class TypesenseProvider implements SearchProvider {
     }
   }
 
+  /**
+   * Get the query_by fields for a given index.
+   * Typesense requires explicit field names — wildcard `*` is not supported for query_by.
+   */
+  private getQueryByFields(indexName: string): string {
+    const fields = this.searchableFieldsMap.get(indexName);
+    if (fields && fields.length > 0) {
+      // Filter out the primary key from query_by — it's the `id` field in Typesense
+      const primaryKey = this.primaryKeyMap.get(indexName);
+      const queryFields = fields.filter((f) => f !== primaryKey && f !== 'id');
+      return queryFields.length > 0 ? queryFields.join(',') : fields[0];
+    }
+    // Fallback: use title for convos, text for messages
+    if (indexName === 'messages') {
+      return 'text,sender';
+    }
+    return 'title,user';
+  }
+
   async getDocuments(
     indexName: string,
     options: { limit: number; offset: number },
   ): Promise<{ results: SearchHit[] }> {
     try {
       // Typesense doesn't have a direct "list documents" API with offset.
-      // We use search with match-all query.
+      // We use the export endpoint for listing, or search with match-all query.
       const page = Math.floor(options.offset / options.limit) + 1;
+      const queryBy = this.getQueryByFields(indexName);
       const { data } = await this.request(
         'GET',
-        `/collections/${encodeURIComponent(indexName)}/documents/search?q=*&query_by=&per_page=${options.limit}&page=${page}`,
+        `/collections/${encodeURIComponent(indexName)}/documents/search?q=*&query_by=${encodeURIComponent(queryBy)}&per_page=${options.limit}&page=${page}`,
       );
 
       const typesenseData = data as unknown as TypesenseSearchResponse;
@@ -375,11 +483,12 @@ export class TypesenseProvider implements SearchProvider {
       const searchQuery = query || '*';
       const perPage = params?.limit ?? 20;
       const page = params?.offset !== undefined ? Math.floor(params.offset / perPage) + 1 : 1;
+      const queryBy = this.getQueryByFields(indexName);
 
       let searchUrl =
         `/collections/${encodeURIComponent(indexName)}/documents/search` +
         `?q=${encodeURIComponent(searchQuery)}` +
-        `&query_by=*` +
+        `&query_by=${encodeURIComponent(queryBy)}` +
         `&per_page=${perPage}` +
         `&page=${page}`;
 

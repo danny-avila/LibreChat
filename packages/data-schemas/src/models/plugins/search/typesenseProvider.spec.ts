@@ -106,7 +106,7 @@ describe('TypesenseProvider', () => {
       );
     });
 
-    test('creates collection with schema when it does not exist', async () => {
+    test('creates messages collection with correct schema fields', async () => {
       mockFetch
         .mockResolvedValueOnce({
           status: 404,
@@ -129,7 +129,37 @@ describe('TypesenseProvider', () => {
       expect(body.fields).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ name: 'messageId', type: 'string' }),
+          expect.objectContaining({ name: 'conversationId', type: 'string' }),
           expect.objectContaining({ name: 'user', type: 'string', facet: true }),
+          expect.objectContaining({ name: 'sender', type: 'string' }),
+          expect.objectContaining({ name: 'text', type: 'string' }),
+          expect.objectContaining({ name: '.*', type: 'auto' }),
+        ]),
+      );
+    });
+
+    test('creates convos collection with title, user, tags fields', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          status: 404,
+          text: () => Promise.resolve('{"message":"Not Found"}'),
+        })
+        .mockResolvedValueOnce({
+          status: 201,
+          text: () => Promise.resolve(JSON.stringify({ name: 'convos' })),
+        });
+
+      await provider.createIndex('convos', 'conversationId');
+
+      const createCall = mockFetch.mock.calls[1];
+      const body = JSON.parse(createCall[1].body);
+      expect(body.name).toBe('convos');
+      expect(body.fields).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'conversationId', type: 'string' }),
+          expect.objectContaining({ name: 'title', type: 'string' }),
+          expect.objectContaining({ name: 'user', type: 'string', facet: true }),
+          expect.objectContaining({ name: 'tags', type: 'string[]' }),
           expect.objectContaining({ name: '.*', type: 'auto' }),
         ]),
       );
@@ -142,18 +172,27 @@ describe('TypesenseProvider', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    test('sends import request with JSONL body', async () => {
+    test('sends import request with JSONL body and maps primaryKey to id', async () => {
+      // First register the index so primaryKey mapping is active
       mockFetch.mockResolvedValueOnce({
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify({ name: 'messages' })),
+      });
+      await provider.createIndex('messages', 'messageId');
+      mockFetch.mockClear();
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
         text: () => Promise.resolve('{"success":true}\n{"success":true}'),
       });
 
       await provider.addDocuments(
         'messages',
         [
-          { id: 'msg1', text: 'hello', user: 'user1' },
-          { id: 'msg2', text: 'world', user: 'user2' },
+          { messageId: 'msg1', text: 'hello', user: 'user1' },
+          { messageId: 'msg2', text: 'world', user: 'user2' },
         ],
-        'id',
+        'messageId',
       );
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -163,7 +202,44 @@ describe('TypesenseProvider', () => {
 
       const lines = (call[1].body as string).split('\n');
       expect(lines).toHaveLength(2);
-      expect(JSON.parse(lines[0])).toEqual({ id: 'msg1', text: 'hello', user: 'user1' });
+      const doc1 = JSON.parse(lines[0]);
+      expect(doc1.id).toBe('msg1');
+      expect(doc1.messageId).toBe('msg1');
+      expect(doc1.text).toBe('hello');
+    });
+
+    test('strips null/undefined values and stringifies objects', async () => {
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify({ name: 'convos' })),
+      });
+      await provider.createIndex('convos', 'conversationId');
+      mockFetch.mockClear();
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve('{"success":true}'),
+      });
+
+      await provider.addDocuments(
+        'convos',
+        [
+          {
+            conversationId: 'conv1',
+            title: 'Test',
+            user: 'user1',
+            nullField: null,
+            nestedObj: { foo: 'bar' },
+          },
+        ],
+        'conversationId',
+      );
+
+      const call = mockFetch.mock.calls[0];
+      const doc = JSON.parse((call[1].body as string).split('\n')[0]);
+      expect(doc.id).toBe('conv1');
+      expect(doc.nullField).toBeUndefined();
+      expect(doc.nestedObj).toBe('{"foo":"bar"}');
     });
   });
 
@@ -255,7 +331,17 @@ describe('TypesenseProvider', () => {
   });
 
   describe('search', () => {
-    test('performs wildcard search when no query string', async () => {
+    beforeEach(async () => {
+      // Register the messages index so query_by fields are available
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify({ name: 'messages' })),
+      });
+      await provider.createIndex('messages', 'messageId');
+      mockFetch.mockClear();
+    });
+
+    test('performs wildcard search with correct query_by fields', async () => {
       mockFetch.mockResolvedValueOnce({
         status: 200,
         text: () =>
@@ -271,7 +357,13 @@ describe('TypesenseProvider', () => {
       await provider.search('messages', '');
 
       const call = mockFetch.mock.calls[0];
-      expect(call[0]).toContain('q=*');
+      const url = decodeURIComponent(call[0]);
+      expect(url).toContain('q=*');
+      // query_by should use actual field names, not '*'
+      expect(url).toContain('query_by=');
+      expect(url).not.toContain('query_by=*');
+      // Should include searchable fields (excluding primaryKey messageId)
+      expect(url).toMatch(/query_by=.*text/);
     });
 
     test('performs search with query', async () => {
@@ -455,6 +547,7 @@ describe('TypesenseProvider', () => {
   describe('updateDocuments', () => {
     test('uses upsert action for updates', async () => {
       mockFetch.mockResolvedValueOnce({
+        ok: true,
         text: () => Promise.resolve('{"success":true}'),
       });
 
@@ -467,6 +560,39 @@ describe('TypesenseProvider', () => {
     test('does nothing for empty array', async () => {
       await provider.updateDocuments('messages', []);
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getDocuments', () => {
+    test('uses valid query_by fields for listing', async () => {
+      // Register index first
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify({ name: 'convos' })),
+      });
+      await provider.createIndex('convos', 'conversationId');
+      mockFetch.mockClear();
+
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              found: 1,
+              hits: [{ document: { id: 'conv1', title: 'Test', user: 'user1' } }],
+              page: 1,
+            }),
+          ),
+      });
+
+      const result = await provider.getDocuments('convos', { limit: 10, offset: 0 });
+
+      expect(result.results).toHaveLength(1);
+      const call = mockFetch.mock.calls[0];
+      const url = decodeURIComponent(call[0]);
+      // Should use actual field names, not empty or '*'
+      expect(url).toContain('query_by=title,user');
+      expect(url).toContain('q=*');
     });
   });
 });
