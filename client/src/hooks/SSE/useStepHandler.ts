@@ -111,7 +111,7 @@ export default function useStepHandler({
     const updatedContent = [...(message.content || [])] as Array<
       Partial<TMessageContentParts> | undefined
     >;
-    if (!updatedContent[index]) {
+    if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {
       updatedContent[index] = { type: contentPart.type as AllContentTypes };
     }
 
