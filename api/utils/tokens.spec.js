@@ -1,13 +1,13 @@
 /** Note: No hard-coded values should be used in this file. */
-const { EModelEndpoint } = require('librechat-data-provider');
 const {
+  EModelEndpoint,
   maxTokensMap,
   matchModelName,
-  processModelData,
   getModelMaxTokens,
   maxOutputTokensMap,
   findMatchingPattern,
-} = require('@librechat/api');
+} = require('librechat-data-provider');
+const { processModelData } = require('@librechat/api');
 
 describe('getModelMaxTokens', () => {
   test('should return correct tokens for exact match', () => {
@@ -485,7 +485,7 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct max output tokens for GPT-5 models', () => {
-    const { getModelMaxOutputTokens } = require('@librechat/api');
+    const { getModelMaxOutputTokens } = require('librechat-data-provider');
     ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5-pro'].forEach((model) => {
       expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
       expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
@@ -498,7 +498,7 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct max output tokens for GPT-OSS models', () => {
-    const { getModelMaxOutputTokens } = require('@librechat/api');
+    const { getModelMaxOutputTokens } = require('librechat-data-provider');
     ['gpt-oss-20b', 'gpt-oss-120b'].forEach((model) => {
       expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
       expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
@@ -745,7 +745,7 @@ describe('Meta Models Tests', () => {
   });
 
   describe('DeepSeek Max Output Tokens', () => {
-    const { getModelMaxOutputTokens } = require('@librechat/api');
+    const { getModelMaxOutputTokens } = require('librechat-data-provider');
 
     test('should return correct max output tokens for deepseek-chat', () => {
       const expected = maxOutputTokensMap[EModelEndpoint.openAI]['deepseek-chat'];
@@ -1123,7 +1123,7 @@ describe('Claude Model Tests', () => {
   });
 
   it('should return correct max output tokens for Claude Opus 4.6 (128K)', () => {
-    const { getModelMaxOutputTokens } = require('@librechat/api');
+    const { getModelMaxOutputTokens } = require('librechat-data-provider');
     expect(getModelMaxOutputTokens('claude-opus-4-6', EModelEndpoint.anthropic)).toBe(
       maxOutputTokensMap[EModelEndpoint.anthropic]['claude-opus-4-6'],
     );
