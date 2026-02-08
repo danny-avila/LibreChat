@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useSetAtom, useAtomValue } from 'jotai';
 import { isAgentsEndpoint, getModelMaxTokens } from 'librechat-data-provider';
@@ -10,6 +10,11 @@ import { useChatContext } from '~/Providers';
 /**
  * Hook to compute and update token usage from conversation messages.
  * Should be called in a component that has access to useChatContext.
+ *
+ * Token summation is incremental: we track how many messages have been processed
+ * and only scan new ones. When the conversation changes or messages reset, we
+ * recompute from scratch. This avoids O(n) re-scans of the full message array
+ * on every new message.
  */
 export function useTokenUsageComputation() {
   const { conversation } = useChatContext();
@@ -34,9 +39,6 @@ export function useTokenUsageComputation() {
    * 1. If URL param is 'new' -> use 'new' (landing page, no conversation yet)
    * 2. If conversation has actual ID -> use it (active conversation)
    * 3. Fallback to URL param (handles direct navigation to /c/:id)
-   *
-   * This ensures we always query the correct messages cache key and avoids
-   * dual subscriptions that would cause duplicate reactivity and API calls.
    */
   const effectiveConversationId = useMemo(() => {
     if (paramId === 'new') {
@@ -45,66 +47,72 @@ export function useTokenUsageComputation() {
     return conversationId || paramId || '';
   }, [paramId, conversationId]);
 
-  /**
-   * Single subscription to messages for the effective conversation ID.
-   * React Query caches messages by [QueryKeys.messages, id], so we'll
-   * automatically get updates when:
-   * - New messages are added via setMessages() in useChatHelpers
-   * - Conversation transitions from 'new' to actual ID (cache is synced in setMessages)
-   * - Messages are fetched from the server
-   */
   const { data: messages } = useGetMessagesByConvoId(effectiveConversationId, {
     enabled: !!effectiveConversationId,
   });
 
-  const effectiveMessages = useMemo<TMessage[]>(() => messages ?? [], [messages]);
+  /**
+   * Incremental token tracking.
+   * We keep running totals and the index of the last processed message.
+   * If the message array shrinks (conversation switch) or the conversation ID
+   * changes, we reset and recompute.
+   */
+  const tokenRef = useRef({
+    convoId: '',
+    processedCount: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  });
 
-  // Compute token usage whenever messages change
-  const tokenData = useMemo(() => {
-    let inputTokens = 0;
-    let outputTokens = 0;
+  const tokenTotals = useMemo(() => {
+    const msgArray = messages ?? [];
+    const ref = tokenRef.current;
 
-    if (effectiveMessages && Array.isArray(effectiveMessages)) {
-      for (const msg of effectiveMessages) {
-        const count = msg.tokenCount ?? 0;
-        if (msg.isCreatedByUser) {
-          inputTokens += count;
-        } else {
-          outputTokens += count;
-        }
-      }
+    // Reset if conversation changed or messages were replaced (e.g. conversation switch)
+    if (ref.convoId !== effectiveConversationId || msgArray.length < ref.processedCount) {
+      ref.convoId = effectiveConversationId;
+      ref.processedCount = 0;
+      ref.inputTokens = 0;
+      ref.outputTokens = 0;
     }
 
-    // Determine max context: explicit setting or model default
-    let maxContext: number | null = conversation?.maxContextTokens ?? null;
+    // Process only new messages since last computation
+    for (let i = ref.processedCount; i < msgArray.length; i++) {
+      const msg: TMessage = msgArray[i];
+      const count = msg.tokenCount ?? 0;
+      if (msg.isCreatedByUser) {
+        ref.inputTokens += count;
+      } else {
+        ref.outputTokens += count;
+      }
+    }
+    ref.processedCount = msgArray.length;
 
-    // If no explicit maxContextTokens, try to look up model default
-    if (maxContext === null) {
-      // For agents endpoint, get the actual model from the fetched agent
+    return { inputTokens: ref.inputTokens, outputTokens: ref.outputTokens };
+  }, [messages, effectiveConversationId]);
+
+  // Compute max context separately (different dependencies, no message iteration)
+  const maxContext = useMemo(() => {
+    let ctx: number | null = conversation?.maxContextTokens ?? null;
+
+    if (ctx === null) {
       if (isAgent && agent?.model) {
-        // Use agent's provider, or fall back to 'agents' endpoint for lookup
         const provider = agent.provider ?? endpoint;
         const modelDefault = getModelMaxTokens(agent.model, provider);
         if (modelDefault !== undefined) {
-          maxContext = modelDefault;
+          ctx = modelDefault;
         }
       } else if (conversation?.model) {
-        // For other endpoints, use conversation model directly
         const effectiveEndpoint = conversation?.endpointType ?? endpoint;
         const modelDefault = getModelMaxTokens(conversation.model, effectiveEndpoint);
         if (modelDefault !== undefined) {
-          maxContext = modelDefault;
+          ctx = modelDefault;
         }
       }
     }
 
-    return {
-      inputTokens,
-      outputTokens,
-      maxContext,
-    };
+    return ctx;
   }, [
-    effectiveMessages,
     conversation?.maxContextTokens,
     conversation?.model,
     conversation?.endpointType,
@@ -115,19 +123,24 @@ export function useTokenUsageComputation() {
 
   // Update the atom when computed values change
   useEffect(() => {
-    setTokenUsage(tokenData);
-  }, [tokenData, setTokenUsage]);
+    setTokenUsage({
+      inputTokens: tokenTotals.inputTokens,
+      outputTokens: tokenTotals.outputTokens,
+      maxContext,
+    });
+  }, [tokenTotals, maxContext, setTokenUsage]);
 
   // Reset token usage when starting a new conversation
   useEffect(() => {
-    if (paramId === 'new' && effectiveMessages.length === 0) {
+    const msgCount = messages?.length ?? 0;
+    if (paramId === 'new' && msgCount === 0) {
       setTokenUsage({
         inputTokens: 0,
         outputTokens: 0,
         maxContext: null,
       });
     }
-  }, [paramId, effectiveMessages.length, setTokenUsage]);
+  }, [paramId, messages, setTokenUsage]);
 }
 
 /**
