@@ -1,7 +1,7 @@
 const { v4 } = require('uuid');
 const { sleep } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
-const { sendEvent, getBalanceConfig, getModelMaxTokens, countTokens } = require('@librechat/api');
+const { sendEvent, getBalanceConfig, countTokens } = require('@librechat/api');
 const {
   Time,
   Constants,
@@ -10,6 +10,7 @@ const {
   ContentTypes,
   ToolCallTypes,
   EModelEndpoint,
+  getModelMaxTokens,
   retrievalMimeTypes,
   AssistantStreamEvents,
 } = require('librechat-data-provider');
