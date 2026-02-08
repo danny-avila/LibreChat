@@ -14,29 +14,22 @@ export type EndpointTokenConfig = Record<string, TokenConfig>;
 /**
  * Model Token Configuration Maps
  *
- * IMPORTANT: Key Ordering for Pattern Matching
- * ============================================
- * The `findMatchingPattern` function iterates through object keys in REVERSE order
- * (last-defined keys are checked first) and uses `modelName.includes(key)` for matching.
+ * Pattern Matching Behavior
+ * ========================
+ * The `findMatchingPattern` function uses `modelName.includes(key)` for matching
+ * and selects the **longest matching key** to ensure the most specific pattern wins.
  *
- * This means:
- * 1. BASE PATTERNS must be defined FIRST (e.g., "kimi", "moonshot")
- * 2. SPECIFIC PATTERNS must be defined AFTER their base patterns (e.g., "kimi-k2", "kimi-k2.5")
+ * For example, given model name "kimi-k2.5-latest":
+ * - "kimi" matches (length 4)
+ * - "kimi-k2" matches (length 7)
+ * - "kimi-k2.5" matches (length 9) <-- selected as longest match
  *
- * Example ordering for Kimi models:
- *   kimi: 262144,           // Base pattern - checked last
- *   'kimi-k2': 262144,      // More specific - checked before "kimi"
- *   'kimi-k2.5': 262144,    // Most specific - checked first
+ * This means key insertion order does NOT affect specificity — the longest key always
+ * wins. However, for equal-length keys, insertion order still serves as a tiebreaker
+ * (last-defined key checked first via reverse iteration).
  *
- * Why this matters:
- * - Model name "kimi-k2.5" contains both "kimi" and "kimi-k2" as substrings
- * - If "kimi" were checked first, it would incorrectly match "kimi-k2.5"
- * - By defining specific patterns AFTER base patterns, they're checked first in reverse iteration
- *
- * When adding new model families:
- * 1. Define the base/generic pattern first
- * 2. Define increasingly specific patterns after
- * 3. Ensure no pattern is a substring of another that should match differently
+ * When adding new model families, ensure no pattern key is an unintended substring
+ * of another that maps to a different value.
  */
 
 const openAIModels = {
@@ -429,7 +422,12 @@ export const maxOutputTokensMap = {
 };
 
 /**
- * Finds the first matching pattern in the tokens map.
+ * Finds the most specific matching pattern in the tokens map.
+ *
+ * Uses `includes()` matching so provider-prefixed names (e.g. "openai/gpt-4")
+ * resolve correctly. When multiple keys match, the longest key wins to ensure
+ * specific patterns like "kimi-k2.5" take priority over broader ones like "kimi".
+ *
  * @param {string} modelName
  * @param {Record<string, number> | EndpointTokenConfig} tokensMap
  * @returns {string|null}
@@ -440,14 +438,18 @@ export function findMatchingPattern(
 ): string | null {
   const keys = Object.keys(tokensMap);
   const lowerModelName = modelName.toLowerCase();
+  let bestMatch: string | null = null;
+  let bestLength = 0;
+
   for (let i = keys.length - 1; i >= 0; i--) {
     const modelKey = keys[i];
-    if (lowerModelName.includes(modelKey)) {
-      return modelKey;
+    if (lowerModelName.includes(modelKey) && modelKey.length > bestLength) {
+      bestMatch = modelKey;
+      bestLength = modelKey.length;
     }
   }
 
-  return null;
+  return bestMatch;
 }
 
 /**
