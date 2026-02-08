@@ -22,11 +22,18 @@ const MessageAvatar = ({ iconData }: { iconData: TMessageIcon }) => (
   </div>
 );
 
-const MessageBody = ({ message, messageLabel, fontSize }) => (
+const MessageBody = ({ message, messageLabel, fontSize, displayModel }) => (
   <div
     className={cn('relative flex w-11/12 flex-col', message.isCreatedByUser ? '' : 'agent-turn')}
   >
-    <div className={cn('select-none font-semibold', fontSize)}>{messageLabel}</div>
+    <div className={cn('select-none font-semibold', fontSize)}>
+      {messageLabel}
+      {displayModel && (
+        <span className="ml-2 text-xs font-normal text-text-secondary">
+          {displayModel}
+        </span>
+      )}
+    </div>
     <SearchContent message={message} />
     <SubRow classes="text-xs">
       <MinimalHoverButtons message={message} />
@@ -38,6 +45,7 @@ const MessageBody = ({ message, messageLabel, fontSize }) => (
 export default function SearchMessage({ message }: Pick<TMessageProps, 'message'>) {
   const fontSize = useAtomValue(fontSizeAtom);
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
+  const ModelNameDisplay = useRecoilValue<boolean>(store.ModelNameDisplay);
   const { user } = useAuthContext();
   const localize = useLocalize();
 
@@ -71,12 +79,28 @@ export default function SearchMessage({ message }: Pick<TMessageProps, 'message'
     return null;
   }
 
+  const displayModel = useMemo(() => {
+    if (!ModelNameDisplay || message?.isCreatedByUser) {
+      return '';
+    }
+    const model = message?.model ?? '';
+    if (!model || model === messageLabel) {
+      return '';
+    }
+    return model;
+  }, [ModelNameDisplay, message?.isCreatedByUser, message?.model, messageLabel]);
+
   return (
     <div className="text-token-text-primary w-full bg-transparent">
       <div className="m-auto p-4 py-2 md:gap-6">
         <div className="final-completion group mx-auto flex flex-1 gap-3 md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
           <MessageAvatar iconData={iconData} />
-          <MessageBody message={message} messageLabel={messageLabel} fontSize={fontSize} />
+          <MessageBody
+            message={message}
+            messageLabel={messageLabel}
+            fontSize={fontSize}
+            displayModel={displayModel}
+          />
         </div>
       </div>
     </div>
