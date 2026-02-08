@@ -1,6 +1,6 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
-import { TextareaAutosize } from '@librechat/client';
+import { LightningIcon, TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import {
@@ -34,6 +34,7 @@ import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
+import PromptsButtonCommand from './PromptsButtonCommand';
 
 const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
@@ -318,6 +319,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             >
               <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
                 <AttachFileChat conversation={conversation} disableInputs={disableInputs} />
+              </div>
+              <div className={`${isRTL ? 'mr-2' : 'ml-2'} flex w-full items-center gap-2`}>
+                <PromptsButtonCommand icon={<LightningIcon />} submitPrompt={submitPrompt} />
               </div>
               <BadgeRow
                 showEphemeralBadges={

@@ -78,7 +78,7 @@
   "com_agents_no_access": "Non hai l'autorizzazione per modificare questo agente.",
   "com_agents_no_agent_id_error": "Non è stato trovato alcun ID agente. Assicurarsi che l'agente sia stato prima creato.",
   "com_agents_no_more_results": "Avete raggiunto la fine dei risultati",
-  "com_agents_not_available": "Agente Non Disponibile",
+  "com_agents_prompt_selection": "Seleziona un prompt per nome o comando.",
   "com_agents_recommended": "I nostri agenti consigliati",
   "com_agents_results_for": "Risultati per '{{query}}'",
   "com_agents_search_aria": "Cerca agenti",
