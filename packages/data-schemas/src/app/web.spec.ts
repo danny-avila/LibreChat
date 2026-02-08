@@ -55,6 +55,7 @@ describe('loadWebSearchConfig', () => {
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
+        cohereApiUrl: '${COHERE_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
       });
     });
@@ -154,6 +155,7 @@ describe('loadWebSearchConfig', () => {
       expect(result?.searxngInstanceUrl).toBe('${SEARXNG_INSTANCE_URL}');
       expect(result?.firecrawlApiUrl).toBe('${FIRECRAWL_API_URL}');
       expect(result?.jinaApiUrl).toBe('${JINA_API_URL}');
+      expect(result?.cohereApiUrl).toBe('${COHERE_API_URL}');
     });
 
     it('should preserve custom URLs', () => {
@@ -161,6 +163,7 @@ describe('loadWebSearchConfig', () => {
         searxngInstanceUrl: 'https://custom-searxng.com',
         firecrawlApiUrl: 'https://custom-firecrawl.com',
         jinaApiUrl: 'https://custom-jina.com',
+        cohereApiUrl: 'https://custom-cohere.com',
       };
 
       const result = loadWebSearchConfig(config);
@@ -168,6 +171,7 @@ describe('loadWebSearchConfig', () => {
       expect(result?.searxngInstanceUrl).toBe('https://custom-searxng.com');
       expect(result?.firecrawlApiUrl).toBe('https://custom-firecrawl.com');
       expect(result?.jinaApiUrl).toBe('https://custom-jina.com');
+      expect(result?.cohereApiUrl).toBe('https://custom-cohere.com');
     });
   });
 });
