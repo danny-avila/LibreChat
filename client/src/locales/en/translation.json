@@ -1422,7 +1422,7 @@
   "com_ui_token_exchange_method": "Token Exchange Method",
   "com_ui_token_url": "Token URL",
   "com_ui_token_usage_aria_full": "Token usage: {{0}} input, {{1}} output, {{2}} max context, {{3}}% used",
-  "com_ui_token_usage_aria_no_max": "Token usage: {{0}} input, {{1}} output",
+  "com_ui_token_usage_aria_no_max": "Token usage: {{0}} input, {{1}} output, {{2}} total tokens used",
   "com_ui_token_usage_context": "Context Usage",
   "com_ui_token_usage_input": "Input",
   "com_ui_token_usage_output": "Output",

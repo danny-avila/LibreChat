@@ -4,10 +4,12 @@ import { useLocalize, useTokenUsage } from '~/hooks';
 import { cn } from '~/utils';
 
 function formatTokens(n: number): string {
-  return new Intl.NumberFormat(undefined, {
+  const formatted = new Intl.NumberFormat(undefined, {
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(n);
+  // Remove trailing .0 before suffix (e.g., "1.0K" -> "1K", "2.0M" -> "2M")
+  return formatted.replace(/\.0(?=[A-Za-z]|$)/, '');
 }
 
 interface ProgressBarProps {
@@ -209,6 +211,7 @@ const TokenUsageIndicator = memo(function TokenUsageIndicator() {
     : localize('com_ui_token_usage_aria_no_max', {
         0: formatTokens(inputTokens),
         1: formatTokens(outputTokens),
+        2: formatTokens(totalUsed),
       });
 
   // Color based on percentage
