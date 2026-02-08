@@ -46,6 +46,56 @@ services:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
     volumes:
       - ./meili_data_v1.12:/meili_data
+
+  # ---- OpenSearch (alternative to MeiliSearch) ----
+  # To use OpenSearch instead of MeiliSearch:
+  #   1. Comment out the 'meilisearch' service above
+  #   2. Uncomment the 'opensearch' service below
+  #   3. In .env, set:
+  #        SEARCH_PROVIDER=opensearch
+  #        OPENSEARCH_HOST=http://opensearch:9200
+  #        OPENSEARCH_INSECURE=true
+  #   4. In the 'api' service environment, replace MEILI_HOST with:
+  #        OPENSEARCH_HOST=http://opensearch:9200
+  #   5. Comment out MEILI_HOST in the 'api' service environment
+  # opensearch:
+  #   container_name: chat-opensearch
+  #   image: opensearchproject/opensearch:3.4.0
+  #   restart: always
+  #   environment:
+  #     - discovery.type=single-node
+  #     - DISABLE_SECURITY_PLUGIN=true
+  #     - DISABLE_INSTALL_DEMO_CONFIG=true
+  #     - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+  #   volumes:
+  #     - opensearch_data:/usr/share/opensearch/data
+  #   ports:
+  #     - "9200:9200"
+
+  # ---- Typesense (alternative to MeiliSearch) ----
+  # To use Typesense instead of MeiliSearch:
+  #   1. Comment out the 'meilisearch' service above
+  #   2. Uncomment the 'typesense' service below
+  #   3. In .env, set:
+  #        SEARCH_PROVIDER=typesense
+  #        TYPESENSE_HOST=http://typesense:8108
+  #        TYPESENSE_API_KEY=xyz  (match the --api-key below)
+  #   4. In the 'api' service environment, replace MEILI_HOST with:
+  #        TYPESENSE_HOST=http://typesense:8108
+  #   5. Comment out MEILI_HOST in the 'api' service environment
+  # typesense:
+  #   container_name: chat-typesense
+  #   image: typesense/typesense:30.1
+  #   restart: always
+  #   environment:
+  #     - TYPESENSE_DATA_DIR=/data
+  #     - TYPESENSE_API_KEY=${TYPESENSE_API_KEY:-xyz}
+  #   volumes:
+  #     - typesense_data:/data
+  #   ports:
+  #     - "8108:8108"
+  #   command: "--data-dir /data --api-key=${TYPESENSE_API_KEY:-xyz} --enable-cors"
+
   vectordb:
     container_name: vectordb
     image: pgvector/pgvector:0.8.0-pg15-trixie
@@ -70,3 +120,7 @@ services:
 
 volumes:
   pgdata2:
+  # Uncomment when using OpenSearch:
+  # opensearch_data:
+  # Uncomment when using Typesense:
+  # typesense_data:

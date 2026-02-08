@@ -9,6 +9,48 @@ data:
   {{- if and (not (dig "configEnv" "MEILI_HOST" "" .Values.librechat)) .Values.meilisearch.enabled }}
   MEILI_HOST: http://{{ include "meilisearch.fullname" .Subcharts.meilisearch }}.{{ .Release.Namespace | lower }}.svc.cluster.local:7700
   {{- end }}
+  {{- if .Values.opensearch.enabled }}
+  {{- if not (dig "configEnv" "SEARCH_PROVIDER" "" .Values.librechat) }}
+  SEARCH_PROVIDER: opensearch
+  {{- end }}
+  {{- if not (dig "configEnv" "OPENSEARCH_HOST" "" .Values.librechat) }}
+  {{- $opensearchProto := "http" }}
+  {{- $securityDisabled := false }}
+  {{- range (.Values.opensearch.extraEnvs | default list) }}
+    {{- if and (eq .name "DISABLE_SECURITY_PLUGIN") (eq .value "true") }}
+      {{- $securityDisabled = true }}
+    {{- end }}
+  {{- end }}
+  {{- if not $securityDisabled }}
+    {{- $opensearchProto = "https" }}
+  {{- end }}
+  {{- $osClusterName := .Values.opensearch.clusterName | default "opensearch-cluster" }}
+  {{- $osNodeGroup := .Values.opensearch.nodeGroup | default "master" }}
+  {{- $osMasterService := .Values.opensearch.masterService | default (printf "%s-%s" $osClusterName $osNodeGroup) }}
+  OPENSEARCH_HOST: "{{ $opensearchProto }}://{{ $osMasterService }}.{{ .Release.Namespace | lower }}.svc.cluster.local:9200"
+  {{- end }}
+  {{- if not (dig "configEnv" "OPENSEARCH_INSECURE" "" .Values.librechat) }}
+  OPENSEARCH_INSECURE: "true"
+  {{- end }}
+  {{- if not (dig "configEnv" "OPENSEARCH_USERNAME" "" .Values.librechat) }}
+  {{- if and (hasKey .Values.opensearch "opensearchUsername") .Values.opensearch.opensearchUsername }}
+  OPENSEARCH_USERNAME: {{ .Values.opensearch.opensearchUsername | quote }}
+  {{- end }}
+  {{- end }}
+  {{- /* OPENSEARCH_PASSWORD should be provided via the existing secret (librechat-credentials-env) */ -}}
+  {{- /* or via global.librechat.env with secretKeyRef — never in a ConfigMap. */ -}}
+  {{- end }}
+  {{- /* Typesense auto-wiring: only when typesense is enabled via values */ -}}
+  {{- if and (hasKey .Values "typesense") .Values.typesense.enabled }}
+  {{- if not (dig "configEnv" "SEARCH_PROVIDER" "" .Values.librechat) }}
+  SEARCH_PROVIDER: typesense
+  {{- end }}
+  {{- if not (dig "configEnv" "TYPESENSE_HOST" "" .Values.librechat) }}
+  TYPESENSE_HOST: "http://{{ .Release.Name }}-typesense.{{ .Release.Namespace | lower }}.svc.cluster.local:8108"
+  {{- end }}
+  {{- /* TYPESENSE_API_KEY should be provided via the existing secret (librechat-credentials-env) */ -}}
+  {{- /* or via global.librechat.env with secretKeyRef — never in a ConfigMap. */ -}}
+  {{- end }}
   {{- if and (not (dig "configEnv" "MONGO_URI" "" .Values.librechat)) .Values.mongodb.enabled }}
   MONGO_URI: mongodb://{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ .Release.Namespace | lower }}.svc.cluster.local:27017/LibreChat
   {{- end }}

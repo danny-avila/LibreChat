@@ -14,7 +14,9 @@ global:
    # - CREDS_IV
    # - JWT_SECRET
    # - JWT_REFRESH_SECRET
-   # - MEILI_MASTER_KEY
+   # - MEILI_MASTER_KEY (if using MeiliSearch)
+   # - OPENSEARCH_PASSWORD (if using OpenSearch with security enabled)
+   # - TYPESENSE_API_KEY (if using Typesense)
   librechat:
     existingSecretName: "librechat-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
@@ -304,3 +306,126 @@ meilisearch:
   auth:
     # Use an existing Kubernetes secret for the MEILI_MASTER_KEY
     existingMasterKeySecret: "librechat-credentials-env"
+
+# OpenSearch Parameters
+# Enable this as an alternative to MeiliSearch for conversation/message search.
+# When enabled, set meilisearch.enabled=false and configure SEARCH_PROVIDER=opensearch in configEnv.
+# OpenSearch supports multi-replica mode and is Apache-2.0 licensed.
+#
+# ---- Connecting to an external/remote OpenSearch cluster ----
+# If you already have an OpenSearch cluster running outside this chart, keep opensearch.enabled=false
+# and set the connection details directly in librechat.configEnv:
+#   librechat:
+#     configEnv:
+#       SEARCH_PROVIDER: opensearch
+#       OPENSEARCH_HOST: "https://my-remote-opensearch:9200"
+#       OPENSEARCH_USERNAME: "admin"
+#       OPENSEARCH_INSECURE: "true"   # set to "false" if using valid TLS certs
+# Then provide OPENSEARCH_PASSWORD via the existing secret or secretKeyRef (see below).
+opensearch:
+  enabled: false
+  # singleNode: true for development, false for production (multi-replica)
+  singleNode: true
+  replicas: 1
+
+  # ---- Image Configuration ----
+  # Supports both official and Docker Hardened Images (DHI).
+  # To switch to DHI, set:
+  #   global.dockerRegistry: "dhi.io"
+  #   image.repository: "opensearch"
+  #   image.tag: "3.4.0-debian13"
+  #   persistence.image: "busybox"
+  #   persistence.imageTag: "1.37.0-alpine3.22"
+  #   imagePullSecrets: [{ name: "dhi-pull-secret" }]
+  global:
+    dockerRegistry: ""
+  image:
+    repository: "opensearchproject/opensearch"
+    tag: "3.4.0"
+    pullPolicy: "IfNotPresent"
+
+  # OpenSearch Java memory settings
+  opensearchJavaOpts: "-Xmx512M -Xms512M"
+
+  # Persistence
+  persistence:
+    enabled: true
+    size: 8Gi
+    # storageClass: ""
+
+  # Security — for development, you can disable the security plugin.
+  # For production, configure proper TLS and authentication.
+  extraEnvs:
+    - name: DISABLE_SECURITY_PLUGIN
+      value: "true"
+    - name: DISABLE_INSTALL_DEMO_CONFIG
+      value: "true"
+  # # For production with security enabled, set the admin password:
+  # extraEnvs:
+  #   - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+  #     valueFrom:
+  #       secretKeyRef:
+  #         name: opensearch-credentials
+  #         key: admin-password
+
+  # Resources
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+
+  # Credentials for LibreChat to connect to OpenSearch.
+  # Username is auto-wired into the configmap (non-sensitive).
+  # opensearchUsername: "admin"
+  #
+  # OPENSEARCH_PASSWORD must be provided via the existing secret or secretKeyRef:
+  #   Option A: Add OPENSEARCH_PASSWORD to the secret referenced by global.librechat.existingSecretName
+  #   Option B: Use global.librechat.env:
+  #     global:
+  #       librechat:
+  #         env:
+  #           - name: OPENSEARCH_PASSWORD
+  #             valueFrom:
+  #               secretKeyRef:
+  #                 name: opensearch-credentials
+  #                 key: password
+
+  # Pull secrets (required for DHI images, not needed for official images)
+  imagePullSecrets: []
+  # - name: dhi-pull-secret
+
+# Typesense Parameters
+# Enable this as an alternative to MeiliSearch for conversation/message search.
+# When enabled, set meilisearch.enabled=false.
+# Typesense is a fast, typo-tolerant search engine with Raft-based clustering.
+# NOTE: Typesense is not a subchart dependency — deploy it separately
+#       (e.g. via the Typesense Kubernetes Operator or a community Helm chart).
+# The values below configure how LibreChat connects to an existing Typesense instance.
+#
+# ---- Connecting to an external/remote Typesense instance ----
+# You can also keep typesense.enabled=false and set the connection details directly:
+#   librechat:
+#     configEnv:
+#       SEARCH_PROVIDER: typesense
+#       TYPESENSE_HOST: "http://my-remote-typesense:8108"
+# Then provide TYPESENSE_API_KEY via the existing secret or secretKeyRef (see below).
+typesense:
+  enabled: false
+
+  # Connection settings (auto-wired into the configmap)
+  # host: "http://typesense:8108"
+
+  # Image reference (for documentation; deploy Typesense separately)
+  # image: typesense/typesense:30.1
+
+  # TYPESENSE_API_KEY must be provided via the existing secret or secretKeyRef:
+  #   Option A: Add TYPESENSE_API_KEY to the secret referenced by global.librechat.existingSecretName
+  #   Option B: Use global.librechat.env:
+  #     global:
+  #       librechat:
+  #         env:
+  #           - name: TYPESENSE_API_KEY
+  #             valueFrom:
+  #               secretKeyRef:
+  #                 name: typesense-credentials
+  #                 key: api-key
