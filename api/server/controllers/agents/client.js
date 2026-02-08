@@ -315,6 +315,8 @@ class AgentClient extends BaseClient {
       Object.assign(
         {
           endpoint: this.options.endpoint,
+          endpointType: this.options.endpointType,
+          model: this.options.agent?.model_parameters?.model,
           agent_id: this.options.agent.id,
           modelLabel: this.options.modelLabel,
           maxContextTokens: this.options.maxContextTokens,

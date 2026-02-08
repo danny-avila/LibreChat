@@ -18,7 +18,9 @@ import {
   useQueryParams,
   useSubmitMessage,
   useFocusChatEffect,
+  useTokenUsageComputation,
 } from '~/hooks';
+import TokenUsageIndicator from './TokenUsageIndicator';
 import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
@@ -39,6 +41,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   useFocusChatEffect(textAreaRef);
+  useTokenUsageComputation();
   const localize = useLocalize();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -331,6 +334,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 }
               />
               <div className="mx-auto flex" />
+              <TokenUsageIndicator />
               {SpeechToText && (
                 <AudioRecorder
                   methods={methods}
