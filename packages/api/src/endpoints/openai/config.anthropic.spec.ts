@@ -45,6 +45,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'http://host.docker.internal:4000/v1',
           defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
             'anthropic-beta': 'context-1m-2025-08-07',
           },
         },
@@ -94,6 +95,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'http://localhost:4000/v1',
           defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
             'anthropic-beta': 'token-efficient-tools-2025-02-19,output-128k-2025-02-19',
           },
         },
@@ -142,6 +144,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'http://localhost:4000/v1',
           defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
             'anthropic-beta': 'token-efficient-tools-2025-02-19,output-128k-2025-02-19',
           },
         },
@@ -184,6 +187,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'https://api.anthropic.proxy.com/v1',
           defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
             'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
           },
         },
@@ -228,6 +232,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'http://custom.proxy/v1',
           defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
             'Custom-Header': 'custom-value',
             Authorization: 'Bearer custom-token',
           },
@@ -270,6 +275,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://litellm:4000/v1',
+          defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
+          },
         },
         tools: [],
       });
@@ -314,6 +322,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://proxy.litellm/v1',
+          defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
+          },
         },
         tools: [],
       });
@@ -353,6 +364,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
+          defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
+          },
         },
         tools: [],
       });
@@ -392,6 +406,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
+          defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
+          },
         },
         tools: [
           {
@@ -439,6 +456,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
+          defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
+          },
         },
         tools: [],
       });
@@ -487,6 +507,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
+          defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
+          },
         },
         tools: [],
       });
@@ -538,6 +561,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'http://litellm/v1',
           defaultHeaders: {
+            'User-Agent': expect.stringContaining('LibreChat/'),
             'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
           },
         },

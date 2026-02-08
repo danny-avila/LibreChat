@@ -1,4 +1,4 @@
-import { AnthropicEffort } from 'librechat-data-provider';
+import { AnthropicEffort, Constants } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { getLLMConfig } from './llm';
 
@@ -18,6 +18,15 @@ describe('getLLMConfig', () => {
     expect(result.llmConfig).toHaveProperty('model', 'claude-3-5-sonnet-latest');
     expect(result.llmConfig).toHaveProperty('stream', true);
     expect(result.llmConfig).toHaveProperty('maxTokens');
+  });
+
+  it('should include User-Agent header in defaultHeaders', () => {
+    const result = getLLMConfig('test-api-key', { modelOptions: {} });
+    const defaultHeaders = result.llmConfig.clientOptions?.defaultHeaders as
+      | Record<string, string>
+      | undefined;
+    expect(defaultHeaders).toBeDefined();
+    expect(defaultHeaders?.['User-Agent']).toBe(`LibreChat/${Constants.VERSION}`);
   });
 
   it('should include proxy settings when provided', () => {
@@ -128,7 +137,8 @@ describe('getLLMConfig', () => {
     };
     const result = getLLMConfig('test-key', { modelOptions });
     const clientOptions = result.llmConfig.clientOptions;
-    expect(clientOptions?.defaultHeaders).toBeUndefined();
+    const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string> | undefined;
+    expect(defaultHeaders?.['anthropic-beta']).toBeUndefined();
     expect(result.llmConfig.promptCache).toBe(true);
   });
 
@@ -144,7 +154,8 @@ describe('getLLMConfig', () => {
       const modelOptions = { model, promptCache: true };
       const result = getLLMConfig('test-key', { modelOptions });
       const clientOptions = result.llmConfig.clientOptions;
-      expect(clientOptions?.defaultHeaders).toBeUndefined();
+      const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string> | undefined;
+      expect(defaultHeaders?.['anthropic-beta']).toBeUndefined();
       expect(result.llmConfig.promptCache).toBe(true);
     });
   });
@@ -306,6 +317,7 @@ describe('getLLMConfig', () => {
 
       // claude-3-5-sonnet supports prompt caching and should get the max-tokens header and promptCache boolean
       expect(result.llmConfig.clientOptions?.defaultHeaders).toEqual({
+        'User-Agent': `LibreChat/${Constants.VERSION}`,
         'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
       });
       expect(result.llmConfig.promptCache).toBe(true);
@@ -516,6 +528,7 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig).not.toHaveProperty('topK');
         // Should have appropriate headers for Claude-3.7 with prompt cache
         expect(result.llmConfig.clientOptions?.defaultHeaders).toEqual({
+          'User-Agent': `LibreChat/${Constants.VERSION}`,
           'anthropic-beta': 'token-efficient-tools-2025-02-19,output-128k-2025-02-19',
         });
         // Should pass promptCache boolean
@@ -1358,13 +1371,15 @@ describe('getLLMConfig', () => {
             modelOptions: { model, promptCache },
           });
 
-          const headers = result.llmConfig.clientOptions?.defaultHeaders;
+          const headers = result.llmConfig.clientOptions?.defaultHeaders as
+            | Record<string, string>
+            | undefined;
 
           if (shouldHaveHeaders) {
             expect(headers).toBeDefined();
-            expect((headers as Record<string, string>)['anthropic-beta']).toBeDefined();
+            expect(headers?.['anthropic-beta']).toBeDefined();
           } else {
-            expect(headers).toBeUndefined();
+            expect(headers?.['anthropic-beta']).toBeUndefined();
           }
 
           if (shouldHavePromptCache) {
