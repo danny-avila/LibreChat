@@ -432,6 +432,7 @@
   "com_ui_avatar": "Awatar",
   "com_ui_back_to_chat": "Powrót do czatu",
   "com_ui_back_to_prompts": "Powrót do promptów",
+  "com_ui_balance_tokens_left": "{{0}} tokenów pozostało",
   "com_ui_bookmark_delete_confirm": "Czy na pewno chcesz usunąć tę zakładkę?",
   "com_ui_bookmarks": "Zakładki",
   "com_ui_bookmarks_add": "Dodaj zakładki",

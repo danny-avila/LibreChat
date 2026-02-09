@@ -732,6 +732,7 @@
   "com_ui_back_to_builder": "ビルダーに戻る",
   "com_ui_back_to_chat": "チャットに戻る",
   "com_ui_back_to_prompts": "プロンプトに戻る",
+  "com_ui_balance_tokens_left": "{{0}}トークン残り",
   "com_ui_backup_code_number": "コード番号{{number}}",
   "com_ui_backup_codes": "バックアップコード",
   "com_ui_backup_codes_regenerate_error": "バックアップコードの再生成中にエラーが発生しました",

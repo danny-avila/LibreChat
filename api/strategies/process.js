@@ -97,8 +97,10 @@ const createSocialUser = async ({
     emailVerified,
   };
 
-  const balanceConfig = getBalanceConfig(appConfig);
-  const newUserId = await createUser(update, balanceConfig);
+  const newUserId = await createUser(update, {
+    ...appConfig,
+    balance: getBalanceConfig(appConfig),
+  });
   const fileStrategy = appConfig?.fileStrategy ?? process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 

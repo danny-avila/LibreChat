@@ -19,6 +19,17 @@ function AccountSettings() {
   const [showFiles, setShowFiles] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
+  // Calculate total token credits including per-model credits
+  // if per-model credits is enabled
+  let totalTokenCredits = balanceQuery.data?.tokenCredits;
+  const perSpecTokenCredits = balanceQuery.data?.perSpecTokenCredits;
+  if (Object.keys(perSpecTokenCredits || {}).length > 0) {
+    totalTokenCredits = (Object.values(perSpecTokenCredits || {}) as number[]).reduce(
+      (acc: number, val: number) => acc + val,
+      totalTokenCredits || 0,
+    );
+  }
+
   return (
     <Select.SelectProvider>
       <Select.Select
@@ -54,7 +65,7 @@ function AccountSettings() {
           <>
             <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
               {localize('com_nav_balance')}:{' '}
-              {new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits))}
+              {new Intl.NumberFormat().format(Math.round(totalTokenCredits))}
             </div>
             <DropdownMenuSeparator />
           </>

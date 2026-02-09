@@ -9,10 +9,11 @@ const { createTransaction, createStructuredTransaction } = require('./Transactio
  * @param {Object} tokenUsage - The number of tokens used.
  * @param {Number} tokenUsage.promptTokens - The number of prompt tokens used.
  * @param {Number} tokenUsage.completionTokens - The number of completion tokens used.
+ * @param {import('@librechat/data-schemas').AppConfig} [appConfig] - The app configuration.
  * @returns {Promise<void>} - Returns nothing.
  * @throws {Error} - Throws an error if there's an issue creating the transactions.
  */
-const spendTokens = async (txData, tokenUsage) => {
+const spendTokens = async (txData, tokenUsage, appConfig) => {
   const { promptTokens, completionTokens } = tokenUsage;
   logger.debug(
     `[spendTokens] conversationId: ${txData.conversationId}${
@@ -24,13 +25,15 @@ const spendTokens = async (txData, tokenUsage) => {
     },
   );
   let prompt, completion;
+  const normalizedPromptTokens = Math.max(promptTokens ?? 0, 0);
   try {
     if (promptTokens !== undefined) {
       prompt = await createTransaction({
         ...txData,
         tokenType: 'prompt',
-        rawAmount: promptTokens === 0 ? 0 : -Math.max(promptTokens, 0),
-      });
+        rawAmount: promptTokens === 0 ? 0 : -normalizedPromptTokens,
+        inputTokenCount: normalizedPromptTokens,
+      }, appConfig);
     }
 
     if (completionTokens !== undefined) {
@@ -38,7 +41,8 @@ const spendTokens = async (txData, tokenUsage) => {
         ...txData,
         tokenType: 'completion',
         rawAmount: completionTokens === 0 ? 0 : -Math.max(completionTokens, 0),
-      });
+        inputTokenCount: normalizedPromptTokens,
+      }, appConfig);
     }
 
     if (prompt || completion) {
@@ -48,6 +52,7 @@ const spendTokens = async (txData, tokenUsage) => {
         promptRate: prompt?.rate,
         completion: completion?.completion,
         completionRate: completion?.rate,
+        spec: completion?.spec ?? prompt?.spec,
         balance: completion?.balance ?? prompt?.balance,
       });
     } else {
@@ -70,10 +75,11 @@ const spendTokens = async (txData, tokenUsage) => {
  * @param {Number} tokenUsage.promptTokens.write - The number of write tokens.
  * @param {Number} tokenUsage.promptTokens.read - The number of read tokens.
  * @param {Number} tokenUsage.completionTokens - The number of completion tokens used.
+ * @param {import('@librechat/data-schemas').AppConfig} [appConfig] - The app configuration.
  * @returns {Promise<void>} - Returns nothing.
  * @throws {Error} - Throws an error if there's an issue creating the transactions.
  */
-const spendStructuredTokens = async (txData, tokenUsage) => {
+const spendStructuredTokens = async (txData, tokenUsage, appConfig) => {
   const { promptTokens, completionTokens } = tokenUsage;
   logger.debug(
     `[spendStructuredTokens] conversationId: ${txData.conversationId}${
@@ -87,22 +93,32 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
   let prompt, completion;
   try {
     if (promptTokens) {
-      const { input = 0, write = 0, read = 0 } = promptTokens;
+      const input = Math.max(promptTokens.input ?? 0, 0);
+      const write = Math.max(promptTokens.write ?? 0, 0);
+      const read = Math.max(promptTokens.read ?? 0, 0);
+      const totalInputTokens = input + write + read;
       prompt = await createStructuredTransaction({
         ...txData,
         tokenType: 'prompt',
         inputTokens: -input,
         writeTokens: -write,
         readTokens: -read,
-      });
+        inputTokenCount: totalInputTokens,
+      }, appConfig);
     }
 
     if (completionTokens) {
+      const totalInputTokens = promptTokens
+        ? Math.max(promptTokens.input ?? 0, 0) +
+          Math.max(promptTokens.write ?? 0, 0) +
+          Math.max(promptTokens.read ?? 0, 0)
+        : undefined;
       completion = await createTransaction({
         ...txData,
         tokenType: 'completion',
-        rawAmount: -completionTokens,
-      });
+        rawAmount: -Math.max(completionTokens, 0),
+        inputTokenCount: totalInputTokens,
+      }, appConfig);
     }
 
     if (prompt || completion) {
@@ -112,6 +128,7 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
         promptRate: prompt?.rate,
         completion: completion?.completion,
         completionRate: completion?.rate,
+        spec: completion?.spec ?? prompt?.spec,
         balance: completion?.balance ?? prompt?.balance,
       });
     } else {

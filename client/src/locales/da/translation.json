@@ -537,6 +537,7 @@
   "com_ui_azure": "Azure",
   "com_ui_back_to_chat": "Tilbage til chat",
   "com_ui_back_to_prompts": "Tilbage til Prompts",
+  "com_ui_balance_tokens_left": "{{0}} tokens tilbage",
   "com_ui_backup_codes": "Backupkoder",
   "com_ui_backup_codes_regenerate_error": "Der opstod en fejl ved genskabelse af backup-koder",
   "com_ui_backup_codes_regenerated": "Backupkoder er blevet genereret",

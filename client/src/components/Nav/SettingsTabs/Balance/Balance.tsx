@@ -9,6 +9,8 @@ function Balance() {
   const { isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
 
+  console.log('sta', startupConfig);
+
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && !!startupConfig?.balance?.enabled,
   });
@@ -17,6 +19,7 @@ function Balance() {
   // Pull out all the fields we need, with safe defaults
   const {
     tokenCredits = 0,
+    perSpecTokenCredits = null,
     autoRefillEnabled = false,
     lastRefill,
     refillAmount,
@@ -34,7 +37,7 @@ function Balance() {
   return (
     <div className="flex flex-col gap-4 p-4 text-sm text-text-primary">
       {/* Token credits display */}
-      <TokenCreditsItem tokenCredits={tokenCredits} />
+      <TokenCreditsItem perSpecTokenCredits={perSpecTokenCredits} tokenCredits={tokenCredits} />
 
       {/* Auto-refill display */}
       {autoRefillEnabled ? (

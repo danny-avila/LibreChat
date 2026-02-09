@@ -3,11 +3,12 @@ const mongoose = require('mongoose');
 const { getBalanceConfig } = require('@librechat/api');
 const { User, Balance } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { getAppConfig } = require('~/server/services/Config');
 const { askQuestion, silentExit } = require('./helpers');
+const { kebabCase } = require('lodash');
 const connect = require('./connect');
-
 (async () => {
-  await connect();
+  await connect();;
 
   /**
    * Show the welcome / help menu
@@ -15,26 +16,25 @@ const connect = require('./connect');
   console.purple('--------------------------');
   console.purple('Set balance to a user account!');
   console.purple('--------------------------');
+
   /**
    * Set up the variables we need and get the arguments if they were passed in
    */
-  let email = '';
-  let amount = '';
-  // If we have the right number of arguments, lets use them
-  if (process.argv.length >= 3) {
-    email = process.argv[2];
-    amount = process.argv[3];
-  } else {
-    console.orange('Usage: npm run set-balance <email> <amount>');
-    console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
-    console.purple('--------------------------');
-    // console.purple(`[DEBUG] Args Length: ${process.argv.length}`);
-  }
+  let email = process.argv[2];
+  let amount = process.argv[3];
+  let spec = process.argv[4];
 
-  const balanceConfig = getBalanceConfig();
+  const appConfig = await getAppConfig();
+  const balanceConfig = getBalanceConfig(appConfig);
   if (!balanceConfig?.enabled) {
     console.red('Error: Balance is not enabled. Use librechat.yaml to enable it');
     silentExit(1);
+  }
+
+  if (!process.argv[2]) {
+    console.orange(`Usage: npm run set-balance <email*> <amount> <spec>`);
+    console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
+    console.purple('--------------------------');
   }
 
   /**
@@ -62,9 +62,18 @@ const connect = require('./connect');
   if (!balance) {
     console.purple('User has no balance!');
   } else {
-    console.purple(`Current Balance: ${balance.tokenCredits}`);
+    console.purple(`Current balance: ${balance.tokenCredits}`);
+    for (let modelSpec of appConfig.modelSpecs?.list || []) {
+      if (!modelSpec.balance?.enabled) {
+        continue;
+      }
+      const specKey = kebabCase(modelSpec.name);
+      const specBalance = balance.perSpecTokenCredits?.[specKey] || 0;
+      console.purple(`- ${modelSpec.label ?? modelSpec.name}: ${specBalance}`);
+    }
   }
 
+  // Get the amount if not provided
   if (!amount) {
     amount = await askQuestion('amount:');
   }
@@ -74,16 +83,40 @@ const connect = require('./connect');
     silentExit(1);
   }
 
+  // Asking the model you want to set balance for
+  if (!spec) {
+    spec = await askQuestion('Model spec name (null):');
+  }
+  // check if the spec exists
+  if (spec) {
+    const specKey = kebabCase(spec);
+    const specExists = (appConfig.modelSpecs?.list || []).find(
+      (modelSpec) => kebabCase(modelSpec.name) === specKey,
+    );
+    if (!specExists) {
+      console.red(`Error: Spec "${spec}" does not exist in the config!`);
+      silentExit(1);
+    }
+  }
+
   /**
    * Now that we have all the variables we need, lets set the balance
    */
   let result;
   try {
-    result = await Balance.findOneAndUpdate(
-      { user: user._id },
-      { tokenCredits: amount },
-      { upsert: true, new: true },
-    ).lean();
+    if (spec) {
+      result = await Balance.findOneAndUpdate(
+        { user: user._id },
+        { $set: { [`perSpecTokenCredits.${kebabCase(spec)}`]: amount } },
+        { upsert: true, new: true },
+      ).lean();
+    } else {
+      result = await Balance.findOneAndUpdate(
+        { user: user._id },
+        { tokenCredits: amount },
+        { upsert: true, new: true },
+      ).lean();
+    }
   } catch (error) {
     console.red('Error: ' + error.message);
     console.error(error);
@@ -97,9 +130,15 @@ const connect = require('./connect');
     silentExit(1);
   }
 
+  // Print out the new balance
+  if (spec) {
+    console.purple(`New Balance for spsec ${spec}: ${amount}`);
+  } else {
+    console.purple(`New Balance: ${result.tokenCredits}`);
+  }
+
   // Done!
   console.green('Balance set successfully!');
-  console.purple(`New Balance: ${result.tokenCredits}`);
   silentExit(0);
 })();
 

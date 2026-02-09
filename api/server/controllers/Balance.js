@@ -3,7 +3,7 @@ const { Balance } = require('~/db/models');
 async function balanceController(req, res) {
   const balanceData = await Balance.findOne(
     { user: req.user.id },
-    '-_id tokenCredits autoRefillEnabled refillIntervalValue refillIntervalUnit lastRefill refillAmount',
+    '-_id tokenCredits perSpecTokenCredits autoRefillEnabled refillIntervalValue refillIntervalUnit lastRefill refillAmount',
   ).lean();
 
   if (!balanceData) {

@@ -517,6 +517,7 @@
   "com_ui_avatar": "Avatar",
   "com_ui_back_to_chat": "Volver al Chat",
   "com_ui_back_to_prompts": "Volver a Prompts",
+  "com_ui_balance_tokens_left": "{{0}} tokens restantes",
   "com_ui_bookmark_delete_confirm": "¿Está seguro de que desea eliminar este marcador?",
   "com_ui_bookmarks": "Marcadores",
   "com_ui_bookmarks_add": "Agregar Marcadores",

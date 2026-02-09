@@ -398,6 +398,7 @@
   "com_ui_avatar": "Profiilikuva",
   "com_ui_back_to_chat": "Palaa keskusteluun",
   "com_ui_back_to_prompts": "Palaa syötteisiin",
+  "com_ui_balance_tokens_left": "{{0}} tokenia jäljellä",
   "com_ui_bookmark_delete_confirm": "Oletko varma, että haluat poistaa tämän kirjanmerkin?",
   "com_ui_bookmarks": "Kirjanmerkit",
   "com_ui_bookmarks_add_to_conversation": "Lisää nykyiseen keskusteluun",

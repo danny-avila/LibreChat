@@ -692,6 +692,7 @@
   "com_ui_back": "Назад",
   "com_ui_back_to_chat": "Повернутися до чату",
   "com_ui_back_to_prompts": "Повернутися до підказок",
+  "com_ui_balance_tokens_left": "{{0}} токенів залишилося",
   "com_ui_backup_code_number": "Код #{{number}}",
   "com_ui_backup_codes": "Резервні коди",
   "com_ui_backup_codes_regenerate_error": "Під час повторної генерації резервних кодів сталася помилка",

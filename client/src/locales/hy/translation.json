@@ -176,6 +176,7 @@
   "com_sidepanel_manage_files": "Կառավարել ֆայլերը",
   "com_ui_2fa_enable": "Միացնել 2FA-ն",
   "com_ui_admin_settings": "Ադմինի կարգավորումներ",
+  "com_ui_balance_tokens_left": "{{0}} նշան մնացել է",
   "com_ui_tools": "Գործիքներ",
   "com_ui_travel": "Ճամփորդություն",
   "com_ui_unknown": "Անհայտ",

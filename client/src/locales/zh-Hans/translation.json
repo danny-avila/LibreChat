@@ -710,6 +710,7 @@
   "com_ui_back_to_builder": "返回构建器",
   "com_ui_back_to_chat": "返回对话",
   "com_ui_back_to_prompts": "返回提示词",
+  "com_ui_balance_tokens_left": "剩余{{0}}个令牌",
   "com_ui_backup_code_number": "代码 #{{number}}",
   "com_ui_backup_codes": "备份代码",
   "com_ui_backup_codes_regenerate_error": "重新生成备份代码时出现错误",

@@ -255,6 +255,7 @@ describe('AgentClient - titleConvo', () => {
 
       expect(client.recordCollectedUsage).toHaveBeenCalledWith({
         model: 'gpt-3.5-turbo',
+        spec: undefined,
         context: 'title',
         collectedUsage: expect.any(Array),
         balance: {
@@ -263,7 +264,7 @@ describe('AgentClient - titleConvo', () => {
         transactions: {
           enabled: true,
         },
-      });
+      }, expect.any(Object));
     });
 
     it('should return the generated title', async () => {
