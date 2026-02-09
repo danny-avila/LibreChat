@@ -32,6 +32,8 @@ type ContentPartsProps = {
     | ((value: number) => void | React.Dispatch<React.SetStateAction<number>>)
     | null
     | undefined;
+  endpoint?: string;
+  model?: string;
 };
 
 /**
@@ -54,6 +56,8 @@ const ContentParts = memo(function ContentParts({
   conversationId,
   isCreatedByUser,
   isLatestMessage,
+  endpoint,
+  model,
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
@@ -87,6 +91,8 @@ const ContentParts = memo(function ContentParts({
             isCreatedByUser={isCreatedByUser}
             isLast={isLastPart}
             showCursor={isLastPart && isLast}
+            endpoint={endpoint}
+            model={model}
           />
         </MessageContext.Provider>
       );
@@ -100,6 +106,8 @@ const ContentParts = memo(function ContentParts({
       isLast,
       isLatestMessage,
       messageId,
+      endpoint,
+      model,
     ],
   );
 

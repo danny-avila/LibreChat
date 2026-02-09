@@ -214,29 +214,78 @@ function processTree(tree: Node) {
         }
 
         case 'standalone': {
-          // Extract reference info
+          // Extract reference info for first citation
           const turn = Number(match![1]);
           const refType = match![2];
           const refIndex = Number(match![3]);
 
-          segments.push({
-            type: 'citation',
-            data: {
-              hName: 'citation',
-              hProperties: {
-                citation: {
-                  turn,
-                  refType,
-                  index: refIndex,
-                },
-                citationType: 'standalone',
-                citationId: citationId,
-              },
+          // Collect adjacent standalone citations into a group
+          const citations: Array<Citation> = [
+            {
+              turn,
+              refType,
+              index: refIndex,
             },
-          });
+          ];
 
-          typeCounts.standalone++;
-          break;
+          let lookAheadPos = matchIndex + matchText.length;
+
+          // Keep looking for adjacent standalone citations (only whitespace between them)
+          while (true) {
+            // Reset regex for fresh search
+            STANDALONE_PATTERN.lastIndex = lookAheadPos;
+            const nextStandalone = STANDALONE_PATTERN.exec(originalValue);
+
+            if (nextStandalone && isStandaloneMarker(originalValue, nextStandalone.index)) {
+              const gapText = originalValue.substring(lookAheadPos, nextStandalone.index);
+              // Only group if there's only whitespace between citations (max 5 chars)
+              if (gapText.length <= 5 && /^\s*$/.test(gapText)) {
+                citations.push({
+                  turn: Number(nextStandalone[1]),
+                  refType: nextStandalone[2],
+                  index: Number(nextStandalone[3]),
+                });
+                lookAheadPos = nextStandalone.index + nextStandalone[0].length;
+              } else {
+                break;
+              }
+            } else {
+              break;
+            }
+          }
+
+          if (citations.length > 1) {
+            // Multiple adjacent citations - create composite
+            segments.push({
+              type: 'composite-citation',
+              data: {
+                hName: 'composite-citation',
+                hProperties: {
+                  citations,
+                  citationId: citationId,
+                },
+              },
+            });
+            typeCounts.composite++;
+          } else {
+            // Single citation
+            segments.push({
+              type: 'citation',
+              data: {
+                hName: 'citation',
+                hProperties: {
+                  citation: citations[0],
+                  citationType: 'standalone',
+                  citationId: citationId,
+                },
+              },
+            });
+            typeCounts.standalone++;
+          }
+
+          // Move position past all collected citations
+          currentPosition = lookAheadPos;
+          continue; // Skip the default position update
         }
       }
 

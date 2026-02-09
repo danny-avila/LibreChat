@@ -27,6 +27,7 @@ const {
   formatMessage,
   labelContentByAgent,
   formatAgentMessages,
+  processContentParts,
   getTokenCountForMessage,
   createMetadataAggregator,
 } = require('@librechat/agents');
@@ -787,7 +788,30 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
-    return { completion };
+
+    // Get processed citations from the graph (already transformed by librechat-agents)
+    const processedCitations = this.run?.Graph?.getProcessedCitations?.();
+    const searchResults = processedCitations?.searchResults || null;
+
+    // If we have search results, inject citation markers into the content
+    let processedCompletion = completion;
+    let metadata;
+
+    if (searchResults?.organic?.length > 0) {
+      // Calculate turn number for citation markers
+      const turnNumber = Math.floor((this.currentMessages?.length || 0) / 2);
+
+      // Inject Unicode citation markers into text content parts
+      processedCompletion = processContentParts(completion, turnNumber);
+
+      // Pass pre-processed searchResults in metadata
+      metadata = {
+        searchResults,
+        turn: turnNumber,
+      };
+    }
+
+    return { completion: processedCompletion, metadata };
   }
 
   /**

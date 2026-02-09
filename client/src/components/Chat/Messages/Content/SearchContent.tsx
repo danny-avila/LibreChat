@@ -53,6 +53,8 @@ const SearchContent = ({
                 isCreatedByUser={message.isCreatedByUser}
                 attachments={attachments}
                 part={part}
+                endpoint={message.endpoint}
+                model={message.model}
               />
             );
           })}

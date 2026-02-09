@@ -102,13 +102,15 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 
   const content = useMemo(() => {
     if (!isCreatedByUser) {
-      return <Markdown content={text} isLatestMessage={isLatestMessage} />;
+      return (
+        <Markdown content={text} isLatestMessage={isLatestMessage} endpoint={message.endpoint} model={message.model} />
+      );
     }
     if (enableUserMsgMarkdown) {
       return <MarkdownLite content={text} />;
     }
     return <>{text}</>;
-  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage]);
+  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage, message.endpoint, message.model]);
 
   return (
     <Container message={message}>
