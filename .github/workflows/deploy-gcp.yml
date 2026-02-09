@@ -70,7 +70,6 @@ jobs:
           image: ${{ steps.tags.outputs.image_tag }}
           env_vars: |
             HOST=0.0.0.0
-            PORT=3080
             NODE_ENV=production
             CONSOLE_JSON=true
             NO_INDEX=true
