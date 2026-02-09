@@ -414,18 +414,20 @@ class E2BDataAnalystAgent {
               shouldExitMainLoop = true; // LLM主动决定完成，立即停止
             }
 
-            // 如果没有工具调用，检查 finish_reason 决定是否停止
+            // 如果没有工具调用，提醒 LLM 继续执行计划
             if (!message.tool_calls || message.tool_calls.length === 0) {
-              // finish_reason 为 'stop' 表示 LLM 认为对话已完成（例如简单问答）
-              if (message.finish_reason === 'stop') {
-                logger.info(`[E2BAgent] No tool calls and finish_reason is 'stop' - LLM completed the response. Exiting loop.`);
-                shouldExitMainLoop = true;
-                break; // Exit immediately
-              } else {
-                // 其他情况（如 finish_reason 为 'length' 或其他），继续迭代
-                logger.info(`[E2BAgent] No tool calls in this iteration (finish_reason: ${message.finish_reason}). Continuing to next iteration (${iteration}/${this.maxIterations})`);
-                continue; // Skip to next iteration
-              }
+              // 🔧 FIX: 不要因为 finish_reason='stop' 就退出
+              // LLM 可能只是完成了一步的分析，还需要继续执行后续步骤
+              logger.info(`[E2BAgent] LLM returned text without tool calls (finish_reason: ${message.finish_reason}). Prompting to continue with next step.`);
+              
+              // 添加系统提示，提醒 LLM 继续执行计划
+              messages.push({
+                role: 'user',
+                content: 'Please continue with the next step of your plan. If all steps are completed, use the `complete_task` tool to finish.'
+              });
+              
+              // 继续下一次迭代
+              continue;
             }
 
             // 5. 执行工具调用 (ReAct 模式)
@@ -444,7 +446,7 @@ class E2BDataAnalystAgent {
                 toolCallIndex = this.getContentIndex();
                 const argsString = JSON.stringify(args);
                 
-                // 构造初始 Tool Call 对象
+                // 构造初始 Tool Call 对象（PENDING 不发送 startTime，避免客户端/服务器时钟不同步）
                 const pendingToolCall = {
                   id: id,
                   name: name,
@@ -452,7 +454,6 @@ class E2BDataAnalystAgent {
                   input: args.code || argsString,
                   output: '', // 暂时为空
                   progress: 0.1, // 表示开始执行
-                  startTime: Date.now(),
                 };
                 
                 // 占位到 contentParts
@@ -498,7 +499,7 @@ class E2BDataAnalystAgent {
                 }
               }
 
-              // 记录开始时间（用于前端计时器）
+              // 记录开始时间（用于计算 elapsedTime）
               const startTime = Date.now();
               
               // 先执行工具，判断是否成功
@@ -571,8 +572,7 @@ class E2BDataAnalystAgent {
                 if (this.res.flush) {
                   this.res.flush();
                 }
-                logger.info(`[E2BAgent] Sent COMPLETED TOOL_CALL event (index=${toolCallIndex}, output=${output.length} chars)`);
-                logger.info(`[E2BAgent] 🕒 Timer data sent: startTime=${startTime}, elapsedTime=${elapsedTime}ms`);
+                logger.info(`[E2BAgent] Sent COMPLETED TOOL_CALL event (index=${toolCallIndex}, output=${output.length} chars, elapsedTime=${elapsedTime}ms)`);
 
                 // ✨ 再次确认切断 Text Part (通常在 Pending 时已切断，但为了保险)
                 if (this.startNewTextPart) {

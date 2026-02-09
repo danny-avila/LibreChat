@@ -2,6 +2,7 @@ const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { sendEvent, sanitizeMessageForTransmit } = require('@librechat/api');
+const { ContentTypes } = require('librechat-data-provider');
 const { 
   createE2BAssistantDoc, 
   getE2BAssistantDocs, 
@@ -519,24 +520,42 @@ const chat = async (req, res) => {
       files: files || [], // CRITICAL: Include files so they're saved to DB and visible in frontend
     };
 
+    // Create initial response message for sync event (matching Azure format)
+    const initialResponseMessage = {
+      messageId: responseMessageId,
+      conversationId: finalConversationId,
+      parentMessageId: userMessageId,
+      sender: assistant.name || 'E2B Agent',
+      text: '\u200B', // ✨ 使用零宽空格确保助手名和 Loading 正常显示
+      content: [], // ✨ 恢复为空数组
+      isCreatedByUser: false,
+      user: req.user.id,
+      endpoint: 'e2bAssistants',
+      model: assistant.model || 'gpt-4o',
+    };
+
     // Send sync event (matching Azure Assistant implementation)
     sendEvent(res, {
       sync: true,
-      conversationId,
+      conversationId: finalConversationId,
       requestMessage: userMessage,
-      responseMessage: {
-        user: req.user.id,
-        messageId: responseMessageId,
-        parentMessageId: userMessageId,
-        conversationId,
-        model: assistant_id,
-      },
+      responseMessage: initialResponseMessage,
     });
     
-    // FLUSH: Ensure the sync event is sent immediately
+    // 🎯 Immediately send zero-width space TEXT event (before flush)
+    // This maintains loading state while minimizing flicker
+    sendEvent(res, {
+      type: ContentTypes.TEXT,
+      index: 0,
+      [ContentTypes.TEXT]: { value: '\u200B' },
+      messageId: responseMessageId,
+      conversationId: finalConversationId,
+    });
+    
+    // FLUSH: Send both events together to minimize flicker
     if (res.flush) res.flush();
     
-    logger.info(`[E2B Assistant] Sent SYNC event for message ${userMessageId}`);
+    logger.info(`[E2B Assistant] Sent SYNC event and initial zero-width space for conversation ${finalConversationId}`);
 
     // CRITICAL: Save conversation FIRST (before messages)
     // This ensures conversation exists in DB so saveMessage won't fail validation
@@ -627,9 +646,12 @@ const chat = async (req, res) => {
     }
 
     // 📝 Track content parts (TOOL_CALL + TEXT) - MUST declare before agent
-    const contentParts = [];
-    let currentTextIndex = -1;  // Will be set on first text token
-    let contentIndex = 0;  // Global content index
+    // Initialize with zero-width space TEXT at index=0 to avoid sparse array
+    const contentParts = [
+      { type: 'text', text: { value: '\u200B' } }  // Placeholder at index=0
+    ];
+    let currentTextIndex = 0;  // TEXT part already exists at index=0
+    let contentIndex = 1;  // Next index starts from 1
     
     // 📝 Helper: Start a new TEXT part (called when text output resumes after tool call)
     const startNewTextPart = () => {
@@ -667,13 +689,15 @@ const chat = async (req, res) => {
       tokenCount++;
       eventsSent++;
       
-      // 📝 Initialize TEXT content part on first token (or if reset)
-      if (currentTextIndex === -1) {
-        startNewTextPart();
+      // 📝 Update TEXT content at index=0 (already initialized)
+      // Replace zero-width space with first token, then append subsequent tokens
+      if (contentParts[currentTextIndex].text.value === '\u200B') {
+        // First token: replace placeholder
+        contentParts[currentTextIndex].text.value = token;
+      } else {
+        // Subsequent tokens: append
+        contentParts[currentTextIndex].text.value += token;
       }
-      
-      // 📝 Accumulate text content
-      contentParts[currentTextIndex].text.value += token;
       
       // ✅ 添加详细调试日志
       if (eventsSent <= 5 || eventsSent % 20 === 0) {
@@ -694,7 +718,7 @@ const chat = async (req, res) => {
       
       try {
         sendEvent(res, eventData);
-        // FLUSH: Critical for real-time streaming when compression is enabled
+        // FLUSH: Critical for real-time streaming - flush immediately for each token
         if (res.flush) res.flush();
       } catch (error) {
         logger.error(`[E2B onToken] Failed to send event: ${error.message}`);
@@ -704,9 +728,12 @@ const chat = async (req, res) => {
     logger.info(`[E2B Assistant] onToken callback created for messageId=${responseMessageId}`);
 
     logger.info(`[E2B Assistant] Starting agent with streaming enabled`);
-    
+
     // Run the agent with history and streaming callback
     const result = await agent.processMessage(text, history, onToken);
+    
+    // CRITICAL: Ensure final batch is flushed
+    if (res.flush) res.flush();
     
     // CRITICAL: Use result.text which has image paths replaced, not fullResponseText!
     const finalText = result.text;

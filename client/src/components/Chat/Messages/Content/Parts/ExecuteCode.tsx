@@ -74,29 +74,35 @@ export default function ExecuteCode({
   const prevShowCodeRef = useRef<boolean>(showCode);
   const { lang, code } = useParseArgs(args) ?? ({} as ParsedArgs);
   const progress = useProgress(initialProgress);
+  const [clientStartTime, setClientStartTime] = useState<number | null>(null);
 
-  // 🐛 调试：检查是否收到计时数据
+  // ✨ 当进入 PENDING 状态（无 elapsedTime）时，记录客户端时间
   useEffect(() => {
-    console.log('[ExecuteCode] Timer data:', { startTime, elapsedTime, currentTime });
-  }, [startTime, elapsedTime, currentTime]);
+    if (initialProgress > 0 && initialProgress < 1 && !elapsedTime && !clientStartTime) {
+      setClientStartTime(Date.now());
+    }
+  }, [initialProgress, elapsedTime, clientStartTime]);
 
-  // ✨ 实时计时器（仅在执行中更新）
+  // ✨ 实时计时器（使用客户端时间避免时钟不同步）
   useEffect(() => {
-    if (!startTime || elapsedTime) {
-      // 已完成，使用固定的 elapsedTime
-      if (elapsedTime) {
-        setCurrentTime(elapsedTime);
-      }
+    if (elapsedTime) {
+      // 已完成，使用服务器的 elapsedTime
+      setCurrentTime(elapsedTime);
       return;
     }
 
-    // 执行中，每 100ms 更新一次
+    if (!clientStartTime) {
+      // 还未进入 PENDING 状态
+      return;
+    }
+
+    // 执行中，每 100ms 更新一次（使用客户端时间）
     const timer = setInterval(() => {
-      setCurrentTime(Date.now() - startTime);
+      setCurrentTime(Date.now() - clientStartTime);
     }, 100);
 
     return () => clearInterval(timer);
-  }, [startTime, elapsedTime]);
+  }, [elapsedTime, clientStartTime]);
 
   const formatTime = (ms: number) => {
     if (ms < 1000) return `${ms}ms`;

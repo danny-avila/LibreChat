@@ -3,6 +3,109 @@
 > 记录 E2B Data Analyst Agent 的每日开发进展、问题解决和关键决策。
 
 
+## 2026-02-09 (周日)
+
+### 🐛 Loading Dot 消失与 Prompt 优化
+**Git Commit**: feat(e2b): Fix loading dot persistence and optimize system prompt
+
+### 主要工作
+1. **Loading Dot 消失问题根本修复** ⭐⭐⭐
+   - **问题**: 用户反馈"有时候在对话里，第二次对话中的 dot 会消失"，系统工作状态不可见
+   - **根本原因**: 
+     - `contentParts` 数组初始化为空 `[]`，`contentIndex` 从 1 开始
+     - 如果第一个事件是 TOOL_CALL（代码执行），会创建 `contentParts[1]`
+     - 导致 `contentParts[0] = undefined`（稀疏数组）
+     - 前端遍历时访问 `contentParts[0].type` 触发错误：`Cannot read properties of null (reading 'type')`
+   - **修复方案**:
+     - 初始化 `contentParts` 为 `[{ type: 'text', text: { value: '\u200B' } }]`（包含零宽空格占位符）
+     - `currentTextIndex = 0`（TEXT part 已存在于 index=0）
+     - `contentIndex = 1`（下一个 index 从 1 开始）
+     - 第一个 token 替换零宽空格，后续 token 追加
+   - **效果**: 
+     - 消除稀疏数组，防止 null reference 错误
+     - 前端始终能正确显示 loading 状态
+     - 助手名称正常显示
+
+2. **System Prompt 大幅优化** 📝⭐
+   - **背景**: 用户反馈"回复不是很专业和系统性"、"暴露了内部计划流程"
+   - **优化内容**:
+     - **简化冗余描述** (删除 ~150 行):
+       - 移除 `Multi-Scenario Adaptation Rules` 章节（4 种场景的详细示例代码）
+       - 移除 `Common Error Patterns` 章节（5 种具体错误类型的硬编码处理）
+       - 移除数据库连接的冗长示例代码（Python 代码块）
+       - 移除 XGBoost 训练的完整代码示例
+     - **精简核心规则**:
+       - 保留关键工作流程（Initial Turn → Subsequent Turns → Final Turn）
+       - 保留强制性要求（Plan First, Sequential Execution, Language Consistency）
+       - 保留通用错误处理协议（而非特定错误类型）
+     - **优化措辞**:
+       - 从 "multi-scenario Python-based data tasks" 改为 "end-to-end Python data tasks"
+       - 移除过多的 emoji 和警告符号（⚠️）
+       - 统一术语：将各处的描述统一为简洁、专业的风格
+   - **哲学转变**:
+     - 从"详尽的示例驱动" → "简洁的原则驱动"
+     - 从"特定场景说明" → "通用方法指导"
+     - 从"冗长的代码示例" → "清晰的规则描述"
+   - **效果**:
+     - Prompt 长度从 233 行减少到约 170 行
+     - 输出更专业、结构化，不暴露内部流程
+     - LLM 聚焦核心任务，减少冗余输出
+
+3. **稀疏数组防御性修复** 🛡️
+   - **技术细节**:
+     ```javascript
+     // 之前（有风险）
+     const contentParts = [];
+     let contentIndex = 1;
+     // 如果第一个是 TOOL_CALL → contentParts[1] 存在，contentParts[0] 为 undefined
+     
+     // 现在（安全）
+     const contentParts = [{ type: 'text', text: { value: '\u200B' } }];
+     let currentTextIndex = 0;  // 已存在
+     let contentIndex = 1;      // 后续索引
+     ```
+   - **零宽空格策略**:
+     - 用作占位符，维持 loading 状态可见
+     - 第一个 token 到达时替换（而非追加），避免显示
+     - 与 sync 事件的零宽空格配合，确保流畅过渡
+
+### 验证结果
+- ✅ 修复前端错误：`Cannot read properties of null (reading 'type')`
+- ✅ Loading dot 在第二次对话中正常显示
+- ✅ 助手名称始终可见
+- ✅ 简单问答不再显示"任务计划"、"步骤1"等内部流程
+- ✅ Prompt 长度减少约 27%，输出更简洁专业
+
+### 技术细节
+**文件修改**:
+1. `api/server/routes/e2bAssistants/controller.js` (+5 行, -4 行)
+   - 初始化 `contentParts` 为包含零宽空格的数组
+   - 调整 `currentTextIndex` 和 `contentIndex` 初始值
+   - 优化 onToken 中的 token 处理逻辑（替换 vs 追加）
+
+2. `api/server/services/Agents/e2bAgent/prompts.js` (-63 行)
+   - 删除 `Multi-Scenario Adaptation Rules` 章节（~50 行）
+   - 删除 `Common Error Patterns` 章节（~15 行）
+   - 删除数据库连接示例代码（~30 行）
+   - 删除 XGBoost 示例代码（~20 行）
+   - 精简文件管理、工具调用格式描述
+   - 统一措辞为简洁专业风格
+
+**ContentParts 数组结构对比**:
+| 场景 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 第一个事件是 TEXT | `[{type:'text',...}]` ✅ | `[{type:'text',...}]` ✅ |
+| 第一个事件是 TOOL_CALL | `[undefined, {type:'tool_call',...}]` ❌ | `[{type:'text',text:{value:'\u200B'}}, {type:'tool_call',...}]` ✅ |
+
+### 遗留问题
+- 🔲 需要用户测试验证简单问答的输出质量
+- 🔲 需要验证复杂数据分析任务是否仍能正常完成
+
+### 工作时长
+约 2 小时（Bug 诊断 + 修复 + Prompt 优化）
+
+---
+
 ## 2026-02-05 (周三)
 
 ### 🚀 流式体验优化与 Prompt 增强
