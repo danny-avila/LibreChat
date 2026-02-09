@@ -366,6 +366,12 @@ export const fileConfig = {
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
   fileTokenLimit: defaultTokenLimit,
+  fileContext: {
+    prefixText: 'Attached document(s):',
+    showFilenameHeaders: true,
+    filenameHeaderTemplate: '# "{filename}"',
+    latestAttachmentsAsSystemMessage: true,
+  },
   clientImageResize: {
     enabled: false,
     maxWidth: 1900,
@@ -418,6 +424,14 @@ export const fileConfigSchema = z.object({
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
   fileTokenLimit: z.number().min(0).optional(),
+  fileContext: z
+    .object({
+      prefixText: z.string().optional(),
+      showFilenameHeaders: z.boolean().optional(),
+      filenameHeaderTemplate: z.string().optional(),
+      latestAttachmentsAsSystemMessage: z.boolean().optional(),
+    })
+    .optional(),
   imageGeneration: z
     .object({
       percentage: z.number().min(0).max(100).optional(),
@@ -600,6 +614,9 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     endpoints: {
       ...fileConfig.endpoints,
     },
+    fileContext: {
+      ...fileConfig.fileContext,
+    },
     ocr: {
       ...fileConfig.ocr,
       supportedMimeTypes: fileConfig.ocr?.supportedMimeTypes || [],
@@ -627,6 +644,13 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
   if (dynamic.fileTokenLimit !== undefined) {
     mergedConfig.fileTokenLimit = dynamic.fileTokenLimit;
+  }
+
+  if (dynamic.fileContext !== undefined) {
+    mergedConfig.fileContext = {
+      ...mergedConfig.fileContext,
+      ...dynamic.fileContext,
+    };
   }
 
   // Merge clientImageResize configuration

@@ -3,6 +3,7 @@ import { FileSources, mergeFileConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
 import { processTextWithTokenLimit } from '~/utils/text';
+import type { FileContextConfig } from 'librechat-data-provider';
 
 /**
  * Extracts text context from attachments and returns formatted text.
@@ -11,16 +12,19 @@ import { processTextWithTokenLimit } from '~/utils/text';
  * @param params.attachments - Array of file attachments
  * @param params.req - Express request object for config access
  * @param params.tokenCountFn - Function to count tokens in text
+ * @param params.contextConfig - Optional file context configuration (see FileContextConfig; e.g. prefixText, showFilenameHeaders, filenameHeaderTemplate, latestAttachmentsAsSystemMessage)
  * @returns The formatted file context text, or undefined if no text found
  */
 export async function extractFileContext({
   attachments,
   req,
   tokenCountFn,
+  contextConfig,
 }: {
   attachments: IMongoFile[];
   req?: ServerRequest;
   tokenCountFn: (text: string) => number;
+  contextConfig?: FileContextConfig;
 }): Promise<string | undefined> {
   if (!attachments || attachments.length === 0) {
     return undefined;
@@ -28,6 +32,11 @@ export async function extractFileContext({
 
   const fileConfig = mergeFileConfig(req?.config?.fileConfig);
   const fileTokenLimit = req?.body?.fileTokenLimit ?? fileConfig.fileTokenLimit;
+  const fileContextConfig = contextConfig ?? fileConfig.fileContext;
+  const prefixText = fileContextConfig?.prefixText ?? 'Attached document(s):';
+  const showFilenameHeaders = fileContextConfig?.showFilenameHeaders ?? true;
+  const filenameHeaderTemplate =
+    fileContextConfig?.filenameHeaderTemplate ?? '# "{filename}"';
 
   if (!fileTokenLimit) {
     // If no token limit, return undefined (no processing)
@@ -51,7 +60,12 @@ export async function extractFileContext({
         );
       }
 
-      resultText += `${!resultText ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${limitedText}\n`;
+      const filenameHeader = showFilenameHeaders
+        ? filenameHeaderTemplate.replace(/\{filename\}/g, file.filename)
+        : '';
+      const prefixBlock = !resultText ? `${prefixText}\n\`\`\`md` : '\n---\n\n';
+      const headerBlock = showFilenameHeaders ? `${filenameHeader}\n` : '';
+      resultText += `${prefixBlock}\n${headerBlock}${limitedText}\n`;
     }
   }
 

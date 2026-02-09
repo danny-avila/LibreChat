@@ -1276,13 +1276,15 @@ class BaseClient {
    * This handles text that was already extracted from files (OCR, transcriptions, document text, etc.)
    * @param {TMessage} message - The message to add context to
    * @param {MongoFile[]} attachments - Array of file attachments
+   * @param {FileContextConfig} [contextConfig] - Optional configuration for file context extraction
    * @returns {Promise<void>}
    */
-  async addFileContextToMessage(message, attachments) {
+  async addFileContextToMessage(message, attachments, contextConfig) {
     const fileContext = await extractFileContext({
       attachments,
       req: this.options?.req,
       tokenCountFn: (text) => countTokens(text),
+      contextConfig,
     });
 
     if (fileContext) {

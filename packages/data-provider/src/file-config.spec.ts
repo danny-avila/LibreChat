@@ -1133,4 +1133,55 @@ describe('getEndpointFileConfig', () => {
       expect(result.supportedMimeTypes).toEqual([]);
     });
   });
+
+  describe('fileContext configuration', () => {
+    it('should use default fileContext values when not configured', () => {
+      const merged = mergeFileConfig(undefined);
+
+      expect(merged.fileContext?.prefixText).toBe('Attached document(s):');
+      expect(merged.fileContext?.showFilenameHeaders).toBe(true);
+      expect(merged.fileContext?.filenameHeaderTemplate).toBe('# "{filename}"');
+      expect(merged.fileContext?.latestAttachmentsAsSystemMessage).toBe(true);
+    });
+
+    it('should merge custom fileContext values', () => {
+      const merged = mergeFileConfig({
+        fileContext: {
+          prefixText: 'Custom prefix',
+          showFilenameHeaders: false,
+          filenameHeaderTemplate: '## {filename}',
+          latestAttachmentsAsSystemMessage: true,
+        },
+      });
+
+      expect(merged.fileContext?.prefixText).toBe('Custom prefix');
+      expect(merged.fileContext?.showFilenameHeaders).toBe(false);
+      expect(merged.fileContext?.filenameHeaderTemplate).toBe('## {filename}');
+      expect(merged.fileContext?.latestAttachmentsAsSystemMessage).toBe(true);
+    });
+
+    it('should partial merge fileContext (override some, keep defaults)', () => {
+      const merged = mergeFileConfig({
+        fileContext: {
+          prefixText: 'Custom prefix',
+        },
+      });
+
+      expect(merged.fileContext?.prefixText).toBe('Custom prefix');
+      expect(merged.fileContext?.showFilenameHeaders).toBe(true);
+      expect(merged.fileContext?.filenameHeaderTemplate).toBe('# "{filename}"');
+      expect(merged.fileContext?.latestAttachmentsAsSystemMessage).toBe(true);
+    });
+
+    it('should handle empty fileContext override', () => {
+      const merged = mergeFileConfig({
+        fileContext: {},
+      });
+
+      expect(merged.fileContext?.prefixText).toBe('Attached document(s):');
+      expect(merged.fileContext?.showFilenameHeaders).toBe(true);
+      expect(merged.fileContext?.filenameHeaderTemplate).toBe('# "{filename}"');
+      expect(merged.fileContext?.latestAttachmentsAsSystemMessage).toBe(true);
+    });
+  });
 });

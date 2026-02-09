@@ -359,6 +359,7 @@ class AgentClient extends BaseClient {
   }
 
   async buildMessages(messages, parentMessageId, _buildOptions, opts) {
+    const appConfig = this.options.req?.config;
     /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
@@ -396,6 +397,10 @@ class AgentClient extends BaseClient {
         : []),
     ];
 
+    const fileContextConfig = appConfig?.fileConfig?.fileContext;
+    const latestAttachmentsAsSystemMessage =
+      fileContextConfig?.latestAttachmentsAsSystemMessage ?? true;
+
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
@@ -408,7 +413,7 @@ class AgentClient extends BaseClient {
         };
       }
 
-      await this.addFileContextToMessage(latestMessage, attachments);
+      await this.addFileContextToMessage(latestMessage, attachments, fileContextConfig);
       const files = await this.processAttachments(latestMessage, attachments);
 
       this.options.attachments = files;
@@ -429,8 +434,12 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
-      /** For non-latest messages, prepend file context directly to message content */
-      if (message.fileContext && i !== orderedMessages.length - 1) {
+      const isLatestMessage = i === orderedMessages.length - 1;
+      const shouldMergeFileContext =
+        message.fileContext && (!isLatestMessage || !latestAttachmentsAsSystemMessage);
+
+      /** Prepend file context directly to message content when appropriate */
+      if (shouldMergeFileContext) {
         if (typeof formattedMessage.content === 'string') {
           formattedMessage.content = message.fileContext + '\n' + formattedMessage.content;
         } else {
@@ -479,7 +488,7 @@ class AgentClient extends BaseClient {
 
     /** File context from the latest message (attachments) */
     const latestMessage = orderedMessages[orderedMessages.length - 1];
-    if (latestMessage?.fileContext) {
+    if (latestMessage?.fileContext && latestAttachmentsAsSystemMessage) {
       sharedRunContextParts.push(latestMessage.fileContext);
     }
 

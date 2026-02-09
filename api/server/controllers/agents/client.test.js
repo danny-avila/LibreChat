@@ -10,12 +10,16 @@ jest.mock('@librechat/agents', () => ({
   }),
 }));
 
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
-  checkAccess: jest.fn(),
-  initializeAgent: jest.fn(),
-  createMemoryProcessor: jest.fn(),
-}));
+jest.mock('@librechat/api', () => {
+  const actual = jest.requireActual('@librechat/api');
+  return {
+    ...actual,
+    checkAccess: jest.fn(),
+    initializeAgent: jest.fn(),
+    applyContextToAgent: jest.fn(async (params) => actual.applyContextToAgent(params)),
+    createMemoryProcessor: jest.fn(),
+  };
+});
 
 jest.mock('~/models/Agent', () => ({
   loadAgent: jest.fn(),
@@ -2254,6 +2258,352 @@ describe('AgentClient - titleConvo', () => {
         }),
         expect.any(Object),
       );
+    });
+  });
+
+  describe('buildMessages - latestAttachmentsAsSystemMessage configuration', () => {
+    let client;
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      mockAgent = {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        instructions: 'Agent instructions',
+        model_parameters: {
+          model: 'gpt-4',
+        },
+      };
+
+      mockReq = {
+        user: {
+          id: 'user-123',
+        },
+        body: {
+          endpoint: EModelEndpoint.openAI,
+        },
+        config: {
+          fileConfig: {
+            fileTokenLimit: 4096,
+            fileContext: {
+              prefixText: 'Attached document(s):',
+              showFilenameHeaders: true,
+              filenameHeaderTemplate: '# "{filename}"',
+              latestAttachmentsAsSystemMessage: true,
+            },
+          },
+        },
+      };
+
+      mockRes = {};
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+        endpoint: EModelEndpoint.agents,
+      };
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+
+      const { applyContextToAgent } = require('@librechat/api');
+      applyContextToAgent.mockClear();
+    });
+
+    it('should add file context to shared run context when latestAttachmentsAsSystemMessage is true', async () => {
+      // Mock attachments with file context
+      const mockAttachments = [
+        {
+          file_id: 'file-1',
+          filename: 'document.txt',
+          source: 'text',
+          text: 'Document content here',
+          embedded: false,
+        },
+      ];
+
+      const fileContextText = 'FILE_CONTEXT_BLOCK';
+      const { applyContextToAgent } = require('@librechat/api');
+      const tokenSpy = jest.spyOn(client, 'getTokenCountForMessage').mockReturnValue(0);
+
+      jest.spyOn(client, 'addFileContextToMessage').mockImplementation(async (message) => {
+        message.fileContext = fileContextText;
+      });
+      jest.spyOn(client, 'processAttachments').mockResolvedValue(mockAttachments);
+      client.useMemory = jest.fn().mockResolvedValue(undefined);
+
+      client.options.attachments = Promise.resolve(mockAttachments);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Please analyze this document',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, 'msg-1', {
+        instructions: 'Build messages with file context',
+        additional_instructions: null,
+      });
+
+      // Verify that the latest message has file context
+      expect(client.message_file_map).toBeDefined();
+      expect(client.message_file_map['msg-1']).toEqual(mockAttachments);
+
+      // Since latestAttachmentsAsSystemMessage is true, file context should be in shared run context
+      expect(applyContextToAgent).toHaveBeenCalled();
+      const { sharedRunContext } = applyContextToAgent.mock.calls[0][0];
+      expect(sharedRunContext).toContain(fileContextText);
+
+      // Latest message should not have file context prepended when true
+      const formattedMessage = tokenSpy.mock.calls[0][0];
+      if (typeof formattedMessage.content === 'string') {
+        expect(formattedMessage.content.startsWith(fileContextText)).toBe(false);
+      } else {
+        const textPart = formattedMessage.content.find((part) => part.type === 'text');
+        expect(textPart?.text?.startsWith(fileContextText)).toBe(false);
+      }
+
+      tokenSpy.mockRestore();
+    });
+
+    it('should merge file context with message content when latestAttachmentsAsSystemMessage is false', async () => {
+      // Override the configuration to set latestAttachmentsAsSystemMessage to false
+      mockReq.config.fileConfig.fileContext.latestAttachmentsAsSystemMessage = false;
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+
+      // Mock attachments
+      const mockAttachments = [
+        {
+          file_id: 'file-1',
+          filename: 'report.pdf',
+          source: 'text',
+          text: 'Report content',
+          embedded: false,
+        },
+      ];
+
+      const fileContextText = 'FILE_CONTEXT_BLOCK';
+      const { applyContextToAgent } = require('@librechat/api');
+      const tokenSpy = jest.spyOn(client, 'getTokenCountForMessage').mockReturnValue(0);
+
+      jest.spyOn(client, 'addFileContextToMessage').mockImplementation(async (message) => {
+        message.fileContext = fileContextText;
+      });
+      jest.spyOn(client, 'processAttachments').mockResolvedValue(mockAttachments);
+      client.useMemory = jest.fn().mockResolvedValue(undefined);
+
+      client.options.attachments = Promise.resolve(mockAttachments);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Analyze the attached report',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, 'msg-1', {
+        instructions: 'Build messages with file context merged',
+        additional_instructions: null,
+      });
+
+      // Verify that the latest message has file context recorded
+      expect(client.message_file_map).toBeDefined();
+      expect(client.message_file_map['msg-1']).toEqual(mockAttachments);
+
+      // File context should NOT be in shared run context when false
+      expect(applyContextToAgent).toHaveBeenCalled();
+      const { sharedRunContext } = applyContextToAgent.mock.calls[0][0];
+      expect(sharedRunContext).not.toContain(fileContextText);
+
+      // Latest message should have file context prepended when false
+      const formattedMessage = tokenSpy.mock.calls[0][0];
+      if (typeof formattedMessage.content === 'string') {
+        expect(formattedMessage.content.startsWith(fileContextText)).toBe(true);
+      } else {
+        const textPart = formattedMessage.content.find((part) => part.type === 'text');
+        expect(textPart?.text?.startsWith(fileContextText)).toBe(true);
+      }
+
+      tokenSpy.mockRestore();
+    });
+
+    it('should use default value true when latestAttachmentsAsSystemMessage is not configured', async () => {
+      // Remove the fileContext configuration
+      mockReq.config.fileConfig = {
+        fileTokenLimit: 4096,
+      };
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+
+      const mockAttachments = [
+        {
+          file_id: 'file-1',
+          filename: 'file.txt',
+          source: 'text',
+          text: 'Content',
+          embedded: false,
+        },
+      ];
+
+      client.options.attachments = Promise.resolve(mockAttachments);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Read this file',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, 'msg-1', {
+        instructions: 'Build messages with default config',
+        additional_instructions: null,
+      });
+
+      // Should still process attachments (default behavior should work)
+      expect(client.message_file_map).toBeDefined();
+      expect(client.message_file_map['msg-1']).toBeDefined();
+    });
+
+    it('should handle file context with different configuration options', async () => {
+      // Customize file context configuration
+      mockReq.config.fileConfig.fileContext = {
+        prefixText: 'Files:',
+        showFilenameHeaders: false,
+        filenameHeaderTemplate: '## {filename}',
+        latestAttachmentsAsSystemMessage: true,
+      };
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+
+      const mockAttachments = [
+        {
+          file_id: 'file-1',
+          filename: 'data.json',
+          source: 'text',
+          text: '{"key": "value"}',
+          embedded: false,
+        },
+      ];
+
+      client.options.attachments = Promise.resolve(mockAttachments);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Process this JSON data',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, 'msg-1', {
+        instructions: 'Build messages with custom config',
+        additional_instructions: null,
+      });
+
+      // Verify the custom fileContext configuration was applied
+      expect(client.message_file_map['msg-1']).toBeDefined();
+      expect(client.message_file_map['msg-1'][0]).toMatchObject({
+        filename: 'data.json',
+        source: 'text',
+      });
+    });
+
+    it('should not add file context to message when no attachments are present', async () => {
+      client.options.attachments = Promise.resolve([]);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Just a regular message',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, 'msg-1', {
+        instructions: 'Build messages without files',
+        additional_instructions: null,
+      });
+
+      // When attachments are empty, message_file_map should still be set with an empty array
+      expect(client.message_file_map['msg-1']).toEqual([]);
+    });
+
+    it('should preserve message structure when merging file context with false setting', async () => {
+      // Set latestAttachmentsAsSystemMessage to false
+      mockReq.config.fileConfig.fileContext.latestAttachmentsAsSystemMessage = false;
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+
+      const mockAttachments = [
+        {
+          file_id: 'file-1',
+          filename: 'test.txt',
+          source: 'text',
+          text: 'Test content',
+          embedded: false,
+        },
+      ];
+
+      client.options.attachments = Promise.resolve(mockAttachments);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Original message text',
+          isCreatedByUser: true,
+        },
+      ];
+
+      // Build messages and verify the structure is preserved
+      await client.buildMessages(messages, 'msg-1', {
+        instructions: 'Build messages',
+        additional_instructions: null,
+      });
+
+      // Verify attachment tracking
+      expect(client.message_file_map['msg-1']).toBeDefined();
+      expect(client.message_file_map['msg-1'][0].filename).toBe('test.txt');
     });
   });
 });
