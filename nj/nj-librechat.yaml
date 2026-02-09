@@ -50,10 +50,10 @@ endpoints:
     availableRegions:
       - "us-east-1"
     titleModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    # guardrailConfig:
-    #   guardrailIdentifier: "${GUARDRAIL_ID}"
-    #   guardrailVersion: "1"
-    #   trace: "disabled"
+    guardrailConfig:
+      guardrailIdentifier: "${GUARDRAIL_ID}"
+      guardrailVersion: "2"
+      trace: "disabled"
 
   # Workaround: we have to explicitly disable all agent capabilities (otherwise the agents UI won't go away)
   agents:
