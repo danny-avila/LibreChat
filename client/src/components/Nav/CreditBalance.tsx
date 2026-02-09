@@ -7,7 +7,7 @@ export default function CreditBalance() {
   return (
     <div className="mx-2 mb-2 rounded-lg border border-border-light px-3 py-2">
       <div className="flex items-center justify-between text-[11px]">
-        <span className="text-text-secondary">Credits</span>
+        <span className="text-text-secondary">{'Credits'}</span>
         <span className="font-medium text-text-primary">
           {CURRENT.toLocaleString()} / {TOTAL.toLocaleString()}
         </span>

@@ -24,7 +24,7 @@ export default function ModelTierSelector() {
               : 'border border-[--tier-border] text-[--tier-text] hover:text-text-primary',
           )}
         >
-          {tier.label} ({tier.credits} cr)
+          {`${tier.label} (${tier.credits} cr)`}
         </button>
       ))}
     </div>

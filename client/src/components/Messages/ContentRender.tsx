@@ -140,7 +140,7 @@ const ContentRender = memo(
           className={cn(
             'relative flex flex-col',
             hasParallelContent ? 'w-full' : 'max-w-[85%]',
-            isUser ? 'items-end user-turn' : 'agent-turn',
+            isUser ? 'user-turn items-end' : 'agent-turn',
           )}
         >
           {!hasParallelContent && !isUser && (

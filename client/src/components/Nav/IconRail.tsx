@@ -60,7 +60,13 @@ export default function IconRail({
           xmlns="http://www.w3.org/2000/svg"
           className="rounded-lg"
         >
-          <rect width="512" height="512" rx="64" fill="currentColor" className="text-text-primary" />
+          <rect
+            width="512"
+            height="512"
+            rx="64"
+            fill="currentColor"
+            className="text-text-primary"
+          />
           <text
             x="250"
             y="355"
@@ -71,7 +77,7 @@ export default function IconRail({
             className="fill-surface-primary"
             letterSpacing="-10"
           >
-            $gz
+            {'$gz'}
           </text>
         </svg>
       </button>
