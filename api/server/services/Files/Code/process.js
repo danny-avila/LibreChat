@@ -18,9 +18,9 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
-const { createFile, getFiles, updateFile } = require('~/models');
 const { determineFileType } = require('~/server/utils');
 
 /**
@@ -54,50 +54,6 @@ const createDownloadFallback = ({
     toolCallId,
     messageId,
   };
-};
-
-/**
- * Find an existing code-generated file by filename in the conversation.
- * Used to update existing files instead of creating duplicates.
- *
- * ## Deduplication Strategy
- *
- * Files are deduplicated by `(conversationId, filename)` - NOT including `messageId`.
- * This is an intentional design decision to handle iterative code development patterns:
- *
- * **Rationale:**
- * - When users iteratively refine code (e.g., "regenerate that chart with red bars"),
- *   the same logical file (e.g., "chart.png") is produced multiple times
- * - Without deduplication, each iteration would create a new file, leading to storage bloat
- * - The latest version is what matters for re-upload to the code environment
- *
- * **Implications:**
- * - Different messages producing files with the same name will update the same file record
- * - The `messageId` field tracks which message last updated the file
- * - The `usage` counter tracks how many times the file has been generated
- *
- * **Future Considerations:**
- * - If file versioning is needed, consider adding a `versions` array or separate version collection
- * - The current approach prioritizes storage efficiency over history preservation
- *
- * @param {string} filename - The filename to search for.
- * @param {string} conversationId - The conversation ID.
- * @returns {Promise<MongoFile | null>} The existing file or null.
- */
-const findExistingCodeFile = async (filename, conversationId) => {
-  if (!filename || !conversationId) {
-    return null;
-  }
-  const files = await getFiles(
-    {
-      filename,
-      conversationId,
-      context: FileContext.execute_code,
-    },
-    { createdAt: -1 },
-    { text: 0 },
-  );
-  return files?.[0] ?? null;
 };
 
 /**
@@ -170,12 +126,19 @@ const processCodeOutput = async ({
     const fileIdentifier = `${session_id}/${id}`;
 
     /**
-     * Check for existing file with same filename in this conversation.
-     * If found, we'll update it instead of creating a duplicate.
+     * Atomically claim a file_id for this (filename, conversationId, context) tuple.
+     * Uses $setOnInsert so concurrent calls for the same filename converge on
+     * a single record instead of creating duplicates (TOCTOU race fix).
      */
-    const existingFile = await findExistingCodeFile(name, conversationId);
-    const file_id = existingFile?.file_id ?? v4();
-    const isUpdate = !!existingFile;
+    const newFileId = v4();
+    const claimed = await claimCodeFile({
+      filename: name,
+      conversationId,
+      file_id: newFileId,
+      user: req.user.id,
+    });
+    const file_id = claimed.file_id;
+    const isUpdate = file_id !== newFileId;
 
     if (isUpdate) {
       logger.debug(
@@ -184,27 +147,29 @@ const processCodeOutput = async ({
     }
 
     if (isImage) {
+      const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
       const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
+      const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
       const file = {
         ..._file,
+        filepath,
         file_id,
         messageId,
-        usage: isUpdate ? (existingFile.usage ?? 0) + 1 : 1,
+        usage,
         filename: name,
         conversationId,
         user: req.user.id,
         type: `image/${appConfig.imageOutputType}`,
-        createdAt: isUpdate ? existingFile.createdAt : formattedDate,
+        createdAt: isUpdate ? claimed.createdAt : formattedDate,
         updatedAt: formattedDate,
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
         metadata: { fileIdentifier },
       };
-      createFile(file, true);
+      await createFile(file, true);
       return Object.assign(file, { messageId, toolCallId });
     }
 
-    // For non-image files, save to configured storage strategy
     const { saveBuffer } = getStrategyFunctions(appConfig.fileStrategy);
     if (!saveBuffer) {
       logger.warn(
@@ -221,7 +186,6 @@ const processCodeOutput = async ({
       });
     }
 
-    // Determine MIME type from buffer or extension
     const detectedType = await determineFileType(buffer, true);
     const mimeType = detectedType?.mime || inferMimeType(name, '') || 'application/octet-stream';
 
@@ -258,11 +222,11 @@ const processCodeOutput = async ({
       metadata: { fileIdentifier },
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
-      usage: isUpdate ? (existingFile.usage ?? 0) + 1 : 1,
-      createdAt: isUpdate ? existingFile.createdAt : formattedDate,
+      usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
+      createdAt: isUpdate ? claimed.createdAt : formattedDate,
     };
 
-    createFile(file, true);
+    await createFile(file, true);
     return Object.assign(file, { messageId, toolCallId });
   } catch (error) {
     logAxiosError({
