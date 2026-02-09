@@ -81,7 +81,8 @@ const Nav = memo(
 
     const isSmallScreen = useMediaQuery('(max-width: 768px)');
     const [newUser, setNewUser] = useLocalStorage('newUser', true);
-    const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
+    // NJ: We always want chats expanded by default
+    const [isChatsExpanded, setIsChatsExpanded] = useState(true);
     const [showLoading, setShowLoading] = useState(false);
     const [tags, setTags] = useState<string[]>([]);
 

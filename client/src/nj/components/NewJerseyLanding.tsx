@@ -28,7 +28,7 @@ export function NewJerseyLanding() {
           parties built by the{' '}
           <a
             href="https://innovation.nj.gov/"
-            className="underline"
+            className="underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
@@ -57,14 +57,14 @@ export function NewJerseyLanding() {
                       <span
                         role="button"
                         onClick={() => navigate('/nj/guide')}
-                        className="inline-flex items-center gap-1 underline"
+                        className="inline-flex items-center gap-1 underline hover:decoration-2"
                       >
                         AI Assistant FAQ <GraduationCap size={16} />
                       </span>{' '}
                       and{' '}
                       <a
                         href="https://innovation.nj.gov/skills/ai-how-tos/"
-                        className="inline-flex items-center gap-1 underline"
+                        className="inline-flex items-center gap-1 underline hover:decoration-2"
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -81,7 +81,7 @@ export function NewJerseyLanding() {
                       Read the State{' '}
                       <a
                         href="https://innovation.nj.gov/ai-faq-state-employees/"
-                        className="inline-flex items-center gap-1 underline"
+                        className="inline-flex items-center gap-1 underline hover:decoration-2"
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -93,12 +93,12 @@ export function NewJerseyLanding() {
 
                   <div className="my-5 border-t-2 border-dotted border-border-medium" />
 
-                  <div className="mb-4">
+                  <div className="mb-2">
                     <p>
                       Access the state&apos;s Generative AI training as a{' '}
                       <a
                         href="https://stateofnewjersey.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/ledetail/CLIP.RAIPP.WBT/latestversion"
-                        className="underline"
+                        className="underline hover:decoration-2"
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -107,7 +107,7 @@ export function NewJerseyLanding() {
                       (government employees) or{' '}
                       <a
                         href="https://stateofnewjersey-external.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/ledetail/CLIP.RAIPP.WBT/latestversion"
-                        className="underline"
+                        className="underline hover:decoration-2"
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -121,7 +121,7 @@ export function NewJerseyLanding() {
             )}
           </AnimatePresence>
 
-          <Collapsible.Trigger className="flex w-full items-center justify-between px-6 py-3">
+          <Collapsible.Trigger className="flex w-full items-center justify-between px-6 py-5">
             <span>
               {open
                 ? "If you're all set, start a new conversation below."
