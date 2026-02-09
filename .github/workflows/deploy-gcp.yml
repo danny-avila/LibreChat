@@ -1,0 +1,131 @@
+name: Deploy to GCP Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: handy-droplet-486816-d1
+  REGION: europe-west1
+  SERVICE_NAME: ground0
+  REPOSITORY: ground0-images
+  IMAGE_NAME: ground0
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Set image tags
+        id: tags
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE_URI="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}"
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_URI}:${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "image_latest=${IMAGE_URI}:latest" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg NODE_MAX_OLD_SPACE_SIZE=6144 \
+            -t ${{ steps.tags.outputs.image_tag }} \
+            -t ${{ steps.tags.outputs.image_latest }} \
+            .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ steps.tags.outputs.image_tag }}
+          docker push ${{ steps.tags.outputs.image_latest }}
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ steps.tags.outputs.image_tag }}
+          env_vars: |
+            HOST=0.0.0.0
+            PORT=3080
+            NODE_ENV=production
+            CONSOLE_JSON=true
+            NO_INDEX=true
+            TRUST_PROXY=1
+            DOMAIN_CLIENT=https://ground0.io
+            DOMAIN_SERVER=https://ground0.io
+            SEARCH=false
+            MEILI_NO_SYNC=true
+            ALLOW_EMAIL_LOGIN=true
+            ALLOW_REGISTRATION=true
+            ALLOW_SOCIAL_LOGIN=false
+            ALLOW_SOCIAL_REGISTRATION=false
+            ALLOW_PASSWORD_RESET=false
+            ALLOW_UNVERIFIED_EMAIL_LOGIN=true
+            ALLOW_SHARED_LINKS=true
+            ALLOW_SHARED_LINKS_PUBLIC=true
+            BAN_VIOLATIONS=true
+            BAN_DURATION=7200000
+            BAN_INTERVAL=20
+            LOGIN_MAX=7
+            LOGIN_WINDOW=5
+            REGISTER_MAX=5
+            REGISTER_WINDOW=60
+            LIMIT_CONCURRENT_MESSAGES=true
+            CONCURRENT_MESSAGE_MAX=2
+            LIMIT_MESSAGE_IP=true
+            MESSAGE_IP_MAX=40
+            MESSAGE_IP_WINDOW=1
+            DEBUG_LOGGING=true
+            DEBUG_CONSOLE=false
+            OPENAI_MODERATION=false
+            APP_TITLE=Ground Zero
+          secrets: |
+            MONGO_URI=MONGO_URI:latest
+            JWT_SECRET=JWT_SECRET:latest
+            JWT_REFRESH_SECRET=JWT_REFRESH_SECRET:latest
+            CREDS_KEY=CREDS_KEY:latest
+            CREDS_IV=CREDS_IV:latest
+            MEILI_MASTER_KEY=MEILI_MASTER_KEY:latest
+            OPENAI_API_KEY=OPENAI_API_KEY:latest
+            ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest
+            GOOGLE_KEY=GOOGLE_KEY:latest
+            ASSISTANTS_API_KEY=ASSISTANTS_API_KEY:latest
+          flags: |
+            --port=3080
+            --cpu=2
+            --memory=4Gi
+            --min-instances=0
+            --max-instances=3
+            --concurrency=80
+            --timeout=300
+            --cpu-boost
+            --session-affinity
+            --execution-environment=gen2
+            --allow-unauthenticated
+
+      - name: Show deployment URL
+        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"

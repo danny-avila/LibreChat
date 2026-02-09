@@ -66,13 +66,12 @@ export default function NewChat({
               data-testid="close-sidebar-button"
               aria-label={localize('com_nav_close_sidebar')}
               aria-expanded={true}
-              className="rounded-full border-none bg-transparent duration-0 hover:bg-surface-active-alt focus-visible:ring-inset focus-visible:ring-black focus-visible:ring-offset-0 dark:focus-visible:ring-white md:rounded-xl"
+              className="rounded-full border-none bg-transparent duration-0 hover:bg-surface-active-alt focus-visible:ring-inset focus-visible:ring-black focus-visible:ring-offset-0 dark:focus-visible:ring-white md:hidden md:rounded-xl"
               onClick={handleToggleNav}
             >
-              <Sidebar aria-hidden="true" className="max-md:hidden" />
               <MobileSidebar
                 aria-hidden="true"
-                className="icon-lg m-1 inline-flex items-center justify-center md:hidden"
+                className="icon-lg m-1 inline-flex items-center justify-center"
               />
             </Button>
           }

@@ -57,7 +57,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Set page title
-  useDocumentTitle(`${localize('com_agents_marketplace')} | LibreChat`);
+  useDocumentTitle(`${localize('com_agents_marketplace')} | Ground Zero`);
 
   // Ensure right sidebar is always visible in marketplace
   useEffect(() => {

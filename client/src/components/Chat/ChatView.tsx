@@ -8,7 +8,8 @@ import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
 import { useAddedResponse, useResumeOnLoad, useAdaptiveSSE, useChatHelpers } from '~/hooks';
-import ConversationStarters from './Input/ConversationStarters';
+import ModelTierSelector from './Input/ModelTierSelector';
+import FeatureGrid from './FeatureGrid';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
@@ -99,8 +100,9 @@ function ChatView({ index = 0 }: { index?: number }) {
                       isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                     )}
                   >
+                    {isLandingPage && <ModelTierSelector />}
                     <ChatForm index={index} />
-                    {isLandingPage ? <ConversationStarters /> : <Footer />}
+                    {isLandingPage ? <FeatureGrid /> : <Footer />}
                   </div>
                 </div>
                 {isLandingPage && <Footer />}

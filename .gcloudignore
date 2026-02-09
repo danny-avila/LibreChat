@@ -1,0 +1,60 @@
+# .gcloudignore
+# Files excluded from Cloud Build context.
+
+# Git
+.git
+.gitignore
+
+# CI/CD & IDE
+.github/
+.circleci/
+.vscode/
+.idea/
+*.code-workspace
+
+# Docker files (not needed in build context — Dockerfile is auto-included)
+docker-compose*.yml
+deploy-compose.yml
+
+# Local data volumes
+data-node/
+meili_data*/
+data/
+logs/
+uploads/
+images/
+
+# Dependencies (rebuilt during docker build)
+node_modules/
+
+# Environment files (secrets come from Secret Manager)
+.env
+.env.*
+!.env.example
+
+# Documentation
+docs/
+LICENSE
+
+# Testing
+coverage/
+e2e/
+playwright*/
+junit.xml
+**/*.spec.js
+**/*.test.js
+
+# Helm charts (not needed for Cloud Run)
+helm/
+
+# AI assistant files
+.claude/
+.cursor/
+.copilot/
+.aider*
+.mcp.json
+
+# OS files
+.DS_Store
+*.pem
+*.cert

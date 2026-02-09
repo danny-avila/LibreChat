@@ -8,7 +8,7 @@ services:
       - "${PORT}:${PORT}"
     depends_on:
       - mongodb
-      - rag_api
+      # - rag_api
     image: ghcr.io/danny-avila/librechat-dev:latest
     restart: always
     user: "${UID}:${GID}"
@@ -31,9 +31,8 @@ services:
     container_name: chat-mongodb
     image: mongo:8.0.17
     restart: always
-    user: "${UID}:${GID}"
     volumes:
-      - ./data-node:/data/db
+      - mongodata:/data/db
     command: mongod --noauth
   meilisearch:
     container_name: chat-meilisearch
@@ -46,27 +45,30 @@ services:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
     volumes:
       - ./meili_data_v1.12:/meili_data
-  vectordb:
-    container_name: vectordb
-    image: pgvector/pgvector:0.8.0-pg15-trixie
-    environment:
-      POSTGRES_DB: mydatabase
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
-    restart: always
-    volumes:
-      - pgdata2:/var/lib/postgresql/data
-  rag_api:
-    container_name: rag_api
-    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
-    environment:
-      - DB_HOST=vectordb
-      - RAG_PORT=${RAG_PORT:-8000}
-    restart: always
-    depends_on:
-      - vectordb
-    env_file:
-      - .env
+  # TODO: Re-enable once RAG DB is properly configured with correct credentials
+  # and RAG_OPENAI_API_KEY is set in .env
+  # vectordb:
+  #   container_name: vectordb
+  #   image: pgvector/pgvector:0.8.0-pg15-trixie
+  #   environment:
+  #     POSTGRES_DB: mydatabase
+  #     POSTGRES_USER: myuser
+  #     POSTGRES_PASSWORD: mypassword
+  #   restart: always
+  #   volumes:
+  #     - pgdata2:/var/lib/postgresql/data
+  # rag_api:
+  #   container_name: rag_api
+  #   image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+  #   environment:
+  #     - DB_HOST=vectordb
+  #     - RAG_PORT=${RAG_PORT:-8000}
+  #   restart: always
+  #   depends_on:
+  #     - vectordb
+  #   env_file:
+  #     - .env
 
 volumes:
+  mongodata:
   pgdata2:

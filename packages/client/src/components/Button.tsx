@@ -16,8 +16,7 @@ const buttonVariants = cva(
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
         ghost: 'hover:bg-surface-hover hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
-        // hardcoded text color because of WCAG contrast issues (text-white)
-        submit: 'bg-surface-submit text-white hover:bg-surface-submit-hover',
+        submit: 'bg-surface-submit text-surface-submit-text hover:bg-surface-submit-hover',
       },
       size: {
         default: 'h-10 px-4 py-2',

@@ -91,6 +91,8 @@ export default function Message(props: TMessageProps) {
     return 'md:max-w-[47rem] xl:max-w-[55rem]';
   };
 
+  const isUser = isCreatedByUser ?? false;
+
   const baseClasses = {
     common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu',
     chat: getChatWidthClass(),
@@ -107,11 +109,16 @@ export default function Message(props: TMessageProps) {
           <div
             id={messageId ?? ''}
             aria-label={getMessageAriaLabel(message, localize)}
-            className={cn(baseClasses.common, baseClasses.chat, 'message-render')}
+            className={cn(
+              baseClasses.common,
+              baseClasses.chat,
+              'message-render',
+              isUser && 'flex-row-reverse',
+            )}
           >
-            {!hasParallelContent && (
+            {!hasParallelContent && !isUser && (
               <div className="relative flex flex-shrink-0 flex-col items-center">
-                <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full pt-0.5">
+                <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full pt-0.5">
                   <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
                 </div>
               </div>
@@ -119,17 +126,22 @@ export default function Message(props: TMessageProps) {
             <div
               className={cn(
                 'relative flex flex-col',
-                hasParallelContent ? 'w-full' : 'w-11/12',
-                isCreatedByUser ? 'user-turn' : 'agent-turn',
+                hasParallelContent ? 'w-full' : 'max-w-[85%]',
+                isUser ? 'items-end user-turn' : 'agent-turn',
               )}
             >
-              {!hasParallelContent && (
+              {!hasParallelContent && !isUser && (
                 <h2 className={cn('select-none font-semibold text-text-primary', fontSize)}>
                   {name}
                 </h2>
               )}
               <div className="flex flex-col gap-1">
-                <div className="flex max-w-full flex-grow flex-col gap-0">
+                <div
+                  className={cn(
+                    'flex max-w-full flex-grow flex-col gap-0',
+                    isUser && 'rounded-2xl bg-bubble-user px-4 py-3',
+                  )}
+                >
                   <ContentParts
                     edit={edit}
                     isLast={isLast}

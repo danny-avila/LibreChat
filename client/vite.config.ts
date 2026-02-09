@@ -58,11 +58,11 @@ export default defineConfig(({ command }) => ({
       },
       includeAssets: [],
       manifest: {
-        name: 'LibreChat',
-        short_name: 'LibreChat',
+        name: 'Ground Zero',
+        short_name: 'Ground Zero',
         display: 'standalone',
-        background_color: '#000000',
-        theme_color: '#009688',
+        background_color: '#0A0A0A',
+        theme_color: '#0A0A0A',
         icons: [
           {
             src: 'assets/favicon-32x32.png',

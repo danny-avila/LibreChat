@@ -27,10 +27,7 @@ export default function Footer({ className }: { className?: string }) {
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : '[LibreChat ' +
-        Constants.VERSION +
-        '](https://librechat.ai) - ' +
-        localize('com_ui_latest_footer')
+      : '[Ground Zero](https://ground0.io) — the ground where your creativity begins'
   ).split('|');
 
   useEffect(() => {

@@ -105,6 +105,8 @@ const ContentRender = memo(
       return 'md:max-w-[47rem] xl:max-w-[55rem]';
     };
 
+    const isUser = msg.isCreatedByUser ?? false;
+
     const baseClasses = {
       common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu ',
       chat: getChatWidthClass(),
@@ -123,11 +125,12 @@ const ContentRender = memo(
           baseClasses.chat,
           conditionalClasses.focus,
           'message-render',
+          isUser && 'flex-row-reverse',
         )}
       >
-        {!hasParallelContent && (
+        {!hasParallelContent && !isUser && (
           <div className="relative flex flex-shrink-0 flex-col items-center">
-            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+            <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full">
               <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
             </div>
           </div>
@@ -136,16 +139,21 @@ const ContentRender = memo(
         <div
           className={cn(
             'relative flex flex-col',
-            hasParallelContent ? 'w-full' : 'w-11/12',
-            msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
+            hasParallelContent ? 'w-full' : 'max-w-[85%]',
+            isUser ? 'items-end user-turn' : 'agent-turn',
           )}
         >
-          {!hasParallelContent && (
+          {!hasParallelContent && !isUser && (
             <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
           )}
 
           <div className="flex flex-col gap-1">
-            <div className="flex max-w-full flex-grow flex-col gap-0">
+            <div
+              className={cn(
+                'flex max-w-full flex-grow flex-col gap-0',
+                isUser && 'rounded-2xl bg-bubble-user px-4 py-3',
+              )}
+            >
               <ContentParts
                 edit={edit}
                 isLast={isLast}

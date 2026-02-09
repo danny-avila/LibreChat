@@ -1,0 +1,41 @@
+# cloudbuild.yaml
+# Cloud Build configuration for Ground Zero.
+# Alternative to building in GitHub Actions — use with:
+#   gcloud builds submit --config cloudbuild.yaml .
+
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'NODE_MAX_OLD_SPACE_SIZE=6144'
+      - '-t'
+      - '${_IMAGE_TAG}'
+      - '-t'
+      - '${_IMAGE_LATEST}'
+      - '.'
+    timeout: '1800s'
+
+  # Push the tagged image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_IMAGE_TAG}']
+
+  # Push the latest tag
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_IMAGE_LATEST}']
+
+substitutions:
+  _IMAGE_TAG: 'europe-west1-docker.pkg.dev/handy-droplet-486816-d1/ground0-images/ground0:${SHORT_SHA}'
+  _IMAGE_LATEST: 'europe-west1-docker.pkg.dev/handy-droplet-486816-d1/ground0-images/ground0:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: 50
+
+timeout: '2400s'
+
+images:
+  - '${_IMAGE_TAG}'
+  - '${_IMAGE_LATEST}'

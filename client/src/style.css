@@ -18,17 +18,17 @@
   --gray-800: #212121;
   --gray-850: #171717;
   --gray-900: #0d0d0d;
-  --green-50: #ecfdf5;
-  --green-100: #d1fae5;
-  --green-200: #a7f3d0;
-  --green-300: #6ee7b7;
-  --green-400: #34d399;
-  --green-500: #10b981;
-  --green-600: #059669;
-  --green-700: #047857;
-  --green-800: #065f46;
-  --green-900: #064e3b;
-  --green-950: #022c22;
+  --green-50: #fafafa;
+  --green-100: #f5f5f5;
+  --green-200: #e5e5e5;
+  --green-300: #d4d4d4;
+  --green-400: #a3a3a3;
+  --green-500: #404040;
+  --green-600: #262626;
+  --green-700: #0A0A0A;
+  --green-800: #171717;
+  --green-900: #0d0d0d;
+  --green-950: #0a0a0a;
   --red-50: #fef2f2;
   --red-100: #fee2e2;
   --red-200: #fecaca;
@@ -51,7 +51,7 @@
   --amber-800: #92400e;
   --amber-900: #78350f;
   --amber-950: #451a03;
-  --brand-purple: #ab68ff;
+  --brand-purple: #0A0A0A;
   --gizmo-gray-500: #999;
   --gizmo-gray-600: #666;
   --gizmo-gray-950: #0f0f0f;
@@ -63,7 +63,7 @@
   --markdown-font-size: 1rem;
 }
 html {
-  --brand-purple: #ab68ff;
+  --brand-purple: #0A0A0A;
   --presentation: var(--white);
   --text-primary: var(--gray-800);
   --text-secondary: var(--gray-600);
@@ -88,6 +88,7 @@ html {
   --surface-dialog: var(--white);
   --surface-submit: var(--green-700);
   --surface-submit-hover: var(--green-800);
+  --surface-submit-text: #FFFFFF;
   --surface-destructive: var(--red-700);
   --surface-destructive-hover: var(--red-800);
   --surface-chat: var(--white);
@@ -122,9 +123,20 @@ html {
   --chart-4: 43 74% 66%;
   --chart-5: 27 87% 67%;
   --switch-unchecked: 0 0% 58%;
+
+  /* Ground Zero layout tokens */
+  --icon-rail-bg: #FCFCFC;
+  --icon-rail-border: #F0F0F0;
+  --bubble-user: #F5F5F5;
+  --tier-selected-bg: #0A0A0A;
+  --tier-selected-text: #FFFFFF;
+  --tier-border: #E8E8E8;
+  --tier-text: #BBBBBB;
+  --feature-tile-bg: #F8F8F8;
+  --feature-label: #AAAAAA;
 }
 .dark {
-  --brand-purple: #ab68ff;
+  --brand-purple: #FFFFFF;
   --presentation: var(--gray-800);
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-300);
@@ -146,8 +158,9 @@ html {
   --surface-tertiary: var(--gray-700);
   --surface-tertiary-alt: var(--gray-700);
   --surface-dialog: var(--gray-850);
-  --surface-submit: var(--green-700);
-  --surface-submit-hover: var(--green-800);
+  --surface-submit: #FFFFFF;
+  --surface-submit-hover: #E0E0E0;
+  --surface-submit-text: #0A0A0A;
   --surface-destructive: var(--red-800);
   --surface-destructive-hover: var(--red-900);
   --surface-chat: var(--gray-700);
@@ -181,6 +194,17 @@ html {
   --chart-4: 280 65% 60%;
   --chart-5: 340 75% 55%;
   --switch-unchecked: 0 0% 40%;
+
+  /* Ground Zero layout tokens */
+  --icon-rail-bg: #0A0A0A;
+  --icon-rail-border: #333333;
+  --bubble-user: #2f2f2f;
+  --tier-selected-bg: #FFFFFF;
+  --tier-selected-text: #0A0A0A;
+  --tier-border: #444444;
+  --tier-text: #888888;
+  --feature-tile-bg: #1a1a1a;
+  --feature-label: #888888;
 }
 .gizmo {
   --text-primary: var(--gizmo-gray-950);
@@ -305,82 +329,94 @@ html {
   text-overflow: ellipsis;
 }
 
+/* Ground Zero Fonts: DM Sans (body) + Space Mono (logo, code, mono UI) */
 @font-face {
   font-display: swap;
-  font-family: Inter;
+  font-family: 'DM Sans';
   font-style: normal;
   font-weight: 400;
-  src: url('$fonts/Inter-Regular.woff2') format('woff2');
-  size-adjust: 94%;
+  src: url('$fonts/DM-Sans-Regular.woff2') format('woff2');
 }
 
 @font-face {
   font-display: swap;
-  font-family: Inter;
+  font-family: 'DM Sans';
   font-style: italic;
   font-weight: 400;
-  src: url('$fonts/Inter-Italic.woff2') format('woff2');
-  size-adjust: 94%;
+  src: url('$fonts/DM-Sans-Italic.woff2') format('woff2');
 }
 
 @font-face {
   font-display: swap;
-  font-family: Inter;
+  font-family: 'DM Sans';
   font-style: normal;
   font-weight: 500;
-  src: url('$fonts/Inter-SemiBold.woff2') format('woff2');
-  size-adjust: 94%;
+  src: url('$fonts/DM-Sans-Medium.woff2') format('woff2');
 }
 
 @font-face {
   font-display: swap;
-  font-family: Inter;
+  font-family: 'DM Sans';
   font-style: italic;
   font-weight: 500;
-  src: url('$fonts/Inter-SemiBoldItalic.woff2') format('woff2');
-  size-adjust: 94%;
+  src: url('$fonts/DM-Sans-MediumItalic.woff2') format('woff2');
 }
 
 @font-face {
   font-display: swap;
-  font-family: Inter;
-  font-style: normal;
-  font-weight: 600;
-  src: url('$fonts/Inter-Bold.woff2') format('woff2');
-  size-adjust: 94%;
-}
-
-@font-face {
-  font-display: swap;
-  font-family: Inter;
-  font-style: italic;
-  font-weight: 600;
-  src: url('$fonts/Inter-BoldItalic.woff2') format('woff2');
-  size-adjust: 94%;
-}
-
-@font-face {
-  font-display: swap;
-  font-family: Roboto Mono;
-  font-style: normal;
-  font-weight: 400;
-  src: url('$fonts/roboto-mono-latin-400-normal.woff2') format('woff2');
-}
-
-@font-face {
-  font-display: swap;
-  font-family: Roboto Mono;
+  font-family: 'DM Sans';
   font-style: normal;
   font-weight: 700;
-  src: url('$fonts/roboto-mono-latin-700-normal.woff2') format('woff2');
+  src: url('$fonts/DM-Sans-Bold.woff2') format('woff2');
 }
 
 @font-face {
   font-display: swap;
-  font-family: Roboto Mono;
+  font-family: 'DM Sans';
+  font-style: italic;
+  font-weight: 700;
+  src: url('$fonts/DM-Sans-BoldItalic.woff2') format('woff2');
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 400;
+  src: url('$fonts/Space-Mono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'Space Mono';
   font-style: italic;
   font-weight: 400;
-  src: url('$fonts/roboto-mono-latin-400-italic.woff2') format('woff2');
+  src: url('$fonts/Space-Mono-Italic.woff2') format('woff2');
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 700;
+  src: url('$fonts/Space-Mono-Bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'Space Mono';
+  font-style: italic;
+  font-weight: 700;
+  src: url('$fonts/Space-Mono-BoldItalic.woff2') format('woff2');
+}
+
+/* Ground Zero blinking cursor animation */
+@keyframes gz-cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+.animate-blink {
+  animation: gz-cursor-blink 1.06s step-end infinite;
 }
 
 /*

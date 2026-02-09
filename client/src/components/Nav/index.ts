@@ -1,5 +1,6 @@
 export * from './ExportConversation';
 export * from './SettingsTabs/';
+export { default as IconRail } from './IconRail';
 export { default as MobileNav } from './MobileNav';
 export { default as Nav, NAV_WIDTH } from './Nav';
 export { default as NavLink } from './NavLink';

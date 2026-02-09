@@ -9,7 +9,8 @@
 # Specific patterns to ignore
 data-node
 meili_data*
-librechat*
+librechat-data*
+!librechat.yaml
 Dockerfile*
 docs
 

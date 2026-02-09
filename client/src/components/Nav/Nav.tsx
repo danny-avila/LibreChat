@@ -26,6 +26,7 @@ import {
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
 import SearchBar from './SearchBar';
+import CreditBalance from './CreditBalance';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -35,7 +36,7 @@ const AccountSettings = lazy(() => import('./AccountSettings'));
 
 export const NAV_WIDTH = {
   MOBILE: 320,
-  DESKTOP: 260,
+  DESKTOP: 220,
 } as const;
 
 const SearchBarSkeleton = memo(() => (
@@ -247,6 +248,7 @@ const Nav = memo(
               />
             </div>
           </div>
+          <CreditBalance />
           <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
             <AccountSettings />
           </Suspense>
