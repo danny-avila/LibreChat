@@ -53,7 +53,7 @@ endpoints:
     guardrailConfig:
       guardrailIdentifier: "${GUARDRAIL_ID}"
       guardrailVersion: "2"
-      trace: "disabled"
+      trace: "enabled"
 
   # Workaround: we have to explicitly disable all agent capabilities (otherwise the agents UI won't go away)
   agents:
