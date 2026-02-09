@@ -20,6 +20,12 @@ Ground Zero (ground0.io) is a multi-model AI SaaS platform with chat, document g
 - **DO:** Always include $ in icon mark, keep monochrome, use Space Mono
 - **DON'T:** Use gz without $, add colors to logo, use uppercase $GZ, remove underscore from ground_zero
 
+## Code & Commit Rules
+- **NEVER** mention Claude, AI, or any AI assistant in code, comments, commit messages, or PR descriptions
+- **NO** `Co-Authored-By` lines referencing AI in commits
+- **NO** "Generated with Claude Code" or similar attribution in PRs, code comments, or documentation
+- All work should appear as if written by the human developer
+
 ## Architecture Decisions (LOCKED)
 - **Foundation:** LibreChat fork (musnada/ground0 on GitHub)
 - **Cloud:** GCP — Cloud Run (serverless containers), NOT Kubernetes
