@@ -172,6 +172,35 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
+   * Atomically claims a file_id for a code-execution output by compound key.
+   * Uses $setOnInsert so concurrent calls for the same (filename, conversationId)
+   * converge on a single record instead of creating duplicates.
+   */
+  async function claimCodeFile(data: {
+    filename: string;
+    conversationId: string;
+    file_id: string;
+    user: string;
+  }): Promise<IMongoFile> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const result = await File.findOneAndUpdate(
+      {
+        filename: data.filename,
+        conversationId: data.conversationId,
+        context: FileContext.execute_code,
+      },
+      { $setOnInsert: { file_id: data.file_id, user: data.user } },
+      { upsert: true, new: true },
+    ).lean();
+    if (!result) {
+      throw new Error(
+        `[claimCodeFile] Failed to claim file "${data.filename}" for conversation ${data.conversationId}`,
+      );
+    }
+    return result as IMongoFile;
+  }
+
+  /**
    * Creates a new file with a TTL of 1 hour.
    * @param data - The file data to be created, must contain file_id
    * @param disableTTL - Whether to disable the TTL
@@ -344,6 +373,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     getToolFilesByIds,
     getCodeGeneratedFiles,
     getUserCodeFiles,
+    claimCodeFile,
     createFile,
     updateFile,
     updateFileUsage,
