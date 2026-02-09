@@ -444,8 +444,9 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
     const refreshToken = tokenset.refresh_token || existingRefreshToken;
 
     if (!refreshToken) {
-      logger.error('[setOpenIDAuthTokens] No refresh token available');
-      return;
+      logger.warn(
+        '[setOpenIDAuthTokens] No refresh token available — session will not auto-refresh',
+      );
     }
 
     /** Store tokens server-side in session to avoid large cookies */
@@ -454,6 +455,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         accessToken: tokenset.access_token,
         refreshToken: refreshToken,
         expiresAt: expirationDate.getTime(),
+        userId: userId,
       };
     } else {
       logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');

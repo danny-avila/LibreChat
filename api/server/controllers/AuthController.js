@@ -74,7 +74,42 @@ const refreshController = async (req, res) => {
     const refreshToken = req.session?.openidTokens?.refreshToken || parsedCookies.refreshToken;
 
     if (!refreshToken) {
-      return res.status(200).send('Refresh token not provided');
+      const accessToken = req.session?.openidTokens?.accessToken;
+      const storedUserId = req.session?.openidTokens?.userId;
+
+      if (!accessToken || !storedUserId) {
+        return res.status(200).send('Refresh token not provided');
+      }
+
+      let tokenExpired = false;
+      try {
+        const decoded = jwt.decode(accessToken);
+        if (decoded?.exp && decoded.exp < Date.now() / 1000) {
+          tokenExpired = true;
+        }
+      } catch {
+        const expiresAt = req.session?.openidTokens?.expiresAt;
+        if (expiresAt && expiresAt < Date.now()) {
+          tokenExpired = true;
+        }
+      }
+
+      if (tokenExpired) {
+        logger.warn('[refreshController] Access token expired and no refresh token available');
+        return res.status(401).redirect('/login');
+      }
+
+      const user = await getUserById(storedUserId, '-password -__v -totpSecret -backupCodes');
+      if (!user) {
+        return res.status(401).redirect('/login');
+      }
+
+      user.federatedTokens = {
+        access_token: accessToken,
+        expires_at: req.session?.openidTokens?.expiresAt,
+      };
+
+      return res.status(200).send({ token: accessToken, user });
     }
 
     try {
