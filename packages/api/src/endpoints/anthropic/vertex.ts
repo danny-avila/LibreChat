@@ -1,10 +1,10 @@
 import path from 'path';
-import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';
 import { GoogleAuth } from 'google-auth-library';
-import { ClientOptions } from '@anthropic-ai/sdk';
 import { AuthKeys } from 'librechat-data-provider';
-import { loadServiceKey } from '~/utils/key';
+import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';
+import type { ClientOptions } from '@anthropic-ai/sdk';
 import type { AnthropicCredentials, VertexAIClientOptions } from '~/types/anthropic';
+import { loadServiceKey } from '~/utils/key';
 
 /**
  * Options for loading Vertex AI credentials

@@ -349,13 +349,13 @@ export const parseCompactConvo = ({
 };
 
 export function parseTextParts(
-  contentParts: a.TMessageContentParts[],
+  contentParts: Array<a.TMessageContentParts | undefined>,
   skipReasoning: boolean = false,
 ): string {
   let result = '';
 
   for (const part of contentParts) {
-    if (!part.type) {
+    if (!part?.type) {
       continue;
     }
     if (part.type === ContentTypes.TEXT) {

@@ -1,6 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
-import { EModelEndpoint, anthropicSettings } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  AnthropicEffort,
+  anthropicSettings,
+  supportsContext1m,
+  supportsAdaptiveThinking,
+} from 'librechat-data-provider';
 import { matchModelName } from '~/utils/tokens';
 
 /**
@@ -48,7 +54,7 @@ function getClaudeHeaders(
     return {
       'anthropic-beta': 'token-efficient-tools-2025-02-19,output-128k-2025-02-19',
     };
-  } else if (/claude-sonnet-4/.test(model)) {
+  } else if (supportsContext1m(model)) {
     return {
       'anthropic-beta': 'context-1m-2025-08-07',
     };
@@ -58,25 +64,43 @@ function getClaudeHeaders(
 }
 
 /**
- * Configures reasoning-related options for Claude models
- * @param {AnthropicClientOptions & { max_tokens?: number }} anthropicInput The request options object
- * @param {Object} extendedOptions Additional client configuration options
- * @param {boolean} extendedOptions.thinking Whether thinking is enabled in client config
- * @param {number|null} extendedOptions.thinkingBudget The token budget for thinking
- * @returns {Object} Updated request options
+ * Configures reasoning-related options for Claude models.
+ * Models supporting adaptive thinking (Opus 4.6+, Sonnet 5+) use effort control instead of manual budget_tokens.
  */
 function configureReasoning(
   anthropicInput: AnthropicClientOptions & { max_tokens?: number },
-  extendedOptions: { thinking?: boolean; thinkingBudget?: number | null } = {},
+  extendedOptions: {
+    thinking?: boolean;
+    thinkingBudget?: number | null;
+    effort?: AnthropicEffort | string | null;
+  } = {},
 ): AnthropicClientOptions & { max_tokens?: number } {
   const updatedOptions = { ...anthropicInput };
   const currentMaxTokens = updatedOptions.max_tokens ?? updatedOptions.maxTokens;
+  const modelName = updatedOptions.model ?? '';
+
+  if (extendedOptions.thinking && modelName && supportsAdaptiveThinking(modelName)) {
+    updatedOptions.thinking = { type: 'adaptive' };
+
+    const effort = extendedOptions.effort;
+    if (effort && effort !== AnthropicEffort.unset) {
+      updatedOptions.invocationKwargs = {
+        ...updatedOptions.invocationKwargs,
+        output_config: { effort },
+      };
+    }
+
+    if (currentMaxTokens == null) {
+      updatedOptions.max_tokens = anthropicSettings.maxOutputTokens.reset(modelName);
+    }
+
+    return updatedOptions;
+  }
 
   if (
     extendedOptions.thinking &&
-    updatedOptions?.model &&
-    (/claude-3[-.]7/.test(updatedOptions.model) ||
-      /claude-(?:sonnet|opus|haiku)-[4-9]/.test(updatedOptions.model))
+    modelName &&
+    (/claude-3[-.]7/.test(modelName) || /claude-(?:sonnet|opus|haiku)-[4-9]/.test(modelName))
   ) {
     updatedOptions.thinking = {
       ...updatedOptions.thinking,
@@ -100,7 +124,7 @@ function configureReasoning(
     updatedOptions.thinking.type === 'enabled' &&
     (currentMaxTokens == null || updatedOptions.thinking.budget_tokens > currentMaxTokens)
   ) {
-    const maxTokens = anthropicSettings.maxOutputTokens.reset(updatedOptions.model ?? '');
+    const maxTokens = anthropicSettings.maxOutputTokens.reset(modelName);
     updatedOptions.max_tokens = currentMaxTokens ?? maxTokens;
 
     logger.warn(
@@ -111,11 +135,11 @@ function configureReasoning(
 
     updatedOptions.thinking.budget_tokens = Math.min(
       updatedOptions.thinking.budget_tokens,
-      Math.floor(updatedOptions.max_tokens * 0.9),
+      Math.floor((updatedOptions.max_tokens ?? 0) * 0.9),
     );
   }
 
   return updatedOptions;
 }
 
-export { checkPromptCacheSupport, getClaudeHeaders, configureReasoning };
+export { checkPromptCacheSupport, getClaudeHeaders, configureReasoning, supportsAdaptiveThinking };

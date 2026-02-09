@@ -61,10 +61,12 @@ jest.mock('@librechat/api', () => ({
 }));
 
 // Mock models
+const mockClaimCodeFile = jest.fn();
 jest.mock('~/models', () => ({
-  createFile: jest.fn(),
+  createFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
   updateFile: jest.fn(),
+  claimCodeFile: (...args) => mockClaimCodeFile(...args),
 }));
 
 // Mock permissions (must be before process.js import)
@@ -119,7 +121,11 @@ describe('Code Process', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Default mock implementations
+    // Default mock: atomic claim returns a new file record (no existing file)
+    mockClaimCodeFile.mockResolvedValue({
+      file_id: 'mock-uuid-1234',
+      user: 'user-123',
+    });
     getFiles.mockResolvedValue(null);
     createFile.mockResolvedValue({});
     getStrategyFunctions.mockReturnValue({
@@ -128,66 +134,45 @@ describe('Code Process', () => {
     determineFileType.mockResolvedValue({ mime: 'text/plain' });
   });
 
-  describe('findExistingCodeFile (via processCodeOutput)', () => {
-    it('should find existing file by filename and conversationId', async () => {
-      const existingFile = {
+  describe('atomic file claim (via processCodeOutput)', () => {
+    it('should reuse file_id from existing record via atomic claim', async () => {
+      mockClaimCodeFile.mockResolvedValue({
         file_id: 'existing-file-id',
         filename: 'test-file.txt',
         usage: 2,
         createdAt: '2024-01-01T00:00:00.000Z',
-      };
-      getFiles.mockResolvedValue([existingFile]);
+      });
 
       const smallBuffer = Buffer.alloc(100);
       axios.mockResolvedValue({ data: smallBuffer });
 
       const result = await processCodeOutput(baseParams);
 
-      // Verify getFiles was called with correct deduplication query
-      expect(getFiles).toHaveBeenCalledWith(
-        {
-          filename: 'test-file.txt',
-          conversationId: 'conv-123',
-          context: FileContext.execute_code,
-        },
-        { createdAt: -1 },
-        { text: 0 },
-      );
+      expect(mockClaimCodeFile).toHaveBeenCalledWith({
+        filename: 'test-file.txt',
+        conversationId: 'conv-123',
+        file_id: 'mock-uuid-1234',
+        user: 'user-123',
+      });
 
-      // Verify the existing file_id was reused
       expect(result.file_id).toBe('existing-file-id');
-      // Verify usage was incremented
       expect(result.usage).toBe(3);
-      // Verify original createdAt was preserved
       expect(result.createdAt).toBe('2024-01-01T00:00:00.000Z');
     });
 
     it('should create new file when no existing file found', async () => {
-      getFiles.mockResolvedValue(null);
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'mock-uuid-1234',
+        user: 'user-123',
+      });
 
       const smallBuffer = Buffer.alloc(100);
       axios.mockResolvedValue({ data: smallBuffer });
 
       const result = await processCodeOutput(baseParams);
 
-      // Should use the mocked uuid
       expect(result.file_id).toBe('mock-uuid-1234');
-      // Should have usage of 1 for new file
       expect(result.usage).toBe(1);
-    });
-
-    it('should return null for invalid inputs (empty filename)', async () => {
-      const smallBuffer = Buffer.alloc(100);
-      axios.mockResolvedValue({ data: smallBuffer });
-
-      // The function handles this internally - with empty name
-      // findExistingCodeFile returns null early for empty filename (guard clause)
-      const result = await processCodeOutput({ ...baseParams, name: '' });
-
-      // getFiles should NOT be called due to early return in findExistingCodeFile
-      expect(getFiles).not.toHaveBeenCalled();
-      // A new file_id should be generated since no existing file was found
-      expect(result.file_id).toBe('mock-uuid-1234');
     });
   });
 
@@ -203,7 +188,6 @@ describe('Code Process', () => {
           bytes: 400,
         };
         convertImage.mockResolvedValue(convertedFile);
-        getFiles.mockResolvedValue(null);
 
         const result = await processCodeOutput(imageParams);
 
@@ -218,23 +202,29 @@ describe('Code Process', () => {
         expect(result.filename).toBe('chart.png');
       });
 
-      it('should update existing image file and increment usage', async () => {
+      it('should update existing image file with cache-busted filepath', async () => {
         const imageParams = { ...baseParams, name: 'chart.png' };
-        const existingFile = {
+        mockClaimCodeFile.mockResolvedValue({
           file_id: 'existing-img-id',
           usage: 1,
           createdAt: '2024-01-01T00:00:00.000Z',
-        };
-        getFiles.mockResolvedValue([existingFile]);
+        });
 
         const imageBuffer = Buffer.alloc(500);
         axios.mockResolvedValue({ data: imageBuffer });
-        convertImage.mockResolvedValue({ filepath: '/uploads/img.webp' });
+        convertImage.mockResolvedValue({ filepath: '/images/user-123/existing-img-id.webp' });
 
         const result = await processCodeOutput(imageParams);
 
+        expect(convertImage).toHaveBeenCalledWith(
+          mockReq,
+          imageBuffer,
+          'high',
+          'existing-img-id.png',
+        );
         expect(result.file_id).toBe('existing-img-id');
         expect(result.usage).toBe(2);
+        expect(result.filepath).toMatch(/^\/images\/user-123\/existing-img-id\.webp\?v=\d+$/);
         expect(logger.debug).toHaveBeenCalledWith(
           expect.stringContaining('Updating existing file'),
         );
@@ -335,7 +325,6 @@ describe('Code Process', () => {
 
     describe('usage counter increment', () => {
       it('should set usage to 1 for new files', async () => {
-        getFiles.mockResolvedValue(null);
         const smallBuffer = Buffer.alloc(100);
         axios.mockResolvedValue({ data: smallBuffer });
 
@@ -345,8 +334,11 @@ describe('Code Process', () => {
       });
 
       it('should increment usage for existing files', async () => {
-        const existingFile = { file_id: 'existing-id', usage: 5, createdAt: '2024-01-01' };
-        getFiles.mockResolvedValue([existingFile]);
+        mockClaimCodeFile.mockResolvedValue({
+          file_id: 'existing-id',
+          usage: 5,
+          createdAt: '2024-01-01',
+        });
         const smallBuffer = Buffer.alloc(100);
         axios.mockResolvedValue({ data: smallBuffer });
 
@@ -356,14 +348,15 @@ describe('Code Process', () => {
       });
 
       it('should handle existing file with undefined usage', async () => {
-        const existingFile = { file_id: 'existing-id', createdAt: '2024-01-01' };
-        getFiles.mockResolvedValue([existingFile]);
+        mockClaimCodeFile.mockResolvedValue({
+          file_id: 'existing-id',
+          createdAt: '2024-01-01',
+        });
         const smallBuffer = Buffer.alloc(100);
         axios.mockResolvedValue({ data: smallBuffer });
 
         const result = await processCodeOutput(baseParams);
 
-        // (undefined ?? 0) + 1 = 1
         expect(result.usage).toBe(1);
       });
     });

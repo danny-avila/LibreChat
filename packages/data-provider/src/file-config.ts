@@ -60,6 +60,7 @@ export const fullMimeTypesList = [
   'application/vnd.coffeescript',
   'application/xml',
   'application/zip',
+  'application/x-parquet',
   'image/svg',
   'image/svg+xml',
   // Video formats
@@ -114,6 +115,7 @@ export const codeInterpreterMimeTypesList = [
   'application/typescript',
   'application/xml',
   'application/zip',
+  'application/x-parquet',
   ...excelFileTypes,
 ];
 
@@ -144,7 +146,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|pdf|x-tar|x-sh|typescript|sql|yaml|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
@@ -202,6 +204,7 @@ export const codeTypeMapping: { [key: string]: string } = {
   log: 'text/plain', // .log - Log file
   csv: 'text/csv', // .csv - Comma-separated values
   tsv: 'text/tab-separated-values', // .tsv - Tab-separated values
+  parquet: 'application/x-parquet', // .parquet - Apache Parquet columnar storage
   json: 'application/json', // .json - JSON file
   xml: 'application/xml', // .xml - XML file
   html: 'text/html', // .html - HTML file
