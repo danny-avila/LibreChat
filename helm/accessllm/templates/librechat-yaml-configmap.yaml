@@ -7,4 +7,4 @@ metadata:
     {{- include "accessllm.labels" . | nindent 4 }}
 data:
   librechat.yaml: |
-    {{- .Values.librechatYaml | nindent 4 }}
+{{ .Files.Get "librechat.yaml" | indent 4 }}

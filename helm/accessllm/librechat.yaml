@@ -1,0 +1,104 @@
+version: 1.2.8
+cache: false
+interface:
+  agents: true
+  multiConvo: true
+memory:
+  disabled: false
+  personalize: true
+  tokenLimit: 2000
+  messageWindowSize: 5
+  agent:
+    provider: "OpenAI_models"
+    model: "gpt-5-mini"
+    instructions: |
+      Store information only in the specified validKeys categories.
+      Focus on explicitly stated preferences and important facts.
+      Delete outdated or corrected information promptly.
+endpoints:
+  agents:
+    disableBuilder: false
+    capabilities: ["file_search","context","tools","actions"]
+  custom:
+    - name: "OpenAI_models"
+      apiKey: "${OPENAIMODELS_API_KEY}"
+      baseURL: "http://litellm:8000/v1"
+      models:
+        default: ["gpt-5-mini"]
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      modelDisplayLabel: "OpenAi"
+      customParams:
+        defaultParamsEndpoint: 'openAI'
+        paramDefinitions:
+           - key: web_search
+             default: true
+    - name: "Anthropic_models"
+      apiKey: "${ANTHROPICMODELS_API_KEY}"
+      baseURL: "http://litellm:8000/v1"
+      models:
+        default: ["claude-haiku-4-5"]
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      modelDisplayLabel: "Anthropic"
+      customParams:
+        defaultParamsEndpoint: 'anthropic'
+        paramDefinitions:
+           - key: web_search
+             default: true
+
+    - name: "Google_models"
+      apiKey: "${GOOGLEMODELS_API_KEY}"
+      baseURL: "http://litellm:8000/v1"
+      models:
+        default: ["gemini-2.5-flash"]
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      modelDisplayLabel: "Google"
+      customParams:
+        defaultParamsEndpoint: 'google'
+        paramDefinitions:
+           - key: web_search
+             default: true
+mcpServers:
+  scholar:
+    type: stdio
+    command: /bin/sh
+    args:
+      - "-c"
+      - |
+        mkdir -p /tmp/ss-mcp && cd /tmp/ss-mcp && \
+        if [ ! -f "server.py" ]; then \
+          wget -qO repo.zip https://github.com/alperenkocyigit/semantic-scholar-graph-api/archive/refs/heads/main.zip && \
+          unzip -qo repo.zip && \
+          mv semantic-scholar-graph-api-main/* . && \
+          rm -rf semantic-scholar-graph-api-main repo.zip && \
+          sed -i 's/transport="streamable-http"//' server.py && \
+          sed -i 's/async def search_semantic_scholar_papers/async def find_papers/g' server.py && \
+          sed -i 's/async def get_semantic_scholar_paper_details/async def lookup_paper/g' server.py && \
+          sed -i 's/async def get_semantic_scholar_author_details/async def lookup_author/g' server.py && \
+          sed -i 's/async def get_semantic_scholar_citations_and_references/async def get_refs/g' server.py && \
+          sed -i 's/async def search_semantic_scholar_authors/async def find_authors/g' server.py && \
+          sed -i 's/async def get_semantic_scholar_paper_match/async def match_paper/g' server.py && \
+          sed -i 's/async def get_semantic_scholar_paper_autocomplete/async def complete_title/g' server.py && \
+          sed -i 's/async def get_semantic_scholar_papers_batch/async def batch_papers/g' server.py && \
+          sed -i 's/async def get_semantic_scholar_authors_batch/async def batch_authors/g' server.py && \
+          sed -i 's/async def search_semantic_scholar_snippets/async def find_snippets/g' server.py && \
+          sed -i 's/async def get_semantic_scholar_paper_recommendations_from_lists/async def rec_listing/g' server.py && \
+          sed -i 's/async def get_semantic_scholar_paper_recommendations/async def rec_paper/g' server.py; \
+        fi && \
+        uv venv .venv && \
+        . .venv/bin/activate && \
+        uv pip install -r requirements.txt && \
+        python server.py
+    env:
+      SEMANTIC_SCHOLAR_API_KEY: "${SEMANTIC_SCHOLAR_API_KEY}"
+speech:
+  stt:
+    openai:
+      url: "http://litellm:8000/v1/audio/transcriptions"
+      apiKey: "${WHISPER_API_KEY}"
+      model: "whisper-1"
