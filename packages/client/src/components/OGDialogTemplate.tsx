@@ -79,7 +79,7 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
     overlayClassName,
     showCancelButton = true,
   } = props;
-  const isLegacySelection = selection && isSelectionProps(selection);
+  const isLegacySelection = isSelectionProps(selection);
   const { selectHandler, selectClasses, selectText, isLoading } = isLegacySelection
     ? selection
     : {};
