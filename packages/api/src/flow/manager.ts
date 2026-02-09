@@ -21,7 +21,10 @@ export class FlowStateManager<T = unknown> {
     this.ttl = ttl;
     this.keyv = store;
     this.intervals = new Set();
-    this.setupCleanupHandlers();
+
+    if (!ci) {
+      this.setupCleanupHandlers();
+    }
   }
 
   private setupCleanupHandlers() {
@@ -40,6 +43,49 @@ export class FlowStateManager<T = unknown> {
 
   private getFlowKey(flowId: string, type: string): string {
     return `${type}:${flowId}`;
+  }
+
+  /**
+   * Normalizes an expiration timestamp to milliseconds.
+   * Detects whether the input is in seconds or milliseconds based on magnitude.
+   * Timestamps below 10 billion are assumed to be in seconds (valid until ~2286).
+   * @param timestamp - The expiration timestamp (in seconds or milliseconds)
+   * @returns The timestamp normalized to milliseconds
+   */
+  private normalizeExpirationTimestamp(timestamp: number): number {
+    const SECONDS_THRESHOLD = 1e10;
+    if (timestamp < SECONDS_THRESHOLD) {
+      return timestamp * 1000;
+    }
+    return timestamp;
+  }
+
+  /**
+   * Checks if a flow's token has expired based on its expires_at field
+   * @param flowState - The flow state to check
+   * @returns true if the token has expired, false otherwise (including if no expires_at exists)
+   */
+  private isTokenExpired(flowState: FlowState<T> | undefined): boolean {
+    if (!flowState?.result) {
+      return false;
+    }
+
+    if (typeof flowState.result !== 'object') {
+      return false;
+    }
+
+    if (!('expires_at' in flowState.result)) {
+      return false;
+    }
+
+    const expiresAt = (flowState.result as { expires_at: unknown }).expires_at;
+
+    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+      return false;
+    }
+
+    const normalizedExpiresAt = this.normalizeExpirationTimestamp(expiresAt);
+    return normalizedExpiresAt < Date.now();
   }
 
   /**
@@ -83,22 +129,61 @@ export class FlowStateManager<T = unknown> {
     return new Promise<T>((resolve, reject) => {
       const checkInterval = 2000;
       let elapsedTime = 0;
+      let isCleanedUp = false;
+      let intervalId: NodeJS.Timeout | null = null;
 
-      const intervalId = setInterval(async () => {
+      // Cleanup function to avoid duplicate cleanup
+      const cleanup = () => {
+        if (isCleanedUp) return;
+        isCleanedUp = true;
+        if (intervalId) {
+          clearInterval(intervalId);
+          this.intervals.delete(intervalId);
+        }
+        if (signal && abortHandler) {
+          signal.removeEventListener('abort', abortHandler);
+        }
+      };
+
+      // Immediate abort handler - responds instantly to abort signal
+      const abortHandler = async () => {
+        cleanup();
+        logger.warn(`[${flowKey}] Flow aborted (immediate)`);
+        const message = `${type} flow aborted`;
+        try {
+          await this.keyv.delete(flowKey);
+        } catch {
+          // Ignore delete errors during abort
+        }
+        reject(new Error(message));
+      };
+
+      // Register abort handler immediately if signal provided
+      if (signal) {
+        if (signal.aborted) {
+          // Already aborted, reject immediately
+          cleanup();
+          reject(new Error(`${type} flow aborted`));
+          return;
+        }
+        signal.addEventListener('abort', abortHandler, { once: true });
+      }
+
+      intervalId = setInterval(async () => {
+        if (isCleanedUp) return;
+
         try {
           const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
           if (!flowState) {
-            clearInterval(intervalId);
-            this.intervals.delete(intervalId);
+            cleanup();
             logger.error(`[${flowKey}] Flow state not found`);
             reject(new Error(`${type} Flow state not found`));
             return;
           }
 
           if (signal?.aborted) {
-            clearInterval(intervalId);
-            this.intervals.delete(intervalId);
+            cleanup();
             logger.warn(`[${flowKey}] Flow aborted`);
             const message = `${type} flow aborted`;
             await this.keyv.delete(flowKey);
@@ -107,8 +192,7 @@ export class FlowStateManager<T = unknown> {
           }
 
           if (flowState.status !== 'PENDING') {
-            clearInterval(intervalId);
-            this.intervals.delete(intervalId);
+            cleanup();
             logger.debug(`[${flowKey}] Flow completed`);
 
             if (flowState.status === 'COMPLETED' && flowState.result !== undefined) {
@@ -122,8 +206,7 @@ export class FlowStateManager<T = unknown> {
 
           elapsedTime += checkInterval;
           if (elapsedTime >= this.ttl) {
-            clearInterval(intervalId);
-            this.intervals.delete(intervalId);
+            cleanup();
             logger.error(
               `[${flowKey}] Flow timed out | Elapsed time: ${elapsedTime} | TTL: ${this.ttl}`,
             );
@@ -133,8 +216,7 @@ export class FlowStateManager<T = unknown> {
           logger.debug(`[${flowKey}] Flow state elapsed time: ${elapsedTime}, checking again...`);
         } catch (error) {
           logger.error(`[${flowKey}] Error checking flow state:`, error);
-          clearInterval(intervalId);
-          this.intervals.delete(intervalId);
+          cleanup();
           reject(error);
         }
       }, checkInterval);
@@ -272,16 +354,16 @@ export class FlowStateManager<T = unknown> {
   ): Promise<T> {
     const flowKey = this.getFlowKey(flowId, type);
     let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    if (existingState) {
-      logger.debug(`[${flowKey}] Flow already exists`);
+    if (existingState && !this.isTokenExpired(existingState)) {
+      logger.debug(`[${flowKey}] Flow already exists with valid token`);
       return this.monitorFlow(flowKey, type, signal);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 250));
 
     existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    if (existingState) {
-      logger.debug(`[${flowKey}] Flow exists on 2nd check`);
+    if (existingState && !this.isTokenExpired(existingState)) {
+      logger.debug(`[${flowKey}] Flow exists on 2nd check with valid token`);
       return this.monitorFlow(flowKey, type, signal);
     }
 

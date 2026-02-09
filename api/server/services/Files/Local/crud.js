@@ -67,7 +67,12 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }
   try {
     const { publicPath, uploads } = paths;
 
-    const directoryPath = path.join(basePath === 'images' ? publicPath : uploads, basePath, userId);
+    /**
+     * For 'images': save to publicPath/images/userId (images are served statically)
+     * For 'uploads': save to uploads/userId (files downloaded via API)
+     * */
+    const directoryPath =
+      basePath === 'images' ? path.join(publicPath, basePath, userId) : path.join(uploads, userId);
 
     if (!fs.existsSync(directoryPath)) {
       fs.mkdirSync(directoryPath, { recursive: true });
@@ -210,14 +215,24 @@ const deleteLocalFile = async (req, file) => {
 
   if (file.embedded && process.env.RAG_API_URL) {
     const jwtToken = generateShortLivedToken(req.user.id);
-    axios.delete(`${process.env.RAG_API_URL}/documents`, {
-      headers: {
-        Authorization: `Bearer ${jwtToken}`,
-        'Content-Type': 'application/json',
-        accept: 'application/json',
-      },
-      data: [file.file_id],
-    });
+    try {
+      await axios.delete(`${process.env.RAG_API_URL}/documents`, {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+          'Content-Type': 'application/json',
+          accept: 'application/json',
+        },
+        data: [file.file_id],
+      });
+    } catch (error) {
+      if (error.response?.status === 404) {
+        logger.warn(
+          `[deleteLocalFile] Document ${file.file_id} not found in RAG API, may have been deleted already`,
+        );
+      } else {
+        logger.error('[deleteLocalFile] Error deleting document from RAG API:', error);
+      }
+    }
   }
 
   if (cleanFilepath.startsWith(`/uploads/${req.user.id}`)) {

@@ -4,11 +4,7 @@ module.exports = {
   roots: ['<rootDir>'],
   coverageDirectory: 'coverage',
   testTimeout: 30000, // 30 seconds timeout for all tests
-  setupFiles: [
-    './test/jestSetup.js',
-    './test/__mocks__/logger.js',
-    './test/__mocks__/fetchEventSource.js',
-  ],
+  setupFiles: ['./test/jestSetup.js', './test/__mocks__/logger.js'],
   moduleNameMapper: {
     '~/(.*)': '<rootDir>/$1',
     '~/data/auth.json': '<rootDir>/__mocks__/auth.mock.json',

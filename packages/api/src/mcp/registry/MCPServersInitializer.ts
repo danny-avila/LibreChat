@@ -2,11 +2,10 @@ import { registryStatusCache as statusCache } from './cache/RegistryStatusCache'
 import { isLeader } from '~/cluster';
 import { withTimeout } from '~/utils';
 import { logger } from '@librechat/data-schemas';
-import { MCPServerInspector } from './MCPServerInspector';
 import { ParsedServerConfig } from '~/mcp/types';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 import type * as t from '~/mcp/types';
-import { mcpServersRegistry as registry } from './MCPServersRegistry';
+import { MCPServersRegistry } from './MCPServersRegistry';
 
 const MCP_INIT_TIMEOUT_MS =
   process.env.MCP_INIT_TIMEOUT_MS != null ? parseInt(process.env.MCP_INIT_TIMEOUT_MS) : 30_000;
@@ -31,16 +30,26 @@ export class MCPServersInitializer {
    * - Followers wait and poll `statusCache` until the leader finishes, ensuring only one node
    *   performs the expensive initialization operations.
    */
-  public static async initialize(rawConfigs: t.MCPServers): Promise<void> {
-    if (await statusCache.isInitialized()) return;
+  private static hasInitializedThisProcess = false;
 
-    /** Store raw configs immediately so they're available even if initialization fails/is slow */
-    registry.setRawConfigs(rawConfigs);
+  /** Reset the process-level initialization flag. Only used for testing. */
+  public static resetProcessFlag(): void {
+    MCPServersInitializer.hasInitializedThisProcess = false;
+  }
+
+  public static async initialize(rawConfigs: t.MCPServers): Promise<void> {
+    // On first call in this process, always reset and re-initialize
+    // This ensures we don't use stale Redis data from previous runs
+    const isFirstCallThisProcess = !MCPServersInitializer.hasInitializedThisProcess;
+    // Set flag immediately so recursive calls (from followers) use Redis cache for coordination
+    MCPServersInitializer.hasInitializedThisProcess = true;
+
+    if (!isFirstCallThisProcess && (await statusCache.isInitialized())) return;
 
     if (await isLeader()) {
-      // Leader performs initialization
+      // Leader performs initialization - always reset on first call
       await statusCache.reset();
-      await registry.reset();
+      await MCPServersRegistry.getInstance().reset();
       const serverNames = Object.keys(rawConfigs);
       await Promise.allSettled(
         serverNames.map((serverName) =>
@@ -61,19 +70,14 @@ export class MCPServersInitializer {
   }
 
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
-  private static async initializeServer(
-    serverName: string,
-    rawConfig: t.MCPOptions,
-  ): Promise<void> {
+  public static async initializeServer(serverName: string, rawConfig: t.MCPOptions): Promise<void> {
     try {
-      const config = await MCPServerInspector.inspect(serverName, rawConfig);
-
-      if (config.startup === false || config.requiresOAuth) {
-        await registry.sharedUserServers.add(serverName, config);
-      } else {
-        await registry.sharedAppServers.add(serverName, config);
-      }
-      MCPServersInitializer.logParsedConfig(serverName, config);
+      const result = await MCPServersRegistry.getInstance().addServer(
+        serverName,
+        rawConfig,
+        'CACHE',
+      );
+      MCPServersInitializer.logParsedConfig(serverName, result.config);
     } catch (error) {
       logger.error(`${MCPServersInitializer.prefix(serverName)} Failed to initialize:`, error);
     }

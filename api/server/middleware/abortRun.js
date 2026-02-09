@@ -16,6 +16,7 @@ async function abortRun(req, res) {
   const conversation = await getConvo(req.user.id, conversationId);
 
   if (conversation?.model) {
+    req.body = req.body || {}; // Express 5: ensure req.body exists
     req.body.model = conversation.model;
   }
 

@@ -7,6 +7,7 @@ export interface IBanner extends Document {
   displayTo?: Date;
   type: 'banner' | 'popup';
   isPublic: boolean;
+  persistable: boolean;
 }
 
 const bannerSchema = new Schema<IBanner>(
@@ -33,6 +34,10 @@ const bannerSchema = new Schema<IBanner>(
       default: 'banner',
     },
     isPublic: {
+      type: Boolean,
+      default: false,
+    },
+    persistable: {
       type: Boolean,
       default: false,
     },

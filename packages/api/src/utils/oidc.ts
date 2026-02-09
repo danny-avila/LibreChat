@@ -34,31 +34,32 @@ const OPENID_TOKEN_FIELDS = [
   'EXPIRES_AT',
 ] as const;
 
-export function extractOpenIDTokenInfo(user: IUser | null | undefined): OpenIDTokenInfo | null {
+/**
+ * Placeholder for Microsoft Graph API access token.
+ * This placeholder is resolved asynchronously via OBO (On-Behalf-Of) flow
+ * and requires special handling outside the synchronous processMCPEnv pipeline.
+ */
+export const GRAPH_TOKEN_PLACEHOLDER = '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
+
+/**
+ * Default Microsoft Graph API scopes for OBO token exchange.
+ * Can be overridden via GRAPH_API_SCOPES environment variable.
+ */
+export const DEFAULT_GRAPH_SCOPES = 'https://graph.microsoft.com/.default';
+
+export function extractOpenIDTokenInfo(
+  user: Partial<IUser> | null | undefined,
+): OpenIDTokenInfo | null {
   if (!user) {
-    logger.debug('[extractOpenIDTokenInfo] No user provided');
     return null;
   }
 
   try {
-    logger.debug(
-      '[extractOpenIDTokenInfo] User provider:',
-      user.provider,
-      'openidId:',
-      user.openidId,
-    );
-
     if (user.provider !== 'openid' && !user.openidId) {
-      logger.debug('[extractOpenIDTokenInfo] User not authenticated via OpenID');
       return null;
     }
 
     const tokenInfo: OpenIDTokenInfo = {};
-
-    logger.debug(
-      '[extractOpenIDTokenInfo] Checking for federatedTokens in user object:',
-      'federatedTokens' in user,
-    );
 
     if ('federatedTokens' in user && isFederatedTokens(user.federatedTokens)) {
       const tokens = user.federatedTokens;

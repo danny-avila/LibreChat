@@ -9,6 +9,7 @@ import {
   TerminalSquareIcon,
 } from 'lucide-react';
 import {
+  Providers,
   EToolResources,
   EModelEndpoint,
   defaultAgentCapabilities,
@@ -36,6 +37,8 @@ import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
+type FileUploadType = 'image' | 'document' | 'image_document' | 'image_document_video_audio';
+
 interface AttachFileMenuProps {
   agentId?: string | null;
   endpoint?: string | null;
@@ -43,6 +46,7 @@ interface AttachFileMenuProps {
   conversationId: string;
   endpointType?: EModelEndpoint;
   endpointFileConfig?: EndpointFileConfig;
+  useResponsesApi?: boolean;
 }
 
 const AttachFileMenu = ({
@@ -52,6 +56,7 @@ const AttachFileMenu = ({
   endpointType,
   conversationId,
   endpointFileConfig,
+  useResponsesApi,
 }: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
@@ -83,21 +88,19 @@ const AttachFileMenu = ({
     ephemeralAgent,
   );
 
-  const handleUploadClick = (
-    fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal',
-  ) => {
+  const handleUploadClick = (fileType?: FileUploadType) => {
     if (!inputRef.current) {
       return;
     }
     inputRef.current.value = '';
     if (fileType === 'image') {
-      inputRef.current.accept = 'image/*';
+      inputRef.current.accept = 'image/*,.heif,.heic';
     } else if (fileType === 'document') {
       inputRef.current.accept = '.pdf,application/pdf';
-    } else if (fileType === 'multimodal') {
-      inputRef.current.accept = 'image/*,.pdf,application/pdf';
-    } else if (fileType === 'google_multimodal') {
-      inputRef.current.accept = 'image/*,.pdf,application/pdf,video/*,audio/*';
+    } else if (fileType === 'image_document') {
+      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf';
+    } else if (fileType === 'image_document_video_audio') {
+      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
     } else {
       inputRef.current.accept = '';
     }
@@ -106,23 +109,33 @@ const AttachFileMenu = ({
   };
 
   const dropdownItems = useMemo(() => {
-    const createMenuItems = (
-      onAction: (fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal') => void,
-    ) => {
+    const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
       const items: MenuItemProps[] = [];
 
-      const currentProvider = provider || endpoint;
+      let currentProvider = provider || endpoint;
+
+      // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
+      if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
+        currentProvider = Providers.OPENROUTER;
+      }
+
+      const isAzureWithResponsesApi =
+        currentProvider === EModelEndpoint.azureOpenAI && useResponsesApi;
+
       if (
         isDocumentSupportedProvider(endpointType) ||
-        isDocumentSupportedProvider(currentProvider)
+        isDocumentSupportedProvider(currentProvider) ||
+        isAzureWithResponsesApi
       ) {
         items.push({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(undefined);
-            onAction(
-              (provider || endpoint) === EModelEndpoint.google ? 'google_multimodal' : 'multimodal',
-            );
+            let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
+            if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
+              fileType = 'image_document_video_audio';
+            }
+            onAction(fileType);
           },
           icon: <FileImageIcon className="icon-md" />,
         });
@@ -204,6 +217,7 @@ const AttachFileMenu = ({
     provider,
     endpointType,
     capabilities,
+    useResponsesApi,
     setToolResource,
     setEphemeralAgent,
     sharePointEnabled,
@@ -220,7 +234,8 @@ const AttachFileMenu = ({
           id="attach-file-menu-button"
           aria-label="Attach File Options"
           className={cn(
-            'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50',
+            'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
+            isPopoverActive && 'bg-surface-hover',
           )}
         >
           <div className="flex w-full items-center justify-center gap-2">

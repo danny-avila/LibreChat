@@ -1,6 +1,9 @@
-import { replaceSpecialVars } from '../src/parsers';
+import { replaceSpecialVars, parseCompactConvo, parseTextParts } from '../src/parsers';
 import { specialVariables } from '../src/config';
-import type { TUser } from '../src/types';
+import { EModelEndpoint } from '../src/schemas';
+import { ContentTypes } from '../src/types/runs';
+import type { TMessageContentParts } from '../src/types/assistants';
+import type { TUser, TConversation } from '../src/types';
 
 // Mock dayjs module with consistent date/time values regardless of environment
 jest.mock('dayjs', () => {
@@ -121,5 +124,226 @@ describe('replaceSpecialVars', () => {
     expect(result).toContain('2024-04-29 12:34:56 (1)'); // current_datetime
     expect(result).toContain('2024-04-29T16:34:56.000Z'); // iso_datetime
     expect(result).toContain('Test User'); // current_user
+  });
+});
+
+describe('parseCompactConvo', () => {
+  describe('iconURL security sanitization', () => {
+    test('should strip iconURL from OpenAI endpoint conversation input', () => {
+      const maliciousIconURL = 'https://evil-tracker.example.com/pixel.png?user=victim';
+      const conversation: Partial<TConversation> = {
+        model: 'gpt-4',
+        iconURL: maliciousIconURL,
+        endpoint: EModelEndpoint.openAI,
+      };
+
+      const result = parseCompactConvo({
+        endpoint: EModelEndpoint.openAI,
+        conversation,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.['iconURL']).toBeUndefined();
+      expect(result?.model).toBe('gpt-4');
+    });
+
+    test('should strip iconURL from agents endpoint conversation input', () => {
+      const maliciousIconURL = 'https://evil-tracker.example.com/pixel.png';
+      const conversation: Partial<TConversation> = {
+        agent_id: 'agent_123',
+        iconURL: maliciousIconURL,
+        endpoint: EModelEndpoint.agents,
+      };
+
+      const result = parseCompactConvo({
+        endpoint: EModelEndpoint.agents,
+        conversation,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.['iconURL']).toBeUndefined();
+      expect(result?.agent_id).toBe('agent_123');
+    });
+
+    test('should strip iconURL from anthropic endpoint conversation input', () => {
+      const maliciousIconURL = 'https://tracker.malicious.com/beacon.gif';
+      const conversation: Partial<TConversation> = {
+        model: 'claude-3-opus',
+        iconURL: maliciousIconURL,
+        endpoint: EModelEndpoint.anthropic,
+      };
+
+      const result = parseCompactConvo({
+        endpoint: EModelEndpoint.anthropic,
+        conversation,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.['iconURL']).toBeUndefined();
+      expect(result?.model).toBe('claude-3-opus');
+    });
+
+    test('should strip iconURL from google endpoint conversation input', () => {
+      const maliciousIconURL = 'https://tracking.example.com/spy.png';
+      const conversation: Partial<TConversation> = {
+        model: 'gemini-pro',
+        iconURL: maliciousIconURL,
+        endpoint: EModelEndpoint.google,
+      };
+
+      const result = parseCompactConvo({
+        endpoint: EModelEndpoint.google,
+        conversation,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.['iconURL']).toBeUndefined();
+      expect(result?.model).toBe('gemini-pro');
+    });
+
+    test('should strip iconURL from assistants endpoint conversation input', () => {
+      const maliciousIconURL = 'https://evil.com/track.png';
+      const conversation: Partial<TConversation> = {
+        assistant_id: 'asst_123',
+        iconURL: maliciousIconURL,
+        endpoint: EModelEndpoint.assistants,
+      };
+
+      const result = parseCompactConvo({
+        endpoint: EModelEndpoint.assistants,
+        conversation,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.['iconURL']).toBeUndefined();
+      expect(result?.assistant_id).toBe('asst_123');
+    });
+
+    test('should preserve other conversation properties while stripping iconURL', () => {
+      const conversation: Partial<TConversation> = {
+        model: 'gpt-4',
+        iconURL: 'https://malicious.com/track.png',
+        endpoint: EModelEndpoint.openAI,
+        temperature: 0.7,
+        top_p: 0.9,
+        promptPrefix: 'You are a helpful assistant.',
+        maxContextTokens: 4000,
+      };
+
+      const result = parseCompactConvo({
+        endpoint: EModelEndpoint.openAI,
+        conversation,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.['iconURL']).toBeUndefined();
+      expect(result?.model).toBe('gpt-4');
+      expect(result?.temperature).toBe(0.7);
+      expect(result?.top_p).toBe(0.9);
+      expect(result?.promptPrefix).toBe('You are a helpful assistant.');
+      expect(result?.maxContextTokens).toBe(4000);
+    });
+
+    test('should handle conversation without iconURL (no error)', () => {
+      const conversation: Partial<TConversation> = {
+        model: 'gpt-4',
+        endpoint: EModelEndpoint.openAI,
+      };
+
+      const result = parseCompactConvo({
+        endpoint: EModelEndpoint.openAI,
+        conversation,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.['iconURL']).toBeUndefined();
+      expect(result?.model).toBe('gpt-4');
+    });
+  });
+});
+
+describe('parseTextParts', () => {
+  test('should concatenate text parts', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'Hello' },
+      { type: ContentTypes.TEXT, text: 'World' },
+    ];
+    expect(parseTextParts(parts)).toBe('Hello World');
+  });
+
+  test('should handle text parts with object-style text values', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: { value: 'structured text' } },
+    ];
+    expect(parseTextParts(parts)).toBe('structured text');
+  });
+
+  test('should include think parts by default', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'Answer:' },
+      { type: ContentTypes.THINK, think: 'reasoning step' },
+    ];
+    expect(parseTextParts(parts)).toBe('Answer: reasoning step');
+  });
+
+  test('should skip think parts when skipReasoning is true', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.THINK, think: 'internal reasoning' },
+      { type: ContentTypes.TEXT, text: 'visible answer' },
+    ];
+    expect(parseTextParts(parts, true)).toBe('visible answer');
+  });
+
+  test('should skip non-text/think part types', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'before' },
+      { type: ContentTypes.IMAGE_FILE } as TMessageContentParts,
+      { type: ContentTypes.TEXT, text: 'after' },
+    ];
+    expect(parseTextParts(parts)).toBe('before after');
+  });
+
+  test('should handle undefined elements in the content parts array', () => {
+    const parts: Array<TMessageContentParts | undefined> = [
+      { type: ContentTypes.TEXT, text: 'first' },
+      undefined,
+      { type: ContentTypes.TEXT, text: 'third' },
+    ];
+    expect(parseTextParts(parts)).toBe('first third');
+  });
+
+  test('should handle multiple consecutive undefined elements', () => {
+    const parts: Array<TMessageContentParts | undefined> = [
+      undefined,
+      undefined,
+      { type: ContentTypes.TEXT, text: 'only text' },
+      undefined,
+    ];
+    expect(parseTextParts(parts)).toBe('only text');
+  });
+
+  test('should handle an array of all undefined elements', () => {
+    const parts: Array<TMessageContentParts | undefined> = [undefined, undefined, undefined];
+    expect(parseTextParts(parts)).toBe('');
+  });
+
+  test('should handle parts with missing type property', () => {
+    const parts: Array<TMessageContentParts | undefined> = [
+      { text: 'no type field' } as unknown as TMessageContentParts,
+      { type: ContentTypes.TEXT, text: 'valid' },
+    ];
+    expect(parseTextParts(parts)).toBe('valid');
+  });
+
+  test('should return empty string for empty array', () => {
+    expect(parseTextParts([])).toBe('');
+  });
+
+  test('should not add extra spaces when parts already have spacing', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'Hello ' },
+      { type: ContentTypes.TEXT, text: 'World' },
+    ];
+    expect(parseTextParts(parts)).toBe('Hello World');
   });
 });

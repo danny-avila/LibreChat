@@ -27,23 +27,31 @@ type TContentHandler = {
 export default function useContentHandler({ setMessages, getMessages }: TUseContentHandler) {
   const queryClient = useQueryClient();
   const messageMap = useMemo(() => new Map<string, TMessage>(), []);
-  return useCallback(
+
+  /** Reset the message map - call this after sync to prevent stale state from overwriting synced content */
+  const resetMessageMap = useCallback(() => {
+    messageMap.clear();
+  }, [messageMap]);
+
+  const handler = useCallback(
     ({ data, submission }: TContentHandler) => {
       const { type, messageId, thread_id, conversationId, index } = data;
 
       const _messages = getMessages();
       const messages =
-        _messages
-          ?.filter((m) => m.messageId !== messageId)
-          .map((msg) => ({ ...msg, thread_id })) ?? [];
+        _messages?.filter((m) => m.messageId !== messageId).map((msg) => ({ ...msg, thread_id })) ??
+        [];
       const userMessage = messages[messages.length - 1] as TMessage | undefined;
 
       const { initialResponse } = submission;
 
       let response = messageMap.get(messageId);
       if (!response) {
+        // Check if message already exists in current messages (e.g., after sync)
+        // Use that as base instead of stale initialResponse
+        const existingMessage = _messages?.find((m) => m.messageId === messageId);
         response = {
-          ...(initialResponse as TMessage),
+          ...(existingMessage ?? (initialResponse as TMessage)),
           parentMessageId: userMessage?.messageId ?? '',
           conversationId,
           messageId,
@@ -66,18 +74,23 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       response.content[index] = { type, [type]: part } as TMessageContentParts;
 
+      const lastContentPart = response.content[response.content.length - 1];
+      const initialContentPart = initialResponse.content?.[0];
       if (
         type !== ContentTypes.TEXT &&
-        initialResponse.content &&
-        ((response.content[response.content.length - 1].type === ContentTypes.TOOL_CALL &&
-          response.content[response.content.length - 1][ContentTypes.TOOL_CALL].progress === 1) ||
-          response.content[response.content.length - 1].type === ContentTypes.IMAGE_FILE)
+        initialContentPart != null &&
+        lastContentPart != null &&
+        ((lastContentPart.type === ContentTypes.TOOL_CALL &&
+          lastContentPart[ContentTypes.TOOL_CALL]?.progress === 1) ||
+          lastContentPart.type === ContentTypes.IMAGE_FILE)
       ) {
-        response.content.push(initialResponse.content[0]);
+        response.content.push(initialContentPart);
       }
 
       setMessages([...messages, response]);
     },
     [queryClient, getMessages, messageMap, setMessages],
   );
+
+  return { contentHandler: handler, resetContentHandler: resetMessageMap };
 }

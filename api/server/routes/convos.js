@@ -6,6 +6,7 @@ const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const {
   createImportLimiters,
+  validateConvoAccess,
   createForkLimiters,
   configMiddleware,
 } = require('~/server/middleware');
@@ -31,7 +32,8 @@ router.get('/', async (req, res) => {
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
   const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
-  const order = req.query.order || 'desc';
+  const sortBy = req.query.sortBy || 'updatedAt';
+  const sortDirection = req.query.sortDirection || 'desc';
 
   let tags;
   if (req.query.tags) {
@@ -45,7 +47,8 @@ router.get('/', async (req, res) => {
       isArchived,
       tags,
       search,
-      order,
+      sortBy,
+      sortDirection,
     });
     res.status(200).json(result);
   } catch (error) {
@@ -65,16 +68,17 @@ router.get('/:conversationId', async (req, res) => {
   }
 });
 
-router.post('/gen_title', async (req, res) => {
-  const { conversationId } = req.body;
+router.get('/gen_title/:conversationId', async (req, res) => {
+  const { conversationId } = req.params;
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
   const key = `${req.user.id}-${conversationId}`;
   let title = await titleCache.get(key);
 
   if (!title) {
-    // Retry every 1s for up to 20s
-    for (let i = 0; i < 20; i++) {
-      await sleep(1000);
+    // Exponential backoff: 500ms, 1s, 2s, 4s, 8s (total ~15.5s max wait)
+    const delays = [500, 1000, 2000, 4000, 8000];
+    for (const delay of delays) {
+      await sleep(delay);
       title = await titleCache.get(key);
       if (title) {
         break;
@@ -148,17 +152,70 @@ router.delete('/all', async (req, res) => {
   }
 });
 
-router.post('/update', async (req, res) => {
-  const update = req.body.arg;
+/**
+ * Archives or unarchives a conversation.
+ * @route POST /archive
+ * @param {string} req.body.arg.conversationId - The conversation ID to archive/unarchive.
+ * @param {boolean} req.body.arg.isArchived - Whether to archive (true) or unarchive (false).
+ * @returns {object} 200 - The updated conversation object.
+ */
+router.post('/archive', validateConvoAccess, async (req, res) => {
+  const { conversationId, isArchived } = req.body.arg ?? {};
 
-  if (!update.conversationId) {
+  if (!conversationId) {
     return res.status(400).json({ error: 'conversationId is required' });
   }
 
+  if (typeof isArchived !== 'boolean') {
+    return res.status(400).json({ error: 'isArchived must be a boolean' });
+  }
+
   try {
-    const dbResponse = await saveConvo(req, update, {
-      context: `POST /api/convos/update ${update.conversationId}`,
-    });
+    const dbResponse = await saveConvo(
+      req,
+      { conversationId, isArchived },
+      { context: `POST /api/convos/archive ${conversationId}` },
+    );
+    res.status(200).json(dbResponse);
+  } catch (error) {
+    logger.error('Error archiving conversation', error);
+    res.status(500).send('Error archiving conversation');
+  }
+});
+
+/** Maximum allowed length for conversation titles */
+const MAX_CONVO_TITLE_LENGTH = 1024;
+
+/**
+ * Updates a conversation's title.
+ * @route POST /update
+ * @param {string} req.body.arg.conversationId - The conversation ID to update.
+ * @param {string} req.body.arg.title - The new title for the conversation.
+ * @returns {object} 201 - The updated conversation object.
+ */
+router.post('/update', validateConvoAccess, async (req, res) => {
+  const { conversationId, title } = req.body.arg ?? {};
+
+  if (!conversationId) {
+    return res.status(400).json({ error: 'conversationId is required' });
+  }
+
+  if (title === undefined) {
+    return res.status(400).json({ error: 'title is required' });
+  }
+
+  if (typeof title !== 'string') {
+    return res.status(400).json({ error: 'title must be a string' });
+  }
+
+  const sanitizedTitle = title.trim().slice(0, MAX_CONVO_TITLE_LENGTH);
+
+  try {
+    const dbResponse = await saveConvo(
+      req,
+      { conversationId, title: sanitizedTitle },
+      { context: `POST /api/convos/update ${conversationId}` },
+    );
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error updating conversation', error);

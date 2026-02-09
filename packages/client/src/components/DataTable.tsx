@@ -14,8 +14,8 @@ import {
 } from '@tanstack/react-table';
 import type { Table as TTable } from '@tanstack/react-table';
 import { Table, TableRow, TableBody, TableCell, TableHead, TableHeader } from './Table';
+import { useMediaQuery, useLocalize, TranslationKeys } from '~/hooks';
 import AnimatedSearchInput from './AnimatedSearchInput';
-import { useMediaQuery, useLocalize } from '~/hooks';
 import { TrashIcon, Spinner } from '~/svgs';
 import { Skeleton } from './Skeleton';
 import { Checkbox } from './Checkbox';
@@ -129,7 +129,7 @@ const TableRowComponent = <TData, TValue>({
               )}
               scope="row"
             >
-              <div className="overflow-hidden text-ellipsis">
+              <div className="overflow-visible text-ellipsis">
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </div>
             </TableHead>
@@ -139,13 +139,13 @@ const TableRowComponent = <TData, TValue>({
         return (
           <TableCell
             key={cell.id}
-            className="w-0 max-w-0 px-2 py-1 align-middle text-xs transition-all duration-300 sm:px-4 sm:py-2 sm:text-sm"
+            className="w-0 max-w-0 overflow-visible px-2 py-1 align-middle text-xs transition-all duration-300 sm:px-4 sm:py-2 sm:text-sm"
             style={getColumnStyle(
               cell.column.columnDef as TableColumn<TData, TValue>,
               isSmallScreen,
             )}
           >
-            <div className="overflow-hidden text-ellipsis">
+            <div className="overflow-visible text-ellipsis">
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
             </div>
           </TableCell>
@@ -234,6 +234,7 @@ export default function DataTable<TData, TValue>({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [searchTerm, setSearchTerm] = useState(filterValue ?? '');
   const [isSearching, setIsSearching] = useState(false);
+  const [searchResultsAnnouncement, setSearchResultsAnnouncement] = useState('');
 
   const tableColumns = useMemo(() => {
     if (!enableRowSelection || !showCheckboxes) {
@@ -331,6 +332,29 @@ export default function DataTable<TData, TValue>({
     return () => clearTimeout(timeout);
   }, [searchTerm, onFilterChange]);
 
+  useEffect(() => {
+    if (!searchTerm.trim() || isSearching) {
+      setSearchResultsAnnouncement('');
+      return;
+    }
+
+    const resultCount = rows.length;
+    const announcement =
+      resultCount === 1
+        ? localize('com_ui_result_found' as TranslationKeys, {
+            count: resultCount,
+          })
+        : localize('com_ui_results_found' as TranslationKeys, {
+            count: resultCount,
+          });
+
+    const timeout = setTimeout(() => {
+      setSearchResultsAnnouncement(announcement);
+    }, 300);
+
+    return () => clearTimeout(timeout);
+  }, [rows.length, searchTerm, isSearching, localize]);
+
   const handleDelete = useCallback(async () => {
     if (!onDelete) {
       return;
@@ -373,6 +397,10 @@ export default function DataTable<TData, TValue>({
 
   return (
     <div className={cn('flex h-full flex-col gap-4', className)}>
+      <div aria-live="assertive" aria-atomic="true" className="sr-only">
+        {searchResultsAnnouncement}
+      </div>
+
       {/* Table controls */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-4">
         {enableRowSelection && showCheckboxes && (
@@ -400,7 +428,7 @@ export default function DataTable<TData, TValue>({
       <div
         ref={tableContainerRef}
         className={cn(
-          'relative h-[calc(100vh-20rem)] max-w-full overflow-x-auto overflow-y-auto rounded-md border border-black/10 dark:border-white/10',
+          'relative min-h-0 max-w-full flex-1 overflow-x-auto overflow-y-auto rounded-md border border-black/10 dark:border-white/10',
           'transition-all duration-300 ease-out',
           isSearching && 'bg-surface-secondary/50',
           className,

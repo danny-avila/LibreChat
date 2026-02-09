@@ -1,8 +1,10 @@
 const path = require('path');
 const mongoose = require('mongoose');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
+const { batchResetMeiliFlags } = require('~/db/utils');
 
 (async () => {
   await connect();
@@ -24,32 +26,39 @@ const connect = require('./connect');
   }
 
   try {
+    const clearProgress = () => process.stdout.write('\r' + ' '.repeat(70) + '\r');
+
     // Reset _meiliIndex flags for messages
     console.cyan('\nResetting message sync flags...');
-    const messageResult = await mongoose.connection.db
-      .collection('messages')
-      .updateMany({ _meiliIndex: true }, { $set: { _meiliIndex: false } });
-
-    console.green(`✓ Reset ${messageResult.modifiedCount} message sync flags`);
+    const messages = mongoose.connection.db.collection('messages');
+    const messageModifiedCount = await batchResetMeiliFlags(messages);
+    clearProgress();
+    console.green(`✓ Reset ${messageModifiedCount} message sync flags`);
 
     // Reset _meiliIndex flags for conversations
     console.cyan('\nResetting conversation sync flags...');
-    const conversationResult = await mongoose.connection.db
-      .collection('conversations')
-      .updateMany({ _meiliIndex: true }, { $set: { _meiliIndex: false } });
+    const conversationsCollection = mongoose.connection.db.collection('conversations');
+    const conversationModifiedCount = await batchResetMeiliFlags(conversationsCollection);
+    clearProgress();
+    console.green(`✓ Reset ${conversationModifiedCount} conversation sync flags`);
 
-    console.green(`✓ Reset ${conversationResult.modifiedCount} conversation sync flags`);
+    // Query to count only non-expired documents that are queued for sync (_meiliIndex: false)
+    // This represents documents that need to be indexed, not the total collection size
+    const queryTotal = { expiredAt: null, _meiliIndex: false };
 
-    // Get current counts
-    const totalMessages = await mongoose.connection.db.collection('messages').countDocuments();
+    // Get current counts of documents queued for sync
+    const totalMessages = await mongoose.connection.db
+      .collection('messages')
+      .countDocuments(queryTotal);
     const totalConversations = await mongoose.connection.db
       .collection('conversations')
-      .countDocuments();
+      .countDocuments(queryTotal);
 
     console.purple('\n---------------------------------------');
     console.green('MeiliSearch sync flags have been reset successfully!');
-    console.cyan(`\nTotal messages to sync: ${totalMessages}`);
-    console.cyan(`Total conversations to sync: ${totalConversations}`);
+    console.cyan(`\nDocuments queued for sync:`);
+    console.cyan(`Messages: ${totalMessages}`);
+    console.cyan(`Conversations: ${totalConversations}`);
     console.yellow('\nThe next time LibreChat starts or performs a sync check,');
     console.yellow('all data will be re-indexed into MeiliSearch.');
     console.purple('---------------------------------------\n');

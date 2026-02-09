@@ -7,6 +7,7 @@ export default function ThumbDownIcon({ className = '', size = '1em', bold = fal
       fill="none"
       viewBox="0 0 24 24"
       className={className}
+      aria-hidden="true"
     >
       <path
         d="M11.4079 21.4961C11.1953 21.8698 10.7683 22.0649 10.348 21.9805C8.4373 21.5968 7.27541 19.6391 7.84844 17.7691L8.69697 14.9999L6.98577 14.9999C4.35915 14.9999 2.45151 12.492 3.14262 9.94747L4.50063 4.94747C4.97329 3.20722 6.54741 1.99994 8.34378 1.99994H14.0328C15.131 2.00207 16.0206 2.89668 16.0206 3.99994V14.9999H15.6827C15.3253 14.9999 14.9953 15.1922 14.818 15.5038L11.4079 21.4961Z"
@@ -25,6 +26,7 @@ export default function ThumbDownIcon({ className = '', size = '1em', bold = fal
       fill="none"
       viewBox="0 0 24 24"
       className={className}
+      aria-hidden="true"
     >
       <path
         fillRule="evenodd"

@@ -1,18 +1,11 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, getBalanceConfig } = require('@librechat/api');
-const {
-  Constants,
-  CacheKeys,
-  removeNullishValues,
-  defaultSocialLogins,
-} = require('librechat-data-provider');
+const { Constants, CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
 const { getProjectByName } = require('~/models/Project');
-const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
-const { mcpServersRegistry } = require('@librechat/api');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -30,46 +23,11 @@ const publicSharedLinksEnabled =
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
 
-/**
- * Fetches MCP servers from registry and adds them to the payload.
- * Registry now includes all configured servers (from YAML) plus inspection data when available.
- * Always fetches fresh to avoid caching incomplete initialization state.
- */
-const getMCPServers = async (payload, appConfig) => {
-  try {
-    if (appConfig?.mcpConfig == null) {
-      return;
-    }
-    const mcpManager = getMCPManager();
-    if (!mcpManager) {
-      return;
-    }
-    const mcpServers = await mcpServersRegistry.getAllServerConfigs();
-    if (!mcpServers) return;
-    for (const serverName in mcpServers) {
-      if (!payload.mcpServers) {
-        payload.mcpServers = {};
-      }
-      const serverConfig = mcpServers[serverName];
-      payload.mcpServers[serverName] = removeNullishValues({
-        startup: serverConfig?.startup,
-        chatMenu: serverConfig?.chatMenu,
-        isOAuth: serverConfig.requiresOAuth,
-        customUserVars: serverConfig?.customUserVars,
-      });
-    }
-  } catch (error) {
-    logger.error('Error loading MCP servers', error);
-  }
-};
-
 router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
 
   const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
   if (cachedStartupConfig) {
-    const appConfig = await getAppConfig({ role: req.user?.role });
-    await getMCPServers(cachedStartupConfig, appConfig);
     res.send(cachedStartupConfig);
     return;
   }
@@ -190,7 +148,6 @@ router.get('/', async function (req, res) {
     }
 
     await cache.set(CacheKeys.STARTUP_CONFIG, payload);
-    await getMCPServers(payload, appConfig);
     return res.status(200).send(payload);
   } catch (err) {
     logger.error('Error in startup config', err);

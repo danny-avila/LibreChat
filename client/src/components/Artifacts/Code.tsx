@@ -114,7 +114,11 @@ export const CopyCodeButton: React.FC<{ content: string }> = ({ content }) => {
       onClick={handleCopy}
       aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
     >
-      {isCopied ? <CircleCheckBig size={16} /> : <Copy size={16} />}
+      {isCopied ? (
+        <CircleCheckBig size={16} aria-hidden="true" />
+      ) : (
+        <Copy size={16} aria-hidden="true" />
+      )}
     </Button>
   );
 };

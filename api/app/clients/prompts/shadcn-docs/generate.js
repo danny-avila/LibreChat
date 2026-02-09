@@ -18,17 +18,17 @@ function generateShadcnPrompt(options) {
     Here are the components that are available, along with how to import them, and how to use them:
 
     ${Object.values(components)
-    .map((component) => {
-      if (useXML) {
-        return dedent`
+      .map((component) => {
+        if (useXML) {
+          return dedent`
             <component>
               <name>${component.componentName}</name>
               <import-instructions>${component.importDocs}</import-instructions>
               <usage-instructions>${component.usageDocs}</usage-instructions>
             </component>
           `;
-      } else {
-        return dedent`
+        } else {
+          return dedent`
             # ${component.componentName}
 
             ## Import Instructions
@@ -37,9 +37,9 @@ function generateShadcnPrompt(options) {
             ## Usage Instructions
             ${component.usageDocs}
           `;
-      }
-    })
-    .join('\n\n')}
+        }
+      })
+      .join('\n\n')}
   `;
 
   return systemPrompt;

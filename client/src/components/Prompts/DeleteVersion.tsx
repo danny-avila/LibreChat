@@ -28,7 +28,7 @@ const DeleteConfirmDialog = ({
             e.stopPropagation();
           }}
         >
-          <Trash2 className="size-5 cursor-pointer text-white" />
+          <Trash2 className="size-5 cursor-pointer text-white" aria-hidden="true" />
         </Button>
       </OGDialogTrigger>
       <OGDialogTemplate

@@ -5,6 +5,7 @@ import { useFormContext } from 'react-hook-form';
 import { DropdownPopup } from '@librechat/client';
 import { specialVariables } from 'librechat-data-provider';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
+import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 interface VariableOption {
@@ -30,6 +31,7 @@ export default function VariablesDropdown({
   const localize = useLocalize();
   const methods = useFormContext();
   const { setValue, getValues } = methods;
+  const { announcePolite } = useLiveAnnouncer();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -39,13 +41,12 @@ export default function VariablesDropdown({
     const prefix = localize(label);
     setValue(fieldName, currentText + spacer + prefix + ': ' + value);
     setIsMenuOpen(false);
+    const announcement = localize('com_ui_special_variable_added', { 0: prefix });
+    announcePolite({ message: announcement, isStatus: true });
   };
 
   return (
-    <div
-      className={className}
-      title={`${localize('com_ui_add')} ${localize('com_ui_special_variables')}`}
-    >
+    <div className={className} title={localize('com_ui_add_special_variables')}>
       <DropdownPopup
         portal={true}
         mountByState={true}
@@ -56,7 +57,7 @@ export default function VariablesDropdown({
         trigger={
           <Menu.MenuButton
             id="variables-menu-button"
-            aria-label={`${localize('com_ui_add')} ${localize('com_ui_special_variables')}`}
+            aria-label={localize('com_ui_add_special_variables')}
             className="flex h-8 items-center gap-1 rounded-md border border-border-medium bg-surface-secondary px-2 py-0 text-sm text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
           >
             <PlusCircle className="mr-1 h-3 w-3 text-text-secondary" aria-hidden={true} />
