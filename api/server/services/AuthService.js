@@ -20,6 +20,7 @@ const {
   deleteUserById,
   generateRefreshToken,
 } = require('~/models');
+const { Token } = require('~/db/models');
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
 const { sendEmail } = require('~/server/utils');
@@ -103,7 +104,7 @@ const sendVerificationEmail = async (user) => {
     email: user.email,
     token: hash,
     createdAt: Date.now(),
-    expiresIn: 900,
+    expiresIn: 86400, // 24 hours
   });
 
   logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
@@ -129,30 +130,55 @@ const verifyEmail = async (req) => {
     return { message: 'Email already verified', status: 'success' };
   }
 
-  let emailVerificationData = await findToken({ email: decodedEmail }, { sort: { createdAt: -1 } });
+  // Fetch all tokens for this email, valid or not (we check expiry/validity in loop)
+  // We need to use the raw Mongoose model because findToken only returns one.
+  const emailVerificationTokens = await Token.find({ email: decodedEmail }).sort({ createdAt: -1 });
 
-  if (!emailVerificationData) {
+  logger.info(`[verifyEmail DEBUG] Checking ${emailVerificationTokens.length} tokens for email: ${decodedEmail}`);
+
+  if (!emailVerificationTokens || emailVerificationTokens.length === 0) {
     logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
     return new Error('Invalid or expired password reset token');
   }
 
-  const isValid = bcrypt.compareSync(token, emailVerificationData.token);
+  let validTokenFound = null;
 
-  if (!isValid) {
+  for (const record of emailVerificationTokens) {
+    const isMismatch = !bcrypt.compareSync(token, record.token);
+    const isExpired = record.expiresAt && new Date() > record.expiresAt;
+    
+    logger.info(`[verifyEmail DEBUG] Token ${record._id}: Mismatch=${isMismatch}, Expired=${isExpired}, ExpiresAt=${record.expiresAt}`);
+
+    if (isMismatch) {
+      continue;
+    }
+    // Token matches. Check expiry if needed (createToken sets expiresAt in DB usually)
+    // The schema usually has TTL or we check expiresAt.
+    // data-schemas/src/methods/token.ts creates it with `expiresAt`.
+    if (isExpired) {
+      continue;
+    }
+
+    validTokenFound = record;
+    break;
+  }
+
+  if (!validTokenFound) {
     logger.warn(
       `[verifyEmail] [Invalid or expired email verification token] [Email: ${decodedEmail}]`,
     );
     return new Error('Invalid or expired email verification token');
   }
 
-  const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
+  const updatedUser = await updateUser(validTokenFound.userId, { emailVerified: true });
 
   if (!updatedUser) {
     logger.warn(`[verifyEmail] [User update failed] [Email: ${decodedEmail}]`);
     return new Error('Failed to update user verification status');
   }
 
-  await deleteTokens({ token: emailVerificationData.token });
+  // Delete all tokens for this user to cleanup
+  await deleteTokens({ userId: validTokenFound.userId });
   logger.info(`[verifyEmail] Email verification successful [Email: ${decodedEmail}]`);
   return { message: 'Email verification was successful', status: 'success' };
 };
@@ -486,7 +512,7 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    await deleteTokens({ email });
+    // await deleteTokens({ email }); // Don't delete old tokens to support delayed email delivery
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {
@@ -517,7 +543,7 @@ const resendVerificationEmail = async (req) => {
       email: user.email,
       token: hash,
       createdAt: Date.now(),
-      expiresIn: 900,
+      expiresIn: 86400, // 24 hours
     });
 
     logger.info(`[resendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
