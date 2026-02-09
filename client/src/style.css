@@ -2925,3 +2925,28 @@ html {
 .sharepoint-picker-bg {
   background-color: #f5f5f5;
 }
+
+/* Customization for feedback widget - no easier way to customize, sadly */
+.feedback-container {
+  background-color: #edeff0 !important;
+  padding: 12px 30px !important;
+}
+
+.feedback-text {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+
+.feedback-button {
+  padding: 12px 20px !important;
+  font-weight: 700 !important;
+}
+
+.feedback-button:focus {
+  outline-offset: 4px !important;
+  outline: 4px solid #1b1b1b !important;
+}
+
+.confirmation-text {
+  font-size: 16px !important;
+}

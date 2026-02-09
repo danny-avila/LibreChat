@@ -13,17 +13,6 @@ import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import temporaryStore from '~/store/temporary';
 import store from '~/store';
-import '@newjersey/feedback-widget/feedback-widget.min.js'; // NJ: imports feedback widget
-
-// NJ: Tells TypeScript that <feedback-widget> is a valid custom element.
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace JSX {
-    interface IntrinsicElements {
-      'feedback-widget': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-    }
-  }
-}
 
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
@@ -169,8 +158,6 @@ export default function ChatRoute() {
   return (
     <ToolCallsMapProvider conversationId={conversation.conversationId ?? ''}>
       <ChatView index={index} />
-      {/* NJ: New Jersey feedback widget */}
-      <feedback-widget show-comment-disclaimer="false" skip-email-step="true"></feedback-widget>
     </ToolCallsMapProvider>
   );
 }
