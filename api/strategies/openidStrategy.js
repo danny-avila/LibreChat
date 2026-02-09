@@ -268,6 +268,22 @@ function getFullName(userinfo) {
 }
 
 /**
+ * Extracts the email/identifier from OpenID userinfo based on environment configuration.
+ * When OPENID_EMAIL_CLAIM is set, uses that specific claim from userinfo.
+ * Otherwise, falls back to: email -> preferred_username -> upn.
+ *
+ * @param {Object} userinfo - The user information object from OpenID Connect
+ * @returns {string|undefined} The email/identifier value
+ */
+function getOpenIdEmail(userinfo) {
+  const claimKey = process.env.OPENID_EMAIL_CLAIM;
+  if (claimKey) {
+    return userinfo[claimKey];
+  }
+  return userinfo.email || userinfo.preferred_username || userinfo.upn;
+}
+
+/**
  * Converts an input into a string suitable for a username.
  * If the input is a string, it will be returned as is.
  * If the input is an array, elements will be joined with underscores.
@@ -309,7 +325,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
   const appConfig = await getAppConfig();
   /** Azure AD sometimes doesn't return email, use preferred_username as fallback */
-  const email = userinfo.email || userinfo.preferred_username || userinfo.upn;
+  const email = getOpenIdEmail(userinfo);
   if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
     logger.error(
       `[OpenID Strategy] Authentication blocked - email domain not allowed [Email: ${userinfo.email}]`,
@@ -634,4 +650,5 @@ function getOpenIdConfig() {
 module.exports = {
   setupOpenId,
   getOpenIdConfig,
+  getOpenIdEmail,
 };
