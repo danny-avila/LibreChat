@@ -1,10 +1,10 @@
 import path from 'path';
-import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';
 import { GoogleAuth } from 'google-auth-library';
-import { ClientOptions } from '@anthropic-ai/sdk';
 import { AuthKeys } from 'librechat-data-provider';
-import { loadServiceKey } from '~/utils/key';
+import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';
+import type { ClientOptions } from '@anthropic-ai/sdk';
 import type { AnthropicCredentials, VertexAIClientOptions } from '~/types/anthropic';
+import { loadServiceKey } from '~/utils/key';
 
 /**
  * Options for loading Vertex AI credentials
@@ -110,10 +110,6 @@ function filterVertexHeaders(headers?: Record<string, string>): Record<string, s
         }
         // Remove token-efficient-tools headers
         if (v.includes('token-efficient-tools')) {
-          return false;
-        }
-        // Remove context-1m headers
-        if (v.includes('context-1m')) {
           return false;
         }
         return true;

@@ -227,6 +227,10 @@ export const getResponseSender = (endpointOption: Partial<t.TEndpointOption>): s
       return 'Mistral';
     } else if (model && model.includes('deepseek')) {
       return 'Deepseek';
+    } else if (model && model.includes('kimi')) {
+      return 'Kimi';
+    } else if (model && model.includes('moonshot')) {
+      return 'Moonshot';
     } else if (model && model.includes('gpt-')) {
       const gptVersion = extractGPTVersion(model);
       return gptVersion || 'GPT';
@@ -264,6 +268,10 @@ export const getResponseSender = (endpointOption: Partial<t.TEndpointOption>): s
       return 'Mistral';
     } else if (model && model.includes('deepseek')) {
       return 'Deepseek';
+    } else if (model && model.includes('kimi')) {
+      return 'Kimi';
+    } else if (model && model.includes('moonshot')) {
+      return 'Moonshot';
     } else if (model && model.includes('gpt-')) {
       const gptVersion = extractGPTVersion(model);
       return gptVersion || 'GPT';
@@ -341,13 +349,13 @@ export const parseCompactConvo = ({
 };
 
 export function parseTextParts(
-  contentParts: a.TMessageContentParts[],
+  contentParts: Array<a.TMessageContentParts | undefined>,
   skipReasoning: boolean = false,
 ): string {
   let result = '';
 
   for (const part of contentParts) {
-    if (!part.type) {
+    if (!part?.type) {
       continue;
     }
     if (part.type === ContentTypes.TEXT) {

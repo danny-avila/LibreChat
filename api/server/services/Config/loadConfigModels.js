@@ -28,6 +28,11 @@ async function loadConfigModels(req) {
     modelsConfig[EModelEndpoint.azureAssistants] = azureConfig.assistantModels;
   }
 
+  const bedrockConfig = appConfig.endpoints?.[EModelEndpoint.bedrock];
+  if (bedrockConfig?.models && Array.isArray(bedrockConfig.models)) {
+    modelsConfig[EModelEndpoint.bedrock] = bedrockConfig.models;
+  }
+
   if (!Array.isArray(appConfig.endpoints?.[EModelEndpoint.custom])) {
     return modelsConfig;
   }

@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { spendTokens, spendStructuredTokens } = require('./spendTokens');
-const { getMultiplier, getCacheMultiplier } = require('./tx');
+const { getMultiplier, getCacheMultiplier, premiumTokenValues, tokenValues } = require('./tx');
 const { createTransaction, createStructuredTransaction } = require('./Transaction');
 const { Balance, Transaction } = require('~/db/models');
 
@@ -562,5 +562,293 @@ describe('Transactions Config Tests', () => {
     expect(transactions[0].readTokens).toBe(-5);
     const balance = await Balance.findOne({ user: userId });
     expect(balance.tokenCredits).toBe(initialBalance);
+  });
+});
+
+describe('calculateTokenValue Edge Cases', () => {
+  test('should derive multiplier from model when valueKey is not provided', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-4';
+    const promptTokens = 1000;
+
+    const result = await createTransaction({
+      user: userId,
+      conversationId: 'test-no-valuekey',
+      model,
+      tokenType: 'prompt',
+      rawAmount: -promptTokens,
+      context: 'test',
+      balance: { enabled: true },
+    });
+
+    const expectedRate = getMultiplier({ model, tokenType: 'prompt' });
+    expect(result.rate).toBe(expectedRate);
+
+    const tx = await Transaction.findOne({ user: userId });
+    expect(tx.tokenValue).toBe(-promptTokens * expectedRate);
+    expect(tx.rate).toBe(expectedRate);
+  });
+
+  test('should derive valueKey and apply correct rate for an unknown model with tokenType', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    await createTransaction({
+      user: userId,
+      conversationId: 'test-unknown-model',
+      model: 'some-unrecognized-model-xyz',
+      tokenType: 'prompt',
+      rawAmount: -500,
+      context: 'test',
+      balance: { enabled: true },
+    });
+
+    const tx = await Transaction.findOne({ user: userId });
+    expect(tx.rate).toBeDefined();
+    expect(tx.rate).toBeGreaterThan(0);
+    expect(tx.tokenValue).toBe(tx.rawAmount * tx.rate);
+  });
+
+  test('should correctly apply model-derived multiplier without valueKey for completion', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-opus-4-6';
+    const completionTokens = 500;
+
+    const result = await createTransaction({
+      user: userId,
+      conversationId: 'test-completion-no-valuekey',
+      model,
+      tokenType: 'completion',
+      rawAmount: -completionTokens,
+      context: 'test',
+      balance: { enabled: true },
+    });
+
+    const expectedRate = getMultiplier({ model, tokenType: 'completion' });
+    expect(expectedRate).toBe(tokenValues[model].completion);
+    expect(result.rate).toBe(expectedRate);
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(
+      initialBalance - completionTokens * expectedRate,
+      0,
+    );
+  });
+});
+
+describe('Premium Token Pricing Integration Tests', () => {
+  test('spendTokens should apply standard pricing when prompt tokens are below premium threshold', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-opus-4-6';
+    const promptTokens = 100000;
+    const completionTokens = 500;
+
+    const txData = {
+      user: userId,
+      conversationId: 'test-premium-below',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+      balance: { enabled: true },
+    };
+
+    await spendTokens(txData, { promptTokens, completionTokens });
+
+    const standardPromptRate = tokenValues[model].prompt;
+    const standardCompletionRate = tokenValues[model].completion;
+    const expectedCost =
+      promptTokens * standardPromptRate + completionTokens * standardCompletionRate;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+
+  test('spendTokens should apply premium pricing when prompt tokens exceed premium threshold', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-opus-4-6';
+    const promptTokens = 250000;
+    const completionTokens = 500;
+
+    const txData = {
+      user: userId,
+      conversationId: 'test-premium-above',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+      balance: { enabled: true },
+    };
+
+    await spendTokens(txData, { promptTokens, completionTokens });
+
+    const premiumPromptRate = premiumTokenValues[model].prompt;
+    const premiumCompletionRate = premiumTokenValues[model].completion;
+    const expectedCost =
+      promptTokens * premiumPromptRate + completionTokens * premiumCompletionRate;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+
+  test('spendTokens should apply standard pricing at exactly the premium threshold', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-opus-4-6';
+    const promptTokens = premiumTokenValues[model].threshold;
+    const completionTokens = 500;
+
+    const txData = {
+      user: userId,
+      conversationId: 'test-premium-exact',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+      balance: { enabled: true },
+    };
+
+    await spendTokens(txData, { promptTokens, completionTokens });
+
+    const standardPromptRate = tokenValues[model].prompt;
+    const standardCompletionRate = tokenValues[model].completion;
+    const expectedCost =
+      promptTokens * standardPromptRate + completionTokens * standardCompletionRate;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+
+  test('spendStructuredTokens should apply premium pricing when total input tokens exceed threshold', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-opus-4-6';
+    const txData = {
+      user: userId,
+      conversationId: 'test-structured-premium',
+      model,
+      context: 'message',
+      endpointTokenConfig: null,
+      balance: { enabled: true },
+    };
+
+    const tokenUsage = {
+      promptTokens: {
+        input: 200000,
+        write: 10000,
+        read: 5000,
+      },
+      completionTokens: 1000,
+    };
+
+    const totalInput =
+      tokenUsage.promptTokens.input + tokenUsage.promptTokens.write + tokenUsage.promptTokens.read;
+
+    await spendStructuredTokens(txData, tokenUsage);
+
+    const premiumPromptRate = premiumTokenValues[model].prompt;
+    const premiumCompletionRate = premiumTokenValues[model].completion;
+    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
+    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+
+    const expectedPromptCost =
+      tokenUsage.promptTokens.input * premiumPromptRate +
+      tokenUsage.promptTokens.write * writeMultiplier +
+      tokenUsage.promptTokens.read * readMultiplier;
+    const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
+    const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(totalInput).toBeGreaterThan(premiumTokenValues[model].threshold);
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
+  });
+
+  test('spendStructuredTokens should apply standard pricing when total input tokens are below threshold', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-opus-4-6';
+    const txData = {
+      user: userId,
+      conversationId: 'test-structured-standard',
+      model,
+      context: 'message',
+      endpointTokenConfig: null,
+      balance: { enabled: true },
+    };
+
+    const tokenUsage = {
+      promptTokens: {
+        input: 50000,
+        write: 10000,
+        read: 5000,
+      },
+      completionTokens: 1000,
+    };
+
+    const totalInput =
+      tokenUsage.promptTokens.input + tokenUsage.promptTokens.write + tokenUsage.promptTokens.read;
+
+    await spendStructuredTokens(txData, tokenUsage);
+
+    const standardPromptRate = tokenValues[model].prompt;
+    const standardCompletionRate = tokenValues[model].completion;
+    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
+    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+
+    const expectedPromptCost =
+      tokenUsage.promptTokens.input * standardPromptRate +
+      tokenUsage.promptTokens.write * writeMultiplier +
+      tokenUsage.promptTokens.read * readMultiplier;
+    const expectedCompletionCost = tokenUsage.completionTokens * standardCompletionRate;
+    const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(totalInput).toBeLessThanOrEqual(premiumTokenValues[model].threshold);
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
+  });
+
+  test('non-premium models should not be affected by inputTokenCount regardless of prompt size', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-opus-4-5';
+    const promptTokens = 300000;
+    const completionTokens = 500;
+
+    const txData = {
+      user: userId,
+      conversationId: 'test-no-premium',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+      balance: { enabled: true },
+    };
+
+    await spendTokens(txData, { promptTokens, completionTokens });
+
+    const standardPromptRate = getMultiplier({ model, tokenType: 'prompt' });
+    const standardCompletionRate = getMultiplier({ model, tokenType: 'completion' });
+    const expectedCost =
+      promptTokens * standardPromptRate + completionTokens * standardCompletionRate;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
   });
 });

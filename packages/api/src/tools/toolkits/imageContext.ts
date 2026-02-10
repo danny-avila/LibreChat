@@ -35,4 +35,3 @@ export function buildImageToolContext({
   }
   return toolContext;
 }
-
