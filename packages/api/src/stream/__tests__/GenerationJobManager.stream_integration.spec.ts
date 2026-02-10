@@ -1,10 +1,12 @@
 import type { Redis, Cluster } from 'ioredis';
-import type { ServerSentEvent } from '../../types/events';
-import { GenerationJobManagerClass } from '../GenerationJobManager';
-import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
-import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
-import { RedisEventTransport } from '../implementations/RedisEventTransport';
-import { createStreamServices } from '../createStreamServices';
+import type { ServerSentEvent } from '~/types/events';
+import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
+import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
+import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
+import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
+import { RedisJobStore } from '~/stream/implementations/RedisJobStore';
+import { createStreamServices } from '~/stream/createStreamServices';
+import { GenerationJobManager } from '~/stream/GenerationJobManager';
 
 /**
  * Integration tests for GenerationJobManager.
@@ -29,7 +31,7 @@ describe('GenerationJobManager Integration Tests', () => {
 
     jest.resetModules();
 
-    const { ioredisClient: client } = await import('../../cache/redisClients');
+    const { ioredisClient: client } = await import('~/cache/redisClients');
     ioredisClient = client;
   });
 
@@ -69,10 +71,6 @@ describe('GenerationJobManager Integration Tests', () => {
 
   describe('In-Memory Mode', () => {
     test('should create and manage jobs', async () => {
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
-
       // Configure with in-memory
       // cleanupOnComplete: false so we can verify completed status
       GenerationJobManager.configure({
@@ -114,10 +112,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should handle event streaming', async () => {
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
-
       GenerationJobManager.configure({
         jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
         eventTransport: new InMemoryEventTransport(),
@@ -171,9 +165,6 @@ describe('GenerationJobManager Integration Tests', () => {
         return;
       }
 
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
-
       // Create Redis services
       const services = createStreamServices({
         useRedis: true,
@@ -209,9 +200,6 @@ describe('GenerationJobManager Integration Tests', () => {
         console.warn('Redis not available, skipping test');
         return;
       }
-
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
 
       const services = createStreamServices({
         useRedis: true,
@@ -268,9 +256,6 @@ describe('GenerationJobManager Integration Tests', () => {
         return;
       }
 
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
-
       const services = createStreamServices({
         useRedis: true,
         redisClient: ioredisClient,
@@ -320,10 +305,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const runTestWithMode = async (isRedis: boolean) => {
         jest.resetModules();
 
-        const { GenerationJobManager } = await import('../GenerationJobManager');
-
         if (isRedis && ioredisClient) {
-          const { createStreamServices } = await import('../createStreamServices');
           GenerationJobManager.configure({
             ...createStreamServices({
               useRedis: true,
@@ -332,10 +314,6 @@ describe('GenerationJobManager Integration Tests', () => {
             cleanupOnComplete: false, // Keep job for verification
           });
         } else {
-          const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-          const { InMemoryEventTransport } = await import(
-            '../implementations/InMemoryEventTransport'
-          );
           GenerationJobManager.configure({
             jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
             eventTransport: new InMemoryEventTransport(),
@@ -401,8 +379,6 @@ describe('GenerationJobManager Integration Tests', () => {
         return;
       }
 
-      const { RedisJobStore } = await import('../implementations/RedisJobStore');
-
       // === REPLICA A: Creates the job ===
       // Simulate Replica A creating the job directly in Redis
       // (In real scenario, this happens via GenerationJobManager.createJob on Replica A)
@@ -418,8 +394,6 @@ describe('GenerationJobManager Integration Tests', () => {
       // === REPLICA B: Receives the stream request ===
       // Fresh GenerationJobManager that does NOT have this job in its local runtimeState
       jest.resetModules();
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
 
       const services = createStreamServices({
         useRedis: true,
@@ -470,10 +444,6 @@ describe('GenerationJobManager Integration Tests', () => {
         return;
       }
 
-      // Simulate two instances - one creates job, other tries to get it
-      const { createStreamServices } = await import('../createStreamServices');
-      const { RedisJobStore } = await import('../implementations/RedisJobStore');
-
       // Instance 1: Create the job directly in Redis (simulating another replica)
       const jobStore = new RedisJobStore(ioredisClient);
       await jobStore.initialize();
@@ -486,7 +456,6 @@ describe('GenerationJobManager Integration Tests', () => {
 
       // Instance 2: Fresh GenerationJobManager that doesn't have this job in memory
       jest.resetModules();
-      const { GenerationJobManager } = await import('../GenerationJobManager');
 
       const services = createStreamServices({
         useRedis: true,
@@ -522,9 +491,6 @@ describe('GenerationJobManager Integration Tests', () => {
         console.warn('Redis not available, skipping test');
         return;
       }
-
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
 
       const services = createStreamServices({
         useRedis: true,
@@ -564,9 +530,6 @@ describe('GenerationJobManager Integration Tests', () => {
         console.warn('Redis not available, skipping test');
         return;
       }
-
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
 
       const services = createStreamServices({
         useRedis: true,
@@ -610,9 +573,6 @@ describe('GenerationJobManager Integration Tests', () => {
         return;
       }
 
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
-
       const services = createStreamServices({
         useRedis: true,
         redisClient: ioredisClient,
@@ -655,9 +615,6 @@ describe('GenerationJobManager Integration Tests', () => {
       // This test validates that jobs created on Replica A and lazily-initialized
       // on Replica B can still receive and handle abort signals.
 
-      const { createStreamServices } = await import('../createStreamServices');
-      const { RedisJobStore } = await import('../implementations/RedisJobStore');
-
       // === Replica A: Create job directly in Redis ===
       const replicaAJobStore = new RedisJobStore(ioredisClient);
       await replicaAJobStore.initialize();
@@ -667,7 +624,6 @@ describe('GenerationJobManager Integration Tests', () => {
 
       // === Replica B: Fresh manager that lazily initializes the job ===
       jest.resetModules();
-      const { GenerationJobManager } = await import('../GenerationJobManager');
 
       const services = createStreamServices({
         useRedis: true,
@@ -716,12 +672,7 @@ describe('GenerationJobManager Integration Tests', () => {
       // 2. Replica B receives abort request and emits abort signal
       // 3. Replica A receives signal and aborts its AbortController
 
-      const { createStreamServices } = await import('../createStreamServices');
-      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
-
       // Create the job on "Replica A"
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-
       const services = createStreamServices({
         useRedis: true,
         redisClient: ioredisClient,
@@ -770,9 +721,6 @@ describe('GenerationJobManager Integration Tests', () => {
         return;
       }
 
-      const { createStreamServices } = await import('../createStreamServices');
-      const { RedisJobStore } = await import('../implementations/RedisJobStore');
-
       // Create job directly in Redis with syncSent: true
       const jobStore = new RedisJobStore(ioredisClient);
       await jobStore.initialize();
@@ -783,7 +731,6 @@ describe('GenerationJobManager Integration Tests', () => {
 
       // Fresh manager that doesn't have this job locally
       jest.resetModules();
-      const { GenerationJobManager } = await import('../GenerationJobManager');
 
       const services = createStreamServices({
         useRedis: true,
@@ -819,8 +766,6 @@ describe('GenerationJobManager Integration Tests', () => {
       }
 
       jest.resetModules();
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
 
       const services = createStreamServices({
         useRedis: true,
@@ -871,8 +816,6 @@ describe('GenerationJobManager Integration Tests', () => {
       }
 
       jest.resetModules();
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
 
       const services = createStreamServices({
         useRedis: true,
@@ -932,8 +875,6 @@ describe('GenerationJobManager Integration Tests', () => {
       }
 
       jest.resetModules();
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
 
       const services = createStreamServices({
         useRedis: true,
@@ -997,8 +938,6 @@ describe('GenerationJobManager Integration Tests', () => {
       }
 
       jest.resetModules();
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { createStreamServices } = await import('../createStreamServices');
 
       const services = createStreamServices({
         useRedis: true,
@@ -1269,10 +1208,6 @@ describe('GenerationJobManager Integration Tests', () => {
      */
 
     test('should store error in emitError for late-connecting subscribers', async () => {
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
-
       GenerationJobManager.configure({
         jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
         eventTransport: new InMemoryEventTransport(),
@@ -1301,10 +1236,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should NOT delete job immediately when completeJob is called with error', async () => {
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
-
       GenerationJobManager.configure({
         jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
         eventTransport: new InMemoryEventTransport(),
@@ -1335,10 +1266,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should send stored error to late-connecting subscriber', async () => {
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
-
       GenerationJobManager.configure({
         jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
         eventTransport: new InMemoryEventTransport(),
@@ -1384,10 +1311,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should prioritize error status over finalEvent in subscribe', async () => {
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
-
       GenerationJobManager.configure({
         jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
         eventTransport: new InMemoryEventTransport(),
@@ -1439,9 +1362,6 @@ describe('GenerationJobManager Integration Tests', () => {
         return;
       }
 
-      const { createStreamServices } = await import('../createStreamServices');
-      const { RedisJobStore } = await import('../implementations/RedisJobStore');
-
       // === Replica A: Creates job and emits error ===
       const replicaAJobStore = new RedisJobStore(ioredisClient);
       await replicaAJobStore.initialize();
@@ -1458,7 +1378,6 @@ describe('GenerationJobManager Integration Tests', () => {
 
       // === Replica B: Fresh manager receives client connection ===
       jest.resetModules();
-      const { GenerationJobManager } = await import('../GenerationJobManager');
 
       const services = createStreamServices({
         useRedis: true,
@@ -1495,10 +1414,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('error jobs should be cleaned up by periodic cleanup after TTL', async () => {
-      const { GenerationJobManager } = await import('../GenerationJobManager');
-      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-      const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
-
       // Use a very short TTL for testing
       const jobStore = new InMemoryJobStore({ ttlAfterComplete: 100 });
 
@@ -1536,35 +1451,27 @@ describe('GenerationJobManager Integration Tests', () => {
   });
 
   describe('createStreamServices Auto-Detection', () => {
-    test('should auto-detect Redis when USE_REDIS is true', async () => {
+    test('should use Redis when useRedis is true and client is available', () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');
         return;
       }
 
-      // Force USE_REDIS to true
-      process.env.USE_REDIS = 'true';
-      jest.resetModules();
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
 
-      const { createStreamServices } = await import('../createStreamServices');
-      const services = createStreamServices();
-
-      // Should detect Redis
       expect(services.isRedis).toBe(true);
     });
 
-    test('should fall back to in-memory when USE_REDIS is false', async () => {
-      process.env.USE_REDIS = 'false';
-      jest.resetModules();
-
-      const { createStreamServices } = await import('../createStreamServices');
-      const services = createStreamServices();
+    test('should fall back to in-memory when useRedis is false', () => {
+      const services = createStreamServices({ useRedis: false });
 
       expect(services.isRedis).toBe(false);
     });
 
     test('should allow forcing in-memory via config override', async () => {
-      const { createStreamServices } = await import('../createStreamServices');
       const services = createStreamServices({ useRedis: false });
 
       expect(services.isRedis).toBe(false);
