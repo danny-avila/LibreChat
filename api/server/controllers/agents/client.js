@@ -5,6 +5,7 @@ const {
   createRun,
   Tokenizer,
   checkAccess,
+  buildToolSet,
   logAxiosError,
   sanitizeTitle,
   resolveHeaders,
@@ -655,6 +656,7 @@ class AgentClient extends BaseClient {
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
+        getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       },
     );
 
@@ -973,7 +975,7 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
-      const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
+      const toolSet = buildToolSet(this.options.agent);
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
         this.indexTokenCountMap,
@@ -1034,6 +1036,7 @@ class AgentClient extends BaseClient {
 
         run = await createRun({
           agents,
+          messages,
           indexTokenCountMap,
           runId: this.responseMessageId,
           signal: abortController.signal,

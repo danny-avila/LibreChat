@@ -187,6 +187,32 @@ describe('convertJsonSchemaToZod', () => {
       expect(() => zodSchema?.parse('invalid')).toThrow();
     });
 
+    it('should accept mixed-type enum schema values', () => {
+      const schema = {
+        enum: ['active', 'inactive', 0, 1, true, false, null],
+      };
+      const zodSchema = convertWithResolvedRefs(schema as JsonSchemaType);
+
+      expect(zodSchema?.parse('active')).toBe('active');
+      expect(zodSchema?.parse(0)).toBe(0);
+      expect(zodSchema?.parse(1)).toBe(1);
+      expect(zodSchema?.parse(true)).toBe(true);
+      expect(zodSchema?.parse(false)).toBe(false);
+      expect(zodSchema?.parse(null)).toBe(null);
+    });
+
+    it('should accept number enum schema values', () => {
+      const schema = {
+        type: 'number' as const,
+        enum: [1, 2, 3, 5, 8, 13],
+      };
+      const zodSchema = convertWithResolvedRefs(schema as JsonSchemaType);
+
+      expect(zodSchema?.parse(1)).toBe(1);
+      expect(zodSchema?.parse(13)).toBe(13);
+      expect(zodSchema?.parse(5)).toBe(5);
+    });
+
     it('should convert number schema', () => {
       const schema: JsonSchemaType = {
         type: 'number',

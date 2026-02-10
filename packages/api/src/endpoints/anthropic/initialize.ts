@@ -77,13 +77,11 @@ export async function initializeAnthropic({
     ...(vertexConfig && { vertexConfig }),
   };
 
-  /** @type {undefined | TBaseEndpoint} */
   const anthropicConfig = appConfig?.endpoints?.[EModelEndpoint.anthropic];
   const allConfig = appConfig?.endpoints?.all;
 
   const result = getLLMConfig(credentials, clientOptions);
 
-  // Apply stream rate delay
   if (anthropicConfig?.streamRate) {
     (result.llmConfig as Record<string, unknown>)._lc_stream_delay = anthropicConfig.streamRate;
   }

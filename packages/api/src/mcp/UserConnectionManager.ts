@@ -49,7 +49,7 @@ export abstract class UserConnectionManager {
     serverName: string;
     forceNew?: boolean;
   } & Omit<t.OAuthConnectionOptions, 'useOAuth'>): Promise<MCPConnection> {
-    const userId = user.id;
+    const userId = user?.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
     }

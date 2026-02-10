@@ -26,6 +26,10 @@ export class MCPServersRegistry {
   private readonly allowedDomains?: string[] | null;
   private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
   private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
+  private readonly pendingGetAllPromises = new Map<
+    string,
+    Promise<Record<string, t.ParsedServerConfig>>
+  >();
 
   constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
@@ -99,11 +103,29 @@ export class MCPServersRegistry {
   public async getAllServerConfigs(userId?: string): Promise<Record<string, t.ParsedServerConfig>> {
     const cacheKey = userId ?? '__no_user__';
 
-    // Check if key exists in read-through cache
     if (await this.readThroughCacheAll.has(cacheKey)) {
       return (await this.readThroughCacheAll.get(cacheKey)) ?? {};
     }
 
+    const pending = this.pendingGetAllPromises.get(cacheKey);
+    if (pending) {
+      return pending;
+    }
+
+    const fetchPromise = this.fetchAllServerConfigs(cacheKey, userId);
+    this.pendingGetAllPromises.set(cacheKey, fetchPromise);
+
+    try {
+      return await fetchPromise;
+    } finally {
+      this.pendingGetAllPromises.delete(cacheKey);
+    }
+  }
+
+  private async fetchAllServerConfigs(
+    cacheKey: string,
+    userId?: string,
+  ): Promise<Record<string, t.ParsedServerConfig>> {
     const result = {
       ...(await this.cacheConfigsRepo.getAll()),
       ...(await this.dbConfigsRepo.getAll(userId)),

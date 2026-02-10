@@ -14,6 +14,7 @@ import {
 import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { useLocalize, useResourcePermissions } from '~/hooks';
+import { useLiveAnnouncer } from '~/Providers';
 import { cn } from '~/utils';
 
 interface DashGroupItemProps {
@@ -25,6 +26,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const params = useParams();
   const navigate = useNavigate();
   const localize = useLocalize();
+  const { announcePolite } = useLiveAnnouncer();
 
   const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [nameInputValue, setNameInputValue] = useState(group.name);
@@ -49,6 +51,8 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const deleteGroup = useDeletePromptGroup({
     onSuccess: (_response, variables) => {
       if (variables.id === group._id) {
+        const announcement = localize('com_ui_prompt_deleted', { 0: group.name });
+        announcePolite({ message: announcement, isStatus: true });
         navigate('/d/prompts');
       }
     },

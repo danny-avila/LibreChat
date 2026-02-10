@@ -58,19 +58,6 @@
     ]
   },
   {
-    "name": "Browser",
-    "pluginKey": "web-browser",
-    "description": "Scrape and summarize webpage data",
-    "icon": "assets/web-browser.svg",
-    "authConfig": [
-      {
-        "authField": "OPENAI_API_KEY",
-        "label": "OpenAI API Key",
-        "description": "Browser makes use of OpenAI embeddings"
-      }
-    ]
-  },
-  {
     "name": "DALL-E-3",
     "pluginKey": "dalle",
     "description": "[DALL-E-3] Create realistic images and art from a description in natural language",

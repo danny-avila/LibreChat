@@ -97,7 +97,6 @@ librechat:
   #         titleModel: "gpt-3.5-turbo"
   #         summarize: false
   #         summaryModel: "gpt-3.5-turbo"
-  #         forcePrompt: false
   #         modelDisplayLabel: "OpenRouter"
 
   # name of existing Yaml configmap, key must be librechat.yaml

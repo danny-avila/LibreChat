@@ -46,10 +46,10 @@ type SafeUser = Pick<IUser, AllowedUserField>;
  *   if (headerValue.startsWith('b64:')) {
  *     const decoded = Buffer.from(headerValue.slice(4), 'base64').toString('utf8');
  *   }
- * 
+ *
  * @param value - The string value to encode
  * @returns ASCII-safe string (encoded if necessary)
- * 
+ *
  * @example
  * encodeHeaderValue("José")   // Returns "José" (é = 233, safe)
  * encodeHeaderValue("Marić")  // Returns "b64:TWFyacSH" (ć = 263, needs encoding)
@@ -59,17 +59,17 @@ export function encodeHeaderValue(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';
   }
-  
+
   // Check if string contains extended Unicode characters (> 255)
   // Characters 0-255 (ASCII + Latin-1) are safe and don't need encoding
   // Characters > 255 (e.g., ć=263, đ=272, ł=322) need Base64 encoding
   // eslint-disable-next-line no-control-regex
   const hasExtendedUnicode = /[^\u0000-\u00FF]/.test(value);
-  
+
   if (!hasExtendedUnicode) {
     return value; // Safe to pass through
   }
-  
+
   // Encode to Base64 for extended Unicode characters
   const base64 = Buffer.from(value, 'utf8').toString('base64');
   return `b64:${base64}`;
@@ -118,7 +118,11 @@ const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messageId'] a
  * @param isHeader - Whether this value will be used in an HTTP header
  * @returns The processed string with placeholders replaced (and encoded if necessary)
  */
-function processUserPlaceholders(value: string, user?: IUser, isHeader: boolean = false): string {
+function processUserPlaceholders(
+  value: string,
+  user?: Partial<IUser>,
+  isHeader: boolean = false,
+): string {
   if (!user || typeof value !== 'string') {
     return value;
   }
@@ -208,7 +212,7 @@ function processSingleValue({
 }: {
   originalValue: string;
   customUserVars?: Record<string, string>;
-  user?: IUser;
+  user?: Partial<IUser>;
   body?: RequestBody;
   isHeader?: boolean;
 }): string {
@@ -255,7 +259,7 @@ function processSingleValue({
  */
 export function processMCPEnv(params: {
   options: Readonly<MCPOptions>;
-  user?: IUser;
+  user?: Partial<IUser>;
   customUserVars?: Record<string, string>;
   body?: RequestBody;
 }): MCPOptions {

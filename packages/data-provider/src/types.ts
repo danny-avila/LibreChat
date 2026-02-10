@@ -52,6 +52,7 @@ export type TEndpointOption = Pick<
   | 'promptCache'
   | 'thinking'
   | 'thinkingBudget'
+  | 'effort'
   // Assistant/Agent fields
   | 'assistant_id'
   | 'agent_id'
@@ -233,6 +234,33 @@ export type TUpdateUserKeyRequest = {
   name: string;
   value: string;
   expiresAt: string;
+};
+
+export type TAgentApiKeyCreateRequest = {
+  name: string;
+  expiresAt?: string | null;
+};
+
+export type TAgentApiKeyCreateResponse = {
+  id: string;
+  name: string;
+  key: string;
+  keyPrefix: string;
+  createdAt: string;
+  expiresAt?: string;
+};
+
+export type TAgentApiKeyListItem = {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  lastUsedAt?: string;
+  expiresAt?: string;
+  createdAt: string;
+};
+
+export type TAgentApiKeyListResponse = {
+  keys: TAgentApiKeyListItem[];
 };
 
 export type TUpdateConversationRequest = {

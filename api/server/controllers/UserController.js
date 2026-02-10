@@ -22,6 +22,7 @@ const {
 } = require('~/models');
 const {
   ConversationTag,
+  AgentApiKey,
   Transaction,
   MemoryEntry,
   Assistant,
@@ -256,6 +257,7 @@ const deleteUserController = async (req, res) => {
     await deleteFiles(null, user.id); // delete database files in case of orphaned files from previous steps
     await deleteToolCalls(user.id); // delete user tool calls
     await deleteUserAgents(user.id); // delete user agents
+    await AgentApiKey.deleteMany({ user: user._id }); // delete user agent API keys
     await Assistant.deleteMany({ user: user.id }); // delete user assistants
     await ConversationTag.deleteMany({ user: user.id }); // delete user conversation tags
     await MemoryEntry.deleteMany({ userId: user.id }); // delete user memory entries

@@ -1,6 +1,5 @@
 // Generates image using stable diffusion webui's api (automatic1111)
 const fs = require('fs');
-const { z } = require('zod');
 const path = require('path');
 const axios = require('axios');
 const sharp = require('sharp');
@@ -10,6 +9,23 @@ const { logger } = require('@librechat/data-schemas');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 const { getBasePath } = require('@librechat/api');
 const paths = require('~/config/paths');
+
+const stableDiffusionJsonSchema = {
+  type: 'object',
+  properties: {
+    prompt: {
+      type: 'string',
+      description:
+        'Detailed keywords to describe the subject, using at least 7 keywords to accurately describe the image, separated by comma',
+    },
+    negative_prompt: {
+      type: 'string',
+      description:
+        'Keywords we want to exclude from the final image, using at least 7 keywords to accurately describe the image, separated by comma',
+    },
+  },
+  required: ['prompt', 'negative_prompt'],
+};
 
 const displayMessage =
   "Stable Diffusion displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
@@ -46,18 +62,11 @@ class StableDiffusionAPI extends Tool {
 // - Generate images only once per human query unless explicitly requested by the user`;
     this.description =
       "You can generate images using text with 'stable-diffusion'. This tool is exclusively for visual content.";
-    this.schema = z.object({
-      prompt: z
-        .string()
-        .describe(
-          'Detailed keywords to describe the subject, using at least 7 keywords to accurately describe the image, separated by comma',
-        ),
-      negative_prompt: z
-        .string()
-        .describe(
-          'Keywords we want to exclude from the final image, using at least 7 keywords to accurately describe the image, separated by comma',
-        ),
-    });
+    this.schema = stableDiffusionJsonSchema;
+  }
+
+  static get jsonSchema() {
+    return stableDiffusionJsonSchema;
   }
 
   replaceNewLinesWithSpaces(inputString) {

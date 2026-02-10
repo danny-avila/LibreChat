@@ -5,6 +5,7 @@ import {
   openAISettings,
   googleSettings,
   ReasoningEffort,
+  AnthropicEffort,
   ReasoningSummary,
   BedrockProviders,
   anthropicSettings,
@@ -445,6 +446,26 @@ const anthropic: Record<string, SettingDefinition> = {
     showDefault: false,
     columnSpan: 2,
   },
+  effort: {
+    key: 'effort',
+    label: 'com_endpoint_effort',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_effort',
+    descriptionCode: true,
+    type: 'enum',
+    default: anthropicSettings.effort.default,
+    component: 'slider',
+    options: anthropicSettings.effort.options,
+    enumMappings: {
+      [AnthropicEffort.unset]: 'com_ui_auto',
+      [AnthropicEffort.low]: 'com_ui_low',
+      [AnthropicEffort.medium]: 'com_ui_medium',
+      [AnthropicEffort.high]: 'com_ui_high',
+      [AnthropicEffort.max]: 'com_ui_max',
+    },
+    optionType: 'model',
+    columnSpan: 4,
+  },
 };
 
 const bedrock: Record<string, SettingDefinition> = {
@@ -734,6 +755,7 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  anthropic.effort,
   anthropic.web_search,
   librechat.fileTokenLimit,
 ];
@@ -754,6 +776,7 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  anthropic.effort,
   anthropic.web_search,
   librechat.fileTokenLimit,
 ];
@@ -772,6 +795,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   bedrock.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  anthropic.effort,
   librechat.fileTokenLimit,
 ];
 
@@ -829,6 +853,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   bedrock.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  anthropic.effort,
   librechat.fileTokenLimit,
 ];
 

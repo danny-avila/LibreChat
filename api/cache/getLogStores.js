@@ -51,6 +51,10 @@ const namespaces = {
     CacheKeys.OPENID_EXCHANGED_TOKENS,
     Time.TEN_MINUTES,
   ),
+  [CacheKeys.ADMIN_OAUTH_EXCHANGE]: standardCache(
+    CacheKeys.ADMIN_OAUTH_EXCHANGE,
+    Time.THIRTY_SECONDS,
+  ),
 };
 
 /**

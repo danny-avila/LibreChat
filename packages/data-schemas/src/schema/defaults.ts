@@ -83,6 +83,9 @@ export const conversationPreset = {
   thinkingBudget: {
     type: Number,
   },
+  effort: {
+    type: String,
+  },
   system: {
     type: String,
   },

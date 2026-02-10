@@ -236,4 +236,106 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       expect(Object.keys(configsAfter)).toHaveLength(0);
     });
   });
+
+  describe('single-flight deduplication', () => {
+    it('should deduplicate concurrent getAllServerConfigs calls', async () => {
+      await registry.addServer('server1', testRawConfig, 'CACHE');
+      await registry.addServer('server2', testRawConfig, 'CACHE');
+      await registry.addServer('server3', testRawConfig, 'CACHE');
+
+      await registry['readThroughCacheAll'].clear();
+
+      const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
+
+      const concurrentCalls = 10;
+      const promises = Array.from({ length: concurrentCalls }, () =>
+        registry.getAllServerConfigs(),
+      );
+
+      const results = await Promise.all(promises);
+
+      expect(cacheRepoGetAllSpy.mock.calls.length).toBe(1);
+
+      for (const result of results) {
+        expect(Object.keys(result).length).toBe(3);
+        expect(result).toHaveProperty('server1');
+        expect(result).toHaveProperty('server2');
+        expect(result).toHaveProperty('server3');
+      }
+    });
+
+    it('should handle different userIds independently', async () => {
+      await registry.addServer('shared_server', testRawConfig, 'CACHE');
+
+      await registry['readThroughCacheAll'].clear();
+
+      const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
+
+      const [result1, result2, result3] = await Promise.all([
+        registry.getAllServerConfigs('user1'),
+        registry.getAllServerConfigs('user2'),
+        registry.getAllServerConfigs('user1'),
+      ]);
+
+      expect(cacheRepoGetAllSpy.mock.calls.length).toBe(2);
+
+      expect(Object.keys(result1)).toContain('shared_server');
+      expect(Object.keys(result2)).toContain('shared_server');
+      expect(Object.keys(result3)).toContain('shared_server');
+    });
+
+    it('should complete concurrent requests without timeout', async () => {
+      for (let i = 0; i < 10; i++) {
+        await registry.addServer(`stress_server_${i}`, testRawConfig, 'CACHE');
+      }
+
+      await registry['readThroughCacheAll'].clear();
+
+      const concurrentCalls = 50;
+      const startTime = Date.now();
+
+      const promises = Array.from({ length: concurrentCalls }, () =>
+        registry.getAllServerConfigs(),
+      );
+
+      const results = await Promise.all(promises);
+      const elapsed = Date.now() - startTime;
+
+      expect(elapsed).toBeLessThan(10000);
+
+      for (const result of results) {
+        expect(Object.keys(result).length).toBe(10);
+      }
+    });
+
+    it('should return consistent results across all concurrent callers', async () => {
+      await registry.addServer('consistency_server_a', testRawConfig, 'CACHE');
+      await registry.addServer(
+        'consistency_server_b',
+        {
+          ...testRawConfig,
+          command: 'python',
+        },
+        'CACHE',
+      );
+
+      await registry['readThroughCacheAll'].clear();
+
+      const results = await Promise.all([
+        registry.getAllServerConfigs(),
+        registry.getAllServerConfigs(),
+        registry.getAllServerConfigs(),
+        registry.getAllServerConfigs(),
+        registry.getAllServerConfigs(),
+      ]);
+
+      const firstResult = results[0];
+      for (const result of results) {
+        expect(Object.keys(result).sort()).toEqual(Object.keys(firstResult).sort());
+        for (const key of Object.keys(firstResult)) {
+          expect(result[key]).toMatchObject(firstResult[key]);
+        }
+      }
+    });
+  });
 });

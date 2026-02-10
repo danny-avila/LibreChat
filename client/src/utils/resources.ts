@@ -47,6 +47,19 @@ export const RESOURCE_CONFIGS: Record<ResourceType, ResourceConfig> = {
       `Manage permissions for ${name && name !== '' ? `"${name}"` : 'MCP server'}`,
     getCopyUrlMessage: () => 'MCP Server URL copied',
   },
+  [ResourceType.REMOTE_AGENT]: {
+    resourceType: ResourceType.REMOTE_AGENT,
+    defaultViewerRoleId: AccessRoleIds.REMOTE_AGENT_VIEWER,
+    defaultEditorRoleId: AccessRoleIds.REMOTE_AGENT_EDITOR,
+    defaultOwnerRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
+    getResourceUrl: () => `${window.location.origin}/api/v1/responses`,
+    getResourceName: (name?: string) => (name && name !== '' ? `"${name}"` : 'remote agent'),
+    getShareMessage: (name?: string) =>
+      name && name !== '' ? `"${name}" (API Access)` : 'remote agent access',
+    getManageMessage: (name?: string) =>
+      `Manage API access for ${name && name !== '' ? `"${name}"` : 'agent'}`,
+    getCopyUrlMessage: () => 'API endpoint copied',
+  },
 };
 
 export const getResourceConfig = (resourceType: ResourceType): ResourceConfig | undefined => {

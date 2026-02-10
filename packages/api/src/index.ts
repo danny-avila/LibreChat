@@ -2,6 +2,8 @@ export * from './app';
 export * from './cdn';
 /* Auth */
 export * from './auth';
+/* API Keys */
+export * from './apiKeys';
 /* MCP */
 export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';
