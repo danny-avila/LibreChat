@@ -7,6 +7,11 @@ import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { RedisJobStore } from '~/stream/implementations/RedisJobStore';
 import { createStreamServices } from '~/stream/createStreamServices';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
+import {
+  ioredisClient as staticRedisClient,
+  keyvRedisClient as staticKeyvClient,
+  keyvRedisClientReady,
+} from '~/cache/redisClients';
 
 /**
  * Integration tests for GenerationJobManager.
@@ -19,20 +24,23 @@ import { GenerationJobManager } from '~/stream/GenerationJobManager';
 describe('GenerationJobManager Integration Tests', () => {
   let originalEnv: NodeJS.ProcessEnv;
   let ioredisClient: Redis | Cluster | null = null;
+  let dynamicKeyvClient: unknown = null;
+  let dynamicKeyvReady: Promise<unknown> | null = null;
   const testPrefix = 'JobManager-Integration-Test';
 
   beforeAll(async () => {
     originalEnv = { ...process.env };
 
-    // Set up test environment
     process.env.USE_REDIS = process.env.USE_REDIS ?? 'true';
     process.env.REDIS_URI = process.env.REDIS_URI ?? 'redis://127.0.0.1:6379';
     process.env.REDIS_KEY_PREFIX = testPrefix;
 
     jest.resetModules();
 
-    const { ioredisClient: client } = await import('~/cache/redisClients');
-    ioredisClient = client;
+    const redisModule = await import('~/cache/redisClients');
+    ioredisClient = redisModule.ioredisClient;
+    dynamicKeyvClient = redisModule.keyvRedisClient;
+    dynamicKeyvReady = redisModule.keyvRedisClientReady;
   });
 
   afterEach(async () => {
@@ -53,19 +61,24 @@ describe('GenerationJobManager Integration Tests', () => {
   });
 
   afterAll(async () => {
-    if (ioredisClient) {
-      try {
-        // Use quit() to gracefully close - waits for pending commands
-        await ioredisClient.quit();
-      } catch {
-        // Fall back to disconnect if quit fails
-        try {
-          ioredisClient.disconnect();
-        } catch {
-          // Ignore
-        }
+    for (const ready of [keyvRedisClientReady, dynamicKeyvReady]) {
+      if (ready) {
+        await ready.catch(() => {});
       }
     }
+
+    const clients = [ioredisClient, staticRedisClient, staticKeyvClient, dynamicKeyvClient];
+    for (const client of clients) {
+      if (!client) {
+        continue;
+      }
+      try {
+        await (client as { disconnect: () => void | Promise<void> }).disconnect();
+      } catch {
+        /* ignore */
+      }
+    }
+
     process.env = originalEnv;
   });
 
@@ -80,7 +93,7 @@ describe('GenerationJobManager Integration Tests', () => {
         cleanupOnComplete: false,
       });
 
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `inmem-job-${Date.now()}`;
       const userId = 'test-user-1';
@@ -118,7 +131,7 @@ describe('GenerationJobManager Integration Tests', () => {
         isRedis: false,
       });
 
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `inmem-events-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -174,7 +187,7 @@ describe('GenerationJobManager Integration Tests', () => {
       expect(services.isRedis).toBe(true);
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `redis-job-${Date.now()}`;
       const userId = 'test-user-redis';
@@ -207,7 +220,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `redis-chunks-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -262,7 +275,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `redis-abort-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -322,7 +335,7 @@ describe('GenerationJobManager Integration Tests', () => {
           });
         }
 
-        await GenerationJobManager.initialize();
+        GenerationJobManager.initialize();
 
         const streamId = `consistency-${isRedis ? 'redis' : 'inmem'}-${Date.now()}`;
 
@@ -401,7 +414,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       // This is what the stream endpoint does:
       // const job = await GenerationJobManager.getJob(streamId);
@@ -463,7 +476,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       // This should work even though the job was created by "another instance"
       // The manager should lazily create runtime state from Redis data
@@ -498,7 +511,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `sync-sent-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -540,7 +553,7 @@ describe('GenerationJobManager Integration Tests', () => {
         ...services,
         cleanupOnComplete: false, // Keep job for verification
       });
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `final-event-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -579,7 +592,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `abort-signal-${Date.now()}`;
       const job = await GenerationJobManager.createJob(streamId, 'user-1');
@@ -631,7 +644,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       // Get job triggers lazy initialization of runtime state
       const job = await GenerationJobManager.getJob(streamId);
@@ -679,7 +692,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `cross-abort-${Date.now()}`;
       const job = await GenerationJobManager.createJob(streamId, 'user-1');
@@ -738,7 +751,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       // wasSyncSent should check Redis even without local runtime
       const wasSent = await GenerationJobManager.wasSyncSent(streamId);
@@ -773,7 +786,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `order-rapid-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -823,7 +836,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `tool-args-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -882,7 +895,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `step-order-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -945,7 +958,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       GenerationJobManager.configure(services);
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId1 = `concurrent-1-${Date.now()}`;
       const streamId2 = `concurrent-2-${Date.now()}`;
@@ -1215,7 +1228,7 @@ describe('GenerationJobManager Integration Tests', () => {
         cleanupOnComplete: false,
       });
 
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `error-store-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -1243,7 +1256,7 @@ describe('GenerationJobManager Integration Tests', () => {
         cleanupOnComplete: true, // Default behavior
       });
 
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `error-no-delete-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -1273,7 +1286,7 @@ describe('GenerationJobManager Integration Tests', () => {
         cleanupOnComplete: true,
       });
 
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `error-late-sub-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -1318,7 +1331,7 @@ describe('GenerationJobManager Integration Tests', () => {
         cleanupOnComplete: false,
       });
 
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `error-priority-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -1388,7 +1401,7 @@ describe('GenerationJobManager Integration Tests', () => {
         ...services,
         cleanupOnComplete: false,
       });
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       // Client connects to Replica B (job created on Replica A)
       let receivedError: string | undefined;
@@ -1424,7 +1437,7 @@ describe('GenerationJobManager Integration Tests', () => {
         cleanupOnComplete: true,
       });
 
-      await GenerationJobManager.initialize();
+      GenerationJobManager.initialize();
 
       const streamId = `error-cleanup-${Date.now()}`;
       await GenerationJobManager.createJob(streamId, 'user-1');
@@ -1463,6 +1476,7 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       expect(services.isRedis).toBe(true);
+      services.eventTransport.destroy();
     });
 
     test('should fall back to in-memory when useRedis is false', () => {

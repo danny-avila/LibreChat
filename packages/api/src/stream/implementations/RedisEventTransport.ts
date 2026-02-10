@@ -612,7 +612,12 @@ export class RedisEventTransport implements IEventTransport {
     this.streams.clear();
     this.sequenceCounters.clear();
 
-    // Note: Don't close Redis connections - they may be shared
+    try {
+      this.subscriber.disconnect();
+    } catch {
+      /* ignore */
+    }
+
     logger.info('[RedisEventTransport] Destroyed');
   }
 }
