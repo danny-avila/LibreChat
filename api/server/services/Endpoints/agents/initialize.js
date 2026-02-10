@@ -123,7 +123,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       '[TRACE] primaryConfig full:',
       JSON.stringify(primaryConfig, null, 2),
     );
-    logger.info('[Ontario] Agent primaryConfig summary', {
+    logger.info('[CodeCan] Agent primaryConfig summary', {
       provider: primaryConfig.provider,
       model: primaryConfig.model,
       endpoint: primaryConfig.endpoint,

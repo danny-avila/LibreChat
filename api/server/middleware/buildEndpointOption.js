@@ -16,10 +16,10 @@ const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
 const {
-  buildOntarioSystemPrompt,
-  getOntarioModel,
-  getOntarioFileId,
-} = require('~/server/services/prompts/ontario');
+  buildCodeCanSystemPrompt,
+  getCodeCanModel,
+  getCodeCanFileId,
+} = require('~/server/services/prompts/codeCan');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
@@ -34,21 +34,21 @@ const buildFunction = {
 };
 
 async function buildEndpointOption(req, res, next) {
-  const ontarioModel = getOntarioModel();
+  const codeCanModel = getCodeCanModel();
   req.body.endpoint = EModelEndpoint.openAI;
   req.body.endpointType = EModelEndpoint.openAI;
   req.body.agent_id = Constants.EPHEMERAL_AGENT_ID;
-  req.body.model = ontarioModel;
-  req.body.promptPrefix = buildOntarioSystemPrompt();
-  logger.info('[Ontario] Config', {
-    model: ontarioModel,
-    fileId: getOntarioFileId(),
-    vectorStoreId: process.env.ONTARIO_OPENAI_VECTOR_STORE_ID,
+  req.body.model = codeCanModel;
+  req.body.promptPrefix = buildCodeCanSystemPrompt();
+  logger.info('[CodeCan] Config', {
+    model: codeCanModel,
+    fileId: getCodeCanFileId(),
+    vectorStoreId: process.env.CODECAN_OPENAI_VECTOR_STORE_ID,
   });
 
   const { endpoint, endpointType } = req.body;
   if (endpoint !== EModelEndpoint.openAI || endpointType !== EModelEndpoint.openAI) {
-    return handleError(res, { text: 'Only Ontario OpenAI endpoint is allowed' });
+    return handleError(res, { text: 'Only CodeCan OpenAI endpoint is allowed' });
   }
 
   let parsedBody;
@@ -97,7 +97,7 @@ async function buildEndpointOption(req, res, next) {
   }
 
   const vectorStoreId =
-    process.env.ONTARIO_OPENAI_VECTOR_STORE_ID || 'vs_693860848bc48191bccb7c1d197f488f';
+    process.env.CODECAN_OPENAI_VECTOR_STORE_ID || 'vs_693860848bc48191bccb7c1d197f488f';
   const fileSearchTool = [{ type: 'file_search' }];
   const fileSearchResources = {
     file_search: {
@@ -105,10 +105,10 @@ async function buildEndpointOption(req, res, next) {
     },
   };
 
-  parsedBody.promptPrefix = buildOntarioSystemPrompt();
-  parsedBody.model = ontarioModel;
+  parsedBody.promptPrefix = buildCodeCanSystemPrompt();
+  parsedBody.model = codeCanModel;
   parsedBody.model_parameters = Object.assign({}, parsedBody.model_parameters, {
-    model: ontarioModel,
+    model: codeCanModel,
     useResponsesApi: true,
     tools: fileSearchTool,
     tool_choice: 'required',
@@ -138,7 +138,7 @@ async function buildEndpointOption(req, res, next) {
     if (!req.body.endpointOption.modelOptions) {
       req.body.endpointOption.modelOptions = {};
     }
-    req.body.endpointOption.modelOptions.model = ontarioModel;
+    req.body.endpointOption.modelOptions.model = codeCanModel;
     req.body.endpointOption.modelOptions.useResponsesApi = true;
     req.body.endpointOption.modelOptions.tool_choice = 'required';
     req.body.endpointOption.modelOptions.tools = fileSearchTool;
@@ -147,12 +147,12 @@ async function buildEndpointOption(req, res, next) {
       {},
       req.body.endpointOption.modelOptions?.modelKwargs,
     );
-    // User-provided attachments/uploads are not supported in the Ontario-locked experience.
+    // User-provided attachments/uploads are not supported in the CodeCan-locked experience.
     req.body.endpointOption.attachments = [];
 
     // eslint-disable-next-line no-console
     console.log(
-      '[Ontario] endpointOption',
+      '[CodeCan] endpointOption',
       JSON.stringify(req.body.endpointOption, null, 2),
     );
 

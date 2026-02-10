@@ -8,7 +8,7 @@ Next Pieces
 - Check all settings and disable any that are not needed
 - After signup, redirect to chat page
 - Update GPT-Icon to new icon
-- Update prompt to handle Ontario Building Code context
+- Update prompt to handle CodeCan Building Code context
 - Create iOS app version
 - Implement in-app billing for paid plans
     - Revenue Cat Integration
@@ -38,7 +38,7 @@ Name
 Welcome to LibreChat! Enjoy your experience.
 
 PDF Viewer
-- Embed a PDF viewer into the application to allow users to view the Ontario Building Code directly within the app.
+- Embed a PDF viewer into the application to allow users to view the CodeCan Building Code directly within the app.
 - Presenting the PDF viewer will be triggered when the user clicks on a link in the citations. The PDF will be in a folder called PDFS.
 - The citation links will open the Specific page in the PDF viewer. Right now the links back from Open AI are in the format of `nbc2020_page_845.json` so we will need to convert that to `nbc2020.pdf#page=845` when opening the PDF viewer.
 
@@ -48,7 +48,7 @@ Production
 
 
 
-The goal is to release a version of LibreChat that is limited to the Ontario Building Code. The documentation  The tool will call a dedicated Open AI model that has the Ontario building code attached. The application will answer the chats and provide citations from the building code.
+The goal is to release a version of LibreChat that is limited to the CodeCan Building Code. The documentation  The tool will call a dedicated Open AI model that has the CodeCan building code attached. The application will answer the chats and provide citations from the building code.
 
 To begin, we need to remove a few features.
 
@@ -64,14 +64,14 @@ Footer
 Chat top Menu
 - Remove Top Menu that includes model picker, presets, etc
 
-Then we need to modify the code to call OpenAI with a prebuilt prompt that includes the Ontario Building Code context. We will need to extend LibreChat to support citations.
+Then we need to modify the code to call OpenAI with a prebuilt prompt that includes the CodeCan Building Code context. We will need to extend LibreChat to support citations.
 
 I need a detailed and logical plan for implementing these changes.
 
 - Remove Terms of Service after registration
 - Sign in automatically after registration
 
-- Change Message "Welcome to LibreChat! Enjoy your expierience" to "Welcome to Ontrario CodeCan AI! How can I assist you with the Ontario Building Code today?"
+- Change Message "Welcome to LibreChat! Enjoy your expierience" to "Welcome to Ontrario CodeCan AI! How can I assist you with the CodeCan Building Code today?"
 - The sidebar icon disappears after clicking it
 
-- I NEED AN ICON - Treillium Leaf or something that represents Ontario
+- I NEED AN ICON - Treillium Leaf or something that represents CodeCan

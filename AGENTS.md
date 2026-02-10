@@ -29,4 +29,4 @@
 - Link relevant issues using `Fixes #123` and ensure CI build/test commands pass before requesting review.
 
 ## Persistent Codex Context
-- Always read `docs/codex/ONTARIO_DIRECT_CONTEXT.md` at the start of a session to load OntarioDirect decisions, fixes, and constraints.
+- Always read `docs/codex/CODECAN_DIRECT_CONTEXT.md` at the start of a session to load CodeCanDirect decisions, fixes, and constraints.

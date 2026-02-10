@@ -39,11 +39,11 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 
 const app = express();
 
-function ensureOntarioConfig() {
-  const { ONTARIO_OPENAI_FILE_ID, ONTARIO_OPENAI_VECTOR_STORE_ID } = process.env;
-  if (!ONTARIO_OPENAI_FILE_ID && !ONTARIO_OPENAI_VECTOR_STORE_ID) {
+function ensureCodeCanConfig() {
+  const { CODECAN_OPENAI_FILE_ID, CODECAN_OPENAI_VECTOR_STORE_ID } = process.env;
+  if (!CODECAN_OPENAI_FILE_ID && !CODECAN_OPENAI_VECTOR_STORE_ID) {
     logger.warn(
-      'Ontario configuration: neither ONTARIO_OPENAI_FILE_ID nor ONTARIO_OPENAI_VECTOR_STORE_ID is set; falling back to defaults',
+      'CodeCan configuration: neither CODECAN_OPENAI_FILE_ID nor CODECAN_OPENAI_VECTOR_STORE_ID is set; falling back to defaults',
     );
   }
 }
@@ -67,7 +67,7 @@ const startServer = async () => {
   initializeFileStorage(appConfig);
   await performStartupChecks(appConfig);
   await updateInterfacePermissions(appConfig);
-  ensureOntarioConfig();
+  ensureCodeCanConfig();
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');

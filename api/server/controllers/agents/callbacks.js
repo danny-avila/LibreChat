@@ -138,7 +138,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
     [GraphEvents.CHAT_MODEL_END]: {
       handle: (event, data, metadata, graph) => {
         logger.info(
-          `[Ontario] CHAT_MODEL_END meta=${JSON.stringify(metadata ?? {})} outputKeys=${
+          `[CodeCan] CHAT_MODEL_END meta=${JSON.stringify(metadata ?? {})} outputKeys=${
             data ? Object.keys(data) : []
           }`,
         );
@@ -150,7 +150,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
       handle: (event, data, metadata, graph) => {
         const preview = previewText(data?.delta ?? data);
         logger.info(
-          `[Ontario] CHAT_MODEL_STREAM meta=${JSON.stringify(metadata ?? {})} deltaKeys=${
+          `[CodeCan] CHAT_MODEL_STREAM meta=${JSON.stringify(metadata ?? {})} deltaKeys=${
             data ? Object.keys(data) : []
           } preview="${preview}"`,
         );
@@ -166,7 +166,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        */
       handle: (event, data, metadata) => {
         logger.info(
-          `[Ontario] ON_RUN_STEP meta=${JSON.stringify(metadata ?? {})} detailType=${
+          `[CodeCan] ON_RUN_STEP meta=${JSON.stringify(metadata ?? {})} detailType=${
             data?.stepDetails?.type
           } resultKeys=${data?.result ? Object.keys(data.result) : []}`,
         );
@@ -200,7 +200,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        */
       handle: (event, data, metadata) => {
         logger.info(
-          `[Ontario] ON_RUN_STEP_DELTA meta=${JSON.stringify(metadata ?? {})} deltaType=${
+          `[CodeCan] ON_RUN_STEP_DELTA meta=${JSON.stringify(metadata ?? {})} deltaType=${
             data?.delta?.type
           } preview="${previewText(data?.delta)}"`,
         );
@@ -223,7 +223,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        */
       handle: (event, data, metadata) => {
         logger.info(
-          `[Ontario] ON_RUN_STEP_COMPLETED meta=${JSON.stringify(metadata ?? {})} hasResult=${
+          `[CodeCan] ON_RUN_STEP_COMPLETED meta=${JSON.stringify(metadata ?? {})} hasResult=${
             data?.result != null
           }`,
         );
@@ -247,7 +247,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
       handle: (event, data, metadata) => {
         const preview = previewText(data?.delta ?? data);
         logger.info(
-          `[Ontario] ON_MESSAGE_DELTA meta=${JSON.stringify(metadata ?? {})} preview="${preview}"`,
+          `[CodeCan] ON_MESSAGE_DELTA meta=${JSON.stringify(metadata ?? {})} preview="${preview}"`,
         );
         if (metadata?.last_agent_index === metadata?.agent_index) {
           sendEvent(res, { event, data });
@@ -267,7 +267,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
       handle: (event, data, metadata) => {
         const preview = safeStringify(data?.delta)?.slice(0, 200);
         logger.info(
-          `[Ontario] ON_REASONING_DELTA meta=${JSON.stringify(metadata ?? {})} preview="${preview}"`,
+          `[CodeCan] ON_REASONING_DELTA meta=${JSON.stringify(metadata ?? {})} preview="${preview}"`,
         );
         if (metadata?.last_agent_index === metadata?.agent_index) {
           sendEvent(res, { event, data });

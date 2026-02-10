@@ -44,7 +44,7 @@ const { extractBaseURL } = require('~/utils');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
 const DEFAULT_VECTOR_STORE_ID =
-  process.env.ONTARIO_OPENAI_VECTOR_STORE_ID || 'vs_693860848bc48191bccb7c1d197f488f';
+  process.env.CODECAN_OPENAI_VECTOR_STORE_ID || 'vs_693860848bc48191bccb7c1d197f488f';
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -68,8 +68,8 @@ class OpenAIClient extends BaseClient {
     /** @type {SplitStreamHandler | undefined} */
     this.streamHandler;
     /** @type {string | undefined} */
-    // For vector-store-only mode, avoid attaching Ontario file IDs by default
-    this.ontarioFileId = undefined;
+    // For vector-store-only mode, avoid attaching CodeCan file IDs by default
+    this.codeCanFileId = undefined;
   }
 
   // TODO: PluginsClient calls this 3x, unneeded
@@ -208,8 +208,8 @@ class OpenAIClient extends BaseClient {
 
     this.userLabel = this.options.userLabel || 'User';
     this.chatGptLabel = this.options.chatGptLabel || 'Assistant';
-    // Vector-store only: do not pull Ontario file ID from options/env
-    this.ontarioFileId = undefined;
+    // Vector-store only: do not pull CodeCan file ID from options/env
+    this.codeCanFileId = undefined;
 
     this.setupTokens();
 
@@ -1216,7 +1216,7 @@ ${convo}
           '[TRACE] chatCompletion outbound params:',
           JSON.stringify({ modelOptions, baseURL: opts.baseURL, headers: opts.defaultHeaders }, null, 2),
         );
-        logger.info('[Ontario] chatCompletion outbound', {
+        logger.info('[CodeCan] chatCompletion outbound', {
           modelOptions: JSON.stringify(modelOptions),
           baseURL: opts.baseURL,
         });
@@ -1450,7 +1450,7 @@ ${convo}
           }
           // Log every chunk to backend logs for visibility
           try {
-            logger.info('[Ontario] OpenAI chat stream chunk', {
+            logger.info('[CodeCan] OpenAI chat stream chunk', {
               chunk: JSON.stringify(chunk),
             });
           } catch (e) {
@@ -1478,7 +1478,7 @@ ${convo}
               JSON.stringify(chatCompletion, null, 2),
             );
             try {
-              logger.info('[Ontario] OpenAI chat stream final', {
+              logger.info('[CodeCan] OpenAI chat stream final', {
                 response: JSON.stringify(chatCompletion),
               });
             } catch (e) {
@@ -1507,7 +1507,7 @@ ${convo}
             JSON.stringify(chatCompletion, null, 2),
           );
           try {
-            logger.info('[Ontario] OpenAI chat completion (non-stream)', {
+            logger.info('[CodeCan] OpenAI chat completion (non-stream)', {
               response: JSON.stringify(chatCompletion),
             });
           } catch (e) {
@@ -1721,7 +1721,7 @@ ${convo}
     return [...tools, { type: 'file_search' }];
   }
 
-  addOntarioAttachment(inputMessages) {
+  addCodeCanAttachment(inputMessages) {
     // Vector-store only: do not attach a specific file_id
     return inputMessages;
   }
@@ -1729,7 +1729,7 @@ ${convo}
   buildResponsesRequest(modelOptions, payload, shouldStream) {
     const requestBody = this.sanitizeResponsesOptions(modelOptions, shouldStream);
     requestBody.input = this.formatResponsesMessages(payload);
-    requestBody.input = this.addOntarioAttachment(requestBody.input);
+    requestBody.input = this.addCodeCanAttachment(requestBody.input);
     const tools = this.ensureFileSearchTool(requestBody.tools);
     const toolResourceIds =
       modelOptions?.tool_resources?.file_search?.vector_store_ids ??
@@ -1870,6 +1870,7 @@ ${convo}
     let aggregated = '';
     let stream;
     let loggedFirstEvent = false;
+    let loggedEventTypes = 0;
     try {
       // eslint-disable-next-line no-console
       console.log('[TRACE] handleResponsesApi before responses.stream');
@@ -1901,11 +1902,31 @@ ${convo}
           loggedFirstEvent = true;
         }
         try {
-          logger.info('[Ontario] OpenAI Responses API stream event', {
+          logger.info('[CodeCan] OpenAI Responses API stream event', {
             event: JSON.stringify(event),
           });
         } catch (e) {
           /* ignore logging errors */
+        }
+        // Console output for visibility when logger output isn't surfacing
+        // eslint-disable-next-line no-console
+        console.log('[CodeCan] Responses API stream event JSON:', JSON.stringify(event));
+        if (loggedEventTypes < 5) {
+          loggedEventTypes += 1;
+          try {
+            logger.info('[CodeCan] Responses API stream event summary', {
+              type: event?.type,
+              hasDelta: event?.delta != null,
+              deltaLength:
+                typeof event?.delta === 'string'
+                  ? event.delta.length
+                  : event?.delta?.text?.length ?? null,
+              hasText: typeof event?.text === 'string',
+              textLength: typeof event?.text === 'string' ? event.text.length : null,
+            });
+          } catch (e) {
+            /* ignore logging errors */
+          }
         }
         if (event.type === 'response.output_text.delta') {
           const text = event.delta ?? '';
@@ -1924,6 +1945,24 @@ ${convo}
           });
           if (typeof onProgress === 'function') {
             onProgress(text);
+          }
+        } else if (event.type === 'response.output_text.done') {
+          const text = event.text ?? '';
+          if (text) {
+            aggregated += text;
+            try {
+              logger.info('[CodeCan] Responses API output_text.done received', {
+                textLength: text.length,
+              });
+            } catch (e) {
+              /* ignore logging errors */
+            }
+          } else {
+            try {
+              logger.info('[CodeCan] Responses API output_text.done received with empty text');
+            } catch (e) {
+              /* ignore logging errors */
+            }
           }
         } else if (event.type === 'response.error') {
           throw new Error(event.error?.message || 'OpenAI response stream error');
@@ -1956,7 +1995,7 @@ ${convo}
       JSON.stringify(finalResponse, null, 2),
     );
     try {
-      logger.info('[Ontario] OpenAI Responses API stream final', {
+      logger.info('[CodeCan] OpenAI Responses API stream final', {
         response: JSON.stringify(finalResponse),
       });
     } catch (e) {

@@ -71,7 +71,7 @@ const CitationsBlock: React.FC<CitationsBlockProps> = ({ citations, className })
         className,
       )}
       role="note"
-      aria-label="Ontario Building Code citations"
+      aria-label="CodeCan Building Code citations"
     >
       <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-text-primary">
         Citations

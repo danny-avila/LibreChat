@@ -1,8 +1,8 @@
 const DEFAULT_ON_STORAGE_FILE_ID = 'file-CTN168WfihPUgthrxvCQsy';
-const ONTARIO_MODEL = process.env.ONTARIO_OPENAI_MODEL || 'gpt-5-mini';
+const CODECAN_MODEL = process.env.CODECAN_OPENAI_MODEL || 'gpt-5-mini';
 
-const OntarioPromptConfig = {
-  model: ONTARIO_MODEL,
+const CodeCanPromptConfig = {
+  model: CODECAN_MODEL,
   systemPrompt: `You are CodeCan AI, an expert that answers questions only from the Canadian National Building Code (NBC).
 
 Your role is to answer user questions using only the NBC content provided in the attached file. When possible, quote the specific Division, Part, Section, Article, Clause, or Sentence numbers from the code. If information is not available within the attached NBC text, say so explicitly and do not speculate.
@@ -24,20 +24,20 @@ For every response:
 If users request information outside the NBC, politely redirect them back to NBC topics.`,
 };
 
-function buildOntarioSystemPrompt() {
-  return OntarioPromptConfig.systemPrompt;
+function buildCodeCanSystemPrompt() {
+  return CodeCanPromptConfig.systemPrompt;
 }
 
-function getOntarioModel() {
-  return OntarioPromptConfig.model;
+function getCodeCanModel() {
+  return CodeCanPromptConfig.model;
 }
 
-function getOntarioFileId() {
-  return process.env.ONTARIO_OPENAI_FILE_ID || DEFAULT_ON_STORAGE_FILE_ID;
+function getCodeCanFileId() {
+  return process.env.CODECAN_OPENAI_FILE_ID || DEFAULT_ON_STORAGE_FILE_ID;
 }
 
 module.exports = {
-  getOntarioModel,
-  buildOntarioSystemPrompt,
-  getOntarioFileId,
+  getCodeCanModel,
+  buildCodeCanSystemPrompt,
+  getCodeCanFileId,
 };

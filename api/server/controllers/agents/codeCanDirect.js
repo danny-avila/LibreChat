@@ -8,10 +8,10 @@ const addTitle = require('~/server/services/Endpoints/openAI/title');
 const { createOnProgress } = require('~/server/utils');
 
 /**
- * Ontario-only direct Responses API handler (bypasses LangGraph/agents).
+ * CodeCan-only direct Responses API handler (bypasses LangGraph/agents).
  * Streams or returns the response using OpenAIClient.handleResponsesApi.
  */
-async function ontarioDirectHandler(req, res) {
+async function codeCanDirectHandler(req, res) {
   const {
     endpointOption,
     text,
@@ -23,7 +23,7 @@ async function ontarioDirectHandler(req, res) {
   const userId = req.user.id;
   const convoId = conversationId ?? uuidv4();
 
-  req.traceStep?.('ontario_direct_start', {
+  req.traceStep?.('codecan_direct_start', {
     endpoint: endpointOption?.endpoint,
     conversationId: convoId,
   });
@@ -84,7 +84,7 @@ async function ontarioDirectHandler(req, res) {
           aggregated += delta;
           if (!sentFirstToken) {
             sentFirstToken = true;
-            req.traceStep?.('ontario_direct_first_token');
+            req.traceStep?.('codecan_direct_first_token');
           }
           sendProgress(delta);
         }
@@ -103,22 +103,22 @@ async function ontarioDirectHandler(req, res) {
     parentMessageId: parentMessageId ?? Constants.NO_PARENT,
   };
   try {
-    logger.info('[Ontario] Saving user message', {
+    logger.info('[CodeCan] Saving user message', {
       conversationId: convoId,
       messageId: userMessageId,
       userId,
     });
     await saveMessage(req, userMessage, {
-      context: 'api/server/controllers/agents/ontarioDirect.js - user message',
+      context: 'api/server/controllers/agents/codeCanDirect.js - user message',
     });
-    logger.info('[Ontario] Saved user message', {
+    logger.info('[CodeCan] Saved user message', {
       conversationId: convoId,
       messageId: userMessageId,
       userId,
     });
     sendEvent(res, { message: userMessage, created: true });
   } catch (error) {
-    logger.error('[Ontario] Failed to save user message', {
+    logger.error('[CodeCan] Failed to save user message', {
       conversationId: convoId,
       messageId: userMessageId,
       userId,
@@ -126,7 +126,7 @@ async function ontarioDirectHandler(req, res) {
     });
     throw error;
   }
-  req.traceStep?.('ontario_direct_user_saved');
+  req.traceStep?.('codecan_direct_user_saved');
   let conversation = null;
   try {
     conversation = await saveConvo(
@@ -136,14 +136,14 @@ async function ontarioDirectHandler(req, res) {
         endpoint: endpointOption?.endpoint,
         endpointType: endpointOption?.endpointType,
       },
-      { context: 'api/server/controllers/agents/ontarioDirect.js - saveConvo (user)' },
+      { context: 'api/server/controllers/agents/codeCanDirect.js - saveConvo (user)' },
     );
-    logger.info('[Ontario] Saved conversation (user)', {
+    logger.info('[CodeCan] Saved conversation (user)', {
       conversationId: convoId,
       userId,
     });
   } catch (error) {
-    logger.error('[Ontario] Failed to save conversation (user)', {
+    logger.error('[CodeCan] Failed to save conversation (user)', {
       conversationId: convoId,
       userId,
       error,
@@ -151,14 +151,14 @@ async function ontarioDirectHandler(req, res) {
   }
 
   // Run completion
-  req.traceStep?.('ontario_direct_llm_start');
+  req.traceStep?.('codecan_direct_llm_start');
   const completion = await client.chatCompletion({
     payload,
     onProgress,
     abortController,
     returnRaw: true,
   });
-  req.traceStep?.('ontario_direct_llm_end');
+  req.traceStep?.('codecan_direct_llm_end');
 
   const finalText =
     typeof completion === 'string'
@@ -211,21 +211,21 @@ async function ontarioDirectHandler(req, res) {
 
   // Save response message
   try {
-    logger.info('[Ontario] Saving response message', {
+    logger.info('[CodeCan] Saving response message', {
       conversationId: convoId,
       messageId: responseMessageId,
       userId,
     });
     await saveMessage(req, responseMessage, {
-      context: 'api/server/controllers/agents/ontarioDirect.js - response',
+      context: 'api/server/controllers/agents/codeCanDirect.js - response',
     });
-    logger.info('[Ontario] Saved response message', {
+    logger.info('[CodeCan] Saved response message', {
       conversationId: convoId,
       messageId: responseMessageId,
       userId,
     });
   } catch (error) {
-    logger.error('[Ontario] Failed to save response message', {
+    logger.error('[CodeCan] Failed to save response message', {
       conversationId: convoId,
       messageId: responseMessageId,
       userId,
@@ -233,7 +233,7 @@ async function ontarioDirectHandler(req, res) {
     });
     throw error;
   }
-  req.traceStep?.('ontario_direct_response_saved');
+  req.traceStep?.('codecan_direct_response_saved');
   try {
     conversation = await saveConvo(
       req,
@@ -242,14 +242,14 @@ async function ontarioDirectHandler(req, res) {
         endpoint: endpointOption?.endpoint,
         endpointType: endpointOption?.endpointType,
       },
-      { context: 'api/server/controllers/agents/ontarioDirect.js - saveConvo (response)' },
+      { context: 'api/server/controllers/agents/codeCanDirect.js - saveConvo (response)' },
     );
-    logger.info('[Ontario] Saved conversation (response)', {
+    logger.info('[CodeCan] Saved conversation (response)', {
       conversationId: convoId,
       userId,
     });
   } catch (error) {
-    logger.error('[Ontario] Failed to save conversation (response)', {
+    logger.error('[CodeCan] Failed to save conversation (response)', {
       conversationId: convoId,
       userId,
       error,
@@ -273,15 +273,15 @@ async function ontarioDirectHandler(req, res) {
       client,
     })
       .then(() => {
-        logger.debug('[Ontario] Title generation started');
+        logger.debug('[CodeCan] Title generation started');
       })
       .catch((err) => {
-        logger.error('[Ontario] Error in title generation', err);
+        logger.error('[CodeCan] Error in title generation', err);
       })
       .finally(() => {
-        logger.debug('[Ontario] Title generation completed');
+        logger.debug('[CodeCan] Title generation completed');
       });
   }
 }
 
-module.exports = { ontarioDirectHandler };
+module.exports = { codeCanDirectHandler };

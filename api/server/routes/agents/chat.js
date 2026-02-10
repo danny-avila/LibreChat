@@ -14,7 +14,7 @@ const { initializeClient } = require('~/server/services/Endpoints/agents');
 const AgentController = require('~/server/controllers/agents/request');
 const addTitle = require('~/server/services/Endpoints/agents/title');
 const { getRoleByName } = require('~/models/Role');
-const { ontarioDirectHandler } = require('~/server/controllers/agents/ontarioDirect');
+const { codeCanDirectHandler } = require('~/server/controllers/agents/codeCanDirect');
 
 const router = express.Router();
 
@@ -39,7 +39,7 @@ router.use(setHeaders);
 
 const controller = async (req, res, next) => {
   if (req.body?.endpointOption?.modelOptions?.useResponsesApi === true) {
-    return ontarioDirectHandler(req, res, next);
+    return codeCanDirectHandler(req, res, next);
   }
   await AgentController(req, res, next, initializeClient, addTitle);
 };
