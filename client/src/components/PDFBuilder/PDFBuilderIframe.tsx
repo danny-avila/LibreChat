@@ -124,6 +124,11 @@ export function PDFBuilderIframe({
           setIsReady(true);
           setPDFBuilderState((prev) => ({ ...prev, isReady: true }));
 
+          // Send USER_INFO so PDF builder can track user (X-User-Id on API requests)
+          if (userId) {
+            sendMessage('USER_INFO', { userId });
+          }
+
           // Send initialization data
           sendMessage('INIT', {
             userId,

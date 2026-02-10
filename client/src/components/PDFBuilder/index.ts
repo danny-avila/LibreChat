@@ -26,6 +26,7 @@ export type {
   ErrorPayload,
   InitPayload,
   ThemeChangePayload,
+  UserInfoPayload,
   PDFBuilderIframeProps,
   PDFBuilderModalProps,
   PDFBuilderState,

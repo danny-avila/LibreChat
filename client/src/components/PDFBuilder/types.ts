@@ -19,6 +19,7 @@ export type PDFBuilderMessageType =
   | 'ERROR'          // An error occurred
   | 'CLOSE'          // User wants to close the builder
   | 'INIT'           // Initialize with user context
+  | 'USER_INFO'      // Parent sends logged-in user id for tracking (X-User-Id in PDF builder API)
   | 'GET_THEME'      // Iframe requesting current theme
   | 'THEME_CHANGE';  // Theme has changed
 
@@ -76,6 +77,15 @@ export interface InitPayload {
 export interface ThemeChangePayload {
   /** Current theme mode */
   theme: 'dark' | 'light';
+}
+
+/**
+ * Payload for USER_INFO (parent → iframe) for print/user tracking
+ * PDF builder sends X-User-Id with this value on API requests
+ */
+export interface UserInfoPayload {
+  userId: string;
+  token?: string;
 }
 
 // ============================================

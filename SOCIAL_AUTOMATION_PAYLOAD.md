@@ -126,3 +126,15 @@ To show “Social Media Automation” in the app, add an entry to the profile’
 ```
 
 The **endpoint** must match the path you set on the Webhook node in n8n (e.g. `librechat/social-draft` → `/webhook/librechat/social-draft`).
+
+---
+
+## 6. Production: activate the workflow in n8n
+
+**Production webhook URLs only work when the workflow is active.** If you get a 404 like *"The requested webhook \"POST librechat/social-draft\" is not registered"* from the live app (while Postman or the n8n Test URL works):
+
+1. Open the Social Media Draft workflow in n8n.
+2. Turn **Activate** **ON** (toggle in the top-right of the editor).
+3. Save if prompted. The production URL is then registered and LibreChat can call it.
+
+Test URL in the editor works when the workflow is inactive; the production URL (used by LibreChat) is only registered when the workflow is active.
