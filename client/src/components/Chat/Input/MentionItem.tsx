@@ -25,15 +25,16 @@ export default function MentionItem({
 }: MentionItemProps) {
   return (
     <button
+      type="button"
+      style={style}
       tabIndex={index}
       onClick={onClick}
       id={`${type}-item-${index}`}
-      className="w-full"
-      style={style}
+      className="w-full touch-manipulation"
     >
       <div
         className={cn(
-          'text-token-text-primary bg-token-main-surface-secondary group flex h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-surface-secondary',
+          'text-token-text-primary bg-token-main-surface-secondary group flex min-h-[44px] items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-surface-secondary active:bg-surface-active',
           isActive === true ? 'bg-surface-active' : 'bg-transparent',
         )}
       >

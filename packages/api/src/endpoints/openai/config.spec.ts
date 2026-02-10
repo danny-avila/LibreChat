@@ -1300,7 +1300,6 @@ describe('getOpenAIConfig', () => {
             max_completion_tokens: 4000,
           },
           dropParams: ['frequency_penalty'],
-          forcePrompt: false,
           modelOptions: {
             model: modelName,
             user: 'azure-user-123',
@@ -1395,7 +1394,6 @@ describe('getOpenAIConfig', () => {
           dropParams: ['presence_penalty'],
           titleConvo: true,
           titleModel: 'gpt-3.5-turbo',
-          forcePrompt: false,
           summaryModel: 'gpt-3.5-turbo',
           modelDisplayLabel: 'Custom GPT-4',
           titleMethod: 'completion',
@@ -1414,7 +1412,6 @@ describe('getOpenAIConfig', () => {
           customParams: {},
           titleConvo: endpointConfig.titleConvo,
           titleModel: endpointConfig.titleModel,
-          forcePrompt: endpointConfig.forcePrompt,
           summaryModel: endpointConfig.summaryModel,
           modelDisplayLabel: endpointConfig.modelDisplayLabel,
           titleMethod: endpointConfig.titleMethod,

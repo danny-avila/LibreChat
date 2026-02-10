@@ -11,7 +11,9 @@ const {
   convertOcrToContextInPlace,
 } = require('@librechat/api');
 const {
+  Time,
   Tools,
+  CacheKeys,
   Constants,
   FileSources,
   ResourceType,
@@ -21,8 +23,6 @@ const {
   PermissionBits,
   actionDelimiter,
   removeNullishValues,
-  CacheKeys,
-  Time,
 } = require('librechat-data-provider');
 const {
   getListAgentsByAccess,
@@ -94,16 +94,25 @@ const createAgentHandler = async (req, res) => {
 
     const agent = await createAgent(agentData);
 
-    // Automatically grant owner permissions to the creator
     try {
-      await grantPermission({
-        principalType: PrincipalType.USER,
-        principalId: userId,
-        resourceType: ResourceType.AGENT,
-        resourceId: agent._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
-        grantedBy: userId,
-      });
+      await Promise.all([
+        grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          accessRoleId: AccessRoleIds.AGENT_OWNER,
+          grantedBy: userId,
+        }),
+        grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.REMOTE_AGENT,
+          resourceId: agent._id,
+          accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
+          grantedBy: userId,
+        }),
+      ]);
       logger.debug(
         `[createAgent] Granted owner permissions to user ${userId} for agent ${agent.id}`,
       );
@@ -396,16 +405,25 @@ const duplicateAgentHandler = async (req, res) => {
     newAgentData.actions = agentActions;
     const newAgent = await createAgent(newAgentData);
 
-    // Automatically grant owner permissions to the duplicator
     try {
-      await grantPermission({
-        principalType: PrincipalType.USER,
-        principalId: userId,
-        resourceType: ResourceType.AGENT,
-        resourceId: newAgent._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
-        grantedBy: userId,
-      });
+      await Promise.all([
+        grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.AGENT,
+          resourceId: newAgent._id,
+          accessRoleId: AccessRoleIds.AGENT_OWNER,
+          grantedBy: userId,
+        }),
+        grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.REMOTE_AGENT,
+          resourceId: newAgent._id,
+          accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
+          grantedBy: userId,
+        }),
+      ]);
       logger.debug(
         `[duplicateAgent] Granted owner permissions to user ${userId} for duplicated agent ${newAgent.id}`,
       );

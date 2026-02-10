@@ -1,10 +1,11 @@
 import { ResourceType, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useHasAccess } from '~/hooks';
 
-const resourceToPermissionMap: Record<ResourceType, PermissionTypes> = {
+const resourceToPermissionMap: Partial<Record<ResourceType, PermissionTypes>> = {
   [ResourceType.AGENT]: PermissionTypes.AGENTS,
   [ResourceType.PROMPTGROUP]: PermissionTypes.PROMPTS,
   [ResourceType.MCPSERVER]: PermissionTypes.MCP_SERVERS,
+  [ResourceType.REMOTE_AGENT]: PermissionTypes.REMOTE_AGENTS,
 };
 
 /**
