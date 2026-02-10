@@ -1,9 +1,28 @@
 const { logger } = require('@librechat/data-schemas');
+const { standardCache } = require('@librechat/api');
 const { ViolationTypes } = require('librechat-data-provider');
 const { createAutoRefillTransaction } = require('./Transaction');
 const { logViolation } = require('~/cache');
-const { getMultiplier } = require('./tx');
+const { getMultiplier, isModelFreeForUser, getFlatCreditCost } = require('./tx');
 const { Balance } = require('~/db/models');
+
+const freeTierCache = standardCache('free_tier_hourly', 3600000); // 1 hour TTL
+
+/**
+ * Checks and increments the free-tier rate limit for a user.
+ * @param {string} userId - The user ID.
+ * @param {number} [limit=15] - Max free-tier messages per hour.
+ * @returns {Promise<boolean>} True if allowed, false if limit reached.
+ */
+async function checkFreeTierRateLimit(userId, limit = 15) {
+  const key = `free_tier:${userId}`;
+  const current = (await freeTierCache.get(key)) || 0;
+  if (current >= limit) {
+    return false;
+  }
+  await freeTierCache.set(key, current + 1);
+  return true;
+}
 
 function isInvalidDate(date) {
   return isNaN(date);
@@ -21,9 +40,35 @@ const checkBalanceRecord = async function ({
   tokenType,
   amount,
   endpointTokenConfig,
+  isSubscribed,
+  freeModelThreshold,
+  modelTiers,
+  freeTierLimit,
 }) {
-  const multiplier = getMultiplier({ valueKey, tokenType, model, endpoint, endpointTokenConfig });
-  const tokenCost = amount * multiplier;
+  logger.debug('[Balance.check] Entry', { model, endpoint, modelTiers: modelTiers ? Object.keys(modelTiers).length + ' tiers' : 'NONE', isSubscribed, freeModelThreshold });
+
+  // Free model for subscriber — always allow, zero cost
+  if (isModelFreeForUser({ model, endpoint, freeModelThreshold, isSubscribed, endpointTokenConfig })) {
+    return { canSpend: true, balance: 0, tokenCost: 0 };
+  }
+
+  // Flat credit cost lookup from modelTiers config
+  const flatCost = getFlatCreditCost(model, modelTiers);
+  logger.debug('[Balance.check] Flat cost lookup', { model, flatCost });
+
+  // Free tier (cost = 0): rate-limited, always available regardless of balance
+  if (flatCost === 0) {
+    const allowed = await checkFreeTierRateLimit(user, freeTierLimit);
+    if (!allowed) {
+      return { canSpend: false, balance: 0, tokenCost: 0, freeTierLimitReached: true };
+    }
+    return { canSpend: true, balance: 0, tokenCost: 0 };
+  }
+
+  // Paid tier with flat cost — check balance against flat cost
+  const tokenCost = flatCost !== null && flatCost > 0
+    ? flatCost
+    : amount * getMultiplier({ valueKey, tokenType, model, endpoint, endpointTokenConfig });
 
   // Retrieve the balance record
   let record = await Balance.findOne({ user }).lean();
@@ -41,12 +86,9 @@ const checkBalanceRecord = async function ({
     user,
     model,
     endpoint,
-    valueKey,
-    tokenType,
-    amount,
+    tokenCost,
+    flatCost,
     balance,
-    multiplier,
-    endpointTokenConfig: !!endpointTokenConfig,
   });
 
   // Only perform auto-refill if spending would bring the balance to 0 or below
@@ -130,9 +172,20 @@ const addIntervalToDate = (date, value, unit) => {
  * @throws {Error} Throws an error if there's an issue with the balance check.
  */
 const checkBalance = async ({ req, res, txData }) => {
-  const { canSpend, balance, tokenCost } = await checkBalanceRecord(txData);
+  const { canSpend, balance, tokenCost, freeTierLimitReached } = await checkBalanceRecord(txData);
   if (canSpend) {
     return true;
+  }
+
+  // Free-tier rate limit reached — different error type
+  if (freeTierLimitReached) {
+    const type = 'free_tier_limit';
+    const errorMessage = {
+      type,
+      limit: txData.freeTierLimit || 15,
+    };
+    await logViolation(req, res, type, errorMessage, 0);
+    throw new Error(JSON.stringify(errorMessage));
   }
 
   const type = ViolationTypes.TOKEN_BALANCE;

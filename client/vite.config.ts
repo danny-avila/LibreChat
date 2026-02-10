@@ -102,6 +102,7 @@ export default defineConfig(({ command }) => ({
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
     outDir: './dist',
+    target: 'esnext',
     minify: 'terser',
     rollupOptions: {
       preserveEntrySignatures: 'strict',

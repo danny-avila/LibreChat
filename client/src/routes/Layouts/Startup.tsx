@@ -29,13 +29,18 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   const location = useLocation();
 
   useEffect(() => {
+    // Redirect login page to chat UI — auth is handled by AuthGateDialog in the chat
+    if (location.pathname === '/login') {
+      navigate('/c/new', { replace: true });
+      return;
+    }
     if (isAuthenticated) {
       navigate('/c/new', { replace: true });
     }
     if (data) {
       setStartupConfig(data);
     }
-  }, [isAuthenticated, navigate, data]);
+  }, [isAuthenticated, navigate, data, location.pathname]);
 
   useEffect(() => {
     document.title = startupConfig?.appTitle || 'Ground Zero';

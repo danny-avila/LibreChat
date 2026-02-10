@@ -911,6 +911,7 @@ export const ocrSchema = z.object({
 export const balanceSchema = z.object({
   enabled: z.boolean().optional().default(false),
   startBalance: z.number().optional().default(20000),
+  freeModelThreshold: z.number().optional().default(0),
   autoRefillEnabled: z.boolean().optional().default(false),
   refillIntervalValue: z.number().optional().default(30),
   refillIntervalUnit: z
@@ -918,6 +919,8 @@ export const balanceSchema = z.object({
     .optional()
     .default('days'),
   refillAmount: z.number().optional().default(10000),
+  modelTiers: z.record(z.string(), z.number()).optional(),
+  freeTierLimit: z.number().optional().default(15),
 });
 
 export const transactionsSchema = z.object({

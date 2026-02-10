@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useSetRecoilState } from 'recoil';
 import { useMediaQuery } from '@librechat/client';
 import type { ContextType } from '~/common';
 import {
@@ -21,6 +22,7 @@ import { IconRail, Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
 import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
+import store from '~/store';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -32,6 +34,12 @@ export default function Root() {
 
   const { isAuthenticated, logout } = useAuthContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const setQueriesEnabled = useSetRecoilState(store.queriesEnabled);
+
+  // Disable auth-requiring queries for unauthenticated users
+  useEffect(() => {
+    setQueriesEnabled(isAuthenticated);
+  }, [isAuthenticated, setQueriesEnabled]);
 
   // Global health check - runs once per authenticated session
   useHealthCheck(isAuthenticated);
@@ -61,10 +69,6 @@ export default function Root() {
     setShowTerms(false);
     logout('/login?redirect=false');
   };
-
-  if (!isAuthenticated) {
-    return null;
-  }
 
   return (
     <SetConvoProvider>

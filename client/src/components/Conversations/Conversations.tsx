@@ -173,8 +173,9 @@ const Conversations: FC<ConversationsProps> = ({
   );
 
   // Determine if FavoritesList will render content
+  // Only show loading skeleton if there are already cached favorites (avoid skeleton on first load when unauthenticated)
   const shouldShowFavorites =
-    !search.query && (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
+    !search.query && ((isFavoritesLoading && favorites.length > 0) || favorites.length > 0 || showAgentMarketplace);
 
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],

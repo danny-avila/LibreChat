@@ -15,6 +15,7 @@ import {
   MCPUIResourceCarousel,
 } from '~/components/MCPUIResource';
 import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
+import { choicesPlugin, ChoiceButtons } from './ChoiceButtons';
 import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
 import { langSubset, preprocessLaTeX } from '~/utils';
@@ -57,6 +58,7 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
     supersub,
     remarkGfm,
     remarkDirective,
+    choicesPlugin,
     artifactPlugin,
     [remarkMath, { singleDollarTextMath: false }],
     unicodeCitation,
@@ -94,6 +96,7 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
                 'composite-citation': CompositeCitation,
                 'mcp-ui-resource': MCPUIResource,
                 'mcp-ui-carousel': MCPUIResourceCarousel,
+                'choice-buttons': ChoiceButtons,
               } as {
                 [nodeType: string]: React.ElementType;
               }

@@ -45,10 +45,14 @@ interface SplitTextProps {
   onLineCountChange?: (lineCount: number) => void;
 }
 
+// Detect if text contains RTL characters (Arabic, Hebrew, etc.)
+const hasRTL = (text: string): boolean => /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+
 const splitGraphemes = (text: string): string[] => {
   if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    const locale = document.documentElement.lang || 'en';
     const segmenter = new (Intl as typeof Intl & { Segmenter: IntlSegmenterConstructor }).Segmenter(
-      'en',
+      locale,
       { granularity: 'grapheme' },
     );
     const segments = segmenter.segment(text);
@@ -71,21 +75,25 @@ const SplitText: React.FC<SplitTextProps> = ({
   onLetterAnimationComplete,
   onLineCountChange,
 }) => {
-  const words = text.split(' ').map(splitGraphemes);
-  const letters = words.flat();
+  const isRTL = hasRTL(text);
+  // For RTL text, animate by word to preserve Arabic ligatures.
+  // For LTR text, animate by grapheme for the letter-by-letter effect.
+  const wordStrings = text.split(' ');
+  const words = isRTL ? wordStrings.map((w) => [w]) : wordStrings.map(splitGraphemes);
+  const units = words.flat();
   const [inView, setInView] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
   const animatedCount = useRef(0);
 
   const [springs] = useSprings(
-    letters.length,
+    units.length,
     (i) => ({
       from: animationFrom,
       to: inView
         ? async (next) => {
             await next(animationTo);
             animatedCount.current += 1;
-            if (animatedCount.current === letters.length && onLetterAnimationComplete) {
+            if (animatedCount.current === units.length && onLetterAnimationComplete) {
               onLetterAnimationComplete();
             }
           }
@@ -138,15 +146,16 @@ const SplitText: React.FC<SplitTextProps> = ({
       <span className="sr-only">{text}</span>
       <p
         ref={ref}
+        dir="auto"
         className={`split-parent inline overflow-hidden ${className}`}
         style={{ textAlign, whiteSpace: 'normal', wordWrap: 'break-word' }}
         aria-hidden="true"
       >
         {words.map((word, wordIndex) => (
           <span key={wordIndex} style={{ display: 'inline-block', whiteSpace: 'nowrap' }}>
-            {word.map((letter, letterIndex) => {
+            {word.map((unit, unitIndex) => {
               const index =
-                words.slice(0, wordIndex).reduce((acc, w) => acc + w.length, 0) + letterIndex;
+                words.slice(0, wordIndex).reduce((acc, w) => acc + w.length, 0) + unitIndex;
 
               return (
                 <animated.span
@@ -154,7 +163,7 @@ const SplitText: React.FC<SplitTextProps> = ({
                   style={springs[index]}
                   className="inline-block transform transition-opacity will-change-transform"
                 >
-                  {letter}
+                  {unit}
                 </animated.span>
               );
             })}

@@ -8,6 +8,8 @@ const getLoginError = (errorText: string): TranslationKeys => {
   }
 
   switch (true) {
+    case errorText.includes('404'):
+      return 'com_auth_error_login_not_found';
     case errorText.includes('429'):
       return 'com_auth_error_login_rl';
     case errorText.includes('403'):

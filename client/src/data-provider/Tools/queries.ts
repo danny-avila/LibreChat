@@ -1,12 +1,15 @@
+import { useRecoilValue } from 'recoil';
 import { useQuery } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
 import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
+import store from '~/store';
 
 export const useVerifyAgentToolAuth = (
   params: t.VerifyToolAuthParams,
   config?: UseQueryOptions<t.VerifyToolAuthResponse>,
 ): QueryObserverResult<t.VerifyToolAuthResponse> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery<t.VerifyToolAuthResponse>(
     [QueryKeys.toolAuth, params.toolId],
     () => dataService.getVerifyAgentToolAuth(params),
@@ -15,6 +18,7 @@ export const useVerifyAgentToolAuth = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
+      enabled: (config?.enabled ?? true) === true && queriesEnabled,
     },
   );
 };

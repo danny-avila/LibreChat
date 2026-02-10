@@ -31,7 +31,7 @@ export default function ExportAndShareMenu({
     conversation.conversationId !== 'new' &&
     conversation.conversationId !== 'search';
 
-  if (exportable === false) {
+  if (!exportable) {
     return null;
   }
 

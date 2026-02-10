@@ -7,20 +7,7 @@
   margin-left: 8px;
 }
 
-.nav {
-  position: fixed;
-  z-index: 110;
-  top: 0;
-
-  /* max-width: 260px; */
-
-  bottom: 0;
-  opacity: 0;
-}
-
 .nav.active {
-  position: relative;
-  left: 0;
   opacity: 1;
 }
 

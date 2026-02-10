@@ -14,5 +14,6 @@ export * from './prompts';
 export * from './queries';
 export * from './roles';
 export * from './tags';
+export * from './Mail';
 export * from './MCP';
 export * from './SSE';

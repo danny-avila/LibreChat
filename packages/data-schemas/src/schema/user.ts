@@ -152,6 +152,14 @@ const userSchema = new Schema<IUser>(
       ],
       default: [],
     },
+    subscription: {
+      type: {
+        active: { type: Boolean, default: false },
+        plan: { type: String },
+        expiresAt: { type: Date },
+      },
+      default: { active: false },
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,

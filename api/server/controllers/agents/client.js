@@ -43,6 +43,7 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getFreeTierContext } = require('~/models/tx');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { getConvoFiles } = require('~/models/Conversation');
@@ -848,6 +849,8 @@ class AgentClient extends BaseClient {
         user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
         model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
+        modelTiers: balance?.modelTiers,
+        ...getFreeTierContext(this.options.req, balance),
       };
 
       if (cache_creation > 0 || cache_read > 0) {

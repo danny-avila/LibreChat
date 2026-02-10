@@ -1,22 +1,10 @@
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks';
 
 export default function useAuthRedirect() {
   const { user, roles, isAuthenticated } = useAuthContext();
-  const navigate = useNavigate();
 
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (!isAuthenticated) {
-        navigate('/login', { replace: true });
-      }
-    }, 300);
-
-    return () => {
-      clearTimeout(timeout);
-    };
-  }, [isAuthenticated, navigate]);
+  // No redirect — unauthenticated users can view the UI.
+  // Auth is enforced at the submission layer (AuthGateDialog).
 
   return {
     user,

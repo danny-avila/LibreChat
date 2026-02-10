@@ -29,7 +29,7 @@ export default function ChatRoute() {
   useAppStartup({ startupConfig, user });
 
   const index = 0;
-  const { conversationId = '' } = useParams();
+  const { conversationId = Constants.NEW_CONVO } = useParams();
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();
@@ -130,16 +130,12 @@ export default function ChatRoute() {
     assistantListMap,
   ]);
 
-  if (endpointsQuery.isLoading || modelsQuery.isLoading) {
+  if (isAuthenticated && (endpointsQuery.isLoading || modelsQuery.isLoading)) {
     return (
       <div className="flex h-screen items-center justify-center" aria-live="polite" role="status">
         <Spinner className="text-text-primary" />
       </div>
     );
-  }
-
-  if (!isAuthenticated) {
-    return null;
   }
 
   // if not a conversation
@@ -148,7 +144,12 @@ export default function ChatRoute() {
   }
   // if conversationId not match
   if (conversation?.conversationId !== conversationId && !conversation) {
-    return null;
+    // Show the chat UI (for both unauth users and auth users waiting for conversation init)
+    return (
+      <ToolCallsMapProvider conversationId="">
+        <ChatView index={index} />
+      </ToolCallsMapProvider>
+    );
   }
   // if conversationId is null
   if (!conversationId) {

@@ -30,6 +30,7 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getFreeTierContext } = require('~/models/tx');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
@@ -514,6 +515,8 @@ const OpenAIChatCompletionController = async (req, res) => {
         balance: balanceConfig,
         transactions: transactionsConfig,
         model: primaryConfig.model || agent.model_parameters?.model,
+        modelTiers: balanceConfig?.modelTiers,
+        ...getFreeTierContext(req, balanceConfig),
       },
     ).catch((err) => {
       logger.error('[OpenAI API] Error recording usage:', err);

@@ -1,11 +1,14 @@
+import { useRecoilValue } from 'recoil';
 import { dataService } from 'librechat-data-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions } from '@tanstack/react-query';
 import type { FavoritesState } from '~/store/favorites';
+import store from '~/store';
 
 export const useGetFavoritesQuery = (
   config?: Omit<UseQueryOptions<FavoritesState, Error>, 'queryKey' | 'queryFn'>,
 ) => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery<FavoritesState, Error>(
     ['favorites'],
     () => dataService.getFavorites() as Promise<FavoritesState>,
@@ -14,6 +17,7 @@ export const useGetFavoritesQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
+      enabled: (config?.enabled ?? true) === true && queriesEnabled,
     },
   );
 };

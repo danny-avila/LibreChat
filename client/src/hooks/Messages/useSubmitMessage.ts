@@ -6,19 +6,28 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
 
 export default function useSubmitMessage() {
-  const { user } = useAuthContext();
+  const { user, isAuthenticated } = useAuthContext();
   const methods = useChatFormContext();
   const { conversation: addedConvo } = useAddedChatContext();
   const { ask, index, getMessages, setMessages, latestMessage } = useChatContext();
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
+  const setActiveFeature = useSetRecoilState(store.activeFeature);
+  const setActiveStylePreset = useSetRecoilState(store.activeStylePreset);
+  const setAuthGateOpen = useSetRecoilState(store.authGateOpen);
 
   const submitMessage = useCallback(
     (data?: { text: string }) => {
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
+
+      if (!isAuthenticated) {
+        setAuthGateOpen(true);
+        return;
+      }
+
       const rootMessages = getMessages();
       const isLatestInRootMessages = rootMessages?.some(
         (message) => message.messageId === latestMessage?.messageId,
@@ -36,8 +45,10 @@ export default function useSubmitMessage() {
         },
       );
       methods.reset();
+      setActiveFeature(null);
+      setActiveStylePreset(null);
     },
-    [ask, methods, addedConvo, setMessages, getMessages, latestMessage],
+    [ask, methods, addedConvo, setMessages, getMessages, latestMessage, setActiveFeature, setActiveStylePreset, isAuthenticated, setAuthGateOpen],
   );
 
   const submitPrompt = useCallback(

@@ -99,8 +99,10 @@ const errorMessages = {
     }.`;
   },
   token_balance: (json: TTokenBalance) => {
-    const { balance, tokenCost, promptTokens, generations } = json;
-    const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
+    const { balance, tokenCost, generations } = json;
+    const message = balance <= 0
+      ? `You've run out of credits! You can still chat using free models — just switch to a free model to continue.`
+      : `Not enough credits for this model. Your balance: ${balance}. This model costs ${tokenCost} credits per message. Try a cheaper model or switch to a free one.`;
     return (
       <>
         {message}

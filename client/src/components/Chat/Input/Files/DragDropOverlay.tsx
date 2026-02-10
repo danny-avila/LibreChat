@@ -11,7 +11,7 @@ const DragDropOverlay = memo(({ isActive }: DragDropOverlayProps) => {
     <>
       {/** Modal backdrop overlay */}
       <div
-        className={`fixed inset-0 z-[9998] transition-opacity duration-200 ease-in-out ${
+        className={`absolute inset-0 z-[9998] transition-opacity duration-200 ease-in-out ${
           isActive
             ? 'pointer-events-auto visible opacity-100'
             : 'pointer-events-none invisible opacity-0'
@@ -24,7 +24,7 @@ const DragDropOverlay = memo(({ isActive }: DragDropOverlayProps) => {
       />
       {/** Main content overlay */}
       <div
-        className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-2 text-text-primary transition-all duration-200 ease-in-out ${
+        className={`absolute inset-0 z-[9999] flex flex-col items-center justify-center gap-2 text-text-primary transition-all duration-200 ease-in-out ${
           isActive
             ? 'pointer-events-auto visible opacity-100'
             : 'pointer-events-none invisible opacity-0'

@@ -23,105 +23,109 @@ import {
   Account,
 } from './SettingsTabs';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
-import { useLocalize, TranslationKeys } from '~/hooks';
+import { useLocalize, useAuthContext, TranslationKeys } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import { cn } from '~/utils';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const { data: startupConfig } = useGetStartupConfig();
+  const { isAuthenticated } = useAuthContext();
   const localize = useLocalize();
   const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
   const tabRefs = useRef({});
   const { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
 
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    const tabs: SettingsTabValues[] = [
-      SettingsTabValues.GENERAL,
-      SettingsTabValues.CHAT,
-      SettingsTabValues.COMMANDS,
-      SettingsTabValues.SPEECH,
-      ...(hasAnyPersonalizationFeature ? [SettingsTabValues.PERSONALIZATION] : []),
-      SettingsTabValues.DATA,
-      ...(startupConfig?.balance?.enabled ? [SettingsTabValues.BALANCE] : []),
-      SettingsTabValues.ACCOUNT,
-    ];
-    const currentIndex = tabs.indexOf(activeTab);
-
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        setActiveTab(tabs[(currentIndex + 1) % tabs.length]);
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        setActiveTab(tabs[(currentIndex - 1 + tabs.length) % tabs.length]);
-        break;
-      case 'Home':
-        event.preventDefault();
-        setActiveTab(tabs[0]);
-        break;
-      case 'End':
-        event.preventDefault();
-        setActiveTab(tabs[tabs.length - 1]);
-        break;
-    }
-  };
-
   const settingsTabs: {
     value: SettingsTabValues;
     icon: React.JSX.Element;
     label: TranslationKeys;
-  }[] = [
-    {
-      value: SettingsTabValues.GENERAL,
-      icon: <GearIcon />,
-      label: 'com_nav_setting_general',
-    },
-    {
-      value: SettingsTabValues.CHAT,
-      icon: <MessageSquare className="icon-sm" aria-hidden="true" />,
-      label: 'com_nav_setting_chat',
-    },
-    {
-      value: SettingsTabValues.COMMANDS,
-      icon: <Command className="icon-sm" aria-hidden="true" />,
-      label: 'com_nav_commands',
-    },
-    {
-      value: SettingsTabValues.SPEECH,
-      icon: <SpeechIcon className="icon-sm" aria-hidden="true" />,
-      label: 'com_nav_setting_speech',
-    },
-    ...(hasAnyPersonalizationFeature
-      ? [
-          {
-            value: SettingsTabValues.PERSONALIZATION,
-            icon: <PersonalizationIcon />,
-            label: 'com_nav_setting_personalization' as TranslationKeys,
-          },
-        ]
-      : []),
-    {
-      value: SettingsTabValues.DATA,
-      icon: <DataIcon />,
-      label: 'com_nav_setting_data',
-    },
-    ...(startupConfig?.balance?.enabled
-      ? [
-          {
-            value: SettingsTabValues.BALANCE,
-            icon: <DollarSign size={18} />,
-            label: 'com_nav_setting_balance' as TranslationKeys,
-          },
-        ]
-      : ([] as { value: SettingsTabValues; icon: React.JSX.Element; label: TranslationKeys }[])),
-    {
-      value: SettingsTabValues.ACCOUNT,
-      icon: <UserIcon />,
-      label: 'com_nav_setting_account',
-    },
-  ];
+  }[] = isAuthenticated
+    ? [
+        {
+          value: SettingsTabValues.GENERAL,
+          icon: <GearIcon />,
+          label: 'com_nav_setting_general',
+        },
+        {
+          value: SettingsTabValues.CHAT,
+          icon: <MessageSquare className="icon-sm" aria-hidden="true" />,
+          label: 'com_nav_setting_chat',
+        },
+        {
+          value: SettingsTabValues.COMMANDS,
+          icon: <Command className="icon-sm" aria-hidden="true" />,
+          label: 'com_nav_commands',
+        },
+        {
+          value: SettingsTabValues.SPEECH,
+          icon: <SpeechIcon className="icon-sm" aria-hidden="true" />,
+          label: 'com_nav_setting_speech',
+        },
+        ...(hasAnyPersonalizationFeature
+          ? [
+              {
+                value: SettingsTabValues.PERSONALIZATION,
+                icon: <PersonalizationIcon />,
+                label: 'com_nav_setting_personalization' as TranslationKeys,
+              },
+            ]
+          : []),
+        {
+          value: SettingsTabValues.DATA,
+          icon: <DataIcon />,
+          label: 'com_nav_setting_data',
+        },
+        ...(startupConfig?.balance?.enabled
+          ? [
+              {
+                value: SettingsTabValues.BALANCE,
+                icon: <DollarSign size={18} />,
+                label: 'com_nav_setting_balance' as TranslationKeys,
+              },
+            ]
+          : ([] as {
+              value: SettingsTabValues;
+              icon: React.JSX.Element;
+              label: TranslationKeys;
+            }[])),
+        {
+          value: SettingsTabValues.ACCOUNT,
+          icon: <UserIcon />,
+          label: 'com_nav_setting_account',
+        },
+      ]
+    : [
+        {
+          value: SettingsTabValues.GENERAL,
+          icon: <GearIcon />,
+          label: 'com_nav_setting_general',
+        },
+      ];
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    const tabValues = settingsTabs.map((t) => t.value);
+    const currentIndex = tabValues.indexOf(activeTab);
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        setActiveTab(tabValues[(currentIndex + 1) % tabValues.length]);
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        setActiveTab(tabValues[(currentIndex - 1 + tabValues.length) % tabValues.length]);
+        break;
+      case 'Home':
+        event.preventDefault();
+        setActiveTab(tabValues[0]);
+        break;
+      case 'End':
+        event.preventDefault();
+        setActiveTab(tabValues[tabValues.length - 1]);
+        break;
+    }
+  };
 
   const handleTabChange = (value: string) => {
     setActiveTab(value as SettingsTabValues);
@@ -223,34 +227,38 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Content value={SettingsTabValues.GENERAL} tabIndex={-1}>
                       <General />
                     </Tabs.Content>
-                    <Tabs.Content value={SettingsTabValues.CHAT} tabIndex={-1}>
-                      <Chat />
-                    </Tabs.Content>
-                    <Tabs.Content value={SettingsTabValues.COMMANDS} tabIndex={-1}>
-                      <Commands />
-                    </Tabs.Content>
-                    <Tabs.Content value={SettingsTabValues.SPEECH} tabIndex={-1}>
-                      <Speech />
-                    </Tabs.Content>
-                    {hasAnyPersonalizationFeature && (
-                      <Tabs.Content value={SettingsTabValues.PERSONALIZATION} tabIndex={-1}>
-                        <Personalization
-                          hasMemoryOptOut={hasMemoryOptOut}
-                          hasAnyPersonalizationFeature={hasAnyPersonalizationFeature}
-                        />
-                      </Tabs.Content>
+                    {isAuthenticated && (
+                      <>
+                        <Tabs.Content value={SettingsTabValues.CHAT} tabIndex={-1}>
+                          <Chat />
+                        </Tabs.Content>
+                        <Tabs.Content value={SettingsTabValues.COMMANDS} tabIndex={-1}>
+                          <Commands />
+                        </Tabs.Content>
+                        <Tabs.Content value={SettingsTabValues.SPEECH} tabIndex={-1}>
+                          <Speech />
+                        </Tabs.Content>
+                        {hasAnyPersonalizationFeature && (
+                          <Tabs.Content value={SettingsTabValues.PERSONALIZATION} tabIndex={-1}>
+                            <Personalization
+                              hasMemoryOptOut={hasMemoryOptOut}
+                              hasAnyPersonalizationFeature={hasAnyPersonalizationFeature}
+                            />
+                          </Tabs.Content>
+                        )}
+                        <Tabs.Content value={SettingsTabValues.DATA} tabIndex={-1}>
+                          <Data />
+                        </Tabs.Content>
+                        {startupConfig?.balance?.enabled && (
+                          <Tabs.Content value={SettingsTabValues.BALANCE} tabIndex={-1}>
+                            <Balance />
+                          </Tabs.Content>
+                        )}
+                        <Tabs.Content value={SettingsTabValues.ACCOUNT} tabIndex={-1}>
+                          <Account />
+                        </Tabs.Content>
+                      </>
                     )}
-                    <Tabs.Content value={SettingsTabValues.DATA} tabIndex={-1}>
-                      <Data />
-                    </Tabs.Content>
-                    {startupConfig?.balance?.enabled && (
-                      <Tabs.Content value={SettingsTabValues.BALANCE} tabIndex={-1}>
-                        <Balance />
-                      </Tabs.Content>
-                    )}
-                    <Tabs.Content value={SettingsTabValues.ACCOUNT} tabIndex={-1}>
-                      <Account />
-                    </Tabs.Content>
                   </div>
                 </Tabs.Root>
               </div>

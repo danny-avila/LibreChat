@@ -27,6 +27,9 @@ interface TxMetadata {
   balance?: Partial<TCustomConfig['balance']> | null;
   transactions?: Partial<TTransactionsConfig>;
   endpointTokenConfig?: EndpointTokenConfig;
+  isSubscribed?: boolean;
+  freeModelThreshold?: number;
+  modelTiers?: Record<string, number>;
 }
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
@@ -49,6 +52,9 @@ export interface RecordUsageParams {
   balance?: Partial<TCustomConfig['balance']> | null;
   transactions?: Partial<TTransactionsConfig>;
   endpointTokenConfig?: EndpointTokenConfig;
+  isSubscribed?: boolean;
+  freeModelThreshold?: number;
+  modelTiers?: Record<string, number>;
 }
 
 export interface RecordUsageResult {
@@ -72,6 +78,9 @@ export async function recordCollectedUsage(
     conversationId,
     collectedUsage,
     endpointTokenConfig,
+    isSubscribed,
+    freeModelThreshold,
+    modelTiers,
     context = 'message',
   } = params;
 
@@ -114,6 +123,9 @@ export async function recordCollectedUsage(
       conversationId,
       user,
       endpointTokenConfig,
+      isSubscribed,
+      freeModelThreshold,
+      modelTiers,
       model: usage.model ?? model,
     };
 

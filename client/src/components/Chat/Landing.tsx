@@ -1,15 +1,14 @@
 import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { easings } from '@react-spring/web';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
+import { useRecoilValue } from 'recoil';
+import { Sparkles, SplitText } from '@librechat/client';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
-import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
-
-const containerClassName =
-  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
+import { FEATURES } from './featureConfig';
+import store from '~/store';
 
 function getTextSizeClass(text: string | undefined | null) {
   if (!text) {
@@ -35,6 +34,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { user } = useAuthContext();
   const localize = useLocalize();
+  const activeFeature = useRecoilValue(store.activeFeature);
+  const featureConfig = activeFeature ? FEATURES[activeFeature] : null;
 
   const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);
   const [lineCount, setLineCount] = useState(1);
@@ -132,10 +133,21 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     return margin;
   }, [lineCount, description, textHasMultipleLines, contentHeight]);
 
-  const greetingText =
-    typeof startupConfig?.interface?.customWelcome === 'string'
-      ? getGreeting()
-      : getGreeting() + (user?.name ? ', ' + user.name : '');
+  const greetingText = useMemo(() => {
+    if (typeof startupConfig?.interface?.customWelcome === 'string') {
+      return getGreeting();
+    }
+    const greeting = getGreeting();
+    if (!user?.name) {
+      return greeting;
+    }
+    // For RTL greetings (Arabic, Hebrew), use Arabic comma and bidi marks
+    const isRTLGreeting = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(greeting);
+    if (isRTLGreeting) {
+      return `${greeting}، ${user.name}`;
+    }
+    return `${greeting}, ${user.name}`;
+  }, [getGreeting, startupConfig?.interface?.customWelcome, user?.name]);
 
   return (
     <div
@@ -145,25 +157,14 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
         <div
           className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-2`}
         >
-          <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
-            <ConvoIcon
-              agentsMap={agentsMap}
-              assistantMap={assistantMap}
-              conversation={conversation}
-              endpointsConfig={endpointsConfig}
-              containerClassName={containerClassName}
-              context="landing"
-              className="h-2/3 w-2/3 text-black dark:text-white"
-              size={41}
-            />
-            {startupConfig?.showBirthdayIcon && (
-              <TooltipAnchor
-                className="absolute bottom-[27px] right-2"
-                description={localize('com_ui_happy_birthday')}
-                aria-label={localize('com_ui_happy_birthday')}
-              >
-                <BirthdayIcon />
-              </TooltipAnchor>
+          <div className={`relative flex size-10 items-center justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
+            {featureConfig ? (
+              <featureConfig.icon
+                className="icon-2xl"
+                style={{ color: `var(--feature-${featureConfig.color}-icon)` }}
+              />
+            ) : (
+              <Sparkles className="icon-2xl text-black dark:text-white" />
             )}
           </div>
           {((isAgent || isAssistant) && name) || name ? (
@@ -171,7 +172,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               <SplitText
                 key={`split-text-${name}`}
                 text={name}
-                className={`${getTextSizeClass(name)} font-medium text-text-primary`}
+                className={`${getTextSizeClass(name)} font-sans font-semibold tracking-tight text-text-primary`}
                 delay={50}
                 textAlign="center"
                 animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
@@ -184,9 +185,9 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             </div>
           ) : (
             <SplitText
-              key={`split-text-${greetingText}${user?.name ? '-user' : ''}`}
-              text={greetingText}
-              className={`${getTextSizeClass(greetingText)} font-medium text-text-primary`}
+              key={`split-text-${featureConfig ? featureConfig.heading : greetingText}${user?.name ? '-user' : ''}`}
+              text={featureConfig ? featureConfig.heading : greetingText}
+              className={`${getTextSizeClass(featureConfig ? featureConfig.heading : greetingText)} font-sans font-semibold tracking-tight text-text-primary`}
               delay={50}
               textAlign="center"
               animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}

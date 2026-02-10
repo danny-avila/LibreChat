@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { getMultiplier, getCacheMultiplier } = require('./tx');
+const { getMultiplier, getCacheMultiplier, isModelFreeForUser, getFlatCreditCost } = require('./tx');
 const { Transaction, Balance } = require('~/db/models');
 
 const cancelRate = 1.15;
@@ -138,6 +138,20 @@ const updateBalance = async ({ user, incrementValue, setValues }) => {
 
 /** Method to calculate and set the tokenValue for a transaction */
 function calculateTokenValue(txn) {
+  // Flat credit pricing: charge full flat cost on prompt, zero on completion
+  const flatCost = getFlatCreditCost(txn.model, txn.modelTiers);
+  if (flatCost !== null) {
+    if (txn.tokenType === 'prompt') {
+      txn.rate = flatCost;
+      txn.tokenValue = -flatCost;
+    } else {
+      txn.rate = 0;
+      txn.tokenValue = 0;
+    }
+    return;
+  }
+
+  // Fallback: existing per-token calculation
   const { valueKey, tokenType, model, endpointTokenConfig, inputTokenCount } = txn;
   const multiplier = Math.abs(
     getMultiplier({ valueKey, tokenType, model, endpointTokenConfig, inputTokenCount }),
@@ -189,7 +203,7 @@ async function createAutoRefillTransaction(txData) {
  * @param {txData} _txData - Transaction data.
  */
 async function createTransaction(_txData) {
-  const { balance, transactions, ...txData } = _txData;
+  const { balance, transactions, isSubscribed, freeModelThreshold, modelTiers, ...txData } = _txData;
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
     return;
   }
@@ -201,9 +215,28 @@ async function createTransaction(_txData) {
   const transaction = new Transaction(txData);
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
   transaction.inputTokenCount = txData.inputTokenCount;
+  transaction.modelTiers = modelTiers;
   calculateTokenValue(transaction);
 
   await transaction.save();
+
+  // Skip balance deduction for free-tier models (transaction is still recorded for analytics)
+  if (
+    isModelFreeForUser({
+      model: txData.model,
+      endpoint: txData.endpoint,
+      freeModelThreshold,
+      isSubscribed,
+      endpointTokenConfig: txData.endpointTokenConfig,
+    })
+  ) {
+    return {
+      rate: transaction.rate,
+      user: transaction.user.toString(),
+      [transaction.tokenType]: 0,
+    };
+  }
+
   if (!balance?.enabled) {
     return;
   }
@@ -227,7 +260,7 @@ async function createTransaction(_txData) {
  * @param {txData} _txData - Transaction data.
  */
 async function createStructuredTransaction(_txData) {
-  const { balance, transactions, ...txData } = _txData;
+  const { balance, transactions, isSubscribed, freeModelThreshold, modelTiers, ...txData } = _txData;
   if (transactions?.enabled === false) {
     return;
   }
@@ -235,10 +268,28 @@ async function createStructuredTransaction(_txData) {
   const transaction = new Transaction(txData);
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
   transaction.inputTokenCount = txData.inputTokenCount;
+  transaction.modelTiers = modelTiers;
 
   calculateStructuredTokenValue(transaction);
 
   await transaction.save();
+
+  // Skip balance deduction for free-tier models (transaction is still recorded for analytics)
+  if (
+    isModelFreeForUser({
+      model: txData.model,
+      endpoint: txData.endpoint,
+      freeModelThreshold,
+      isSubscribed,
+      endpointTokenConfig: txData.endpointTokenConfig,
+    })
+  ) {
+    return {
+      rate: transaction.rate,
+      user: transaction.user.toString(),
+      [transaction.tokenType]: 0,
+    };
+  }
 
   if (!balance?.enabled) {
     return;
@@ -263,6 +314,25 @@ async function createStructuredTransaction(_txData) {
 function calculateStructuredTokenValue(txn) {
   if (!txn.tokenType) {
     txn.tokenValue = txn.rawAmount;
+    return;
+  }
+
+  // Flat credit pricing: charge full flat cost on prompt, zero on completion
+  const flatCost = getFlatCreditCost(txn.model, txn.modelTiers);
+  if (flatCost !== null) {
+    if (txn.tokenType === 'prompt') {
+      txn.rate = flatCost;
+      txn.tokenValue = -flatCost;
+      txn.rawAmount = -(
+        Math.abs(txn.inputTokens || 0) +
+        Math.abs(txn.writeTokens || 0) +
+        Math.abs(txn.readTokens || 0)
+      );
+    } else if (txn.tokenType === 'completion') {
+      txn.rate = 0;
+      txn.tokenValue = 0;
+      txn.rawAmount = -Math.abs(txn.rawAmount);
+    }
     return;
   }
 

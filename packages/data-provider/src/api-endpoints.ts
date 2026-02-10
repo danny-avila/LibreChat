@@ -246,6 +246,10 @@ export const mcp = {
 
 export const mcpServer = (serverName: string) => `${BASE_URL}/api/mcp/servers/${serverName}`;
 
+export const mailStatus = () => `${BASE_URL}/api/mail/status`;
+export const mailConnect = (provider: string) => `${BASE_URL}/api/mail/connect/${provider}`;
+export const mailDisconnect = (provider: string) => `${BASE_URL}/api/mail/disconnect/${provider}`;
+
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
 
 export const files = () => `${BASE_URL}/api/files`;

@@ -1,5 +1,6 @@
 import React from 'react';
 import DisplayUsernameMessages from './DisplayUsernameMessages';
+import ConnectedMailAccounts from './ConnectedMailAccounts';
 import DeleteAccount from './DeleteAccount';
 import Avatar from './Avatar';
 import EnableTwoFactorItem from './TwoFactorAuthentication';
@@ -16,6 +17,9 @@ function Account() {
       </div>
       <div className="pb-3">
         <Avatar />
+      </div>
+      <div className="pb-3">
+        <ConnectedMailAccounts />
       </div>
       {user?.provider === 'local' && (
         <>

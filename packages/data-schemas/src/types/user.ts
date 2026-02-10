@@ -39,6 +39,11 @@ export interface IUser extends Document {
     model?: string;
     endpoint?: string;
   }>;
+  subscription?: {
+    active: boolean;
+    plan?: string;
+    expiresAt?: Date;
+  };
   createdAt?: Date;
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
@@ -48,10 +53,13 @@ export interface IUser extends Document {
 export interface BalanceConfig {
   enabled?: boolean;
   startBalance?: number;
+  freeModelThreshold?: number;
   autoRefillEnabled?: boolean;
   refillIntervalValue?: number;
   refillIntervalUnit?: string;
   refillAmount?: number;
+  modelTiers?: Record<string, number>;
+  freeTierLimit?: number;
 }
 
 export interface CreateUserRequest extends Partial<IUser> {

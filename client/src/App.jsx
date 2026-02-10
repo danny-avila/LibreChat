@@ -5,6 +5,7 @@ import { RouterProvider } from 'react-router-dom';
 import * as RadixToast from '@radix-ui/react-toast';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Toast, ThemeProvider, ToastProvider } from '@librechat/client';
+import axios from 'axios';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
 import WakeLockManager from '~/components/System/WakeLockManager';
@@ -22,6 +23,13 @@ const App = () => {
         // Always attempt network requests, even when navigator.onLine is false
         // This is needed because localhost is reachable without WiFi
         networkMode: 'always',
+        // Don't retry requests that were cancelled by our auth interceptor
+        retry: (failureCount, error) => {
+          if (axios.isCancel(error)) {
+            return false;
+          }
+          return failureCount < 3;
+        },
       },
       mutations: {
         networkMode: 'always',
@@ -29,6 +37,10 @@ const App = () => {
     },
     queryCache: new QueryCache({
       onError: (error) => {
+        // Ignore cancelled requests (from auth interceptor blocking unauthenticated calls)
+        if (axios.isCancel(error)) {
+          return;
+        }
         if (error?.response?.status === 401) {
           setError(error);
         }

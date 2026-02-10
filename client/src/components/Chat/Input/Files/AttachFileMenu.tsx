@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo } from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import {
   FileSearch,
@@ -7,6 +7,13 @@ import {
   FileType2Icon,
   FileImageIcon,
   TerminalSquareIcon,
+  Presentation,
+  Sheet,
+  FileText,
+  Code2,
+  Video,
+  Music,
+  Paperclip,
 } from 'lucide-react';
 import {
   Providers,
@@ -36,8 +43,9 @@ import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
+import store from '~/store';
 
-type FileUploadType = 'image' | 'document' | 'image_document' | 'image_document_video_audio';
+type FileUploadType = 'image' | 'document' | 'image_document' | 'image_document_video_audio' | 'presentation' | 'spreadsheet' | 'text_document' | 'code' | 'video' | 'audio' | 'any';
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -88,27 +96,124 @@ const AttachFileMenu = ({
     ephemeralAgent,
   );
 
+  const activeFeature = useRecoilValue(store.activeFeature);
+
+  const acceptMap: Record<string, string> = {
+    image: 'image/*,.heif,.heic',
+    document: '.pdf,application/pdf',
+    image_document: 'image/*,.heif,.heic,.pdf,application/pdf',
+    image_document_video_audio: 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*',
+    presentation: '.pptx,.ppt,.pdf,.key,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/pdf',
+    spreadsheet: '.xlsx,.xls,.csv,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv',
+    text_document: '.docx,.doc,.pdf,.txt,.md,.rtf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/pdf,text/plain,text/markdown',
+    code: '.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.go,.rs,.rb,.php,.swift,.kt,.cs,.html,.css,.json,.xml,.yaml,.yml,.sql,.sh,.bat,.ps1,text/*',
+    video: 'video/*',
+    audio: 'audio/*,.mp3,.wav,.flac,.aac,.ogg,.m4a,.wma',
+    any: '',
+  };
+
   const handleUploadClick = (fileType?: FileUploadType) => {
     if (!inputRef.current) {
       return;
     }
     inputRef.current.value = '';
-    if (fileType === 'image') {
-      inputRef.current.accept = 'image/*,.heif,.heic';
-    } else if (fileType === 'document') {
-      inputRef.current.accept = '.pdf,application/pdf';
-    } else if (fileType === 'image_document') {
-      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf';
-    } else if (fileType === 'image_document_video_audio') {
-      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
-    } else {
-      inputRef.current.accept = '';
-    }
+    inputRef.current.accept = fileType ? (acceptMap[fileType] ?? '') : '';
     inputRef.current.click();
     inputRef.current.accept = '';
   };
 
   const dropdownItems = useMemo(() => {
+    // Feature-specific upload menus
+    const featureMenuItems: Record<string, (onAction: (fileType?: FileUploadType) => void) => MenuItemProps[]> = {
+      slides: (onAction) => [
+        {
+          label: 'Upload Presentation',
+          onClick: () => { setToolResource(undefined); onAction('presentation'); },
+          icon: <Presentation className="icon-md" />,
+        },
+        {
+          label: 'Upload Image',
+          onClick: () => { setToolResource(undefined); onAction('image'); },
+          icon: <ImageUpIcon className="icon-md" />,
+        },
+      ],
+      sheets: (onAction) => [
+        {
+          label: 'Upload Spreadsheet',
+          onClick: () => { setToolResource(undefined); onAction('spreadsheet'); },
+          icon: <Sheet className="icon-md" />,
+        },
+        {
+          label: 'Upload as Text',
+          onClick: () => { setToolResource(EToolResources.context); onAction(); },
+          icon: <FileType2Icon className="icon-md" />,
+        },
+      ],
+      docs: (onAction) => [
+        {
+          label: 'Upload Document',
+          onClick: () => { setToolResource(undefined); onAction('text_document'); },
+          icon: <FileText className="icon-md" />,
+        },
+        {
+          label: 'Upload as Text',
+          onClick: () => { setToolResource(EToolResources.context); onAction(); },
+          icon: <FileType2Icon className="icon-md" />,
+        },
+      ],
+      dev: (onAction) => [
+        {
+          label: 'Upload Code',
+          onClick: () => { setToolResource(undefined); onAction('code'); },
+          icon: <Code2 className="icon-md" />,
+        },
+        {
+          label: 'Upload as Text',
+          onClick: () => { setToolResource(EToolResources.context); onAction(); },
+          icon: <FileType2Icon className="icon-md" />,
+        },
+      ],
+      image: (onAction) => [
+        {
+          label: 'Upload Image',
+          onClick: () => { setToolResource(undefined); onAction('image'); },
+          icon: <ImageUpIcon className="icon-md" />,
+        },
+      ],
+      video: (onAction) => [
+        {
+          label: 'Upload Video',
+          onClick: () => { setToolResource(undefined); onAction('video'); },
+          icon: <Video className="icon-md" />,
+        },
+      ],
+      music: (onAction) => [
+        {
+          label: 'Upload Audio',
+          onClick: () => { setToolResource(undefined); onAction('audio'); },
+          icon: <Music className="icon-md" />,
+        },
+      ],
+      mail: (onAction) => [
+        {
+          label: 'Upload Attachment',
+          onClick: () => { setToolResource(undefined); onAction('any'); },
+          icon: <Paperclip className="icon-md" />,
+        },
+      ],
+    };
+
+    // If a feature is active and has custom upload items, use those
+    if (activeFeature && featureMenuItems[activeFeature]) {
+      return featureMenuItems[activeFeature](handleUploadClick);
+    }
+
+    // For Chat (default): skip the menu, just open file picker directly
+    // This is handled in the button click below, return empty to signal direct upload
+    if (!activeFeature || activeFeature === 'chat' || activeFeature === 'agent') {
+      return null;
+    }
+
     const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
       const items: MenuItemProps[] = [];
 
@@ -224,7 +329,31 @@ const AttachFileMenu = ({
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
+    activeFeature,
   ]);
+
+  // Direct upload button (no dropdown) for Chat/Agent modes
+  const directUploadButton = (
+    <TooltipAnchor
+      render={
+        <button
+          type="button"
+          disabled={isUploadDisabled}
+          id="attach-file-menu-button"
+          aria-label="Attach files"
+          onClick={() => handleUploadClick('image_document_video_audio')}
+          className="flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50"
+        >
+          <div className="flex w-full items-center justify-center gap-2">
+            <AttachmentIcon />
+          </div>
+        </button>
+      }
+      id="attach-file-menu-button"
+      description={localize('com_sidepanel_attach_files')}
+      disabled={isUploadDisabled}
+    />
+  );
 
   const menuTrigger = (
     <TooltipAnchor
@@ -256,6 +385,30 @@ const AttachFileMenu = ({
       console.error('SharePoint file processing error:', error);
     }
   };
+
+  // If no dropdown items (Chat/Agent mode), render direct file picker button
+  if (!dropdownItems) {
+    return (
+      <>
+        <FileUpload
+          ref={inputRef}
+          handleFileChange={(e) => {
+            handleFileChange(e, toolResource);
+          }}
+        >
+          {directUploadButton}
+        </FileUpload>
+        <SharePointPickerDialog
+          isOpen={isSharePointDialogOpen}
+          onOpenChange={setIsSharePointDialogOpen}
+          onFilesSelected={handleSharePointFilesSelected}
+          isDownloading={isProcessing}
+          downloadProgress={downloadProgress}
+          maxSelectionCount={endpointFileConfig?.fileLimit}
+        />
+      </>
+    );
+  }
 
   return (
     <>

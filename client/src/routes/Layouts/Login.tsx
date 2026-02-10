@@ -8,7 +8,7 @@ export default function LoginLayout() {
   const { isAuthenticated } = useAuthContext();
   const [queriesEnabled, setQueriesEnabled] = useRecoilState<boolean>(store.queriesEnabled);
   useEffect(() => {
-    if (queriesEnabled) {
+    if (queriesEnabled || !isAuthenticated) {
       return;
     }
     const timeout: NodeJS.Timeout = setTimeout(() => {
@@ -18,6 +18,6 @@ export default function LoginLayout() {
     return () => {
       clearTimeout(timeout);
     };
-  }, [queriesEnabled, setQueriesEnabled]);
+  }, [queriesEnabled, setQueriesEnabled, isAuthenticated]);
   return <StartupLayout isAuthenticated={isAuthenticated} />;
 }

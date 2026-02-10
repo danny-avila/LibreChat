@@ -1,5 +1,6 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useAtom } from 'jotai';
+import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, MCPOptions, ResourceType } from 'librechat-data-provider';
@@ -15,6 +16,7 @@ import { useLocalize, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
 import type { MCPServerInitState } from '~/store/mcp';
+import storeRoot from '~/store';
 
 export interface MCPServerDefinition {
   serverName: string;
@@ -32,12 +34,15 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
+  const queriesEnabled = useRecoilValue<boolean>(storeRoot.queriesEnabled);
   const { data: startupConfig } = useGetStartupConfig(); // Keep for UI config only
 
   const { data: loadedServers, isLoading } = useMCPServersQuery();
 
   // Fetch effective permissions for all MCP servers
-  const { data: permissionsMap } = useGetAllEffectivePermissionsQuery(ResourceType.MCPSERVER);
+  const { data: permissionsMap } = useGetAllEffectivePermissionsQuery(ResourceType.MCPSERVER, {
+    enabled: queriesEnabled,
+  });
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);

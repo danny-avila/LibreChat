@@ -65,7 +65,7 @@ function ModelSelectorContent() {
       description={localize('com_ui_select_model')}
       render={
         <button
-          className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
+          className="flex h-8 max-w-[50vw] items-center gap-1.5 rounded-full border border-border-light bg-surface-secondary px-3 text-xs font-medium text-text-primary transition-colors hover:bg-surface-hover"
           aria-label={localize('com_ui_select_model')}
         >
           {selectedIcon && React.isValidElement(selectedIcon) && (
@@ -73,14 +73,14 @@ function ModelSelectorContent() {
               {selectedIcon}
             </div>
           )}
-          <span className="flex-grow truncate text-left">{selectedDisplayValue}</span>
+          <span className="truncate">{selectedDisplayValue}</span>
         </button>
       }
     />
   );
 
   return (
-    <div className="relative flex w-full max-w-md flex-col items-center gap-2">
+    <div className="relative inline-flex flex-col items-start gap-2">
       <Menu
         values={selectedValues}
         onValuesChange={(values: Record<string, any>) => {

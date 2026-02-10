@@ -488,6 +488,73 @@ const getCacheMultiplier = ({ valueKey, cacheType, model, endpoint, endpointToke
   return cacheTokenValues[valueKey]?.[cacheType] ?? null;
 };
 
+/**
+ * Determines if a model is in the "free tier" for a subscribed user.
+ * A model is free if the user has an active subscription and
+ * the model's prompt rate is below the configured threshold.
+ *
+ * @param {Object} params
+ * @param {string} params.model - The model name.
+ * @param {string} [params.endpoint] - The endpoint name.
+ * @param {number} params.freeModelThreshold - The prompt rate threshold (USD/1M tokens).
+ * @param {boolean} params.isSubscribed - Whether the user has an active subscription.
+ * @param {EndpointTokenConfig} [params.endpointTokenConfig] - Optional endpoint token config.
+ * @returns {boolean} True if the model should be free (no credit deduction).
+ */
+const isModelFreeForUser = ({
+  model,
+  endpoint,
+  freeModelThreshold,
+  isSubscribed,
+  endpointTokenConfig,
+}) => {
+  if (!freeModelThreshold || freeModelThreshold <= 0 || !isSubscribed) {
+    return false;
+  }
+  const valueKey = getValueKey(model, endpoint);
+  // Unknown models (no match in tokenValues or endpointTokenConfig) use defaultRate — not free
+  if (!valueKey && !endpointTokenConfig?.[model]) {
+    return false;
+  }
+  const promptRate = getMultiplier({
+    model,
+    endpoint,
+    tokenType: 'prompt',
+    endpointTokenConfig,
+  });
+  return promptRate < freeModelThreshold;
+};
+
+/**
+ * Extracts free-tier context from request and balance config.
+ * @param {Object} req - Express request with user.
+ * @param {Object} balanceConfig - From getBalanceConfig().
+ * @returns {{ isSubscribed: boolean, freeModelThreshold: number }}
+ */
+const getFreeTierContext = (req, balanceConfig) => ({
+  isSubscribed: req?.user?.subscription?.active === true,
+  freeModelThreshold: balanceConfig?.freeModelThreshold ?? 0,
+});
+
+/**
+ * Looks up the flat credit cost for a model from the modelTiers config.
+ * Returns the flat cost (number) or null if model is not in any tier.
+ *
+ * @param {string} model - The model name.
+ * @param {Record<string, number>} [modelTiers] - Model-to-credit-cost mapping from config.
+ * @returns {number|null} The flat credit cost, or null if not in any tier.
+ */
+const getFlatCreditCost = (model, modelTiers) => {
+  if (!model || !modelTiers || Object.keys(modelTiers).length === 0) {
+    return null;
+  }
+  if (modelTiers[model] !== undefined) {
+    return modelTiers[model];
+  }
+  const matchedKey = findMatchingPattern(model, modelTiers);
+  return matchedKey ? modelTiers[matchedKey] : null;
+};
+
 module.exports = {
   tokenValues,
   premiumTokenValues,
@@ -495,6 +562,9 @@ module.exports = {
   getMultiplier,
   getPremiumRate,
   getCacheMultiplier,
+  isModelFreeForUser,
+  getFreeTierContext,
+  getFlatCreditCost,
   defaultRate,
   cacheTokenValues,
 };

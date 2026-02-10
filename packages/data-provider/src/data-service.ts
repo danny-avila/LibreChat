@@ -182,6 +182,14 @@ export const getMCPConnectionStatus = (): Promise<q.MCPConnectionStatusResponse>
   return request.get(endpoints.mcpConnectionStatus());
 };
 
+export const getMailConnectionStatus = (): Promise<{ gmail: boolean; outlook: boolean }> => {
+  return request.get(endpoints.mailStatus());
+};
+
+export const disconnectMailProvider = (provider: string): Promise<{ success: boolean }> => {
+  return request.post(endpoints.mailDisconnect(provider));
+};
+
 export const getMCPServerConnectionStatus = (
   serverName: string,
 ): Promise<q.MCPServerConnectionStatusResponse> => {

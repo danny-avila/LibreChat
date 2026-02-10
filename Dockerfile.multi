@@ -81,6 +81,7 @@ COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist
 COPY --from=client-build /app/client/dist ./client/dist
+COPY librechat.yaml ./
 WORKDIR /app/api
 EXPOSE 3080
 ENV HOST=0.0.0.0

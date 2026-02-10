@@ -31,6 +31,7 @@ const {
 } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { checkBalance } = require('~/models/balanceMethods');
+const { getFreeTierContext } = require('~/models/tx');
 const { truncateToolCallOutputs } = require('./prompts');
 const TextStream = require('./TextStream');
 
@@ -693,6 +694,9 @@ class BaseClient {
           endpoint: this.options.endpoint,
           model: this.modelOptions?.model ?? this.model,
           endpointTokenConfig: this.options.endpointTokenConfig,
+          modelTiers: balanceConfig?.modelTiers,
+          freeTierLimit: balanceConfig?.freeTierLimit,
+          ...getFreeTierContext(this.options.req, balanceConfig),
         },
       });
     }

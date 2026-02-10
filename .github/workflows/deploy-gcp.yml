@@ -80,8 +80,8 @@ jobs:
             MEILI_NO_SYNC=true
             ALLOW_EMAIL_LOGIN=true
             ALLOW_REGISTRATION=true
-            ALLOW_SOCIAL_LOGIN=false
-            ALLOW_SOCIAL_REGISTRATION=false
+            ALLOW_SOCIAL_LOGIN=true
+            ALLOW_SOCIAL_REGISTRATION=true
             ALLOW_PASSWORD_RESET=false
             ALLOW_UNVERIFIED_EMAIL_LOGIN=true
             ALLOW_SHARED_LINKS=true
@@ -113,6 +113,12 @@ jobs:
             ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest
             GOOGLE_KEY=GOOGLE_KEY:latest
             ASSISTANTS_API_KEY=ASSISTANTS_API_KEY:latest
+            GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest
+            GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest
+            OPENID_CLIENT_ID=OPENID_CLIENT_ID:latest
+            OPENID_CLIENT_SECRET=OPENID_CLIENT_SECRET:latest
+            OPENID_ISSUER=OPENID_ISSUER:latest
+            OPENID_SCOPE=OPENID_SCOPE:latest
           flags: |
             --port=3080
             --cpu=2

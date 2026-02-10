@@ -2,40 +2,31 @@ import { useMemo } from 'react';
 import { useMediaQuery } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { getConfigDefaults } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
+import { useSetRecoilState } from 'recoil';
 import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
-import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
-import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
-import AddMultiConvo from './AddMultiConvo';
-import { useHasAccess } from '~/hooks';
+import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
 
 export default function Header() {
   const { data: startupConfig } = useGetStartupConfig();
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
+  const { isAuthenticated } = useAuthContext();
+  const setAuthGateOpen = useSetRecoilState(store.authGateOpen);
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
   );
 
-  const hasAccessToBookmarks = useHasAccess({
-    permissionType: PermissionTypes.BOOKMARKS,
-    permission: Permissions.USE,
-  });
-
-  const hasAccessToMultiConvo = useHasAccess({
-    permissionType: PermissionTypes.MULTI_CONVO,
-    permission: Permissions.USE,
-  });
-
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   return (
     <div className="via-presentation/70 md:from-presentation/80 md:via-presentation/50 2xl:from-presentation/0 absolute top-0 z-10 flex h-14 w-full items-center justify-between bg-gradient-to-b from-presentation to-transparent p-2 font-semibold text-text-primary 2xl:via-transparent">
@@ -64,12 +55,17 @@ export default function Header() {
                 !navVisible && !isSmallScreen ? 'pl-2' : '',
               )}
             >
-              <ModelSelector startupConfig={startupConfig} />
               {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
-              {hasAccessToBookmarks === true && <BookmarkMenu />}
-              {hasAccessToMultiConvo === true && <AddMultiConvo />}
               {isSmallScreen && (
                 <>
+                  {!isAuthenticated && (
+                    <button
+                      onClick={() => setAuthGateOpen(true)}
+                      className="rounded-xl bg-green-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700"
+                    >
+                      Sign In
+                    </button>
+                  )}
                   <ExportAndShareMenu
                     isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
                   />
@@ -82,6 +78,14 @@ export default function Header() {
 
         {!isSmallScreen && (
           <div className="flex items-center gap-2">
+            {!isAuthenticated && (
+              <button
+                onClick={() => setAuthGateOpen(true)}
+                className="rounded-xl bg-green-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700"
+              >
+                Sign In
+              </button>
+            )}
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />

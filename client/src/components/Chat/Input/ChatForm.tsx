@@ -18,6 +18,7 @@ import {
   useQueryParams,
   useSubmitMessage,
   useFocusChatEffect,
+  useAuthContext,
 } from '~/hooks';
 import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
@@ -31,6 +32,13 @@ import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import EditBadges from './EditBadges';
+import ModelSelector from '../Menus/Endpoints/ModelSelector';
+import FeatureModelSelector from './FeatureModelSelector';
+import FeatureQuickOptions from './FeatureQuickOptions';
+import { useGetStartupConfig } from '~/data-provider';
+import AuthGateDialog from '~/components/Auth/AuthGateDialog';
+import MailOAuthConsentDialog from '../MailOAuthConsentDialog';
+import { FEATURES } from '../featureConfig';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
@@ -47,6 +55,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
   const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
+  const { data: startupConfig } = useGetStartupConfig();
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const chatDirection = useRecoilValue(store.chatDirection);
@@ -54,6 +63,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
   const isTemporary = useRecoilValue(store.isTemporary);
+  const activeFeature = useRecoilValue(store.activeFeature);
 
   const [badges, setBadges] = useRecoilState(store.chatBadges);
   const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
@@ -63,6 +73,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     store.showMentionPopoverFamily(index),
   );
 
+  const { isAuthenticated } = useAuthContext();
   const { requiresKey } = useRequiresKey();
   const methods = useChatFormContext();
   const {
@@ -102,8 +113,8 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     [conversation?.assistant_id, endpoint, assistantMap],
   );
   const disableInputs = useMemo(
-    () => requiresKey || invalidAssistant,
-    [requiresKey, invalidAssistant],
+    () => isAuthenticated && (requiresKey || invalidAssistant),
+    [isAuthenticated, requiresKey, invalidAssistant],
   );
 
   const handleContainerClick = useCallback(() => {
@@ -202,6 +213,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   );
 
   return (
+    <>
     <form
       onSubmit={methods.handleSubmit(submitMessage)}
       className={cn(
@@ -248,6 +260,17 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             )}
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
+            {!activeFeature && isAuthenticated && (
+              <div className="flex items-center gap-2 px-3 pt-2">
+                <ModelSelector startupConfig={startupConfig} />
+              </div>
+            )}
+            {activeFeature && FEATURES[activeFeature] && (
+              <>
+                <FeatureModelSelector />
+                <FeatureQuickOptions />
+              </>
+            )}
             {/* WIP */}
             <EditBadges
               isEditingChatBadges={isEditingBadges}
@@ -256,7 +279,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               setBadges={setBadges}
             />
             <FileFormChat conversation={conversation} />
-            {endpoint && (
+            {(endpoint || !isAuthenticated) && (
               <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
                 <div
                   className="relative flex-1"
@@ -286,6 +309,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     tabIndex={0}
                     data-testid="text-input"
                     rows={1}
+                    placeholder={!isAuthenticated ? 'This is your ground zero, your creativity begins here' : activeFeature && FEATURES[activeFeature] ? FEATURES[activeFeature].placeholder : undefined}
                     onFocus={() => {
                       handleFocusOrClick();
                       setIsTextAreaFocused(true);
@@ -327,7 +351,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 conversationId={conversationId}
                 onChange={setBadges}
                 isInChat={
-                  Array.isArray(conversation?.messages) && conversation.messages.length >= 1
+                  Array.isArray(conversation?.messages) && conversation?.messages?.length >= 1
                 }
               />
               <div className="mx-auto flex" />
@@ -344,7 +368,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 {isSubmitting && showStopButton ? (
                   <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
                 ) : (
-                  endpoint && (
+                  (endpoint || !isAuthenticated) && (
                     <SendButton
                       ref={submitButtonRef}
                       control={methods.control}
@@ -359,6 +383,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         </div>
       </div>
     </form>
+    <MailOAuthConsentDialog />
+    <AuthGateDialog />
+  </>
   );
 });
 

@@ -41,6 +41,7 @@ export const useGetAgentFiles = <TData = t.TFile[]>(
 export const useGetFileConfig = <TData = t.FileConfig>(
   config?: UseQueryOptions<t.FileConfig, unknown, TData>,
 ): QueryObserverResult<TData, unknown> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery<t.FileConfig, unknown, TData>(
     [QueryKeys.fileConfig],
     () => dataService.getFileConfig(),
@@ -49,6 +50,7 @@ export const useGetFileConfig = <TData = t.FileConfig>(
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
+      enabled: (config?.enabled ?? true) === true && queriesEnabled,
     },
   );
 };

@@ -49,7 +49,7 @@ const conversationAttachmentsSelector = selectorFamily<
 
 const queriesEnabled = atom<boolean>({
   key: 'queriesEnabled',
-  default: true,
+  default: false,
 });
 
 const isEditingBadges = atom<boolean>({
@@ -64,6 +64,31 @@ const chatBadges = atomWithLocalStorage<Pick<BadgeItem, 'id'>[]>('chatBadges', [
   // { id: '2' },
 ]);
 
+const activeFeature = atom<string | null>({
+  key: 'activeFeature',
+  default: null,
+});
+
+const activeStylePreset = atom<string | null>({
+  key: 'activeStylePreset',
+  default: null,
+});
+
+const mailConsentDialogOpen = atom<boolean>({
+  key: 'mailConsentDialogOpen',
+  default: false,
+});
+
+const executionStatus = atom<string | null>({
+  key: 'executionStatus',
+  default: null,
+});
+
+const authGateOpen = atom<boolean>({
+  key: 'authGateOpen',
+  default: false,
+});
+
 export default {
   hideBannerHint,
   messageAttachmentsMap,
@@ -71,4 +96,9 @@ export default {
   queriesEnabled,
   isEditingBadges,
   chatBadges,
+  activeFeature,
+  activeStylePreset,
+  mailConsentDialogOpen,
+  executionStatus,
+  authGateOpen,
 };

@@ -14,10 +14,12 @@ import { isEnabled } from '~/utils';
 export function getBalanceConfig(appConfig?: AppConfig): Partial<TCustomConfig['balance']> | null {
   const isLegacyEnabled = isEnabled(process.env.CHECK_BALANCE);
   const startBalance = process.env.START_BALANCE;
+  const freeModelThreshold = process.env.FREE_MODEL_THRESHOLD;
   /** @type {} */
   const config: Partial<TCustomConfig['balance']> = removeNullishValues({
     enabled: isLegacyEnabled,
     startBalance: startBalance != null && startBalance ? parseInt(startBalance, 10) : undefined,
+    freeModelThreshold: freeModelThreshold != null ? parseFloat(freeModelThreshold) : undefined,
   });
   if (!appConfig) {
     return config;

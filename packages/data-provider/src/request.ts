@@ -84,18 +84,59 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
 };
 
 if (typeof window !== 'undefined') {
+  /**
+   * Public API paths that don't require authentication.
+   * Requests to any other /api/ path will be silently blocked
+   * when no Authorization header is present.
+   */
+  const publicApiPaths = [
+    '/api/config',
+    '/api/endpoints',
+    '/api/banner',
+    '/api/auth/',
+    '/health',
+  ];
+
+  const isPublicApiPath = (url: string | undefined): boolean => {
+    if (!url) {
+      return false;
+    }
+    return publicApiPaths.some((path) => url.includes(path));
+  };
+
+  // Request interceptor: block auth-requiring API calls when not authenticated
+  axios.interceptors.request.use(
+    (config) => {
+      const url = config.url ?? '';
+      const hasAuth = !!config.headers?.['Authorization'] ||
+        !!axios.defaults.headers.common['Authorization'];
+
+      // If the request targets an auth-requiring API and there's no token, reject it silently
+      if (url.includes('/api/') && !hasAuth && !isPublicApiPath(url)) {
+        return Promise.reject(
+          new axios.Cancel(`Blocked unauthenticated request to ${url}`),
+        );
+      }
+
+      return config;
+    },
+    (error) => Promise.reject(error),
+  );
+
   axios.interceptors.response.use(
     (response) => response,
     async (error) => {
+      // Silently swallow cancelled requests (from the request interceptor above)
+      if (axios.isCancel(error)) {
+        return Promise.reject(error);
+      }
+
       const originalRequest = error.config;
       if (!error.response) {
         return Promise.reject(error);
       }
 
-      if (originalRequest.url?.includes('/api/auth/2fa') === true) {
-        return Promise.reject(error);
-      }
-      if (originalRequest.url?.includes('/api/auth/logout') === true) {
+      if (originalRequest.url?.includes('/api/auth/') === true) {
         return Promise.reject(error);
       }
 
@@ -135,7 +176,8 @@ if (typeof window !== 'undefined') {
               `Refresh token failed from shared link, attempting request to ${originalRequest.url}`,
             );
           } else {
-            window.location.href = endpoints.loginPage();
+            // Don't redirect — allow unauthenticated users to stay on the page
+            console.log('Token refresh failed. User is not authenticated.');
           }
         } catch (err) {
           processQueue(err as AxiosError, null);

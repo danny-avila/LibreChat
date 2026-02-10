@@ -1,6 +1,8 @@
+import { useRecoilValue } from 'recoil';
 import { useQuery, UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
+import store from '~/store';
 
 /**
  * Hook for fetching all accessible MCP servers with permission metadata
@@ -8,6 +10,7 @@ import type * as t from 'librechat-data-provider';
 export const useMCPServersQuery = <TData = t.MCPServersListResponse>(
   config?: UseQueryOptions<t.MCPServersListResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery<t.MCPServersListResponse, unknown, TData>(
     [QueryKeys.mcpServers],
     () => dataService.getMCPServers(),
@@ -18,6 +21,7 @@ export const useMCPServersQuery = <TData = t.MCPServersListResponse>(
       refetchOnMount: false,
       retry: false,
       ...config,
+      enabled: (config?.enabled ?? true) === true && queriesEnabled,
     },
   );
 };
@@ -30,6 +34,7 @@ export const useMCPServersQuery = <TData = t.MCPServersListResponse>(
 export const useMCPToolsQuery = <TData = t.MCPServersResponse>(
   config?: UseQueryOptions<t.MCPServersResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery<t.MCPServersResponse, unknown, TData>(
     [QueryKeys.mcpTools],
     () => dataService.getMCPTools(),
@@ -39,6 +44,7 @@ export const useMCPToolsQuery = <TData = t.MCPServersResponse>(
       refetchOnMount: false,
       staleTime: 5 * 60 * 1000, // 5 minutes
       ...config,
+      enabled: (config?.enabled ?? true) === true && queriesEnabled,
     },
   );
 };

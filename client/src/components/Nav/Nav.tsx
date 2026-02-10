@@ -175,13 +175,14 @@ const Nav = memo(
     }, [isFetchingNextPage, computedHasNextPage, fetchNextPage]);
 
     const subHeaders = useMemo(
-      () => (
-        <>
-          {search.enabled === null && <SearchBarSkeleton />}
-          {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
-        </>
-      ),
-      [search.enabled, isSmallScreen],
+      () =>
+        isAuthenticated ? (
+          <>
+            {search.enabled === null && <SearchBarSkeleton />}
+            {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
+          </>
+        ) : null,
+      [search.enabled, isSmallScreen, isAuthenticated],
     );
 
     const headerButtons = useMemo(
@@ -241,17 +242,21 @@ const Nav = memo(
                 toggleNav={itemToggleNav}
                 containerRef={conversationsRef}
                 loadMoreConversations={loadMoreConversations}
-                isLoading={isFetchingNextPage || showLoading || isLoading}
+                isLoading={isAuthenticated && (isFetchingNextPage || showLoading || isLoading)}
                 isSearchLoading={isSearchLoading}
                 isChatsExpanded={isChatsExpanded}
                 setIsChatsExpanded={setIsChatsExpanded}
               />
             </div>
           </div>
-          <CreditBalance />
-          <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
-            <AccountSettings />
-          </Suspense>
+          {isAuthenticated && (
+            <>
+              <CreditBalance />
+              <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
+                <AccountSettings />
+              </Suspense>
+            </>
+          )}
         </nav>
       </div>
     );

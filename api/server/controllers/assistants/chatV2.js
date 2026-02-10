@@ -28,6 +28,7 @@ const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
 const { getTransactions } = require('~/models/Transaction');
 const { checkBalance } = require('~/models/balanceMethods');
+const { getFreeTierContext } = require('~/models/tx');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { getOpenAIClient } = require('./helpers');
@@ -156,6 +157,9 @@ const chatV2 = async (req, res) => {
           user: req.user.id,
           tokenType: 'prompt',
           amount: promptTokens,
+          modelTiers: balanceConfig?.modelTiers,
+          freeTierLimit: balanceConfig?.freeTierLimit,
+          ...getFreeTierContext(req, balanceConfig),
         },
       });
     };

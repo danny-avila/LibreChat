@@ -8,7 +8,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
 import { useAddedResponse, useResumeOnLoad, useAdaptiveSSE, useChatHelpers } from '~/hooks';
-import ModelTierSelector from './Input/ModelTierSelector';
+import ExecutionStatus from './ExecutionStatus';
 import FeatureGrid from './FeatureGrid';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
@@ -83,7 +83,7 @@ function ChatView({ index = 0 }: { index?: number }) {
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
             <div className="relative flex h-full w-full flex-col">
-              {!isLoading && <Header />}
+              {(!isLoading || isLandingPage) && <Header />}
               <>
                 <div
                   className={cn(
@@ -100,7 +100,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                       isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                     )}
                   >
-                    {isLandingPage && <ModelTierSelector />}
+                    <ExecutionStatus isSubmitting={chatHelpers.isSubmitting} />
                     <ChatForm index={index} />
                     {isLandingPage ? <FeatureGrid /> : <Footer />}
                   </div>
