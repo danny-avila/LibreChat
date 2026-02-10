@@ -296,14 +296,14 @@ export interface IEventTransport {
     },
   ): { unsubscribe: () => void };
 
-  /** Publish a chunk event */
-  emitChunk(streamId: string, event: unknown): void;
+  /** Publish a chunk event - returns Promise in Redis mode for ordered delivery */
+  emitChunk(streamId: string, event: unknown): void | Promise<void>;
 
-  /** Publish a done event */
-  emitDone(streamId: string, event: unknown): void;
+  /** Publish a done event - returns Promise in Redis mode for ordered delivery */
+  emitDone(streamId: string, event: unknown): void | Promise<void>;
 
-  /** Publish an error event */
-  emitError(streamId: string, error: string): void;
+  /** Publish an error event - returns Promise in Redis mode for ordered delivery */
+  emitError(streamId: string, error: string): void | Promise<void>;
 
   /**
    * Publish an abort signal to all replicas (Redis mode).

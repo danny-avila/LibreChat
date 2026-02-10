@@ -238,6 +238,7 @@ class GenerationJobManagerClass {
       const currentRuntime = this.runtimeState.get(streamId);
       if (currentRuntime) {
         currentRuntime.syncSent = false;
+        currentRuntime.hasSubscriber = false;
         // Persist syncSent=false to Redis for cross-replica consistency
         this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
           logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
@@ -435,6 +436,7 @@ class GenerationJobManagerClass {
       const currentRuntime = this.runtimeState.get(streamId);
       if (currentRuntime) {
         currentRuntime.syncSent = false;
+        currentRuntime.hasSubscriber = false;
         // Persist syncSent=false to Redis
         this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
           logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
@@ -660,7 +662,7 @@ class GenerationJobManagerClass {
       runtime.finalEvent = abortFinalEvent;
     }
 
-    this.eventTransport.emitDone(streamId, abortFinalEvent);
+    await this.eventTransport.emitDone(streamId, abortFinalEvent);
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
 
@@ -767,7 +769,6 @@ class GenerationJobManagerClass {
         for (const bufferedEvent of runtime.earlyEventBuffer) {
           onChunk(bufferedEvent);
         }
-        // Clear buffer after replay
         runtime.earlyEventBuffer = [];
       }
     }
@@ -788,8 +789,11 @@ class GenerationJobManagerClass {
    *
    * If no subscriber has connected yet, buffers the event for replay when they do.
    * This ensures early events (like 'created') aren't lost due to race conditions.
+   *
+   * In Redis mode, awaits the publish to guarantee event ordering.
+   * This is critical for streaming deltas (tool args, message content) to arrive in order.
    */
-  emitChunk(streamId: string, event: t.ServerSentEvent): void {
+  async emitChunk(streamId: string, event: t.ServerSentEvent): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (!runtime || runtime.abortController.signal.aborted) {
       return;
@@ -798,7 +802,7 @@ class GenerationJobManagerClass {
     // Track user message from created event
     this.trackUserMessage(streamId, event);
 
-    // For Redis mode, persist chunk for later reconstruction
+    // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
       // The SSE event structure is { event: string, data: unknown, ... }
       // The aggregator expects { event: string, data: unknown } where data is the payload
@@ -822,10 +826,10 @@ class GenerationJobManagerClass {
     // Buffer early events if no subscriber yet (replay when first subscriber connects)
     if (!runtime.hasSubscriber) {
       runtime.earlyEventBuffer.push(event);
-      // Also emit to transport in case subscriber connects mid-flight
     }
 
-    this.eventTransport.emitChunk(streamId, event);
+    // Await the transport emit - critical for Redis mode to maintain event order
+    await this.eventTransport.emitChunk(streamId, event);
   }
 
   /**
@@ -1035,7 +1039,7 @@ class GenerationJobManagerClass {
    * Emit a done event.
    * Persists finalEvent to Redis for cross-replica access.
    */
-  emitDone(streamId: string, event: t.ServerSentEvent): void {
+  async emitDone(streamId: string, event: t.ServerSentEvent): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (runtime) {
       runtime.finalEvent = event;
@@ -1044,7 +1048,7 @@ class GenerationJobManagerClass {
     this.jobStore.updateJob(streamId, { finalEvent: JSON.stringify(event) }).catch((err) => {
       logger.error(`[GenerationJobManager] Failed to persist finalEvent:`, err);
     });
-    this.eventTransport.emitDone(streamId, event);
+    await this.eventTransport.emitDone(streamId, event);
   }
 
   /**
@@ -1052,7 +1056,7 @@ class GenerationJobManagerClass {
    * Stores the error for late-connecting subscribers (race condition where error
    * occurs before client connects to SSE stream).
    */
-  emitError(streamId: string, error: string): void {
+  async emitError(streamId: string, error: string): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (runtime) {
       runtime.errorEvent = error;
@@ -1061,7 +1065,7 @@ class GenerationJobManagerClass {
     this.jobStore.updateJob(streamId, { error }).catch((err) => {
       logger.error(`[GenerationJobManager] Failed to persist error:`, err);
     });
-    this.eventTransport.emitError(streamId, error);
+    await this.eventTransport.emitError(streamId, error);
   }
 
   /**

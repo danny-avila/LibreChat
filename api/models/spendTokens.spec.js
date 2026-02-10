@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { createTransaction, createAutoRefillTransaction } = require('./Transaction');
+const { tokenValues, premiumTokenValues, getCacheMultiplier } = require('./tx');
+const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 
 require('~/db/models');
 
@@ -733,5 +734,329 @@ describe('spendTokens', () => {
     const balance = await Balance.findOne({ user: userId });
     expect(balance).toBeDefined();
     expect(balance.tokenCredits).toBeLessThan(10000); // Balance should be reduced
+  });
+
+  describe('premium token pricing', () => {
+    it('should charge standard rates for claude-opus-4-6 when prompt tokens are below threshold', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-6';
+      const promptTokens = 100000;
+      const completionTokens = 500;
+
+      const txData = {
+        user: userId,
+        conversationId: 'test-standard-pricing',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens, completionTokens });
+
+      const expectedCost =
+        promptTokens * tokenValues[model].prompt + completionTokens * tokenValues[model].completion;
+
+      const balance = await Balance.findOne({ user: userId });
+      expect(balance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+    });
+
+    it('should charge premium rates for claude-opus-4-6 when prompt tokens exceed threshold', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-6';
+      const promptTokens = 250000;
+      const completionTokens = 500;
+
+      const txData = {
+        user: userId,
+        conversationId: 'test-premium-pricing',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens, completionTokens });
+
+      const expectedCost =
+        promptTokens * premiumTokenValues[model].prompt +
+        completionTokens * premiumTokenValues[model].completion;
+
+      const balance = await Balance.findOne({ user: userId });
+      expect(balance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+    });
+
+    it('should charge premium rates for both prompt and completion in structured tokens when above threshold', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-6';
+      const txData = {
+        user: userId,
+        conversationId: 'test-structured-premium',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      const tokenUsage = {
+        promptTokens: {
+          input: 200000,
+          write: 10000,
+          read: 5000,
+        },
+        completionTokens: 1000,
+      };
+
+      const result = await spendStructuredTokens(txData, tokenUsage);
+
+      const premiumPromptRate = premiumTokenValues[model].prompt;
+      const premiumCompletionRate = premiumTokenValues[model].completion;
+      const writeRate = getCacheMultiplier({ model, cacheType: 'write' });
+      const readRate = getCacheMultiplier({ model, cacheType: 'read' });
+
+      const expectedPromptCost =
+        tokenUsage.promptTokens.input * premiumPromptRate +
+        tokenUsage.promptTokens.write * writeRate +
+        tokenUsage.promptTokens.read * readRate;
+      const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
+
+      expect(result.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
+    });
+
+    it('should charge standard rates for structured tokens when below threshold', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-6';
+      const txData = {
+        user: userId,
+        conversationId: 'test-structured-standard',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      const tokenUsage = {
+        promptTokens: {
+          input: 50000,
+          write: 10000,
+          read: 5000,
+        },
+        completionTokens: 1000,
+      };
+
+      const result = await spendStructuredTokens(txData, tokenUsage);
+
+      const standardPromptRate = tokenValues[model].prompt;
+      const standardCompletionRate = tokenValues[model].completion;
+      const writeRate = getCacheMultiplier({ model, cacheType: 'write' });
+      const readRate = getCacheMultiplier({ model, cacheType: 'read' });
+
+      const expectedPromptCost =
+        tokenUsage.promptTokens.input * standardPromptRate +
+        tokenUsage.promptTokens.write * writeRate +
+        tokenUsage.promptTokens.read * readRate;
+      const expectedCompletionCost = tokenUsage.completionTokens * standardCompletionRate;
+
+      expect(result.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
+    });
+
+    it('should not apply premium pricing to non-premium models regardless of prompt size', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-5';
+      const promptTokens = 300000;
+      const completionTokens = 500;
+
+      const txData = {
+        user: userId,
+        conversationId: 'test-no-premium',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens, completionTokens });
+
+      const expectedCost =
+        promptTokens * tokenValues[model].prompt + completionTokens * tokenValues[model].completion;
+
+      const balance = await Balance.findOne({ user: userId });
+      expect(balance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+    });
+  });
+
+  describe('inputTokenCount Normalization', () => {
+    it('should normalize negative promptTokens to zero for inputTokenCount', async () => {
+      await Balance.create({
+        user: userId,
+        tokenCredits: 100000000,
+      });
+
+      const txData = {
+        user: userId,
+        conversationId: 'test-negative-prompt',
+        model: 'claude-opus-4-6',
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens: -500, completionTokens: 100 });
+
+      const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+
+      const completionTx = transactions.find((t) => t.tokenType === 'completion');
+      const promptTx = transactions.find((t) => t.tokenType === 'prompt');
+
+      expect(Math.abs(promptTx.rawAmount)).toBe(0);
+      expect(completionTx.rawAmount).toBe(-100);
+
+      const standardCompletionRate = tokenValues['claude-opus-4-6'].completion;
+      expect(completionTx.rate).toBe(standardCompletionRate);
+    });
+
+    it('should use normalized inputTokenCount for premium threshold check on completion', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-6';
+      const promptTokens = 250000;
+      const completionTokens = 500;
+
+      const txData = {
+        user: userId,
+        conversationId: 'test-normalized-premium',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens, completionTokens });
+
+      const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+      const completionTx = transactions.find((t) => t.tokenType === 'completion');
+      const promptTx = transactions.find((t) => t.tokenType === 'prompt');
+
+      const premiumPromptRate = premiumTokenValues[model].prompt;
+      const premiumCompletionRate = premiumTokenValues[model].completion;
+      expect(promptTx.rate).toBe(premiumPromptRate);
+      expect(completionTx.rate).toBe(premiumCompletionRate);
+    });
+
+    it('should keep inputTokenCount as zero when promptTokens is zero', async () => {
+      await Balance.create({
+        user: userId,
+        tokenCredits: 100000000,
+      });
+
+      const txData = {
+        user: userId,
+        conversationId: 'test-zero-prompt',
+        model: 'claude-opus-4-6',
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens: 0, completionTokens: 100 });
+
+      const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+      const completionTx = transactions.find((t) => t.tokenType === 'completion');
+      const promptTx = transactions.find((t) => t.tokenType === 'prompt');
+
+      expect(Math.abs(promptTx.rawAmount)).toBe(0);
+
+      const standardCompletionRate = tokenValues['claude-opus-4-6'].completion;
+      expect(completionTx.rate).toBe(standardCompletionRate);
+    });
+
+    it('should not trigger premium pricing with negative promptTokens on premium model', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-6';
+      const txData = {
+        user: userId,
+        conversationId: 'test-negative-no-premium',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      await spendTokens(txData, { promptTokens: -300000, completionTokens: 500 });
+
+      const transactions = await Transaction.find({ user: userId }).sort({ tokenType: 1 });
+      const completionTx = transactions.find((t) => t.tokenType === 'completion');
+
+      const standardCompletionRate = tokenValues[model].completion;
+      expect(completionTx.rate).toBe(standardCompletionRate);
+    });
+
+    it('should normalize negative structured token values to zero in spendStructuredTokens', async () => {
+      const initialBalance = 100000000;
+      await Balance.create({
+        user: userId,
+        tokenCredits: initialBalance,
+      });
+
+      const model = 'claude-opus-4-6';
+      const txData = {
+        user: userId,
+        conversationId: 'test-negative-structured',
+        model,
+        context: 'test',
+        balance: { enabled: true },
+      };
+
+      const tokenUsage = {
+        promptTokens: { input: -100, write: 50, read: -30 },
+        completionTokens: -200,
+      };
+
+      await spendStructuredTokens(txData, tokenUsage);
+
+      const transactions = await Transaction.find({
+        user: userId,
+        conversationId: 'test-negative-structured',
+      }).sort({ tokenType: 1 });
+
+      const completionTx = transactions.find((t) => t.tokenType === 'completion');
+      const promptTx = transactions.find((t) => t.tokenType === 'prompt');
+
+      expect(Math.abs(promptTx.inputTokens)).toBe(0);
+      expect(promptTx.writeTokens).toBe(-50);
+      expect(Math.abs(promptTx.readTokens)).toBe(0);
+
+      expect(Math.abs(completionTx.rawAmount)).toBe(0);
+
+      const standardRate = tokenValues[model].completion;
+      expect(completionTx.rate).toBe(standardRate);
+    });
   });
 });
