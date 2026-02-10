@@ -127,6 +127,10 @@ export class RedisEventTransport implements IEventTransport {
     this.sequenceCounters.delete(streamId);
     const state = this.streams.get(streamId);
     if (state) {
+      if (state.reorderBuffer.flushTimeout) {
+        clearTimeout(state.reorderBuffer.flushTimeout);
+        state.reorderBuffer.flushTimeout = null;
+      }
       state.reorderBuffer.nextSeq = 0;
       state.reorderBuffer.pending.clear();
     }
@@ -137,6 +141,10 @@ export class RedisEventTransport implements IEventTransport {
     const currentSeq = this.sequenceCounters.get(streamId) ?? 0;
     const state = this.streams.get(streamId);
     if (state) {
+      if (state.reorderBuffer.flushTimeout) {
+        clearTimeout(state.reorderBuffer.flushTimeout);
+        state.reorderBuffer.flushTimeout = null;
+      }
       state.reorderBuffer.nextSeq = currentSeq;
       state.reorderBuffer.pending.clear();
     }
