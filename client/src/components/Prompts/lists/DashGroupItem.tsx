@@ -1,7 +1,7 @@
 import { memo, useState, useRef, useMemo, useCallback } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
-import { EarthIcon, Pencil, Trash2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { EarthIcon, Pencil, Trash2, User } from 'lucide-react';
 import { PermissionBits, ResourceType, type TPromptGroup } from 'librechat-data-provider';
 import {
   Input,
@@ -13,8 +13,8 @@ import {
   OGDialogTrigger,
   OGDialogTemplate,
 } from '@librechat/client';
+import { useLocalize, useAuthContext, useResourcePermissions } from '~/hooks';
 import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
-import { useLocalize, useResourcePermissions } from '~/hooks';
 import CategoryIcon from '../utils/CategoryIcon';
 import { cn } from '~/utils';
 
@@ -27,6 +27,9 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const params = useParams();
   const navigate = useNavigate();
   const localize = useLocalize();
+  const { user } = useAuthContext();
+
+  const isSharedPrompt = group.author !== user?.id && Boolean(group.authorName);
 
   const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [nameInputValue, setNameInputValue] = useState(group.name);
@@ -118,6 +121,22 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
         >
           {group.name}
         </span>
+        {isSharedPrompt && (
+          <TooltipAnchor
+            description={localize('com_ui_by_author', { 0: group.authorName })}
+            side="top"
+            render={
+              <span
+                tabIndex={0}
+                role="img"
+                aria-label={localize('com_ui_by_author', { 0: group.authorName })}
+                className="flex shrink-0 cursor-default items-center rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+              >
+                <User className="icon-md text-text-secondary" aria-hidden="true" />
+              </span>
+            }
+          />
+        )}
         {isGlobalGroup && (
           <EarthIcon
             className="icon-md shrink-0 text-green-400"

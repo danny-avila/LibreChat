@@ -1,10 +1,11 @@
 import { useState, useMemo, memo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PermissionBits, ResourceType } from 'librechat-data-provider';
-import { Eye, Pencil, EarthIcon } from 'lucide-react';
+import { Eye, Pencil, EarthIcon, User } from 'lucide-react';
 import { Button, TooltipAnchor } from '@librechat/client';
+
 import type { TPromptGroup } from 'librechat-data-provider';
-import { useLocalize, useSubmitMessage, useResourcePermissions } from '~/hooks';
+import { useLocalize, useAuthContext, useSubmitMessage, useResourcePermissions } from '~/hooks';
 import VariableDialog from '../dialogs/VariableDialog';
 import PreviewPrompt from '../dialogs/PreviewPrompt';
 import ListCard from './ListCard';
@@ -19,7 +20,10 @@ function ChatGroupItem({
 }) {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const { user } = useAuthContext();
   const { submitPrompt } = useSubmitMessage();
+
+  const isSharedPrompt = group.author !== user?.id && Boolean(group.authorName);
   const [isPreviewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [isVariableDialogOpen, setVariableDialogOpen] = useState(false);
 
@@ -61,11 +65,31 @@ function ChatGroupItem({
               : (group.productionPrompt?.prompt ?? '')
           }
           icon={
-            groupIsGlobal ? (
-              <EarthIcon
-                className="icon-md shrink-0 text-green-400"
-                aria-label={localize('com_ui_sr_global_prompt')}
-              />
+            isSharedPrompt || groupIsGlobal ? (
+              <>
+                {isSharedPrompt && (
+                  <TooltipAnchor
+                    description={localize('com_ui_by_author', { 0: group.authorName })}
+                    side="top"
+                    render={
+                      <span
+                        tabIndex={0}
+                        role="img"
+                        aria-label={localize('com_ui_by_author', { 0: group.authorName })}
+                        className="flex shrink-0 cursor-default items-center rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+                      >
+                        <User className="icon-md text-text-secondary" aria-hidden="true" />
+                      </span>
+                    }
+                  />
+                )}
+                {groupIsGlobal && (
+                  <EarthIcon
+                    className="icon-md shrink-0 text-green-400"
+                    aria-label={localize('com_ui_sr_global_prompt')}
+                  />
+                )}
+              </>
             ) : undefined
           }
         >

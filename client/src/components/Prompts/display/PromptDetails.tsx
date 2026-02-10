@@ -4,8 +4,8 @@ import { replaceSpecialVars } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
 import PromptDetailHeader from './PromptDetailHeader';
-import PromptTextCard from './PromptTextCard';
 import PromptVariables from './PromptVariables';
+import PromptTextCard from './PromptTextCard';
 import PromptActions from './PromptActions';
 
 interface PromptDetailsProps {
