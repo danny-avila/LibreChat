@@ -329,6 +329,9 @@ export interface IEventTransport {
   /** Listen for all subscribers leaving */
   onAllSubscribersLeft(streamId: string, callback: () => void): void;
 
+  /** Reset publish sequence counter for a stream (Redis: prevents gaps after buffer replay) */
+  resetSequence?(streamId: string): void;
+
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;
 

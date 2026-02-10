@@ -771,6 +771,8 @@ class GenerationJobManagerClass {
         }
         runtime.earlyEventBuffer = [];
       }
+
+      this.eventTransport.resetSequence?.(streamId);
     }
 
     if (isFirst) {
@@ -825,7 +827,9 @@ class GenerationJobManagerClass {
 
     if (!runtime.hasSubscriber) {
       runtime.earlyEventBuffer.push(event);
-      return;
+      if (!this._isRedis) {
+        return;
+      }
     }
 
     await this.eventTransport.emitChunk(streamId, event);

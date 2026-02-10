@@ -1463,6 +1463,164 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
+  describe('Cross-Replica Live Streaming (Redis)', () => {
+    test('should publish events to Redis even when no local subscriber exists', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const replicaA = new GenerationJobManagerClass();
+      const servicesA = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+      replicaA.configure(servicesA);
+      replicaA.initialize();
+
+      const replicaB = new GenerationJobManagerClass();
+      const servicesB = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+      replicaB.configure(servicesB);
+      replicaB.initialize();
+
+      const streamId = `cross-live-${Date.now()}`;
+      await replicaA.createJob(streamId, 'user-1');
+
+      const replicaBJobStore = new RedisJobStore(ioredisClient);
+      await replicaBJobStore.initialize();
+      await replicaBJobStore.createJob(streamId, 'user-1');
+
+      const receivedOnB: unknown[] = [];
+      const subB = await replicaB.subscribe(streamId, (event: unknown) => receivedOnB.push(event));
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      for (let i = 0; i < 5; i++) {
+        await replicaA.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: `token${i} ` } }, index: i },
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(receivedOnB.length).toBe(5);
+      for (let i = 0; i < 5; i++) {
+        expect((receivedOnB[i] as Record<string, unknown>).event).toBe('on_message_delta');
+      }
+
+      subB?.unsubscribe();
+      replicaBJobStore.destroy();
+      await replicaA.destroy();
+      await replicaB.destroy();
+    });
+
+    test('should deliver buffered events locally AND publish live events cross-replica', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const replicaA = new GenerationJobManagerClass();
+      const servicesA = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+      replicaA.configure(servicesA);
+      replicaA.initialize();
+
+      const streamId = `cross-buf-live-${Date.now()}`;
+      await replicaA.createJob(streamId, 'user-1');
+
+      await replicaA.emitChunk(streamId, {
+        created: true,
+        message: { text: 'hello' },
+        streamId,
+      } as unknown as ServerSentEvent);
+
+      const receivedOnA: unknown[] = [];
+      const subA = await replicaA.subscribe(streamId, (event: unknown) => receivedOnA.push(event));
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(receivedOnA.length).toBe(1);
+      expect((receivedOnA[0] as Record<string, unknown>).created).toBe(true);
+
+      const replicaB = new GenerationJobManagerClass();
+      const servicesB = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+      replicaB.configure(servicesB);
+      replicaB.initialize();
+
+      const replicaBJobStore = new RedisJobStore(ioredisClient);
+      await replicaBJobStore.initialize();
+      await replicaBJobStore.createJob(streamId, 'user-1');
+
+      const receivedOnB: unknown[] = [];
+      const subB = await replicaB.subscribe(streamId, (event: unknown) => receivedOnB.push(event));
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      for (let i = 0; i < 3; i++) {
+        await replicaA.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: `word${i} ` } }, index: i },
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(receivedOnA.length).toBe(4);
+      expect(receivedOnB.length).toBe(3);
+
+      subA?.unsubscribe();
+      subB?.unsubscribe();
+      replicaBJobStore.destroy();
+      await replicaA.destroy();
+      await replicaB.destroy();
+    });
+  });
+
+  describe('Concurrent Subscriber Readiness (Redis)', () => {
+    test('should return ready promise to all concurrent subscribers for same stream', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const subscriber = (
+        ioredisClient as unknown as { duplicate: () => typeof ioredisClient }
+      ).duplicate()!;
+      const transport = new RedisEventTransport(ioredisClient as never, subscriber as never);
+
+      const streamId = `concurrent-sub-${Date.now()}`;
+
+      const sub1 = transport.subscribe(streamId, {
+        onChunk: () => {},
+        onDone: () => {},
+      });
+      const sub2 = transport.subscribe(streamId, {
+        onChunk: () => {},
+        onDone: () => {},
+      });
+
+      expect(sub1.ready).toBeDefined();
+      expect(sub2.ready).toBeDefined();
+
+      await Promise.all([sub1.ready, sub2.ready]);
+
+      sub1.unsubscribe();
+      sub2.unsubscribe();
+      transport.destroy();
+      subscriber.disconnect();
+    });
+  });
+
   describe('createStreamServices Auto-Detection', () => {
     test('should use Redis when useRedis is true and client is available', () => {
       if (!ioredisClient) {
