@@ -452,6 +452,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
     if (req.session) {
       req.session.openidTokens = {
         accessToken: tokenset.access_token,
+        idToken: tokenset.id_token,
         refreshToken: refreshToken,
         expiresAt: expirationDate.getTime(),
       };

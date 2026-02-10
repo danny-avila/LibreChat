@@ -84,6 +84,7 @@ const openIdJwtLogin = (openIdConfig) => {
           /** Read tokens from session (server-side) to avoid large cookie issues */
           const sessionTokens = req.session?.openidTokens;
           let accessToken = sessionTokens?.accessToken;
+          let idToken = sessionTokens?.idToken;
           let refreshToken = sessionTokens?.refreshToken;
 
           /** Fallback to cookies for backward compatibility */
@@ -96,7 +97,7 @@ const openIdJwtLogin = (openIdConfig) => {
 
           user.federatedTokens = {
             access_token: accessToken || rawToken,
-            id_token: rawToken,
+            id_token: idToken,
             refresh_token: refreshToken,
             expires_at: payload.exp,
           };
