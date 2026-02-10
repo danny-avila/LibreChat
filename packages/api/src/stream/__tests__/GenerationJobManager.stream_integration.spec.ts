@@ -1621,6 +1621,191 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
+  describe('Sequence Reset Safety (Redis)', () => {
+    test('should not receive stale pre-subscribe events via Redis after sequence reset', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const manager = new GenerationJobManagerClass();
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+      manager.configure(services);
+      manager.initialize();
+
+      const streamId = `seq-stale-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'pre-sub-0' } }, index: 0 },
+      });
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'pre-sub-1' } }, index: 1 },
+      });
+
+      const receivedEvents: unknown[] = [];
+      const sub = await manager.subscribe(streamId, (event: unknown) => receivedEvents.push(event));
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(receivedEvents.length).toBe(2);
+      expect(
+        ((receivedEvents[0] as Record<string, unknown>).data as Record<string, unknown>).delta,
+      ).toBeDefined();
+
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: `post-sub-${i}` } }, index: i + 2 },
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(receivedEvents.length).toBe(7);
+
+      const texts = receivedEvents.map(
+        (e) =>
+          (
+            ((e as Record<string, unknown>).data as Record<string, unknown>).delta as Record<
+              string,
+              unknown
+            >
+          ).content as Record<string, unknown>,
+      );
+      expect((texts[0] as Record<string, unknown>).text).toBe('pre-sub-0');
+      expect((texts[1] as Record<string, unknown>).text).toBe('pre-sub-1');
+      for (let i = 0; i < 5; i++) {
+        expect((texts[i + 2] as Record<string, unknown>).text).toBe(`post-sub-${i}`);
+      }
+
+      sub?.unsubscribe();
+      await manager.destroy();
+    });
+
+    test('should not reset sequence when second subscriber joins mid-stream', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const manager = new GenerationJobManagerClass();
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+      manager.configure({ ...services, cleanupOnComplete: false });
+      manager.initialize();
+
+      const streamId = `seq-2nd-sub-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const eventsA: unknown[] = [];
+      const subA = await manager.subscribe(streamId, (event: unknown) => eventsA.push(event));
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      for (let i = 0; i < 3; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: `chunk-${i}` } }, index: i },
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(eventsA.length).toBe(3);
+
+      const eventsB: unknown[] = [];
+      const subB = await manager.subscribe(streamId, (event: unknown) => eventsB.push(event));
+
+      for (let i = 3; i < 6; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: `chunk-${i}` } }, index: i },
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(eventsA.length).toBe(6);
+      expect(eventsB.length).toBe(3);
+
+      for (let i = 0; i < 6; i++) {
+        const text = (
+          (
+            ((eventsA[i] as Record<string, unknown>).data as Record<string, unknown>)
+              .delta as Record<string, unknown>
+          ).content as Record<string, unknown>
+        ).text;
+        expect(text).toBe(`chunk-${i}`);
+      }
+
+      subA?.unsubscribe();
+      subB?.unsubscribe();
+      await manager.destroy();
+    });
+  });
+
+  describe('Subscribe Error Recovery (Redis)', () => {
+    test('should allow resubscription after Redis subscribe failure', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const subscriber = (
+        ioredisClient as unknown as { duplicate: () => typeof ioredisClient }
+      ).duplicate()!;
+
+      const realSubscribe = subscriber.subscribe.bind(subscriber);
+      let callCount = 0;
+      subscriber.subscribe = ((...args: Parameters<typeof subscriber.subscribe>) => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.reject(new Error('Simulated Redis SUBSCRIBE failure'));
+        }
+        return realSubscribe(...args);
+      }) as typeof subscriber.subscribe;
+
+      const transport = new RedisEventTransport(ioredisClient as never, subscriber as never);
+
+      const streamId = `err-retry-${Date.now()}`;
+
+      const sub1 = transport.subscribe(streamId, {
+        onChunk: () => {},
+        onDone: () => {},
+      });
+
+      await sub1.ready;
+
+      const receivedEvents: unknown[] = [];
+      sub1.unsubscribe();
+
+      const sub2 = transport.subscribe(streamId, {
+        onChunk: (event: unknown) => receivedEvents.push(event),
+        onDone: () => {},
+      });
+
+      expect(sub2.ready).toBeDefined();
+      await sub2.ready;
+
+      await transport.emitChunk(streamId, { event: 'test', data: { value: 'hello' } });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(receivedEvents.length).toBe(1);
+
+      sub2.unsubscribe();
+      transport.destroy();
+      subscriber.disconnect();
+    });
+  });
+
   describe('createStreamServices Auto-Detection', () => {
     test('should use Redis when useRedis is true and client is available', () => {
       if (!ioredisClient) {
