@@ -51,3 +51,11 @@ export function createSSRFSafeAgents(): { httpAgent: http.Agent; httpsAgent: htt
     httpsAgent: withSSRFProtection(new https.Agent()),
   };
 }
+
+/**
+ * Returns undici-compatible `connect` options with SSRF-safe DNS lookup.
+ * Pass the result as the `connect` property when constructing an undici `Agent`.
+ */
+export function createSSRFSafeUndiciConnect(): { lookup: LookupFunction } {
+  return { lookup: ssrfSafeLookup };
+}
