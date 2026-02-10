@@ -13,6 +13,7 @@ import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import temporaryStore from '~/store/temporary';
 import store from '~/store';
+import { AxiosError } from 'axios';
 
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
@@ -117,6 +118,14 @@ export default function ChatRoute() {
         modelsData: modelsQuery.data,
         keepLatestMessage: true,
       });
+      hasSetConversation.current = true;
+    } else if (
+      initialConvoQuery.isError &&
+      initialConvoQuery.error instanceof AxiosError &&
+      initialConvoQuery.error.response?.status === 404
+    ) {
+      // If we get a 404, the conversation doesn't exist - reroute to a new conversation
+      newConversation();
       hasSetConversation.current = true;
     }
     /* Creates infinite render if all dependencies included due to newConversation invocations exceeding call stack before hasSetConversation.current becomes truthy */
