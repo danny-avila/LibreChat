@@ -93,27 +93,64 @@ In a **Code** node that builds the response:
 - Then output:  
   `return [{ json: { success: true, drafts: { linkedin } } }];`
 
-**Option B – full function (single LLM returning JSON string):** Pass the **item** as `$json`, not `{$json}`. Return an **array** of items with `json`:
+**Option B – full function (single LLM returning JSON or plain text):** Pass the **item** as `$json`, not `{$json}`. Return an **array** of items with `json`. This version tries JSON first, then falls back to parsing plain-text labels (Facebook:, Twitter:, LinkedIn:, Instagram:, Pinterest:) so the workflow keeps working if the model ignores the “return only JSON” instruction:
 
 ```js
+// Map plain-text platform labels to our keys (Twitter → x, Pinterest → farcaster)
+function parsePlainTextDrafts(text) {
+  const drafts = { linkedin: '', x: '', instagram: '', facebook: '', farcaster: '' };
+  const keyMap = { Facebook: 'facebook', Twitter: 'x', LinkedIn: 'linkedin', Instagram: 'instagram', Pinterest: 'farcaster' };
+  const blocks = text.split(/(?=(?:Facebook|Twitter|LinkedIn|Instagram|Pinterest):\s*\n)/);
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i];
+    const labelMatch = block.match(/^(Facebook|Twitter|LinkedIn|Instagram|Pinterest):\s*\n/);
+    if (!labelMatch) continue;
+    const platform = labelMatch[1];
+    const key = keyMap[platform];
+    if (!key) continue;
+    const openQuote = block.indexOf('"', labelMatch[0].length);
+    if (openQuote === -1) continue;
+    const closeMatch = block.indexOf('"\n\n', openQuote + 1);
+    const end = closeMatch === -1 ? block.length : closeMatch + 1;
+    let content = block.substring(openQuote + 1, end).replace(/"\s*$/, '').trim();
+    if (content) drafts[key] = content;
+  }
+  return drafts;
+}
+
 function processResponseData(data) {
   try {
-    const content = data.output[0].content[0].text;
-    const parsedContent = JSON.parse(content);
-    const drafts = {
-      linkedin: parsedContent.linkedin ?? '',
-      x: parsedContent.x ?? '',
-      instagram: parsedContent.instagram ?? '',
-      facebook: parsedContent.facebook ?? '',
-      farcaster: parsedContent.farcaster ?? '',
-    };
-    return [{ json: { success: true, drafts } }];
+    const content = (data.output && data.output[0] && data.output[0].content && data.output[0].content[0] && data.output[0].content[0].text) ? data.output[0].content[0].text : '';
+    if (!content || typeof content !== 'string') {
+      return [{ json: { success: false, error: 'No text in model output' } }];
+    }
+    const raw = content.trim();
+    // Strip markdown code fence if present
+    const toParse = raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '').trim();
+    let drafts = { linkedin: '', x: '', instagram: '', facebook: '', farcaster: '' };
+    try {
+      const parsed = JSON.parse(toParse);
+      drafts = {
+        linkedin: (parsed.linkedin ?? '').trim(),
+        x: (parsed.x ?? '').trim(),
+        instagram: (parsed.instagram ?? '').trim(),
+        facebook: (parsed.facebook ?? '').trim(),
+        farcaster: (parsed.farcaster ?? '').trim(),
+      };
+    } catch (_) {
+      drafts = parsePlainTextDrafts(content);
+    }
+    const prepareData = $('Prepare Data').first().json;
+    const userId = prepareData && prepareData.userId;
+    const ideaId = prepareData && prepareData.ideaId;
+    const rawIdea = prepareData && prepareData.rawIdea;
+    return [{ json: { success: true, drafts, userId, ideaId, rawIdea } }];
   } catch (error) {
     console.error(error);
     return [{ json: { success: false, error: 'Failed to process response data' } }];
   }
 }
-return processResponseData($json);   // pass $json, not {$json}; Code node must return the array
+return processResponseData($json);   // pass $json; Code node must return the array
 ```
 
 For Option A with 4 nodes, use `$('NodeName').first().json` and the same `output[0].content[0].text` path for each, then combine into one `drafts` object.

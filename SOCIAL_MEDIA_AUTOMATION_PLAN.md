@@ -99,7 +99,7 @@ Restart `npm run dev` after changing `.env`. Then proceed to Phase A below.
 
 | Step | Task | Status | Notes |
 |------|------|--------|-------|
-| D1 | **Credentials** – In n8n, create OAuth2 (or API key) credentials for LinkedIn, X (Twitter), Instagram (e.g. Meta Graph API) as needed. Document which APIs you use (REST endpoints). | ⬜ Todo | |
+| D1 | **Credentials** – In n8n, create OAuth2 (or API key) credentials for LinkedIn, X (Twitter), Instagram (e.g. Meta Graph API) as needed. Document which APIs you use (REST endpoints). | 🔄 In progress | See `SOCIAL_POSTING_APIS.md` for endpoints, auth, and checklist. |
 | D2 | **Post nodes** – Add HTTP Request or native nodes to post approved content to each platform. Map draft fields to the required API payloads. | ⬜ Todo | |
 | D3 | **Error handling & retries** – Use n8n’s retry/error handling and respect rate limits (backoff, optional queue). | ⬜ Todo | |
 | D4 | **E2E test** – Approve one draft → confirm it appears on the target platform (or in sandbox). | ⬜ Todo | |
@@ -128,7 +128,7 @@ Use this section to note what you did and when. Copy the table and add rows as y
 - **Sidebar history for drafts:** TBD – design of “Previous social drafts” / “Approved drafts” sections (data model, where drafts are stored, how they’re retrieved and resumed).
 - **Wait implementation:** TBD – n8n “Wait for Webhook” vs external DB + resume URL; document once chosen.
 - **Postiz integration strategy:** TBD – whether Postiz sits in front of or behind n8n (e.g. n8n → Postiz → platforms), and which features we rely on (scheduling, analytics, multi-account management).
-
+- **Social accounts (per-user only):** Each logged-in/registered user connects their own LinkedIn, X, Instagram in LibreChat (OAuth + store tokens per userId). When they approve a draft, the post is sent only to that user's accounts. Sending all approved drafts to a single shared account is not the product. See `SOCIAL_POSTING_APIS.md` §0.
 ---
 
 ## 7. File and doc links
@@ -138,6 +138,7 @@ Use this section to note what you did and when. Copy the table and add rows as y
 - **n8n workflow reference (this repo):** `n8n-workflows/`
 - **LibreChat → n8n:** `api/server/middleware/n8nProxy.js`, `api/server/routes/n8n.js`
 - **Payload contract:** `SOCIAL_AUTOMATION_PAYLOAD.md` (trigger, response, approval, profile reference)
+- **Phase D – Posting APIs & credentials:** `SOCIAL_POSTING_APIS.md` (LinkedIn, X, Instagram endpoints; D1/D2 checklists)
 
 ---
 
@@ -151,4 +152,4 @@ Full contract: **`SOCIAL_AUTOMATION_PAYLOAD.md`**.
 
 ---
 
-*Last updated: 2026-02-02. Phase B complete; next: Phase C (HITL, incl. chat embedding & history), then Phase D (Postiz + direct posting).*
+*Last updated: 2026. Phase C complete; next: Phase D – D1 credentials in n8n, then D2 post nodes (see SOCIAL_POSTING_APIS.md).*
