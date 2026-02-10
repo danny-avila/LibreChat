@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import { format } from 'date-fns';
-import { User, Calendar, EarthIcon } from 'lucide-react';
+import { User, Calendar, EarthIcon, BarChart3 } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
+import { useLocalize, useAuthContext } from '~/hooks';
 import CategoryIcon from '../utils/CategoryIcon';
-import { useLocalize } from '~/hooks';
 
 interface PromptDetailHeaderProps {
   group: TPromptGroup;
@@ -13,8 +13,10 @@ interface PromptDetailHeaderProps {
 
 const PromptDetailHeader = ({ group }: PromptDetailHeaderProps) => {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const formattedDate = group.createdAt ? format(new Date(group.createdAt), 'MMM d, yyyy') : null;
+  const isSharedPrompt = group.author !== user?.id && Boolean(group.authorName);
 
   const isGlobalGroup = useMemo(
     () =>
@@ -53,10 +55,10 @@ const PromptDetailHeader = ({ group }: PromptDetailHeaderProps) => {
           <p className="text-sm text-text-secondary sm:truncate">{group.oneliner}</p>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-text-secondary">
-          {group.authorName && (
+          {isSharedPrompt && (
             <span className="flex items-center gap-1">
-              <User className="h-3 w-3" aria-hidden="true" />
-              {group.authorName}
+              <User className="h-3 w-3 text-text-secondary" aria-hidden="true" />
+              {localize('com_ui_by_author', { 0: group.authorName })}
             </span>
           )}
           {formattedDate && (
@@ -64,6 +66,12 @@ const PromptDetailHeader = ({ group }: PromptDetailHeaderProps) => {
               <Calendar className="h-3 w-3" aria-hidden="true" />
               {formattedDate}
             </time>
+          )}
+          {group.numberOfGenerations != null && group.numberOfGenerations > 0 && (
+            <span className="flex items-center gap-1">
+              <BarChart3 className="h-3 w-3" aria-hidden="true" />
+              {localize('com_ui_usage')}: {group.numberOfGenerations}
+            </span>
           )}
         </div>
       </div>
