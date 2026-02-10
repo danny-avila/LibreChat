@@ -24,7 +24,7 @@ export default function StreamAudio({ index = 0 }) {
 
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const playbackRate = useRecoilValue(store.playbackRate);
-  const includeThinkinginTTS = useRecoilValue(store.includeThinkinginTTS);
+  const includeThinkingInTTS = useRecoilValue(store.includeThinkingInTTS);
 
   const voice = useRecoilValue(store.voice);
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
@@ -101,7 +101,7 @@ export default function StreamAudio({ index = 0 }) {
             messageId: latestMessage?.messageId,
             runId: activeRunId,
             voice,
-            skipReasoning: !includeThinkinginTTS,
+            skipReasoning: !includeThinkingInTTS,
           }),
         });
 
@@ -194,7 +194,7 @@ export default function StreamAudio({ index = 0 }) {
     isFetching,
     audioRunId,
     cacheTTS,
-    includeThinkinginTTS,
+    includeThinkingInTTS,
     audioRef,
     voice,
     token,

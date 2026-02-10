@@ -42,7 +42,9 @@ function Speech() {
   const [speechToText, setSpeechToText] = useRecoilState(store.speechToText);
   const [textToSpeech, setTextToSpeech] = useRecoilState(store.textToSpeech);
   const [cacheTTS, setCacheTTS] = useRecoilState(store.cacheTTS);
-  const [includeThinkinginTTS, setIncludeThinkinginTTS] = useRecoilState(store.includeThinkinginTTS);
+  const [includeThinkingInTTS, setIncludeThinkingInTTS] = useRecoilState(
+    store.includeThinkingInTTS,
+  );
   const [engineSTT, setEngineSTT] = useRecoilState<string>(store.engineSTT);
   const [languageSTT, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
   const [decibelValue, setDecibelValue] = useRecoilState(store.decibelValue);
@@ -66,7 +68,7 @@ function Speech() {
         speechToText: { value: speechToText, setFunc: setSpeechToText },
         textToSpeech: { value: textToSpeech, setFunc: setTextToSpeech },
         cacheTTS: { value: cacheTTS, setFunc: setCacheTTS },
-        includeThinkinginTTS: { value: includeThinkinginTTS, setFunc: setIncludeThinkinginTTS },
+        includeThinkingInTTS: { value: includeThinkingInTTS, setFunc: setIncludeThinkingInTTS },
         engineSTT: { value: engineSTT, setFunc: setEngineSTT },
         languageSTT: { value: languageSTT, setFunc: setLanguageSTT },
         autoTranscribeAudio: { value: autoTranscribeAudio, setFunc: setAutoTranscribeAudio },
@@ -93,7 +95,7 @@ function Speech() {
       speechToText,
       textToSpeech,
       cacheTTS,
-      includeThinkinginTTS,
+      includeThinkingInTTS,
       engineSTT,
       languageSTT,
       autoTranscribeAudio,
@@ -112,7 +114,7 @@ function Speech() {
       setSpeechToText,
       setTextToSpeech,
       setCacheTTS,
-      setIncludeThinkinginTTS,
+      setIncludeThinkingInTTS,
       setEngineSTT,
       setLanguageSTT,
       setAutoTranscribeAudio,

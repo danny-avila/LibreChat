@@ -11,7 +11,7 @@ export default function IncludeThinkingSwitch({
 
   return (
     <ToggleSwitch
-      stateAtom={store.includeThinkinginTTS}
+      stateAtom={store.includeThinkingInTTS}
       localizationKey={'com_nav_include_thinking_tts' as const}
       switchId="IncludeThinkingTTS"
       onCheckedChange={onCheckedChange}
