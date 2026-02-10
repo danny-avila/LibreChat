@@ -32,6 +32,7 @@ import type {
 } from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
 import { findConversationInInfinite } from '~/utils';
+import { AxiosError } from 'axios';
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -71,6 +72,15 @@ export const useGetConvoIdQuery = (
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      retry: (failureCount, error) => {
+        // Early exit on 404
+        if (error instanceof AxiosError && error.response?.status == 404) {
+          return false;
+        }
+
+        // Default to 3 retries
+        return failureCount < 3;
+      },
       ...config,
     },
   );
