@@ -772,7 +772,7 @@ class GenerationJobManagerClass {
         runtime.earlyEventBuffer = [];
       }
 
-      this.eventTransport.resetSequence?.(streamId);
+      this.eventTransport.syncReorderBuffer?.(streamId);
     }
 
     if (isFirst) {

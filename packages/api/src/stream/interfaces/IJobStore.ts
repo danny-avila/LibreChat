@@ -329,8 +329,11 @@ export interface IEventTransport {
   /** Listen for all subscribers leaving */
   onAllSubscribersLeft(streamId: string, callback: () => void): void;
 
-  /** Reset publish sequence counter for a stream (Redis: prevents gaps after buffer replay) */
+  /** Reset publish sequence counter for a stream (used during full stream cleanup) */
   resetSequence?(streamId: string): void;
+
+  /** Advance subscriber reorder buffer to match publisher sequence (cross-replica safe: doesn't reset publisher counter) */
+  syncReorderBuffer?(streamId: string): void;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

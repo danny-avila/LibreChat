@@ -1518,6 +1518,90 @@ describe('GenerationJobManager Integration Tests', () => {
       await replicaB.destroy();
     });
 
+    test('should not cause data loss on cross-replica subscribers when local subscriber joins', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const replicaA = new GenerationJobManagerClass();
+      const servicesA = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+      replicaA.configure(servicesA);
+      replicaA.initialize();
+
+      const replicaB = new GenerationJobManagerClass();
+      const servicesB = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+      replicaB.configure(servicesB);
+      replicaB.initialize();
+
+      const streamId = `cross-seq-safe-${Date.now()}`;
+
+      await replicaA.createJob(streamId, 'user-1');
+      const replicaBJobStore = new RedisJobStore(ioredisClient);
+      await replicaBJobStore.initialize();
+      await replicaBJobStore.createJob(streamId, 'user-1');
+
+      const receivedOnB: unknown[] = [];
+      const subB = await replicaB.subscribe(streamId, (event: unknown) => receivedOnB.push(event));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      for (let i = 0; i < 3; i++) {
+        await replicaA.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: `pre-local-${i}` } }, index: i },
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(receivedOnB.length).toBe(3);
+
+      const receivedOnA: unknown[] = [];
+      const subA = await replicaA.subscribe(streamId, (event: unknown) => receivedOnA.push(event));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(receivedOnA.length).toBe(3);
+
+      for (let i = 0; i < 3; i++) {
+        await replicaA.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: `post-local-${i}` } }, index: i + 3 },
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(receivedOnB.length).toBe(6);
+      expect(receivedOnA.length).toBe(6);
+
+      for (let i = 0; i < 3; i++) {
+        const data = (receivedOnB[i] as Record<string, unknown>).data as Record<string, unknown>;
+        const delta = data.delta as Record<string, unknown>;
+        const content = delta.content as Record<string, unknown>;
+        expect(content.text).toBe(`pre-local-${i}`);
+      }
+      for (let i = 0; i < 3; i++) {
+        const data = (receivedOnB[i + 3] as Record<string, unknown>).data as Record<
+          string,
+          unknown
+        >;
+        const delta = data.delta as Record<string, unknown>;
+        const content = delta.content as Record<string, unknown>;
+        expect(content.text).toBe(`post-local-${i}`);
+      }
+
+      subA?.unsubscribe();
+      subB?.unsubscribe();
+      replicaBJobStore.destroy();
+      await replicaA.destroy();
+      await replicaB.destroy();
+    });
+
     test('should deliver buffered events locally AND publish live events cross-replica', async () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');
@@ -1573,7 +1657,8 @@ describe('GenerationJobManager Integration Tests', () => {
         });
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      /** B joined after A published seq 0, so B's reorder buffer force-flushes after REORDER_TIMEOUT_MS (500ms) */
+      await new Promise((resolve) => setTimeout(resolve, 700));
 
       expect(receivedOnA.length).toBe(4);
       expect(receivedOnB.length).toBe(3);

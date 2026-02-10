@@ -122,12 +122,22 @@ export class RedisEventTransport implements IEventTransport {
     return current;
   }
 
-  /** Reset publish sequence counter and subscriber reorder state for a stream */
+  /** Reset publish sequence counter and subscriber reorder state for a stream (full cleanup only) */
   resetSequence(streamId: string): void {
     this.sequenceCounters.delete(streamId);
     const state = this.streams.get(streamId);
     if (state) {
       state.reorderBuffer.nextSeq = 0;
+      state.reorderBuffer.pending.clear();
+    }
+  }
+
+  /** Advance subscriber reorder buffer to current publisher sequence without resetting publisher (cross-replica safe) */
+  syncReorderBuffer(streamId: string): void {
+    const currentSeq = this.sequenceCounters.get(streamId) ?? 0;
+    const state = this.streams.get(streamId);
+    if (state) {
+      state.reorderBuffer.nextSeq = currentSeq;
       state.reorderBuffer.pending.clear();
     }
   }
