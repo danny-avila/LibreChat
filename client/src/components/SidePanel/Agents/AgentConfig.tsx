@@ -1,4 +1,7 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useHref } from 'react-router-dom';
+import copy from 'copy-to-clipboard';
+import { Link, Copy, CopyCheck } from 'lucide-react';
 import { useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
@@ -44,6 +47,17 @@ export default function AgentConfig() {
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
+  const newChatHref = useHref('/c/new');
+  const [copiedAgentId, setCopiedAgentId] = useState<string | null>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
   const {
     actions,
     setAction,
@@ -64,6 +78,29 @@ export default function AgentConfig() {
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
   const agent_id = useWatch({ control, name: 'id' });
+
+  const handleCopyLink = useCallback(
+    (id: string) => {
+      if (copiedAgentId === id) {
+        return;
+      }
+      const searchParams = new URLSearchParams({ agent_id: id });
+      const chatHref = `${newChatHref}?${searchParams.toString()}`;
+      const chatUrl = new URL(chatHref, window.location.origin);
+      const success = copy(chatUrl.toString(), { format: 'text/plain' });
+      if (success) {
+        setCopiedAgentId(id);
+        showToast({ message: localize('com_agents_link_copied') });
+        if (copyTimeoutRef.current) {
+          clearTimeout(copyTimeoutRef.current);
+        }
+        copyTimeoutRef.current = setTimeout(() => setCopiedAgentId(null), 3000);
+      } else {
+        showToast({ message: localize('com_agents_link_copy_failed') });
+      }
+    },
+    [copiedAgentId, localize, showToast, newChatHref],
+  );
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
 
@@ -219,11 +256,35 @@ export default function AgentConfig() {
           <Controller
             name="id"
             control={control}
-            render={({ field }) => (
-              <p className="h-3 text-xs italic text-text-secondary" aria-live="polite">
-                {field.value}
-              </p>
-            )}
+            render={({ field }) => {
+              if (!field.value || isEphemeralAgent(field.value)) {
+                return (
+                  <p className="text-xs italic text-text-secondary" aria-live="polite">
+                    {field.value}
+                  </p>
+                );
+              }
+              const isCopied = copiedAgentId === field.value;
+              return (
+                <p className="h-3" aria-live="polite">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyLink(field.value)}
+                    className="flex cursor-pointer items-center gap-1 text-xs italic text-text-secondary transition-colors hover:text-text-primary"
+                    title={localize('com_agents_copy_link')}
+                    aria-label={`${localize('com_agents_copy_link')}: ${field.value}`}
+                  >
+                    <Link className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    {field.value}
+                    {isCopied ? (
+                      <CopyCheck className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <Copy className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    )}
+                  </button>
+                </p>
+              );
+            }}
           />
         </div>
         {/* Description */}
