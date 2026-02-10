@@ -50,6 +50,7 @@ jobs:
           export JWT_REFRESH_SECRET="${{ secrets.JWT_REFRESH_SECRET }}"
           export ANALYTICS_GTM_ID="${{ secrets.ANALYTICS_GTM_ID }}"
           export GUARDRAIL_ID="${{ secrets.GUARDRAIL_ID }}"
+          export GUARDRAIL_VERSION="${{ secrets.GUARDRAIL_VERSION }}"
 
           envsubst < nj/nj.env.template > "${{ inputs.environment }}.env"
 
