@@ -1,4 +1,10 @@
 import type { Redis, Cluster } from 'ioredis';
+import type { ServerSentEvent } from '../../types/events';
+import { GenerationJobManagerClass } from '../GenerationJobManager';
+import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
+import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
+import { RedisEventTransport } from '../implementations/RedisEventTransport';
+import { createStreamServices } from '../createStreamServices';
 
 /**
  * Integration tests for GenerationJobManager.
@@ -1054,6 +1060,202 @@ describe('GenerationJobManager Integration Tests', () => {
       sub1?.unsubscribe();
       sub2?.unsubscribe();
       await GenerationJobManager.destroy();
+    });
+  });
+
+  describe('Race Condition: Events Before Subscriber Ready', () => {
+    /**
+     * These tests verify the fix for the race condition where early events
+     * (like the 'created' event at seq 0) are lost because the Redis SUBSCRIBE
+     * command hasn't completed when events are published.
+     *
+     * Symptom: "[RedisEventTransport] Stream <id>: timeout waiting for seq 0"
+     *          followed by truncated responses in the UI.
+     *
+     * Root cause: RedisEventTransport.subscribe() fired Redis SUBSCRIBE as
+     * fire-and-forget. GenerationJobManager set hasSubscriber=true immediately,
+     * disabling the earlyEventBuffer before Redis was actually listening.
+     *
+     * Fix: subscribe() now returns a `ready` promise that resolves when the
+     * Redis subscription is confirmed. earlyEventBuffer stays active until then.
+     */
+
+    test('should buffer and replay events emitted before subscribe (in-memory)', async () => {
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+
+      manager.initialize();
+
+      const streamId = `early-buf-inmem-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await manager.emitChunk(streamId, {
+        created: true,
+        message: { text: 'hello' },
+        streamId,
+      } as unknown as ServerSentEvent);
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'First chunk' } } },
+      });
+
+      const receivedEvents: unknown[] = [];
+      const subscription = await manager.subscribe(streamId, (event: unknown) =>
+        receivedEvents.push(event),
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(receivedEvents.length).toBe(2);
+      expect((receivedEvents[0] as Record<string, unknown>).created).toBe(true);
+
+      subscription?.unsubscribe();
+      await manager.destroy();
+    });
+
+    test('should buffer and replay events emitted before subscribe (Redis)', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const manager = new GenerationJobManagerClass();
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      manager.configure(services);
+      manager.initialize();
+
+      const streamId = `early-buf-redis-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await manager.emitChunk(streamId, {
+        created: true,
+        message: { text: 'hello' },
+        streamId,
+      } as unknown as ServerSentEvent);
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'First' } } },
+      });
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: ' chunk' } } },
+      });
+
+      const receivedEvents: unknown[] = [];
+      const subscription = await manager.subscribe(streamId, (event: unknown) =>
+        receivedEvents.push(event),
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(receivedEvents.length).toBe(3);
+      expect((receivedEvents[0] as Record<string, unknown>).created).toBe(true);
+      expect(
+        ((receivedEvents[1] as Record<string, unknown>).data as Record<string, unknown>).delta,
+      ).toBeDefined();
+
+      subscription?.unsubscribe();
+      await manager.destroy();
+    });
+
+    test('should not lose events when emitting before and after subscribe (Redis)', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const manager = new GenerationJobManagerClass();
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      manager.configure(services);
+      manager.initialize();
+
+      const streamId = `no-loss-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await manager.emitChunk(streamId, {
+        created: true,
+        message: { text: 'hello' },
+        streamId,
+      } as unknown as ServerSentEvent);
+      await manager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: { id: 'step-1', type: 'message_creation', index: 0 },
+      });
+
+      const receivedEvents: unknown[] = [];
+      const subscription = await manager.subscribe(streamId, (event: unknown) =>
+        receivedEvents.push(event),
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      for (let i = 0; i < 10; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: `word${i} ` } }, index: i },
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(receivedEvents.length).toBe(12);
+      expect((receivedEvents[0] as Record<string, unknown>).created).toBe(true);
+      expect((receivedEvents[1] as Record<string, unknown>).event).toBe('on_run_step');
+      for (let i = 0; i < 10; i++) {
+        expect((receivedEvents[i + 2] as Record<string, unknown>).event).toBe('on_message_delta');
+      }
+
+      subscription?.unsubscribe();
+      await manager.destroy();
+    });
+
+    test('RedisEventTransport.subscribe() should return a ready promise', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const subscriber = (ioredisClient as unknown as { duplicate: () => unknown }).duplicate();
+      const transport = new RedisEventTransport(ioredisClient as never, subscriber as never);
+
+      const streamId = `ready-promise-${Date.now()}`;
+      const result = transport.subscribe(streamId, {
+        onChunk: () => {},
+      });
+
+      expect(result.ready).toBeDefined();
+      expect(result.ready).toBeInstanceOf(Promise);
+
+      await result.ready;
+
+      result.unsubscribe();
+      transport.destroy();
+      (subscriber as { disconnect: () => void }).disconnect();
+    });
+
+    test('InMemoryEventTransport.subscribe() should not have a ready promise', () => {
+      const transport = new InMemoryEventTransport();
+      const streamId = `no-ready-${Date.now()}`;
+      const result = transport.subscribe(streamId, {
+        onChunk: () => {},
+      });
+
+      expect(result.ready).toBeUndefined();
+
+      result.unsubscribe();
+      transport.destroy();
     });
   });
 

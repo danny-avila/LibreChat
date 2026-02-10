@@ -331,7 +331,7 @@ export class RedisEventTransport implements IEventTransport {
       onDone?: (event: unknown) => void;
       onError?: (error: string) => void;
     },
-  ): { unsubscribe: () => void } {
+  ): { unsubscribe: () => void; ready?: Promise<void> } {
     const channel = CHANNELS.events(streamId);
     const subscriberId = `sub_${++this.subscriberIdCounter}`;
 
@@ -354,16 +354,22 @@ export class RedisEventTransport implements IEventTransport {
     streamState.count++;
     streamState.handlers.set(subscriberId, handlers);
 
-    // Subscribe to Redis channel if this is first subscriber
+    let readyPromise: Promise<void> | undefined;
+
     if (!this.subscribedChannels.has(channel)) {
       this.subscribedChannels.add(channel);
-      this.subscriber.subscribe(channel).catch((err) => {
-        logger.error(`[RedisEventTransport] Failed to subscribe to ${channel}:`, err);
-      });
+      readyPromise = this.subscriber
+        .subscribe(channel)
+        .then(() => {
+          logger.debug(`[RedisEventTransport] Subscription active for channel ${channel}`);
+        })
+        .catch((err) => {
+          logger.error(`[RedisEventTransport] Failed to subscribe to ${channel}:`, err);
+        });
     }
 
-    // Return unsubscribe function
     return {
+      ready: readyPromise,
       unsubscribe: () => {
         const state = this.streams.get(streamId);
         if (!state) {
