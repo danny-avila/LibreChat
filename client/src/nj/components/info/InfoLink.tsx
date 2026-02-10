@@ -1,18 +1,26 @@
-import { BookOpen, LucideIcon } from 'lucide-react';
+import icons from '@uswds/uswds/img/sprite.svg';
+import React from 'react';
 
 interface InfoLinkProps {
   text: string;
   link: string;
-  icon: LucideIcon;
+  icon: string;
 }
 
-export default function InfoLink({ text, link, icon: Icon }: InfoLinkProps) {
+export default function InfoLink({ text, link, icon }: InfoLinkProps) {
   return (
     <div>
       <a href={link} className="inline-flex gap-1 underline hover:no-underline">
         {text}
         <div className="inline-flex rounded bg-surface-secondary p-1">
-          <Icon size={16} />
+          <svg
+            className="usa-icon usa-icon--size-2"
+            aria-hidden="true"
+            focusable="false"
+            role="img"
+          >
+            <use href={`${icons}#${icon}`} />
+          </svg>
         </div>
       </a>
     </div>

@@ -8,6 +8,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import { NewJerseySelectItems } from '~/nj/components/NewJerseySelectItems';
+import icons from '@uswds/uswds/img/sprite.svg';
 
 function AccountSettings() {
   const localize = useLocalize();
@@ -96,7 +97,17 @@ function AccountSettings() {
           value="logout"
           className="select-item text-sm"
         >
+          <svg
+            className="usa-icon usa-icon--size-2"
+            aria-hidden="true"
+            focusable="false"
+            role="img"
+          >
+            <use href={`${icons}#logout`} />
+          </svg>
+          {/* NJ: Use USWDS icon (to match the other icons in the menu)
           <LogOut className="icon-md" aria-hidden="true" />
+           */}
           {localize('com_nav_log_out')}
         </Select.SelectItem>
       </Select.SelectPopover>

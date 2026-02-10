@@ -4,7 +4,6 @@
 import InfoDivider from '~/nj/components/info/InfoDivider';
 import InfoTitle from '~/nj/components/info/InfoTitle';
 import InfoSectionHeader from '~/nj/components/info/InfoSectionHeader';
-import { BookOpen, SquareArrowOutUpRight } from 'lucide-react';
 import InfoLink from '~/nj/components/info/InfoLink';
 import InfoFooter from '~/nj/components/info/InfoFooter';
 
@@ -48,24 +47,20 @@ export default function NewJerseyGuidePage() {
 
       {/* Links List */}
       <div className="mb-6 space-y-3">
-        <InfoLink text="Guides and FAQs" link="https://nj.gov" icon={BookOpen} />
+        <InfoLink text="Guides and FAQs" link="https://nj.gov" icon="local_library" />
 
-        <InfoLink
-          text="New Jersey Innovation Authority"
-          link="https://nj.gov"
-          icon={SquareArrowOutUpRight}
-        />
+        <InfoLink text="New Jersey Innovation Authority" link="https://nj.gov" icon="launch" />
 
         <InfoLink
           text="Guidelines on Generative AI use for Public Professionals"
           link="https://nj.gov"
-          icon={SquareArrowOutUpRight}
+          icon="launch"
         />
 
         <InfoLink
           text="Responsible AI Use Policy in New Jersey"
           link="https://nj.gov"
-          icon={SquareArrowOutUpRight}
+          icon="launch"
         />
       </div>
 

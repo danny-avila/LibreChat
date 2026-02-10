@@ -3,11 +3,11 @@
 
 import React from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import { ChevronDownIcon, ChevronUpIcon, GraduationCap, SquareArrowOutUpRight } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import { landingHelpOpen } from '~/nj/store/landing';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import icons from '@uswds/uswds/img/sprite.svg';
 
 /**
  * Provides alternate landing page content w/ New Jersey-specific information.
@@ -59,7 +59,15 @@ export function NewJerseyLanding() {
                         onClick={() => navigate('/nj/guide')}
                         className="inline-flex items-center gap-1 underline hover:decoration-2"
                       >
-                        AI Assistant FAQ <GraduationCap size={16} />
+                        AI Assistant FAQ{' '}
+                        <svg
+                          className="usa-icon usa-icon--size-2"
+                          aria-hidden="true"
+                          focusable="false"
+                          role="img"
+                        >
+                          <use href={`${icons}#school`} />
+                        </svg>
                       </span>{' '}
                       and{' '}
                       <a
@@ -69,7 +77,14 @@ export function NewJerseyLanding() {
                         rel="noreferrer"
                       >
                         Generative AI How-to guides
-                        <SquareArrowOutUpRight size={16} />
+                        <svg
+                          className="usa-icon usa-icon--size-2"
+                          aria-hidden="true"
+                          focusable="false"
+                          role="img"
+                        >
+                          <use href={`${icons}#launch`} />
+                        </svg>
                       </a>
                     </p>
                   </div>
@@ -86,7 +101,14 @@ export function NewJerseyLanding() {
                         rel="noreferrer"
                       >
                         Guidelines on Generative AI use for Public Professionals
-                        <SquareArrowOutUpRight size={16} />
+                        <svg
+                          className="usa-icon usa-icon--size-2"
+                          aria-hidden="true"
+                          focusable="false"
+                          role="img"
+                        >
+                          <use href={`${icons}#launch`} />
+                        </svg>
                       </a>
                     </p>
                   </div>
@@ -131,12 +153,26 @@ export function NewJerseyLanding() {
               {open ? (
                 <>
                   <span>See less</span>
-                  <ChevronUpIcon />
+                  <svg
+                    className="usa-icon usa-icon--size-3"
+                    aria-hidden="true"
+                    focusable="false"
+                    role="img"
+                  >
+                    <use href={`${icons}#expand_less`} />
+                  </svg>
                 </>
               ) : (
                 <>
                   <span>See more</span>
-                  <ChevronDownIcon />
+                  <svg
+                    className="usa-icon usa-icon--size-3"
+                    aria-hidden="true"
+                    focusable="false"
+                    role="img"
+                  >
+                    <use href={`${icons}#expand_more`} />
+                  </svg>
                 </>
               )}
             </span>

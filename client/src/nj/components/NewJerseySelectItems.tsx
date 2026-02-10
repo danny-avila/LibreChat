@@ -4,7 +4,8 @@
 import { DropdownMenuSeparator } from '@librechat/client';
 import * as Select from '@ariakit/react/select';
 import { useNavigate } from 'react-router-dom';
-import { Bell, BookOpen, GraduationCap, Mail } from 'lucide-react';
+import icons from '@uswds/uswds/img/sprite.svg';
+import React from 'react';
 
 /**
  * New Jersey-specific menu items that show up in the AccountSettings popup.
@@ -19,7 +20,9 @@ export function NewJerseySelectItems() {
         onClick={() => navigate('nj/guide')}
         className="select-item text-sm"
       >
-        <GraduationCap className="icon-md" aria-hidden="true" />
+        <svg className="usa-icon usa-icon--size-2" aria-hidden="true" focusable="false" role="img">
+          <use href={`${icons}#school`} />
+        </svg>
         Guides & FAQs
       </Select.SelectItem>
 
@@ -28,7 +31,9 @@ export function NewJerseySelectItems() {
         onClick={() => navigate('nj/about')}
         className="select-item text-sm"
       >
-        <BookOpen className="icon-md" aria-hidden="true" />
+        <svg className="usa-icon usa-icon--size-2" aria-hidden="true" focusable="false" role="img">
+          <use href={`${icons}#local_library`} />
+        </svg>
         About the AI Assistant
       </Select.SelectItem>
 
@@ -39,7 +44,9 @@ export function NewJerseySelectItems() {
         onClick={() => window.open('https://forms.office.com/g/zLiSuXxJ0Y', '_blank')}
         className="select-item text-sm"
       >
-        <Mail className="icon-md" aria-hidden="true" />
+        <svg className="usa-icon usa-icon--size-2" aria-hidden="true" focusable="false" role="img">
+          <use href={`${icons}#mail`} />
+        </svg>
         Contact us
       </Select.SelectItem>
 
@@ -50,7 +57,9 @@ export function NewJerseySelectItems() {
         }
         className="select-item text-sm"
       >
-        <Bell className="icon-md" aria-hidden="true" />
+        <svg className="usa-icon usa-icon--size-2" aria-hidden="true" focusable="false" role="img">
+          <use href={`${icons}#notifications`} />
+        </svg>
         Get updates
       </Select.SelectItem>
 

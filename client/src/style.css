@@ -2950,3 +2950,52 @@ html {
 .confirmation-text {
   font-size: 16px !important;
 }
+
+/* USWDS icon styling; we don't want all of USWDS styles (it overrides a lot of LibreChat styling) */
+.usa-icon {
+  display: inline-block;
+  fill: currentColor;
+  height: 1em;
+  position: relative;
+  width: 1em;
+}
+
+.usa-icon--size-2 {
+  height: 1.0rem;
+  width: 1.0rem;
+}
+
+.usa-icon--size-3 {
+  height: 1.5rem;
+  width: 1.5rem;
+}
+
+.usa-icon--size-4 {
+  height: 2rem;
+  width: 2rem;
+}
+
+.usa-icon--size-5 {
+  height: 2.5rem;
+  width: 2.5rem;
+}
+
+.usa-icon--size-6 {
+  height: 3rem;
+  width: 3rem;
+}
+
+.usa-icon--size-7 {
+  height: 3.5rem;
+  width: 3.5rem;
+}
+
+.usa-icon--size-8 {
+  height: 4rem;
+  width: 4rem;
+}
+
+.usa-icon--size-9 {
+  height: 4.5rem;
+  width: 4.5rem;
+}

@@ -60,6 +60,7 @@
     "@react-spring/web": "^9.7.5",
     "@tanstack/react-query": "^4.28.0",
     "@tanstack/react-table": "^8.11.7",
+    "@uswds/uswds": "^3.13.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "copy-to-clipboard": "^3.3.3",
