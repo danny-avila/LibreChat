@@ -358,3 +358,14 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
     },
   });
 };
+
+export const useRecordPromptUsage = (): UseMutationResult<
+  { numberOfGenerations: number },
+  unknown,
+  string,
+  unknown
+> => {
+  return useMutation({
+    mutationFn: (groupId: string) => dataService.recordPromptGroupUsage(groupId),
+  });
+};

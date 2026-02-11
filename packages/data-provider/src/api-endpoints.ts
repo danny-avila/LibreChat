@@ -317,6 +317,8 @@ export const postPrompt = prompts;
 
 export const updatePromptGroup = getPromptGroup;
 
+export const recordPromptGroupUsage = (groupId: string) => `${prompts()}/groups/${groupId}/use`;
+
 export const updatePromptLabels = (_id: string) => `${getPrompt(_id)}/labels`;
 
 export const updatePromptTag = (_id: string) => `${getPrompt(_id)}/tags/production`;

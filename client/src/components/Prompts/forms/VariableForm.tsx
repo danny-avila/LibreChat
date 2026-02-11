@@ -12,6 +12,7 @@ import type { TPromptGroup } from 'librechat-data-provider';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { cn, wrapVariable, defaultTextProps, extractVariableInfo } from '~/utils';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
+import { useRecordPromptUsage } from '~/data-provider';
 import { PromptVariableGfm } from '../editor/Markdown';
 
 type FieldType = 'text' | 'select';
@@ -82,6 +83,7 @@ export default function VariableForm({
   );
 
   const { submitPrompt } = useSubmitMessage();
+  const recordUsage = useRecordPromptUsage();
   const { control, handleSubmit } = useForm<FormValues>({
     defaultValues: {
       fields: uniqueVariables.map((variable) => ({
@@ -134,6 +136,9 @@ export default function VariableForm({
     });
 
     submitPrompt(text);
+    if (group._id) {
+      recordUsage.mutate(group._id);
+    }
     onClose();
   };
 

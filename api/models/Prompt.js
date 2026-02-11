@@ -26,7 +26,7 @@ const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 const createGroupPipeline = (query, skip, limit) => {
   return [
     { $match: query },
-    { $sort: { createdAt: -1 } },
+    { $sort: { numberOfGenerations: -1, updatedAt: -1 } },
     { $skip: skip },
     { $limit: limit },
     {
@@ -80,7 +80,7 @@ const createAllGroupsPipeline = (
 ) => {
   return [
     { $match: query },
-    { $sort: { createdAt: -1 } },
+    { $sort: { numberOfGenerations: -1, updatedAt: -1 } },
     {
       $lookup: {
         from: 'prompts',
@@ -297,7 +297,10 @@ async function getListPromptGroupsByAccess({
   }
 
   // Build aggregation pipeline
-  const pipeline = [{ $match: baseQuery }, { $sort: { updatedAt: -1, _id: 1 } }];
+  const pipeline = [
+    { $match: baseQuery },
+    { $sort: { numberOfGenerations: -1, updatedAt: -1, _id: 1 } },
+  ];
 
   // Only apply limit if pagination is requested
   if (isPaginated) {
@@ -366,11 +369,31 @@ async function getListPromptGroupsByAccess({
   };
 }
 
+/**
+ * Increment the numberOfGenerations counter for a prompt group.
+ * @param {string} groupId - The ID of the prompt group.
+ * @returns {Promise<{ numberOfGenerations: number }>}
+ */
+const incrementPromptGroupUsage = async (groupId) => {
+  const result = await PromptGroup.findByIdAndUpdate(
+    groupId,
+    { $inc: { numberOfGenerations: 1 } },
+    { new: true, select: 'numberOfGenerations' },
+  ).lean();
+
+  if (!result) {
+    throw new Error('Prompt group not found');
+  }
+
+  return { numberOfGenerations: result.numberOfGenerations };
+};
+
 module.exports = {
   getPromptGroups,
   deletePromptGroup,
   getAllPromptGroups,
   getListPromptGroupsByAccess,
+  incrementPromptGroupUsage,
   /**
    * Create a prompt and its respective group
    * @param {TCreatePromptRecord} saveData

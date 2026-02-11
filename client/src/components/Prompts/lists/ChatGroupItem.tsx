@@ -6,6 +6,7 @@ import { Button, TooltipAnchor } from '@librechat/client';
 
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useAuthContext, useSubmitMessage, useResourcePermissions } from '~/hooks';
+import { useRecordPromptUsage } from '~/data-provider';
 import VariableDialog from '../dialogs/VariableDialog';
 import PreviewPrompt from '../dialogs/PreviewPrompt';
 import ListCard from './ListCard';
@@ -22,6 +23,7 @@ function ChatGroupItem({
   const navigate = useNavigate();
   const { user } = useAuthContext();
   const { submitPrompt } = useSubmitMessage();
+  const recordUsage = useRecordPromptUsage();
 
   const isSharedPrompt = group.author !== user?.id && Boolean(group.authorName);
   const [isPreviewDialogOpen, setPreviewDialogOpen] = useState(false);
@@ -50,6 +52,9 @@ function ChatGroupItem({
     }
 
     submitPrompt(text);
+    if (group._id) {
+      recordUsage.mutate(group._id);
+    }
   };
 
   return (

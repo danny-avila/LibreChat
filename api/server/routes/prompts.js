@@ -20,6 +20,7 @@ const {
 } = require('librechat-data-provider');
 const {
   getListPromptGroupsByAccess,
+  incrementPromptGroupUsage,
   makePromptProduction,
   updatePromptGroup,
   deletePromptGroup,
@@ -327,6 +328,27 @@ router.post(
     requiredPermission: PermissionBits.EDIT,
   }),
   addPromptToGroup,
+);
+
+/**
+ * Records a prompt group usage (increments numberOfGenerations)
+ * POST /groups/:groupId/use
+ */
+router.post(
+  '/groups/:groupId/use',
+  canAccessPromptGroupResource({
+    requiredPermission: PermissionBits.VIEW,
+  }),
+  async (req, res) => {
+    try {
+      const { groupId } = req.params;
+      const result = await incrementPromptGroupUsage(groupId);
+      res.status(200).send(result);
+    } catch (error) {
+      logger.error('[recordPromptUsage]', error);
+      res.status(500).send({ error: 'Error recording prompt usage' });
+    }
+  },
 );
 
 /**

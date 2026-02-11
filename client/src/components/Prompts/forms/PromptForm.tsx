@@ -403,7 +403,7 @@ const PromptForm = () => {
     }
 
     if (fetchedPrompt || group) {
-      return <PromptDetails group={fetchedPrompt || group} />;
+      return <PromptDetails group={fetchedPrompt || group} showActions={false} />;
     }
   }
 
