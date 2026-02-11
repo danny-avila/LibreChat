@@ -2,10 +2,11 @@ import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { easings } from '@react-spring/web';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
+import { Pin, PinOff } from 'lucide-react';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
-import { useLocalize, useAuthContext } from '~/hooks';
+import { useLocalize, useAuthContext, useFavorites } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
 
 const containerClassName =
@@ -34,6 +35,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { user } = useAuthContext();
+  const { isFavoriteAgent, toggleFavoriteAgent } = useFavorites();
   const localize = useLocalize();
 
   const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);
@@ -60,6 +62,14 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     agent_id: conversation?.agent_id,
     assistant_id: conversation?.assistant_id,
   });
+
+  const agentId = conversation?.agent_id ?? null;
+  const isFavorite = !!(isAgent && agentId && isFavoriteAgent(agentId));
+  const handleFavoriteClick = useCallback(() => {
+    if (agentId) {
+      toggleFavoriteAgent(agentId);
+    }
+  }, [agentId, toggleFavoriteAgent]);
 
   const name = entity?.name ?? '';
   const description = (entity?.description || conversation?.greeting) ?? '';
@@ -167,20 +177,37 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             )}
           </div>
           {((isAgent || isAssistant) && name) || name ? (
-            <div className="flex flex-col items-center gap-0 p-2">
-              <SplitText
-                key={`split-text-${name}`}
-                text={name}
-                className={`${getTextSizeClass(name)} font-medium text-text-primary`}
-                delay={50}
-                textAlign="center"
-                animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
-                animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
-                easing={easings.easeOutCubic}
-                threshold={0}
-                rootMargin="0px"
-                onLineCountChange={handleLineCountChange}
-              />
+            <div className="flex flex-col items-center gap-1 p-2">
+              <div className="flex items-center gap-2">
+                <SplitText
+                  key={`split-text-${name}`}
+                  text={name}
+                  className={`${getTextSizeClass(name)} font-medium text-text-primary`}
+                  delay={50}
+                  textAlign="center"
+                  animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
+                  animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+                  easing={easings.easeOutCubic}
+                  threshold={0}
+                  rootMargin="0px"
+                  onLineCountChange={handleLineCountChange}
+                />
+                {isAgent && agentId && (
+                  <button
+                    type="button"
+                    onClick={handleFavoriteClick}
+                    className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                    title={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
+                    aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
+                  >
+                    {isFavorite ? (
+                      <PinOff className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Pin className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <SplitText
