@@ -20,7 +20,7 @@ import type {
 import type { MCPOAuthTokens } from './oauth/types';
 import { withTimeout } from '~/utils/promise';
 import type * as t from './types';
-import { createSSRFSafeUndiciConnect } from '~/auth';
+import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
 import { sanitizeUrlForLogging } from './utils';
 import { mcpConfig } from './mcpConfig';
 
@@ -348,7 +348,7 @@ export class MCPConnection extends EventEmitter {
     logger.error(`${this.getLogPrefix()} ${errorContext}: ${errorMessage}`);
   }
 
-  private constructTransport(options: t.MCPOptions): Transport {
+  private async constructTransport(options: t.MCPOptions): Promise<Transport> {
     try {
       let type: t.MCPOptions['type'];
       if (isStdioOptions(options)) {
@@ -384,6 +384,15 @@ export class MCPConnection extends EventEmitter {
             throw new Error('Invalid options for websocket transport.');
           }
           this.url = options.url;
+          if (this.useSSRFProtection) {
+            const wsHostname = new URL(options.url).hostname;
+            const isSSRF = await resolveHostnameSSRF(wsHostname);
+            if (isSSRF) {
+              throw new Error(
+                `SSRF protection: WebSocket host "${wsHostname}" resolved to a private/reserved IP address`,
+              );
+            }
+          }
           return new WebSocketClientTransport(new URL(options.url));
 
         case 'sse': {
@@ -637,7 +646,7 @@ export class MCPConnection extends EventEmitter {
           }
         }
 
-        this.transport = this.constructTransport(this.options);
+        this.transport = await this.constructTransport(this.options);
         this.setupTransportDebugHandlers();
 
         const connectTimeout = this.options.initTimeout ?? 120000;
