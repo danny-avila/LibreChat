@@ -6,6 +6,55 @@ const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { saveMessage, saveConvo, getConvo } = require('~/models');
 const addTitle = require('~/server/services/Endpoints/openAI/title');
 const { createOnProgress } = require('~/server/utils');
+const {
+  buildCodeCanSystemPrompt,
+  getCodeCanVectorStoreConfig,
+  getCodeCanVectorStoreIds,
+  NO_RELEVANT_ONTARIO_TEXT,
+  NO_RELEVANT_NATIONAL_TEXT,
+} = require('~/server/services/prompts/codeCan');
+
+const PRE_FLIGHT_RESPONSE = Object.freeze({
+  RELEVANT: 'RELEVANT',
+  NOT_RELEVANT: 'NOT_RELEVANT',
+});
+const CODECAN_NO_RELEVANT_TEXT = 'No relevant content found in the Ontario or National Building Code files.';
+const PRE_FLIGHT_INSTRUCTIONS = `Determine whether the Ontario Building Code retrieval can answer the user question.
+Always call file_search before deciding.
+Return exactly one token and nothing else:
+- RELEVANT
+- NOT_RELEVANT`;
+
+function extractCompletionText(completion, fallback = '') {
+  if (typeof completion === 'string') {
+    return completion;
+  }
+  return completion?.text ?? fallback;
+}
+
+function isOntarioRelevant(preflightText) {
+  const decision = String(preflightText || '').trim().toUpperCase();
+  if (decision.includes(PRE_FLIGHT_RESPONSE.NOT_RELEVANT)) {
+    return false;
+  }
+  return true;
+}
+
+function buildStageModelOptions(baseModelOptions, stage, stream, instructions = buildCodeCanSystemPrompt(stage)) {
+  return Object.assign({}, baseModelOptions, {
+    useResponsesApi: true,
+    stream,
+    instructions,
+    promptPrefix: instructions,
+    tools: [{ type: 'file_search' }],
+    tool_choice: 'required',
+    tool_resources: {
+      file_search: {
+        vector_store_ids: getCodeCanVectorStoreIds(stage),
+      },
+    },
+  });
+}
 
 /**
  * CodeCan-only direct Responses API handler (bypasses LangGraph/agents).
@@ -28,28 +77,24 @@ async function codeCanDirectHandler(req, res) {
     conversationId: convoId,
   });
 
-  // Build model options from endpointOption
-  const modelOptions = Object.assign(
+  // Build base model options from endpointOption
+  const baseModelOptions = Object.assign(
     {},
     endpointOption?.model_parameters ?? endpointOption?.modelOptions ?? {},
   );
-  // Force Responses API path; ensure stream flag matches client expectations
-  modelOptions.useResponsesApi = true;
-  // Stream tokens for faster perceived latency; capture final response for annotations
-  modelOptions.stream = true;
+  baseModelOptions.useResponsesApi = true;
+  const vectorStoreConfig = getCodeCanVectorStoreConfig();
 
-  const clientOptions = {
+  const clientBaseOptions = {
     req,
     res,
     endpoint: endpointOption?.endpoint,
     endpointType: endpointOption?.endpointType,
-    modelOptions,
     sender: endpointOption?.sender,
     resendFiles: endpointOption?.resendFiles ?? true,
     maxContextTokens: endpointOption?.maxContextTokens,
   };
-
-  const client = new OpenAIClient(endpointOption?.model_parameters?.apiKey, clientOptions);
+  let client = null;
 
   const existingConvo = await getConvo(userId, convoId);
   const isNewConvo = existingConvo == null;
@@ -78,17 +123,14 @@ async function codeCanDirectHandler(req, res) {
     type: ContentTypes.TEXT,
     thread_id: null,
   });
-  const onProgress =
-    modelOptions.stream === true
-      ? (delta) => {
-          aggregated += delta;
-          if (!sentFirstToken) {
-            sentFirstToken = true;
-            req.traceStep?.('codecan_direct_first_token');
-          }
-          sendProgress(delta);
-        }
-      : undefined;
+  const onProgress = (delta) => {
+    aggregated += delta;
+    if (!sentFirstToken) {
+      sentFirstToken = true;
+      req.traceStep?.('codecan_direct_first_token');
+    }
+    sendProgress(delta);
+  };
 
   // Prepare user message and save it so it appears in the timeline
   const userMessageId = clientMessageId ?? uuidv4();
@@ -150,6 +192,48 @@ async function codeCanDirectHandler(req, res) {
     });
   }
 
+  req.traceStep?.('codecan_preflight_start', {
+    conversationId: convoId,
+    vectorStoreId: vectorStoreConfig.ontarioId,
+  });
+  const preflightModelOptions = buildStageModelOptions(
+    baseModelOptions,
+    'ontario',
+    false,
+    PRE_FLIGHT_INSTRUCTIONS,
+  );
+  const preflightClient = new OpenAIClient(endpointOption?.model_parameters?.apiKey, {
+    ...clientBaseOptions,
+    modelOptions: preflightModelOptions,
+  });
+  const preflightCompletion = await preflightClient.chatCompletion({
+    payload,
+    abortController,
+    returnRaw: false,
+  });
+  const preflightText = extractCompletionText(preflightCompletion).trim();
+  const selectedStage = isOntarioRelevant(preflightText) ? 'ontario' : 'national';
+  req.traceStep?.('codecan_preflight_result', {
+    conversationId: convoId,
+    response: preflightText,
+    selectedStage,
+  });
+  req.traceStep?.('codecan_selected_stage', {
+    conversationId: convoId,
+    stage: selectedStage,
+  });
+  req.traceStep?.('codecan_selected_vector_store_id', {
+    conversationId: convoId,
+    vectorStoreId:
+      selectedStage === 'ontario' ? vectorStoreConfig.ontarioId : vectorStoreConfig.nationalId,
+  });
+
+  const stageModelOptions = buildStageModelOptions(baseModelOptions, selectedStage, true);
+  client = new OpenAIClient(endpointOption?.model_parameters?.apiKey, {
+    ...clientBaseOptions,
+    modelOptions: stageModelOptions,
+  });
+
   // Run completion
   req.traceStep?.('codecan_direct_llm_start');
   const completion = await client.chatCompletion({
@@ -160,10 +244,12 @@ async function codeCanDirectHandler(req, res) {
   });
   req.traceStep?.('codecan_direct_llm_end');
 
-  const finalText =
-    typeof completion === 'string'
-      ? completion
-      : (completion && completion.text) || aggregated || '';
+  let finalText = extractCompletionText(completion, aggregated || '');
+  if (selectedStage === 'national' && finalText.trim() === NO_RELEVANT_NATIONAL_TEXT) {
+    finalText = CODECAN_NO_RELEVANT_TEXT;
+  } else if (selectedStage === 'ontario' && finalText.trim() === NO_RELEVANT_ONTARIO_TEXT) {
+    finalText = CODECAN_NO_RELEVANT_TEXT;
+  }
   const rawResponse = completion?.raw;
   // Extract annotations from raw response if present
   let annotations = [];
@@ -206,7 +292,10 @@ async function codeCanDirectHandler(req, res) {
     conversationId: convoId,
     parentMessageId: userMessageId,
     annotations,
-    citations,
+    citations:
+      finalText === CODECAN_NO_RELEVANT_TEXT || finalText.trim() === NO_RELEVANT_NATIONAL_TEXT
+        ? []
+        : citations,
   };
 
   // Save response message

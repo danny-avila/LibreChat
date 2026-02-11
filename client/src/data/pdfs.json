@@ -1,4 +1,12 @@
 {
+  "ontario": {
+    "displayName": "Ontario Building Code 2024",
+    "pdfPath": "/pdfs/ontario_combined.pdf"
+  },
+  "ontario_combined": {
+    "displayName": "Ontario Building Code 2024",
+    "pdfPath": "/pdfs/ontario_combined.pdf"
+  },
   "nbc2020": {
     "displayName": "National Building Code of Canada 2020",
     "pdfPath": "/pdfs/nbc2020.pdf"

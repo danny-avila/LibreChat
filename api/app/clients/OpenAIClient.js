@@ -42,9 +42,9 @@ const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { extractBaseURL } = require('~/utils');
 const { tokenSplit } = require('./document');
+const { getCodeCanVectorStoreConfig } = require('~/server/services/prompts/codeCan');
 const BaseClient = require('./BaseClient');
-const DEFAULT_VECTOR_STORE_ID =
-  process.env.CODECAN_OPENAI_VECTOR_STORE_ID || 'vs_693860848bc48191bccb7c1d197f488f';
+const DEFAULT_VECTOR_STORE_ID = getCodeCanVectorStoreConfig().nationalId;
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -1740,15 +1740,15 @@ ${convo}
         ? Object.assign({}, tool, { vector_store_ids: toolResourceIds })
         : tool,
     );
-    if (modelOptions.tool_resources) {
-      requestBody.tool_resources = modelOptions.tool_resources;
-    }
+    // Responses API rejects tool_resources; pass vector store IDs via tools.file_search instead.
     /* Debug log to verify file_search attachments */
     logger.warn(
-      `[OpenAIClient] buildResponsesRequest file_search resources: ${JSON.stringify(requestBody.tool_resources)}`,
+      `[OpenAIClient] buildResponsesRequest file_search resources (source): ${JSON.stringify(
+        modelOptions.tool_resources,
+      )}`,
     );
     // eslint-disable-next-line no-console
-    console.log('[OpenAIClient] buildResponsesRequest tool_resources:', requestBody.tool_resources);
+    console.log('[OpenAIClient] buildResponsesRequest tool_resources source:', modelOptions.tool_resources);
     // eslint-disable-next-line no-console
     console.log('[OpenAIClient] buildResponsesRequest tools:', requestBody.tools);
     return requestBody;

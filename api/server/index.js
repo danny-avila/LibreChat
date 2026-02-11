@@ -40,10 +40,16 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 const app = express();
 
 function ensureCodeCanConfig() {
-  const { CODECAN_OPENAI_FILE_ID, CODECAN_OPENAI_VECTOR_STORE_ID } = process.env;
-  if (!CODECAN_OPENAI_FILE_ID && !CODECAN_OPENAI_VECTOR_STORE_ID) {
+  const {
+    CODECAN_OPENAI_FILE_ID,
+    CODECAN_OPENAI_ONTARIO_VECTOR_STORE_ID,
+    CODECAN_OPENAI_NATIONAL_VECTOR_STORE_ID,
+    CODECAN_OPENAI_VECTOR_STORE_ID,
+  } = process.env;
+  const hasNationalVectorStore = !!(CODECAN_OPENAI_NATIONAL_VECTOR_STORE_ID || CODECAN_OPENAI_VECTOR_STORE_ID);
+  if (!CODECAN_OPENAI_FILE_ID && !CODECAN_OPENAI_ONTARIO_VECTOR_STORE_ID && !hasNationalVectorStore) {
     logger.warn(
-      'CodeCan configuration: neither CODECAN_OPENAI_FILE_ID nor CODECAN_OPENAI_VECTOR_STORE_ID is set; falling back to defaults',
+      'CodeCan configuration: no CodeCan file/vector store env vars are set; falling back to Ontario/National defaults',
     );
   }
 }

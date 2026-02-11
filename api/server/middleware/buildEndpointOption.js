@@ -19,6 +19,8 @@ const {
   buildCodeCanSystemPrompt,
   getCodeCanModel,
   getCodeCanFileId,
+  getCodeCanVectorStoreConfig,
+  getCodeCanVectorStoreIds,
 } = require('~/server/services/prompts/codeCan');
 
 const buildFunction = {
@@ -34,16 +36,21 @@ const buildFunction = {
 };
 
 async function buildEndpointOption(req, res, next) {
+  const defaultStage = 'ontario';
+  const codeCanPrompt = buildCodeCanSystemPrompt(defaultStage);
+  const vectorStoreConfig = getCodeCanVectorStoreConfig();
   const codeCanModel = getCodeCanModel();
   req.body.endpoint = EModelEndpoint.openAI;
   req.body.endpointType = EModelEndpoint.openAI;
   req.body.agent_id = Constants.EPHEMERAL_AGENT_ID;
   req.body.model = codeCanModel;
-  req.body.promptPrefix = buildCodeCanSystemPrompt();
+  req.body.promptPrefix = codeCanPrompt;
   logger.info('[CodeCan] Config', {
     model: codeCanModel,
     fileId: getCodeCanFileId(),
-    vectorStoreId: process.env.CODECAN_OPENAI_VECTOR_STORE_ID,
+    ontarioVectorStoreId: vectorStoreConfig.ontarioId,
+    nationalVectorStoreId: vectorStoreConfig.nationalId,
+    activeDefaultStage: defaultStage,
   });
 
   const { endpoint, endpointType } = req.body;
@@ -96,20 +103,19 @@ async function buildEndpointOption(req, res, next) {
     }
   }
 
-  const vectorStoreId =
-    process.env.CODECAN_OPENAI_VECTOR_STORE_ID || 'vs_693860848bc48191bccb7c1d197f488f';
   const fileSearchTool = [{ type: 'file_search' }];
   const fileSearchResources = {
     file_search: {
-      vector_store_ids: [vectorStoreId],
+      vector_store_ids: getCodeCanVectorStoreIds(defaultStage),
     },
   };
 
-  parsedBody.promptPrefix = buildCodeCanSystemPrompt();
+  parsedBody.promptPrefix = codeCanPrompt;
   parsedBody.model = codeCanModel;
   parsedBody.model_parameters = Object.assign({}, parsedBody.model_parameters, {
     model: codeCanModel,
     useResponsesApi: true,
+    instructions: codeCanPrompt,
     tools: fileSearchTool,
     tool_choice: 'required',
     tool_resources: fileSearchResources,
@@ -140,6 +146,7 @@ async function buildEndpointOption(req, res, next) {
     }
     req.body.endpointOption.modelOptions.model = codeCanModel;
     req.body.endpointOption.modelOptions.useResponsesApi = true;
+    req.body.endpointOption.modelOptions.instructions = codeCanPrompt;
     req.body.endpointOption.modelOptions.tool_choice = 'required';
     req.body.endpointOption.modelOptions.tools = fileSearchTool;
     req.body.endpointOption.modelOptions.tool_resources = fileSearchResources;

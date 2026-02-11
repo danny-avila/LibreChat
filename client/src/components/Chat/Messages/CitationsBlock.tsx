@@ -20,6 +20,20 @@ const resolvePdfPath = (pdfPath: string) => {
   return `${assetBasePath}${pdfPath.startsWith('/') ? '' : '/'}${pdfPath}`;
 };
 
+const resolvePdfMeta = (rawKey: string): PdfMeta | undefined => {
+  if (!rawKey) {
+    return undefined;
+  }
+  const map = pdfMap as Record<string, PdfMeta>;
+  if (map[rawKey]) {
+    return map[rawKey];
+  }
+  if (rawKey === 'ontario_combined' || rawKey.startsWith('ontario_') || rawKey.startsWith('ontario')) {
+    return map.ontario;
+  }
+  return undefined;
+};
+
 type CitationsBlockProps = {
   citations?: TCitation[];
   className?: string;
@@ -46,7 +60,7 @@ const CitationsBlock: React.FC<CitationsBlockProps> = ({ citations, className })
 
       const key = match?.[1] ?? '';
       const page = match?.[2] ? parseInt(match[2], 10) : citation.page ?? null;
-      const meta = key && (pdfMap as Record<string, PdfMeta>)[key];
+      const meta = resolvePdfMeta(key);
 
       const displayName =
         meta?.displayName ?? citation.label ?? citation.id ?? citation.url ?? 'Citation';

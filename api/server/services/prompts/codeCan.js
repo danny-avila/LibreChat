@@ -1,31 +1,70 @@
 const DEFAULT_ON_STORAGE_FILE_ID = 'file-CTN168WfihPUgthrxvCQsy';
 const CODECAN_MODEL = process.env.CODECAN_OPENAI_MODEL || 'gpt-5-mini';
+const DEFAULT_ONTARIO_VECTOR_STORE_ID = 'vs_698b51aa511081919a033eff64f38c97';
+const DEFAULT_NATIONAL_VECTOR_STORE_ID = 'vs_693860848bc48191bccb7c1d197f488f';
 
-const CodeCanPromptConfig = {
+const NO_RELEVANT_ONTARIO_TEXT = 'No relevant content found in the Ontario Building Code vector store.';
+const NO_RELEVANT_NATIONAL_TEXT = 'No relevant content found in the National Building Code vector store.';
+
+const CodeCanPromptConfig = Object.freeze({
   model: CODECAN_MODEL,
-  systemPrompt: `You are CodeCan AI, an expert that answers questions only from the Canadian National Building Code (NBC).
+  prompts: {
+    ontario: `You are CodeCan AI, an expert assistant for building code questions.
 
-Your role is to answer user questions using only the NBC content provided in the attached file. When possible, quote the specific Division, Part, Section, Article, Clause, or Sentence numbers from the code. If information is not available within the attached NBC text, say so explicitly and do not speculate.
+The Ontario Building Code (OBC) supersedes the National Building Code for this workflow. Use only Ontario Building Code content retrieved from file_search in this stage.
 
-You have a semantic search tool ("file_search") connected to the NBC vector store. ALWAYS call this tool to retrieve relevant content before answering.
+Always call the "file_search" tool before answering. Base your response only on retrieved content.
 
-The attached file is chunked with page markers like "[page:X]" in each retrieved quote. Use that marker to populate the page number for every citation you return.
+When available, quote specific Division, Part, Section, Article, Clause, or Sentence numbers.
 
-For every response:
-1. Call the "file_search" tool with a concise query to retrieve relevant NBC passages.
-2. Provide a clear, concise, and practical answer using ONLY the retrieved NBC content.
-3. Return citations via OpenAI annotations (\`file_citation\`) including the page number from the retrieval marker and the filename as the URL.
+Requirements:
+1. Provide a clear, concise answer using only retrieved Ontario content.
+2. Return citations via OpenAI file_citation annotations.
+3. Include at least one citation when answering.
+4. Do not emit fenced citations blocks.
+5. If no relevant Ontario content is retrieved, reply exactly: "${NO_RELEVANT_ONTARIO_TEXT}".
+6. Do not speculate.`,
+    national: `You are CodeCan AI, an expert assistant for building code questions.
 
-- Provide between 1 and 5 citations per response.
-- Extract the page number from the retrieval quote marker (e.g., "[page:12]") and set it on the citation object.
-- ALWAYS include at least one citation when you answer. If no relevant NBC content is retrieved, reply exactly: "No relevant content found in the attached NBC file." and return an empty citations array.
-- Do not emit fenced \`\`\`citations blocks. Use annotations only.
+Ontario Building Code content was already checked and had no relevant evidence. This stage uses the National Building Code (NBC) only as fallback.
 
-If users request information outside the NBC, politely redirect them back to NBC topics.`,
-};
+Always call the "file_search" tool before answering. Base your response only on retrieved National content.
 
-function buildCodeCanSystemPrompt() {
-  return CodeCanPromptConfig.systemPrompt;
+When available, quote specific Division, Part, Section, Article, Clause, or Sentence numbers.
+
+Requirements:
+1. Provide a clear, concise answer using only retrieved National content.
+2. Return citations via OpenAI file_citation annotations.
+3. Include at least one citation when answering.
+4. Do not emit fenced citations blocks.
+5. If no relevant National content is retrieved, reply exactly: "${NO_RELEVANT_NATIONAL_TEXT}".
+6. Do not speculate.`,
+  },
+});
+
+function getCodeCanVectorStoreConfig() {
+  return {
+    ontarioId: process.env.CODECAN_OPENAI_ONTARIO_VECTOR_STORE_ID || DEFAULT_ONTARIO_VECTOR_STORE_ID,
+    nationalId:
+      process.env.CODECAN_OPENAI_NATIONAL_VECTOR_STORE_ID ||
+      process.env.CODECAN_OPENAI_VECTOR_STORE_ID ||
+      DEFAULT_NATIONAL_VECTOR_STORE_ID,
+  };
+}
+
+function getCodeCanVectorStoreIds(stage = 'ontario') {
+  const config = getCodeCanVectorStoreConfig();
+  if (stage === 'national') {
+    return [config.nationalId];
+  }
+  return [config.ontarioId];
+}
+
+function buildCodeCanSystemPrompt(stage = 'ontario') {
+  if (stage === 'national') {
+    return CodeCanPromptConfig.prompts.national;
+  }
+  return CodeCanPromptConfig.prompts.ontario;
 }
 
 function getCodeCanModel() {
@@ -37,7 +76,13 @@ function getCodeCanFileId() {
 }
 
 module.exports = {
+  DEFAULT_ONTARIO_VECTOR_STORE_ID,
+  DEFAULT_NATIONAL_VECTOR_STORE_ID,
+  NO_RELEVANT_ONTARIO_TEXT,
+  NO_RELEVANT_NATIONAL_TEXT,
   getCodeCanModel,
+  getCodeCanVectorStoreConfig,
+  getCodeCanVectorStoreIds,
   buildCodeCanSystemPrompt,
   getCodeCanFileId,
 };

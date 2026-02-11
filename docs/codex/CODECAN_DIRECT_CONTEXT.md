@@ -4,12 +4,17 @@ This document captures the key architectural decisions, fixes, and constraints a
 
 ## Why CodeCanDirect Exists
 - CodeCanDirect bypasses the standard agents/graph flow to force a locked-down OpenAI Responses API path with `file_search` against a specific vector store.
-- The model is constrained to CodeCan Building Code content; citations are required and must map to NBC page markers.
+- The model is constrained to CodeCan Building Code content; citations are required.
+- Retrieval precedence is Ontario-first, National fallback:
+  - Ontario vector store is checked first.
+  - National vector store is only used when Ontario has no relevant evidence.
 
 ## Core Flow (Backend)
 - Handler: `api/server/controllers/agents/codeCanDirect.js`
 - Uses `OpenAIClient.handleResponsesApi` with `useResponsesApi: true` and `stream: true`.
 - Always includes `file_search` with `vector_store_ids` and `tool_choice: required`.
+- Performs a non-streaming Ontario preflight to decide stage selection.
+- Streams only the final selected stage response.
 - Uses `createOnProgress` to stream tokens via SSE using LibreChat’s expected schema.
 - Captures `returnRaw` response and extracts `output_text.annotations` to build `citations`.
 
@@ -45,7 +50,10 @@ This document captures the key architectural decisions, fixes, and constraints a
 - Client SSE handlers live in `client/src/hooks/SSE/useEventHandlers.ts`.
 - `createdHandler` inserts conversations into cache for immediate sidebar update.
 - Citations appear only if `responseMessage.citations` is present and saved.
-- CodeCanDirect extracts citations from `output_text.annotations` (file_citation) and maps `page` from filename like `nbc2020_page_845.json`.
+- CodeCanDirect extracts citations from `output_text.annotations` (file_citation) and maps `page` from filename patterns like:
+  - `ontario_page_845.json`
+  - `ontario_combined_page_845.json`
+  - `nbc2020_page_845.json`
 
 ## Key Files
 - Backend:
@@ -62,4 +70,4 @@ This document captures the key architectural decisions, fixes, and constraints a
 - Title errors: title request still using Responses API or not dropping CodeCan-only params.
 - Missing citations: no `returnRaw` or failed annotation extraction.
 - File_search errors: missing `vector_store_ids` in `tools`.
-
+- Incorrect source precedence: Ontario preflight bypassed or National store used before Ontario.
