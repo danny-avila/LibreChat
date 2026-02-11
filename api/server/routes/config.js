@@ -90,9 +90,9 @@ router.get('/', async function (req, res) {
         !!process.env.EMAIL_FROM,
       passwordResetEnabled,
       showBirthdayIcon:
-        isBirthday() ||
-        isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
-        process.env.SHOW_BIRTHDAY_ICON === '',
+        process.env.SHOW_BIRTHDAY_ICON !== undefined
+          ? isEnabled(process.env.SHOW_BIRTHDAY_ICON) || process.env.SHOW_BIRTHDAY_ICON === ''
+          : isBirthday(),
       helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
       interface: appConfig?.interfaceConfig,
       i18n: appConfig?.i18n,
