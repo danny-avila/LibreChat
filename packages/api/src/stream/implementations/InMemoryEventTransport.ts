@@ -32,7 +32,7 @@ export class InMemoryEventTransport implements IEventTransport {
       onDone?: (event: unknown) => void;
       onError?: (error: string) => void;
     },
-  ): { unsubscribe: () => void } {
+  ): { unsubscribe: () => void; ready?: Promise<void> } {
     const state = this.getOrCreateStream(streamId);
 
     const chunkHandler = (event: unknown) => handlers.onChunk(event);

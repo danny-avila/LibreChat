@@ -745,7 +745,6 @@ class GenerationJobManagerClass {
     const subscription = this.eventTransport.subscribe(streamId, {
       onChunk: (event) => {
         const e = event as t.ServerSentEvent;
-        // Filter out internal events
         if (!(e as Record<string, unknown>)._internal) {
           onChunk(e);
         }
@@ -754,14 +753,15 @@ class GenerationJobManagerClass {
       onError,
     });
 
-    // Check if this is the first subscriber
+    if (subscription.ready) {
+      await subscription.ready;
+    }
+
     const isFirst = this.eventTransport.isFirstSubscriber(streamId);
 
-    // First subscriber: replay buffered events and mark as connected
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
 
-      // Replay any events that were emitted before subscriber connected
       if (runtime.earlyEventBuffer.length > 0) {
         logger.debug(
           `[GenerationJobManager] Replaying ${runtime.earlyEventBuffer.length} buffered events for ${streamId}`,
@@ -771,6 +771,8 @@ class GenerationJobManagerClass {
         }
         runtime.earlyEventBuffer = [];
       }
+
+      this.eventTransport.syncReorderBuffer?.(streamId);
     }
 
     if (isFirst) {
@@ -823,12 +825,13 @@ class GenerationJobManagerClass {
       }
     }
 
-    // Buffer early events if no subscriber yet (replay when first subscriber connects)
     if (!runtime.hasSubscriber) {
       runtime.earlyEventBuffer.push(event);
+      if (!this._isRedis) {
+        return;
+      }
     }
 
-    // Await the transport emit - critical for Redis mode to maintain event order
     await this.eventTransport.emitChunk(streamId, event);
   }
 
