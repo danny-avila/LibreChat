@@ -3,6 +3,7 @@ const { createContentAggregator } = require('@librechat/agents');
 const {
   initializeAgent,
   createSummarizeFn,
+  getProviderConfig,
   validateAgentModel,
   createEdgeCollector,
   filterOrphanedEdges,
@@ -23,7 +24,6 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
-const { getProviderConfig } = require('~/server/services/Endpoints');
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
 const { logViolation } = require('~/cache');

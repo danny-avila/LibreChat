@@ -9,6 +9,7 @@ const {
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
+  getProviderConfig,
   createSummarizeFn,
   recordCollectedUsage,
   getTransactionsConfig,
@@ -40,7 +41,6 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getProviderConfig } = require('~/server/services/Endpoints');
 const db = require('~/models');
 
 /** @type {import('@librechat/api').AppConfig | null} */

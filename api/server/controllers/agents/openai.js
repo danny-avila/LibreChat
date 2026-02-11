@@ -12,6 +12,7 @@ const {
   validateRequest,
   initializeAgent,
   getBalanceConfig,
+  getProviderConfig,
   createSummarizeFn,
   createErrorResponse,
   recordCollectedUsage,
@@ -28,7 +29,6 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getProviderConfig } = require('~/server/services/Endpoints');
 const db = require('~/models');
 
 /**
