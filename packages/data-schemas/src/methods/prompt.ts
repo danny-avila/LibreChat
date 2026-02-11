@@ -77,7 +77,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
         .lean();
       return await attachProductionPrompts(groups as unknown as Array<Record<string, unknown>>);
     } catch (error) {
-      console.error('Error getting all prompt groups', error);
+      logger.error('Error getting all prompt groups', error);
       return { message: 'Error getting all prompt groups' };
     }
   }
@@ -143,7 +143,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
         pages: Math.ceil(totalPromptGroups / validatedPageSize).toString(),
       };
     } catch (error) {
-      console.error('Error getting prompt groups', error);
+      logger.error('Error getting prompt groups', error);
       return { message: 'Error getting prompt groups' };
     }
   }
@@ -210,12 +210,20 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
     if (after && typeof after === 'string' && after !== 'undefined' && after !== 'null') {
       try {
         const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
-        const { updatedAt, _id } = cursor;
+        const { numberOfGenerations, updatedAt, _id } = cursor;
 
         const cursorCondition = {
           $or: [
-            { updatedAt: { $lt: new Date(updatedAt) } },
-            { updatedAt: new Date(updatedAt), _id: { $gt: new ObjectId(_id) } },
+            { numberOfGenerations: { $lt: numberOfGenerations } },
+            {
+              numberOfGenerations,
+              updatedAt: { $lt: new Date(updatedAt) },
+            },
+            {
+              numberOfGenerations,
+              updatedAt: new Date(updatedAt),
+              _id: { $gt: new ObjectId(_id) },
+            },
           ],
         };
 
@@ -264,6 +272,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       const lastGroup = promptGroups[normalizedLimit - 1] as Record<string, unknown>;
       nextCursor = Buffer.from(
         JSON.stringify({
+          numberOfGenerations: lastGroup.numberOfGenerations,
           updatedAt: (lastGroup.updatedAt as Date).toISOString(),
           _id: (lastGroup._id as Types.ObjectId).toString(),
         }),

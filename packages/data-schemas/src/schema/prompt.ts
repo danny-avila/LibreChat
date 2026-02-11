@@ -13,6 +13,7 @@ const promptSchema: Schema<IPrompt> = new Schema(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+      index: true,
     },
     prompt: {
       type: String,
