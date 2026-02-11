@@ -26,6 +26,7 @@ export type PersistSummaryResult = {
 
 export type SummarizeFn = (params: {
   prompt: string;
+  customPrompt?: string;
   agentId: string;
   context: BaseMessage[];
   messagesToRefine: BaseMessage[];
@@ -52,6 +53,7 @@ export interface SummarizeOptions {
 
 export type SummarizationUsage = {
   type: 'summarization';
+  phase?: 'single' | 'chunk' | 'merge';
   provider: string;
   model: string;
   input_tokens?: number;
@@ -84,6 +86,13 @@ const DEFAULT_SUMMARIZE_PROMPT = `Summarize the following conversation for conte
 Preserve: the user's objective, key decisions, important code/file paths, current progress state, next steps, relevant errors and resolutions, and critical tool results.
 
 Be concise but thorough. Focus on what is needed to continue the task effectively.`;
+
+const DEFAULT_SUMMARIZATION_PARTS = 2;
+const DEFAULT_MIN_MESSAGES_FOR_SPLIT = 4;
+const DEFAULT_MAX_INPUT_TOKENS_FOR_SINGLE_PASS = 32000;
+const MERGE_SUMMARIES_PROMPT = `Merge these partial summaries into a single cohesive summary.
+
+Preserve decisions, TODOs, open questions, constraints, and the exact user objective.`;
 
 export function resolveSummarizationLLMConfig({
   agentId,
@@ -154,6 +163,82 @@ function extractTextContent(content: AIMessageChunk['content']): string {
   return String(content);
 }
 
+function normalizePositiveInt(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.floor(value);
+}
+
+function estimateTokensFromText(text: string): number {
+  return Math.max(1, Math.ceil(text.length / 3.5));
+}
+
+function estimateMessagesTokens(messages: BaseMessage[]): number {
+  if (messages.length === 0) {
+    return 0;
+  }
+  return messages.reduce((sum, message) => {
+    const text = getBufferString([message]);
+    return sum + estimateTokensFromText(text);
+  }, 0);
+}
+
+function splitMessagesByTokenShare(messages: BaseMessage[], parts: number): BaseMessage[][] {
+  if (messages.length === 0) {
+    return [];
+  }
+
+  const normalizedParts = Math.min(
+    Math.max(1, normalizePositiveInt(parts, DEFAULT_SUMMARIZATION_PARTS)),
+    messages.length,
+  );
+  if (normalizedParts <= 1) {
+    return [messages];
+  }
+
+  const weighted = messages.map((message) => ({
+    message,
+    tokens: estimateTokensFromText(getBufferString([message])),
+  }));
+  const totalTokens = weighted.reduce((sum, item) => sum + item.tokens, 0);
+  const targetTokens = Math.max(1, totalTokens / normalizedParts);
+  const chunks: BaseMessage[][] = [];
+  let currentChunk: BaseMessage[] = [];
+  let currentTokens = 0;
+
+  for (const item of weighted) {
+    if (
+      chunks.length < normalizedParts - 1 &&
+      currentChunk.length > 0 &&
+      currentTokens + item.tokens > targetTokens
+    ) {
+      chunks.push(currentChunk);
+      currentChunk = [];
+      currentTokens = 0;
+    }
+    currentChunk.push(item.message);
+    currentTokens += item.tokens;
+  }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
+function buildMergeSummariesPrompt(partialSummaries: string[], customPrompt?: string): string {
+  const additionalFocus =
+    customPrompt && customPrompt.trim().length > 0
+      ? `\n\nAdditional focus:\n${customPrompt.trim()}`
+      : '';
+  const partials = partialSummaries
+    .map((summary, index) => `Partial ${index + 1}:\n${summary}`)
+    .join('\n\n');
+  return `${MERGE_SUMMARIES_PROMPT}${additionalFocus}\n\n${partials}`;
+}
+
 export function createSummarizeFn({
   resolveConfig,
   getProviderOptions,
@@ -165,7 +250,7 @@ export function createSummarizeFn({
 }): SummarizeFn {
   const modelCache = new Map<string, Runnable>();
 
-  return async ({ prompt, agentId }) => {
+  return async ({ prompt, customPrompt, agentId, messagesToRefine }) => {
     const resolved = resolveConfig(agentId);
     if (!resolved.enabled) {
       throw new Error('Summarization is disabled for this agent');
@@ -184,26 +269,108 @@ export function createSummarizeFn({
       modelCache.set(cacheKey, chatModel);
     }
 
-    const response = await chatModel.invoke(prompt);
-    const text = extractTextContent(response.content);
-    const usageMeta = response.usage_metadata as
-      | { input_tokens?: number; output_tokens?: number; total_tokens?: number }
-      | undefined;
+    const invokeSummary = async ({
+      currentPrompt,
+      phase,
+    }: {
+      currentPrompt: string;
+      phase: SummarizationUsage['phase'];
+    }) => {
+      const response = await chatModel.invoke(currentPrompt);
+      const text = extractTextContent(response.content).trim();
+      const usageMeta = response.usage_metadata as
+        | { input_tokens?: number; output_tokens?: number; total_tokens?: number }
+        | undefined;
 
-    const tokenCount = usageMeta?.output_tokens ?? Math.ceil(text.length / 3.5);
+      await onUsage?.({
+        type: 'summarization',
+        phase,
+        provider: provider as string,
+        model,
+        input_tokens: usageMeta?.input_tokens,
+        output_tokens: usageMeta?.output_tokens,
+        total_tokens: usageMeta?.total_tokens,
+      });
 
-    await onUsage?.({
-      type: 'summarization',
-      provider: provider as string,
-      model,
-      input_tokens: usageMeta?.input_tokens,
-      output_tokens: usageMeta?.output_tokens,
-      total_tokens: usageMeta?.total_tokens,
-    });
+      return {
+        text,
+        tokenCount: usageMeta?.output_tokens ?? estimateTokensFromText(text),
+      };
+    };
+
+    const summarizeInStages = async () => {
+      const parts = normalizePositiveInt(resolved.parameters?.parts, DEFAULT_SUMMARIZATION_PARTS);
+      const chunks = splitMessagesByTokenShare(messagesToRefine, parts).filter(
+        (chunk) => chunk.length > 0,
+      );
+      if (chunks.length <= 1) {
+        return invokeSummary({ currentPrompt: prompt, phase: 'single' });
+      }
+
+      const partials: string[] = [];
+      let latestTokenCount = 0;
+      for (const chunk of chunks) {
+        const chunkPrompt = buildSummarizationPrompt(chunk, customPrompt);
+        const chunkResult = await invokeSummary({
+          currentPrompt: chunkPrompt,
+          phase: 'chunk',
+        });
+        latestTokenCount = chunkResult.tokenCount;
+        if (chunkResult.text.length > 0) {
+          partials.push(chunkResult.text);
+        }
+      }
+
+      if (partials.length === 0) {
+        throw new Error('Summarization returned empty partial summaries');
+      }
+
+      if (partials.length === 1) {
+        return {
+          text: partials[0],
+          tokenCount: latestTokenCount || estimateTokensFromText(partials[0]),
+        };
+      }
+
+      const mergePrompt = buildMergeSummariesPrompt(partials, customPrompt);
+      return invokeSummary({ currentPrompt: mergePrompt, phase: 'merge' });
+    };
+
+    const parts = normalizePositiveInt(resolved.parameters?.parts, DEFAULT_SUMMARIZATION_PARTS);
+    const minMessagesForSplit = normalizePositiveInt(
+      resolved.parameters?.minMessagesForSplit,
+      DEFAULT_MIN_MESSAGES_FOR_SPLIT,
+    );
+    const maxInputTokensForSinglePass = normalizePositiveInt(
+      resolved.parameters?.maxInputTokensForSinglePass,
+      DEFAULT_MAX_INPUT_TOKENS_FOR_SINGLE_PASS,
+    );
+
+    const estimatedInputTokens =
+      messagesToRefine.length > 0
+        ? estimateMessagesTokens(messagesToRefine)
+        : estimateTokensFromText(prompt);
+    const canStageSummarization = parts > 1 && messagesToRefine.length >= minMessagesForSplit;
+    const shouldStageSummarization =
+      canStageSummarization && estimatedInputTokens > maxInputTokensForSinglePass;
+
+    let summaryResult: { text: string; tokenCount: number };
+    if (shouldStageSummarization) {
+      summaryResult = await summarizeInStages();
+    } else {
+      try {
+        summaryResult = await invokeSummary({ currentPrompt: prompt, phase: 'single' });
+      } catch (error) {
+        if (!canStageSummarization) {
+          throw error;
+        }
+        summaryResult = await summarizeInStages();
+      }
+    }
 
     return {
-      text,
-      tokenCount,
+      text: summaryResult.text,
+      tokenCount: summaryResult.tokenCount,
       model,
       provider: provider as string,
     };
@@ -243,6 +410,7 @@ export function createSummarizeHandler(options: SummarizeOptions): EventHandler 
         const prompt = buildSummarizationPrompt(data.messagesToRefine, customPrompt);
         const summary = await summarize({
           prompt,
+          customPrompt,
           agentId: data.agentId,
           context: data.context,
           messagesToRefine: data.messagesToRefine,

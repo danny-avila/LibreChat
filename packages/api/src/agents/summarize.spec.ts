@@ -241,6 +241,106 @@ describe('createSummarizeFn', () => {
       }),
     ).rejects.toThrow('disabled');
   });
+
+  it('uses staged chunk-and-merge summarization for oversized refine sets', async () => {
+    const usages: SummarizationUsage[] = [];
+    const resolveConfig = () => ({
+      enabled: true,
+      provider: 'openAI',
+      model: 'gpt-4.1-mini',
+      parameters: {
+        parts: 2,
+        minMessagesForSplit: 2,
+        maxInputTokensForSinglePass: 1,
+      },
+    });
+    const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
+      provider: resolved.provider as Providers,
+      clientOptions: { model: resolved.model },
+      model: resolved.model,
+    });
+
+    mockInvoke
+      .mockResolvedValueOnce({
+        content: 'Chunk summary 1',
+        usage_metadata: { input_tokens: 20, output_tokens: 10, total_tokens: 30 },
+      })
+      .mockResolvedValueOnce({
+        content: 'Chunk summary 2',
+        usage_metadata: { input_tokens: 20, output_tokens: 10, total_tokens: 30 },
+      })
+      .mockResolvedValueOnce({
+        content: 'Merged summary',
+        usage_metadata: { input_tokens: 15, output_tokens: 8, total_tokens: 23 },
+      });
+
+    const fn = createSummarizeFn({
+      resolveConfig,
+      getProviderOptions,
+      onUsage: (u) => usages.push(u),
+    });
+
+    const result = await fn({
+      prompt: 'Summarize this',
+      customPrompt: 'Focus on decisions',
+      agentId: 'agent_1',
+      context: [],
+      messagesToRefine: [new HumanMessage('Older message 1'), new HumanMessage('Older message 2')],
+      remainingContextTokens: 100,
+    });
+
+    expect(result.text).toBe('Merged summary');
+    expect(result.tokenCount).toBe(8);
+    expect(mockInvoke).toHaveBeenCalledTimes(3);
+    expect(usages.map((u) => u.phase)).toEqual(['chunk', 'chunk', 'merge']);
+  });
+
+  it('falls back to staged summarization when single-pass invocation fails', async () => {
+    const resolveConfig = () => ({
+      enabled: true,
+      provider: 'openAI',
+      model: 'gpt-4.1-mini',
+      parameters: {
+        parts: 2,
+        minMessagesForSplit: 2,
+        maxInputTokensForSinglePass: 999999,
+      },
+    });
+    const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
+      provider: resolved.provider as Providers,
+      clientOptions: { model: resolved.model },
+      model: resolved.model,
+    });
+
+    mockInvoke
+      .mockRejectedValueOnce(new Error('single-pass failed'))
+      .mockResolvedValueOnce({
+        content: 'Chunk fallback 1',
+        usage_metadata: { input_tokens: 12, output_tokens: 6, total_tokens: 18 },
+      })
+      .mockResolvedValueOnce({
+        content: 'Chunk fallback 2',
+        usage_metadata: { input_tokens: 12, output_tokens: 6, total_tokens: 18 },
+      })
+      .mockResolvedValueOnce({
+        content: 'Merged fallback',
+        usage_metadata: { input_tokens: 8, output_tokens: 5, total_tokens: 13 },
+      });
+
+    const fn = createSummarizeFn({ resolveConfig, getProviderOptions });
+    const result = await fn({
+      prompt: 'Summarize this',
+      customPrompt: 'Focus on actions',
+      agentId: 'agent_1',
+      context: [],
+      messagesToRefine: [new HumanMessage('Older message 1'), new HumanMessage('Older message 2')],
+      remainingContextTokens: 100,
+    });
+
+    expect(result.text).toBe('Merged fallback');
+    expect(result.tokenCount).toBe(5);
+    expect(mockInvoke).toHaveBeenCalledTimes(4);
+  });
 });
 
 describe('createSummarizeHandler', () => {
