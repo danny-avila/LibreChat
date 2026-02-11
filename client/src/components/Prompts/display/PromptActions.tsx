@@ -4,6 +4,7 @@ import { Button } from '@librechat/client';
 import { replaceSpecialVars } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useAuthContext, useSubmitMessage } from '~/hooks';
+import { useRecordPromptUsage } from '~/data-provider';
 import VariableDialog from '../dialogs/VariableDialog';
 import SharePrompt from '../dialogs/SharePrompt';
 import { detectVariables } from '~/utils';
@@ -17,6 +18,7 @@ const PromptActions = ({ group, onUsePrompt }: PromptActionsProps) => {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { submitPrompt } = useSubmitMessage();
+  const recordUsage = useRecordPromptUsage();
   const [showVariableDialog, setShowVariableDialog] = useState(false);
 
   const mainText = useMemo(() => {
@@ -34,9 +36,12 @@ const PromptActions = ({ group, onUsePrompt }: PromptActionsProps) => {
       setShowVariableDialog(true);
     } else {
       submitPrompt(mainText);
+      if (group._id) {
+        recordUsage.mutate(group._id);
+      }
       onUsePrompt?.();
     }
-  }, [hasVariables, submitPrompt, mainText, onUsePrompt]);
+  }, [hasVariables, submitPrompt, mainText, onUsePrompt, group._id, recordUsage]);
 
   const handleVariableDialogClose = useCallback(() => {
     setShowVariableDialog(false);

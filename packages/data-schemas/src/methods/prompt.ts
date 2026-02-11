@@ -72,7 +72,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       }
 
       const groups = await PromptGroup.find(query)
-        .sort({ createdAt: -1 })
+        .sort({ numberOfGenerations: -1, updatedAt: -1 })
         .select('name oneliner category author authorName createdAt updatedAt command productionId')
         .lean();
       return await attachProductionPrompts(groups as unknown as Array<Record<string, unknown>>);
@@ -122,7 +122,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
 
       const [groups, totalPromptGroups] = await Promise.all([
         PromptGroup.find(query)
-          .sort({ createdAt: -1 })
+          .sort({ numberOfGenerations: -1, updatedAt: -1 })
           .skip(skip)
           .limit(limit)
           .select(
@@ -235,7 +235,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
     }
 
     const findQuery = PromptGroup.find(baseQuery)
-      .sort({ updatedAt: -1, _id: 1 })
+      .sort({ numberOfGenerations: -1, updatedAt: -1, _id: 1 })
       .select(
         'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt',
       );
@@ -278,6 +278,24 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       has_more: hasMore,
       after: nextCursor,
     };
+  }
+
+  /**
+   * Increment the numberOfGenerations counter for a prompt group.
+   */
+  async function incrementPromptGroupUsage(groupId: string) {
+    const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
+    const result = await PromptGroup.findByIdAndUpdate(
+      groupId,
+      { $inc: { numberOfGenerations: 1 } },
+      { new: true, select: 'numberOfGenerations' },
+    ).lean();
+
+    if (!result) {
+      throw new Error('Prompt group not found');
+    }
+
+    return { numberOfGenerations: result.numberOfGenerations };
   }
 
   /**
@@ -657,6 +675,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
     deletePromptGroup,
     getAllPromptGroups,
     getListPromptGroupsByAccess,
+    incrementPromptGroupUsage,
     createPromptGroup,
     savePrompt,
     getPrompts,
