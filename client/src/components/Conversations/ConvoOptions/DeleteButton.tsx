@@ -10,6 +10,7 @@ import {
   OGDialogClose,
   OGDialogTitle,
   OGDialogHeader,
+  OGDialogFooter,
   OGDialogContent,
   useToastContext,
 } from '@librechat/client';
@@ -96,7 +97,7 @@ export function DeleteConversationDialog({
           components={{ strong: <strong /> }}
         />
       </div>
-      <div className="flex justify-end gap-4 pt-4">
+      <OGDialogFooter className="pt-4">
         <OGDialogClose asChild>
           <Button aria-label="cancel" variant="outline">
             {localize('com_ui_cancel')}
@@ -105,7 +106,7 @@ export function DeleteConversationDialog({
         <Button variant="destructive" onClick={confirmDelete} disabled={deleteMutation.isLoading}>
           {deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete')}
         </Button>
-      </div>
+      </OGDialogFooter>
     </OGDialogContent>
   );
 }

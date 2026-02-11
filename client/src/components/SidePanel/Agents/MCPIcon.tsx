@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { SquirclePlusIcon } from '@librechat/client';
+import { FileInput, SquirclePlusIcon } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 interface MCPIconProps {
@@ -62,10 +62,9 @@ export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
         </span>
         <span className="text-xs text-text-secondary">{localize('com_agents_mcp_icon_size')}</span>
       </div>
-      <input
-        accept="image/png,.png,image/jpeg,.jpg,.jpeg,image/gif,.gif,image/webp,.webp"
+      <FileInput
+        acceptTypes={['image']}
         multiple={false}
-        type="file"
         style={{ display: 'none' }}
         onChange={onIconChange}
         ref={fileInputRef}

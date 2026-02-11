@@ -1,8 +1,8 @@
-import { useFormContext, Controller } from 'react-hook-form';
 import { Checkbox, Label } from '@librechat/client';
+import { useFormContext, Controller } from 'react-hook-form';
+import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 import { useLocalize, useLocalizedConfig } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
-import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 
 export default function TrustSection() {
   const localize = useLocalize();
@@ -68,7 +68,7 @@ export default function TrustSection() {
         </Label>
       </div>
       {errors.trust && (
-        <p className="mt-2 text-xs text-red-500">{localize('com_ui_field_required')}</p>
+        <p className="text-text-destructive mt-2 text-xs">{localize('com_ui_field_required')}</p>
       )}
     </div>
   );
