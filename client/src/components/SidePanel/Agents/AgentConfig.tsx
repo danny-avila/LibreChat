@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useHref } from 'react-router-dom';
 import copy from 'copy-to-clipboard';
-import { Link, Copy, CopyCheck } from 'lucide-react';
+import { Link, Copy, CopyCheck, Pin, PinOff } from 'lucide-react';
 import { useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
@@ -19,7 +19,7 @@ import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize, useVisibleTools } from '~/hooks';
+import { useLocalize, useVisibleTools, useFavorites } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
 import { useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -44,6 +44,7 @@ export default function AgentConfig() {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
+  const { isFavoriteAgent, toggleFavoriteAgent } = useFavorites();
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
@@ -100,6 +101,15 @@ export default function AgentConfig() {
       }
     },
     [copiedAgentId, localize, showToast, newChatHref],
+  );
+
+  const handleFavoriteClick = useCallback(
+    (id: string) => {
+      if (id) {
+        toggleFavoriteAgent(id);
+      }
+    },
+    [toggleFavoriteAgent],
   );
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
@@ -265,8 +275,9 @@ export default function AgentConfig() {
                 );
               }
               const isCopied = copiedAgentId === field.value;
+              const isFavorite = isFavoriteAgent(field.value);
               return (
-                <p className="h-3" aria-live="polite">
+                <div className="h-3 flex items-center gap-2" aria-live="polite">
                   <button
                     type="button"
                     onClick={() => handleCopyLink(field.value)}
@@ -282,7 +293,20 @@ export default function AgentConfig() {
                       <Copy className="h-3 w-3 shrink-0" aria-hidden="true" />
                     )}
                   </button>
-                </p>
+                  <button
+                    type="button"
+                    onClick={() => handleFavoriteClick(field.value)}
+                    className="flex cursor-pointer items-center gap-1 text-xs italic text-text-secondary transition-colors hover:text-text-primary"
+                    title={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
+                    aria-label={`${isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}: ${field.value}`}
+                  >
+                    {isFavorite ? (
+                      <PinOff className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <Pin className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
               );
             }}
           />
