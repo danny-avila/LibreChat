@@ -128,6 +128,7 @@ describe('createSummarizeFn', () => {
       provider: 'openAI',
       model: 'gpt-4.1-mini',
       parameters: { temperature: 0.3 },
+      prompt: 'Config-driven prompt',
     });
     const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
       provider: resolved.provider as Providers,
@@ -144,13 +145,13 @@ describe('createSummarizeFn', () => {
     });
 
     const result = await fn({
-      prompt: 'Summarize this',
       agentId: 'agent_1',
       context: [new HumanMessage('Recent')],
       messagesToRefine: [new HumanMessage('Old')],
       remainingContextTokens: 100,
     });
 
+    expect(mockInvoke).toHaveBeenCalledWith(expect.stringContaining('Config-driven prompt'));
     expect(result.text).toBe('Summary of the conversation');
     expect(result.tokenCount).toBe(50);
     expect(result.model).toBe('gpt-4.1-mini');
@@ -179,7 +180,6 @@ describe('createSummarizeFn', () => {
 
     const fn = createSummarizeFn({ resolveConfig, getProviderOptions });
     const result = await fn({
-      prompt: 'Summarize',
       agentId: 'agent_1',
       context: [],
       messagesToRefine: [],
@@ -204,7 +204,6 @@ describe('createSummarizeFn', () => {
 
     const fn = createSummarizeFn({ resolveConfig, getProviderOptions });
     const params = {
-      prompt: 'Summarize',
       agentId: 'agent_1',
       context: [],
       messagesToRefine: [],
@@ -233,7 +232,6 @@ describe('createSummarizeFn', () => {
     const fn = createSummarizeFn({ resolveConfig, getProviderOptions });
     await expect(
       fn({
-        prompt: 'Summarize',
         agentId: 'agent_disabled',
         context: [],
         messagesToRefine: [],
@@ -281,8 +279,6 @@ describe('createSummarizeFn', () => {
     });
 
     const result = await fn({
-      prompt: 'Summarize this',
-      customPrompt: 'Focus on decisions',
       agentId: 'agent_1',
       context: [],
       messagesToRefine: [new HumanMessage('Older message 1'), new HumanMessage('Older message 2')],
@@ -329,8 +325,6 @@ describe('createSummarizeFn', () => {
 
     const fn = createSummarizeFn({ resolveConfig, getProviderOptions });
     const result = await fn({
-      prompt: 'Summarize this',
-      customPrompt: 'Focus on actions',
       agentId: 'agent_1',
       context: [],
       messagesToRefine: [new HumanMessage('Older message 1'), new HumanMessage('Older message 2')],

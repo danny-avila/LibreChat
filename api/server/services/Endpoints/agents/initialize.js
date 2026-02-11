@@ -177,7 +177,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
       summarizationOptions = {
         enabled: true,
-        prompt: globalConfig.prompt,
         summarize,
       };
     } catch (error) {

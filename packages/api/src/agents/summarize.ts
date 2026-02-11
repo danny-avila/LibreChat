@@ -25,8 +25,6 @@ export type PersistSummaryResult = {
 };
 
 export type SummarizeFn = (params: {
-  prompt: string;
-  customPrompt?: string;
   agentId: string;
   context: BaseMessage[];
   messagesToRefine: BaseMessage[];
@@ -46,7 +44,6 @@ export type PersistSummaryFn = (params: {
 
 export interface SummarizeOptions {
   summarize: SummarizeFn;
-  customPrompt?: string;
   persistSummary?: PersistSummaryFn;
   onStatusChange?: (event: SummarizationStatus) => void | Promise<void>;
 }
@@ -239,6 +236,14 @@ function buildMergeSummariesPrompt(partialSummaries: string[], customPrompt?: st
   return `${MERGE_SUMMARIES_PROMPT}${additionalFocus}\n\n${partials}`;
 }
 
+function normalizePromptOverride(prompt?: string): string | undefined {
+  if (typeof prompt !== 'string') {
+    return undefined;
+  }
+  const normalized = prompt.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 export function createSummarizeFn({
   resolveConfig,
   getProviderOptions,
@@ -250,11 +255,13 @@ export function createSummarizeFn({
 }): SummarizeFn {
   const modelCache = new Map<string, Runnable>();
 
-  return async ({ prompt, customPrompt, agentId, messagesToRefine }) => {
+  return async ({ agentId, messagesToRefine }) => {
     const resolved = resolveConfig(agentId);
     if (!resolved.enabled) {
       throw new Error('Summarization is disabled for this agent');
     }
+    const promptOverride = normalizePromptOverride(resolved.prompt);
+    const summarizePrompt = buildSummarizationPrompt(messagesToRefine, promptOverride);
 
     const { provider, clientOptions, model } = await getProviderOptions(resolved);
     const cacheKey = `${agentId}|${provider}|${model}`;
@@ -304,13 +311,13 @@ export function createSummarizeFn({
         (chunk) => chunk.length > 0,
       );
       if (chunks.length <= 1) {
-        return invokeSummary({ currentPrompt: prompt, phase: 'single' });
+        return invokeSummary({ currentPrompt: summarizePrompt, phase: 'single' });
       }
 
       const partials: string[] = [];
       let latestTokenCount = 0;
       for (const chunk of chunks) {
-        const chunkPrompt = buildSummarizationPrompt(chunk, customPrompt);
+        const chunkPrompt = buildSummarizationPrompt(chunk, promptOverride);
         const chunkResult = await invokeSummary({
           currentPrompt: chunkPrompt,
           phase: 'chunk',
@@ -332,7 +339,7 @@ export function createSummarizeFn({
         };
       }
 
-      const mergePrompt = buildMergeSummariesPrompt(partials, customPrompt);
+      const mergePrompt = buildMergeSummariesPrompt(partials, promptOverride);
       return invokeSummary({ currentPrompt: mergePrompt, phase: 'merge' });
     };
 
@@ -349,7 +356,7 @@ export function createSummarizeFn({
     const estimatedInputTokens =
       messagesToRefine.length > 0
         ? estimateMessagesTokens(messagesToRefine)
-        : estimateTokensFromText(prompt);
+        : estimateTokensFromText(summarizePrompt);
     const canStageSummarization = parts > 1 && messagesToRefine.length >= minMessagesForSplit;
     const shouldStageSummarization =
       canStageSummarization && estimatedInputTokens > maxInputTokensForSinglePass;
@@ -359,7 +366,7 @@ export function createSummarizeFn({
       summaryResult = await summarizeInStages();
     } else {
       try {
-        summaryResult = await invokeSummary({ currentPrompt: prompt, phase: 'single' });
+        summaryResult = await invokeSummary({ currentPrompt: summarizePrompt, phase: 'single' });
       } catch (error) {
         if (!canStageSummarization) {
           throw error;
@@ -393,7 +400,7 @@ export function createDeferredPersistSummary(): PersistSummaryFn {
 }
 
 export function createSummarizeHandler(options: SummarizeOptions): EventHandler {
-  const { summarize, persistSummary, customPrompt, onStatusChange } = options;
+  const { summarize, persistSummary, onStatusChange } = options;
 
   return {
     handle: async (_event: string, data: SummarizeRequest) => {
@@ -407,10 +414,7 @@ export function createSummarizeHandler(options: SummarizeOptions): EventHandler 
           agentId: data.agentId,
         });
 
-        const prompt = buildSummarizationPrompt(data.messagesToRefine, customPrompt);
         const summary = await summarize({
-          prompt,
-          customPrompt,
           agentId: data.agentId,
           context: data.context,
           messagesToRefine: data.messagesToRefine,

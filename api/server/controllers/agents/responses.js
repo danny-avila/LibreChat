@@ -493,7 +493,6 @@ const createResponse = async (req, res) => {
       const summarizeHandler =
         summarizeFn != null
           ? createSummarizeHandler({
-              customPrompt: summarizationConfig?.prompt,
               summarize: summarizeFn,
               persistSummary: createDeferredPersistSummary(),
               onStatusChange: async (status) => {
@@ -657,7 +656,6 @@ const createResponse = async (req, res) => {
       const summarizeHandler =
         summarizeFn != null
           ? createSummarizeHandler({
-              customPrompt: summarizationConfig?.prompt,
               summarize: summarizeFn,
               persistSummary: createDeferredPersistSummary(),
             })

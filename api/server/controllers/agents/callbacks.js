@@ -250,7 +250,6 @@ function getDefaultHandlers({
 
   if (summarizationOptions?.enabled === true) {
     handlers[GraphEvents.ON_SUMMARIZE] = createSummarizeHandler({
-      customPrompt: summarizationOptions.prompt,
       summarize: summarizationOptions.summarize,
       persistSummary: summarizationOptions.persistSummary ?? createDeferredPersistSummary(),
       onStatusChange: async (status) => {
