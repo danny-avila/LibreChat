@@ -29,6 +29,11 @@ export type ConvertJsonSchemaToZodOptions = {
   transformOneOfAnyOf?: boolean;
 };
 
+export type AppSummarizationConfig = {
+  enabled?: boolean;
+  [key: string]: unknown;
+};
+
 export interface FunctionTool {
   type: 'function';
   function: {
@@ -56,6 +61,8 @@ export interface AppConfig {
   };
   /** Memory configuration */
   memory?: TMemoryConfig;
+  /** Summarization configuration */
+  summarization?: AppSummarizationConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */

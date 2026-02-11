@@ -10,6 +10,18 @@ import { loadMemoryConfig } from './memory';
 import { loadEndpoints } from './endpoints';
 import { loadOCRConfig } from './ocr';
 
+function loadSummarizationConfig(config: DeepPartial<TCustomConfig>): AppConfig['summarization'] {
+  const summarization = (config as { summarization?: AppConfig['summarization'] }).summarization;
+  if (!summarization || typeof summarization !== 'object') {
+    return undefined;
+  }
+
+  return {
+    ...summarization,
+    enabled: summarization.enabled !== false,
+  };
+}
+
 export type Paths = {
   root: string;
   uploads: string;
@@ -41,6 +53,7 @@ export const AppService = async (params?: {
   const ocr = loadOCRConfig(config.ocr);
   const webSearch = loadWebSearchConfig(config.webSearch);
   const memory = loadMemoryConfig(config.memory);
+  const summarization = loadSummarizationConfig(config);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = (config.fileStrategy ?? configDefaults.fileStrategy) as
@@ -73,6 +86,7 @@ export const AppService = async (params?: {
     paths,
     config,
     memory,
+    summarization,
     speech,
     balance,
     actions,
