@@ -59,6 +59,7 @@ endpoints:
   agents:
     capabilities:
       - "context"
+      - "ocr"
 
 # We explicitly spec our models (since we only have a few models and this makes the selector simpler)
 modelSpecs:
@@ -69,3 +70,6 @@ modelSpecs:
       preset:
         endpoint: "bedrock"
         model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+ocr:
+  strategy: "document_parser"
