@@ -47,6 +47,7 @@ export default function Conversation({
   const [hasInteracted, setHasInteracted] = useState(false);
 
   const previousTitle = useRef(title);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (title !== previousTitle.current) {
@@ -109,6 +110,37 @@ export default function Conversation({
     }
   }, [hasInteracted]);
 
+  const handleMouseLeave = useCallback(() => {
+    if (!isPopoverActive) {
+      setHasInteracted(false);
+    }
+  }, [isPopoverActive]);
+
+  const handleBlur = useCallback(
+    (e: React.FocusEvent<HTMLDivElement>) => {
+      // Don't reset if focus is moving to a child element within this container
+      if (e.currentTarget.contains(e.relatedTarget as Node)) {
+        return;
+      }
+      if (!isPopoverActive) {
+        setHasInteracted(false);
+      }
+    },
+    [isPopoverActive],
+  );
+
+  const handlePopoverOpenChange = useCallback((open: boolean) => {
+    setIsPopoverActive(open);
+    if (!open) {
+      requestAnimationFrame(() => {
+        const container = containerRef.current;
+        if (container && !container.contains(document.activeElement)) {
+          setHasInteracted(false);
+        }
+      });
+    }
+  }, []);
+
   const handleNavigation = (ctrlOrMetaKey: boolean) => {
     if (ctrlOrMetaKey) {
       toggleNav();
@@ -141,12 +173,13 @@ export default function Conversation({
     isActiveConvo,
     conversationId,
     isPopoverActive,
-    setIsPopoverActive,
+    setIsPopoverActive: handlePopoverOpenChange,
     isShiftHeld: isActiveConvo ? isShiftHeld : false,
   };
 
   return (
     <div
+      ref={containerRef}
       className={cn(
         'group relative flex h-12 w-full items-center rounded-lg outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white md:h-9',
         isActiveConvo || isPopoverActive
@@ -159,7 +192,9 @@ export default function Conversation({
         title: title || localize('com_ui_untitled'),
       })}
       onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       onFocus={handleMouseEnter}
+      onBlur={handleBlur}
       onClick={(e) => {
         if (renaming) {
           return;

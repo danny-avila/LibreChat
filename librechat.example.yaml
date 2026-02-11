@@ -102,17 +102,14 @@ interface:
   marketplace:
     use: false
   fileCitations: true
-  mcpServers:
-    # MCP Servers configuration
+  # MCP Servers configuration example
+  # mcpServers:
     # Controls user permissions for MCP (Model Context Protocol) server management
     # - use: Allow users to use configured MCP servers
     # - create: Allow users to create and manage new MCP servers
     # - share: Allow users to share MCP servers with other users
     # - public: Allow users to share MCP servers publicly (with everyone)
-    use: false
-    share: false
-    create: false
-    public: false
+     
     # Creation / edit MCP server config Dialog config example
     # trustCheckbox:
     #   label:
@@ -377,9 +374,6 @@ endpoints:
       # Summary Model: Specify the model to use if summarization is enabled.
       # summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
 
-      # Force Prompt setting: If true, sends a `prompt` parameter instead of `messages`.
-      # forcePrompt: false
-
       # The label displayed for the AI model in messages.
       modelDisplayLabel: 'Mistral' # Default is "AI" when not set.
 
@@ -439,25 +433,38 @@ endpoints:
       titleModel: 'current_model'
       summarize: false
       summaryModel: 'current_model'
-      forcePrompt: false
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
+  #   # Models Configuration
+  #   # Specify which models are available (equivalent to BEDROCK_AWS_MODELS env variable)
+  #   models:
+  #     - "anthropic.claude-3-7-sonnet-20250219-v1:0"
+  #     - "anthropic.claude-3-5-sonnet-20241022-v2:0"
+  #
+  #   # Inference Profiles Configuration
+  #   # Maps model IDs to their inference profile ARNs
+  #   # IMPORTANT: The model ID (key) MUST be a valid AWS Bedrock model ID that you've added to the models list above
+  #   # The ARN (value) is the inference profile you wish to map to for that model
+  #   # Both the model ID and ARN are sent to AWS - the model ID for validation/metadata, the ARN for routing
+  #   inferenceProfiles:
+  #     "us.anthropic.claude-sonnet-4-20250514-v1:0": "${BEDROCK_INFERENCE_PROFILE_CLAUDE_SONNET}"
+  #     "anthropic.claude-3-7-sonnet-20250219-v1:0": "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc123"
+  #
   #   # Guardrail Configuration
   #   guardrailConfig:
   #     guardrailIdentifier: "your-guardrail-id"
   #     guardrailVersion: "1"
-  #     
+  #
   #     # Trace behavior for debugging (optional)
   #     # - "enabled": Include basic trace information about guardrail assessments
   #     # - "enabled_full": Include comprehensive trace details (recommended for debugging)
   #     # - "disabled": No trace information (default)
   #     # Trace output is logged to application log files for compliance auditing
   #     trace: "enabled"
-
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:
 # - If 'group' matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint

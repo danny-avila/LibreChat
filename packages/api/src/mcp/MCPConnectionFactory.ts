@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, OAuthMetadata } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
@@ -10,6 +11,13 @@ import { sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
+
+export interface ToolDiscoveryResult {
+  tools: Tool[] | null;
+  connection: MCPConnection | null;
+  oauthRequired: boolean;
+  oauthUrl: string | null;
+}
 
 /**
  * Factory for creating MCP connections with optional OAuth authentication.
@@ -41,6 +49,137 @@ export class MCPConnectionFactory {
     return factory.createConnection();
   }
 
+  /**
+   * Discovers tools from an MCP server, even when OAuth is required.
+   * Per MCP spec, tool listing should be possible without authentication.
+   * Returns tools if discoverable, plus OAuth status for tool execution.
+   */
+  static async discoverTools(
+    basic: t.BasicConnectionOptions,
+    oauth?: Omit<t.OAuthConnectionOptions, 'returnOnOAuth'>,
+  ): Promise<ToolDiscoveryResult> {
+    const factory = new this(basic, oauth ? { ...oauth, returnOnOAuth: true } : undefined);
+    return factory.discoverToolsInternal();
+  }
+
+  protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
+    const oauthUrl: string | null = null;
+    let oauthRequired = false;
+
+    const oauthTokens = this.useOAuth ? await this.getOAuthTokens() : null;
+    const connection = new MCPConnection({
+      serverName: this.serverName,
+      serverConfig: this.serverConfig,
+      userId: this.userId,
+      oauthTokens,
+    });
+
+    const oauthHandler = async () => {
+      logger.info(
+        `${this.logPrefix} [Discovery] OAuth required; skipping URL generation in discovery mode`,
+      );
+      oauthRequired = true;
+      connection.emit('oauthFailed', new Error('OAuth required during tool discovery'));
+    };
+
+    if (this.useOAuth) {
+      connection.on('oauthRequired', oauthHandler);
+    }
+
+    try {
+      const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+      await withTimeout(
+        connection.connect(),
+        connectTimeout,
+        `Connection timeout after ${connectTimeout}ms`,
+      );
+
+      if (await connection.isConnected()) {
+        const tools = await connection.fetchTools();
+        if (this.useOAuth) {
+          connection.removeListener('oauthRequired', oauthHandler);
+        }
+        return { tools, connection, oauthRequired: false, oauthUrl: null };
+      }
+    } catch {
+      logger.debug(
+        `${this.logPrefix} [Discovery] Connection failed, attempting unauthenticated tool listing`,
+      );
+    }
+
+    try {
+      const tools = await this.attemptUnauthenticatedToolListing();
+      if (this.useOAuth) {
+        connection.removeListener('oauthRequired', oauthHandler);
+      }
+      if (tools && tools.length > 0) {
+        logger.info(
+          `${this.logPrefix} [Discovery] Successfully discovered ${tools.length} tools without auth`,
+        );
+        try {
+          await connection.disconnect();
+        } catch {
+          // Ignore cleanup errors
+        }
+        return { tools, connection: null, oauthRequired, oauthUrl };
+      }
+    } catch (listError) {
+      logger.debug(`${this.logPrefix} [Discovery] Unauthenticated tool listing failed:`, listError);
+    }
+
+    if (this.useOAuth) {
+      connection.removeListener('oauthRequired', oauthHandler);
+    }
+
+    try {
+      await connection.disconnect();
+    } catch {
+      // Ignore cleanup errors
+    }
+
+    return { tools: null, connection: null, oauthRequired, oauthUrl };
+  }
+
+  protected async attemptUnauthenticatedToolListing(): Promise<Tool[] | null> {
+    const unauthConnection = new MCPConnection({
+      serverName: this.serverName,
+      serverConfig: this.serverConfig,
+      userId: this.userId,
+      oauthTokens: null,
+    });
+
+    unauthConnection.on('oauthRequired', () => {
+      logger.debug(
+        `${this.logPrefix} [Discovery] Unauthenticated connection requires OAuth, failing fast`,
+      );
+      unauthConnection.emit(
+        'oauthFailed',
+        new Error('OAuth not supported in unauthenticated discovery'),
+      );
+    });
+
+    try {
+      const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 15000;
+      await withTimeout(unauthConnection.connect(), connectTimeout, `Unauth connection timeout`);
+
+      if (await unauthConnection.isConnected()) {
+        const tools = await unauthConnection.fetchTools();
+        await unauthConnection.disconnect();
+        return tools;
+      }
+    } catch {
+      logger.debug(`${this.logPrefix} [Discovery] Unauthenticated connection attempt failed`);
+    }
+
+    try {
+      await unauthConnection.disconnect();
+    } catch {
+      // Ignore cleanup errors
+    }
+
+    return null;
+  }
+
   protected constructor(basic: t.BasicConnectionOptions, oauth?: t.OAuthConnectionOptions) {
     this.serverConfig = processMCPEnv({
       options: basic.serverConfig,
@@ -56,7 +195,7 @@ export class MCPConnectionFactory {
       : `[MCP][${basic.serverName}]`;
 
     if (oauth?.useOAuth) {
-      this.userId = oauth.user.id;
+      this.userId = oauth.user?.id;
       this.flowManager = oauth.flowManager;
       this.tokenMethods = oauth.tokenMethods;
       this.signal = oauth.signal;

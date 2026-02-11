@@ -11,6 +11,8 @@ interface AgentCapabilitiesResult {
   webSearchEnabled: boolean;
   codeEnabled: boolean;
   visionEnabled: boolean;
+  deferredToolsEnabled: boolean;
+  programmaticToolsEnabled: boolean;
 }
 
 export default function useAgentCapabilities(
@@ -61,6 +63,16 @@ export default function useAgentCapabilities(
     [capabilities],
   );
 
+  const deferredToolsEnabled = useMemo(
+    () => capabilities?.includes(AgentCapabilities.deferred_tools) ?? false,
+    [capabilities],
+  );
+
+  const programmaticToolsEnabled = useMemo(
+    () => capabilities?.includes(AgentCapabilities.programmatic_tools) ?? false,
+    [capabilities],
+  );
+
   return {
     ocrEnabled,
     codeEnabled,
@@ -71,5 +83,7 @@ export default function useAgentCapabilities(
     webSearchEnabled,
     fileSearchEnabled,
     visionEnabled,
+    deferredToolsEnabled,
+    programmaticToolsEnabled,
   };
 }
