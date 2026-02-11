@@ -60,9 +60,6 @@ class AgentClient extends BaseClient {
      * @type {string} */
     this.clientName = EModelEndpoint.agents;
 
-    /** @type {'discard' | 'summarize'} */
-    this.contextStrategy = 'discard';
-
     /** @deprecated @type {true} - Is a Chat Completion Request */
     this.isChatCompletion = true;
 
@@ -214,7 +211,6 @@ class AgentClient extends BaseClient {
           }))
         : []),
     ];
-
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
@@ -260,8 +256,7 @@ class AgentClient extends BaseClient {
         }
       }
 
-      const needsTokenCount =
-        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.fileContext;
+      const needsTokenCount = !orderedMessages[i].tokenCount || message.fileContext;
 
       /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
@@ -289,6 +284,10 @@ class AgentClient extends BaseClient {
 
       return formattedMessage;
     });
+
+    payload = formattedMessages;
+    messages = orderedMessages;
+    promptTokens = orderedMessages.reduce((total, message) => total + (message.tokenCount ?? 0), 0);
 
     /**
      * Build shared run context - applies to ALL agents in the run.
@@ -321,13 +320,6 @@ class AgentClient extends BaseClient {
 
     /** @type {Record<string, number> | undefined} */
     let tokenCountMap;
-
-    if (this.contextStrategy) {
-      ({ payload, promptTokens, tokenCountMap, messages } = await this.handleContextStrategy({
-        orderedMessages,
-        formattedMessages,
-      }));
-    }
 
     for (let i = 0; i < messages.length; i++) {
       this.indexTokenCountMap[i] = messages[i].tokenCount;

@@ -329,7 +329,8 @@ export async function createRun({
       maxContextTokens: agent.maxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
       discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
-      summarizationEnabled: resolvedSummarizationConfig?.enabled === true,
+      summarizationEnabled:
+        resolvedSummarizationConfig != null && resolvedSummarizationConfig.enabled !== false,
       summarizationConfig: resolvedSummarizationConfig
         ? {
             trigger: resolvedSummarizationConfig.trigger,

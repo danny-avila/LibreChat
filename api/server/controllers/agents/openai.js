@@ -274,7 +274,7 @@ const OpenAIChatCompletionController = async (req, res) => {
 
     const summarizationConfig = appConfig?.summarization;
     let summarizeHandler = null;
-    if (summarizationConfig?.enabled === true) {
+    if (summarizationConfig && summarizationConfig.enabled !== false) {
       try {
         const globalConfig = summarizationConfig;
         const resolveConfig = (agentIdParam) =>

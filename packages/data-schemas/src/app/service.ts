@@ -11,7 +11,7 @@ import { loadEndpoints } from './endpoints';
 import { loadOCRConfig } from './ocr';
 
 function loadSummarizationConfig(config: DeepPartial<TCustomConfig>): AppConfig['summarization'] {
-  const summarization = (config as { summarization?: AppConfig['summarization'] }).summarization;
+  const summarization = config.summarization;
   if (!summarization || typeof summarization !== 'object') {
     return undefined;
   }
@@ -86,22 +86,22 @@ export const AppService = async (params?: {
     paths,
     config,
     memory,
-    summarization,
     speech,
     balance,
     actions,
-    transactions,
-    mcpConfig: mcpServersConfig,
-    mcpSettings,
     webSearch,
+    mcpSettings,
+    transactions,
     fileStrategy,
     registration,
     filteredTools,
     includedTools,
+    summarization,
     availableTools,
     imageOutputType,
     interfaceConfig,
     turnstileConfig,
+    mcpConfig: mcpServersConfig,
     fileStrategies: config.fileStrategies,
   };
 

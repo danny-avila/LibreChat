@@ -135,7 +135,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   };
 
   let summarizationOptions = null;
-  if (appConfig?.summarization?.enabled) {
+  if (appConfig?.summarization && appConfig.summarization.enabled !== false) {
     try {
       const globalConfig = appConfig.summarization;
       const resolveConfig = (agentId) => resolveSummarizationLLMConfig({ agentId, globalConfig });

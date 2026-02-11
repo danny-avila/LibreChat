@@ -961,7 +961,7 @@ export const summarizationAgentOverrideSchema = z.object({
 });
 
 export const summarizationConfigSchema = z.object({
-  enabled: z.boolean().optional().default(false),
+  enabled: z.boolean().optional(),
   provider: z.string().optional(),
   model: z.string().optional(),
   parameters: z.record(z.any()).optional(),
