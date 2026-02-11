@@ -627,23 +627,31 @@ class AgentClient extends BaseClient {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
+    const messageUsages = collectedUsage.filter(
+      (usage) => usage != null && usage.usage_type !== 'summarization',
+    );
+    const summarizationUsages = collectedUsage.filter(
+      (usage) => usage != null && usage.usage_type === 'summarization',
+    );
+
     // Use first entry's input_tokens as the base input (represents initial user message context)
     // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
-    const firstUsage = collectedUsage[0];
-    const input_tokens =
-      (firstUsage?.input_tokens || 0) +
-      (Number(firstUsage?.input_token_details?.cache_creation) ||
-        Number(firstUsage?.cache_creation_input_tokens) ||
-        0) +
-      (Number(firstUsage?.input_token_details?.cache_read) ||
-        Number(firstUsage?.cache_read_input_tokens) ||
-        0);
+    const firstUsage = messageUsages[0];
+    const input_tokens = firstUsage
+      ? (firstUsage.input_tokens || 0) +
+        (Number(firstUsage.input_token_details?.cache_creation) ||
+          Number(firstUsage.cache_creation_input_tokens) ||
+          0) +
+        (Number(firstUsage.input_token_details?.cache_read) ||
+          Number(firstUsage.cache_read_input_tokens) ||
+          0)
+      : 0;
 
     // Sum output_tokens directly from all entries - works for both sequential and parallel execution
     // This avoids the incremental calculation that produced negative values for parallel agents
     let total_output_tokens = 0;
 
-    for (const usage of collectedUsage) {
+    for (const usage of messageUsages) {
       if (!usage) {
         continue;
       }
@@ -691,6 +699,56 @@ class AgentClient extends BaseClient {
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending tokens',
+          err,
+        );
+      });
+    }
+
+    for (const usage of summarizationUsages) {
+      if (!usage) {
+        continue;
+      }
+
+      const cache_creation =
+        Number(usage.input_token_details?.cache_creation) ||
+        Number(usage.cache_creation_input_tokens) ||
+        0;
+      const cache_read =
+        Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
+
+      const txMetadata = {
+        context: 'summarization',
+        balance,
+        transactions,
+        conversationId: this.conversationId,
+        user: this.user ?? this.options.req.user?.id,
+        endpointTokenConfig: this.options.endpointTokenConfig,
+        model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
+      };
+
+      if (cache_creation > 0 || cache_read > 0) {
+        spendStructuredTokens(txMetadata, {
+          promptTokens: {
+            input: usage.input_tokens,
+            write: cache_creation,
+            read: cache_read,
+          },
+          completionTokens: usage.output_tokens,
+        }).catch((err) => {
+          logger.error(
+            '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending structured summarization tokens',
+            err,
+          );
+        });
+        continue;
+      }
+
+      spendTokens(txMetadata, {
+        promptTokens: usage.input_tokens,
+        completionTokens: usage.output_tokens,
+      }).catch((err) => {
+        logger.error(
+          '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending summarization tokens',
           err,
         );
       });

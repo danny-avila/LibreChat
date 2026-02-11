@@ -107,6 +107,46 @@ describe('recordCollectedUsage', () => {
     });
   });
 
+  describe('summarization usage segregation', () => {
+    it('keeps summarization usage out of message token rollups while still spending it', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'message',
+          input_tokens: 120,
+          output_tokens: 40,
+          model: 'gpt-4',
+        },
+        {
+          usage_type: 'summarization',
+          input_tokens: 30,
+          output_tokens: 12,
+          model: 'gpt-4.1-mini',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ context: 'message', model: 'gpt-4' }),
+        expect.any(Object),
+      );
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          context: 'summarization',
+          model: 'gpt-4.1-mini',
+        }),
+        expect.any(Object),
+      );
+    });
+  });
+
   describe('parallel execution (multiple agents)', () => {
     it('should handle parallel agents with independent input tokens', async () => {
       const collectedUsage: UsageMetadata[] = [

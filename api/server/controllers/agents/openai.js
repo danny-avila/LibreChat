@@ -303,9 +303,12 @@ const OpenAIChatCompletionController = async (req, res) => {
           getProviderOptions,
           onUsage: (usage) => {
             collectedUsage.push({
+              usage_type: 'summarization',
               input_tokens: usage.input_tokens ?? 0,
               output_tokens: usage.output_tokens ?? 0,
               total_tokens: usage.total_tokens ?? 0,
+              model: usage.model,
+              provider: usage.provider,
             });
           },
         });
