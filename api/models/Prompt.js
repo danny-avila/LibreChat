@@ -17,48 +17,6 @@ const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 
 /**
- * Create a pipeline for the aggregation to get prompt groups
- * @param {Object} query
- * @param {number} skip
- * @param {number} limit
- * @returns {[Object]} - The pipeline for the aggregation
- */
-const createGroupPipeline = (query, skip, limit) => {
-  return [
-    { $match: query },
-    { $sort: { numberOfGenerations: -1, updatedAt: -1 } },
-    { $skip: skip },
-    { $limit: limit },
-    {
-      $lookup: {
-        from: 'prompts',
-        localField: 'productionId',
-        foreignField: '_id',
-        as: 'productionPrompt',
-      },
-    },
-    { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
-    {
-      $project: {
-        name: 1,
-        numberOfGenerations: 1,
-        oneliner: 1,
-        category: 1,
-        projectIds: 1,
-        productionId: 1,
-        author: 1,
-        authorName: 1,
-        createdAt: 1,
-        updatedAt: 1,
-        'productionPrompt.prompt': 1,
-        // 'productionPrompt._id': 1,
-        // 'productionPrompt.type': 1,
-      },
-    },
-  ];
-};
-
-/**
  * Create a pipeline for the aggregation to get all prompt groups
  * @param {Object} query
  * @param {Partial<MongoPromptGroup>} $project
@@ -137,7 +95,7 @@ const getAllPromptGroups = async (req, filter) => {
     const promptGroupsPipeline = createAllGroupsPipeline(combinedQuery);
     return await PromptGroup.aggregate(promptGroupsPipeline).exec();
   } catch (error) {
-    console.error('Error getting all prompt groups', error);
+    logger.error('Error getting all prompt groups', error);
     return { message: 'Error getting all prompt groups' };
   }
 };
@@ -187,17 +145,49 @@ const getPromptGroups = async (req, filter) => {
     const skip = (validatedPageNumber - 1) * validatedPageSize;
     const limit = validatedPageSize;
 
-    const promptGroupsPipeline = createGroupPipeline(combinedQuery, skip, limit);
-    const totalPromptGroupsPipeline = [{ $match: combinedQuery }, { $count: 'total' }];
+    const facetPipeline = [
+      { $match: combinedQuery },
+      {
+        $facet: {
+          data: [
+            { $sort: { numberOfGenerations: -1, updatedAt: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $lookup: {
+                from: 'prompts',
+                localField: 'productionId',
+                foreignField: '_id',
+                as: 'productionPrompt',
+              },
+            },
+            { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                name: 1,
+                numberOfGenerations: 1,
+                oneliner: 1,
+                category: 1,
+                projectIds: 1,
+                productionId: 1,
+                author: 1,
+                authorName: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                'productionPrompt.prompt': 1,
+              },
+            },
+          ],
+          totalCount: [{ $count: 'total' }],
+        },
+      },
+    ];
 
-    const [promptGroupsResults, totalPromptGroupsResults] = await Promise.all([
-      PromptGroup.aggregate(promptGroupsPipeline).exec(),
-      PromptGroup.aggregate(totalPromptGroupsPipeline).exec(),
-    ]);
+    const [facetResult] = await PromptGroup.aggregate(facetPipeline).exec();
 
-    const promptGroups = promptGroupsResults;
+    const promptGroups = facetResult.data;
     const totalPromptGroups =
-      totalPromptGroupsResults.length > 0 ? totalPromptGroupsResults[0].total : 0;
+      facetResult.totalCount.length > 0 ? facetResult.totalCount[0].total : 0;
 
     return {
       promptGroups,
@@ -206,7 +196,7 @@ const getPromptGroups = async (req, filter) => {
       pages: Math.ceil(totalPromptGroups / validatedPageSize).toString(),
     };
   } catch (error) {
-    console.error('Error getting prompt groups', error);
+    logger.error('Error getting prompt groups', error);
     return { message: 'Error getting prompt groups' };
   }
 };
@@ -272,12 +262,20 @@ async function getListPromptGroupsByAccess({
   if (after && typeof after === 'string' && after !== 'undefined' && after !== 'null') {
     try {
       const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
-      const { updatedAt, _id } = cursor;
+      const { numberOfGenerations, updatedAt, _id } = cursor;
 
       const cursorCondition = {
         $or: [
-          { updatedAt: { $lt: new Date(updatedAt) } },
-          { updatedAt: new Date(updatedAt), _id: { $gt: new ObjectId(_id) } },
+          { numberOfGenerations: { $lt: numberOfGenerations } },
+          {
+            numberOfGenerations: numberOfGenerations,
+            updatedAt: { $lt: new Date(updatedAt) },
+          },
+          {
+            numberOfGenerations: numberOfGenerations,
+            updatedAt: new Date(updatedAt),
+            _id: { $gt: new ObjectId(_id) },
+          },
         ],
       };
 
@@ -353,6 +351,7 @@ async function getListPromptGroupsByAccess({
     const lastGroup = promptGroups[normalizedLimit - 1];
     nextCursor = Buffer.from(
       JSON.stringify({
+        numberOfGenerations: lastGroup.numberOfGenerations,
         updatedAt: lastGroup.updatedAt.toISOString(),
         _id: lastGroup._id.toString(),
       }),

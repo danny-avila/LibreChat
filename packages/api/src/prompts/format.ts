@@ -81,22 +81,12 @@ export function markPublicPromptGroups(
 /**
  * Builds filter object for prompt group queries
  */
-export function buildPromptGroupFilter({
-  name,
-  category,
-  ...otherFilters
-}: {
-  name?: string;
-  category?: string;
-  [key: string]: string | number | boolean | RegExp | undefined;
-}): {
+export function buildPromptGroupFilter({ name, category }: { name?: string; category?: string }): {
   filter: Record<string, string | number | boolean | RegExp | undefined>;
   searchShared: boolean;
   searchSharedOnly: boolean;
 } {
-  const filter: Record<string, string | number | boolean | RegExp | undefined> = {
-    ...otherFilters,
-  };
+  const filter: Record<string, string | number | boolean | RegExp | undefined> = {};
   let searchShared = true;
   let searchSharedOnly = false;
 
