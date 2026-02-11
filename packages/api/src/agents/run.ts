@@ -240,8 +240,9 @@ export async function createRun({
 
   const agentInputs: AgentInputs[] = [];
   const buildAgentContext = (agent: RunAgent) => {
-    const resolvedSummarizationConfig = (agent.summarization ??
-      summarizationConfig) as RuntimeSummarizationConfig | undefined;
+    const resolvedSummarizationConfig = (agent.summarization ?? summarizationConfig) as
+      | RuntimeSummarizationConfig
+      | undefined;
 
     const provider =
       (providerEndpointMap[

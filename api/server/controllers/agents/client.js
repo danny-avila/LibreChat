@@ -916,11 +916,11 @@ class AgentClient extends BaseClient {
           messages,
           indexTokenCountMap,
           runId: this.responseMessageId,
-          summarizationConfig: appConfig?.summarization,
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
+          summarizationConfig: appConfig?.summarization,
           tokenCounter: createTokenCounter(this.getEncoding()),
         });
 
