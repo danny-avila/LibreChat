@@ -209,6 +209,7 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        aggregateContent({ event, data });
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
           await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
@@ -227,7 +228,6 @@ function getDefaultHandlers({
             },
           });
         }
-        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_RUN_STEP_DELTA]: {
@@ -238,6 +238,7 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        aggregateContent({ event, data });
         if (data?.delta.type === StepTypes.TOOL_CALLS) {
           await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
@@ -245,7 +246,6 @@ function getDefaultHandlers({
         } else if (!metadata?.hide_sequential_outputs) {
           await emitEvent(res, streamId, { event, data });
         }
-        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_RUN_STEP_COMPLETED]: {
@@ -256,6 +256,7 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        aggregateContent({ event, data });
         if (data?.result != null) {
           await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
@@ -263,7 +264,6 @@ function getDefaultHandlers({
         } else if (!metadata?.hide_sequential_outputs) {
           await emitEvent(res, streamId, { event, data });
         }
-        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_MESSAGE_DELTA]: {
@@ -274,12 +274,12 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
           await emitEvent(res, streamId, { event, data });
         }
-        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_REASONING_DELTA]: {
@@ -290,12 +290,12 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
           await emitEvent(res, streamId, { event, data });
         }
-        aggregateContent({ event, data });
       },
     },
   };
