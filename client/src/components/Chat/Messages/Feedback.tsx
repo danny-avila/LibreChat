@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { TFeedback, TFeedbackTag, getTagsForRating } from 'librechat-data-provider';
 import {
@@ -21,11 +21,17 @@ import {
 } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import { FormProvider, useForm } from 'react-hook-form';
+import AudioRecorder from '../Input/AudioRecorder';
 
 interface FeedbackProps {
   handleFeedback: ({ feedback }: { feedback: TFeedback | undefined }) => void;
   feedback?: TFeedback;
   isLast?: boolean;
+}
+
+interface FeedbackForm {
+  text: string;
 }
 
 const ICONS = {
@@ -233,11 +239,25 @@ export default function Feedback({
   const localize = useLocalize();
   const [openDialog, setOpenDialog] = useState(false);
   const [feedback, setFeedback] = useState<TFeedback | undefined>(initialFeedback);
+  const methods = useForm<FeedbackForm>({
+    defaultValues: { text: '' },
+  });
+
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setFeedback(initialFeedback);
-  }, [initialFeedback]);
-
+    methods.setValue('text', initialFeedback?.text || '');
+  }, [initialFeedback, methods]);
+  const handleSpeechSubmit = useCallback(
+    ({ text }: { text: string }) => {
+      setFeedback((prev) =>
+        prev ? { ...prev, text } : ({ rating: 'thumbsDown', text } as TFeedback),
+      );
+      methods.setValue('text', text);
+    },
+    [methods],
+  );
   const propagateMinimal = useCallback(
     (fb: TFeedback | undefined) => {
       setFeedback(fb);
@@ -258,6 +278,7 @@ export default function Feedback({
   const handleOtherOpen = useCallback(() => setOpenDialog(true), []);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    methods.setValue('text', e.target.value);
     setFeedback((prev) => (prev ? { ...prev, text: e.target.value } : undefined));
   };
 
@@ -265,9 +286,10 @@ export default function Feedback({
     if (feedback?.tag?.key === 'other' && !feedback?.text?.trim()) {
       return;
     }
+    handleFeedback({ feedback });
     propagateMinimal(feedback);
     setOpenDialog(false);
-  }, [feedback, propagateMinimal]);
+  }, [feedback, propagateMinimal, handleFeedback]);
 
   const handleDialogClear = useCallback(() => {
     setFeedback(undefined);
@@ -314,27 +336,43 @@ export default function Feedback({
         />
       )}
       <OGDialog open={openDialog} onOpenChange={setOpenDialog}>
-        <OGDialogContent className="w-11/12 max-w-lg">
-          <OGDialogTitle className="text-token-text-primary text-lg font-semibold leading-6">
-            {localize('com_ui_feedback_more_information')}
-          </OGDialogTitle>
-          <textarea
-            className="w-full rounded-xl border border-border-light bg-transparent p-2 text-text-primary"
-            value={feedback?.text || ''}
-            onChange={handleTextChange}
-            rows={4}
-            placeholder={localize('com_ui_feedback_placeholder')}
-            maxLength={500}
-          />
-          <div className="mt-4 flex items-end justify-end gap-2">
-            <Button variant="destructive" onClick={handleDialogClear}>
-              {localize('com_ui_delete')}
-            </Button>
-            <Button variant="submit" onClick={handleDialogSave} disabled={!feedback?.text?.trim()}>
-              {localize('com_ui_save')}
-            </Button>
-          </div>
-        </OGDialogContent>
+        <FormProvider {...methods}>
+          <OGDialogContent className="w-11/12 max-w-lg">
+            <OGDialogTitle className="text-token-text-primary text-lg font-semibold leading-6">
+              {localize('com_ui_feedback_more_information')}
+            </OGDialogTitle>
+            <textarea
+              ref={textAreaRef}
+              className="w-full rounded-xl border border-border-light bg-transparent p-2 text-text-primary"
+              value={feedback?.text || ''}
+              onChange={handleTextChange}
+              rows={4}
+              placeholder={localize('com_ui_feedback_placeholder')}
+              maxLength={500}
+            />
+            <div className="mt-3 flex justify-end">
+              <AudioRecorder
+                disabled={false}
+                isSubmitting={false}
+                methods={methods}
+                textAreaRef={textAreaRef}
+                ask={handleSpeechSubmit}
+              />
+            </div>
+            <div className="mt-4 flex items-end justify-end gap-2">
+              <Button variant="destructive" onClick={handleDialogClear}>
+                {localize('com_ui_delete')}
+              </Button>
+              <Button
+                variant="submit"
+                onClick={handleDialogSave}
+                disabled={!feedback?.text?.trim()}
+              >
+                {localize('com_ui_save')}
+              </Button>
+            </div>
+          </OGDialogContent>
+        </FormProvider>
       </OGDialog>
     </>
   );
