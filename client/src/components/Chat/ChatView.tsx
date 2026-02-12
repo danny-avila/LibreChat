@@ -18,7 +18,7 @@ import Header from './Header';
 import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
-import PiiNotice from '~/nj/components/PiiNotice';
+import NewJerseyChatNotice from '~/nj/components/NewJerseyChatNotice';
 
 function LoadingSpinner() {
   return (
@@ -102,7 +102,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                     )}
                   >
                     <ChatForm index={index} />
-                    <PiiNotice />
+                    <NewJerseyChatNotice />
                     {isLandingPage ? <ConversationStarters /> : <Footer />}
                   </div>
                 </div>
