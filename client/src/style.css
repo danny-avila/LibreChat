@@ -2944,6 +2944,7 @@ html {
 .feedback-button {
   padding: 12px 20px !important;
   font-weight: 700 !important;
+  width: auto !important;
 }
 
 .feedback-button:focus {
@@ -2953,6 +2954,16 @@ html {
 
 .confirmation-text {
   font-size: 16px !important;
+}
+
+.flex-box {
+  gap: .5rem !important;
+}
+
+@media screen and (max-width: 620px) {
+  .feedback-button {
+    padding: 6px 20px !important;
+  }
 }
 
 /* USWDS icon styling; we don't want all of USWDS styles (it overrides a lot of LibreChat styling) */

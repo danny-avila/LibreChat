@@ -84,7 +84,7 @@ export default function Root() {
           <AgentsMapContext.Provider value={agentsMap}>
             <PromptGroupsProvider>
               {/* NJ: We added dynamic height measurement via CSS instead of setBannerHeight, required extra div */}
-              <div className="flex h-screen flex-col">
+              <div className="flex h-dvh flex-col">
                 <Banner onHeightChange={setBannerHeight} />
                 <div className="flex min-h-0 flex-1">
                   <div className="relative z-0 flex h-full w-full overflow-hidden">
