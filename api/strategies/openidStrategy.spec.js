@@ -1021,5 +1021,34 @@ describe('setupOpenId', () => {
 
       expect(user.email).toBe('test@example.com');
     });
+
+    it('should trim whitespace from OPENID_EMAIL_CLAIM and resolve correctly', async () => {
+      process.env.OPENID_EMAIL_CLAIM = '  upn  ';
+      const userinfo = { ...tokenset.claims(), upn: 'user@corp.example.com' };
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfo });
+
+      expect(user.email).toBe('user@corp.example.com');
+    });
+
+    it('should ignore whitespace-only OPENID_EMAIL_CLAIM and use default fallback', async () => {
+      process.env.OPENID_EMAIL_CLAIM = '   ';
+
+      const { user } = await validate(tokenset);
+
+      expect(user.email).toBe('test@example.com');
+    });
+
+    it('should fall back to default chain with warning when configured claim is missing from userinfo', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_EMAIL_CLAIM = 'nonexistent_claim';
+
+      const { user } = await validate(tokenset);
+
+      expect(user.email).toBe('test@example.com');
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('OPENID_EMAIL_CLAIM is set to "nonexistent_claim"'),
+      );
+    });
   });
 });

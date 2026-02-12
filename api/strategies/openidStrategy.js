@@ -276,9 +276,15 @@ function getFullName(userinfo) {
  * @returns {string|undefined} The email/identifier value
  */
 function getOpenIdEmail(userinfo) {
-  const claimKey = process.env.OPENID_EMAIL_CLAIM;
+  const claimKey = process.env.OPENID_EMAIL_CLAIM?.trim();
   if (claimKey) {
-    return userinfo[claimKey];
+    const value = userinfo[claimKey];
+    if (value) {
+      return value;
+    }
+    logger.warn(
+      `[openidStrategy] OPENID_EMAIL_CLAIM is set to "${claimKey}" but the claim is not present in userinfo. Falling back to default email chain.`,
+    );
   }
   return userinfo.email || userinfo.preferred_username || userinfo.upn;
 }
