@@ -73,6 +73,7 @@ export class ConnectionsRepository {
       {
         serverName,
         serverConfig,
+        useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
       },
       this.oauthOpts,
     );

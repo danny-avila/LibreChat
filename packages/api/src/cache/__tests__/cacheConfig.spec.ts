@@ -215,16 +215,30 @@ describe('cacheConfig', () => {
       }).rejects.toThrow('Invalid cache keys in FORCED_IN_MEMORY_CACHE_NAMESPACES: INVALID_KEY');
     });
 
-    test('should handle empty string gracefully', async () => {
+    test('should produce empty array when set to empty string (opt out of defaults)', async () => {
       process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = '';
 
       const { cacheConfig } = await import('../cacheConfig');
       expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual([]);
     });
 
-    test('should handle undefined env var gracefully', async () => {
+    test('should default to CONFIG_STORE and APP_CONFIG when env var is not set', async () => {
       const { cacheConfig } = await import('../cacheConfig');
-      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual([]);
+      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual(['CONFIG_STORE', 'APP_CONFIG']);
+    });
+
+    test('should accept TOOL_CACHE as a valid namespace', async () => {
+      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = 'TOOL_CACHE';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual(['TOOL_CACHE']);
+    });
+
+    test('should accept CONFIG_STORE and APP_CONFIG together for blue/green deployments', async () => {
+      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = 'CONFIG_STORE,APP_CONFIG';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual(['CONFIG_STORE', 'APP_CONFIG']);
     });
   });
 });

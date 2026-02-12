@@ -26,17 +26,17 @@ export default function TrustSection() {
               checked={field.value}
               onCheckedChange={field.onChange}
               aria-labelledby="trust-label"
-              aria-describedby="trust-description"
+              aria-describedby={
+                errors.trust ? 'trust-description trust-error' : 'trust-description'
+              }
+              aria-invalid={errors.trust ? 'true' : 'false'}
+              aria-required="true"
               className="mt-0.5"
             />
           )}
         />
-        <Label
-          id="trust-label"
-          htmlFor="trust"
-          className="flex cursor-pointer flex-col gap-0.5 text-sm"
-        >
-          <span className="font-medium text-text-primary">
+        <Label htmlFor="trust" className="flex cursor-pointer flex-col gap-0.5 text-sm">
+          <span id="trust-label" className="font-medium text-text-primary">
             {startupConfig?.interface?.mcpServers?.trustCheckbox?.label ? (
               <span
                 dangerouslySetInnerHTML={{
@@ -49,7 +49,9 @@ export default function TrustSection() {
             ) : (
               localize('com_ui_trust_app')
             )}{' '}
-            <span className="text-text-secondary">*</span>
+            <span aria-hidden="true" className="text-text-secondary">
+              *
+            </span>
           </span>
           <span id="trust-description" className="text-xs font-normal text-text-secondary">
             {startupConfig?.interface?.mcpServers?.trustCheckbox?.subLabel ? (
@@ -68,7 +70,9 @@ export default function TrustSection() {
         </Label>
       </div>
       {errors.trust && (
-        <p className="mt-2 text-xs text-red-500">{localize('com_ui_field_required')}</p>
+        <p id="trust-error" role="alert" className="mt-2 text-xs text-text-destructive">
+          {localize('com_ui_field_required')}
+        </p>
       )}
     </div>
   );

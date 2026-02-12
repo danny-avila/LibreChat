@@ -288,6 +288,77 @@ function convertToUsername(input, defaultValue = '') {
 }
 
 /**
+ * Resolve Azure AD groups when group overage is in effect (groups moved to _claim_names/_claim_sources).
+ *
+ * NOTE: Microsoft recommends treating _claim_names/_claim_sources as a signal only and using Microsoft Graph
+ * to resolve group membership instead of calling the endpoint in _claim_sources directly.
+ *
+ * @param {string} accessToken - Access token with Microsoft Graph permissions
+ * @returns {Promise<string[] | null>} Resolved group IDs or null on failure
+ * @see https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference#groups-overage-claim
+ * @see https://learn.microsoft.com/en-us/graph/api/directoryobject-getmemberobjects
+ */
+async function resolveGroupsFromOverage(accessToken) {
+  try {
+    if (!accessToken) {
+      logger.error('[openidStrategy] Access token missing; cannot resolve group overage');
+      return null;
+    }
+
+    // Use /me/getMemberObjects so least-privileged delegated permission User.Read is sufficient
+    // when resolving the signed-in user's group membership.
+    const url = 'https://graph.microsoft.com/v1.0/me/getMemberObjects';
+
+    logger.debug(
+      `[openidStrategy] Detected group overage, resolving groups via Microsoft Graph getMemberObjects: ${url}`,
+    );
+
+    const fetchOptions = {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ securityEnabledOnly: false }),
+    };
+
+    if (process.env.PROXY) {
+      const { ProxyAgent } = undici;
+      fetchOptions.dispatcher = new ProxyAgent(process.env.PROXY);
+    }
+
+    const response = await undici.fetch(url, fetchOptions);
+    if (!response.ok) {
+      logger.error(
+        `[openidStrategy] Failed to resolve groups via Microsoft Graph getMemberObjects: HTTP ${response.status} ${response.statusText}`,
+      );
+      return null;
+    }
+
+    const data = await response.json();
+    const values = Array.isArray(data?.value) ? data.value : null;
+    if (!values) {
+      logger.error(
+        '[openidStrategy] Unexpected response format when resolving groups via Microsoft Graph getMemberObjects',
+      );
+      return null;
+    }
+    const groupIds = values.filter((id) => typeof id === 'string');
+
+    logger.debug(
+      `[openidStrategy] Successfully resolved ${groupIds.length} groups via Microsoft Graph getMemberObjects`,
+    );
+    return groupIds;
+  } catch (err) {
+    logger.error(
+      '[openidStrategy] Error resolving groups via Microsoft Graph getMemberObjects:',
+      err,
+    );
+    return null;
+  }
+}
+
+/**
  * Process OpenID authentication tokenset and userinfo
  * This is the core logic extracted from the passport strategy callback
  * Can be reused by both the passport strategy and proxy authentication
@@ -350,6 +421,25 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     }
 
     let roles = get(decodedToken, requiredRoleParameterPath);
+
+    // Handle Azure AD group overage for ID token groups: when hasgroups or _claim_* indicate overage,
+    // resolve groups via Microsoft Graph instead of relying on token group values.
+    if (
+      !Array.isArray(roles) &&
+      typeof roles !== 'string' &&
+      requiredRoleTokenKind === 'id' &&
+      requiredRoleParameterPath === 'groups' &&
+      decodedToken &&
+      (decodedToken.hasgroups ||
+        (decodedToken._claim_names?.groups &&
+          decodedToken._claim_sources?.[decodedToken._claim_names.groups]))
+    ) {
+      const overageGroups = await resolveGroupsFromOverage(tokenset.access_token);
+      if (overageGroups) {
+        roles = overageGroups;
+      }
+    }
+
     if (!roles || (!Array.isArray(roles) && typeof roles !== 'string')) {
       logger.error(
         `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
@@ -361,7 +451,9 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       throw new Error(`You must have ${rolesList} role to log in.`);
     }
 
-    if (!requiredRoles.some((role) => roles.includes(role))) {
+    const roleValues = Array.isArray(roles) ? roles : [roles];
+
+    if (!requiredRoles.some((role) => roleValues.includes(role))) {
       const rolesList =
         requiredRoles.length === 1
           ? `"${requiredRoles[0]}"`

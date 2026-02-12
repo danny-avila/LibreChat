@@ -37,6 +37,7 @@ const namespaces = {
   [CacheKeys.ROLES]: standardCache(CacheKeys.ROLES),
   [CacheKeys.APP_CONFIG]: standardCache(CacheKeys.APP_CONFIG),
   [CacheKeys.CONFIG_STORE]: standardCache(CacheKeys.CONFIG_STORE),
+  [CacheKeys.TOOL_CACHE]: standardCache(CacheKeys.TOOL_CACHE),
   [CacheKeys.PENDING_REQ]: standardCache(CacheKeys.PENDING_REQ),
   [CacheKeys.ENCODED_DOMAINS]: new Keyv({ store: keyvMongo, namespace: CacheKeys.ENCODED_DOMAINS }),
   [CacheKeys.ABORT_KEYS]: standardCache(CacheKeys.ABORT_KEYS, Time.TEN_MINUTES),

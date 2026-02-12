@@ -1,3 +1,5 @@
+import { lookup } from 'node:dns/promises';
+
 /**
  * @param email
  * @param allowedDomains
@@ -22,6 +24,88 @@ export function isEmailDomainAllowed(email: string, allowedDomains?: string[] | 
   return allowedDomains.some((allowedDomain) => allowedDomain?.toLowerCase() === domain);
 }
 
+/** Checks if IPv4 octets fall within private, reserved, or link-local ranges */
+function isPrivateIPv4(a: number, b: number, c: number): boolean {
+  if (a === 127) {
+    return true;
+  }
+  if (a === 10) {
+    return true;
+  }
+  if (a === 172 && b >= 16 && b <= 31) {
+    return true;
+  }
+  if (a === 192 && b === 168) {
+    return true;
+  }
+  if (a === 169 && b === 254) {
+    return true;
+  }
+  if (a === 0 && b === 0 && c === 0) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks if an IP address belongs to a private, reserved, or link-local range.
+ * Handles IPv4, IPv6, and IPv4-mapped IPv6 addresses (::ffff:A.B.C.D).
+ */
+export function isPrivateIP(ip: string): boolean {
+  const normalized = ip.toLowerCase().trim();
+
+  const mappedMatch = normalized.match(/^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (mappedMatch) {
+    const [, a, b, c] = mappedMatch.map(Number);
+    return isPrivateIPv4(a, b, c);
+  }
+
+  const ipv4Match = normalized.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    const [, a, b, c] = ipv4Match.map(Number);
+    return isPrivateIPv4(a, b, c);
+  }
+
+  const ipv6 = normalized.replace(/^\[|\]$/g, '');
+  if (
+    ipv6 === '::1' ||
+    ipv6 === '::' ||
+    ipv6.startsWith('fc') ||
+    ipv6.startsWith('fd') ||
+    ipv6.startsWith('fe80')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Resolves a hostname via DNS and checks if any resolved address is a private/reserved IP.
+ * Detects DNS-based SSRF bypasses (e.g., nip.io wildcard DNS, attacker-controlled nameservers).
+ * Fails open: returns false if DNS resolution fails, since hostname-only checks still apply
+ * and the actual HTTP request would also fail.
+ */
+export async function resolveHostnameSSRF(hostname: string): Promise<boolean> {
+  const normalizedHost = hostname.toLowerCase().trim();
+
+  if (/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(normalizedHost)) {
+    return false;
+  }
+
+  const ipv6Check = normalizedHost.replace(/^\[|\]$/g, '');
+  if (ipv6Check.includes(':')) {
+    return false;
+  }
+
+  try {
+    const addresses = await lookup(hostname, { all: true });
+    return addresses.some((entry) => isPrivateIP(entry.address));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * SSRF Protection: Checks if a hostname/IP is a potentially dangerous internal target.
  * Blocks private IPs, localhost, cloud metadata IPs, and common internal hostnames.
@@ -31,7 +115,6 @@ export function isEmailDomainAllowed(email: string, allowedDomains?: string[] | 
 export function isSSRFTarget(hostname: string): boolean {
   const normalizedHost = hostname.toLowerCase().trim();
 
-  // Block localhost variations
   if (
     normalizedHost === 'localhost' ||
     normalizedHost === 'localhost.localdomain' ||
@@ -40,51 +123,7 @@ export function isSSRFTarget(hostname: string): boolean {
     return true;
   }
 
-  // Check if it's an IP address and block private/internal ranges
-  const ipv4Match = normalizedHost.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4Match) {
-    const [, a, b, c] = ipv4Match.map(Number);
-
-    // 127.0.0.0/8 - Loopback
-    if (a === 127) {
-      return true;
-    }
-
-    // 10.0.0.0/8 - Private
-    if (a === 10) {
-      return true;
-    }
-
-    // 172.16.0.0/12 - Private (172.16.x.x - 172.31.x.x)
-    if (a === 172 && b >= 16 && b <= 31) {
-      return true;
-    }
-
-    // 192.168.0.0/16 - Private
-    if (a === 192 && b === 168) {
-      return true;
-    }
-
-    // 169.254.0.0/16 - Link-local (includes cloud metadata 169.254.169.254)
-    if (a === 169 && b === 254) {
-      return true;
-    }
-
-    // 0.0.0.0 - Special
-    if (a === 0 && b === 0 && c === 0) {
-      return true;
-    }
-  }
-
-  // IPv6 loopback and private ranges
-  const ipv6Normalized = normalizedHost.replace(/^\[|\]$/g, ''); // Remove brackets if present
-  if (
-    ipv6Normalized === '::1' ||
-    ipv6Normalized === '::' ||
-    ipv6Normalized.startsWith('fc') || // fc00::/7 - Unique local
-    ipv6Normalized.startsWith('fd') || // fd00::/8 - Unique local
-    ipv6Normalized.startsWith('fe80') // fe80::/10 - Link-local
-  ) {
+  if (isPrivateIP(normalizedHost)) {
     return true;
   }
 
@@ -255,6 +294,10 @@ async function isDomainAllowedCore(
   if (!Array.isArray(allowedDomains) || !allowedDomains.length) {
     /** SECURITY: Block SSRF-prone targets when no allowlist is configured */
     if (isSSRFTarget(inputSpec.hostname)) {
+      return false;
+    }
+    /** SECURITY: Resolve hostname and block if it points to a private/reserved IP */
+    if (await resolveHostnameSSRF(inputSpec.hostname)) {
       return false;
     }
     return true;

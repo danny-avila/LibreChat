@@ -1,16 +1,17 @@
+// This file is kept for backward compatibility but is no longer used internally.
+// Theme state is now managed via React useState + localStorage in ThemeProvider.
+
 import { atomWithStorage } from 'jotai/utils';
 import { IThemeRGB } from '../types';
 import { constAtom } from '~/nj/utils/constAtom';
 
 /**
- * Atom for storing the theme mode (light/dark/system) in localStorage
- * Key: 'color-theme'
+ * @deprecated Use ThemeContext instead. This atom is no longer used internally.
  */
 export const themeModeAtom = constAtom<string>('light');
 
 /**
- * Atom for storing custom theme colors in localStorage
- * Key: 'theme-colors'
+ * @deprecated Use ThemeContext instead. This atom is no longer used internally.
  */
 export const themeColorsAtom = atomWithStorage<IThemeRGB | undefined>(
   'theme-colors',
@@ -22,8 +23,7 @@ export const themeColorsAtom = atomWithStorage<IThemeRGB | undefined>(
 );
 
 /**
- * Atom for storing the theme name in localStorage
- * Key: 'theme-name'
+ * @deprecated Use ThemeContext instead. This atom is no longer used internally.
  */
 export const themeNameAtom = atomWithStorage<string | undefined>(
   'theme-name',

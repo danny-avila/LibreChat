@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
+import { Copy, CopyCheck } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Label, Input, Checkbox, SecretInput, Radio, useToastContext } from '@librechat/client';
-import { Copy, CopyCheck } from 'lucide-react';
-import { useLocalize, useCopyToClipboard } from '~/hooks';
-import { cn } from '~/utils';
 import { AuthTypeEnum, AuthorizationTypeEnum } from '../hooks/useMCPServerForm';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
+import { useLocalize, useCopyToClipboard } from '~/hooks';
+import { cn } from '~/utils';
 
 interface AuthSectionProps {
   isEditMode: boolean;
@@ -62,15 +62,20 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
   return (
     <div className="space-y-3">
       {/* Auth Type Radio */}
-      <div className="space-y-1.5">
-        <Label className="text-sm font-medium">{localize('com_ui_authentication')}</Label>
+      <fieldset className="space-y-1.5">
+        <legend>
+          <Label id="auth-type-label" className="text-sm font-medium">
+            {localize('com_ui_authentication')}
+          </Label>
+        </legend>
         <Radio
           options={authTypeOptions}
           value={authType || AuthTypeEnum.None}
           onChange={(val) => setValue('auth.auth_type', val as AuthTypeEnum)}
           fullWidth
+          aria-labelledby="auth-type-label"
         />
-      </div>
+      </fieldset>
 
       {/* API Key Fields */}
       {authType === AuthTypeEnum.ServiceHttp && (
@@ -83,9 +88,13 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
               onCheckedChange={(checked) =>
                 setValue('auth.api_key_source', checked ? 'user' : 'admin')
               }
-              aria-label={localize('com_ui_user_provides_key')}
+              aria-labelledby="user_provides_key_label"
             />
-            <label htmlFor="user_provides_key" className="cursor-pointer text-sm">
+            <label
+              id="user_provides_key_label"
+              htmlFor="user_provides_key"
+              className="cursor-pointer text-sm"
+            >
               {localize('com_ui_user_provides_key')}
             </label>
           </div>
@@ -101,8 +110,12 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
           )}
 
           {/* Header Format Radio */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">{localize('com_ui_header_format')}</Label>
+          <fieldset className="space-y-1.5">
+            <legend>
+              <Label id="header-format-label" className="text-sm font-medium">
+                {localize('com_ui_header_format')}
+              </Label>
+            </legend>
             <Radio
               options={headerFormatOptions}
               value={authorizationType || AuthorizationTypeEnum.Bearer}
@@ -110,8 +123,9 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
                 setValue('auth.api_key_authorization_type', val as AuthorizationTypeEnum)
               }
               fullWidth
+              aria-labelledby="header-format-label"
             />
-          </div>
+          </fieldset>
 
           {/* Custom header name */}
           {authorizationType === AuthorizationTypeEnum.Custom && (
@@ -137,27 +151,67 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
             <div className="space-y-1.5">
               <Label htmlFor="oauth_client_id" className="text-sm font-medium">
                 {localize('com_ui_client_id')}{' '}
-                {!isEditMode && <span className="text-text-secondary">*</span>}
+                {!isEditMode && (
+                  <>
+                    <span aria-hidden="true" className="text-text-secondary">
+                      *
+                    </span>
+                    <span className="sr-only">{localize('com_ui_field_required')}</span>
+                  </>
+                )}
               </Label>
               <Input
                 id="oauth_client_id"
                 autoComplete="off"
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
+                aria-invalid={errors.auth?.oauth_client_id ? 'true' : 'false'}
+                aria-describedby={
+                  errors.auth?.oauth_client_id ? 'oauth-client-id-error' : undefined
+                }
                 {...register('auth.oauth_client_id', { required: !isEditMode })}
-                className={cn(errors.auth?.oauth_client_id && 'border-red-500')}
+                className={cn(errors.auth?.oauth_client_id && 'border-border-destructive')}
               />
+              {errors.auth?.oauth_client_id && (
+                <p
+                  id="oauth-client-id-error"
+                  role="alert"
+                  className="text-xs text-text-destructive"
+                >
+                  {localize('com_ui_field_required')}
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="oauth_client_secret" className="text-sm font-medium">
                 {localize('com_ui_client_secret')}{' '}
-                {!isEditMode && <span className="text-text-secondary">*</span>}
+                {!isEditMode && (
+                  <>
+                    <span aria-hidden="true" className="text-text-secondary">
+                      *
+                    </span>
+                    <span className="sr-only">{localize('com_ui_field_required')}</span>
+                  </>
+                )}
               </Label>
               <SecretInput
                 id="oauth_client_secret"
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
+                aria-invalid={errors.auth?.oauth_client_secret ? 'true' : 'false'}
+                aria-describedby={
+                  errors.auth?.oauth_client_secret ? 'oauth-client-secret-error' : undefined
+                }
                 {...register('auth.oauth_client_secret', { required: !isEditMode })}
-                className={cn(errors.auth?.oauth_client_secret && 'border-red-500')}
+                className={cn(errors.auth?.oauth_client_secret && 'border-border-destructive')}
               />
+              {errors.auth?.oauth_client_secret && (
+                <p
+                  id="oauth-client-secret-error"
+                  role="alert"
+                  className="text-xs text-text-destructive"
+                >
+                  {localize('com_ui_field_required')}
+                </p>
+              )}
             </div>
           </div>
 
@@ -196,9 +250,12 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
           {/* Redirect URI */}
           {isEditMode && redirectUri && (
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">{localize('com_ui_redirect_uri')}</Label>
+              <Label htmlFor="auth-redirect-uri" className="text-sm font-medium">
+                {localize('com_ui_redirect_uri')}
+              </Label>
               <div className="flex items-center gap-2">
                 <Input
+                  id="auth-redirect-uri"
                   type="text"
                   readOnly
                   value={redirectUri}

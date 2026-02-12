@@ -102,7 +102,8 @@ export class MCPManager extends UserConnectionManager {
       serverConfig.requiresOAuth || (serverConfig as t.ParsedServerConfig).oauthMetadata,
     );
 
-    const basic: t.BasicConnectionOptions = { serverName, serverConfig };
+    const useSSRFProtection = MCPServersRegistry.getInstance().shouldEnableSSRFProtection();
+    const basic: t.BasicConnectionOptions = { serverName, serverConfig, useSSRFProtection };
 
     if (!useOAuth) {
       const result = await MCPConnectionFactory.discoverTools(basic);

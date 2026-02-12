@@ -9,6 +9,7 @@ import { QueryKeys, dataService } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useFavorites, useLocalize, useShowMarketplace, useNewConvo } from '~/hooks';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
+import type { AgentQueryResult } from '~/common';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
 import FavoriteItem from './FavoriteItem';
@@ -184,7 +185,20 @@ export default function FavoritesList({
   const missingAgentQueries = useQueries({
     queries: missingAgentIds.map((agentId) => ({
       queryKey: [QueryKeys.agent, agentId],
-      queryFn: () => dataService.getAgentById({ agent_id: agentId }),
+      queryFn: async (): Promise<AgentQueryResult> => {
+        try {
+          const agent = await dataService.getAgentById({ agent_id: agentId });
+          return { found: true, agent };
+        } catch (error) {
+          if (error && typeof error === 'object' && 'response' in error) {
+            const axiosError = error as { response?: { status?: number } };
+            if (axiosError.response?.status === 404) {
+              return { found: false };
+            }
+          }
+          throw error;
+        }
+      },
       staleTime: 1000 * 60 * 5,
       enabled: missingAgentIds.length > 0,
     })),
@@ -201,8 +215,8 @@ export default function FavoritesList({
       }
     }
     missingAgentQueries.forEach((query) => {
-      if (query.data) {
-        combined[query.data.id] = query.data;
+      if (query.data?.found) {
+        combined[query.data.agent.id] = query.data.agent;
       }
     });
     return combined;

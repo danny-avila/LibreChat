@@ -33,6 +33,7 @@ const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   getAllServerConfigs: jest.fn(),
   getOAuthServers: jest.fn(),
+  shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
 };
 
 jest.mock('~/mcp/registry/MCPServersRegistry', () => ({

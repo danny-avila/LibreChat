@@ -9,6 +9,8 @@ import type {
 } from 'librechat-data-provider';
 import type { OptionWithIcon, ExtendedFile } from './types';
 
+export type AgentQueryResult = { found: true; agent: Agent } | { found: false };
+
 export type TAgentOption = OptionWithIcon &
   Agent & {
     knowledge_files?: Array<[string, ExtendedFile]>;

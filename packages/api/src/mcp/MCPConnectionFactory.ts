@@ -29,6 +29,7 @@ export class MCPConnectionFactory {
   protected readonly serverConfig: t.MCPOptions;
   protected readonly logPrefix: string;
   protected readonly useOAuth: boolean;
+  protected readonly useSSRFProtection: boolean;
 
   // OAuth-related properties (only set when useOAuth is true)
   protected readonly userId?: string;
@@ -72,6 +73,7 @@ export class MCPConnectionFactory {
       serverConfig: this.serverConfig,
       userId: this.userId,
       oauthTokens,
+      useSSRFProtection: this.useSSRFProtection,
     });
 
     const oauthHandler = async () => {
@@ -146,6 +148,7 @@ export class MCPConnectionFactory {
       serverConfig: this.serverConfig,
       userId: this.userId,
       oauthTokens: null,
+      useSSRFProtection: this.useSSRFProtection,
     });
 
     unauthConnection.on('oauthRequired', () => {
@@ -189,6 +192,7 @@ export class MCPConnectionFactory {
     });
     this.serverName = basic.serverName;
     this.useOAuth = !!oauth?.useOAuth;
+    this.useSSRFProtection = basic.useSSRFProtection === true;
     this.connectionTimeout = oauth?.connectionTimeout;
     this.logPrefix = oauth?.user
       ? `[MCP][${basic.serverName}][${oauth.user.id}]`
@@ -213,6 +217,7 @@ export class MCPConnectionFactory {
       serverConfig: this.serverConfig,
       userId: this.userId,
       oauthTokens,
+      useSSRFProtection: this.useSSRFProtection,
     });
 
     let cleanupOAuthHandlers: (() => void) | null = null;
