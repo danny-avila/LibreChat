@@ -127,6 +127,10 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
     customConfig.modelSpecs = result.data.modelSpecs;
   }
 
+  if (result.data.adminAccess) {
+    customConfig.adminAccess = result.data.adminAccess;
+  }
+
   return customConfig;
 }
 

@@ -27,6 +27,7 @@ function findModelSpecByName(appConfig, specName) {
  * @param {import('@librechat/data-schemas').AppConfig} appConfig - The app configuration.
  * @returns {Promise<Object>} The updated balance record.
  */
+
 async function updateUserBalance({ spec, user, amount, setValues }, appConfig) {
   // If spec is provided, check for per-spec balance first
   if (spec) {
@@ -34,7 +35,7 @@ async function updateUserBalance({ spec, user, amount, setValues }, appConfig) {
     if (modelSpec?.balance?.enabled) {
       return Balance.findOneAndUpdate(
         { user: user._id },
-        { $set: { [`perSpecTokenCredits.${dashCa(spec)}`]: amount, ...(setValues || {}) } },
+        { $set: { [`perSpecTokenCredits.${kebabCase(spec)}`]: amount, ...(setValues || {}) } },
         { upsert: true, new: true },
       ).lean();
     }

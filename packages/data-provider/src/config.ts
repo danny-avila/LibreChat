@@ -722,6 +722,7 @@ export const interfaceSchema = z
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
+export type TAdminAccessConfig = z.infer<typeof adminAccessSchema>;
 export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 
 export const turnstileOptionsSchema = z
@@ -777,6 +778,7 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  adminAccess?: TAdminAccessConfig;
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
@@ -908,6 +910,12 @@ export const ocrSchema = z.object({
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
+export const adminAccessSchema = z.array(z.object({
+  apiKey: z.string(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+})).optional();
+
 export const balanceSchema = z.object({
   enabled: z.boolean().optional().default(false),
   startBalance: z.number().optional().default(20000),
@@ -982,6 +990,7 @@ export const configSchema = z.object({
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),
+  adminAccess: adminAccessSchema.optional(),
   transactions: transactionsSchema.optional(),
   speech: z
     .object({

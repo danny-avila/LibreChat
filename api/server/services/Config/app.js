@@ -44,7 +44,7 @@ async function getAppConfig(options = {}) {
   if (!baseConfig) {
     logger.info('[getAppConfig] App configuration not initialized. Initializing AppService...');
     baseConfig = await loadBaseConfig();
-
+    
     if (!baseConfig) {
       throw new Error('Failed to initialize app configuration through AppService.');
     }

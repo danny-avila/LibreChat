@@ -600,3 +600,12 @@ endpoints:
 #     # instructions: "You are a memory management assistant. Store and manage user information accurately."
 #     # model_parameters:
 #     #   temperature: 0.1
+
+# Admin access configuration for securing admin endpoints with API keys
+# These access are required to execute admin operations such as:
+# - Managing balances
+# - Others to come...
+# adminAccess:
+  # - apiKey: "librechat-admin-api-key-1234567890"
+  #   name: "Main Admin Key"
+  #   description: "Admin API Key with full access permissions"
