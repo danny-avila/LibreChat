@@ -45,6 +45,7 @@ export interface IUser extends Document {
     agentId?: string;
     model?: string;
     endpoint?: string;
+    spec?: string;
   }>;
   createdAt?: Date;
   updatedAt?: Date;

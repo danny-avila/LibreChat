@@ -11,12 +11,13 @@ import { logger } from '~/utils';
 const MAX_FAVORITES = 50;
 
 /**
- * Hook for managing user favorites (pinned agents and models).
+ * Hook for managing user favorites (pinned agents, models, and model specs).
  *
  * Favorites are synchronized with the server via `/api/user/settings/favorites`.
  * Each favorite is either:
  * - An agent: `{ agentId: string }`
  * - A model: `{ model: string, endpoint: string }`
+ * - A model spec: `{ spec: string }`
  *
  * @returns Object containing favorites state and helper methods for
  * adding, removing, toggling, reordering, and checking favorites.
@@ -29,18 +30,20 @@ const cleanFavorites = (favorites: Favorite[]): Favorite[] => {
   if (!Array.isArray(favorites)) {
     return [];
   }
-  return favorites.map((f) => {
-    if (f.agentId) {
-      return { agentId: f.agentId };
-    }
-    if (f.model && f.endpoint) {
-      return { model: f.model, endpoint: f.endpoint };
-    }
-    if (f.spec) {
-      return { spec: f.spec };
-    }
-    return f;
-  });
+  return favorites
+    .map((f) => {
+      if (f.agentId) {
+        return { agentId: f.agentId };
+      }
+      if (f.model && f.endpoint) {
+        return { model: f.model, endpoint: f.endpoint };
+      }
+      if (f.spec) {
+        return { spec: f.spec };
+      }
+      return null;
+    })
+    .filter((f): f is NonNullable<typeof f> => f !== null);
 };
 
 export default function useFavorites() {
