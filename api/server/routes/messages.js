@@ -15,6 +15,7 @@ const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { getConvosQueried } = require('~/models/Conversation');
 const { Message } = require('~/db/models');
+const { handleMessagesError } = require('~/server/utils/routeErrorHandlers');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -113,7 +114,7 @@ router.get('/', async (req, res) => {
     res.status(200).json(response);
   } catch (error) {
     logger.error('Error fetching messages:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    handleMessagesError(error, req, res, 'list-messages');
   }
 });
 
@@ -275,7 +276,7 @@ router.post('/artifact/:messageId', async (req, res) => {
     });
   } catch (error) {
     logger.error('Error editing artifact:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    handleMessagesError(error, req, res, 'update-artifact');
   }
 });
 
@@ -287,7 +288,7 @@ router.get('/:conversationId', validateMessageReq, async (req, res) => {
     res.status(200).json(messages);
   } catch (error) {
     logger.error('Error fetching messages:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    handleMessagesError(error, req, res, 'get-conversation');
   }
 });
 
@@ -306,7 +307,7 @@ router.post('/:conversationId', validateMessageReq, async (req, res) => {
     res.status(201).json(savedMessage);
   } catch (error) {
     logger.error('Error saving message:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    handleMessagesError(error, req, res, 'save-message');
   }
 });
 
@@ -320,7 +321,7 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     res.status(200).json(message);
   } catch (error) {
     logger.error('Error fetching message:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    handleMessagesError(error, req, res, 'get-message');
   }
 });
 
@@ -373,7 +374,7 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     return res.status(200).json(result);
   } catch (error) {
     logger.error('Error updating message:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    handleMessagesError(error, req, res, 'update-message');
   }
 });
 
@@ -398,7 +399,7 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
     });
   } catch (error) {
     logger.error('Error updating message feedback:', error);
-    res.status(500).json({ error: 'Failed to update feedback' });
+    handleMessagesError(error, req, res, 'update-feedback');
   }
 });
 
@@ -409,7 +410,7 @@ router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res
     res.status(204).send();
   } catch (error) {
     logger.error('Error deleting message:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    handleMessagesError(error, req, res, 'delete-message');
   }
 });
 

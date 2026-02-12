@@ -13,6 +13,7 @@ const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
 const { saveMessage, getConvo } = require('~/models');
 const { abortRun } = require('./abortRun');
+const { formatAbortError } = require('~/server/utils/routeErrorHandlers');
 
 /**
  * Spend tokens for all models from collected usage.
@@ -212,6 +213,9 @@ const handleAbort = function () {
  * @returns {Promise<void>}
  */
 const handleAbortError = async (res, req, error, data) => {
+
+  const classifiedError = formatAbortError(error, req, data);
+
   if (error?.message?.includes('base64')) {
     logger.error('[handleAbortError] Error in base64 encoding', {
       ...error,
@@ -229,9 +233,7 @@ const handleAbortError = async (res, req, error, data) => {
     );
   }
 
-  let errorText = error?.message?.includes('"type"')
-    ? error.message
-    : 'An error occurred while processing your request. Please contact the Admin.';
+  let errorText = JSON.stringify(classifiedError);
 
   if (error?.type === ErrorTypes.INVALID_REQUEST) {
     errorText = `{"type":"${ErrorTypes.INVALID_REQUEST}"}`;
