@@ -49,7 +49,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "librechat.serviceAccountName" . }}
-      {{- if hasKey .Values "enableServiceLinks" }}
+      {{- if kindIs "bool" .Values.enableServiceLinks }}
       enableServiceLinks: {{ .Values.enableServiceLinks }}
       {{- end }}
       securityContext:
