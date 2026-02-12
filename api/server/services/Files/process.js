@@ -957,6 +957,7 @@ async function saveBase64Image(
 function filterFile({ req, image, isAvatar }) {
   const { file } = req;
   const { endpoint, endpointType, file_id, width, height } = req.body;
+  const tool_resource = req.body.tool_resource;
 
   if (!file_id && !isAvatar) {
     throw new Error('No file_id provided');
@@ -983,6 +984,17 @@ function filterFile({ req, image, isAvatar }) {
     fileConfig,
     endpointType,
   });
+
+  if (
+    endpointFileConfig.disableProviderUpload === true &&
+    (tool_resource == null || tool_resource === '')
+  ) {
+    throw new Error('Provider uploads are disabled for this endpoint');
+  }
+
+  if (endpointFileConfig.disableTextUpload === true && tool_resource === EToolResources.context) {
+    throw new Error('Text uploads are disabled for this endpoint');
+  }
   const fileSizeLimit =
     isAvatar === true ? fileConfig.avatarSizeLimit : endpointFileConfig.fileSizeLimit;
 
