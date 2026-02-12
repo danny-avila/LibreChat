@@ -120,7 +120,8 @@ export async function loadWebSearchAuth({
         }
       }
 
-      if (requiredKeys.length === 0) continue;
+      // If there are no required keys and no optional keys, skip this service
+      if (requiredKeys.length === 0 && optionalKeys.length === 0) continue;
 
       const requiredAuthFields = extractWebSearchEnvVars({
         keys: requiredKeys,

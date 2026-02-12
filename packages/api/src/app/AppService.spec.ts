@@ -128,6 +128,8 @@ describe('AppService', () => {
           firecrawlApiKey: '${FIRECRAWL_API_KEY}',
           firecrawlApiUrl: '${FIRECRAWL_API_URL}',
           searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+          crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+          crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         }),
         memory: undefined,
         endpoints: expect.objectContaining({
