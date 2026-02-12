@@ -226,5 +226,19 @@ describe('cacheConfig', () => {
       const { cacheConfig } = await import('../cacheConfig');
       expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual([]);
     });
+
+    test('should accept TOOL_CACHE as a valid namespace', async () => {
+      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = 'TOOL_CACHE';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual(['TOOL_CACHE']);
+    });
+
+    test('should accept CONFIG_STORE and APP_CONFIG together for blue/green deployments', async () => {
+      process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = 'CONFIG_STORE,APP_CONFIG';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual(['CONFIG_STORE', 'APP_CONFIG']);
+    });
   });
 });
