@@ -15,6 +15,11 @@ export const contentSecurityPolicy = () => {
         "'unsafe-eval'",
         ...(process.env.CSP_SCRIPT_SRC?.split(',').map(s => s.trim()) || []),
       ],
+      scriptSrcElem: [
+        "'self'",
+        "'unsafe-inline'",
+        ...(process.env.CSP_SCRIPT_SRC?.split(',').map(s => s.trim()) || []),
+      ],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
       connectSrc: [
