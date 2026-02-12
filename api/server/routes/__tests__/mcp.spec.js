@@ -1,8 +1,18 @@
+const crypto = require('crypto');
 const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
+const cookieParser = require('cookie-parser');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { getBasePath } = require('@librechat/api');
+
+function generateTestCsrfToken(flowId) {
+  return crypto
+    .createHmac('sha256', process.env.JWT_SECRET || '')
+    .update(flowId)
+    .digest('hex')
+    .slice(0, 32);
+}
 
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
@@ -130,6 +140,7 @@ describe('MCP Routes', () => {
 
     app = express();
     app.use(express.json());
+    app.use(cookieParser());
 
     app.use((req, res, next) => {
       req.user = { id: 'test-user-id' };
@@ -308,13 +319,48 @@ describe('MCP Routes', () => {
       expect(response.headers.location).toBe(`${basePath}/oauth/error?error=missing_state`);
     });
 
-    it('should redirect to error page when flow state is not found', async () => {
-      MCPOAuthHandler.getFlowState.mockResolvedValue(null);
-
+    it('should redirect to error page when CSRF cookie is missing', async () => {
       const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
         code: 'test-auth-code',
-        state: 'invalid-flow-id',
+        state: 'test-flow-id',
       });
+      const basePath = getBasePath();
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe(
+        `${basePath}/oauth/error?error=csrf_validation_failed`,
+      );
+    });
+
+    it('should redirect to error page when CSRF cookie does not match state', async () => {
+      const csrfToken = generateTestCsrfToken('different-flow-id');
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: 'test-flow-id',
+        });
+      const basePath = getBasePath();
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe(
+        `${basePath}/oauth/error?error=csrf_validation_failed`,
+      );
+    });
+
+    it('should redirect to error page when flow state is not found', async () => {
+      MCPOAuthHandler.getFlowState.mockResolvedValue(null);
+      const flowId = 'invalid-flow-id';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: flowId,
+        });
       const basePath = getBasePath();
 
       expect(response.status).toBe(302);
@@ -369,16 +415,22 @@ describe('MCP Routes', () => {
       });
       setCachedTools.mockResolvedValue();
 
-      const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
-        code: 'test-auth-code',
-        state: 'test-flow-id',
-      });
+      const flowId = 'test-flow-id';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: flowId,
+        });
       const basePath = getBasePath();
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
       expect(MCPOAuthHandler.completeOAuthFlow).toHaveBeenCalledWith(
-        'test-flow-id',
+        flowId,
         'test-auth-code',
         mockFlowManager,
         {},
@@ -405,11 +457,16 @@ describe('MCP Routes', () => {
 
     it('should redirect to error page when callback processing fails', async () => {
       MCPOAuthHandler.getFlowState.mockRejectedValue(new Error('Callback error'));
+      const flowId = 'test-flow-id';
+      const csrfToken = generateTestCsrfToken(flowId);
 
-      const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
-        code: 'test-auth-code',
-        state: 'test-flow-id',
-      });
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: flowId,
+        });
       const basePath = getBasePath();
 
       expect(response.status).toBe(302);
@@ -442,15 +499,21 @@ describe('MCP Routes', () => {
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
-      const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
-        code: 'test-auth-code',
-        state: 'test-flow-id',
-      });
+      const flowId = 'test-flow-id';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: flowId,
+        });
       const basePath = getBasePath();
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
-      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('test-flow-id', 'mcp_get_tokens');
+      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith(flowId, 'mcp_get_tokens');
     });
 
     it('should handle reconnection failure after OAuth', async () => {
@@ -488,16 +551,22 @@ describe('MCP Routes', () => {
       getCachedTools.mockResolvedValue({});
       setCachedTools.mockResolvedValue();
 
-      const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
-        code: 'test-auth-code',
-        state: 'test-flow-id',
-      });
+      const flowId = 'test-flow-id';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: flowId,
+        });
       const basePath = getBasePath();
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalled();
-      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('test-flow-id', 'mcp_get_tokens');
+      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith(flowId, 'mcp_get_tokens');
     });
 
     it('should redirect to error page if token storage fails', async () => {
@@ -530,10 +599,16 @@ describe('MCP Routes', () => {
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
-      const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
-        code: 'test-auth-code',
-        state: 'test-flow-id',
-      });
+      const flowId = 'test-flow-id';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: flowId,
+        });
       const basePath = getBasePath();
 
       expect(response.status).toBe(302);
@@ -589,22 +664,27 @@ describe('MCP Routes', () => {
         clearReconnection: jest.fn(),
       });
 
-      const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
-        code: 'test-auth-code',
-        state: 'test-flow-id',
-      });
+      const flowId = 'test-flow-id';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: flowId,
+        });
       const basePath = getBasePath();
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
 
-      // Verify storeTokens was called with ORIGINAL flow state credentials
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 'test-user-id',
           serverName: 'test-server',
           tokens: mockTokens,
-          clientInfo: clientInfo, // Uses original flow state, not any "updated" credentials
+          clientInfo: clientInfo,
           metadata: flowState.metadata,
         }),
       );
@@ -631,16 +711,21 @@ describe('MCP Routes', () => {
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
-      const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
-        code: 'test-auth-code',
-        state: 'test-flow-id',
-      });
+      const flowId = 'test-flow-id';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: flowId,
+        });
       const basePath = getBasePath();
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
 
-      // Verify completeOAuthFlow was NOT called (prevented duplicate)
       expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
       expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
     });
@@ -755,7 +840,7 @@ describe('MCP Routes', () => {
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
-      const response = await request(app).get('/api/mcp/oauth/status/test-flow-id');
+      const response = await request(app).get('/api/mcp/oauth/status/test-user-id:test-server');
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({
@@ -766,6 +851,13 @@ describe('MCP Routes', () => {
       });
     });
 
+    it('should return 403 when flowId does not match authenticated user', async () => {
+      const response = await request(app).get('/api/mcp/oauth/status/other-user-id:test-server');
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Access denied' });
+    });
+
     it('should return 404 when flow is not found', async () => {
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue(null),
@@ -774,7 +866,7 @@ describe('MCP Routes', () => {
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
-      const response = await request(app).get('/api/mcp/oauth/status/non-existent-flow');
+      const response = await request(app).get('/api/mcp/oauth/status/test-user-id:non-existent');
 
       expect(response.status).toBe(404);
       expect(response.body).toEqual({ error: 'Flow not found' });
@@ -788,7 +880,7 @@ describe('MCP Routes', () => {
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
-      const response = await request(app).get('/api/mcp/oauth/status/error-flow-id');
+      const response = await request(app).get('/api/mcp/oauth/status/test-user-id:error-server');
 
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ error: 'Failed to get flow status' });
@@ -1403,8 +1495,12 @@ describe('MCP Routes', () => {
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
+      const flowId = 'test-flow-id';
+      const csrfToken = generateTestCsrfToken(flowId);
+
       const response = await request(app)
-        .get('/api/mcp/test-server/oauth/callback?code=test-code&state=test-flow-id')
+        .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
         .expect(302);
 
       const basePath = getBasePath();
@@ -1453,8 +1549,12 @@ describe('MCP Routes', () => {
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
+      const flowId = 'test-flow-id';
+      const csrfToken = generateTestCsrfToken(flowId);
+
       const response = await request(app)
-        .get('/api/mcp/test-server/oauth/callback?code=test-code&state=test-flow-id')
+        .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
         .expect(302);
 
       const basePath = getBasePath();
