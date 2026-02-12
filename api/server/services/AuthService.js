@@ -470,6 +470,14 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         secure: isProduction,
         sameSite: 'strict',
       });
+      if (tokenset.id_token) {
+        res.cookie('openid_id_token', tokenset.id_token, {
+          expires: expirationDate,
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: 'strict',
+        });
+      }
     }
 
     /** Small cookie to indicate token provider (required for auth middleware) */

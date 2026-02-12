@@ -88,10 +88,11 @@ const openIdJwtLogin = (openIdConfig) => {
           let refreshToken = sessionTokens?.refreshToken;
 
           /** Fallback to cookies for backward compatibility */
-          if (!accessToken || !refreshToken) {
+          if (!accessToken || !refreshToken || !idToken) {
             const cookieHeader = req.headers.cookie;
             const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
             accessToken = accessToken || parsedCookies.openid_access_token;
+            idToken = idToken || parsedCookies.openid_id_token;
             refreshToken = refreshToken || parsedCookies.refreshToken;
           }
 
