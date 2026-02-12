@@ -12,7 +12,7 @@ describe('Document Parser', () => {
     const document = await parseDocument({ file });
 
     expect(document).toEqual({
-      bytes: 116,
+      bytes: 29,
       filename: 'sample.docx',
       filepath: 'document_parser',
       images: [],
@@ -30,7 +30,7 @@ describe('Document Parser', () => {
     const document = await parseDocument({ file });
 
     expect(document).toEqual({
-      bytes: 264,
+      bytes: 66,
       filename: 'sample.xlsx',
       filepath: 'document_parser',
       images: [],

@@ -34,7 +34,7 @@ async function parseDocument({ file }) {
 
   return {
     filename: file.filename,
-    bytes: text.length * 4,
+    bytes: Buffer.byteLength(text, 'utf8'),
     filepath: FileSources.document_parser,
     text,
     images: [],
@@ -49,9 +49,9 @@ async function parseDocument({ file }) {
  */
 async function pdfToText(file) {
   // Imported inline so that Jest can test other routes without failing due to loading ESM
-  const { getDocument } = require('pdfjs-dist/legacy/build/pdf.mjs');
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
-  const data = new Uint8Array(fs.readFileSync(file.path));
+  const data = new Uint8Array(await fs.promises.readFile(file.path));
   const pdf = await getDocument({ data }).promise;
 
   // Extract text from all pages
