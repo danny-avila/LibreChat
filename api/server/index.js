@@ -18,6 +18,7 @@ const {
   initializeFileStorage,
   GenerationJobManager,
   createStreamServices,
+  applySecurityMiddleware,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -84,6 +85,7 @@ const startServer = async () => {
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
+  app.use(applySecurityMiddleware);
   app.use(handleJsonParseError);
 
   /**
