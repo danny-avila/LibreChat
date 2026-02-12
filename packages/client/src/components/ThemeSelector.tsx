@@ -78,13 +78,6 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }) => {
   );
 
   useEffect(() => {
-    if (theme === 'system') {
-      const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setTheme(prefersDarkScheme ? 'dark' : 'light');
-    }
-  }, [theme, setTheme]);
-
-  useEffect(() => {
     if (announcement) {
       const timeout = setTimeout(() => setAnnouncement(''), 1000);
       return () => clearTimeout(timeout);
