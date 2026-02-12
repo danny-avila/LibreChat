@@ -53,6 +53,11 @@ const logoutController = async (req, res) => {
         }
       }
     }
+
+    // NJ: Due to our automatic login, we have to redirect users elsewhere (or else logging out
+    // simply results in them being automatically logged in again!)
+    response.redirect = 'https://innovation.nj.gov/';
+
     return res.status(status).send(response);
   } catch (err) {
     logger.error('[logoutController]', err);
