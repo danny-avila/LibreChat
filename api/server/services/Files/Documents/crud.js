@@ -4,12 +4,12 @@ const mammoth = require('mammoth');
 const XLSX = require('xlsx');
 
 /**
- * Retrieves a readable stream for a file from local storage.
+ * Parses an uploaded document and extracts its text content and metadata.
  *
- * Throws an Error if it fails to parse.
+ * Throws an Error if it fails to parse or no text is found.
  *
- * @param {Express.Multer.File} file - The file.
- * @returns {MistralOCRUploadResult} A readable stream of the file.
+ * @param {Express.Multer.File} file - The uploaded file to parse.
+ * @returns {Promise<MistralOCRUploadResult>} A readable stream of the file.
  */
 async function parseDocument({ file }) {
   let text;
