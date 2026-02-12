@@ -6,6 +6,10 @@ import type { Request, Response, NextFunction } from 'express';
  * Configures CSP to allow analytics and necessary external resources
  */
 export const contentSecurityPolicy = () => {
+  const parseEnvList = (envVar: string | undefined): string[] => {
+    return envVar?.split(',').map(s => s.trim()).filter(s => s.length > 0) || [];
+  };
+
   return helmet.contentSecurityPolicy({
     directives: {
       defaultSrc: ["'self'"],
@@ -13,18 +17,23 @@ export const contentSecurityPolicy = () => {
         "'self'",
         "'unsafe-inline'",
         "'unsafe-eval'",
-        ...(process.env.CSP_SCRIPT_SRC?.split(',').map(s => s.trim()) || []),
+        ...parseEnvList(process.env.CSP_SCRIPT_SRC),
       ],
       scriptSrcElem: [
         "'self'",
         "'unsafe-inline'",
-        ...(process.env.CSP_SCRIPT_SRC?.split(',').map(s => s.trim()) || []),
+        ...parseEnvList(process.env.CSP_SCRIPT_SRC),
       ],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
+      imgSrc: [
+        "'self'", 
+        'data:', 
+        'https:', 
+        'blob:',
+      ],
       connectSrc: [
         "'self'",
-        ...(process.env.CSP_CONNECT_SRC?.split(',').map(s => s.trim()) || []),
+        ...parseEnvList(process.env.CSP_CONNECT_SRC),
       ],
       fontSrc: ["'self'", 'data:'],
       objectSrc: ["'none'"],
