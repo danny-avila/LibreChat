@@ -969,7 +969,7 @@ class AgentClient extends BaseClient {
           },
           user: createSafeUser(this.options.req.user),
         },
-        recursionLimit: agentsEConfig?.recursionLimit ?? 25,
+        recursionLimit: agentsEConfig?.recursionLimit ?? 50,
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
