@@ -286,7 +286,7 @@ describe('batchResetMeiliFlags', () => {
       const flaggedDocs = await testCollection
         .find({ expiredAt: null, _meiliIndex: false })
         .toArray();
-      expect(flaggedDocs).toHaveLength(5); // 2 were updated, 1 was already false
+      expect(flaggedDocs).toHaveLength(5); // 4 were updated, 1 was already false
     });
   });
 
