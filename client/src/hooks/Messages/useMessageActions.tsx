@@ -12,6 +12,7 @@ import {
 } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useChatContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
+import { useDeleteMessageMutation } from '~/data-provider/Messages/mutations';
 import useCopyToClipboard from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useGetAddedConvo } from '~/hooks/Chat';
@@ -100,6 +101,16 @@ export default function useMessageActions(props: TMessageActions) {
 
   const copyToClipboard = useCopyToClipboard({ text, content, searchResults });
 
+  const deleteMutation = useDeleteMessageMutation(conversation?.conversationId ?? null);
+
+  const handleDelete = useCallback(() => {
+    const conversationId = conversation?.conversationId;
+    if (!messageId || !conversationId) {
+      return;
+    }
+    deleteMutation.mutate({ conversationId, messageId: messageId as string });
+  }, [conversation?.conversationId, messageId, deleteMutation]);
+
   const messageLabel = useMemo(() => {
     if (message?.isCreatedByUser === true) {
       return UsernameDisplay ? (user?.name ?? '') || user?.username : localize('com_user_message');
@@ -155,6 +166,7 @@ export default function useMessageActions(props: TMessageActions) {
     conversation,
     messageLabel,
     latestMessage,
+    handleDelete,
     handleFeedback,
     handleContinue,
     copyToClipboard,

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, memo } from 'react';
 import { useRecoilState } from 'recoil';
+import { Trash2 } from 'lucide-react';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
@@ -22,6 +23,7 @@ type THoverButtons = {
   isLast: boolean;
   index: number;
   handleFeedback?: ({ feedback }: { feedback: TFeedback | undefined }) => void;
+  onDelete?: () => void;
 };
 
 type HoverButtonProps = {
@@ -122,6 +124,7 @@ const HoverButtons = ({
   latestMessage,
   isLast,
   handleFeedback,
+  onDelete,
 }: THoverButtons) => {
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
@@ -246,6 +249,16 @@ const HoverButtons = ({
       {/* Feedback Buttons */}
       {!isCreatedByUser && handleFeedback != null && (
         <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
+      )}
+
+      {/* Delete Button */}
+      {onDelete != null && (
+        <HoverButton
+          onClick={onDelete}
+          title={localize('com_ui_delete')}
+          icon={<Trash2 className="h-[18px] w-[18px]" />}
+          isLast={isLast}
+        />
       )}
 
       {/* Regenerate Button */}

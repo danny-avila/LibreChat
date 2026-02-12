@@ -404,9 +404,26 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
 
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
-    const { messageId } = req.params;
-    await deleteMessages({ messageId });
-    res.status(204).send();
+    const { conversationId, messageId } = req.params;
+    const user = req.user.id;
+
+    // Collect all descendant messageIds by traversing the tree via parentMessageId
+    const idsToDelete = [messageId];
+    let frontier = [messageId];
+
+    while (frontier.length > 0) {
+      const children = await Message.find(
+        { parentMessageId: { $in: frontier }, conversationId, user },
+        'messageId',
+      ).lean();
+
+      const childIds = children.map((c) => c.messageId);
+      idsToDelete.push(...childIds);
+      frontier = childIds;
+    }
+
+    await deleteMessages({ messageId: { $in: idsToDelete } });
+    res.json({ deletedMessageIds: idsToDelete });
   } catch (error) {
     logger.error('Error deleting message:', error);
     res.status(500).json({ error: 'Internal server error' });
