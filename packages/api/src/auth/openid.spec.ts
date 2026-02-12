@@ -202,6 +202,65 @@ describe('findOpenIDUser', () => {
       });
     });
 
+    it('should migrate user from different provider when allowAccountLinking is true', async () => {
+      const mockUser: IUser = {
+        _id: 'user123',
+        provider: 'google',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser
+        .mockResolvedValueOnce(null) // Primary condition fails
+        .mockResolvedValueOnce(mockUser); // Email search finds user with different provider
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+        allowAccountLinking: true,
+      });
+
+      expect(result).toEqual({
+        user: {
+          ...mockUser,
+          provider: 'openid',
+          openidId: 'openid_123',
+        },
+        error: null,
+        migration: true,
+      });
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Account linking: user user@example.com migrating from "google" to OpenID'),
+      );
+    });
+
+    it('should still block login when allowAccountLinking is false (default)', async () => {
+      const mockUser: IUser = {
+        _id: 'user123',
+        provider: 'google',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser
+        .mockResolvedValueOnce(null) // Primary condition fails
+        .mockResolvedValueOnce(mockUser); // Email search finds user with different provider
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+        allowAccountLinking: false,
+      });
+
+      expect(result).toEqual({
+        user: null,
+        error: ErrorTypes.AUTH_FAILED,
+        migration: false,
+      });
+    });
+
     it('should allow login when user has openid provider', async () => {
       const mockUser: IUser = {
         _id: 'user123',

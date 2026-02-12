@@ -2,7 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
 const { createSocialUser, handleExistingUser } = require('./process');
 const socialLogin = require('./socialLogin');
-const { findUser } = require('~/models');
+const { findUser, updateUser } = require('~/models');
 
 jest.mock('@librechat/data-schemas', () => {
   const actualModule = jest.requireActual('@librechat/data-schemas');
@@ -23,12 +23,13 @@ jest.mock('./process', () => ({
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
-  isEnabled: jest.fn().mockReturnValue(true),
+  isEnabled: jest.requireActual('@librechat/api').isEnabled,
   isEmailDomainAllowed: jest.fn().mockReturnValue(true),
 }));
 
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
+  updateUser: jest.fn(),
 }));
 
 jest.mock('~/server/services/Config', () => ({
@@ -50,6 +51,16 @@ describe('socialLogin', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.ALLOW_SOCIAL_REGISTRATION = 'true';
+  });
+
+  afterEach(() => {
+    delete process.env.ALLOW_SOCIAL_REGISTRATION;
+    delete process.env.GOOGLE_ALLOW_ACCOUNT_LINKING;
+    delete process.env.FACEBOOK_ALLOW_ACCOUNT_LINKING;
+    delete process.env.DISCORD_ALLOW_ACCOUNT_LINKING;
+    delete process.env.GITHUB_ALLOW_ACCOUNT_LINKING;
+    delete process.env.APPLE_ALLOW_ACCOUNT_LINKING;
   });
 
   describe('Finding users by provider ID', () => {
@@ -271,6 +282,112 @@ describe('socialLogin', () => {
 
       expect(logger.info).toHaveBeenCalledWith(
         `[${provider}Login] User ${email} already exists with provider local`,
+      );
+    });
+  });
+
+  describe('Account linking', () => {
+    it('should link account when <PROVIDER>_ALLOW_ACCOUNT_LINKING is true', async () => {
+      const provider = 'google';
+      const googleId = 'google-user-123';
+      const email = 'user@example.com';
+
+      process.env.GOOGLE_ALLOW_ACCOUNT_LINKING = 'true';
+
+      const existingUser = {
+        _id: 'user123',
+        email: email,
+        provider: 'local',
+      };
+
+      findUser
+        .mockResolvedValueOnce(null) // By googleId
+        .mockResolvedValueOnce(existingUser); // By email
+
+      updateUser.mockResolvedValue(existingUser);
+
+      const mockProfile = {
+        id: googleId,
+        emails: [{ value: email, verified: true }],
+        photos: [{ value: 'https://example.com/avatar.png' }],
+        name: { givenName: 'John', familyName: 'Doe' },
+      };
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(null, null, null, mockProfile, callback);
+
+      /** Verify updateUser was called with correct provider + providerKey */
+      expect(updateUser).toHaveBeenCalledWith('user123', {
+        provider: 'google',
+        googleId: googleId,
+      });
+
+      /** Verify handleExistingUser was called */
+      expect(handleExistingUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'google',
+          googleId: googleId,
+        }),
+        'https://example.com/avatar.png',
+        expect.any(Object),
+        email,
+      );
+
+      /** Verify success callback */
+      expect(callback).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          provider: 'google',
+          googleId: googleId,
+        }),
+      );
+
+      /** Verify info log about account linking */
+      expect(logger.info).toHaveBeenCalledWith(
+        `[${provider}Login] Account linking: user ${email} migrating from "local" to ${provider}`,
+      );
+    });
+
+    it('should still block login when <PROVIDER>_ALLOW_ACCOUNT_LINKING is not set', async () => {
+      const provider = 'google';
+      const googleId = 'google-user-123';
+      const email = 'user@example.com';
+
+      delete process.env.GOOGLE_ALLOW_ACCOUNT_LINKING;
+
+      const existingUser = {
+        _id: 'user123',
+        email: email,
+        provider: 'local',
+      };
+
+      findUser
+        .mockResolvedValueOnce(null) // By googleId
+        .mockResolvedValueOnce(existingUser); // By email
+
+      const mockProfile = {
+        id: googleId,
+        emails: [{ value: email, verified: true }],
+        photos: [{ value: 'https://example.com/avatar.png' }],
+        name: { givenName: 'John', familyName: 'Doe' },
+      };
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(null, null, null, mockProfile, callback);
+
+      /** Verify updateUser was NOT called */
+      expect(updateUser).not.toHaveBeenCalled();
+
+      /** Verify error callback */
+      expect(callback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: ErrorTypes.AUTH_FAILED,
+          provider: 'local',
+        }),
       );
     });
   });

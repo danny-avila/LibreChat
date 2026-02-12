@@ -9,8 +9,8 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
-  // isEnabled used for TLS flags
-  isEnabled: jest.fn(() => false),
+  // isEnabled used for TLS flags and account linking
+  isEnabled: jest.requireActual('@librechat/api').isEnabled,
   isEmailDomainAllowed: jest.fn(() => true),
   getBalanceConfig: jest.fn(() => ({ enabled: false })),
 }));
@@ -64,6 +64,7 @@ describe('ldapStrategy', () => {
     delete process.env.LDAP_EMAIL;
     delete process.env.LDAP_TLS_REJECT_UNAUTHORIZED;
     delete process.env.LDAP_STARTTLS;
+    delete process.env.LDAP_ALLOW_ACCOUNT_LINKING;
 
     // Default model/domain mocks
     findUser.mockReset().mockResolvedValue(null);
@@ -179,5 +180,124 @@ describe('ldapStrategy', () => {
     const { user, info } = await callVerify(userinfo);
     expect(user).toBe(false);
     expect(info).toEqual({ message: 'Email domain not allowed' });
+  });
+
+  it('should link account when LDAP_ALLOW_ACCOUNT_LINKING is true', async () => {
+    process.env.LDAP_ALLOW_ACCOUNT_LINKING = 'true';
+
+    // Re-init strategy with new env
+    jest.isolateModules(() => {
+      require('./ldapStrategy');
+    });
+
+    const existing = {
+      _id: 'u1',
+      email: 'first@example.com',
+      provider: 'openid',
+      openidId: 'openid_123',
+    };
+    findUser.mockResolvedValue(existing);
+
+    const userinfo = {
+      uid: 'uid123',
+      mail: 'first@example.com',
+      givenName: 'Alice',
+      cn: 'Alice Doe',
+    };
+
+    const { user } = await callVerify(userinfo);
+
+    expect(updateUser).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({
+        provider: 'ldap',
+        ldapId: 'uid123',
+        email: 'first@example.com',
+      }),
+    );
+    expect(user.provider).toBe('ldap');
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('should still block login when LDAP_ALLOW_ACCOUNT_LINKING is not set', async () => {
+    findUser.mockResolvedValue({ _id: 'u1', email: 'first@example.com', provider: 'openid' });
+
+    const userinfo = {
+      uid: 'uid123',
+      mail: 'first@example.com',
+      givenName: 'Alice',
+      cn: 'Alice Doe',
+    };
+
+    const { user, info } = await callVerify(userinfo);
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: ErrorTypes.AUTH_FAILED });
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('should link by email when user was never on LDAP and LDAP_ALLOW_ACCOUNT_LINKING is true', async () => {
+    process.env.LDAP_ALLOW_ACCOUNT_LINKING = 'true';
+
+    jest.isolateModules(() => {
+      require('./ldapStrategy');
+    });
+
+    const existing = {
+      _id: 'u1',
+      email: 'alice@example.com',
+      provider: 'openid',
+      openidId: 'openid_123',
+    };
+
+    // First call (by ldapId) returns null, second call (by email) returns existing user
+    findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existing);
+
+    const userinfo = {
+      uid: 'uid456',
+      mail: 'alice@example.com',
+      givenName: 'Alice',
+      cn: 'Alice Doe',
+    };
+
+    const { user } = await callVerify(userinfo);
+
+    expect(findUser).toHaveBeenNthCalledWith(1, { ldapId: 'uid456' });
+    expect(findUser).toHaveBeenNthCalledWith(2, { email: 'alice@example.com' });
+    expect(updateUser).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({
+        provider: 'ldap',
+        ldapId: 'uid456',
+        email: 'alice@example.com',
+      }),
+    );
+    expect(user.provider).toBe('ldap');
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('should block by email when user was never on LDAP and LDAP_ALLOW_ACCOUNT_LINKING is not set', async () => {
+    const existing = {
+      _id: 'u1',
+      email: 'alice@example.com',
+      provider: 'openid',
+    };
+
+    // First call (by ldapId) returns null, second call (by email) returns existing user
+    findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existing);
+
+    const userinfo = {
+      uid: 'uid456',
+      mail: 'alice@example.com',
+      givenName: 'Alice',
+      cn: 'Alice Doe',
+    };
+
+    const { user, info } = await callVerify(userinfo);
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: ErrorTypes.AUTH_FAILED });
+    expect(createUser).not.toHaveBeenCalled();
   });
 });
