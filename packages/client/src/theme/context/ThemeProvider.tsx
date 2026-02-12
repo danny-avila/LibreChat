@@ -34,6 +34,7 @@ export interface ThemeProviderProps {
  * Check if theme is dark
  */
 export const isDark = (theme: string): boolean => {
+  return false; // NJ: We're forcing light theme at all times
   if (theme === 'system') {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   }
