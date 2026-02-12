@@ -10,7 +10,7 @@ interface InfoLinkProps {
 export default function InfoLink({ text, link, icon }: InfoLinkProps) {
   return (
     <div>
-      <a href={link} className="inline-flex gap-1 underline hover:no-underline">
+      <a href={link} className="inline-flex gap-1 underline hover:decoration-2">
         {text}
         <div className="inline-flex rounded bg-surface-secondary p-1">
           <svg
