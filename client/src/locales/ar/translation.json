@@ -430,6 +430,7 @@
   "com_ui_avatar": "الصورة الرمزية",
   "com_ui_back_to_chat": "العودة إلى الدردشة",
   "com_ui_back_to_prompts": "العودة إلى الأوامر",
+  "com_ui_balance_tokens_left": "{{0}} رمز متبقي",
   "com_ui_bookmark_delete_confirm": "هل أنت متأكد أنك تريد حذف هذه الإشارة المرجعية؟",
   "com_ui_bookmarks": "الإشارات المرجعية",
   "com_ui_bookmarks_add": "إضافة إشارات مرجعية",

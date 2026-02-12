@@ -7,11 +7,13 @@ import {
   AuthType,
   authTypeSchema,
 } from './schemas';
+import { type TBalanceConfig } from './config';
 
 export type TModelSpec = {
   name: string;
   label: string;
   preset: TPreset;
+  balance?: TBalanceConfig;
   order?: number;
   default?: boolean;
   description?: string;
@@ -42,6 +44,19 @@ export const tModelSpecSchema = z.object({
   name: z.string(),
   label: z.string(),
   preset: tPresetSchema,
+  balance: z
+    .object({
+      enabled: z.boolean().optional().default(false),
+      startBalance: z.number().optional().default(20000),
+      autoRefillEnabled: z.boolean().optional().default(false),
+      refillIntervalValue: z.number().optional().default(30),
+      refillIntervalUnit: z
+        .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
+        .optional()
+        .default('days'),
+      refillAmount: z.number().optional().default(10000),
+    })
+    .optional(),
   order: z.number().optional(),
   default: z.boolean().optional(),
   description: z.string().optional(),

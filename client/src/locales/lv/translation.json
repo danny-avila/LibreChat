@@ -760,6 +760,7 @@
   "com_ui_back_to_builder": "Atpakaļ uz veidotāju",
   "com_ui_back_to_chat": "Atpakaļ uz sarunu",
   "com_ui_back_to_prompts": "Atpakaļ pie uzvednēm",
+  "com_ui_balance_tokens_left": "{{0}} žetonu atlicis",
   "com_ui_backup_code_number": "Kods #{{number}}",
   "com_ui_backup_codes": "Rezerves kodi",
   "com_ui_backup_codes_regenerate_error": "Atkārtoti ģenerējot rezerves kodus, radās kļūda.",

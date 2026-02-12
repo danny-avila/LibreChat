@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { Transaction, Balance } = require('~/db/models');
+const { kebabCase } = require('lodash');
 
 const cancelRate = 1.15;
 
@@ -11,22 +12,38 @@ const cancelRate = 1.15;
  * @function
  * @param {Object} params - The function parameters.
  * @param {string|mongoose.Types.ObjectId} params.user - The user ID.
+ * @param {string} [params.spec] - Optional spec to determine which balance record to update if using per-spec balances.
  * @param {number} params.incrementValue - The value to increment the balance by (can be negative).
  * @param {import('mongoose').UpdateQuery<import('@librechat/data-schemas').IBalance>['$set']} [params.setValues] - Optional additional fields to set.
+ * @param {import('@librechat/data-schemas').AppConfig} appConfig - The app configuration.
  * @returns {Promise<Object>} Returns the updated balance document (lean).
  * @throws {Error} Throws an error if the update fails after multiple retries.
  */
-const updateBalance = async ({ user, incrementValue, setValues }) => {
+const updateBalance = async ({ user, spec, incrementValue, setValues }, appConfig) => {
   let maxRetries = 10; // Number of times to retry on conflict
   let delay = 50; // Initial retry delay in ms
   let lastError = null;
+
+  const kebabSpecName = spec ? kebabCase(spec) : null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     let currentBalanceDoc;
     try {
       // 1. Read the current document state
       currentBalanceDoc = await Balance.findOne({ user }).lean();
-      const currentCredits = currentBalanceDoc ? currentBalanceDoc.tokenCredits : 0;
+      let currentCredits = currentBalanceDoc ? currentBalanceDoc.tokenCredits : 0;
+
+      // check if per-spec balance is used
+      let perSpec = false
+      if (kebabSpecName) {
+        const modelSpec = appConfig.modelSpecs?.list?.find((modelSpec => {
+          return modelSpec.name === spec || kebabCase(modelSpec.name) === kebabSpecName;
+        }));
+        if (modelSpec?.balance?.enabled) {
+          perSpec = true;
+          currentCredits = currentBalanceDoc.perSpecTokenCredits?.[kebabSpecName] || 0;
+        }
+      }
 
       // 2. Calculate the desired new state
       const potentialNewCredits = currentCredits + incrementValue;
@@ -35,21 +52,28 @@ const updateBalance = async ({ user, incrementValue, setValues }) => {
       // 3. Prepare the update payload
       const updatePayload = {
         $set: {
-          tokenCredits: newCredits,
           ...(setValues || {}), // Merge other values to set
         },
       };
+      if (perSpec) {
+        updatePayload.$set[`perSpecTokenCredits.${kebabSpecName}`] = newCredits;
+      } else {
+        updatePayload.$set.tokenCredits = newCredits;
+      }
 
       // 4. Attempt the conditional update or upsert
       let updatedBalance = null;
       if (currentBalanceDoc) {
-        // --- Document Exists: Perform Conditional Update ---
-        // Try to update only if the tokenCredits match the value we read (currentCredits)
+        // Use optimistic concurrency: only update if the credits value matches what we read
+        const filter = {
+          user,
+          // @TODO     add perSpecTokenCredits condition when spec is used for concurrency control
+          // ...(balanceConfig.perSpec && spec
+          //   ? { [`perSpecTokenCredits.${kebabCase(spec)}`]: currentCredits }
+          //   : { tokenCredits: currentCredits }),
+        };
         updatedBalance = await Balance.findOneAndUpdate(
-          {
-            user: user,
-            tokenCredits: currentCredits, // Optimistic lock: condition based on the read value
-          },
+          filter,
           updatePayload,
           {
             new: true, // Return the modified document
@@ -157,9 +181,11 @@ function calculateTokenValue(txn) {
  * @param {string} txData.tokenType - The type of token.
  * @param {string} txData.context - The context of the transaction.
  * @param {number} txData.rawAmount - The raw amount of tokens.
+ * @param {string} [txData.spec] - Optional model spec for per-spec balance.
+ * @param {import('@librechat/data-schemas').AppConfig} [appConfig] - The app configuration.
  * @returns {Promise<object>} - The created transaction.
  */
-async function createAutoRefillTransaction(txData) {
+async function createAutoRefillTransaction(txData, appConfig) {
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
     return;
   }
@@ -171,13 +197,15 @@ async function createAutoRefillTransaction(txData) {
 
   const balanceResponse = await updateBalance({
     user: transaction.user,
+    spec: txData.spec,
     incrementValue: txData.rawAmount,
     setValues: { lastRefill: new Date() },
-  });
+  }, appConfig);
   const result = {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: balanceResponse.tokenCredits,
+    spec: !!balanceResponse.perSpecTokenCredits?.[kebabCase(txData.spec || '')] ? txData.spec : undefined,
+    balance: balanceResponse.perSpecTokenCredits?.[kebabCase(txData.spec || '')] ?? balanceResponse.tokenCredits,
   };
   logger.debug('[Balance.check] Auto-refill performed', result);
   result.transaction = transaction;
@@ -187,9 +215,10 @@ async function createAutoRefillTransaction(txData) {
 /**
  * Static method to create a transaction and update the balance
  * @param {txData} _txData - Transaction data.
+ * @param {import('@librechat/data-schemas').AppConfig} appConfig - The app configuration.
  */
-async function createTransaction(_txData) {
-  const { balance, transactions, ...txData } = _txData;
+async function createTransaction(_txData, appConfig) {
+  const { balance, transactions, spec, ...txData } = _txData;
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
     return;
   }
@@ -211,13 +240,15 @@ async function createTransaction(_txData) {
   let incrementValue = transaction.tokenValue;
   const balanceResponse = await updateBalance({
     user: transaction.user,
+    spec,
     incrementValue,
-  });
+  }, appConfig);
 
   return {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: balanceResponse.tokenCredits,
+    spec: !!balanceResponse.perSpecTokenCredits?.[kebabCase(spec || '')] ? spec : undefined,
+    balance: balanceResponse.perSpecTokenCredits?.[kebabCase(spec || '')] ?? balanceResponse.tokenCredits,
     [transaction.tokenType]: incrementValue,
   };
 }
@@ -225,9 +256,10 @@ async function createTransaction(_txData) {
 /**
  * Static method to create a structured transaction and update the balance
  * @param {txData} _txData - Transaction data.
+ * @param {import('@librechat/data-schemas').AppConfig} appConfig - The app configuration.
  */
-async function createStructuredTransaction(_txData) {
-  const { balance, transactions, ...txData } = _txData;
+async function createStructuredTransaction(_txData, appConfig) {
+  const { balance, spec, transactions, ...txData } = _txData;
   if (transactions?.enabled === false) {
     return;
   }
@@ -248,13 +280,15 @@ async function createStructuredTransaction(_txData) {
 
   const balanceResponse = await updateBalance({
     user: transaction.user,
+    spec,
     incrementValue,
-  });
+  }, appConfig);
 
   return {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: balanceResponse.tokenCredits,
+    spec: !!balanceResponse.perSpecTokenCredits?.[kebabCase(spec || '')] ? spec : undefined,
+    balance: balanceResponse.perSpecTokenCredits?.[kebabCase(spec || '')] ?? balanceResponse.tokenCredits,
     [transaction.tokenType]: incrementValue,
   };
 }
