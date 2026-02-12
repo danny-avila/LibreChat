@@ -107,6 +107,16 @@ describe('Keys Routes', () => {
         expiresAt: undefined,
       });
     });
+
+    it('should return 400 when request body is null', async () => {
+      const response = await request(app)
+        .put('/api/keys')
+        .set('Content-Type', 'application/json')
+        .send('null');
+
+      expect(response.status).toBe(400);
+      expect(updateUserKey).not.toHaveBeenCalled();
+    });
   });
 
   describe('DELETE /:name', () => {

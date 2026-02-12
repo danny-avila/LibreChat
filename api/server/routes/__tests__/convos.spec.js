@@ -409,6 +409,16 @@ describe('Convos Routes', () => {
       expect(deleteConvos).not.toHaveBeenCalled();
     });
 
+    it('should return 400 when request body is null (DoS prevention)', async () => {
+      const response = await request(app)
+        .delete('/api/convos')
+        .set('Content-Type', 'application/json')
+        .send('null');
+
+      expect(response.status).toBe(400);
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
     it('should return 500 if deleteConvoSharedLink fails', async () => {
       const mockConversationId = 'conv-error';
 
