@@ -98,7 +98,7 @@ router.get('/gen_title/:conversationId', async (req, res) => {
 
 router.delete('/', async (req, res) => {
   let filter = {};
-  const { conversationId, source, thread_id, endpoint } = req.body.arg;
+  const { conversationId, source, thread_id, endpoint } = req.body.arg ?? {};
 
   // Prevent deletion of all conversations
   if (!conversationId && !source && !thread_id && !endpoint) {
