@@ -183,17 +183,23 @@ export class RedisJobStore implements IJobStore {
 
   async updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void> {
     const key = KEYS.job(streamId);
-    const exists = await this.redis.exists(key);
-    if (!exists) {
-      return;
-    }
 
     const serialized = this.serializeJob(updates as SerializableJobData);
     if (Object.keys(serialized).length === 0) {
       return;
     }
 
-    await this.redis.hmset(key, serialized);
+    const fields = Object.entries(serialized).flat();
+    const updated = await this.redis.eval(
+      'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HMSET", KEYS[1], unpack(ARGV)) return 1 else return 0 end',
+      1,
+      key,
+      ...fields,
+    );
+
+    if (updated === 0) {
+      return;
+    }
 
     // If status changed to complete/error/aborted, update TTL and remove from running set
     // Note: userJobs cleanup is handled lazily via self-healing in getActiveJobIdsByUser
