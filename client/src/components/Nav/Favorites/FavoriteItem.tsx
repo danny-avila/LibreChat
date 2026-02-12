@@ -18,37 +18,44 @@ type Kwargs = {
   spec?: string | null;
 };
 
-type FavoriteItemProps = {
-  item: t.Agent | FavoriteModel | TModelSpec;
-  type: 'agent' | 'model' | 'spec';
-  onSelectEndpoint?: (endpoint?: EModelEndpoint | string | null, kwargs?: Kwargs) => void;
-  onSelectSpec?: (spec: TModelSpec) => void;
+type FavoriteItemBaseProps = {
   onRemoveFocus?: () => void;
+};
+
+type AgentFavoriteProps = FavoriteItemBaseProps & {
+  type: 'agent';
+  item: t.Agent;
+  onSelectEndpoint?: (endpoint?: EModelEndpoint | string | null, kwargs?: Kwargs) => void;
+};
+
+type ModelFavoriteProps = FavoriteItemBaseProps & {
+  type: 'model';
+  item: FavoriteModel;
+  onSelectEndpoint?: (endpoint?: EModelEndpoint | string | null, kwargs?: Kwargs) => void;
+};
+
+type SpecFavoriteProps = FavoriteItemBaseProps & {
+  type: 'spec';
+  item: TModelSpec;
+  onSelectSpec?: (spec: TModelSpec) => void;
   endpointsConfig?: TEndpointsConfig;
 };
 
-export default function FavoriteItem({
-  item,
-  type,
-  onSelectEndpoint,
-  onSelectSpec,
-  onRemoveFocus,
-  endpointsConfig,
-}: FavoriteItemProps) {
+type FavoriteItemProps = AgentFavoriteProps | ModelFavoriteProps | SpecFavoriteProps;
+
+export default function FavoriteItem(props: FavoriteItemProps) {
+  const { type, onRemoveFocus } = props;
   const localize = useLocalize();
   const { removeFavoriteAgent, removeFavoriteModel, removeFavoriteSpec } = useFavorites();
   const [isPopoverActive, setIsPopoverActive] = useState(false);
 
   const handleSelect = () => {
-    if (type === 'agent') {
-      const agent = item as t.Agent;
-      onSelectEndpoint?.(EModelEndpoint.agents, { agent_id: agent.id });
-    } else if (type === 'spec') {
-      const spec = item as TModelSpec;
-      onSelectSpec?.(spec);
+    if (props.type === 'agent') {
+      props.onSelectEndpoint?.(EModelEndpoint.agents, { agent_id: props.item.id });
+    } else if (props.type === 'spec') {
+      props.onSelectSpec?.(props.item);
     } else {
-      const model = item as FavoriteModel;
-      onSelectEndpoint?.(model.endpoint, { model: model.model });
+      props.onSelectEndpoint?.(props.item.endpoint, { model: props.item.model });
     }
   };
 
@@ -68,13 +75,12 @@ export default function FavoriteItem({
 
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (type === 'agent') {
-      removeFavoriteAgent((item as t.Agent).id);
-    } else if (type === 'spec') {
-      removeFavoriteSpec((item as TModelSpec).name);
+    if (props.type === 'agent') {
+      removeFavoriteAgent(props.item.id);
+    } else if (props.type === 'spec') {
+      removeFavoriteSpec(props.item.name);
     } else {
-      const model = item as FavoriteModel;
-      removeFavoriteModel(model.model, model.endpoint);
+      removeFavoriteModel(props.item.model, props.item.endpoint);
     }
     setIsPopoverActive(false);
     requestAnimationFrame(() => {
@@ -83,33 +89,31 @@ export default function FavoriteItem({
   };
 
   const renderIcon = () => {
-    if (type === 'agent') {
-      return renderAgentAvatar(item as t.Agent, { size: 'icon', className: 'mr-2' });
+    if (props.type === 'agent') {
+      return renderAgentAvatar(props.item, { size: 'icon', className: 'mr-2' });
     }
-    if (type === 'spec') {
-      const spec = item as TModelSpec;
+    if (props.type === 'spec') {
       return (
         <div className="mr-2 h-5 w-5">
-          <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />
+          <SpecIcon currentSpec={props.item} endpointsConfig={props.endpointsConfig} />
         </div>
       );
     }
-    const model = item as FavoriteModel;
     return (
       <div className="mr-2 h-5 w-5">
-        <MinimalIcon endpoint={model.endpoint} size={20} isCreatedByUser={false} />
+        <MinimalIcon endpoint={props.item.endpoint} size={20} isCreatedByUser={false} />
       </div>
     );
   };
 
   const getName = (): string => {
-    if (type === 'agent') {
-      return (item as t.Agent).name ?? '';
+    if (props.type === 'agent') {
+      return props.item.name ?? '';
     }
-    if (type === 'spec') {
-      return (item as TModelSpec).label;
+    if (props.type === 'spec') {
+      return props.item.label;
     }
-    return (item as FavoriteModel).model;
+    return props.item.model;
   };
 
   const name = getName();
@@ -118,7 +122,7 @@ export default function FavoriteItem({
       return localize('com_ui_agent');
     }
     if (type === 'spec') {
-      return localize('com_endpoint_preset_title');
+      return localize('com_ui_model_spec');
     }
     return localize('com_ui_model');
   };

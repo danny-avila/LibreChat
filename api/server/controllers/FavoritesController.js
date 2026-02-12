@@ -44,6 +44,12 @@ const updateFavoritesController = async (req, res) => {
           .status(400)
           .json({ message: `endpoint exceeds maximum length of ${MAX_STRING_LENGTH}` });
       }
+      if (fav.spec != null && typeof fav.spec !== 'string') {
+        return res.status(400).json({ message: 'spec must be a string' });
+      }
+      if (typeof fav.spec === 'string' && fav.spec.length === 0) {
+        return res.status(400).json({ message: 'spec must not be empty' });
+      }
       if (fav.spec && fav.spec.length > MAX_STRING_LENGTH) {
         return res
           .status(400)
