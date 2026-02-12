@@ -146,7 +146,13 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     const flowId = state;
     logger.debug('[MCP OAuth] Using flow ID from state', { flowId });
 
-    const [flowUserId] = flowId.split(':');
+    const flowParts = flowId.split(':');
+    if (flowParts.length < 2 || !flowParts[0] || !flowParts[1]) {
+      logger.error('[MCP OAuth] Invalid flow ID format in state', { flowId });
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
+
+    const [flowUserId] = flowParts;
     if (
       !validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH) &&
       !validateOAuthSession(req, flowUserId)

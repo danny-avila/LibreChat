@@ -8,7 +8,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
 function generateTestCsrfToken(flowId) {
   return crypto
-    .createHmac('sha256', process.env.JWT_SECRET || '')
+    .createHmac('sha256', process.env.JWT_SECRET)
     .update(flowId)
     .digest('hex')
     .slice(0, 32);
@@ -179,12 +179,12 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
         authorizationUrl: 'https://oauth.example.com/auth',
-        flowId: 'test-flow-id',
+        flowId: 'test-user-id:test-server',
       });
 
       const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
         userId: 'test-user-id',
-        flowId: 'test-flow-id',
+        flowId: 'test-user-id:test-server',
       });
 
       expect(response.status).toBe(302);
@@ -201,7 +201,7 @@ describe('MCP Routes', () => {
     it('should return 403 when userId does not match authenticated user', async () => {
       const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
         userId: 'different-user-id',
-        flowId: 'test-flow-id',
+        flowId: 'test-user-id:test-server',
       });
 
       expect(response.status).toBe(403);
@@ -239,7 +239,7 @@ describe('MCP Routes', () => {
 
       const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
         userId: 'test-user-id',
-        flowId: 'test-flow-id',
+        flowId: 'test-user-id:test-server',
       });
 
       expect(response.status).toBe(400);
@@ -256,7 +256,7 @@ describe('MCP Routes', () => {
 
       const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
         userId: 'test-user-id',
-        flowId: 'test-flow-id',
+        flowId: 'test-user-id:test-server',
       });
 
       expect(response.status).toBe(500);
@@ -266,7 +266,7 @@ describe('MCP Routes', () => {
     it('should return 400 when flow state metadata is null', async () => {
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({
-          id: 'test-flow-id',
+          id: 'test-user-id:test-server',
           metadata: null,
         }),
       };
@@ -276,7 +276,7 @@ describe('MCP Routes', () => {
 
       const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
         userId: 'test-user-id',
-        flowId: 'test-flow-id',
+        flowId: 'test-user-id:test-server',
       });
 
       expect(response.status).toBe(400);
@@ -291,7 +291,7 @@ describe('MCP Routes', () => {
     it('should redirect to error page when OAuth error is received', async () => {
       const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
         error: 'access_denied',
-        state: 'test-flow-id',
+        state: 'test-user-id:test-server',
       });
       const basePath = getBasePath();
 
@@ -301,7 +301,7 @@ describe('MCP Routes', () => {
 
     it('should redirect to error page when code is missing', async () => {
       const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
-        state: 'test-flow-id',
+        state: 'test-user-id:test-server',
       });
       const basePath = getBasePath();
 
@@ -322,7 +322,7 @@ describe('MCP Routes', () => {
     it('should redirect to error page when CSRF cookie is missing', async () => {
       const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
         code: 'test-auth-code',
-        state: 'test-flow-id',
+        state: 'test-user-id:test-server',
       });
       const basePath = getBasePath();
 
@@ -339,7 +339,7 @@ describe('MCP Routes', () => {
         .set('Cookie', [`oauth_csrf=${csrfToken}`])
         .query({
           code: 'test-auth-code',
-          state: 'test-flow-id',
+          state: 'test-user-id:test-server',
         });
       const basePath = getBasePath();
 
@@ -351,7 +351,7 @@ describe('MCP Routes', () => {
 
     it('should redirect to error page when flow state is not found', async () => {
       MCPOAuthHandler.getFlowState.mockResolvedValue(null);
-      const flowId = 'invalid-flow-id';
+      const flowId = 'invalid-flow:id';
       const csrfToken = generateTestCsrfToken(flowId);
 
       const response = await request(app)
@@ -415,7 +415,7 @@ describe('MCP Routes', () => {
       });
       setCachedTools.mockResolvedValue();
 
-      const flowId = 'test-flow-id';
+      const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
 
       const response = await request(app)
@@ -452,12 +452,15 @@ describe('MCP Routes', () => {
         'mcp_oauth',
         mockTokens,
       );
-      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('test-flow-id', 'mcp_get_tokens');
+      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith(
+        'test-user-id:test-server',
+        'mcp_get_tokens',
+      );
     });
 
     it('should redirect to error page when callback processing fails', async () => {
       MCPOAuthHandler.getFlowState.mockRejectedValue(new Error('Callback error'));
-      const flowId = 'test-flow-id';
+      const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
 
       const response = await request(app)
@@ -499,7 +502,7 @@ describe('MCP Routes', () => {
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
-      const flowId = 'test-flow-id';
+      const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
 
       const response = await request(app)
@@ -551,7 +554,7 @@ describe('MCP Routes', () => {
       getCachedTools.mockResolvedValue({});
       setCachedTools.mockResolvedValue();
 
-      const flowId = 'test-flow-id';
+      const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
 
       const response = await request(app)
@@ -599,7 +602,7 @@ describe('MCP Routes', () => {
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
-      const flowId = 'test-flow-id';
+      const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
 
       const response = await request(app)
@@ -664,7 +667,7 @@ describe('MCP Routes', () => {
         clearReconnection: jest.fn(),
       });
 
-      const flowId = 'test-flow-id';
+      const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
 
       const response = await request(app)
@@ -711,7 +714,7 @@ describe('MCP Routes', () => {
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
-      const flowId = 'test-flow-id';
+      const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
 
       const response = await request(app)
@@ -1467,7 +1470,7 @@ describe('MCP Routes', () => {
         refresh_token: 'edge-refresh-token',
       };
       MCPOAuthHandler.getFlowState = jest.fn().mockResolvedValue({
-        id: 'test-flow-id',
+        id: 'test-user-id:test-server',
         userId: 'test-user-id',
         metadata: {
           serverUrl: 'https://example.com',
@@ -1495,7 +1498,7 @@ describe('MCP Routes', () => {
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
-      const flowId = 'test-flow-id';
+      const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
 
       const response = await request(app)
@@ -1520,7 +1523,7 @@ describe('MCP Routes', () => {
 
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({
-          id: 'test-flow-id',
+          id: 'test-user-id:test-server',
           userId: 'test-user-id',
           metadata: { serverUrl: 'https://example.com', oauth: {} },
           clientInfo: {},
@@ -1549,7 +1552,7 @@ describe('MCP Routes', () => {
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
-      const flowId = 'test-flow-id';
+      const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
 
       const response = await request(app)

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 export const OAUTH_CSRF_COOKIE = 'oauth_csrf';
 export const OAUTH_CSRF_MAX_AGE = 10 * 60 * 1000;
@@ -12,11 +12,11 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 /** Generates an HMAC-based token for OAuth CSRF protection */
 export function generateOAuthCsrfToken(flowId: string, secret?: string): string {
-  return crypto
-    .createHmac('sha256', secret || process.env.JWT_SECRET || '')
-    .update(flowId)
-    .digest('hex')
-    .slice(0, 32);
+  const key = secret || process.env.JWT_SECRET;
+  if (!key) {
+    throw new Error('JWT_SECRET is required for OAuth CSRF token generation');
+  }
+  return crypto.createHmac('sha256', key).update(flowId).digest('hex').slice(0, 32);
 }
 
 /** Sets a SameSite=Lax CSRF cookie bound to a specific OAuth flow */
@@ -56,7 +56,7 @@ export function validateOAuthCsrf(
  * Express middleware that sets the OAuth session cookie after JWT authentication.
  * Chain after requireJwtAuth on routes that precede an OAuth redirect (e.g., reinitialize, bind).
  */
-export function setOAuthSession(req: Request, res: Response, next: () => void): void {
+export function setOAuthSession(req: Request, res: Response, next: NextFunction): void {
   const user = (req as Request & { user?: { id?: string } }).user;
   if (user?.id && !(req.cookies as Record<string, string> | undefined)?.[OAUTH_SESSION_COOKIE]) {
     setOAuthSessionCookie(res, user.id);
