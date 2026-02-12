@@ -24,6 +24,7 @@ jest.mock('../connection');
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   getAllServerConfigs: jest.fn(),
+  shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
 };
 
 jest.mock('../registry/MCPServersRegistry', () => ({
@@ -108,6 +109,7 @@ describe('ConnectionsRepository', () => {
         {
           serverName: 'server1',
           serverConfig: mockServerConfigs.server1,
+          useSSRFProtection: false,
         },
         undefined,
       );
@@ -129,6 +131,7 @@ describe('ConnectionsRepository', () => {
         {
           serverName: 'server1',
           serverConfig: mockServerConfigs.server1,
+          useSSRFProtection: false,
         },
         undefined,
       );
@@ -167,6 +170,7 @@ describe('ConnectionsRepository', () => {
         {
           serverName: 'server1',
           serverConfig: configWithCachedAt,
+          useSSRFProtection: false,
         },
         undefined,
       );
