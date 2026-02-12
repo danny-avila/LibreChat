@@ -20,6 +20,7 @@ import type {
 import type { MCPOAuthTokens } from './oauth/types';
 import { withTimeout } from '~/utils/promise';
 import type * as t from './types';
+import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
 import { sanitizeUrlForLogging } from './utils';
 import { mcpConfig } from './mcpConfig';
 
@@ -213,6 +214,7 @@ interface MCPConnectionParams {
   serverConfig: t.MCPOptions;
   userId?: string;
   oauthTokens?: MCPOAuthTokens | null;
+  useSSRFProtection?: boolean;
 }
 
 export class MCPConnection extends EventEmitter {
@@ -233,6 +235,7 @@ export class MCPConnection extends EventEmitter {
   private oauthTokens?: MCPOAuthTokens | null;
   private requestHeaders?: Record<string, string> | null;
   private oauthRequired = false;
+  private readonly useSSRFProtection: boolean;
   iconPath?: string;
   timeout?: number;
   url?: string;
@@ -263,6 +266,7 @@ export class MCPConnection extends EventEmitter {
     this.options = params.serverConfig;
     this.serverName = params.serverName;
     this.userId = params.userId;
+    this.useSSRFProtection = params.useSSRFProtection === true;
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
     this.lastPingTime = Date.now();
@@ -301,6 +305,7 @@ export class MCPConnection extends EventEmitter {
     getHeaders: () => Record<string, string> | null | undefined,
     timeout?: number,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
+    const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
     return function customFetch(
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
@@ -310,6 +315,7 @@ export class MCPConnection extends EventEmitter {
       const agent = new Agent({
         bodyTimeout: effectiveTimeout,
         headersTimeout: effectiveTimeout,
+        ...(ssrfConnect != null ? { connect: ssrfConnect } : {}),
       });
       if (!requestHeaders) {
         return undiciFetch(input, { ...init, dispatcher: agent });
@@ -342,7 +348,7 @@ export class MCPConnection extends EventEmitter {
     logger.error(`${this.getLogPrefix()} ${errorContext}: ${errorMessage}`);
   }
 
-  private constructTransport(options: t.MCPOptions): Transport {
+  private async constructTransport(options: t.MCPOptions): Promise<Transport> {
     try {
       let type: t.MCPOptions['type'];
       if (isStdioOptions(options)) {
@@ -378,6 +384,15 @@ export class MCPConnection extends EventEmitter {
             throw new Error('Invalid options for websocket transport.');
           }
           this.url = options.url;
+          if (this.useSSRFProtection) {
+            const wsHostname = new URL(options.url).hostname;
+            const isSSRF = await resolveHostnameSSRF(wsHostname);
+            if (isSSRF) {
+              throw new Error(
+                `SSRF protection: WebSocket host "${wsHostname}" resolved to a private/reserved IP address`,
+              );
+            }
+          }
           return new WebSocketClientTransport(new URL(options.url));
 
         case 'sse': {
@@ -402,6 +417,7 @@ export class MCPConnection extends EventEmitter {
            * The connect timeout is extended because proxies may delay initial response.
            */
           const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
+          const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
           const transport = new SSEClientTransport(url, {
             requestInit: {
               /** User/OAuth headers override SSE defaults */
@@ -420,6 +436,7 @@ export class MCPConnection extends EventEmitter {
                   /** Extended keep-alive for long-lived SSE connections */
                   keepAliveTimeout: sseTimeout,
                   keepAliveMaxTimeout: sseTimeout * 2,
+                  ...(ssrfConnect != null ? { connect: ssrfConnect } : {}),
                 });
                 return undiciFetch(url, {
                   ...init,
@@ -629,7 +646,7 @@ export class MCPConnection extends EventEmitter {
           }
         }
 
-        this.transport = this.constructTransport(this.options);
+        this.transport = await this.constructTransport(this.options);
         this.setupTransportDebugHandlers();
 
         const connectTimeout = this.options.initTimeout ?? 120000;
