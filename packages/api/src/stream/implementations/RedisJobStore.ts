@@ -156,13 +156,13 @@ export class RedisJobStore implements IJobStore {
     // For cluster mode, we can't pipeline keys on different slots
     // The job key uses hash tag {streamId}, runningJobs and userJobs are on different slots
     if (this.isCluster) {
-      await this.redis.hmset(key, this.serializeJob(job));
+      await this.redis.hset(key, this.serializeJob(job));
       await this.redis.expire(key, this.ttl.running);
       await this.redis.sadd(KEYS.runningJobs, streamId);
       await this.redis.sadd(userJobsKey, streamId);
     } else {
       const pipeline = this.redis.pipeline();
-      pipeline.hmset(key, this.serializeJob(job));
+      pipeline.hset(key, this.serializeJob(job));
       pipeline.expire(key, this.ttl.running);
       pipeline.sadd(KEYS.runningJobs, streamId);
       pipeline.sadd(userJobsKey, streamId);
@@ -191,7 +191,7 @@ export class RedisJobStore implements IJobStore {
 
     const fields = Object.entries(serialized).flat();
     const updated = await this.redis.eval(
-      'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HMSET", KEYS[1], unpack(ARGV)) return 1 else return 0 end',
+      'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], unpack(ARGV)) return 1 else return 0 end',
       1,
       key,
       ...fields,
