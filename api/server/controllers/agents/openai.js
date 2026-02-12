@@ -12,14 +12,10 @@ const {
   validateRequest,
   initializeAgent,
   getBalanceConfig,
-  getProviderConfig,
-  createSummarizeFn,
   createErrorResponse,
   recordCollectedUsage,
   getTransactionsConfig,
-  createSummarizeHandler,
   createToolExecuteHandler,
-  resolveSummarizationLLMConfig,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   createOpenAIContentAggregator,
@@ -272,60 +268,6 @@ const OpenAIChatCompletionController = async (req, res) => {
     };
 
     const summarizationConfig = appConfig?.summarization;
-    let summarizeHandler = null;
-    if (summarizationConfig && summarizationConfig.enabled !== false) {
-      try {
-        const globalConfig = summarizationConfig;
-        const resolveConfig = (agentIdParam) =>
-          resolveSummarizationLLMConfig({ agentId: agentIdParam, globalConfig });
-        const getProviderOptions = async (resolved) => {
-          const { getOptions, overrideProvider } = getProviderConfig({
-            provider: resolved.provider,
-            appConfig,
-          });
-          const options = await getOptions({
-            req,
-            endpoint: resolved.provider,
-            model_parameters: { model: resolved.model, ...resolved.parameters },
-            db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
-          });
-          const provider = options.provider ?? overrideProvider ?? resolved.provider;
-          const clientOptions = { ...options.llmConfig };
-          if (options.configOptions) {
-            clientOptions.configuration = options.configOptions;
-          }
-          delete clientOptions.maxTokens;
-          return { provider, clientOptions, model: resolved.model };
-        };
-        const summarize = createSummarizeFn({
-          resolveConfig,
-          getProviderOptions,
-          onUsage: (usage) => {
-            collectedUsage.push({
-              usage_type: 'summarization',
-              input_tokens: usage.input_tokens ?? 0,
-              output_tokens: usage.output_tokens ?? 0,
-              total_tokens: usage.total_tokens ?? 0,
-              model: usage.model,
-              provider: usage.provider,
-            });
-          },
-        });
-        summarizeHandler = createSummarizeHandler({
-          summarize,
-          onStatusChange: async (status) => {
-            if (isStreaming && !res.writableEnded) {
-              res.write(`event: on_summarize_status\ndata: ${JSON.stringify(status)}\n\n`);
-            }
-          },
-        });
-      } catch (error) {
-        logger.error(
-          '[OpenAI API] Failed to configure summarization, continuing without it',
-          error,
-        );
-      }
-    }
 
     const openaiMessages = convertMessages(request.messages);
 
@@ -495,7 +437,31 @@ const OpenAIChatCompletionController = async (req, res) => {
       on_custom_event: createHandler(),
       // Event-driven tool execution handler
       on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
-      ...(summarizeHandler ? { on_summarize: summarizeHandler } : {}),
+      ...(summarizationConfig?.enabled !== false
+        ? {
+            on_summarize_start: {
+              handle: async (_event, data) => {
+                if (isStreaming && !res.writableEnded) {
+                  res.write(`event: on_summarize_start\ndata: ${JSON.stringify(data)}\n\n`);
+                }
+              },
+            },
+            on_summarize_delta: {
+              handle: async (_event, data) => {
+                if (isStreaming && !res.writableEnded) {
+                  res.write(`event: on_summarize_delta\ndata: ${JSON.stringify(data)}\n\n`);
+                }
+              },
+            },
+            on_summarize_complete: {
+              handle: async (_event, data) => {
+                if (isStreaming && !res.writableEnded) {
+                  res.write(`event: on_summarize_complete\ndata: ${JSON.stringify(data)}\n\n`);
+                }
+              },
+            },
+          }
+        : {}),
     };
 
     // Create and run the agent

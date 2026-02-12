@@ -8,7 +8,15 @@ import {
 } from 'librechat-data-provider';
 import { memo } from 'react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
-import { OpenAIImageGen, EmptyText, Reasoning, ExecuteCode, AgentUpdate, Text } from './Parts';
+import {
+  OpenAIImageGen,
+  ExecuteCode,
+  AgentUpdate,
+  EmptyText,
+  Reasoning,
+  Summary,
+  Text,
+} from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
 import AgentHandoff from './AgentHandoff';
@@ -93,6 +101,16 @@ const Part = memo(
         return null;
       }
       return <Reasoning reasoning={reasoning} isLast={isLast ?? false} />;
+    } else if (part.type === ContentTypes.SUMMARY) {
+      return (
+        <Summary
+          text={part.text ?? ''}
+          model={part.model}
+          provider={part.provider}
+          tokenCount={part.tokenCount}
+          summarizing={part.summarizing}
+        />
+      );
     } else if (part.type === ContentTypes.TOOL_CALL) {
       const toolCall = part[ContentTypes.TOOL_CALL];
 

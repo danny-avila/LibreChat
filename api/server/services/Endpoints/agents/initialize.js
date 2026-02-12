@@ -2,18 +2,14 @@ const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
   initializeAgent,
-  createSummarizeFn,
-  getProviderConfig,
   validateAgentModel,
   createEdgeCollector,
   filterOrphanedEdges,
   GenerationJobManager,
   getCustomEndpointConfig,
   createSequentialChainEdges,
-  resolveSummarizationLLMConfig,
 } = require('@librechat/api');
 const {
-  ContentTypes,
   EModelEndpoint,
   isAgentsEndpoint,
   getResponseSender,
@@ -87,114 +83,6 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
  * @param {BaseMessage | Record<string, unknown> | undefined} message
  * @returns {string | undefined}
  */
-function extractBaseMessageId(message) {
-  if (!message || typeof message !== 'object') {
-    return undefined;
-  }
-
-  const candidates = [
-    message.id,
-    message.messageId,
-    message.lc_kwargs?.id,
-    message.kwargs?.id,
-    message.additional_kwargs?.messageId,
-    message.lc_kwargs?.additional_kwargs?.messageId,
-    message.kwargs?.additional_kwargs?.messageId,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim().length > 0) {
-      return candidate;
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Creates a summary persistence handler that writes summary content blocks to MongoDB.
- * @param {ServerRequest} req
- * @returns {import('@librechat/api').PersistSummaryFn}
- */
-function createPersistSummary(req) {
-  return async ({ summary, messagesToRefine }) => {
-    const userId = req?.user?.id;
-    if (!userId) {
-      logger.warn('[initializeClient] Skipping summary persistence: missing req.user.id');
-      return;
-    }
-
-    let targetMessageId;
-    for (let index = messagesToRefine.length - 1; index >= 0; index--) {
-      targetMessageId = extractBaseMessageId(messagesToRefine[index]);
-      if (targetMessageId) {
-        break;
-      }
-    }
-
-    if (!targetMessageId) {
-      logger.warn(
-        '[initializeClient] Skipping summary persistence: unable to resolve target messageId',
-      );
-      return;
-    }
-
-    const existingMessage = await db.getMessage({ user: userId, messageId: targetMessageId });
-    if (!existingMessage) {
-      logger.warn(
-        `[initializeClient] Skipping summary persistence: target message not found (${targetMessageId})`,
-      );
-      return;
-    }
-
-    const existingContent = Array.isArray(existingMessage.content)
-      ? [...existingMessage.content]
-      : [];
-    const summaryPart = {
-      type: ContentTypes.SUMMARY,
-      text: summary.text,
-      tokenCount: summary.tokenCount,
-      model: summary.model,
-      provider: summary.provider,
-      createdAt: new Date().toISOString(),
-    };
-
-    let targetContentIndex = -1;
-    for (let index = existingContent.length - 1; index >= 0; index--) {
-      if (existingContent[index]?.type === ContentTypes.SUMMARY) {
-        targetContentIndex = index;
-        break;
-      }
-    }
-
-    if (targetContentIndex >= 0) {
-      existingContent[targetContentIndex] = summaryPart;
-    } else {
-      existingContent.push(summaryPart);
-      targetContentIndex = existingContent.length - 1;
-    }
-
-    await db.updateMessage(
-      req,
-      {
-        messageId: targetMessageId,
-        summary: summary.text,
-        summaryTokenCount: summary.tokenCount,
-        content: existingContent,
-      },
-      {
-        context: 'api/server/services/Endpoints/agents/initialize.js - createPersistSummary',
-      },
-    );
-
-    return {
-      status: 'persisted',
-      targetMessageId,
-      targetContentIndex,
-    };
-  };
-}
-
 const initializeClient = async ({ req, res, signal, endpointOption }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
@@ -248,59 +136,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolEndCallback,
   };
 
-  let summarizationOptions = null;
-  if (appConfig?.summarization && appConfig.summarization.enabled !== false) {
-    try {
-      const globalConfig = appConfig.summarization;
-      const resolveConfig = (agentId) => resolveSummarizationLLMConfig({ agentId, globalConfig });
-
-      const getProviderOptions = async (resolved) => {
-        const { getOptions, overrideProvider } = getProviderConfig({
-          provider: resolved.provider,
-          appConfig,
-        });
-        const options = await getOptions({
-          req,
-          endpoint: resolved.provider,
-          model_parameters: { model: resolved.model, ...resolved.parameters },
-          db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
-        });
-        const provider = options.provider ?? overrideProvider ?? resolved.provider;
-        const clientOptions = { ...options.llmConfig };
-        if (options.configOptions) {
-          clientOptions.configuration = options.configOptions;
-        }
-        delete clientOptions.maxTokens;
-        return { provider, clientOptions, model: resolved.model };
-      };
-
-      const summarize = createSummarizeFn({
-        resolveConfig,
-        getProviderOptions,
-        onUsage: (usage) => {
-          collectedUsage.push({
-            usage_type: 'summarization',
-            input_tokens: usage.input_tokens ?? 0,
-            output_tokens: usage.output_tokens ?? 0,
-            total_tokens: usage.total_tokens ?? 0,
-            model: usage.model,
-            provider: usage.provider,
-          });
-        },
-      });
-
-      summarizationOptions = {
-        enabled: true,
-        summarize,
-        persistSummary: createPersistSummary(req),
-      };
-    } catch (error) {
-      logger.error(
-        '[initializeClient] Failed to configure summarization, continuing without it',
-        error,
-      );
-    }
-  }
+  const summarizationOptions =
+    appConfig?.summarization && appConfig.summarization.enabled !== false
+      ? { enabled: true }
+      : null;
 
   const eventHandlers = getDefaultHandlers({
     res,

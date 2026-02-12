@@ -525,6 +525,7 @@ export type SummaryContentPart = {
   type: ContentTypes.SUMMARY;
   text: string;
   tokenCount: number;
+  summarizing?: boolean;
   summaryVersion?: number;
   rangeHash?: string;
   model?: string;

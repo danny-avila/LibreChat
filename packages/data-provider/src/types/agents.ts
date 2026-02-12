@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
 import type { TAttachment, TPlugin } from 'src/schemas';
-import type { FunctionToolCall } from './assistants';
+import type { FunctionToolCall, SummaryContentPart } from './assistants';
 
 export namespace Agents {
   export type MessageType = 'human' | 'ai' | 'generic' | 'system' | 'function' | 'tool' | 'remove';
@@ -187,6 +187,7 @@ export namespace Agents {
     /** Group ID for parallel content - parts with same groupId are displayed in columns */
     groupId?: number; // #new
     stepDetails: StepDetails;
+    summary?: SummaryContentPart;
     usage: null | object;
   };
 

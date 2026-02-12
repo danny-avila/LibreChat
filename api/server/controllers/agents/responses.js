@@ -9,13 +9,9 @@ const {
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
-  getProviderConfig,
-  createSummarizeFn,
   recordCollectedUsage,
   getTransactionsConfig,
   createToolExecuteHandler,
-  createSummarizeHandler,
-  resolveSummarizationLLMConfig,
   // Responses API
   writeDone,
   buildResponse,
@@ -283,55 +279,6 @@ const createResponse = async (req, res) => {
   const isStreaming = request.stream === true;
   const summarizationConfig = req.config?.summarization;
 
-  const usageTarget = { collectedUsage: /** @type {Array<*>} */ ([]) };
-  let summarizeFn = null;
-  if (summarizationConfig?.enabled === true) {
-    try {
-      const appConfig = req.config;
-      const globalConfig = summarizationConfig;
-      const resolveConfig = (agentIdParam) =>
-        resolveSummarizationLLMConfig({ agentId: agentIdParam, globalConfig });
-      const getProviderOptions = async (resolved) => {
-        const { getOptions, overrideProvider } = getProviderConfig({
-          provider: resolved.provider,
-          appConfig,
-        });
-        const options = await getOptions({
-          req,
-          endpoint: resolved.provider,
-          model_parameters: { model: resolved.model, ...resolved.parameters },
-          db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
-        });
-        const provider = options.provider ?? overrideProvider ?? resolved.provider;
-        const clientOptions = { ...options.llmConfig };
-        if (options.configOptions) {
-          clientOptions.configuration = options.configOptions;
-        }
-        delete clientOptions.maxTokens;
-        return { provider, clientOptions, model: resolved.model };
-      };
-      summarizeFn = createSummarizeFn({
-        resolveConfig,
-        getProviderOptions,
-        onUsage: (usage) => {
-          usageTarget.collectedUsage.push({
-            usage_type: 'summarization',
-            input_tokens: usage.input_tokens ?? 0,
-            output_tokens: usage.output_tokens ?? 0,
-            total_tokens: usage.total_tokens ?? 0,
-            model: usage.model,
-            provider: usage.provider,
-          });
-        },
-      });
-    } catch (error) {
-      logger.error(
-        '[Responses API] Failed to configure summarization, continuing without it',
-        error,
-      );
-    }
-  }
-
   // Look up the agent
   const agent = await db.getAgent({ id: agentId });
   if (!agent) {
@@ -459,7 +406,6 @@ const createResponse = async (req, res) => {
 
       // Collect usage for balance tracking
       const collectedUsage = [];
-      usageTarget.collectedUsage = collectedUsage;
 
       // Artifact promises for processing tool outputs
       /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
@@ -489,18 +435,6 @@ const createResponse = async (req, res) => {
         toolEndCallback,
       };
 
-      const summarizeHandler =
-        summarizeFn != null
-          ? createSummarizeHandler({
-              summarize: summarizeFn,
-              onStatusChange: async (status) => {
-                if (actuallyStreaming && !res.writableEnded) {
-                  res.write(`event: on_summarize_status\ndata: ${JSON.stringify(status)}\n\n`);
-                }
-              },
-            })
-          : null;
-
       // Combine handlers
       const handlers = {
         on_message_delta: responsesHandlers.on_message_delta,
@@ -523,7 +457,31 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
-        ...(summarizeHandler ? { on_summarize: summarizeHandler } : {}),
+        ...(summarizationConfig?.enabled !== false
+          ? {
+              on_summarize_start: {
+                handle: async (_event, data) => {
+                  if (actuallyStreaming && !res.writableEnded) {
+                    res.write(`event: on_summarize_start\ndata: ${JSON.stringify(data)}\n\n`);
+                  }
+                },
+              },
+              on_summarize_delta: {
+                handle: async (_event, data) => {
+                  if (actuallyStreaming && !res.writableEnded) {
+                    res.write(`event: on_summarize_delta\ndata: ${JSON.stringify(data)}\n\n`);
+                  }
+                },
+              },
+              on_summarize_complete: {
+                handle: async (_event, data) => {
+                  if (actuallyStreaming && !res.writableEnded) {
+                    res.write(`event: on_summarize_complete\ndata: ${JSON.stringify(data)}\n\n`);
+                  }
+                },
+              },
+            }
+          : {}),
       };
 
       // Create and run the agent
@@ -629,7 +587,6 @@ const createResponse = async (req, res) => {
 
       // Collect usage for balance tracking
       const collectedUsage = [];
-      usageTarget.collectedUsage = collectedUsage;
 
       /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
       const artifactPromises = [];
@@ -650,13 +607,6 @@ const createResponse = async (req, res) => {
         },
         toolEndCallback,
       };
-
-      const summarizeHandler =
-        summarizeFn != null
-          ? createSummarizeHandler({
-              summarize: summarizeFn,
-            })
-          : null;
 
       const handlers = {
         on_message_delta: aggregatorHandlers.on_message_delta,
@@ -679,7 +629,13 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
-        ...(summarizeHandler ? { on_summarize: summarizeHandler } : {}),
+        ...(summarizationConfig?.enabled !== false
+          ? {
+              on_summarize_start: { handle: () => {} },
+              on_summarize_delta: { handle: () => {} },
+              on_summarize_complete: { handle: () => {} },
+            }
+          : {}),
       };
 
       const userId = req.user?.id ?? 'api-user';

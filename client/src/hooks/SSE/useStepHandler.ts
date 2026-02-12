@@ -12,8 +12,8 @@ import type {
   PartMetadata,
   ContentMetadata,
   EventSubmission,
-  SummarizationStatus,
   TMessageContentParts,
+  SummaryContentPart,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
@@ -37,7 +37,6 @@ type TStepEvent = {
     | Agents.AgentUpdate
     | Agents.RunStep
     | Agents.ToolEndEvent
-    | SummarizationStatus
     | {
         runId?: string;
         message: string;
@@ -54,6 +53,7 @@ type AllContentTypes =
   | ContentTypes.TOOL_CALL
   | ContentTypes.IMAGE_FILE
   | ContentTypes.IMAGE_URL
+  | ContentTypes.SUMMARY
   | ContentTypes.ERROR;
 
 export default function useStepHandler({
@@ -175,6 +175,8 @@ export default function useStepHandler({
       updatedContent[index] = {
         ...currentContent,
       };
+    } else if (contentType === ContentTypes.SUMMARY) {
+      updatedContent[index] = contentPart as unknown as SummaryContentPart;
     } else if (contentType === ContentTypes.TOOL_CALL && 'tool_call' in contentPart) {
       const existingContent = updatedContent[index] as Agents.ToolCallContent | undefined;
       const existingToolCall = existingContent?.tool_call;
@@ -355,6 +357,30 @@ export default function useStepHandler({
           );
 
           setMessages(updatedMessages);
+        }
+
+        if (runStep.summary != null) {
+          const summaryPart: SummaryContentPart = {
+            type: ContentTypes.SUMMARY,
+            text: '',
+            tokenCount: 0,
+            summarizing: true,
+            model: runStep.summary.model,
+            provider: runStep.summary.provider,
+          };
+
+          let updatedResponse = { ...(messageMap.current.get(responseMessageId) ?? response) };
+          updatedResponse = updateContent(
+            updatedResponse,
+            contentIndex,
+            summaryPart as unknown as Agents.MessageContentComplex,
+            false,
+            getStepMetadata(runStep),
+          );
+
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
 
         const bufferedDeltas = pendingDeltaBuffer.current.get(runStep.id);
@@ -583,18 +609,44 @@ export default function useStepHandler({
 
           setMessages(updatedMessages);
         }
-      } else if (event === 'on_summarize_status') {
-        const statusData = data as SummarizationStatus;
-        if (statusData.status === 'started') {
-          announcePolite({ message: 'summarize_started', isStatus: true });
-        } else if (statusData.status === 'completed') {
-          announcePolite({ message: 'summarize_completed', isStatus: true });
-        } else if (statusData.status === 'failed') {
-          announcePolite({
-            message: 'summarize_failed',
-            isStatus: true,
-          });
+      } else if (event === 'on_summarize_start') {
+        announcePolite({ message: 'summarize_started', isStatus: true });
+      } else if (event === 'on_summarize_delta') {
+        const deltaData = data as { id: string; delta: { summary: SummaryContentPart } };
+        const runStep = stepMap.current.get(deltaData.id);
+        if (!runStep) {
+          console.warn('No run step found for summarize delta event');
+          return;
         }
+
+        let responseMessageId = runStep.runId ?? '';
+        if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
+          responseMessageId = submission?.initialResponse?.messageId ?? '';
+        }
+        if (!responseMessageId) {
+          return;
+        }
+
+        const response = messageMap.current.get(responseMessageId);
+        if (response) {
+          const contentIndex = runStep.index + initialContent.length;
+          const summaryPart: SummaryContentPart = {
+            ...deltaData.delta.summary,
+            summarizing: false,
+          };
+          const updatedResponse = updateContent(
+            response,
+            contentIndex,
+            summaryPart as unknown as Agents.MessageContentComplex,
+            false,
+            getStepMetadata(runStep),
+          );
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+        }
+      } else if (event === 'on_summarize_complete') {
+        announcePolite({ message: 'summarize_completed', isStatus: true });
       }
 
       return () => {
