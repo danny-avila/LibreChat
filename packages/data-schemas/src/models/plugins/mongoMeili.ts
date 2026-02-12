@@ -196,7 +196,7 @@ const createMeiliMongooseModel = ({
       while (hasMore) {
         const query: FilterQuery<unknown> = {
           expiredAt: null,
-          _meiliIndex: false,
+          _meiliIndex: { $ne: true },
         };
 
         try {
