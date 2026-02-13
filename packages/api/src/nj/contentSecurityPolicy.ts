@@ -47,24 +47,26 @@ export const contentSecurityPolicy = () => {
         "https://innovation.nj.gov",
         "https://*.googletagmanager.com",
         "https://googletagmanager.com",
+        ...parseEnvList(process.env.CSP_SCRIPT_SRC),
       ],
       childSrc: [
         "'self'",
         "https://*.googletagmanager.com",
         "https://googletagmanager.com",
+        ...parseEnvList(process.env.CSP_SCRIPT_SRC),
       ],
       baseUri: ["'self'"],
       formAction: [
         "'self'",
         "https://www.googletagmanager.com",
         "https://*.googletagmanager.com",
+        ...parseEnvList(process.env.CSP_SCRIPT_SRC),
       ],
       frameAncestors: ["'self'"],
       upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
     },
     reportOnly: false,
     useDefaults: false,
-    },
   });
 };
 

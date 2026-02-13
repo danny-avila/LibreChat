@@ -85,7 +85,7 @@ const startServer = async () => {
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
-  app.use(applySecurityMiddleware);
+  // app.use(applySecurityMiddleware);
   app.use(handleJsonParseError);
 
   /**
