@@ -165,7 +165,7 @@ const deleteConversationTag = async (user, tag) => {
       return null;
     }
 
-    await Conversation.updateMany({ user, tags: tag }, { $pull: { tags: tag } });
+    await Conversation.updateMany({ user, tags: tag }, { $pullAll: { tags: [tag] } });
 
     await ConversationTag.updateMany(
       { user, position: { $gt: deletedTag.position } },
