@@ -154,6 +154,20 @@ export const librechat = {
   } as const,
 };
 
+const region: SettingDefinition = {
+  key: 'region',
+  type: 'string',
+  label: 'com_ui_region',
+  labelCode: true,
+  component: 'combobox',
+  optionType: 'conversation',
+  selectPlaceholder: 'com_ui_select_region',
+  searchPlaceholder: 'com_ui_select_search_region',
+  searchPlaceholderCode: true,
+  selectPlaceholderCode: true,
+  columnSpan: 2,
+};
+
 const openAIParams: Record<string, SettingDefinition> = {
   chatGptLabel: {
     ...librechat.modelLabel,
@@ -480,19 +494,7 @@ const bedrock: Record<string, SettingDefinition> = {
     placeholderCode: true,
     optionType: 'model',
   },
-  region: {
-    key: 'region',
-    type: 'string',
-    label: 'com_ui_region',
-    labelCode: true,
-    component: 'combobox',
-    optionType: 'conversation',
-    selectPlaceholder: 'com_ui_select_region',
-    searchPlaceholder: 'com_ui_select_search_region',
-    searchPlaceholderCode: true,
-    selectPlaceholderCode: true,
-    columnSpan: 2,
-  },
+  region,
   maxTokens: {
     key: 'maxTokens',
     label: 'com_endpoint_max_output_tokens',
@@ -661,6 +663,7 @@ const google: Record<string, SettingDefinition> = {
     showDefault: false,
     columnSpan: 2,
   },
+  region,
 };
 
 const googleConfig: SettingsConfiguration = [
