@@ -1,20 +1,13 @@
 import { logger } from '@librechat/data-schemas';
-import { AccessRoleIds, ResourceType, PrincipalType, Constants } from 'librechat-data-provider';
+import { AccessRoleIds, ResourceType, PrincipalType } from 'librechat-data-provider';
 import { ensureRequiredCollectionsExist } from '../db/utils';
 import type { AccessRoleMethods, IAgent } from '@librechat/data-schemas';
 import type { Model, Mongoose } from 'mongoose';
 
-const { GLOBAL_PROJECT_NAME } = Constants;
+const GLOBAL_PROJECT_NAME = 'instance';
 
 export interface MigrationCheckDbMethods {
   findRoleByIdentifier: AccessRoleMethods['findRoleByIdentifier'];
-  getProjectByName: (
-    projectName: string,
-    fieldsToSelect?: string[] | null,
-  ) => Promise<{
-    agentIds?: string[];
-    [key: string]: unknown;
-  } | null>;
 }
 
 export interface MigrationCheckParams {
@@ -60,7 +53,6 @@ export async function checkAgentPermissionsMigration({
       await ensureRequiredCollectionsExist(db);
     }
 
-    // Verify required roles exist
     const ownerRole = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_OWNER);
     const viewerRole = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
     const editorRole = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_EDITOR);
@@ -77,9 +69,13 @@ export async function checkAgentPermissionsMigration({
       };
     }
 
-    // Get global project agent IDs
-    const globalProject = await methods.getProjectByName(GLOBAL_PROJECT_NAME, ['agentIds']);
-    const globalAgentIds = new Set(globalProject?.agentIds || []);
+    let globalAgentIds = new Set<string>();
+    if (db) {
+      const project = await db
+        .collection('projects')
+        .findOne({ name: GLOBAL_PROJECT_NAME }, { projection: { agentIds: 1 } });
+      globalAgentIds = new Set(project?.agentIds || []);
+    }
 
     const AclEntry = mongoose.model('AclEntry');
     const migratedAgentIds = await AclEntry.distinct('resourceId', {
@@ -124,7 +120,6 @@ export async function checkAgentPermissionsMigration({
       privateAgents: categories.privateAgents.length,
     };
 
-    // Add details for debugging
     if (agentsToMigrate.length > 0) {
       result.details = {
         globalEditAccess: categories.globalEditAccess.map((a) => ({
@@ -152,7 +147,6 @@ export async function checkAgentPermissionsMigration({
     return result;
   } catch (error) {
     logger.error('Failed to check agent permissions migration', error);
-    // Return zero counts on error to avoid blocking startup
     return {
       totalToMigrate: 0,
       globalEditAccess: 0,
@@ -170,7 +164,6 @@ export function logAgentMigrationWarning(result: MigrationCheckResult): void {
     return;
   }
 
-  // Create a visible warning box
   const border = '='.repeat(80);
   const warning = [
     '',
@@ -201,10 +194,8 @@ export function logAgentMigrationWarning(result: MigrationCheckResult): void {
     '',
   ];
 
-  // Use console methods directly for visibility
   console.log('\n' + warning.join('\n') + '\n');
 
-  // Also log with logger for consistency
   logger.warn('Agent permissions migration required', {
     totalToMigrate: result.totalToMigrate,
     globalEditAccess: result.globalEditAccess,

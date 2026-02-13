@@ -22,12 +22,6 @@ const promptGroupSchema = new Schema<IPromptGroupDocument>(
       default: '',
       index: true,
     },
-    projectIds: {
-      type: [Schema.Types.ObjectId],
-      ref: 'Project',
-      index: true,
-      default: [],
-    },
     productionId: {
       type: Schema.Types.ObjectId,
       ref: 'Prompt',
