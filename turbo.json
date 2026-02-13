@@ -1,0 +1,33 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["package-lock.json"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "!src/**/__tests__/**",
+        "!src/**/__mocks__/**",
+        "!src/**/*.test.*",
+        "!src/**/*.spec.*",
+        "scripts/**",
+        "rollup.config.js",
+        "server-rollup.config.js",
+        "tsconfig.json",
+        "tsconfig.build.json",
+        "vite.config.ts",
+        "index.html",
+        "postcss.config.*",
+        "tailwind.config.*",
+        "package.json"
+      ],
+      "outputs": ["dist/**"]
+    },
+    "@librechat/data-schemas#build": {
+      "dependsOn": ["^build", "librechat-data-provider#build"]
+    },
+    "@librechat/api#build": {
+      "dependsOn": ["^build", "librechat-data-provider#build", "@librechat/data-schemas#build"]
+    }
+  }
+}
