@@ -17,83 +17,25 @@ const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 
 /**
- * Create a pipeline for the aggregation to get prompt groups
- * @param {Object} query
- * @param {number} skip
- * @param {number} limit
- * @returns {[Object]} - The pipeline for the aggregation
+ * Batch-fetches production prompts for an array of prompt groups
+ * and attaches them as `productionPrompt` field.
+ * Replaces $lookup aggregation for FerretDB compatibility.
  */
-const createGroupPipeline = (query, skip, limit) => {
-  return [
-    { $match: query },
-    { $sort: { createdAt: -1 } },
-    { $skip: skip },
-    { $limit: limit },
-    {
-      $lookup: {
-        from: 'prompts',
-        localField: 'productionId',
-        foreignField: '_id',
-        as: 'productionPrompt',
-      },
-    },
-    { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
-    {
-      $project: {
-        name: 1,
-        numberOfGenerations: 1,
-        oneliner: 1,
-        category: 1,
-        projectIds: 1,
-        productionId: 1,
-        author: 1,
-        authorName: 1,
-        createdAt: 1,
-        updatedAt: 1,
-        'productionPrompt.prompt': 1,
-        // 'productionPrompt._id': 1,
-        // 'productionPrompt.type': 1,
-      },
-    },
-  ];
-};
+const attachProductionPrompts = async (groups) => {
+  const uniqueIds = [...new Set(groups.map((g) => g.productionId?.toString()).filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    return groups.map((g) => ({ ...g, productionPrompt: null }));
+  }
 
-/**
- * Create a pipeline for the aggregation to get all prompt groups
- * @param {Object} query
- * @param {Partial<MongoPromptGroup>} $project
- * @returns {[Object]} - The pipeline for the aggregation
- */
-const createAllGroupsPipeline = (
-  query,
-  $project = {
-    name: 1,
-    oneliner: 1,
-    category: 1,
-    author: 1,
-    authorName: 1,
-    createdAt: 1,
-    updatedAt: 1,
-    command: 1,
-    'productionPrompt.prompt': 1,
-  },
-) => {
-  return [
-    { $match: query },
-    { $sort: { createdAt: -1 } },
-    {
-      $lookup: {
-        from: 'prompts',
-        localField: 'productionId',
-        foreignField: '_id',
-        as: 'productionPrompt',
-      },
-    },
-    { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
-    {
-      $project,
-    },
-  ];
+  const prompts = await Prompt.find({ _id: { $in: uniqueIds } })
+    .select('prompt')
+    .lean();
+  const promptMap = new Map(prompts.map((p) => [p._id.toString(), p]));
+
+  return groups.map((g) => ({
+    ...g,
+    productionPrompt: g.productionId ? (promptMap.get(g.productionId.toString()) ?? null) : null,
+  }));
 };
 
 /**
@@ -134,8 +76,11 @@ const getAllPromptGroups = async (req, filter) => {
       }
     }
 
-    const promptGroupsPipeline = createAllGroupsPipeline(combinedQuery);
-    return await PromptGroup.aggregate(promptGroupsPipeline).exec();
+    const groups = await PromptGroup.find(combinedQuery)
+      .sort({ createdAt: -1 })
+      .select('name oneliner category author authorName createdAt updatedAt command productionId')
+      .lean();
+    return await attachProductionPrompts(groups);
   } catch (error) {
     console.error('Error getting all prompt groups', error);
     return { message: 'Error getting all prompt groups' };
@@ -175,7 +120,6 @@ const getPromptGroups = async (req, filter) => {
     let combinedQuery = query;
 
     if (searchShared) {
-      // const projects = req.user.projects || []; // TODO: handle multiple projects
       const project = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, 'promptGroupIds');
       if (project && project.promptGroupIds && project.promptGroupIds.length > 0) {
         const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
@@ -187,17 +131,19 @@ const getPromptGroups = async (req, filter) => {
     const skip = (validatedPageNumber - 1) * validatedPageSize;
     const limit = validatedPageSize;
 
-    const promptGroupsPipeline = createGroupPipeline(combinedQuery, skip, limit);
-    const totalPromptGroupsPipeline = [{ $match: combinedQuery }, { $count: 'total' }];
-
-    const [promptGroupsResults, totalPromptGroupsResults] = await Promise.all([
-      PromptGroup.aggregate(promptGroupsPipeline).exec(),
-      PromptGroup.aggregate(totalPromptGroupsPipeline).exec(),
+    const [groups, totalPromptGroups] = await Promise.all([
+      PromptGroup.find(combinedQuery)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select(
+          'name numberOfGenerations oneliner category projectIds productionId author authorName createdAt updatedAt',
+        )
+        .lean(),
+      PromptGroup.countDocuments(combinedQuery),
     ]);
 
-    const promptGroups = promptGroupsResults;
-    const totalPromptGroups =
-      totalPromptGroupsResults.length > 0 ? totalPromptGroupsResults[0].total : 0;
+    const promptGroups = await attachProductionPrompts(groups);
 
     return {
       promptGroups,
@@ -265,10 +211,8 @@ async function getListPromptGroupsByAccess({
   const isPaginated = limit !== null && limit !== undefined;
   const normalizedLimit = isPaginated ? Math.min(Math.max(1, parseInt(limit) || 20), 100) : null;
 
-  // Build base query combining ACL accessible prompt groups with other filters
   const baseQuery = { ...otherParams, _id: { $in: accessibleIds } };
 
-  // Add cursor condition
   if (after && typeof after === 'string' && after !== 'undefined' && after !== 'null') {
     try {
       const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
@@ -281,10 +225,8 @@ async function getListPromptGroupsByAccess({
         ],
       };
 
-      // Merge cursor condition with base query
       if (Object.keys(baseQuery).length > 0) {
         baseQuery.$and = [{ ...baseQuery }, cursorCondition];
-        // Remove the original conditions from baseQuery to avoid duplication
         Object.keys(baseQuery).forEach((key) => {
           if (key !== '$and') delete baseQuery[key];
         });
@@ -296,43 +238,18 @@ async function getListPromptGroupsByAccess({
     }
   }
 
-  // Build aggregation pipeline
-  const pipeline = [{ $match: baseQuery }, { $sort: { updatedAt: -1, _id: 1 } }];
+  const findQuery = PromptGroup.find(baseQuery)
+    .sort({ updatedAt: -1, _id: 1 })
+    .select(
+      'name numberOfGenerations oneliner category projectIds productionId author authorName createdAt updatedAt',
+    );
 
-  // Only apply limit if pagination is requested
   if (isPaginated) {
-    pipeline.push({ $limit: normalizedLimit + 1 });
+    findQuery.limit(normalizedLimit + 1);
   }
 
-  // Add lookup for production prompt
-  pipeline.push(
-    {
-      $lookup: {
-        from: 'prompts',
-        localField: 'productionId',
-        foreignField: '_id',
-        as: 'productionPrompt',
-      },
-    },
-    { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
-    {
-      $project: {
-        name: 1,
-        numberOfGenerations: 1,
-        oneliner: 1,
-        category: 1,
-        projectIds: 1,
-        productionId: 1,
-        author: 1,
-        authorName: 1,
-        createdAt: 1,
-        updatedAt: 1,
-        'productionPrompt.prompt': 1,
-      },
-    },
-  );
-
-  const promptGroups = await PromptGroup.aggregate(pipeline).exec();
+  const groups = await findQuery.lean();
+  const promptGroups = await attachProductionPrompts(groups);
 
   const hasMore = isPaginated ? promptGroups.length > normalizedLimit : false;
   const data = (isPaginated ? promptGroups.slice(0, normalizedLimit) : promptGroups).map(
@@ -344,7 +261,6 @@ async function getListPromptGroupsByAccess({
     },
   );
 
-  // Generate next cursor only if paginated
   let nextCursor = null;
   if (isPaginated && hasMore && data.length > 0) {
     const lastGroup = promptGroups[normalizedLimit - 1];
@@ -477,32 +393,33 @@ module.exports = {
    */
   getRandomPromptGroups: async (filter) => {
     try {
-      const result = await PromptGroup.aggregate([
-        {
-          $match: {
-            category: { $ne: '' },
-          },
-        },
-        {
-          $group: {
-            _id: '$category',
-            promptGroup: { $first: '$$ROOT' },
-          },
-        },
-        {
-          $replaceRoot: { newRoot: '$promptGroup' },
-        },
-        {
-          $sample: { size: +filter.limit + +filter.skip },
-        },
-        {
-          $skip: +filter.skip,
-        },
-        {
-          $limit: +filter.limit,
-        },
-      ]);
-      return { prompts: result };
+      const categories = await PromptGroup.distinct('category', { category: { $ne: '' } });
+
+      for (let i = categories.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [categories[i], categories[j]] = [categories[j], categories[i]];
+      }
+
+      const skip = +filter.skip;
+      const limit = +filter.limit;
+      const selectedCategories = categories.slice(skip, skip + limit);
+
+      if (selectedCategories.length === 0) {
+        return { prompts: [] };
+      }
+
+      const groups = await PromptGroup.find({ category: { $in: selectedCategories } }).lean();
+
+      const groupByCategory = new Map();
+      for (const group of groups) {
+        if (!groupByCategory.has(group.category)) {
+          groupByCategory.set(group.category, group);
+        }
+      }
+
+      const prompts = selectedCategories.map((cat) => groupByCategory.get(cat)).filter(Boolean);
+
+      return { prompts };
     } catch (error) {
       logger.error('Error getting prompt groups', error);
       return { message: 'Error getting prompt groups' };
@@ -635,7 +552,7 @@ module.exports = {
           await removeGroupIdsFromProject(projectId, [filter._id]);
         }
 
-        updateOps.$pull = { projectIds: { $in: data.removeProjectIds } };
+        updateOps.$pullAll = { projectIds: data.removeProjectIds };
         delete data.removeProjectIds;
       }
 

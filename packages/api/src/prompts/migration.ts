@@ -24,7 +24,7 @@ export interface PromptMigrationCheckParams {
 }
 
 interface PromptGroupMigrationData {
-  _id: string;
+  _id: { toString(): string };
   name: string;
   author: string;
   authorName?: string;
@@ -81,48 +81,18 @@ export async function checkPromptPermissionsMigration({
       (globalProject?.promptGroupIds || []).map((id) => id.toString()),
     );
 
-    // Find promptGroups without ACL entries (no batching for efficiency on startup)
-    const promptGroupsToMigrate: PromptGroupMigrationData[] = await PromptGroupModel.aggregate([
-      {
-        $lookup: {
-          from: 'aclentries',
-          localField: '_id',
-          foreignField: 'resourceId',
-          as: 'aclEntries',
-        },
-      },
-      {
-        $addFields: {
-          promptGroupAclEntries: {
-            $filter: {
-              input: '$aclEntries',
-              as: 'aclEntry',
-              cond: {
-                $and: [
-                  { $eq: ['$$aclEntry.resourceType', ResourceType.PROMPTGROUP] },
-                  { $eq: ['$$aclEntry.principalType', PrincipalType.USER] },
-                ],
-              },
-            },
-          },
-        },
-      },
-      {
-        $match: {
-          author: { $exists: true, $ne: null },
-          promptGroupAclEntries: { $size: 0 },
-        },
-      },
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          author: 1,
-          authorName: 1,
-          category: 1,
-        },
-      },
-    ]);
+    const AclEntry = mongoose.model('AclEntry');
+    const migratedGroupIds = await AclEntry.distinct('resourceId', {
+      resourceType: ResourceType.PROMPTGROUP,
+      principalType: PrincipalType.USER,
+    });
+
+    const promptGroupsToMigrate = (await PromptGroupModel.find({
+      _id: { $nin: migratedGroupIds },
+      author: { $exists: true, $ne: null },
+    })
+      .select('_id name author authorName category')
+      .lean()) as unknown as PromptGroupMigrationData[];
 
     const categories: {
       globalViewAccess: PromptGroupMigrationData[];
