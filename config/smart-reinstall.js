@@ -144,8 +144,8 @@ function runFallbackBuild() {
 }
 
 function hasTurbo() {
-  const turboBin = path.join(ROOT_DIR, 'node_modules', '.bin', 'turbo');
-  return fs.existsSync(turboBin);
+  const binDir = path.join(ROOT_DIR, 'node_modules', '.bin');
+  return ['turbo', 'turbo.cmd', 'turbo.ps1'].some((name) => fs.existsSync(path.join(binDir, name)));
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -161,10 +161,9 @@ function hasTurbo() {
     console.purple('Clearing Turborepo cache...');
     if (hasTurbo()) {
       try {
-        exec('npx turbo run build --dry=json > /dev/null 2>&1 || true', { stdio: 'pipe' });
         exec('npx turbo daemon stop', { stdio: 'pipe' });
       } catch {
-        // ignore
+        // ignore — daemon may not be running
       }
     }
     // Clear local .turbo cache dir
@@ -230,5 +229,7 @@ function hasTurbo() {
   if (flags.verbose) {
     console.red(err.stack);
   }
+  console.gray('  Tip: run with --force to clean all caches and reinstall from scratch');
+  console.gray('  Tip: run with --verbose for detailed output');
   process.exit(1);
 });
