@@ -73,3 +73,10 @@ modelSpecs:
 
 ocr:
   strategy: "document_parser"
+
+fileConfig:
+  endpoints:
+    default:
+      fileLimit: 10
+      fileSizeLimit: 50 # mb
+      totalSizeLimit: 60 # mb
