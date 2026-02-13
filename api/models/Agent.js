@@ -546,16 +546,15 @@ const removeAgentResourceFiles = async ({ agent_id, files }) => {
     return acc;
   }, {});
 
-  // Step 1: Atomically remove file IDs using $pull
-  const pullOps = {};
+  const pullAllOps = {};
   const resourcesToCheck = new Set();
   for (const [resource, fileIds] of Object.entries(filesByResource)) {
     const fileIdsPath = `tool_resources.${resource}.file_ids`;
-    pullOps[fileIdsPath] = { $in: fileIds };
+    pullAllOps[fileIdsPath] = fileIds;
     resourcesToCheck.add(resource);
   }
 
-  const updatePullData = { $pull: pullOps };
+  const updatePullData = { $pullAll: pullAllOps };
   const agentAfterPull = await Agent.findOneAndUpdate(searchParameter, updatePullData, {
     new: true,
   }).lean();
@@ -775,7 +774,7 @@ const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds
     for (const projectId of removeProjectIds) {
       await removeAgentIdsFromProject(projectId, [agentId]);
     }
-    updateOps.$pull = { projectIds: { $in: removeProjectIds } };
+    updateOps.$pullAll = { projectIds: removeProjectIds };
   }
 
   if (projectIds && projectIds.length > 0) {
