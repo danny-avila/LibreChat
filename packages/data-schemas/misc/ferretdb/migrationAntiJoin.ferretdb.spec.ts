@@ -24,7 +24,6 @@ const agentSchema = new Schema({
   id: { type: String, required: true },
   name: { type: String, required: true },
   author: { type: String },
-  isCollaborative: { type: Boolean, default: false },
 });
 
 const promptGroupSchema = new Schema({
@@ -107,7 +106,7 @@ describeIfFerretDB('Migration anti-join → $nin - FerretDB compatibility', () =
         _id: { $nin: migratedIds },
         author: { $exists: true, $ne: null },
       })
-        .select('_id id name author isCollaborative')
+        .select('_id id name author')
         .lean();
 
       expect(toMigrate).toHaveLength(2);
@@ -197,7 +196,6 @@ describeIfFerretDB('Migration anti-join → $nin - FerretDB compatibility', () =
         id: 'proj_agent',
         name: 'Field Test',
         author: 'user1',
-        isCollaborative: true,
       });
 
       const migratedIds = await AclEntry.distinct('resourceId', {
@@ -209,7 +207,7 @@ describeIfFerretDB('Migration anti-join → $nin - FerretDB compatibility', () =
         _id: { $nin: migratedIds },
         author: { $exists: true, $ne: null },
       })
-        .select('_id id name author isCollaborative')
+        .select('_id id name author')
         .lean();
 
       expect(toMigrate).toHaveLength(1);
@@ -218,7 +216,6 @@ describeIfFerretDB('Migration anti-join → $nin - FerretDB compatibility', () =
       expect(agent).toHaveProperty('id', 'proj_agent');
       expect(agent).toHaveProperty('name', 'Field Test');
       expect(agent).toHaveProperty('author', 'user1');
-      expect(agent).toHaveProperty('isCollaborative', true);
     });
   });
 

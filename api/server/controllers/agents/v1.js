@@ -173,9 +173,6 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
 
     agent.author = agent.author.toString();
 
-    // @deprecated - isCollaborative replaced by ACL permissions
-    agent.isCollaborative = !!agent.isCollaborative;
-
     // Check if agent is public
     const isPublic = await hasPublicPermission({
       resourceType: ResourceType.AGENT,
@@ -199,9 +196,6 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         author: agent.author,
         provider: agent.provider,
         model: agent.model,
-        projectIds: agent.projectIds,
-        // @deprecated - isCollaborative replaced by ACL permissions
-        isCollaborative: agent.isCollaborative,
         isPublic: agent.isPublic,
         version: agent.version,
         // Safe metadata
