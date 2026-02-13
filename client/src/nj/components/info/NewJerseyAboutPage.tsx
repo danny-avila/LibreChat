@@ -155,7 +155,7 @@ export default function NewJerseyAboutPage() {
         collaborating with users to understand key needs, and making important decisions along the
         way. These are the principles we use:
       </p>
-      <ul className="mb-6 list-disc">
+      <ul className="mb-6 list-inside list-disc">
         <li className="mb-2">
           <span className="font-bold">Be the safe, go-to AI tool for state employees</span> —
           integrated into daily work for learning and getting things done, with clear information
