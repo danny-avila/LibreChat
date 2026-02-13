@@ -17,11 +17,15 @@ export const contentSecurityPolicy = () => {
         "'self'",
         "'unsafe-inline'",
         "'unsafe-eval'",
+        "https://www.googletagmanager.com",
+        "https://*.googletagmanager.com",
         ...parseEnvList(process.env.CSP_SCRIPT_SRC),
       ],
       scriptSrcElem: [
         "'self'",
         "'unsafe-inline'",
+        "https://www.googletagmanager.com",
+        "https://*.googletagmanager.com",
         ...parseEnvList(process.env.CSP_SCRIPT_SRC),
       ],
       styleSrc: ["'self'", "'unsafe-inline'"],
@@ -50,9 +54,16 @@ export const contentSecurityPolicy = () => {
         "https://googletagmanager.com",
       ],
       baseUri: ["'self'"],
-      formAction: ["'self'"],
+      formAction: [
+        "'self'",
+        "https://www.googletagmanager.com",
+        "https://*.googletagmanager.com",
+      ],
       frameAncestors: ["'self'"],
       upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+    },
+    reportOnly: false,
+    useDefaults: false,
     },
   });
 };
