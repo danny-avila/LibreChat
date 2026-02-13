@@ -9,8 +9,8 @@ import { Constants, actionDelimiter } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { ToolDefinition } from './classification';
-import { buildToolClassification } from './classification';
 import { resolveJsonSchemaRefs, normalizeJsonSchema } from '~/mcp/zod';
+import { buildToolClassification } from './classification';
 import { getToolDefinition } from './registry/definitions';
 
 export interface MCPServerTool {
