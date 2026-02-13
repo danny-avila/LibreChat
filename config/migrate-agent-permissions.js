@@ -10,7 +10,7 @@ const connect = require('./connect');
 const { grantPermission } = require('~/server/services/PermissionService');
 const { getProjectByName } = require('~/models/Project');
 const { findRoleByIdentifier } = require('~/models');
-const { Agent } = require('~/db/models');
+const { Agent, AclEntry } = require('~/db/models');
 
 async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 } = {}) {
   await connect();
@@ -39,48 +39,17 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
 
   logger.info(`Found ${globalAgentIds.size} agents in global project`);
 
-  // Find agents without ACL entries using DocumentDB-compatible approach
-  const agentsToMigrate = await Agent.aggregate([
-    {
-      $lookup: {
-        from: 'aclentries',
-        localField: '_id',
-        foreignField: 'resourceId',
-        as: 'aclEntries',
-      },
-    },
-    {
-      $addFields: {
-        userAclEntries: {
-          $filter: {
-            input: '$aclEntries',
-            as: 'aclEntry',
-            cond: {
-              $and: [
-                { $eq: ['$$aclEntry.resourceType', ResourceType.AGENT] },
-                { $eq: ['$$aclEntry.principalType', PrincipalType.USER] },
-              ],
-            },
-          },
-        },
-      },
-    },
-    {
-      $match: {
-        author: { $exists: true, $ne: null },
-        userAclEntries: { $size: 0 },
-      },
-    },
-    {
-      $project: {
-        _id: 1,
-        id: 1,
-        name: 1,
-        author: 1,
-        isCollaborative: 1,
-      },
-    },
-  ]);
+  const migratedAgentIds = await AclEntry.distinct('resourceId', {
+    resourceType: ResourceType.AGENT,
+    principalType: PrincipalType.USER,
+  });
+
+  const agentsToMigrate = await Agent.find({
+    _id: { $nin: migratedAgentIds },
+    author: { $exists: true, $ne: null },
+  })
+    .select('_id id name author isCollaborative')
+    .lean();
 
   const categories = {
     globalEditAccess: [], // Global project + collaborative -> Public EDIT
