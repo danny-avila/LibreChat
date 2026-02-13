@@ -4,7 +4,6 @@ const { logger } = require('@librechat/data-schemas');
 const { getCustomEndpointConfig } = require('@librechat/api');
 const {
   Tools,
-  SystemRoles,
   ResourceType,
   actionDelimiter,
   isAgentsEndpoint,
@@ -12,11 +11,6 @@ const {
   encodeEphemeralAgentId,
 } = require('librechat-data-provider');
 const { mcp_all, mcp_delimiter } = require('librechat-data-provider').Constants;
-const {
-  removeAgentFromAllProjects,
-  removeAgentIdsFromProject,
-  addAgentIdsToProject,
-} = require('./Project');
 const {
   getSoleOwnedResourceIds,
   removeAllPermissions,
@@ -294,22 +288,8 @@ const isDuplicateVersion = (updateData, currentData, versions, actionsHash = nul
         break;
       }
 
-      // Special handling for projectIds (MongoDB ObjectIds)
-      if (field === 'projectIds') {
-        const wouldBeIds = wouldBeArr.map((id) => id.toString()).sort();
-        const versionIds = lastVersionArr.map((id) => id.toString()).sort();
-
-        if (!wouldBeIds.every((id, i) => id === versionIds[i])) {
-          isMatch = false;
-          break;
-        }
-      }
       // Handle arrays of objects
-      else if (
-        wouldBeArr.length > 0 &&
-        typeof wouldBeArr[0] === 'object' &&
-        wouldBeArr[0] !== null
-      ) {
+      if (wouldBeArr.length > 0 && typeof wouldBeArr[0] === 'object' && wouldBeArr[0] !== null) {
         const sortedWouldBe = [...wouldBeArr].map((item) => JSON.stringify(item)).sort();
         const sortedVersion = [...lastVersionArr].map((item) => JSON.stringify(item)).sort();
 
@@ -590,7 +570,6 @@ const removeAgentResourceFiles = async ({ agent_id, files }) => {
 const deleteAgent = async (searchParameter) => {
   const agent = await Agent.findOneAndDelete(searchParameter);
   if (agent) {
-    await removeAgentFromAllProjects(agent.id);
     await Promise.all([
       removeAllPermissions({
         resourceType: ResourceType.AGENT,
@@ -666,8 +645,6 @@ const deleteUserAgents = async (userId) => {
 
     const agentIds = allAgents.map((agent) => agent.id);
     const agentObjectIds = allAgents.map((agent) => agent._id);
-
-    await Promise.all(agentIds.map((id) => removeAgentFromAllProjects(id)));
 
     await AclEntry.deleteMany({
       resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
@@ -753,7 +730,6 @@ const getListAgentsByAccess = async ({
     name: 1,
     avatar: 1,
     author: 1,
-    projectIds: 1,
     description: 1,
     updatedAt: 1,
     category: 1,
@@ -796,64 +772,6 @@ const getListAgentsByAccess = async ({
     has_more: hasMore,
     after: nextCursor,
   };
-};
-
-/**
- * Updates the projects associated with an agent, adding and removing project IDs as specified.
- * This function also updates the corresponding projects to include or exclude the agent ID.
- *
- * @param {Object} params - Parameters for updating the agent's projects.
- * @param {IUser} params.user - Parameters for updating the agent's projects.
- * @param {string} params.agentId - The ID of the agent to update.
- * @param {string[]} [params.projectIds] - Array of project IDs to add to the agent.
- * @param {string[]} [params.removeProjectIds] - Array of project IDs to remove from the agent.
- * @returns {Promise<MongoAgent>} The updated agent document.
- * @throws {Error} If there's an error updating the agent or projects.
- */
-const updateAgentProjects = async ({ user, agentId, projectIds, removeProjectIds }) => {
-  const updateOps = {};
-
-  if (removeProjectIds && removeProjectIds.length > 0) {
-    for (const projectId of removeProjectIds) {
-      await removeAgentIdsFromProject(projectId, [agentId]);
-    }
-    updateOps.$pullAll = { projectIds: removeProjectIds };
-  }
-
-  if (projectIds && projectIds.length > 0) {
-    for (const projectId of projectIds) {
-      await addAgentIdsToProject(projectId, [agentId]);
-    }
-    updateOps.$addToSet = { projectIds: { $each: projectIds } };
-  }
-
-  if (Object.keys(updateOps).length === 0) {
-    return await getAgent({ id: agentId });
-  }
-
-  const updateQuery = { id: agentId, author: user.id };
-  if (user.role === SystemRoles.ADMIN) {
-    delete updateQuery.author;
-  }
-
-  const updatedAgent = await updateAgent(updateQuery, updateOps, {
-    updatingUserId: user.id,
-    skipVersioning: true,
-  });
-  if (updatedAgent) {
-    return updatedAgent;
-  }
-  if (updateOps.$addToSet) {
-    for (const projectId of projectIds) {
-      await removeAgentIdsFromProject(projectId, [agentId]);
-    }
-  } else if (updateOps.$pull) {
-    for (const projectId of removeProjectIds) {
-      await addAgentIdsToProject(projectId, [agentId]);
-    }
-  }
-
-  return await getAgent({ id: agentId });
 };
 
 /**
@@ -964,7 +882,6 @@ module.exports = {
   deleteAgent,
   deleteUserAgents,
   revertAgentVersion,
-  updateAgentProjects,
   countPromotedAgents,
   addAgentResourceFile,
   getListAgentsByAccess,
