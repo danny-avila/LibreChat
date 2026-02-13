@@ -27,7 +27,6 @@ const promptGroupSchema = new Schema(
     author: { type: Schema.Types.ObjectId, required: true, index: true },
     authorName: { type: String, required: true },
     command: { type: String },
-    projectIds: { type: [Schema.Types.ObjectId], default: [] },
   },
   { timestamps: true },
 );
@@ -51,7 +50,6 @@ type PromptGroupDoc = mongoose.Document & {
   oneliner: string;
   numberOfGenerations: number;
   command?: string;
-  projectIds: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 };
@@ -226,7 +224,7 @@ describeIfFerretDB('Prompt $lookup replacement - FerretDB compatibility', () => 
           .skip(skip)
           .limit(limit)
           .select(
-            'name numberOfGenerations oneliner category projectIds productionId author authorName createdAt updatedAt',
+            'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt',
           )
           .lean(),
         PromptGroup.countDocuments(query),
@@ -273,7 +271,7 @@ describeIfFerretDB('Prompt $lookup replacement - FerretDB compatibility', () => 
         .sort({ updatedAt: -1, _id: 1 })
         .limit(normalizedLimit + 1)
         .select(
-          'name numberOfGenerations oneliner category projectIds productionId author authorName createdAt updatedAt',
+          'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt',
         )
         .lean();
 
@@ -303,7 +301,7 @@ describeIfFerretDB('Prompt $lookup replacement - FerretDB compatibility', () => 
       const groups = await PromptGroup.find({ _id: { $in: accessibleIds } })
         .sort({ updatedAt: -1, _id: 1 })
         .select(
-          'name numberOfGenerations oneliner category projectIds productionId author authorName createdAt updatedAt',
+          'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt',
         )
         .lean();
 
@@ -326,7 +324,7 @@ describeIfFerretDB('Prompt $lookup replacement - FerretDB compatibility', () => 
 
       const groups = await PromptGroup.find({})
         .select(
-          'name numberOfGenerations oneliner category projectIds productionId author authorName createdAt updatedAt',
+          'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt',
         )
         .lean();
       const result = await attachProductionPrompts(
@@ -339,7 +337,6 @@ describeIfFerretDB('Prompt $lookup replacement - FerretDB compatibility', () => 
       expect(item.numberOfGenerations).toBe(5);
       expect(item.oneliner).toBe('A test prompt');
       expect(item.category).toBe('testing');
-      expect(item.projectIds).toEqual([]);
       expect(item.productionId).toBeDefined();
       expect(item.author).toBeDefined();
       expect(item.authorName).toBe('Test User');

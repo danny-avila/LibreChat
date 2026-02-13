@@ -37,7 +37,6 @@ const projectSchema = new Schema({
 
 const agentSchema = new Schema({
   name: { type: String, required: true },
-  projectIds: { type: [String], default: [] },
   tool_resources: { type: Schema.Types.Mixed, default: {} },
 });
 
@@ -195,23 +194,6 @@ describeIfFerretDB('$pullAll FerretDB compatibility', () => {
       const updated = await Project.findOne({ name: 'Agent Project' }).lean();
       const doc = updated as Record<string, unknown>;
       expect(doc.agentIds).toEqual(['a2', 'a4']);
-    });
-
-    it('should remove projectIds from an agent', async () => {
-      await Agent.create({
-        name: 'Test Agent',
-        projectIds: ['p1', 'p2', 'p3'],
-      });
-
-      await Agent.findOneAndUpdate(
-        { name: 'Test Agent' },
-        { $pullAll: { projectIds: ['p1', 'p3'] } },
-        { new: true },
-      );
-
-      const updated = await Agent.findOne({ name: 'Test Agent' }).lean();
-      const doc = updated as Record<string, unknown>;
-      expect(doc.projectIds).toEqual(['p2']);
     });
 
     it('should handle removing from nested dynamic paths (tool_resources)', async () => {

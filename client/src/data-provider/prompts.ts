@@ -46,12 +46,7 @@ export const useUpdatePromptGroup = (
       ]);
       const previousListData = groupListData ? structuredClone(groupListData) : undefined;
 
-      let update = variables.payload;
-      if (update.removeProjectIds && group?.projectIds) {
-        update = structuredClone(update);
-        update.projectIds = group.projectIds.filter((id) => !update.removeProjectIds?.includes(id));
-        delete update.removeProjectIds;
-      }
+      const update = variables.payload;
 
       if (groupListData) {
         const newData = updateGroupFields(

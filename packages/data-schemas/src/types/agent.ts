@@ -31,11 +31,8 @@ export interface IAgent extends Omit<Document, 'model'> {
   /** @deprecated Use edges instead */
   agent_ids?: string[];
   edges?: GraphEdge[];
-  /** @deprecated Use ACL permissions instead */
-  isCollaborative?: boolean;
   conversation_starters?: string[];
   tool_resources?: unknown;
-  projectIds?: Types.ObjectId[];
   versions?: Omit<IAgent, 'versions'>[];
   category: string;
   support_contact?: ISupportContact;

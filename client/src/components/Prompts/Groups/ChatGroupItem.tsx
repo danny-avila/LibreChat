@@ -16,22 +16,13 @@ import PreviewPrompt from '~/components/Prompts/PreviewPrompt';
 import ListCard from '~/components/Prompts/Groups/ListCard';
 import { detectVariables } from '~/utils';
 
-function ChatGroupItem({
-  group,
-  instanceProjectId,
-}: {
-  group: TPromptGroup;
-  instanceProjectId?: string;
-}) {
+function ChatGroupItem({ group }: { group: TPromptGroup }) {
   const localize = useLocalize();
   const { submitPrompt } = useSubmitMessage();
   const [isPreviewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [isVariableDialogOpen, setVariableDialogOpen] = useState(false);
 
-  const groupIsGlobal = useMemo(
-    () => instanceProjectId != null && group.projectIds?.includes(instanceProjectId),
-    [group, instanceProjectId],
-  );
+  const groupIsGlobal = useMemo(() => group.isPublic === true, [group.isPublic]);
 
   // Check permissions for the promptGroup
   const { hasPermission } = useResourcePermissions(ResourceType.PROMPTGROUP, group._id || '');

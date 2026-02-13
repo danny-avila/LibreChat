@@ -19,7 +19,7 @@ const dbModels = require('~/db/models');
 logger.silent = true;
 
 let mongoServer;
-let Prompt, PromptGroup, AclEntry, AccessRole, User, Group, Project;
+let Prompt, PromptGroup, AclEntry, AccessRole, User, Group;
 let promptFns, permissionService;
 let testUsers, testGroups, testRoles;
 
@@ -36,7 +36,6 @@ beforeAll(async () => {
   AccessRole = dbModels.AccessRole;
   User = dbModels.User;
   Group = dbModels.Group;
-  Project = dbModels.Project;
 
   promptFns = require('~/models/Prompt');
   permissionService = require('~/server/services/PermissionService');
@@ -118,12 +117,6 @@ async function setupTestData() {
       description: 'Group with viewer access',
     }),
   };
-
-  await Project.create({
-    name: 'Global',
-    description: 'Global project',
-    promptGroupIds: [],
-  });
 }
 
 describe('Prompt ACL Permissions', () => {

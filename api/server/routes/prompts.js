@@ -56,15 +56,6 @@ const checkPromptCreate = generateCheckAccess({
   getRoleByName,
 });
 
-const checkGlobalPromptShare = generateCheckAccess({
-  permissionType: PermissionTypes.PROMPTS,
-  permissions: [Permissions.USE, Permissions.CREATE],
-  bodyProps: {
-    [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-  },
-  getRoleByName,
-});
-
 router.use(requireJwtAuth);
 router.use(checkPromptAccess);
 
@@ -364,7 +355,7 @@ const patchPromptGroup = async (req, res) => {
 
 router.patch(
   '/groups/:groupId',
-  checkGlobalPromptShare,
+  checkPromptCreate,
   canAccessPromptGroupResource({
     requiredPermission: PermissionBits.EDIT,
   }),
