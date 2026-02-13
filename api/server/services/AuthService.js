@@ -488,7 +488,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         res.cookie('openid_id_token', tokenset.id_token, {
           expires: expirationDate,
           httpOnly: true,
-          secure: isProduction,
+          secure: shouldUseSecureCookie(),
           sameSite: 'strict',
         });
       }
