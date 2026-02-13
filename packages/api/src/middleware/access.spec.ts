@@ -216,17 +216,12 @@ describe('access middleware', () => {
 
       defaultParams.getRoleByName.mockResolvedValue(mockRole);
 
-      const checkObject = {
-        projectIds: ['project1'],
-        removeProjectIds: ['project2'],
-      };
+      const checkObject = {};
 
       const result = await checkAccess({
         ...defaultParams,
         permissions: [Permissions.USE, Permissions.SHARE],
-        bodyProps: {
-          [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-        } as Record<Permissions, string[]>,
+        bodyProps: {} as Record<Permissions, string[]>,
         checkObject,
       });
       expect(result).toBe(true);
@@ -244,17 +239,12 @@ describe('access middleware', () => {
 
       defaultParams.getRoleByName.mockResolvedValue(mockRole);
 
-      const checkObject = {
-        projectIds: ['project1'],
-        // missing removeProjectIds
-      };
+      const checkObject = {};
 
       const result = await checkAccess({
         ...defaultParams,
         permissions: [Permissions.SHARE],
-        bodyProps: {
-          [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-        } as Record<Permissions, string[]>,
+        bodyProps: {} as Record<Permissions, string[]>,
         checkObject,
       });
       expect(result).toBe(false);
@@ -343,17 +333,12 @@ describe('access middleware', () => {
       } as unknown as IRole;
 
       mockGetRoleByName.mockResolvedValue(mockRole);
-      mockReq.body = {
-        projectIds: ['project1'],
-        removeProjectIds: ['project2'],
-      };
+      mockReq.body = {};
 
       const middleware = generateCheckAccess({
         permissionType: PermissionTypes.AGENTS,
         permissions: [Permissions.USE, Permissions.CREATE, Permissions.SHARE],
-        bodyProps: {
-          [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-        } as Record<Permissions, string[]>,
+        bodyProps: {} as Record<Permissions, string[]>,
         getRoleByName: mockGetRoleByName,
       });
 

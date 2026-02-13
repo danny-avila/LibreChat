@@ -2,15 +2,23 @@ const path = require('path');
 const { logger } = require('@librechat/data-schemas');
 const { ensureRequiredCollectionsExist } = require('@librechat/api');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
-const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
 
 const { grantPermission } = require('~/server/services/PermissionService');
-const { getProjectByName } = require('~/models/Project');
 const { findRoleByIdentifier } = require('~/models');
 const { Agent, AclEntry } = require('~/db/models');
+
+const GLOBAL_PROJECT_NAME = 'instance';
+
+/** Queries the raw `projects` collection (which may still exist in the DB even though the model is removed) */
+async function getGlobalProjectAgentIds(db) {
+  const project = await db
+    .collection('projects')
+    .findOne({ name: GLOBAL_PROJECT_NAME }, { projection: { agentIds: 1 } });
+  return new Set(project?.agentIds || []);
+}
 
 async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 } = {}) {
   await connect();
@@ -24,7 +32,6 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
     await ensureRequiredCollectionsExist(db);
   }
 
-  // Verify required roles exist
   const ownerRole = await findRoleByIdentifier(AccessRoleIds.AGENT_OWNER);
   const viewerRole = await findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
   const editorRole = await findRoleByIdentifier(AccessRoleIds.AGENT_EDITOR);
@@ -33,9 +40,7 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
     throw new Error('Required roles not found. Run role seeding first.');
   }
 
-  // Get global project agent IDs (stores agent.id, not agent._id)
-  const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, ['agentIds']);
-  const globalAgentIds = new Set(globalProject?.agentIds || []);
+  const globalAgentIds = db ? await getGlobalProjectAgentIds(db) : new Set();
 
   logger.info(`Found ${globalAgentIds.size} agents in global project`);
 
@@ -52,9 +57,9 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
     .lean();
 
   const categories = {
-    globalEditAccess: [], // Global project + collaborative -> Public EDIT
-    globalViewAccess: [], // Global project + not collaborative -> Public VIEW
-    privateAgents: [], // Not in global project -> Private (owner only)
+    globalEditAccess: [],
+    globalViewAccess: [],
+    privateAgents: [],
   };
 
   agentsToMigrate.forEach((agent) => {
@@ -68,7 +73,6 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
     } else {
       categories.privateAgents.push(agent);
 
-      // Log warning if private agent claims to be collaborative
       if (isCollab) {
         logger.warn(
           `Agent "${agent.name}" (${agent.id}) has isCollaborative=true but is not in global project`,
@@ -130,7 +134,6 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
     ownerGrants: 0,
   };
 
-  // Process in batches
   for (let i = 0; i < agentsToMigrate.length; i += batchSize) {
     const batch = agentsToMigrate.slice(i, i + batchSize);
 
@@ -143,7 +146,6 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
         const isGlobal = globalAgentIds.has(agent.id);
         const isCollab = agent.isCollaborative;
 
-        // Always grant owner permission to author
         await grantPermission({
           principalType: PrincipalType.USER,
           principalId: agent.author,
@@ -154,24 +156,20 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
         });
         results.ownerGrants++;
 
-        // Determine public permissions for global project agents only
         let publicRoleId = null;
         let description = 'Private';
 
         if (isGlobal) {
           if (isCollab) {
-            // Global project + collaborative = Public EDIT access
             publicRoleId = AccessRoleIds.AGENT_EDITOR;
             description = 'Global Edit';
             results.publicEditGrants++;
           } else {
-            // Global project + not collaborative = Public VIEW access
             publicRoleId = AccessRoleIds.AGENT_VIEWER;
             description = 'Global View';
             results.publicViewGrants++;
           }
 
-          // Grant public permission
           await grantPermission({
             principalType: PrincipalType.PUBLIC,
             principalId: null,
@@ -200,7 +198,6 @@ async function migrateAgentPermissionsEnhanced({ dryRun = true, batchSize = 100 
       }
     }
 
-    // Brief pause between batches
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
