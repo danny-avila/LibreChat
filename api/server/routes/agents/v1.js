@@ -21,15 +21,6 @@ const checkAgentCreate = generateCheckAccess({
   getRoleByName,
 });
 
-const checkGlobalAgentShare = generateCheckAccess({
-  permissionType: PermissionTypes.AGENTS,
-  permissions: [Permissions.USE, Permissions.CREATE],
-  bodyProps: {
-    [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-  },
-  getRoleByName,
-});
-
 router.use(requireJwtAuth);
 
 /**
@@ -99,7 +90,7 @@ router.get(
  */
 router.patch(
   '/:id',
-  checkGlobalAgentShare,
+  checkAgentCreate,
   canAccessAgentResource({
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
@@ -148,7 +139,7 @@ router.delete(
  */
 router.post(
   '/:id/revert',
-  checkGlobalAgentShare,
+  checkAgentCreate,
   canAccessAgentResource({
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',

@@ -14,7 +14,6 @@ export interface IPromptGroup {
   numberOfGenerations: number;
   oneliner: string;
   category: string;
-  projectIds: Types.ObjectId[];
   productionId: Types.ObjectId;
   author: Types.ObjectId;
   authorName: string;

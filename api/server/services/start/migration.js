@@ -6,7 +6,6 @@ const {
   checkAgentPermissionsMigration,
   checkPromptPermissionsMigration,
 } = require('@librechat/api');
-const { getProjectByName } = require('~/models/Project');
 const { Agent, PromptGroup } = require('~/db/models');
 const { findRoleByIdentifier } = require('~/models');
 
@@ -20,7 +19,6 @@ async function checkMigrations() {
       mongoose,
       methods: {
         findRoleByIdentifier,
-        getProjectByName,
       },
       AgentModel: Agent,
     });
@@ -33,7 +31,6 @@ async function checkMigrations() {
       mongoose,
       methods: {
         findRoleByIdentifier,
-        getProjectByName,
       },
       PromptGroupModel: PromptGroup,
     });

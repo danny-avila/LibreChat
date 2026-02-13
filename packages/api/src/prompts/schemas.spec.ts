@@ -30,26 +30,6 @@ describe('updatePromptGroupSchema', () => {
       }
     });
 
-    it('should accept valid projectIds array', () => {
-      const result = updatePromptGroupSchema.safeParse({
-        projectIds: ['proj1', 'proj2'],
-      });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.projectIds).toEqual(['proj1', 'proj2']);
-      }
-    });
-
-    it('should accept valid removeProjectIds array', () => {
-      const result = updatePromptGroupSchema.safeParse({
-        removeProjectIds: ['proj1'],
-      });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.removeProjectIds).toEqual(['proj1']);
-      }
-    });
-
     it('should accept valid command field', () => {
       const result = updatePromptGroupSchema.safeParse({ command: 'my-command-123' });
       expect(result.success).toBe(true);

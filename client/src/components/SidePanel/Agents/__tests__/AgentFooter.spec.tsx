@@ -26,8 +26,6 @@ mockUseWatch.mockImplementation(({ name }) => {
       _id: 'agent-db-123',
       name: 'Test Agent',
       author: 'user-123',
-      projectIds: ['project-1'],
-      isCollaborative: false,
     };
   }
   if (name === 'id') {
@@ -237,8 +235,6 @@ describe('AgentFooter', () => {
           _id: 'agent-db-123',
           name: 'Test Agent',
           author: 'user-123',
-          projectIds: ['project-1'],
-          isCollaborative: false,
         };
       }
       if (name === 'id') {
@@ -376,8 +372,6 @@ describe('AgentFooter', () => {
             _id: 'agent-db-123',
             name: 'Test Agent',
             author: 'different-user', // Different author
-            projectIds: ['project-1'],
-            isCollaborative: false,
           };
         }
         if (name === 'id') {
@@ -403,8 +397,6 @@ describe('AgentFooter', () => {
             _id: 'agent-db-123',
             name: 'Test Agent',
             author: 'user-123', // Same as current user
-            projectIds: ['project-1'],
-            isCollaborative: false,
           };
         }
         if (name === 'id') {

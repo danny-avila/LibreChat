@@ -3,7 +3,6 @@ const { ObjectId } = require('mongodb');
 const { logger } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
-  Constants,
   ResourceType,
   AccessRoleIds,
   PrincipalType,
@@ -19,9 +18,9 @@ logger.silent = true;
 
 describe('PromptGroup Migration Script', () => {
   let mongoServer;
-  let Prompt, PromptGroup, AclEntry, AccessRole, User, Project;
+  let Prompt, PromptGroup, AclEntry, AccessRole, User;
   let migrateToPromptGroupPermissions;
-  let testOwner, testProject;
+  let testOwner;
   let ownerRole, viewerRole;
 
   beforeAll(async () => {
@@ -37,7 +36,6 @@ describe('PromptGroup Migration Script', () => {
     AclEntry = dbModels.AclEntry;
     AccessRole = dbModels.AccessRole;
     User = dbModels.User;
-    Project = dbModels.Project;
 
     // Create test user
     testOwner = await User.create({
@@ -46,11 +44,10 @@ describe('PromptGroup Migration Script', () => {
       role: 'USER',
     });
 
-    // Create test project with the proper name
-    const projectName = Constants.GLOBAL_PROJECT_NAME || 'instance';
-    testProject = await Project.create({
+    // Create test project document in the raw `projects` collection
+    const projectName = 'instance';
+    await mongoose.connection.db.collection('projects').insertOne({
       name: projectName,
-      description: 'Global project',
       promptGroupIds: [],
     });
 
@@ -95,9 +92,9 @@ describe('PromptGroup Migration Script', () => {
     await Prompt.deleteMany({});
     await PromptGroup.deleteMany({});
     await AclEntry.deleteMany({});
-    // Reset the project's promptGroupIds array
-    testProject.promptGroupIds = [];
-    await testProject.save();
+    await mongoose.connection.db
+      .collection('projects')
+      .updateOne({ name: 'instance' }, { $set: { promptGroupIds: [] } });
   });
 
   it('should categorize promptGroups correctly in dry run', async () => {
@@ -118,8 +115,9 @@ describe('PromptGroup Migration Script', () => {
     });
 
     // Add global group to project's promptGroupIds array
-    testProject.promptGroupIds = [globalPromptGroup._id];
-    await testProject.save();
+    await mongoose.connection.db
+      .collection('projects')
+      .updateOne({ name: 'instance' }, { $set: { promptGroupIds: [globalPromptGroup._id] } });
 
     const result = await migrateToPromptGroupPermissions({ dryRun: true });
 
@@ -146,8 +144,9 @@ describe('PromptGroup Migration Script', () => {
     });
 
     // Add global group to project's promptGroupIds array
-    testProject.promptGroupIds = [globalPromptGroup._id];
-    await testProject.save();
+    await mongoose.connection.db
+      .collection('projects')
+      .updateOne({ name: 'instance' }, { $set: { promptGroupIds: [globalPromptGroup._id] } });
 
     const result = await migrateToPromptGroupPermissions({ dryRun: false });
 
