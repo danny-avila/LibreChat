@@ -238,8 +238,10 @@ async function setupSaml() {
               emailVerified: true,
               name: fullName,
             };
-            const balanceConfig = getBalanceConfig(appConfig);
-            user = await createUser(user, balanceConfig, true, true);
+            user = await createUser(user, {
+              ...appConfig,
+              balance: getBalanceConfig(appConfig),
+            }, true, true);
           } else {
             user.provider = 'saml';
             user.samlId = profile.nameID;

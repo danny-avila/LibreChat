@@ -485,6 +485,7 @@
   "com_ui_azure": "آژور",
   "com_ui_back_to_chat": "بازگشت به چت",
   "com_ui_back_to_prompts": "بازگشت به Prompts",
+  "com_ui_balance_tokens_left": "{{0}} توکن باقی مانده",
   "com_ui_backup_codes": "کدهای پشتیبان",
   "com_ui_backup_codes_regenerate_error": "هنگام ایجاد مجدد کدهای پشتیبان خطایی روی داد",
   "com_ui_backup_codes_regenerated": "کدهای پشتیبان با موفقیت بازسازی شدند",

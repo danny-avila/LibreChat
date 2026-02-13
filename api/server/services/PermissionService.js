@@ -355,7 +355,7 @@ const ensurePrincipalExists = async function (principal) {
       idOnTheSource: principal.idOnTheSource,
     };
 
-    const userId = await createUser(userData, true, true);
+    const userId = await createUser(userData, {}, true, true);
     return userId.toString();
   }
 

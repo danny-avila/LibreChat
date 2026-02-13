@@ -397,6 +397,7 @@
   "com_ui_azure": "Azure",
   "com_ui_back_to_chat": "Zpět do chatu",
   "com_ui_back_to_prompts": "Zpět na výzvy",
+  "com_ui_balance_tokens_left": "{{0}} tokenů zbývá",
   "com_ui_backup_codes": "Záložní kódy",
   "com_ui_backup_codes_regenerate_error": "Při generování záložních kódů došlo k chybě",
   "com_ui_backup_codes_regenerated": "Záložní kódy byly úspěšně vygenerovány",

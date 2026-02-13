@@ -689,6 +689,7 @@
   "com_ui_back": "חזור",
   "com_ui_back_to_chat": "חזור לצ'אט",
   "com_ui_back_to_prompts": "חזור להנחיות (פרומפטים)",
+  "com_ui_balance_tokens_left": "{{0}} אסימונים נותרו",
   "com_ui_backup_code_number": "קוד {{number}}#",
   "com_ui_backup_codes": "קודי גיבוי",
   "com_ui_backup_codes_regenerate_error": "אירעה שגיאה בעת יצירת קודי הגיבוי מחדש",

@@ -354,6 +354,7 @@
   "com_ui_archive": "Archiveren",
   "com_ui_archive_error": "Kon gesprek niet archiveren",
   "com_ui_assistant": "Assistent",
+  "com_ui_balance_tokens_left": "{{0}} tokens over",
   "com_ui_bookmark_delete_confirm": "Weet je zeker dat je deze bladwijzer wilt verwijderen?",
   "com_ui_bookmarks": "Bladwijzers",
   "com_ui_bookmarks_add_to_conversation": "Toevoegen aan huidige gesprek",

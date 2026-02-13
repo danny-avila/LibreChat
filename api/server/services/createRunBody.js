@@ -38,6 +38,7 @@ function getTimeStr(clientTimestamp) {
 const createRunBody = ({
   assistant_id,
   model,
+  spec,
   promptPrefix,
   instructions,
   endpointOption = {},
@@ -46,6 +47,7 @@ const createRunBody = ({
   const body = {
     assistant_id,
     model,
+    spec
   };
 
   let systemInstructions = '';

@@ -538,6 +538,7 @@
   "com_ui_azure": "Azure",
   "com_ui_back_to_chat": "Tagasi vestlusesse",
   "com_ui_back_to_prompts": "Tagasi sisendite juurde",
+  "com_ui_balance_tokens_left": "{{0}} märki jäänud",
   "com_ui_backup_codes": "Varukoodid",
   "com_ui_backup_codes_regenerate_error": "Varukoodide loomisel tekkis viga",
   "com_ui_backup_codes_regenerated": "Varukoodide loomine oli edukas",

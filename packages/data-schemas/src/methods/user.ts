@@ -1,6 +1,7 @@
 import mongoose, { FilterQuery } from 'mongoose';
-import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
+import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult, AppConfig } from '~/types';
 import { signPayload } from '~/crypto';
+import { kebabCase } from 'lodash';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY = 1000 * 60 * 15;
@@ -57,7 +58,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
    */
   async function createUser(
     data: CreateUserRequest,
-    balanceConfig?: BalanceConfig,
+    appConfig?: Partial<AppConfig>,
     disableTTL: boolean = true,
     returnUser: boolean = false,
   ): Promise<mongoose.Types.ObjectId | Partial<IUser>> {
@@ -76,31 +77,43 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     const user = await User.create(userData);
 
     // If balance is enabled, create or update a balance record for the user
-    if (balanceConfig?.enabled && balanceConfig?.startBalance) {
+    if (appConfig?.balance?.enabled && appConfig?.balance?.startBalance) {
       const update: {
-        $inc: { tokenCredits: number };
-        $set?: {
+        $inc: { tokenCredits?: number; };
+        $set: Partial<{
           autoRefillEnabled: boolean;
           refillIntervalValue: number;
           refillIntervalUnit: string;
           refillAmount: number;
-        };
+          perSpecTokenCredits?: Record<string, number> 
+        }>;
       } = {
-        $inc: { tokenCredits: balanceConfig.startBalance },
+        $inc: {
+          tokenCredits: appConfig.balance.startBalance
+        }, $set: {}
       };
 
       if (
-        balanceConfig.autoRefillEnabled &&
-        balanceConfig.refillIntervalValue != null &&
-        balanceConfig.refillIntervalUnit != null &&
-        balanceConfig.refillAmount != null
+        appConfig.balance.autoRefillEnabled &&
+        appConfig.balance.refillIntervalValue != null &&
+        appConfig.balance.refillIntervalUnit != null &&
+        appConfig.balance.refillAmount != null
       ) {
         update.$set = {
           autoRefillEnabled: true,
-          refillIntervalValue: balanceConfig.refillIntervalValue,
-          refillIntervalUnit: balanceConfig.refillIntervalUnit,
-          refillAmount: balanceConfig.refillAmount,
+          refillIntervalValue: appConfig.balance.refillIntervalValue,
+          refillIntervalUnit: appConfig.balance.refillIntervalUnit,
+          refillAmount: appConfig.balance.refillAmount,
         };
+      }
+      
+      // handle per model specs balance
+      update.$set.perSpecTokenCredits = {}
+      for (let spec of appConfig.modelSpecs?.list || []) {
+        if (!spec.balance?.enabled || !spec.name) {
+          continue;
+        }
+        update.$set.perSpecTokenCredits![kebabCase(spec.name)] = spec.balance.startBalance || 0;
       }
 
       await Balance.findOneAndUpdate({ user: user._id }, update, {

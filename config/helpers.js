@@ -7,6 +7,12 @@ const path = require('path');
 const readline = require('readline');
 const { execSync } = require('child_process');
 
+// allow graceful exit on ctrl+c
+process.on('SIGINT', function () {
+  // some other closing procedures go here
+  process.exit(0);
+});
+
 const askQuestion = (query) => {
   const rl = readline.createInterface({
     input: process.stdin,

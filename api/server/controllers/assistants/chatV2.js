@@ -153,11 +153,12 @@ const chatV2 = async (req, res) => {
         res,
         txData: {
           model,
+          spec: endpointOption.spec,
           user: req.user.id,
           tokenType: 'prompt',
-          amount: promptTokens,
+          amount: promptTokens
         },
-      });
+      }, appConfig);
     };
 
     const { openai: _openai } = await getOpenAIClient({
@@ -470,16 +471,18 @@ const chatV2 = async (req, res) => {
           ...completedRun.usage,
           user: req.user.id,
           model: completedRun.model ?? model,
+          spec: completedRun.spec ?? spec,
           conversationId,
-        });
+        }, req.config);
       }
     } else {
       await recordUsage({
         ...response.run.usage,
         user: req.user.id,
         model: response.run.model ?? model,
+        spec: response.run.spec ?? spec,
         conversationId,
-      });
+      }, req.config);
     }
   } catch (error) {
     await handleError(error);

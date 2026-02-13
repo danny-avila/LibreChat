@@ -562,6 +562,7 @@
   "com_ui_azure": "Azure",
   "com_ui_back_to_chat": "Torna alla Chat",
   "com_ui_back_to_prompts": "Torna ai prompt",
+  "com_ui_balance_tokens_left": "{{0}} token rimanenti",
   "com_ui_backup_codes": "Codici di backup",
   "com_ui_backup_codes_regenerate_error": "Si è verificato un errore durante la rigenerazione dei codici di backup",
   "com_ui_backup_codes_regenerated": "I codici di backup sono stati rigenerati con successo",
