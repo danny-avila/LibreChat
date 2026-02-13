@@ -14,10 +14,6 @@ jest.mock('~/server/services/Config', () => ({
   }),
 }));
 
-jest.mock('~/models/Project', () => ({
-  getProjectByName: jest.fn().mockResolvedValue(null),
-}));
-
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(),
 }));
@@ -538,25 +534,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       const updatedAgent = mockRes.json.mock.calls[0][0];
       expect(updatedAgent.name).toBe('Admin Update');
-    });
-
-    test('should handle projectIds updates', async () => {
-      mockReq.user.id = existingAgentAuthorId.toString();
-      mockReq.params.id = existingAgentId;
-
-      const projectId1 = new mongoose.Types.ObjectId().toString();
-      const projectId2 = new mongoose.Types.ObjectId().toString();
-
-      mockReq.body = {
-        projectIds: [projectId1, projectId2],
-      };
-
-      await updateAgentHandler(mockReq, mockRes);
-
-      expect(mockRes.json).toHaveBeenCalled();
-
-      const updatedAgent = mockRes.json.mock.calls[0][0];
-      expect(updatedAgent).toBeDefined();
     });
 
     test('should validate tool_resources in updates', async () => {

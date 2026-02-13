@@ -199,7 +199,6 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         author: agent.author,
         provider: agent.provider,
         model: agent.model,
-        projectIds: agent.projectIds,
         // @deprecated - isCollaborative replaced by ACL permissions
         isCollaborative: agent.isCollaborative,
         isPublic: agent.isPublic,

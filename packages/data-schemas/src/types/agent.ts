@@ -35,7 +35,6 @@ export interface IAgent extends Omit<Document, 'model'> {
   isCollaborative?: boolean;
   conversation_starters?: string[];
   tool_resources?: unknown;
-  projectIds?: Types.ObjectId[];
   versions?: Omit<IAgent, 'versions'>[];
   category: string;
   support_contact?: ISupportContact;

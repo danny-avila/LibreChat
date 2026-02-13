@@ -1,20 +1,13 @@
 import { logger } from '@librechat/data-schemas';
-import { AccessRoleIds, ResourceType, PrincipalType, Constants } from 'librechat-data-provider';
+import { AccessRoleIds, ResourceType, PrincipalType } from 'librechat-data-provider';
 import { ensureRequiredCollectionsExist } from '../db/utils';
 import type { AccessRoleMethods, IPromptGroupDocument } from '@librechat/data-schemas';
 import type { Model, Mongoose } from 'mongoose';
 
-const { GLOBAL_PROJECT_NAME } = Constants;
+const GLOBAL_PROJECT_NAME = 'instance';
 
 export interface PromptMigrationCheckDbMethods {
   findRoleByIdentifier: AccessRoleMethods['findRoleByIdentifier'];
-  getProjectByName: (
-    projectName: string,
-    fieldsToSelect?: string[] | null,
-  ) => Promise<{
-    promptGroupIds?: string[];
-    [key: string]: unknown;
-  } | null>;
 }
 
 export interface PromptMigrationCheckParams {
@@ -53,13 +46,11 @@ export async function checkPromptPermissionsMigration({
   logger.debug('Checking if prompt permissions migration is needed');
 
   try {
-    /** Native MongoDB database instance */
     const db = mongoose.connection.db;
     if (db) {
       await ensureRequiredCollectionsExist(db);
     }
 
-    // Verify required roles exist
     const ownerRole = await methods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_OWNER);
     const viewerRole = await methods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);
     const editorRole = await methods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_EDITOR);
@@ -75,11 +66,15 @@ export async function checkPromptPermissionsMigration({
       };
     }
 
-    /** Global project prompt group IDs */
-    const globalProject = await methods.getProjectByName(GLOBAL_PROJECT_NAME, ['promptGroupIds']);
-    const globalPromptGroupIds = new Set(
-      (globalProject?.promptGroupIds || []).map((id) => id.toString()),
-    );
+    let globalPromptGroupIds = new Set<string>();
+    if (db) {
+      const project = await db
+        .collection('projects')
+        .findOne({ name: GLOBAL_PROJECT_NAME }, { projection: { promptGroupIds: 1 } });
+      globalPromptGroupIds = new Set(
+        (project?.promptGroupIds || []).map((id: { toString(): string }) => id.toString()),
+      );
+    }
 
     const AclEntry = mongoose.model('AclEntry');
     const migratedGroupIds = await AclEntry.distinct('resourceId', {
@@ -118,7 +113,6 @@ export async function checkPromptPermissionsMigration({
       privateGroups: categories.privateGroups.length,
     };
 
-    // Add details for debugging
     if (promptGroupsToMigrate.length > 0) {
       result.details = {
         globalViewAccess: categories.globalViewAccess.map((g) => ({
@@ -143,7 +137,6 @@ export async function checkPromptPermissionsMigration({
     return result;
   } catch (error) {
     logger.error('Failed to check prompt permissions migration', error);
-    // Return zero counts on error to avoid blocking startup
     return {
       totalToMigrate: 0,
       globalViewAccess: 0,
@@ -160,7 +153,6 @@ export function logPromptMigrationWarning(result: PromptMigrationCheckResult): v
     return;
   }
 
-  // Create a visible warning box
   const border = '='.repeat(80);
   const warning = [
     '',
@@ -190,10 +182,8 @@ export function logPromptMigrationWarning(result: PromptMigrationCheckResult): v
     '',
   ];
 
-  // Use console methods directly for visibility
   console.log('\n' + warning.join('\n') + '\n');
 
-  // Also log with logger for consistency
   logger.warn('Prompt permissions migration required', {
     totalToMigrate: result.totalToMigrate,
     globalViewAccess: result.globalViewAccess,

@@ -239,7 +239,6 @@ export const defaultAgentFormValues = {
   tools: [],
   tool_options: {},
   provider: {},
-  projectIds: [],
   edges: [],
   artifacts: '',
   /** @deprecated Use ACL permissions instead */

@@ -1,18 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { escapeRegExp } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const {
-  Constants,
-  SystemRoles,
-  ResourceType,
-  SystemCategories,
-} = require('librechat-data-provider');
-const {
-  removeGroupFromAllProjects,
-  removeGroupIdsFromProject,
-  addGroupIdsToProject,
-  getProjectByName,
-} = require('./Project');
+const { SystemRoles, ResourceType, SystemCategories } = require('librechat-data-provider');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 
@@ -48,33 +37,20 @@ const getAllPromptGroups = async (req, filter) => {
   try {
     const { name, ...query } = filter;
 
-    let searchShared = true;
-    let searchSharedOnly = false;
     if (name) {
       query.name = new RegExp(escapeRegExp(name), 'i');
     }
     if (!query.category) {
       delete query.category;
     } else if (query.category === SystemCategories.MY_PROMPTS) {
-      searchShared = false;
       delete query.category;
     } else if (query.category === SystemCategories.NO_CATEGORY) {
       query.category = '';
     } else if (query.category === SystemCategories.SHARED_PROMPTS) {
-      searchSharedOnly = true;
       delete query.category;
     }
 
     let combinedQuery = query;
-
-    if (searchShared) {
-      const project = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, 'promptGroupIds');
-      if (project && project.promptGroupIds && project.promptGroupIds.length > 0) {
-        const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
-        delete projectQuery.author;
-        combinedQuery = searchSharedOnly ? projectQuery : { $or: [projectQuery, query] };
-      }
-    }
 
     const groups = await PromptGroup.find(combinedQuery)
       .sort({ createdAt: -1 })
@@ -100,33 +76,20 @@ const getPromptGroups = async (req, filter) => {
     const validatedPageNumber = Math.max(parseInt(pageNumber, 10), 1);
     const validatedPageSize = Math.max(parseInt(pageSize, 10), 1);
 
-    let searchShared = true;
-    let searchSharedOnly = false;
     if (name) {
       query.name = new RegExp(escapeRegExp(name), 'i');
     }
     if (!query.category) {
       delete query.category;
     } else if (query.category === SystemCategories.MY_PROMPTS) {
-      searchShared = false;
       delete query.category;
     } else if (query.category === SystemCategories.NO_CATEGORY) {
       query.category = '';
     } else if (query.category === SystemCategories.SHARED_PROMPTS) {
-      searchSharedOnly = true;
       delete query.category;
     }
 
     let combinedQuery = query;
-
-    if (searchShared) {
-      const project = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, 'promptGroupIds');
-      if (project && project.promptGroupIds && project.promptGroupIds.length > 0) {
-        const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
-        delete projectQuery.author;
-        combinedQuery = searchSharedOnly ? projectQuery : { $or: [projectQuery, query] };
-      }
-    }
 
     const skip = (validatedPageNumber - 1) * validatedPageSize;
     const limit = validatedPageSize;
@@ -137,7 +100,7 @@ const getPromptGroups = async (req, filter) => {
         .skip(skip)
         .limit(limit)
         .select(
-          'name numberOfGenerations oneliner category projectIds productionId author authorName createdAt updatedAt',
+          'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt',
         )
         .lean(),
       PromptGroup.countDocuments(combinedQuery),
@@ -182,7 +145,6 @@ const deletePromptGroup = async ({ _id, author, role }) => {
   }
 
   await Prompt.deleteMany(groupQuery);
-  await removeGroupFromAllProjects(_id);
 
   try {
     await removeAllPermissions({ resourceType: ResourceType.PROMPTGROUP, resourceId: _id });
@@ -241,7 +203,7 @@ async function getListPromptGroupsByAccess({
   const findQuery = PromptGroup.find(baseQuery)
     .sort({ updatedAt: -1, _id: 1 })
     .select(
-      'name numberOfGenerations oneliner category projectIds productionId author authorName createdAt updatedAt',
+      'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt',
     );
 
   if (isPaginated) {
@@ -487,7 +449,6 @@ module.exports = {
       }
 
       await PromptGroup.deleteOne({ _id: groupId });
-      await removeGroupFromAllProjects(groupId);
 
       return {
         prompt: 'Prompt deleted successfully',
@@ -523,10 +484,6 @@ module.exports = {
 
       const groupIds = promptGroups.map((group) => group._id);
 
-      for (const groupId of groupIds) {
-        await removeGroupFromAllProjects(groupId);
-      }
-
       await AclEntry.deleteMany({
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: { $in: groupIds },
@@ -547,23 +504,6 @@ module.exports = {
   updatePromptGroup: async (filter, data) => {
     try {
       const updateOps = {};
-      if (data.removeProjectIds) {
-        for (const projectId of data.removeProjectIds) {
-          await removeGroupIdsFromProject(projectId, [filter._id]);
-        }
-
-        updateOps.$pullAll = { projectIds: data.removeProjectIds };
-        delete data.removeProjectIds;
-      }
-
-      if (data.projectIds) {
-        for (const projectId of data.projectIds) {
-          await addGroupIdsToProject(projectId, [filter._id]);
-        }
-
-        updateOps.$addToSet = { projectIds: { $each: data.projectIds } };
-        delete data.projectIds;
-      }
 
       const updateData = { ...data, ...updateOps };
       const updatedDoc = await PromptGroup.findOneAndUpdate(filter, updateData, {
