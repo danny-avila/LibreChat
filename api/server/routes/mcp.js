@@ -37,7 +37,7 @@ const {
 } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
-const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
+const { getTokenStoreMethods } = require('~/server/services/TokenStore');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
@@ -199,6 +199,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager, oauthHeaders);
     logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
+    const tokenMethods = getTokenStoreMethods();
+
     /** Persist tokens immediately so reconnection uses fresh credentials */
     if (flowState?.userId && tokens) {
       try {
@@ -206,9 +208,9 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           userId: flowState.userId,
           serverName,
           tokens,
-          createToken,
-          updateToken,
-          findToken,
+          createToken: tokenMethods.createToken,
+          updateToken: tokenMethods.updateToken,
+          findToken: tokenMethods.findToken,
           clientInfo: flowState.clientInfo,
           metadata: flowState.metadata,
         });
@@ -245,12 +247,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           user,
           serverName,
           flowManager,
-          tokenMethods: {
-            findToken,
-            updateToken,
-            createToken,
-            deleteTokens,
-          },
+          tokenMethods,
         });
 
         logger.info(
