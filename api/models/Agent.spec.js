@@ -24,7 +24,6 @@ const {
   deleteAgent,
   deleteUserAgents,
   revertAgentVersion,
-  updateAgentProjects,
   addAgentResourceFile,
   getListAgentsByAccess,
   removeAgentResourceFiles,
@@ -1060,53 +1059,6 @@ describe('models/Agent', () => {
       expect(userAfter.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
     });
 
-    test('should update agent projects', async () => {
-      const agentId = `agent_${uuidv4()}`;
-      const authorId = new mongoose.Types.ObjectId();
-      const projectId1 = new mongoose.Types.ObjectId();
-      const projectId2 = new mongoose.Types.ObjectId();
-      const projectId3 = new mongoose.Types.ObjectId();
-
-      await createAgent({
-        id: agentId,
-        name: 'Project Test Agent',
-        provider: 'test',
-        model: 'test-model',
-        author: authorId,
-        projectIds: [projectId1],
-      });
-
-      await updateAgent(
-        { id: agentId },
-        { $addToSet: { projectIds: { $each: [projectId2, projectId3] } } },
-      );
-
-      await updateAgent({ id: agentId }, { $pull: { projectIds: projectId1 } });
-
-      await updateAgent({ id: agentId }, { projectIds: [projectId2, projectId3] });
-
-      const updatedAgent = await getAgent({ id: agentId });
-      expect(updatedAgent.projectIds).toHaveLength(2);
-      expect(updatedAgent.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
-      expect(updatedAgent.projectIds.map((id) => id.toString())).toContain(projectId3.toString());
-      expect(updatedAgent.projectIds.map((id) => id.toString())).not.toContain(
-        projectId1.toString(),
-      );
-
-      await updateAgent({ id: agentId }, { projectIds: [] });
-
-      const emptyProjectsAgent = await getAgent({ id: agentId });
-      expect(emptyProjectsAgent.projectIds).toHaveLength(0);
-
-      const nonExistentId = `agent_${uuidv4()}`;
-      await expect(
-        updateAgentProjects({
-          id: nonExistentId,
-          projectIds: [projectId1],
-        }),
-      ).rejects.toThrow();
-    });
-
     test('should handle ephemeral agent loading', async () => {
       const agentId = 'ephemeral_test';
       const endpoint = 'openai';
@@ -1177,20 +1129,6 @@ describe('models/Agent', () => {
       ])('$name should return null', async ({ fn, expected }) => {
         const result = await fn();
         expect(result).toBe(expected);
-      });
-
-      test('should handle updateAgentProjects with non-existent agent', async () => {
-        const nonExistentId = `agent_${uuidv4()}`;
-        const userId = new mongoose.Types.ObjectId();
-        const projectId = new mongoose.Types.ObjectId();
-
-        const result = await updateAgentProjects({
-          user: { id: userId.toString() },
-          agentId: nonExistentId,
-          projectIds: [projectId.toString()],
-        });
-
-        expect(result).toBeNull();
       });
     });
   });
@@ -1315,7 +1253,6 @@ describe('models/Agent', () => {
     test('should handle MongoDB operators and field updates correctly', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
-      const projectId = new mongoose.Types.ObjectId();
 
       await createAgent({
         id: agentId,
@@ -1331,7 +1268,6 @@ describe('models/Agent', () => {
         {
           description: 'Updated description',
           $push: { tools: 'tool2' },
-          $addToSet: { projectIds: projectId },
         },
       );
 
@@ -1339,7 +1275,6 @@ describe('models/Agent', () => {
       expect(firstUpdate.description).toBe('Updated description');
       expect(firstUpdate.tools).toContain('tool1');
       expect(firstUpdate.tools).toContain('tool2');
-      expect(firstUpdate.projectIds.map((id) => id.toString())).toContain(projectId.toString());
       expect(firstUpdate.versions).toHaveLength(2);
 
       await updateAgent(
@@ -1744,7 +1679,6 @@ describe('models/Agent', () => {
     test('should handle version comparison with special field types', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
-      const projectId = new mongoose.Types.ObjectId();
 
       await createAgent({
         id: agentId,
@@ -1752,7 +1686,6 @@ describe('models/Agent', () => {
         provider: 'test',
         model: 'test-model',
         author: authorId,
-        projectIds: [projectId],
         model_parameters: { temperature: 0.7 },
       });
 
@@ -2630,7 +2563,6 @@ describe('models/Agent', () => {
         const authorId = new mongoose.Types.ObjectId();
         const userId = new mongoose.Types.ObjectId();
         const agentId = `agent_${uuidv4()}`;
-        const projectId = new mongoose.Types.ObjectId();
 
         await createAgent({
           id: agentId,
@@ -2638,7 +2570,6 @@ describe('models/Agent', () => {
           provider: 'openai',
           model: 'gpt-4',
           author: authorId,
-          projectIds: [projectId],
         });
 
         const mockReq = { user: { id: userId.toString() } };
@@ -2698,7 +2629,6 @@ describe('models/Agent', () => {
     test('should handle agent creation with all optional fields', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
-      const projectId = new mongoose.Types.ObjectId();
 
       const agent = await createAgent({
         id: agentId,
@@ -2711,9 +2641,7 @@ describe('models/Agent', () => {
         tools: ['tool1', 'tool2'],
         actions: ['action1', 'action2'],
         model_parameters: { temperature: 0.8, max_tokens: 1000 },
-        projectIds: [projectId],
         avatar: 'https://example.com/avatar.png',
-        isCollaborative: true,
         tool_resources: {
           file_search: { file_ids: ['file1', 'file2'] },
         },
@@ -2727,9 +2655,7 @@ describe('models/Agent', () => {
       expect(agent.actions).toEqual(['action1', 'action2']);
       expect(agent.model_parameters.temperature).toBe(0.8);
       expect(agent.model_parameters.max_tokens).toBe(1000);
-      expect(agent.projectIds.map((id) => id.toString())).toContain(projectId.toString());
       expect(agent.avatar).toBe('https://example.com/avatar.png');
-      expect(agent.isCollaborative).toBe(true);
       expect(agent.tool_resources.file_search.file_ids).toEqual(['file1', 'file2']);
     });
 
@@ -2935,21 +2861,6 @@ describe('models/Agent', () => {
       expect(finalAgent.name).toBe('Version 4');
     });
 
-    test('should handle updateAgentProjects error scenarios', async () => {
-      const nonExistentId = `agent_${uuidv4()}`;
-      const userId = new mongoose.Types.ObjectId();
-      const projectId = new mongoose.Types.ObjectId();
-
-      // Test with non-existent agent
-      const result = await updateAgentProjects({
-        user: { id: userId.toString() },
-        agentId: nonExistentId,
-        projectIds: [projectId.toString()],
-      });
-
-      expect(result).toBeNull();
-    });
-
     test('should handle revertAgentVersion properly', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
@@ -3003,8 +2914,6 @@ describe('models/Agent', () => {
     test('should handle updateAgent with combined MongoDB operators', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
-      const projectId1 = new mongoose.Types.ObjectId();
-      const projectId2 = new mongoose.Types.ObjectId();
 
       await createAgent({
         id: agentId,
@@ -3013,7 +2922,6 @@ describe('models/Agent', () => {
         model: 'test-model',
         author: authorId,
         tools: ['tool1'],
-        projectIds: [projectId1],
       });
 
       // Use multiple operators in single update - but avoid conflicting operations on same field
@@ -3022,14 +2930,6 @@ describe('models/Agent', () => {
         {
           name: 'Updated Name',
           $push: { tools: 'tool2' },
-          $addToSet: { projectIds: projectId2 },
-        },
-      );
-
-      const finalAgent = await updateAgent(
-        { id: agentId },
-        {
-          $pull: { projectIds: projectId1 },
         },
       );
 
@@ -3037,11 +2937,7 @@ describe('models/Agent', () => {
       expect(updatedAgent.name).toBe('Updated Name');
       expect(updatedAgent.tools).toContain('tool1');
       expect(updatedAgent.tools).toContain('tool2');
-      expect(updatedAgent.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
-
-      expect(finalAgent).toBeDefined();
-      expect(finalAgent.projectIds.map((id) => id.toString())).not.toContain(projectId1.toString());
-      expect(finalAgent.versions).toHaveLength(3);
+      expect(updatedAgent.versions).toHaveLength(2);
     });
 
     test('should handle updateAgent when agent does not exist', async () => {
@@ -3313,65 +3209,6 @@ describe('models/Agent', () => {
       expect(updated2.versions).toHaveLength(3);
       expect(updated2.agent_ids).toEqual(['agent1', 'agent2']);
       expect(updated2.description).toBe('Another description');
-    });
-
-    test('should skip version creation when skipVersioning option is used', async () => {
-      const agentId = `agent_${uuidv4()}`;
-      const authorId = new mongoose.Types.ObjectId();
-      const projectId1 = new mongoose.Types.ObjectId();
-      const projectId2 = new mongoose.Types.ObjectId();
-
-      // Create agent with initial projectIds
-      await createAgent({
-        id: agentId,
-        name: 'Test Agent',
-        provider: 'test',
-        model: 'test-model',
-        author: authorId,
-        projectIds: [projectId1],
-      });
-
-      // Share agent using updateAgentProjects (which uses skipVersioning)
-      const shared = await updateAgentProjects({
-        user: { id: authorId.toString() }, // Use the same author ID
-        agentId: agentId,
-        projectIds: [projectId2.toString()],
-      });
-
-      // Should NOT create a new version due to skipVersioning
-      expect(shared.versions).toHaveLength(1);
-      expect(shared.projectIds.map((id) => id.toString())).toContain(projectId1.toString());
-      expect(shared.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
-
-      // Unshare agent using updateAgentProjects
-      const unshared = await updateAgentProjects({
-        user: { id: authorId.toString() },
-        agentId: agentId,
-        removeProjectIds: [projectId1.toString()],
-      });
-
-      // Still should NOT create a new version
-      expect(unshared.versions).toHaveLength(1);
-      expect(unshared.projectIds.map((id) => id.toString())).not.toContain(projectId1.toString());
-      expect(unshared.projectIds.map((id) => id.toString())).toContain(projectId2.toString());
-
-      // Regular update without skipVersioning should create a version
-      const regularUpdate = await updateAgent(
-        { id: agentId },
-        { description: 'Updated description' },
-      );
-
-      expect(regularUpdate.versions).toHaveLength(2);
-      expect(regularUpdate.description).toBe('Updated description');
-
-      // Direct updateAgent with MongoDB operators should still create versions
-      const directUpdate = await updateAgent(
-        { id: agentId },
-        { $addToSet: { projectIds: { $each: [projectId1] } } },
-      );
-
-      expect(directUpdate.versions).toHaveLength(3);
-      expect(directUpdate.projectIds.length).toBe(2);
     });
 
     test('should preserve agent_ids in version history', async () => {
@@ -3754,7 +3591,6 @@ function createTestIds() {
   return {
     agentId: `agent_${uuidv4()}`,
     authorId: new mongoose.Types.ObjectId(),
-    projectId: new mongoose.Types.ObjectId(),
     fileId: uuidv4(),
   };
 }
@@ -3788,9 +3624,6 @@ function mockFindOneAndUpdateError(errorOnCall = 1) {
 }
 
 function generateVersionTestCases() {
-  const projectId1 = new mongoose.Types.ObjectId();
-  const projectId2 = new mongoose.Types.ObjectId();
-
   return [
     {
       name: 'simple field update',
@@ -3816,14 +3649,6 @@ function generateVersionTestCases() {
       },
       update: { tools: ['tool2', 'tool3'] },
       duplicate: { tools: ['tool2', 'tool3'] },
-    },
-    {
-      name: 'projectIds update',
-      initial: {
-        projectIds: [projectId1],
-      },
-      update: { projectIds: [projectId1, projectId2] },
-      duplicate: { projectIds: [projectId2, projectId1] },
     },
   ];
 }

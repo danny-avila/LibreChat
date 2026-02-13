@@ -19,10 +19,9 @@ import { cn } from '~/utils';
 
 interface DashGroupItemProps {
   group: TPromptGroup;
-  instanceProjectId?: string;
 }
 
-function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps) {
+function DashGroupItemComponent({ group }: DashGroupItemProps) {
   const params = useParams();
   const navigate = useNavigate();
   const localize = useLocalize();
@@ -35,10 +34,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const canEdit = hasPermission(PermissionBits.EDIT);
   const canDelete = hasPermission(PermissionBits.DELETE);
 
-  const isGlobalGroup = useMemo(
-    () => instanceProjectId && group.projectIds?.includes(instanceProjectId),
-    [group.projectIds, instanceProjectId],
-  );
+  const isPublicGroup = useMemo(() => group.isPublic === true, [group.isPublic]);
 
   const updateGroup = useUpdatePromptGroup({
     onMutate: () => {
@@ -115,7 +111,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
         </div>
 
         <div className="flex h-full items-center gap-2">
-          {isGlobalGroup && (
+          {isPublicGroup && (
             <EarthIcon
               className="icon-md text-green-500"
               aria-label={localize('com_ui_global_group')}
