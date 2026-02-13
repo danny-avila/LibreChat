@@ -60,7 +60,7 @@ const updateResourcePermissions = async (req, res) => {
     validateResourceType(resourceType);
 
     /** @type {TUpdateResourcePermissionsRequest} */
-    const { updated, removed, public: isPublic, publicAccessRoleId } = req.body;
+    const { updated, removed, public: isPublic, publicAccessRoleId, includeEndpointsForRole } = req.body;
     const { id: userId } = req.user;
 
     // Prepare principals for the service call
@@ -78,6 +78,7 @@ const updateResourcePermissions = async (req, res) => {
         type: PrincipalType.PUBLIC,
         id: null,
         accessRoleId: publicAccessRoleId,
+        includeEndpointsForRole: includeEndpointsForRole === true,
       });
     }
 
@@ -162,6 +163,7 @@ const updateResourcePermissions = async (req, res) => {
         principals: results.granted,
         public: isPublic || false,
         publicAccessRoleId: isPublic ? publicAccessRoleId : undefined,
+        includeEndpointsForRole: isPublic ? (includeEndpointsForRole === true) : undefined,
       },
     };
 
@@ -231,12 +233,14 @@ const getResourcePermissions = async (req, res) => {
           accessRoleId: { $arrayElemAt: ['$role.accessRoleId', 0] },
           userInfo: { $arrayElemAt: ['$userInfo', 0] },
           groupInfo: { $arrayElemAt: ['$groupInfo', 0] },
+          includeEndpointsForRole: 1,
         },
       },
     ]);
 
     let principals = [];
     let publicPermission = null;
+    let includeEndpointsForRole = false;
 
     // Process aggregation results
     for (const result of results) {
@@ -245,6 +249,8 @@ const getResourcePermissions = async (req, res) => {
           public: true,
           publicAccessRoleId: result.accessRoleId,
         };
+        // Retrieve includeEndpointsForRole from public principal (now a simple boolean)
+        includeEndpointsForRole = result.includeEndpointsForRole === true;
       } else if (result.principalType === PrincipalType.USER && result.userInfo) {
         principals.push({
           type: PrincipalType.USER,
@@ -297,6 +303,7 @@ const getResourcePermissions = async (req, res) => {
       ...(publicPermission?.publicAccessRoleId && {
         publicAccessRoleId: publicPermission.publicAccessRoleId,
       }),
+      includeEndpointsForRole,
     };
 
     res.status(200).json(response);
