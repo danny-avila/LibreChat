@@ -38,7 +38,17 @@ export const contentSecurityPolicy = () => {
       fontSrc: ["'self'", 'data:'],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
-      frameSrc: ["'self'", "https://innovation.nj.gov"],
+      frameSrc: [
+        "'self'", 
+        "https://innovation.nj.gov",
+        "https://*.googletagmanager.com",
+        "https://googletagmanager.com",
+      ],
+      childSrc: [
+        "'self'",
+        "https://*.googletagmanager.com",
+        "https://googletagmanager.com",
+      ],
       baseUri: ["'self'"],
       formAction: ["'self'"],
       frameAncestors: ["'self'"],
