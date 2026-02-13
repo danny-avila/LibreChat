@@ -646,7 +646,26 @@ export default function useStepHandler({
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
       } else if (event === 'on_summarize_complete') {
-        announcePolite({ message: 'summarize_completed', isStatus: true });
+        const completeData = data as { agentId: string; error?: string };
+        if (completeData.error) {
+          announcePolite({ message: 'summarize_failed', isStatus: true });
+          // Remove stuck summarizing placeholder from the response
+          const currentMessages = getMessages() || [];
+          const lastMessage = currentMessages[currentMessages.length - 1];
+          if (lastMessage && Array.isArray(lastMessage.content)) {
+            const filtered = lastMessage.content.filter(
+              (part) =>
+                part?.type !== ContentTypes.SUMMARY || !(part as SummaryContentPart).summarizing,
+            );
+            if (filtered.length !== lastMessage.content.length) {
+              const cleaned = { ...lastMessage, content: filtered };
+              messageMap.current.set(lastMessage.messageId, cleaned);
+              setMessages([...currentMessages.slice(0, -1), cleaned]);
+            }
+          }
+        } else {
+          announcePolite({ message: 'summarize_completed', isStatus: true });
+        }
       }
 
       return () => {

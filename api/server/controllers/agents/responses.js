@@ -1,7 +1,12 @@
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
+const {
+  Callback,
+  GraphNodeKeys,
+  ToolEndHandler,
+  formatAgentMessages,
+} = require('@librechat/agents');
 const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
 const {
   createRun,
@@ -442,10 +447,17 @@ const createResponse = async (req, res) => {
         on_run_step: responsesHandlers.on_run_step,
         on_run_step_delta: responsesHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data) => {
+          handle: (event, data, metadata) => {
             responsesHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
+              const currentNode = metadata?.langgraph_node;
+              if (
+                typeof currentNode === 'string' &&
+                currentNode.startsWith(GraphNodeKeys.SUMMARIZE)
+              ) {
+                usage.usage_type = 'summarization';
+              }
               collectedUsage.push(usage);
             }
           },
@@ -614,10 +626,17 @@ const createResponse = async (req, res) => {
         on_run_step: aggregatorHandlers.on_run_step,
         on_run_step_delta: aggregatorHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data) => {
+          handle: (event, data, metadata) => {
             aggregatorHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
+              const currentNode = metadata?.langgraph_node;
+              if (
+                typeof currentNode === 'string' &&
+                currentNode.startsWith(GraphNodeKeys.SUMMARIZE)
+              ) {
+                usage.usage_type = 'summarization';
+              }
               collectedUsage.push(usage);
             }
           },

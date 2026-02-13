@@ -1,7 +1,13 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Constants, EnvVar, GraphEvents, ToolEndHandler } = require('@librechat/agents');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
+const {
+  EnvVar,
+  Constants,
+  GraphEvents,
+  GraphNodeKeys,
+  ToolEndHandler,
+} = require('@librechat/agents');
 const {
   sendEvent,
   GenerationJobManager,
@@ -62,6 +68,10 @@ class ModelEndHandler {
         });
       }
 
+      const currentNode = metadata?.langgraph_node;
+      const isSummarizationNode =
+        typeof currentNode === 'string' && currentNode.startsWith(GraphNodeKeys.SUMMARIZE);
+
       const usage = data?.output?.usage_metadata;
       if (!usage) {
         return this.finalize(errorMessage);
@@ -69,6 +79,10 @@ class ModelEndHandler {
       const modelName = metadata?.ls_model_name || agentContext.clientOptions?.model;
       if (modelName) {
         usage.model = modelName;
+      }
+
+      if (isSummarizationNode) {
+        usage.usage_type = 'summarization';
       }
 
       this.collectedUsage.push(usage);
