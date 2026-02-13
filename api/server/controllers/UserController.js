@@ -36,6 +36,7 @@ const {
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
+const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getAppConfig } = require('~/server/services/Config');
@@ -215,6 +216,7 @@ const updateUserPluginsController = async (req, res) => {
               `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
             );
             await mcpManager.disconnectUserConnection(user.id, serverName);
+            await invalidateCachedTools({ userId: user.id, serverName });
           }
         } catch (disconnectError) {
           logger.error(

@@ -29,7 +29,7 @@ const oauthHandler = createOAuthHandler();
 
 router.get('/error', (req, res) => {
   /** A single error message is pushed by passport when authentication fails. */
-  const errorMessage = req.session?.messages?.pop() || 'Unknown error';
+  const errorMessage = req.session?.messages?.pop() || 'Unknown OAuth error';
   logger.error('Error in OAuth authentication:', {
     message: errorMessage,
   });

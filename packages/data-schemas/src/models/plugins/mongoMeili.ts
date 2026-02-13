@@ -162,8 +162,8 @@ const createMeiliMongooseModel = ({
 
     /**
      * Synchronizes data between the MongoDB collection and the MeiliSearch index by
-     * incrementally indexing only documents where `expiredAt` is `null` and `_meiliIndex` is `false`
-     * (i.e., non-expired documents that have not yet been indexed).
+     * incrementally indexing only documents where `expiredAt` is `null` and `_meiliIndex` is not `true`
+     * (i.e., non-expired documents that have not yet been indexed, including those with missing or null `_meiliIndex`).
      * */
     static async syncWithMeili(this: SchemaWithMeiliMethods): Promise<void> {
       const startTime = Date.now();
@@ -196,7 +196,7 @@ const createMeiliMongooseModel = ({
       while (hasMore) {
         const query: FilterQuery<unknown> = {
           expiredAt: null,
-          _meiliIndex: false,
+          _meiliIndex: { $ne: true },
         };
 
         try {

@@ -178,6 +178,14 @@ export const reinitializeMCPServer = (serverName: string) => {
   return request.post(endpoints.mcpReinitialize(serverName));
 };
 
+export const bindMCPOAuth = (serverName: string): Promise<{ success: boolean }> => {
+  return request.post(endpoints.mcpOAuthBind(serverName));
+};
+
+export const bindActionOAuth = (actionId: string): Promise<{ success: boolean }> => {
+  return request.post(endpoints.actionOAuthBind(actionId));
+};
+
 export const getMCPConnectionStatus = (): Promise<q.MCPConnectionStatusResponse> => {
   return request.get(endpoints.mcpConnectionStatus());
 };

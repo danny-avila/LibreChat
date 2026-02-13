@@ -1015,4 +1015,239 @@ describe('Meilisearch Mongoose plugin', () => {
       ]);
     });
   });
+
+  describe('Missing _meiliIndex property handling in sync process', () => {
+    test('syncWithMeili includes documents with missing _meiliIndex', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      // Insert documents with different _meiliIndex states
+      await conversationModel.collection.insertMany([
+        {
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'Missing _meiliIndex',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          // _meiliIndex is not set (missing/undefined)
+        },
+        {
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'Explicit false',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          _meiliIndex: false,
+        },
+        {
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'Already indexed',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          _meiliIndex: true,
+        },
+      ]);
+
+      // Run sync
+      await conversationModel.syncWithMeili();
+
+      // Should have processed 2 documents (missing and false, but not true)
+      expect(mockAddDocumentsInBatches).toHaveBeenCalled();
+
+      // Check that both documents without _meiliIndex=true are now indexed
+      const indexedCount = await conversationModel.countDocuments({
+        expiredAt: null,
+        _meiliIndex: true,
+      });
+      expect(indexedCount).toBe(3); // All 3 should now be indexed
+
+      // Verify documents with missing _meiliIndex were updated
+      const docsWithMissingIndex = await conversationModel.countDocuments({
+        expiredAt: null,
+        title: 'Missing _meiliIndex',
+        _meiliIndex: true,
+      });
+      expect(docsWithMissingIndex).toBe(1);
+    });
+
+    test('getSyncProgress counts documents with missing _meiliIndex as not indexed', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+
+      // Insert documents with different _meiliIndex states
+      await messageModel.collection.insertMany([
+        {
+          messageId: new mongoose.Types.ObjectId(),
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          isCreatedByUser: true,
+          expiredAt: null,
+          _meiliIndex: true,
+        },
+        {
+          messageId: new mongoose.Types.ObjectId(),
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          isCreatedByUser: true,
+          expiredAt: null,
+          _meiliIndex: false,
+        },
+        {
+          messageId: new mongoose.Types.ObjectId(),
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          isCreatedByUser: true,
+          expiredAt: null,
+          // _meiliIndex is missing
+        },
+      ]);
+
+      const progress = await messageModel.getSyncProgress();
+
+      // Total should be 3
+      expect(progress.totalDocuments).toBe(3);
+      // Only 1 is indexed (with _meiliIndex: true)
+      expect(progress.totalProcessed).toBe(1);
+      // Not complete since 2 documents are not indexed
+      expect(progress.isComplete).toBe(false);
+    });
+
+    test('query with _meiliIndex: { $ne: true } includes missing values', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+
+      // Insert documents with different _meiliIndex states
+      await conversationModel.collection.insertMany([
+        {
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'Missing',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          // _meiliIndex is missing
+        },
+        {
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'False',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          _meiliIndex: false,
+        },
+        {
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'True',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          _meiliIndex: true,
+        },
+      ]);
+
+      // Query for documents where _meiliIndex is not true (used in syncWithMeili)
+      const unindexedDocs = await conversationModel.find({
+        expiredAt: null,
+        _meiliIndex: { $ne: true },
+      });
+
+      // Should find 2 documents (missing and false, but not true)
+      expect(unindexedDocs.length).toBe(2);
+      const titles = unindexedDocs.map((doc) => doc.title).sort();
+      expect(titles).toEqual(['False', 'Missing']);
+    });
+
+    test('syncWithMeili processes all documents where _meiliIndex is not true', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      // Create a mix of documents with missing and false _meiliIndex
+      await messageModel.collection.insertMany([
+        {
+          messageId: new mongoose.Types.ObjectId(),
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          isCreatedByUser: true,
+          expiredAt: null,
+          // _meiliIndex missing
+        },
+        {
+          messageId: new mongoose.Types.ObjectId(),
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          isCreatedByUser: true,
+          expiredAt: null,
+          _meiliIndex: false,
+        },
+        {
+          messageId: new mongoose.Types.ObjectId(),
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          isCreatedByUser: true,
+          expiredAt: null,
+          // _meiliIndex missing
+        },
+      ]);
+
+      // Count documents that should be synced (where _meiliIndex: { $ne: true })
+      const toSyncCount = await messageModel.countDocuments({
+        expiredAt: null,
+        _meiliIndex: { $ne: true },
+      });
+      expect(toSyncCount).toBe(3); // All 3 should be synced
+
+      await messageModel.syncWithMeili();
+
+      // All should now be indexed
+      const indexedCount = await messageModel.countDocuments({
+        expiredAt: null,
+        _meiliIndex: true,
+      });
+      expect(indexedCount).toBe(3);
+    });
+
+    test('syncWithMeili treats missing _meiliIndex same as false', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      // Insert one document with missing _meiliIndex and one with false
+      await conversationModel.collection.insertMany([
+        {
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'Missing',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          // _meiliIndex is missing
+        },
+        {
+          conversationId: new mongoose.Types.ObjectId(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'False',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          _meiliIndex: false,
+        },
+      ]);
+
+      // Both should be picked up by the sync query
+      const toSync = await conversationModel.find({
+        expiredAt: null,
+        _meiliIndex: { $ne: true },
+      });
+      expect(toSync.length).toBe(2);
+
+      await conversationModel.syncWithMeili();
+
+      // Both should be indexed after sync
+      const afterSync = await conversationModel.find({
+        expiredAt: null,
+        _meiliIndex: true,
+      });
+      expect(afterSync.length).toBe(2);
+    });
+  });
 });

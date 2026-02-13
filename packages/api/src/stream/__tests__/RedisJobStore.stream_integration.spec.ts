@@ -880,6 +880,67 @@ describe('RedisJobStore Integration Tests', () => {
     });
   });
 
+  describe('Race Condition: updateJob after deleteJob', () => {
+    test('should not re-create job hash when updateJob runs after deleteJob', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `race-condition-${Date.now()}`;
+      await store.createJob(streamId, 'user-1', streamId);
+
+      const jobKey = `stream:{${streamId}}:job`;
+      const ttlBefore = await ioredisClient.ttl(jobKey);
+      expect(ttlBefore).toBeGreaterThan(0);
+
+      await store.deleteJob(streamId);
+
+      const afterDelete = await ioredisClient.exists(jobKey);
+      expect(afterDelete).toBe(0);
+
+      await store.updateJob(streamId, { finalEvent: JSON.stringify({ final: true }) });
+
+      const afterUpdate = await ioredisClient.exists(jobKey);
+      expect(afterUpdate).toBe(0);
+
+      await store.destroy();
+    });
+
+    test('should not leave orphan keys from concurrent emitDone and deleteJob', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `concurrent-race-${Date.now()}`;
+      await store.createJob(streamId, 'user-1', streamId);
+
+      const jobKey = `stream:{${streamId}}:job`;
+
+      await Promise.all([
+        store.updateJob(streamId, { finalEvent: JSON.stringify({ final: true }) }),
+        store.deleteJob(streamId),
+      ]);
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const exists = await ioredisClient.exists(jobKey);
+      const ttl = exists ? await ioredisClient.ttl(jobKey) : -2;
+
+      expect(ttl === -2 || ttl > 0).toBe(true);
+      expect(ttl).not.toBe(-1);
+
+      await store.destroy();
+    });
+  });
+
   describe('Local Graph Cache Optimization', () => {
     test('should use local cache when available', async () => {
       if (!ioredisClient) {
