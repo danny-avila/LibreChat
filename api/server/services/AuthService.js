@@ -466,6 +466,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
     if (req.session) {
       req.session.openidTokens = {
         accessToken: tokenset.access_token,
+        idToken: tokenset.id_token,
         refreshToken: refreshToken,
         expiresAt: expirationDate.getTime(),
       };
@@ -483,6 +484,14 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         secure: shouldUseSecureCookie(),
         sameSite: 'strict',
       });
+      if (tokenset.id_token) {
+        res.cookie('openid_id_token', tokenset.id_token, {
+          expires: expirationDate,
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: 'strict',
+        });
+      }
     }
 
     /** Small cookie to indicate token provider (required for auth middleware) */
