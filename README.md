@@ -1,3 +1,25 @@
+# MindRoom LibreChat Fork
+
+This is [MindRoom's](https://github.com/mindroom-ai) fork of [LibreChat](https://github.com/danny-avila/LibreChat). We use LibreChat as the web UI for MindRoom's AI agent platform.
+
+## Why this fork exists
+
+MindRoom agents execute tools **server-side**. The upstream LibreChat client expects tool calls via OpenAI's `delta.tool_calls` protocol, which triggers client-side tool execution through LangGraph/LangChain. That doesn't work for us — our backend handles tool execution and streams results back inline.
+
+Instead, the MindRoom backend emits `<tool>call\nresult</tool>` tags in the assistant's streamed message content. This fork adds a parser and rendering layer that turns those tags into LibreChat's native `ToolCall` UI cards, without any client-side tool execution.
+
+### Fork-specific changes
+
+- **Tool tag rendering** — Parser in `client/src/utils/toolTags.ts` that extracts `<tool>` / `<tool-group>` blocks from assistant messages and renders them as `ToolCall` cards via `Text.tsx`. Handles pending/completed states, HTML entity decoding, and ignores tags inside markdown code blocks.
+- **Docker CI** — Automated container builds on push to `main`, published to `ghcr.io/mindroom-ai/mindroom-librechat`.
+- **Various UX features** — Favorites, terms acceptance, context window UI, agent avatars, and other improvements developed on feature branches.
+
+### Staying in sync with upstream
+
+We periodically rebase/merge from [danny-avila/LibreChat](https://github.com/danny-avila/LibreChat) to stay current. Fork-specific changes are kept minimal and isolated to reduce merge conflicts.
+
+---
+
 <p align="center">
   <a href="https://librechat.ai">
     <img src="client/public/assets/logo.svg" height="256">
