@@ -7,6 +7,7 @@ import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-que
 import {
   CloudBrowserVoicesSwitch,
   AutomaticPlaybackSwitch,
+  IncludeThinkingSwitch,
   TextToSpeechSwitch,
   EngineTTSDropdown,
   CacheTTSSwitch,
@@ -41,6 +42,9 @@ function Speech() {
   const [speechToText, setSpeechToText] = useRecoilState(store.speechToText);
   const [textToSpeech, setTextToSpeech] = useRecoilState(store.textToSpeech);
   const [cacheTTS, setCacheTTS] = useRecoilState(store.cacheTTS);
+  const [includeThinkingInTTS, setIncludeThinkingInTTS] = useRecoilState(
+    store.includeThinkingInTTS,
+  );
   const [engineSTT, setEngineSTT] = useRecoilState<string>(store.engineSTT);
   const [languageSTT, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
   const [decibelValue, setDecibelValue] = useRecoilState(store.decibelValue);
@@ -64,6 +68,7 @@ function Speech() {
         speechToText: { value: speechToText, setFunc: setSpeechToText },
         textToSpeech: { value: textToSpeech, setFunc: setTextToSpeech },
         cacheTTS: { value: cacheTTS, setFunc: setCacheTTS },
+        includeThinkingInTTS: { value: includeThinkingInTTS, setFunc: setIncludeThinkingInTTS },
         engineSTT: { value: engineSTT, setFunc: setEngineSTT },
         languageSTT: { value: languageSTT, setFunc: setLanguageSTT },
         autoTranscribeAudio: { value: autoTranscribeAudio, setFunc: setAutoTranscribeAudio },
@@ -90,6 +95,7 @@ function Speech() {
       speechToText,
       textToSpeech,
       cacheTTS,
+      includeThinkingInTTS,
       engineSTT,
       languageSTT,
       autoTranscribeAudio,
@@ -108,6 +114,7 @@ function Speech() {
       setSpeechToText,
       setTextToSpeech,
       setCacheTTS,
+      setIncludeThinkingInTTS,
       setEngineSTT,
       setLanguageSTT,
       setAutoTranscribeAudio,
@@ -234,6 +241,7 @@ function Speech() {
             <PlaybackRate />
           </div>
           <CacheTTSSwitch />
+          <IncludeThinkingSwitch />
         </div>
       </Tabs.Content>
     </Tabs.Root>

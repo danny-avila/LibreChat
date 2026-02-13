@@ -24,6 +24,7 @@ export default function StreamAudio({ index = 0 }) {
 
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const playbackRate = useRecoilValue(store.playbackRate);
+  const includeThinkingInTTS = useRecoilValue(store.includeThinkingInTTS);
 
   const voice = useRecoilValue(store.voice);
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
@@ -96,7 +97,12 @@ export default function StreamAudio({ index = 0 }) {
         const response = await fetch('/api/files/speech/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ messageId: latestMessage?.messageId, runId: activeRunId, voice }),
+          body: JSON.stringify({
+            messageId: latestMessage?.messageId,
+            runId: activeRunId,
+            voice,
+            skipReasoning: !includeThinkingInTTS,
+          }),
         });
 
         if (!response.ok) {
@@ -188,6 +194,7 @@ export default function StreamAudio({ index = 0 }) {
     isFetching,
     audioRunId,
     cacheTTS,
+    includeThinkingInTTS,
     audioRef,
     voice,
     token,

@@ -1,6 +1,5 @@
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { useRef, useMemo, useEffect, useState } from 'react';
-import { parseTextParts } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { Option } from '~/common';
 import useTextToSpeechExternal from '~/hooks/Input/useTextToSpeechExternal';
@@ -8,7 +7,7 @@ import useTextToSpeechBrowser from '~/hooks/Input/useTextToSpeechBrowser';
 import useGetAudioSettings from '~/hooks/Input/useGetAudioSettings';
 import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { usePauseGlobalAudio } from '../Audio';
-import { logger } from '~/utils';
+import { logger, parseMessageForTTS } from '~/utils';
 import store from '~/store';
 
 type TUseTextToSpeech = {
@@ -30,6 +29,7 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const [voice, setVoice] = useRecoilState(store.voice);
   const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
+  const includeThinkingInTTS = useRecoilValue(store.includeThinkingInTTS);
 
   const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
 
@@ -119,9 +119,7 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
     timerRef.current = window.setTimeout(() => {
       if (isMouseDownRef.current) {
         const messageContent = content ?? '';
-        const parsedMessage =
-          typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
-        generateSpeech(parsedMessage, false);
+        generateSpeech(parseMessageForTTS(messageContent, !includeThinkingInTTS), false);
       }
     }, 1000);
   };
@@ -139,9 +137,7 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
       pauseGlobalAudio();
     } else {
       const messageContent = content ?? '';
-      const parsedMessage =
-        typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
-      generateSpeech(parsedMessage, false);
+      generateSpeech(parseMessageForTTS(messageContent, !includeThinkingInTTS), false);
     }
   };
 
