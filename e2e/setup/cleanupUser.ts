@@ -46,7 +46,8 @@ export default async function cleanupUser(user: TUser) {
     await Transaction.deleteMany({ user: userId });
     await Token.deleteMany({ userId: userId });
     await AclEntry.deleteMany({ principalId: userId });
-    await Group.updateMany({ memberIds: userId }, { $pull: { memberIds: userId } });
+    const userIdStr = userId.toString();
+    await Group.updateMany({ memberIds: userIdStr }, { $pullAll: { memberIds: [userIdStr] } });
     await User.deleteMany({ _id: userId });
 
     console.log('🤖:  ✅  Deleted user from Database');

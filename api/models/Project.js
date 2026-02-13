@@ -64,7 +64,7 @@ const addGroupIdsToProject = async function (projectId, promptGroupIds) {
 const removeGroupIdsFromProject = async function (projectId, promptGroupIds) {
   return await Project.findByIdAndUpdate(
     projectId,
-    { $pull: { promptGroupIds: { $in: promptGroupIds } } },
+    { $pullAll: { promptGroupIds: promptGroupIds } },
     { new: true },
   );
 };
@@ -76,7 +76,7 @@ const removeGroupIdsFromProject = async function (projectId, promptGroupIds) {
  * @returns {Promise<void>}
  */
 const removeGroupFromAllProjects = async (promptGroupId) => {
-  await Project.updateMany({}, { $pull: { promptGroupIds: promptGroupId } });
+  await Project.updateMany({}, { $pullAll: { promptGroupIds: [promptGroupId] } });
 };
 
 /**
@@ -104,7 +104,7 @@ const addAgentIdsToProject = async function (projectId, agentIds) {
 const removeAgentIdsFromProject = async function (projectId, agentIds) {
   return await Project.findByIdAndUpdate(
     projectId,
-    { $pull: { agentIds: { $in: agentIds } } },
+    { $pullAll: { agentIds: agentIds } },
     { new: true },
   );
 };
@@ -116,7 +116,7 @@ const removeAgentIdsFromProject = async function (projectId, agentIds) {
  * @returns {Promise<void>}
  */
 const removeAgentFromAllProjects = async (agentId) => {
-  await Project.updateMany({}, { $pull: { agentIds: agentId } });
+  await Project.updateMany({}, { $pullAll: { agentIds: [agentId] } });
 };
 
 module.exports = {

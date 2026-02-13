@@ -307,7 +307,9 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     }
 
     if (removeBits) {
-      if (!update.$bit) update.$bit = {};
+      if (!update.$bit) {
+        update.$bit = {};
+      }
       const bitUpdate = update.$bit as Record<string, unknown>;
       bitUpdate.permBits = { ...(bitUpdate.permBits as Record<string, unknown>), and: ~removeBits };
     }

@@ -24,7 +24,7 @@ export interface MigrationCheckParams {
 }
 
 interface AgentMigrationData {
-  _id: string;
+  _id: unknown;
   id: string;
   name: string;
   author: string;
@@ -81,48 +81,18 @@ export async function checkAgentPermissionsMigration({
     const globalProject = await methods.getProjectByName(GLOBAL_PROJECT_NAME, ['agentIds']);
     const globalAgentIds = new Set(globalProject?.agentIds || []);
 
-    // Find agents without ACL entries (no batching for efficiency on startup)
-    const agentsToMigrate: AgentMigrationData[] = await AgentModel.aggregate([
-      {
-        $lookup: {
-          from: 'aclentries',
-          localField: '_id',
-          foreignField: 'resourceId',
-          as: 'aclEntries',
-        },
-      },
-      {
-        $addFields: {
-          userAclEntries: {
-            $filter: {
-              input: '$aclEntries',
-              as: 'aclEntry',
-              cond: {
-                $and: [
-                  { $eq: ['$$aclEntry.resourceType', ResourceType.AGENT] },
-                  { $eq: ['$$aclEntry.principalType', PrincipalType.USER] },
-                ],
-              },
-            },
-          },
-        },
-      },
-      {
-        $match: {
-          author: { $exists: true, $ne: null },
-          userAclEntries: { $size: 0 },
-        },
-      },
-      {
-        $project: {
-          _id: 1,
-          id: 1,
-          name: 1,
-          author: 1,
-          isCollaborative: 1,
-        },
-      },
-    ]);
+    const AclEntry = mongoose.model('AclEntry');
+    const migratedAgentIds = await AclEntry.distinct('resourceId', {
+      resourceType: ResourceType.AGENT,
+      principalType: PrincipalType.USER,
+    });
+
+    const agentsToMigrate = (await AgentModel.find({
+      _id: { $nin: migratedAgentIds },
+      author: { $exists: true, $ne: null },
+    })
+      .select('_id id name author isCollaborative')
+      .lean()) as unknown as AgentMigrationData[];
 
     const categories: {
       globalEditAccess: AgentMigrationData[];
