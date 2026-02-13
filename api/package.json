@@ -58,6 +58,7 @@
     "cookie": "^0.7.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "cron-parser": "^4.9.0",
     "dedent": "^1.5.3",
     "dotenv": "^16.0.3",
     "eventsource": "^3.0.2",
