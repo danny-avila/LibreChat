@@ -92,6 +92,7 @@ module.exports = {
         'text-secondary-alt': 'var(--text-secondary-alt)',
         'text-tertiary': 'var(--text-tertiary)',
         'text-warning': 'var(--text-warning)',
+        'text-destructive': 'var(--text-destructive)',
         'ring-primary': 'var(--ring-primary)',
         'header-primary': 'var(--header-primary)',
         'header-hover': 'var(--header-hover)',
@@ -118,6 +119,7 @@ module.exports = {
         'border-medium-alt': 'var(--border-medium-alt)',
         'border-heavy': 'var(--border-heavy)',
         'border-xheavy': 'var(--border-xheavy)',
+        'border-destructive': 'var(--border-destructive)',
         /* These are test styles */
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',

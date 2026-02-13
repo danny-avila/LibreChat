@@ -276,6 +276,7 @@ describe('MCPServerInspector', () => {
       expect(MCPConnectionFactory.create).toHaveBeenCalledWith({
         serverName: 'test_server',
         serverConfig: expect.objectContaining({ type: 'stdio', command: 'node' }),
+        useSSRFProtection: true,
       });
 
       // Verify temporary connection was disconnected
