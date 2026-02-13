@@ -250,24 +250,24 @@ function getDefaultHandlers({
     handlers[GraphEvents.ON_SUMMARIZE_START] = {
       handle: async (_event, data) => {
         await emitEvent(res, streamId, {
-          event: 'on_summarize_start',
+          event: GraphEvents.ON_SUMMARIZE_START,
           data,
         });
       },
     };
     handlers[GraphEvents.ON_SUMMARIZE_DELTA] = {
       handle: async (_event, data) => {
+        aggregateContent({ event: GraphEvents.ON_SUMMARIZE_DELTA, data });
         await emitEvent(res, streamId, {
-          event: 'on_summarize_delta',
+          event: GraphEvents.ON_SUMMARIZE_DELTA,
           data,
         });
-        aggregateContent({ event: GraphEvents.ON_SUMMARIZE_DELTA, data });
       },
     };
     handlers[GraphEvents.ON_SUMMARIZE_COMPLETE] = {
       handle: async (_event, data) => {
         await emitEvent(res, streamId, {
-          event: 'on_summarize_complete',
+          event: GraphEvents.ON_SUMMARIZE_COMPLETE,
           data,
         });
       },
