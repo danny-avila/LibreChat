@@ -18,11 +18,12 @@ import {
   CheckCircle,
   Lightbulb,
   Search,
+  MicOff,
+  Mic,
 } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import { FormProvider, useForm } from 'react-hook-form';
-import AudioRecorder from '../Input/AudioRecorder';
 
 interface FeedbackProps {
   handleFeedback: ({ feedback }: { feedback: TFeedback | undefined }) => void;
@@ -98,54 +99,17 @@ function FeedbackButtons({
   const upActive = feedback?.rating === 'thumbsUp' ? feedback.tag?.key : undefined;
   const downActive = feedback?.rating === 'thumbsDown' ? feedback.tag?.key : undefined;
 
-  const handleThumbsUpClick = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      if (feedback?.rating !== 'thumbsUp') {
-        upStore.toggle();
-        return;
-      }
-      onFeedback(undefined);
-    },
-    [feedback, onFeedback, upStore],
-  );
+  const handleUp = (tag: TFeedbackTag) => {
+    upStore.hide();
+    onFeedback({ rating: 'thumbsUp', tag });
+    if (tag.key === 'other') onOther?.();
+  };
 
-  const handleUpOption = useCallback(
-    (tag: TFeedbackTag) => (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      upStore.hide();
-      onFeedback({ rating: 'thumbsUp', tag });
-      if (tag.key === 'other') {
-        onOther?.();
-      }
-    },
-    [onFeedback, onOther, upStore],
-  );
-
-  const handleThumbsDownClick = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      if (feedback?.rating !== 'thumbsDown') {
-        downStore.toggle();
-        return;
-      }
-
-      onOther?.();
-    },
-    [feedback, onOther, downStore],
-  );
-
-  const handleDownOption = useCallback(
-    (tag: TFeedbackTag) => (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      downStore.hide();
-      onFeedback({ rating: 'thumbsDown', tag });
-      if (tag.key === 'other') {
-        onOther?.();
-      }
-    },
-    [onFeedback, onOther, downStore],
-  );
+  const handleDown = (tag: TFeedbackTag) => {
+    downStore.hide();
+    onFeedback({ rating: 'thumbsDown', tag });
+    if (tag.key === 'other') onOther?.();
+  };
 
   return (
     <>
@@ -154,7 +118,7 @@ function FeedbackButtons({
         render={
           <button
             className={buttonClasses(feedback?.rating === 'thumbsUp', isLast)}
-            onClick={handleThumbsUpClick}
+            onClick={() => upStore.toggle()}
             type="button"
             title={localize('com_ui_feedback_positive')}
             aria-pressed={feedback?.rating === 'thumbsUp'}
@@ -177,7 +141,7 @@ function FeedbackButtons({
               key={tag.key}
               tag={tag}
               active={upActive === tag.key}
-              onClick={handleUpOption(tag)}
+              onClick={() => handleUp(tag)}
             />
           ))}
         </div>
@@ -188,7 +152,7 @@ function FeedbackButtons({
         render={
           <button
             className={buttonClasses(feedback?.rating === 'thumbsDown', isLast)}
-            onClick={handleThumbsDownClick}
+            onClick={() => downStore.toggle()}
             type="button"
             title={localize('com_ui_feedback_negative')}
             aria-pressed={feedback?.rating === 'thumbsDown'}
@@ -211,7 +175,7 @@ function FeedbackButtons({
               key={tag.key}
               tag={tag}
               active={downActive === tag.key}
-              onClick={handleDownOption(tag)}
+              onClick={() => handleDown(tag)}
             />
           ))}
         </div>
@@ -242,22 +206,46 @@ export default function Feedback({
   const methods = useForm<FeedbackForm>({
     defaultValues: { text: '' },
   });
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const { ref: rhfRef, ...textRegister } = methods.register('text');
+  /* init browser STT once */
+  useEffect(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+
+    const rec = new SR();
+    rec.lang = 'en-US';
+    rec.interimResults = true;
+    rec.continuous = true;
+
+    rec.onstart = () => setIsListening(true);
+    rec.onend = () => setIsListening(false);
+    rec.onerror = () => setIsListening(false);
+    rec.onresult = (e: any) => {
+      let transcript = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        transcript += e.results[i][0].transcript;
+      }
+      methods.setValue('text', transcript);
+      setFeedback((prev) => (prev ? { ...prev, text: transcript } : prev));
+    };
+
+    recognitionRef.current = rec;
+  }, [methods]);
+
+  const toggleRecording = () => {
+    if (!recognitionRef.current) return;
+    isListening ? recognitionRef.current.stop() : recognitionRef.current.start();
+  };
 
   useEffect(() => {
     setFeedback(initialFeedback);
     methods.setValue('text', initialFeedback?.text || '');
   }, [initialFeedback, methods]);
-  const handleSpeechSubmit = useCallback(
-    ({ text }: { text: string }) => {
-      setFeedback((prev) =>
-        prev ? { ...prev, text } : ({ rating: 'thumbsDown', text } as TFeedback),
-      );
-      methods.setValue('text', text);
-    },
-    [methods],
-  );
+
   const propagateMinimal = useCallback(
     (fb: TFeedback | undefined) => {
       setFeedback(fb);
@@ -276,12 +264,6 @@ export default function Feedback({
   );
 
   const handleOtherOpen = useCallback(() => setOpenDialog(true), []);
-
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    methods.setValue('text', e.target.value);
-    setFeedback((prev) => (prev ? { ...prev, text: e.target.value } : undefined));
-  };
-
   const handleDialogSave = useCallback(() => {
     if (feedback?.tag?.key === 'other' && !feedback?.text?.trim()) {
       return;
@@ -342,22 +324,29 @@ export default function Feedback({
               {localize('com_ui_feedback_more_information')}
             </OGDialogTitle>
             <textarea
-              ref={textAreaRef}
-              className="w-full rounded-xl border border-border-light bg-transparent p-2 text-text-primary"
-              value={feedback?.text || ''}
-              onChange={handleTextChange}
+              {...textRegister}
+              ref={(el) => {
+                textAreaRef.current = el;
+                rhfRef(el);
+              }}
+              className="w-full rounded-xl border bg-transparent p-2"
               rows={4}
               placeholder={localize('com_ui_feedback_placeholder')}
-              maxLength={500}
             />
             <div className="mt-3 flex justify-end">
-              <AudioRecorder
-                disabled={false}
-                isSubmitting={false}
-                methods={methods}
-                textAreaRef={textAreaRef}
-                ask={handleSpeechSubmit}
-              />
+              <button
+                type="button"
+                onClick={toggleRecording}
+                className={cn(
+                  'flex items-center gap-2 rounded-full px-3 py-2',
+                  isListening ? 'bg-red-500/10 text-red-500' : 'hover:bg-surface-hover',
+                )}
+              >
+                {isListening ? <MicOff size="18" /> : <Mic size="18" />}
+                <span className="text-sm">
+                  {isListening ? localize('com_ui_stop') : localize('com_ui_use_micrphone')}
+                </span>
+              </button>
             </div>
             <div className="mt-4 flex items-end justify-end gap-2">
               <Button variant="destructive" onClick={handleDialogClear}>
