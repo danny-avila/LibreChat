@@ -70,6 +70,13 @@ export default function ExecuteCode({
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
   const progress = useProgress(initialProgress);
 
+  // Auto-collapse the analysis block when finished
+  useEffect(() => {
+    if (progress >= 1.0) {
+      setShowCode(false);
+    }
+  }, [progress]);
+
   useEffect(() => {
     if (output !== outputRef.current) {
       outputRef.current = output;
