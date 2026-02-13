@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
-import { Tools, Constants, LocalStorageKeys, AgentCapabilities } from 'librechat-data-provider';
+import { Tools, Constants, LocalStorageKeys, AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import {
   useMCPServerManager,
@@ -114,7 +114,8 @@ export default function BadgeRowProvider({
         [Tools.execute_code]: initialValues[Tools.execute_code] ?? false,
         [Tools.web_search]: initialValues[Tools.web_search] ?? false,
         [Tools.file_search]: initialValues[Tools.file_search] ?? false,
-        [AgentCapabilities.artifacts]: initialValues[AgentCapabilities.artifacts] ?? false,
+        [AgentCapabilities.artifacts]: initialValues[AgentCapabilities.artifacts] ??
+          (agentsConfig?.capabilities?.includes(AgentCapabilities.artifacts) ? ArtifactModes.DEFAULT : false),
       };
 
       setEphemeralAgent((prev) => ({
@@ -138,7 +139,7 @@ export default function BadgeRowProvider({
         }
       });
     }
-  }, [key, isSubmitting, setEphemeralAgent]);
+  }, [key, isSubmitting, setEphemeralAgent, agentsConfig]);
 
   /** CodeInterpreter hooks */
   const codeApiKeyForm = useCodeApiKeyForm({});
