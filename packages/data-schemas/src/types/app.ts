@@ -11,6 +11,7 @@ import type {
   TCustomEndpoints,
   TAssistantEndpoint,
   TAnthropicEndpoint,
+  SummarizationConfig,
 } from 'librechat-data-provider';
 
 export type JsonSchemaType = {
@@ -29,9 +30,8 @@ export type ConvertJsonSchemaToZodOptions = {
   transformOneOfAnyOf?: boolean;
 };
 
-export type AppSummarizationConfig = {
+export type AppSummarizationConfig = SummarizationConfig & {
   enabled?: boolean;
-  [key: string]: unknown;
 };
 
 export interface FunctionTool {
