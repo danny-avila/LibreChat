@@ -241,8 +241,6 @@ export const defaultAgentFormValues = {
   provider: {},
   edges: [],
   artifacts: '',
-  /** @deprecated Use ACL permissions instead */
-  isCollaborative: false,
   recursion_limit: undefined,
   [Tools.execute_code]: false,
   [Tools.file_search]: false,

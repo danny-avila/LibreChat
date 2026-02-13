@@ -76,10 +76,6 @@ const agentSchema = new Schema<IAgent>(
       type: [{ type: Schema.Types.Mixed }],
       default: [],
     },
-    isCollaborative: {
-      type: Boolean,
-      default: undefined,
-    },
     conversation_starters: {
       type: [String],
       default: [],

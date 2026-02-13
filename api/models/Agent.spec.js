@@ -2642,7 +2642,6 @@ describe('models/Agent', () => {
         actions: ['action1', 'action2'],
         model_parameters: { temperature: 0.8, max_tokens: 1000 },
         avatar: 'https://example.com/avatar.png',
-        isCollaborative: true,
         tool_resources: {
           file_search: { file_ids: ['file1', 'file2'] },
         },
@@ -2657,7 +2656,6 @@ describe('models/Agent', () => {
       expect(agent.model_parameters.temperature).toBe(0.8);
       expect(agent.model_parameters.max_tokens).toBe(1000);
       expect(agent.avatar).toBe('https://example.com/avatar.png');
-      expect(agent.isCollaborative).toBe(true);
       expect(agent.tool_resources.file_search.file_ids).toEqual(['file1', 'file2']);
     });
 

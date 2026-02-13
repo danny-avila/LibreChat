@@ -94,7 +94,6 @@ export const agentUpdateSchema = agentBaseSchema.extend({
   avatar: z.union([agentAvatarSchema, z.null()]).optional(),
   provider: z.string().optional(),
   model: z.string().nullable().optional(),
-  isCollaborative: z.boolean().optional(),
 });
 
 interface ValidateAgentModelParams {

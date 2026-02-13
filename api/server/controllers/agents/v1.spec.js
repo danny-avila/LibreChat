@@ -170,7 +170,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         // Unauthorized fields that should be stripped
         author: new mongoose.Types.ObjectId().toString(), // Should not be able to set author
         authorName: 'Hacker', // Should be stripped
-        isCollaborative: true, // Should be stripped on creation
         versions: [], // Should be stripped
         _id: new mongoose.Types.ObjectId(), // Should be stripped
         id: 'custom_agent_id', // Should be overridden
@@ -189,7 +188,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       // Verify unauthorized fields were not set
       expect(createdAgent.author.toString()).toBe(mockReq.user.id); // Should be the request user, not the malicious value
       expect(createdAgent.authorName).toBeUndefined();
-      expect(createdAgent.isCollaborative).toBeFalsy();
       expect(createdAgent.versions).toHaveLength(1); // Should have exactly 1 version from creation
       expect(createdAgent.id).not.toBe('custom_agent_id'); // Should have generated ID
       expect(createdAgent.id).toMatch(/^agent_/); // Should have proper prefix
@@ -440,7 +438,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         model: 'gpt-3.5-turbo',
         author: existingAgentAuthorId,
         description: 'Original description',
-        isCollaborative: false,
         versions: [
           {
             name: 'Original Agent',
@@ -462,7 +459,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         name: 'Updated Agent',
         description: 'Updated description',
         model: 'gpt-4',
-        isCollaborative: true, // This IS allowed in updates
       };
 
       await updateAgentHandler(mockReq, mockRes);
@@ -475,13 +471,11 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(updatedAgent.name).toBe('Updated Agent');
       expect(updatedAgent.description).toBe('Updated description');
       expect(updatedAgent.model).toBe('gpt-4');
-      expect(updatedAgent.isCollaborative).toBe(true);
       expect(updatedAgent.author).toBe(existingAgentAuthorId.toString());
 
       // Verify in database
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.name).toBe('Updated Agent');
-      expect(agentInDb.isCollaborative).toBe(true);
     });
 
     test('should reject update with unauthorized fields (mass assignment protection)', async () => {

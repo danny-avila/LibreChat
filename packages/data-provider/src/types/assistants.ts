@@ -258,8 +258,6 @@ export type Agent = {
   model: string | null;
   model_parameters: AgentModelParameters;
   conversation_starters?: string[];
-  /** @deprecated Use ACL permissions instead */
-  isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
   /** @deprecated Use edges instead */
   agent_ids?: string[];
@@ -312,7 +310,6 @@ export type AgentUpdateParams = {
   provider?: AgentProvider;
   model?: string | null;
   model_parameters?: AgentModelParameters;
-  isCollaborative?: boolean;
 } & Pick<
   Agent,
   | 'agent_ids'
