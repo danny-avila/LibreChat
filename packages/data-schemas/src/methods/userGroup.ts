@@ -215,7 +215,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     const userIdOnTheSource = user.idOnTheSource || userId.toString();
     const updatedGroup = await Group.findByIdAndUpdate(
       groupId,
-      { $pull: { memberIds: userIdOnTheSource } },
+      { $pullAll: { memberIds: [userIdOnTheSource] } },
       options,
     ).lean();
 

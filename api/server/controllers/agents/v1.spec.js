@@ -557,7 +557,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       const updatedAgent = mockRes.json.mock.calls[0][0];
       expect(updatedAgent).toBeDefined();
-      // Note: updateAgentProjects requires more setup, so we just verify the handler doesn't crash
     });
 
     test('should validate tool_resources in updates', async () => {

@@ -536,7 +536,7 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
         memberIds: user.idOnTheSource,
         idOnTheSource: { $nin: allGroupIds },
       },
-      { $pull: { memberIds: user.idOnTheSource } },
+      { $pullAll: { memberIds: [user.idOnTheSource] } },
       sessionOptions,
     );
   } catch (error) {
@@ -788,7 +788,15 @@ const bulkUpdateResourcePermissions = async ({
     return results;
   } catch (error) {
     if (shouldEndSession && supportsTransactions) {
-      await localSession.abortTransaction();
+      try {
+        await localSession.abortTransaction();
+      } catch (transactionError) {
+        /** best-effort abort; may fail if commit already succeeded */
+        logger.error(
+          `[PermissionService.bulkUpdateResourcePermissions] Error aborting transaction:`,
+          transactionError,
+        );
+      }
     }
     logger.error(`[PermissionService.bulkUpdateResourcePermissions] Error: ${error.message}`);
     throw error;
