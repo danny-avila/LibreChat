@@ -28,13 +28,9 @@ import {
   groupSchema,
 } from '~/schema';
 import accessRoleSchema from '~/schema/accessRole';
-import aclEntrySchema from '~/schema/aclEntry';
 import mcpServerSchema from '~/schema/mcpServer';
-import {
-  retryWithBackoff,
-  createIndexesWithRetry,
-  initializeOrgCollections,
-} from '~/utils/retryWithBackoff';
+import aclEntrySchema from '~/schema/aclEntry';
+import { initializeOrgCollections, createIndexesWithRetry, retryWithBackoff } from '~/utils/retry';
 
 /**
  * Production operations tests for FerretDB multi-tenancy:
