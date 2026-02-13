@@ -197,6 +197,8 @@ const moonshotModels = {
   'moonshot.kimi-k2.5': 262144,
   'moonshot.kimi-k2-thinking': 262144,
   'moonshot.kimi-k2-0711': 131072,
+  'moonshotai.kimi': 262144,
+  'moonshotai.kimi-k2.5': 262144,
 };
 
 const metaModels = {
