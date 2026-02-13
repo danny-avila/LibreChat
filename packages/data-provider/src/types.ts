@@ -541,7 +541,6 @@ export type TPromptGroup = {
   command?: string;
   oneliner?: string;
   category?: string;
-  projectIds?: string[];
   productionId?: string | null;
   productionPrompt?: Pick<TPrompt, 'prompt'> | null;
   author: string;
@@ -594,9 +593,7 @@ export type TCreatePromptResponse = {
   group?: TPromptGroup;
 };
 
-export type TUpdatePromptGroupPayload = Partial<TPromptGroup> & {
-  removeProjectIds?: string[];
-};
+export type TUpdatePromptGroupPayload = Partial<TPromptGroup>;
 
 export type TUpdatePromptGroupVariables = {
   id: string;
