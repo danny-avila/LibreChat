@@ -24,7 +24,6 @@ const {
   deleteAgent,
   deleteUserAgents,
   revertAgentVersion,
-
   addAgentResourceFile,
   getListAgentsByAccess,
   removeAgentResourceFiles,
