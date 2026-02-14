@@ -107,16 +107,27 @@ export default function BadgeRowProvider({
       }
 
       /**
-       * Only apply values from localStorage that were actually stored.
-       * If localStorage has no value for a tool, don't override ephemeralAgent —
-       * it may already have been set by a model spec.
+       * Apply localStorage values only for tools not already set in ephemeralAgent.
+       * Spec-driven values (set by applyModelSpecEphemeralAgent before this effect)
+       * take precedence; localStorage fills in the rest for non-spec conversations.
        */
-      if (Object.keys(initialValues).length > 0) {
-        setEphemeralAgent((prev) => ({
-          ...(prev || {}),
-          ...initialValues,
-        }));
-      }
+      setEphemeralAgent((prev) => {
+        if (prev == null) {
+          /** ephemeralAgent is null — no spec applied, use localStorage defaults */
+          return Object.keys(initialValues).length > 0 ? { ...initialValues } : prev;
+        }
+        /** ephemeralAgent already has values (from spec or prior state).
+         *  Only fill in undefined keys from localStorage. */
+        let changed = false;
+        const result = { ...prev };
+        for (const [toolKey, value] of Object.entries(initialValues)) {
+          if (result[toolKey] === undefined) {
+            result[toolKey] = value;
+            changed = true;
+          }
+        }
+        return changed ? result : prev;
+      });
     }
   }, [key, isSubmitting, setEphemeralAgent]);
 

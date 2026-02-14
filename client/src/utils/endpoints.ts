@@ -11,7 +11,6 @@ import {
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';
-import { setTimestamp } from './timestamps';
 
 /**
  * Clears model for non-ephemeral agent conversations.
@@ -221,32 +220,13 @@ export function applyModelSpecEphemeralAgent({
     return;
   }
   const key = (convoId ?? Constants.NEW_CONVO) || Constants.NEW_CONVO;
-  const artifacts = modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '';
-  const web_search = modelSpec.webSearch ?? false;
-  const file_search = modelSpec.fileSearch ?? false;
-  const execute_code = modelSpec.executeCode ?? false;
-
   updateEphemeralAgent(key, {
     mcp: modelSpec.mcpServers ?? [Constants.mcp_clear as string],
-    web_search,
-    file_search,
-    execute_code,
-    artifacts,
+    web_search: modelSpec.webSearch ?? false,
+    file_search: modelSpec.fileSearch ?? false,
+    execute_code: modelSpec.executeCode ?? false,
+    artifacts: modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '',
   });
-
-  /** Write tool values to localStorage so BadgeRowContext reads them on initialization */
-  const toolEntries: [LocalStorageKeys, t.TEphemeralAgent[keyof t.TEphemeralAgent]][] = [
-    [LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_, web_search],
-    [LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_, file_search],
-    [LocalStorageKeys.LAST_CODE_TOGGLE_, execute_code],
-    [LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_, artifacts],
-  ];
-
-  for (const [prefix, value] of toolEntries) {
-    const storageKey = `${prefix}${key}`;
-    localStorage.setItem(storageKey, JSON.stringify(value));
-    setTimestamp(storageKey);
-  }
 }
 
 /**
