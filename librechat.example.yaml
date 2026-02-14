@@ -205,6 +205,12 @@ actions:
 #     - '*.example.com'           # Wildcard subdomain
 #     - 'https://secure.api.com'  # Protocol-restricted
 #     - 'http://internal:8080'    # Protocol and port restricted
+#   apps: true                    # Enable MCP Apps support (default: true)
+#   appSettings:
+#     allowedConnectDomains: []   # Additional CSP connect-src domains for MCP Apps
+#     blockedDomains: []          # Domains blocked for all MCP Apps
+#     maxHeight: 800              # Max iframe height in pixels
+#     allowFullscreen: true       # Whether to allow fullscreen mode
 
 # Example MCP Servers Object Structure
 # mcpServers:

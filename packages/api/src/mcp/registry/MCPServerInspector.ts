@@ -114,7 +114,54 @@ export class MCPServerInspector {
   }
 
   /**
+   * Converts server tools to LibreChat-compatible tool functions format,
+   * returning both model-visible tools and all tools (including app-only).
+   * @param serverName - The name of the server
+   * @param connection - The MCP connection
+   * @returns Object with modelTools (visibility includes 'model') and allTools (all discovered tools)
+   */
+  public static async getAllToolFunctions(
+    serverName: string,
+    connection: MCPConnection,
+  ): Promise<{ modelTools: t.LCAvailableTools; allTools: t.LCAvailableTools }> {
+    const { tools }: t.MCPToolListResponse = await connection.client.listTools();
+
+    const modelTools: t.LCAvailableTools = {};
+    const allTools: t.LCAvailableTools = {};
+
+    tools.forEach((tool) => {
+      const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
+      const toolEntry: t.LCFunctionTool = {
+        type: 'function',
+        ['function']: {
+          name,
+          description: tool.description,
+          parameters: tool.inputSchema as JsonSchemaType,
+        },
+        ...(tool._meta != null
+          ? { _meta: tool._meta as t.LCFunctionTool['_meta'] }
+          : {}),
+      };
+
+      // Always store in allTools for bridge access
+      allTools[name] = toolEntry;
+
+      // Only add to model-visible tools if visibility includes 'model' (or not specified)
+      const visibility = (tool._meta as Record<string, unknown> | undefined)?.ui as
+        | { visibility?: string[] }
+        | undefined;
+      const visibilityList = visibility?.visibility ?? ['model', 'app'];
+      if (visibilityList.includes('model')) {
+        modelTools[name] = toolEntry;
+      }
+    });
+
+    return { modelTools, allTools };
+  }
+
+  /**
    * Converts server tools to LibreChat-compatible tool functions format.
+   * Returns only model-visible tools (backward compatible).
    * @param serverName - The name of the server
    * @param connection - The MCP connection
    * @returns Tool functions formatted for LibreChat
@@ -123,21 +170,7 @@ export class MCPServerInspector {
     serverName: string,
     connection: MCPConnection,
   ): Promise<t.LCAvailableTools> {
-    const { tools }: t.MCPToolListResponse = await connection.client.listTools();
-
-    const toolFunctions: t.LCAvailableTools = {};
-    tools.forEach((tool) => {
-      const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
-      toolFunctions[name] = {
-        type: 'function',
-        ['function']: {
-          name,
-          description: tool.description,
-          parameters: tool.inputSchema as JsonSchemaType,
-        },
-      };
-    });
-
-    return toolFunctions;
+    const { modelTools } = await MCPServerInspector.getAllToolFunctions(serverName, connection);
+    return modelTools;
   }
 }

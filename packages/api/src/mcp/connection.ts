@@ -215,6 +215,7 @@ interface MCPConnectionParams {
   userId?: string;
   oauthTokens?: MCPOAuthTokens | null;
   useSSRFProtection?: boolean;
+  enableApps?: boolean;
 }
 
 export class MCPConnection extends EventEmitter {
@@ -274,13 +275,22 @@ export class MCPConnection extends EventEmitter {
     if (params.oauthTokens) {
       this.oauthTokens = params.oauthTokens;
     }
+    const enableApps = params.enableApps !== false; // default true
     this.client = new Client(
       {
         name: '@librechat/api-client',
         version: '1.2.3',
       },
       {
-        capabilities: {},
+        capabilities: enableApps
+          ? {
+            experimental: {
+              'io.modelcontextprotocol/ui': {
+                mimeTypes: ['text/html;profile=mcp-app'],
+              },
+            },
+          }
+          : {},
       },
     );
 

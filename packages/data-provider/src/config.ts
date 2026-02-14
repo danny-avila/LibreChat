@@ -964,6 +964,15 @@ export const configSchema = z.object({
   mcpSettings: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
+      apps: z.boolean().default(true),
+      appSettings: z
+        .object({
+          allowedConnectDomains: z.array(z.string()).optional(),
+          blockedDomains: z.array(z.string()).optional(),
+          maxHeight: z.number().default(800),
+          allowFullscreen: z.boolean().default(true),
+        })
+        .optional(),
     })
     .optional(),
   interface: interfaceSchema,
