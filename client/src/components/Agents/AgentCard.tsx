@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Label, OGDialog, OGDialogTrigger } from '@librechat/client';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
-import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
+import { cn, AgentAvatar, getContactDisplayName } from '~/utils';
 import AgentDetailContent from './AgentDetailContent';
 
 interface AgentCardProps {
@@ -78,7 +78,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
           {/* Avatar */}
           <div className="flex-shrink-0 self-center">
             <div className="overflow-hidden rounded-full shadow-[0_0_15px_rgba(0,0,0,0.3)] dark:shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-              {renderAgentAvatar(agent, { size: 'sm', showBorder: false })}
+              <AgentAvatar agent={agent} size="sm" />
             </div>
           </div>
 
