@@ -380,11 +380,11 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    const { messages: formattedMessages, indexTokenCountMap } = formatAgentMessages(
-      allMessages,
-      {},
-      toolSet,
-    );
+    const {
+      messages: formattedMessages,
+      indexTokenCountMap,
+      summary: initialSummary,
+    } = formatAgentMessages(allMessages, {}, toolSet);
 
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = actuallyStreaming ? createResponseTracker() : null;
@@ -504,6 +504,7 @@ const createResponse = async (req, res) => {
         agents: [primaryConfig],
         messages: formattedMessages,
         indexTokenCountMap,
+        initialSummary,
         runId: responseId,
         summarizationConfig,
         signal: abortController.signal,
@@ -664,6 +665,7 @@ const createResponse = async (req, res) => {
         agents: [primaryConfig],
         messages: formattedMessages,
         indexTokenCountMap,
+        initialSummary,
         runId: responseId,
         summarizationConfig,
         signal: abortController.signal,

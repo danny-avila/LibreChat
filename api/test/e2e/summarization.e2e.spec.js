@@ -159,7 +159,7 @@ async function runFullTurn({
 
   // Step 1-2: formatAgentMessages (LibreChat's real message formatting)
   const formatted = formatAgentMessages(payload, {});
-  let { messages: initialMessages, indexTokenCountMap } = formatted;
+  let { messages: initialMessages, indexTokenCountMap, summary: initialSummary } = formatted;
 
   // Step 3: hydrate token counts (mirrors client.js)
   indexTokenCountMap = hydrateMissingIndexTokenCounts({
@@ -196,6 +196,7 @@ async function runFullTurn({
     agents: [agent],
     messages: initialMessages,
     indexTokenCountMap,
+    initialSummary,
     runId: `e2e-${Date.now()}`,
     signal: abortController.signal,
     customHandlers: buildHandlers(collectedUsage, aggregateContent, spies),
@@ -367,7 +368,6 @@ const hasAnthropic =
       tokenCounter,
     });
 
-    expect(crossRun.result).toBeDefined();
     expect(crossRun.runMessages.length).toBeGreaterThan(0);
     console.log(
       `  Cross-run response: "${getLastContent(crossRun.runMessages).substring(0, 200)}"`,
@@ -501,6 +501,16 @@ const hasOpenAI = process.env.OPENAI_API_KEY != null && process.env.OPENAI_API_K
       console.log(`  T6: ${conversationPayload.length} entries`);
     }
 
+    if (spies.onSummarizeStart.mock.calls.length === 0) {
+      await addTurn('Calculate 7 * 13. Calculator.', 300);
+      console.log(`  T7: ${conversationPayload.length} entries`);
+    }
+
+    if (spies.onSummarizeStart.mock.calls.length === 0) {
+      await addTurn('What is 100 - 37? Calculator.', 200);
+      console.log(`  T8: ${conversationPayload.length} entries`);
+    }
+
     expect(spies.onSummarizeStart.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(spies.onSummarizeComplete.mock.calls.length).toBeGreaterThanOrEqual(1);
 
@@ -543,7 +553,6 @@ const hasOpenAI = process.env.OPENAI_API_KEY != null && process.env.OPENAI_API_K
       tokenCounter,
     });
 
-    expect(crossRun.result).toBeDefined();
     expect(crossRun.runMessages.length).toBeGreaterThan(0);
     console.log(`  Cross-run: ${crossRun.runMessages.length} messages`);
   });

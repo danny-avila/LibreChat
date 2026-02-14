@@ -225,6 +225,7 @@ export async function createRun({
   customHandlers,
   indexTokenCountMap,
   summarizationConfig,
+  initialSummary,
   streaming = true,
   streamUsage = true,
 }: {
@@ -238,6 +239,8 @@ export async function createRun({
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
   summarizationConfig?: SummarizationConfig;
+  /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
+  initialSummary?: { text: string; tokenCount: number };
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -381,6 +384,7 @@ export async function createRun({
             prompt: resolvedSummarizationConfig.prompt,
           }
         : undefined,
+      initialSummary,
     };
     agentInputs.push(agentInput);
   };

@@ -277,11 +277,11 @@ const OpenAIChatCompletionController = async (req, res) => {
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
-    const { messages: formattedMessages, indexTokenCountMap } = formatAgentMessages(
-      openaiMessages,
-      {},
-      toolSet,
-    );
+    const {
+      messages: formattedMessages,
+      indexTokenCountMap,
+      summary: initialSummary,
+    } = formatAgentMessages(openaiMessages, {}, toolSet);
 
     /**
      * Create a simple handler that processes data
@@ -488,6 +488,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       agents: [primaryConfig],
       messages: formattedMessages,
       indexTokenCountMap,
+      initialSummary,
       runId: requestId,
       summarizationConfig,
       signal: abortController.signal,
