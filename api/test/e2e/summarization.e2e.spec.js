@@ -12,18 +12,18 @@
  * Run:
  *   npx jest --config api/test/e2e/jest.e2e.config.js
  */
+const { createRun, hydrateMissingIndexTokenCounts } = require('@librechat/api');
 const {
   Providers,
   Calculator,
   GraphEvents,
   ToolEndHandler,
   ModelEndHandler,
-  ChatModelStreamHandler,
-  formatAgentMessages,
-  createContentAggregator,
   createTokenCounter,
+  formatAgentMessages,
+  ChatModelStreamHandler,
+  createContentAggregator,
 } = require('@librechat/agents');
-const { createRun } = require('@librechat/api');
 
 // ---------------------------------------------------------------------------
 // Shared test infrastructure
@@ -102,32 +102,6 @@ function getDefaultModel(provider) {
     default:
       return 'gpt-4.1-mini';
   }
-}
-
-/**
- * Fills missing token counts for formatted LangChain messages.
- * Mirrors hydrateMissingIndexTokenCounts from client.js.
- */
-function hydrateMissingIndexTokenCounts({ messages, indexTokenCountMap, tokenCounter }) {
-  const hydratedMap = {};
-  if (indexTokenCountMap) {
-    for (const [index, tokenCount] of Object.entries(indexTokenCountMap)) {
-      if (typeof tokenCount === 'number' && Number.isFinite(tokenCount) && tokenCount > 0) {
-        hydratedMap[Number(index)] = tokenCount;
-      }
-    }
-  }
-  for (let i = 0; i < messages.length; i++) {
-    if (
-      typeof hydratedMap[i] === 'number' &&
-      Number.isFinite(hydratedMap[i]) &&
-      hydratedMap[i] > 0
-    ) {
-      continue;
-    }
-    hydratedMap[i] = tokenCounter(messages[i]);
-  }
-  return hydratedMap;
 }
 
 // ---------------------------------------------------------------------------
