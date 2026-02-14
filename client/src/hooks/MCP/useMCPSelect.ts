@@ -36,15 +36,6 @@ export function useMCPSelect({
   }, [ephemeralAgent?.mcp, setMCPValuesRaw, configuredServers]);
 
   useEffect(() => {
-    setEphemeralAgent((prev) => {
-      if (!isEqual(prev?.mcp, mcpValues)) {
-        return { ...(prev ?? {}), mcp: mcpValues };
-      }
-      return prev;
-    });
-  }, [mcpValues, setEphemeralAgent]);
-
-  useEffect(() => {
     const mcpStorageKey = `${LocalStorageKeys.LAST_MCP_}${key}`;
     if (mcpValues.length > 0) {
       setTimestamp(mcpStorageKey);
@@ -58,8 +49,14 @@ export function useMCPSelect({
         return;
       }
       setMCPValuesRaw(value);
+      setEphemeralAgent((prev) => {
+        if (!isEqual(prev?.mcp, value)) {
+          return { ...(prev ?? {}), mcp: value };
+        }
+        return prev;
+      });
     },
-    [setMCPValuesRaw],
+    [setMCPValuesRaw, setEphemeralAgent],
   );
 
   return {
