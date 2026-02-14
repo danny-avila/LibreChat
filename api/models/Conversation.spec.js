@@ -106,6 +106,50 @@ describe('Conversation Operations', () => {
       expect(result.conversationId).toBe(newConversationId);
     });
 
+    it('should not create a conversation when noUpsert is true and conversation does not exist', async () => {
+      const nonExistentId = uuidv4();
+      const result = await saveConvo(
+        mockReq,
+        { conversationId: nonExistentId, title: 'Ghost Title' },
+        { noUpsert: true },
+      );
+
+      expect(result).toBeNull();
+
+      // Verify nothing was created in the database
+      const dbConvo = await Conversation.findOne({ conversationId: nonExistentId });
+      expect(dbConvo).toBeNull();
+    });
+
+    it('should update an existing conversation when noUpsert is true', async () => {
+      // First create the conversation normally
+      await saveConvo(mockReq, mockConversationData);
+
+      // Now update with noUpsert
+      const result = await saveConvo(
+        mockReq,
+        { conversationId: mockConversationData.conversationId, title: 'Updated Title' },
+        { noUpsert: true },
+      );
+
+      expect(result).not.toBeNull();
+      expect(result.title).toBe('Updated Title');
+      expect(result.conversationId).toBe(mockConversationData.conversationId);
+    });
+
+    it('should still upsert by default when noUpsert is not provided', async () => {
+      const newId = uuidv4();
+      const result = await saveConvo(mockReq, {
+        conversationId: newId,
+        title: 'New Conversation',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result.conversationId).toBe(newId);
+      expect(result.title).toBe('New Conversation');
+    });
+
     it('should handle unsetFields metadata', async () => {
       const metadata = {
         unsetFields: { someField: 1 },
