@@ -116,16 +116,13 @@ describe('Conversation Operations', () => {
 
       expect(result).toBeNull();
 
-      // Verify nothing was created in the database
       const dbConvo = await Conversation.findOne({ conversationId: nonExistentId });
       expect(dbConvo).toBeNull();
     });
 
     it('should update an existing conversation when noUpsert is true', async () => {
-      // First create the conversation normally
       await saveConvo(mockReq, mockConversationData);
 
-      // Now update with noUpsert
       const result = await saveConvo(
         mockReq,
         { conversationId: mockConversationData.conversationId, title: 'Updated Title' },
@@ -166,7 +163,6 @@ describe('Conversation Operations', () => {
 
   describe('isTemporary conversation handling', () => {
     it('should save a conversation with expiredAt when isTemporary is true', async () => {
-      // Mock app config with 24 hour retention
       mockReq.config.interfaceConfig.temporaryChatRetention = 24;
 
       mockReq.body = { isTemporary: true };
@@ -179,7 +175,6 @@ describe('Conversation Operations', () => {
       expect(result.expiredAt).toBeDefined();
       expect(result.expiredAt).toBeInstanceOf(Date);
 
-      // Verify expiredAt is approximately 24 hours in the future
       const expectedExpirationTime = new Date(beforeSave.getTime() + 24 * 60 * 60 * 1000);
       const actualExpirationTime = new Date(result.expiredAt);
 
@@ -201,7 +196,6 @@ describe('Conversation Operations', () => {
     });
 
     it('should save a conversation without expiredAt when isTemporary is not provided', async () => {
-      // No isTemporary in body
       mockReq.body = {};
 
       const result = await saveConvo(mockReq, mockConversationData);
@@ -211,7 +205,6 @@ describe('Conversation Operations', () => {
     });
 
     it('should use custom retention period from config', async () => {
-      // Mock app config with 48 hour retention
       mockReq.config.interfaceConfig.temporaryChatRetention = 48;
 
       mockReq.body = { isTemporary: true };
