@@ -96,8 +96,16 @@ export default function BookmarkCard({ bookmark, position, moveRow }: BookmarkCa
         description={`${bookmark.count} ${localize(bookmark.count === 1 ? 'com_ui_conversation' : 'com_ui_conversations')}`}
         side="top"
         render={
-          <span className="shrink-0 rounded-full bg-surface-tertiary px-2 py-0.5 text-xs text-text-secondary">
-            {bookmark.count}
+          <span className="shrink-0">
+            <span
+              aria-hidden="true"
+              className="rounded-full bg-surface-tertiary px-2 py-0.5 text-xs text-text-secondary"
+            >
+              {bookmark.count}
+            </span>
+            <span className="sr-only">
+              {localize('com_ui_bookmarks_count', { 0: bookmark.count, 1: bookmark.tag })}
+            </span>
           </span>
         }
       />
