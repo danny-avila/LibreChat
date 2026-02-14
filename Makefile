@@ -1,4 +1,4 @@
-.PHONY: db grafana logs build upgrade restart status deploy
+.PHONY: db grafana logs logs-litellm build upgrade restart status deploy
 
 # Forward MongoDB port (27017)
 # Usage: make db
@@ -17,6 +17,12 @@ grafana:
 logs:
 	@echo "📜 Streaming logs for LibreChat API..."
 	kubectl --kubeconfig k8s-ovh/kubeconfig.yml logs -n librechat deployment/librechat-api -f
+
+# Watch logs for LiteLLM
+# Usage: make logs-litellm
+logs-litellm:
+	@echo "📜 Streaming logs for LiteLLM..."
+	kubectl --kubeconfig k8s-ovh/kubeconfig.yml logs -n librechat -l app=litellm --all-containers=true -f
 
 # Build and Push Docker Image
 # Usage: make build
