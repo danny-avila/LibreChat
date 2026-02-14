@@ -16,6 +16,7 @@
   "com_agents_name_placeholder": "Կամընտրական: Գործակալի անունը",
   "com_agents_no_access": "Դուք իրավունք չունեք խմբագրելու այս գործակալը։",
   "com_agents_not_available": "Գործակալը հասանելի չէ",
+  "com_agents_prompt_selection": "Ընտրեք հուշում անունով կամ հրամանով",
   "com_agents_search_name": "Որոնել գործակալներին ըստ անվան",
   "com_assistants_actions": "Գործողություններ",
   "com_assistants_add_actions": "Ավելացնել գործողություններ",
