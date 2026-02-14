@@ -6,6 +6,10 @@
 :root {
   --white: #fff;
   --black: #000;
+  --blue-pfizer: #ecf4fe;
+  --blue-med-pfizer: #ececf1;
+  --blue-dark-pfizer: #091123;
+  --blue-darker-pfizer: #09101d;
   --gray-20: #ececf1;
   --gray-50: #f7f7f8;
   --gray-100: #ececec;
@@ -181,6 +185,26 @@ html {
   --chart-4: 280 65% 60%;
   --chart-5: 340 75% 55%;
   --switch-unchecked: 0 0% 40%;
+}
+.pfizer {
+  --presentation: var(--blue-pfizer);
+  --background: var(--blue-pfizer);
+  --surface-primary: var(--blue-pfizer);
+  --surface-secondary: var(--blue-med-pfizer);
+  --text-primary: var(--blue-dark-pfizer);
+  --border-light: var(--blue-med-pfizer);
+  --surface-submit: #0073e6;
+  --surface-submit-hover: #005bb5;
+}
+.pfizer.dark {
+  --presentation: var(--blue-dark-pfizer);
+  --background: var(--blue-dark-pfizer);
+  --surface-primary: var(--blue-darker-pfizer);
+  --surface-secondary: var(--blue-dark-pfizer);
+  --text-primary: var(--blue-pfizer);
+  --border-light: var(--blue-dark-pfizer);
+  --surface-submit: #0073e6;
+  --surface-submit-hover: #005bb5;
 }
 .gizmo {
   --text-primary: var(--gizmo-gray-950);

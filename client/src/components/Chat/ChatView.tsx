@@ -9,10 +9,11 @@ import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
 import { useAddedResponse, useResumeOnLoad, useAdaptiveSSE, useChatHelpers } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
-import { useGetMessagesByConvoId } from '~/data-provider';
+import { useGetMessagesByConvoId, useGetStartupConfig } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
+import PfizerChatForm from '../Pfizer/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
@@ -33,6 +34,9 @@ function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
+
+  // Get startup config for conditional rendering
+  const { data: startupConfig } = useGetStartupConfig();
 
   const fileMap = useFileMapContext();
 
@@ -59,6 +63,11 @@ function ChatView({ index = 0 }: { index?: number }) {
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
   });
+
+  // Determine which ChatForm component to use based on configuration
+  const isPfizerEnabled = startupConfig?.pfizerThemeEnabled === true;
+
+  const ChatFormComponent = isPfizerEnabled ? PfizerChatForm : ChatForm;
 
   let content: JSX.Element | null | undefined;
   const isLandingPage =
@@ -99,7 +108,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                       isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                     )}
                   >
-                    <ChatForm index={index} />
+                    <ChatFormComponent index={index} />
                     {isLandingPage ? <ConversationStarters /> : <Footer />}
                   </div>
                 </div>

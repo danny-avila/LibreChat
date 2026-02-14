@@ -743,6 +743,7 @@ export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
 export type TStartupConfig = {
   appTitle: string;
+  pfizer_theme_enabled?: boolean;
   socialLogins?: string[];
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
@@ -813,6 +814,7 @@ export type TStartupConfig = {
   >;
   mcpPlaceholder?: string;
   conversationImportMaxFileSize?: number;
+  pfizerThemeEnabled?: boolean;
 };
 
 export enum OCRStrategy {
