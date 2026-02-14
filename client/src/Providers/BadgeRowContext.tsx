@@ -107,36 +107,16 @@ export default function BadgeRowProvider({
       }
 
       /**
-       * Always set values for all tools (use defaults if not in `localStorage`)
-       * If `ephemeralAgent` is `null`, create a new object with just our tool values
+       * Only apply values from localStorage that were actually stored.
+       * If localStorage has no value for a tool, don't override ephemeralAgent —
+       * it may already have been set by a model spec.
        */
-      const finalValues = {
-        [Tools.execute_code]: initialValues[Tools.execute_code] ?? false,
-        [Tools.web_search]: initialValues[Tools.web_search] ?? false,
-        [Tools.file_search]: initialValues[Tools.file_search] ?? false,
-        [AgentCapabilities.artifacts]: initialValues[AgentCapabilities.artifacts] ?? false,
-      };
-
-      setEphemeralAgent((prev) => ({
-        ...(prev || {}),
-        ...finalValues,
-      }));
-
-      Object.entries(finalValues).forEach(([toolKey, value]) => {
-        if (value !== false) {
-          let storageKey = artifactsToggleKey;
-          if (toolKey === Tools.execute_code) {
-            storageKey = codeToggleKey;
-          } else if (toolKey === Tools.web_search) {
-            storageKey = webSearchToggleKey;
-          } else if (toolKey === Tools.file_search) {
-            storageKey = fileSearchToggleKey;
-          }
-          // Store the value and set timestamp for existing values
-          localStorage.setItem(storageKey, JSON.stringify(value));
-          setTimestamp(storageKey);
-        }
-      });
+      if (Object.keys(initialValues).length > 0) {
+        setEphemeralAgent((prev) => ({
+          ...(prev || {}),
+          ...initialValues,
+        }));
+      }
     }
   }, [key, isSubmitting, setEphemeralAgent]);
 
