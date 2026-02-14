@@ -13,6 +13,7 @@ import {
   parseCompactConvo,
   replaceSpecialVars,
   isAssistantsEndpoint,
+  getDefaultParamsEndpoint,
 } from 'librechat-data-provider';
 import type {
   TMessage,
@@ -173,8 +174,7 @@ export default function useChatFunctions({
     const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
     const iconURL = conversation?.iconURL;
-    const defaultParamsEndpoint =
-      endpointsConfig?.[endpoint ?? '']?.customParams?.defaultParamsEndpoint;
+    const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
 
     /** This becomes part of the `endpointOption` */
     const convo = parseCompactConvo({

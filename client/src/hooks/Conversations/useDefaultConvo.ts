@@ -1,5 +1,5 @@
-import { excludedKeys } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { excludedKeys, getDefaultParamsEndpoint } from 'librechat-data-provider';
 import type {
   TEndpointsConfig,
   TModelsConfig,
@@ -47,8 +47,7 @@ const useDefaultConvo = () => {
       }
     }
 
-    const defaultParamsEndpoint =
-      endpointsConfig?.[endpoint ?? '']?.customParams?.defaultParamsEndpoint;
+    const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
 
     const defaultConvo = buildDefaultConvo({
       conversation: conversation as TConversation,

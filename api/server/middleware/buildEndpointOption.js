@@ -5,6 +5,7 @@ const {
   EModelEndpoint,
   isAgentsEndpoint,
   parseCompactConvo,
+  getDefaultParamsEndpoint,
 } = require('librechat-data-provider');
 const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
 const assistants = require('~/server/services/Endpoints/assistants');
@@ -28,7 +29,7 @@ async function buildEndpointOption(req, res, next) {
     logger.error('Error fetching endpoints config in buildEndpointOption', error);
   }
 
-  const defaultParamsEndpoint = endpointsConfig?.[endpoint]?.customParams?.defaultParamsEndpoint;
+  const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
 
   let parsedBody;
   try {
