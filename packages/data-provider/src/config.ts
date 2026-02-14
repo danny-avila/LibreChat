@@ -671,6 +671,7 @@ export const interfaceSchema = z
         public: z.boolean().optional(),
       })
       .optional(),
+    pinnedTools: z.array(z.string()).optional(),
   })
   .default({
     endpointsMenu: true,
@@ -718,6 +719,7 @@ export const interfaceSchema = z
       share: false,
       public: false,
     },
+    pinnedTools: [],
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
