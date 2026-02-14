@@ -82,14 +82,16 @@ export default function BadgeRowProvider({
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(key));
 
   /** Initialize ephemeralAgent from localStorage on mount and when conversation/spec changes.
-   *  Skipped when a spec is active — spec state comes entirely from applyModelSpecEphemeralAgent. */
+   *  Skipped when a spec is active — applyModelSpecEphemeralAgent handles both new conversations
+   *  (pure spec values) and existing conversations (spec values + localStorage overrides). */
   useEffect(() => {
     if (isSubmitting) {
       return;
     }
     if (specName) {
-      // Spec active: all state comes from applyModelSpecEphemeralAgent, no localStorage reads.
-      // Reset init flag so switching back to non-spec triggers a fresh re-init.
+      // Spec active: applyModelSpecEphemeralAgent handles all state (spec base + localStorage
+      // overrides for existing conversations). Reset init flag so switching back to non-spec
+      // triggers a fresh re-init.
       hasInitializedRef.current = false;
       return;
     }
