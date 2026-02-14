@@ -144,25 +144,24 @@ export const parseConvo = ({
   endpointType,
   conversation,
   possibleValues,
+  defaultParamsEndpoint,
 }: {
   endpoint: EndpointSchemaKey;
   endpointType?: EndpointSchemaKey | null;
   conversation: Partial<s.TConversation | s.TPreset> | null;
   possibleValues?: TPossibleValues;
-  // TODO: POC for default schema
-  // defaultSchema?: Partial<EndpointSchema>,
+  defaultParamsEndpoint?: string | null;
 }) => {
   let schema = endpointSchemas[endpoint] as EndpointSchema | undefined;
 
   if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema && endpointType) {
-    schema = endpointSchemas[endpointType];
+  } else if (!schema) {
+    const overrideSchema = defaultParamsEndpoint
+      ? endpointSchemas[defaultParamsEndpoint as EndpointSchemaKey]
+      : undefined;
+    schema = overrideSchema ?? (endpointType ? endpointSchemas[endpointType] : undefined);
   }
-
-  // if (defaultSchema && schemaCreators[endpoint]) {
-  //   schema = schemaCreators[endpoint](defaultSchema);
-  // }
 
   const convo = schema?.parse(conversation) as s.TConversation | undefined;
   const { models } = possibleValues ?? {};
@@ -310,13 +309,13 @@ export const parseCompactConvo = ({
   endpointType,
   conversation,
   possibleValues,
+  defaultParamsEndpoint,
 }: {
   endpoint?: EndpointSchemaKey;
   endpointType?: EndpointSchemaKey | null;
   conversation: Partial<s.TConversation | s.TPreset>;
   possibleValues?: TPossibleValues;
-  // TODO: POC for default schema
-  // defaultSchema?: Partial<EndpointSchema>,
+  defaultParamsEndpoint?: string | null;
 }): Omit<s.TConversation, 'iconURL'> | null => {
   if (!endpoint) {
     throw new Error(`undefined endpoint: ${endpoint}`);
@@ -326,8 +325,11 @@ export const parseCompactConvo = ({
 
   if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema && endpointType) {
-    schema = compactEndpointSchemas[endpointType];
+  } else if (!schema) {
+    const overrideSchema = defaultParamsEndpoint
+      ? compactEndpointSchemas[defaultParamsEndpoint as EndpointSchemaKey]
+      : undefined;
+    schema = overrideSchema ?? (endpointType ? compactEndpointSchemas[endpointType] : undefined);
   }
 
   if (!schema) {

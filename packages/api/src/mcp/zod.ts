@@ -249,6 +249,65 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
 }
 
 /**
+ * Recursively normalizes a JSON schema by converting `const` values to `enum` arrays.
+ * Gemini/Vertex AI does not support the `const` keyword in function declarations,
+ * but `const: X` is semantically equivalent to `enum: [X]` per the JSON Schema spec.
+ *
+ * @param schema - The JSON schema to normalize
+ * @returns The normalized schema with `const` converted to `enum`
+ */
+export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T): T {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  if (Array.isArray(schema)) {
+    return schema.map((item) =>
+      item && typeof item === 'object' ? normalizeJsonSchema(item) : item,
+    ) as unknown as T;
+  }
+
+  const result: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'const' && !('enum' in schema)) {
+      result['enum'] = [value];
+      continue;
+    }
+
+    if (key === 'const' && 'enum' in schema) {
+      // Skip `const` when `enum` already exists
+      continue;
+    }
+
+    if (key === 'properties' && value && typeof value === 'object' && !Array.isArray(value)) {
+      const newProps: Record<string, unknown> = {};
+      for (const [propKey, propValue] of Object.entries(value as Record<string, unknown>)) {
+        newProps[propKey] =
+          propValue && typeof propValue === 'object'
+            ? normalizeJsonSchema(propValue as Record<string, unknown>)
+            : propValue;
+      }
+      result[key] = newProps;
+    } else if (
+      (key === 'items' || key === 'additionalProperties') &&
+      value &&
+      typeof value === 'object'
+    ) {
+      result[key] = normalizeJsonSchema(value as Record<string, unknown>);
+    } else if ((key === 'oneOf' || key === 'anyOf' || key === 'allOf') && Array.isArray(value)) {
+      result[key] = value.map((item) =>
+        item && typeof item === 'object' ? normalizeJsonSchema(item) : item,
+      );
+    } else {
+      result[key] = value;
+    }
+  }
+
+  return result as T;
+}
+
+/**
  * Converts a JSON Schema to a Zod schema.
  *
  * @deprecated This function is deprecated in favor of using JSON schemas directly.
