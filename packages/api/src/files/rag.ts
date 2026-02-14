@@ -23,7 +23,6 @@ interface DeleteRagFileParams {
  * @returns Returns true if deletion was successful or skipped, false if there was an error.
  */
 export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Promise<boolean> {
-	// Skip if the file is not embedded or RAG API URL is not configured
 	if (!file.embedded || !process.env.RAG_API_URL) {
 		return true;
 	}
@@ -33,7 +32,6 @@ export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Prom
 		return false;
 	}
 
-	// Generate a short-lived token for authentication
 	const jwtToken = generateShortLivedToken(userId);
 
 	try {

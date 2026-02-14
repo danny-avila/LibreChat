@@ -208,7 +208,6 @@ const deleteLocalFile = async (req, file) => {
   /** Filepath stripped of query parameters (e.g., ?manual=true) */
   const cleanFilepath = file.filepath.split('?')[0];
 
-  // Delete from RAG API if the file has embeddings
   await deleteRagFile({ userId: req.user.id, file });
 
   if (cleanFilepath.startsWith(`/uploads/${req.user.id}`)) {

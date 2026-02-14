@@ -102,7 +102,6 @@ async function getAzureURL({ fileName, basePath = defaultBasePath, userId, conta
  * @param {MongoFile} params.file - The file object.
  */
 async function deleteFileFromAzure(req, file) {
-  // Delete from RAG API if the file has embeddings
   await deleteRagFile({ userId: req.user.id, file });
 
   try {

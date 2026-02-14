@@ -167,7 +167,6 @@ function extractFirebaseFilePath(urlString) {
  *          Throws an error if there is an issue with deletion.
  */
 const deleteFirebaseFile = async (req, file) => {
-  // Delete from RAG API if the file has embeddings
   await deleteRagFile({ userId: req.user.id, file });
 
   const fileName = extractFirebaseFilePath(file.filepath);
