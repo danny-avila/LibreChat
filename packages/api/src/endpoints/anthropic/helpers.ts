@@ -6,8 +6,8 @@ import {
   anthropicSettings,
   supportsContext1m,
   supportsAdaptiveThinking,
+  matchModelName,
 } from 'librechat-data-provider';
-import { matchModelName } from '~/utils/tokens';
 
 /**
  * @param {string} modelName

@@ -1,16 +1,36 @@
-import z from 'zod';
-import {
-  EModelEndpoint,
-  TOKEN_DEFAULTS,
-  findMatchingPattern as findMatchingPatternSimple,
-  getModelMaxTokens as getModelMaxTokensSimple,
-  getModelMaxOutputTokens as getModelMaxOutputTokensSimple,
-  matchModelName as matchModelNameSimple,
-} from 'librechat-data-provider';
-import type { EndpointTokenConfig, TokenConfig } from '~/types';
+import { EModelEndpoint } from './schemas';
 
-// Re-export from data-provider for backwards compatibility
-export { TOKEN_DEFAULTS };
+/** Configuration object mapping model keys to their respective prompt, completion rates, and context limit */
+export interface TokenConfig {
+  prompt: number;
+  completion: number;
+  context: number;
+  [key: string]: unknown;
+}
+
+/** An endpoint's config object mapping model keys to their respective prompt, completion rates, and context limit */
+export type EndpointTokenConfig = Record<string, TokenConfig>;
+
+/**
+ * Model Token Configuration Maps
+ *
+ * Pattern Matching Behavior
+ * ========================
+ * The `findMatchingPattern` function uses `modelName.includes(key)` for matching
+ * and selects the **longest matching key** to ensure the most specific pattern wins.
+ *
+ * For example, given model name "kimi-k2.5-latest":
+ * - "kimi" matches (length 4)
+ * - "kimi-k2" matches (length 7)
+ * - "kimi-k2.5" matches (length 9) <-- selected as longest match
+ *
+ * This means key insertion order does NOT affect specificity — the longest key always
+ * wins. However, for equal-length keys, insertion order still serves as a tiebreaker
+ * (last-defined key checked first via reverse iteration).
+ *
+ * When adding new model families, ensure no pattern key is an unintended substring
+ * of another that maps to a different value.
+ */
 
 const openAIModels = {
   'o4-mini': 200000,
@@ -179,8 +199,6 @@ const moonshotModels = {
   'moonshot.kimi-k2.5': 262144,
   'moonshot.kimi-k2-thinking': 262144,
   'moonshot.kimi-k2-0711': 131072,
-  'moonshotai.kimi': 262144,
-  'moonshotai.kimi-k2.5': 262144,
 };
 
 const metaModels = {
@@ -292,11 +310,6 @@ const amazonModels = {
   'nova-premier': 995000, // -5000 from max
 };
 
-const openAIBedrockModels = {
-  'openai.gpt-oss-20b': 128000,
-  'openai.gpt-oss-120b': 128000,
-};
-
 const bedrockModels = {
   ...anthropicModels,
   ...mistralModels,
@@ -306,7 +319,6 @@ const bedrockModels = {
   ...metaModels,
   ...ai21Models,
   ...amazonModels,
-  ...openAIBedrockModels,
 };
 
 const xAIModels = {
@@ -409,16 +421,13 @@ export const maxOutputTokensMap = {
   [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
 };
 
-// Re-export simple versions (for use without EndpointTokenConfig)
-export {
-  findMatchingPatternSimple,
-  getModelMaxTokensSimple,
-  getModelMaxOutputTokensSimple,
-  matchModelNameSimple,
-};
-
 /**
- * Finds the first matching pattern in the tokens map.
+ * Finds the most specific matching pattern in the tokens map.
+ *
+ * Uses `includes()` matching so provider-prefixed names (e.g. "openai/gpt-4")
+ * resolve correctly. When multiple keys match, the longest key wins to ensure
+ * specific patterns like "kimi-k2.5" take priority over broader ones like "kimi".
+ *
  * @param {string} modelName
  * @param {Record<string, number> | EndpointTokenConfig} tokensMap
  * @returns {string|null}
@@ -429,14 +438,18 @@ export function findMatchingPattern(
 ): string | null {
   const keys = Object.keys(tokensMap);
   const lowerModelName = modelName.toLowerCase();
+  let bestMatch: string | null = null;
+  let bestLength = 0;
+
   for (let i = keys.length - 1; i >= 0; i--) {
     const modelKey = keys[i];
-    if (lowerModelName.includes(modelKey)) {
-      return modelKey;
+    if (lowerModelName.includes(modelKey) && modelKey.length > bestLength) {
+      bestMatch = modelKey;
+      bestLength = modelKey.length;
     }
   }
 
-  return null;
+  return bestMatch;
 }
 
 /**
@@ -551,91 +564,3 @@ export function matchModelName(
   const matchedPattern = findMatchingPattern(modelName, tokensMap);
   return matchedPattern || modelName;
 }
-
-export const modelSchema = z.object({
-  id: z.string(),
-  pricing: z.object({
-    prompt: z.string(),
-    completion: z.string(),
-  }),
-  context_length: z.number(),
-});
-
-export const inputSchema = z.object({
-  data: z.array(modelSchema),
-});
-
-/**
- * Processes a list of model data from an API and organizes it into structured data based on URL and specifics of rates and context.
- * @param {{ data: Array<z.infer<typeof modelSchema>> }} input The input object containing base URL and data fetched from the API.
- * @returns {EndpointTokenConfig} The processed model data.
- */
-export function processModelData(input: z.infer<typeof inputSchema>): EndpointTokenConfig {
-  const validationResult = inputSchema.safeParse(input);
-  if (!validationResult.success) {
-    throw new Error('Invalid input data');
-  }
-  const { data } = validationResult.data;
-
-  /** @type {EndpointTokenConfig} */
-  const tokenConfig: EndpointTokenConfig = {};
-
-  for (const model of data) {
-    const modelKey = model.id;
-    if (modelKey === 'openrouter/auto') {
-      model.pricing = {
-        prompt: '0.00001',
-        completion: '0.00003',
-      };
-    }
-    const prompt = parseFloat(model.pricing.prompt) * 1000000;
-    const completion = parseFloat(model.pricing.completion) * 1000000;
-
-    tokenConfig[modelKey] = {
-      prompt,
-      completion,
-      context: model.context_length,
-    };
-  }
-
-  return tokenConfig;
-}
-
-export const tiktokenModels = new Set([
-  'text-davinci-003',
-  'text-davinci-002',
-  'text-davinci-001',
-  'text-curie-001',
-  'text-babbage-001',
-  'text-ada-001',
-  'davinci',
-  'curie',
-  'babbage',
-  'ada',
-  'code-davinci-002',
-  'code-davinci-001',
-  'code-cushman-002',
-  'code-cushman-001',
-  'davinci-codex',
-  'cushman-codex',
-  'text-davinci-edit-001',
-  'code-davinci-edit-001',
-  'text-embedding-ada-002',
-  'text-similarity-davinci-001',
-  'text-similarity-curie-001',
-  'text-similarity-babbage-001',
-  'text-similarity-ada-001',
-  'text-search-davinci-doc-001',
-  'text-search-curie-doc-001',
-  'text-search-babbage-doc-001',
-  'text-search-ada-doc-001',
-  'code-search-babbage-code-001',
-  'code-search-ada-code-001',
-  'gpt2',
-  'gpt-4',
-  'gpt-4-0314',
-  'gpt-4-32k',
-  'gpt-4-32k-0314',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0301',
-]);
