@@ -671,6 +671,7 @@ export const interfaceSchema = z
         public: z.boolean().optional(),
       })
       .optional(),
+    marketplaceIcon: z.boolean().optional(),
   })
   .default({
     endpointsMenu: true,
@@ -718,6 +719,7 @@ export const interfaceSchema = z
       share: false,
       public: false,
     },
+    marketplaceIcon: false,
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
