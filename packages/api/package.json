@@ -87,7 +87,7 @@
     "@google/genai": "^1.19.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.80",
-    "@librechat/agents": "^3.1.41",
+    "@librechat/agents": "^3.1.42",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@smithy/node-http-handler": "^4.4.5",
