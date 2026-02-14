@@ -173,12 +173,15 @@ export default function useChatFunctions({
     const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
     const iconURL = conversation?.iconURL;
+    const defaultParamsEndpoint =
+      endpointsConfig?.[endpoint ?? '']?.customParams?.defaultParamsEndpoint;
 
     /** This becomes part of the `endpointOption` */
     const convo = parseCompactConvo({
       endpoint: endpoint as EndpointSchemaKey,
       endpointType: endpointType as EndpointSchemaKey,
       conversation: conversation ?? {},
+      defaultParamsEndpoint,
     });
 
     const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};

@@ -117,11 +117,14 @@ const useGenerateConvo = ({
       }
 
       const models = modelsConfig?.[defaultEndpoint ?? ''] ?? [];
+      const defaultParamsEndpoint =
+        endpointsConfig?.[defaultEndpoint ?? '']?.customParams?.defaultParamsEndpoint;
       conversation = buildDefaultConvo({
         conversation,
         lastConversationSetup: preset as TConversation,
         endpoint: defaultEndpoint ?? ('' as EModelEndpoint),
         models,
+        defaultParamsEndpoint,
       });
 
       if (preset?.title != null && preset.title !== '') {
