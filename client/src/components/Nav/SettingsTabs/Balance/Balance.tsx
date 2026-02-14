@@ -38,9 +38,13 @@ function Balance() {
 
   const [quantity, setQuantity] = useState(2);
 
+  // NEW: Linear pricing model - ₱50 per 1M tokens
   const getPrice = (qty: number) => {
-    const prices = { 1: 250, 2: 450, 3: 600, 4: 720, 5: 850 };
-    return prices[qty as keyof typeof prices] || 250;
+    return qty * 50; // ₱50 per 1M tokens
+  };
+
+  const getTokenAmount = (qty: number) => {
+    return `${qty}M`; // e.g., 2M, 3M, etc.
   };
 
   /**
@@ -57,7 +61,7 @@ function Balance() {
       return;
     }
 
-    // Combine email, quantity, and userId into a single URL
+    // The quantity now represents millions of tokens
     const paymentUrl = `https://pay.ryanslab.space/pay?quantity=${quantity}&email=${encodeURIComponent(userEmail)}&userId=${userId}`;
     
     // Open only ONE tab
@@ -99,26 +103,25 @@ function Balance() {
 
       <div className="mt-2">
         <div className="bg-surface-secondary rounded-xl p-4 border border-border-light shadow-sm">
-          <h3 className="font-semibold mb-2 text-text-primary uppercase text-xs tracking-wider">Choose Token Pack</h3>
+          <h3 className="font-semibold mb-2 text-text-primary uppercase text-xs tracking-wider">Choose Token Amount</h3>
 
-          <select 
+          {/* Flexible input field for token quantity */}
+          <input
+            type="number"
+            min="1"
+            max="100"
             value={quantity}
-            onChange={(e) => setQuantity(parseInt(e.target.value))}
+            onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
             className="w-full p-3 rounded-lg border border-border-light bg-surface-primary text-text-primary mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="1">1 Pack (5,000,000 tokens) - ₱250</option>
-            <option value="2">2 Packs (10M tokens) - ₱450</option>
-            <option value="3">3 Packs (15M tokens) - ₱600</option>
-            <option value="4">4 Packs (20M tokens) - ₱720</option>
-            <option value="5">5 Packs (25M tokens) - ₱850</option>
-          </select>
+            placeholder="Enter amount in millions (e.g., 5 = 5M tokens)"
+          />
 
           <button
             onClick={handlePurchase}
             className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-bold text-white transition-all hover:bg-emerald-700 active:scale-95 flex items-center justify-center shadow-md"
           >
             <span className="mr-2">⚡</span> 
-            Top Up {quantity * 5}M Tokens (₱{getPrice(quantity)})
+            Top Up {getTokenAmount(quantity)} Tokens (₱{getPrice(quantity)})
           </button>
 
           <p className="mt-2 text-[10px] text-text-tertiary text-center uppercase tracking-wider font-medium">
