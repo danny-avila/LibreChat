@@ -53,6 +53,41 @@ const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
+/**
+ * Lazily fills missing token counts for formatted LangChain messages.
+ * Preserves precomputed counts and only computes undefined indices.
+ * @param {Object} params
+ * @param {BaseMessage[]} params.messages
+ * @param {Record<number, number | undefined> | undefined} params.indexTokenCountMap
+ * @param {(message: BaseMessage) => number} params.tokenCounter
+ * @returns {Record<number, number>}
+ */
+function hydrateMissingIndexTokenCounts({ messages, indexTokenCountMap, tokenCounter }) {
+  /** @type {Record<number, number>} */
+  const hydratedMap = {};
+
+  if (indexTokenCountMap) {
+    for (const [index, tokenCount] of Object.entries(indexTokenCountMap)) {
+      if (typeof tokenCount === 'number' && Number.isFinite(tokenCount) && tokenCount > 0) {
+        hydratedMap[Number(index)] = tokenCount;
+      }
+    }
+  }
+
+  for (let i = 0; i < messages.length; i++) {
+    if (
+      typeof hydratedMap[i] === 'number' &&
+      Number.isFinite(hydratedMap[i]) &&
+      hydratedMap[i] > 0
+    ) {
+      continue;
+    }
+    hydratedMap[i] = tokenCounter(messages[i]);
+  }
+
+  return hydratedMap;
+}
+
 class AgentClient extends BaseClient {
   constructor(options = {}) {
     super(null, options);
@@ -237,6 +272,9 @@ class AgentClient extends BaseClient {
       );
     }
 
+    /** @type {Record<number, number>} */
+    const canonicalTokenCountMap = {};
+    let promptTokenTotal = 0;
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
         message,
@@ -282,12 +320,17 @@ class AgentClient extends BaseClient {
         }
       }
 
+      const tokenCount = Number(orderedMessages[i].tokenCount);
+      const normalizedTokenCount = Number.isFinite(tokenCount) && tokenCount > 0 ? tokenCount : 0;
+      canonicalTokenCountMap[i] = normalizedTokenCount;
+      promptTokenTotal += normalizedTokenCount;
+
       return formattedMessage;
     });
 
     payload = formattedMessages;
     messages = orderedMessages;
-    promptTokens = orderedMessages.reduce((total, message) => total + (message.tokenCount ?? 0), 0);
+    promptTokens = promptTokenTotal;
 
     /**
      * Build shared run context - applies to ALL agents in the run.
@@ -321,9 +364,8 @@ class AgentClient extends BaseClient {
     /** @type {Record<string, number> | undefined} */
     let tokenCountMap;
 
-    for (let i = 0; i < messages.length; i++) {
-      this.indexTokenCountMap[i] = messages[i].tokenCount;
-    }
+    /** Preserve canonical pre-format token counts for all history entering graph formatting */
+    this.indexTokenCountMap = canonicalTokenCountMap;
 
     const result = {
       tokenCountMap,
@@ -845,11 +887,17 @@ class AgentClient extends BaseClient {
       };
 
       const toolSet = buildToolSet(this.options.agent);
+      const tokenCounter = createTokenCounter(this.getEncoding());
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
         this.indexTokenCountMap,
         toolSet,
       );
+      indexTokenCountMap = hydrateMissingIndexTokenCounts({
+        messages: initialMessages,
+        indexTokenCountMap,
+        tokenCounter,
+      });
 
       /**
        * @param {BaseMessage[]} messages
@@ -913,7 +961,7 @@ class AgentClient extends BaseClient {
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
           summarizationConfig: appConfig?.summarization,
-          tokenCounter: createTokenCounter(this.getEncoding()),
+          tokenCounter,
         });
 
         if (!run) {

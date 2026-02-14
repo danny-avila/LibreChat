@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { getBufferString } from '@langchain/core/messages';
 import { getChatModelClass, Providers } from '@librechat/agents';
 import type {
@@ -60,8 +61,8 @@ export type SummarizationUsage = {
 
 export type ResolvedSummarizationConfig = {
   enabled: boolean;
-  provider: string;
-  model: string;
+  provider?: string;
+  model?: string;
   parameters: Record<string, unknown>;
   prompt?: string;
 };
@@ -71,18 +72,6 @@ export type GetProviderOptionsFn = (resolved: ResolvedSummarizationConfig) => Pr
   clientOptions: ClientOptions;
   model: string;
 }>;
-
-const SUMMARIZATION_DEFAULTS = {
-  provider: 'openAI',
-  model: 'gpt-4.1-mini',
-  temperature: 0.3,
-};
-
-const DEFAULT_SUMMARIZE_PROMPT = `Summarize the following conversation for context continuity. The AI assistant will use this summary to continue the user's task when the original conversation is no longer accessible due to context window constraints.
-
-Preserve: the user's objective, key decisions, important code/file paths, current progress state, next steps, relevant errors and resolutions, and critical tool results.
-
-Be concise but thorough. Focus on what is needed to continue the task effectively.`;
 
 const DEFAULT_SUMMARIZATION_PARTS = 2;
 const DEFAULT_MIN_MESSAGES_FOR_SPLIT = 4;
@@ -100,39 +89,38 @@ export function resolveSummarizationLLMConfig({
   globalConfig?: SummarizationConfig;
   agentRuntimeConfig?: { provider?: string; model?: string };
 }): ResolvedSummarizationConfig {
+  if (!globalConfig || typeof globalConfig !== 'object') {
+    return {
+      enabled: false,
+      parameters: {},
+    };
+  }
+
   const agentOverride = globalConfig?.agents?.[agentId];
+  const parameters = {
+    ...globalConfig?.parameters,
+    ...agentOverride?.parameters,
+  };
+  const prompt = agentOverride?.prompt ?? globalConfig?.prompt;
+  const provider =
+    agentOverride?.provider ?? globalConfig?.provider ?? agentRuntimeConfig?.provider;
+  const model = agentOverride?.model ?? globalConfig?.model ?? agentRuntimeConfig?.model;
+  const hasProvider = typeof provider === 'string' && provider.trim().length > 0;
+  const hasModel = typeof model === 'string' && model.trim().length > 0;
+  const hasPrompt = typeof prompt === 'string' && prompt.trim().length > 0;
 
   if (agentOverride?.enabled === false) {
     return {
       enabled: false,
-      provider: SUMMARIZATION_DEFAULTS.provider,
-      model: SUMMARIZATION_DEFAULTS.model,
-      parameters: { temperature: SUMMARIZATION_DEFAULTS.temperature },
+      provider,
+      model,
+      parameters,
+      prompt,
     };
   }
 
-  const provider =
-    agentOverride?.provider ??
-    globalConfig?.provider ??
-    agentRuntimeConfig?.provider ??
-    SUMMARIZATION_DEFAULTS.provider;
-
-  const model =
-    agentOverride?.model ??
-    globalConfig?.model ??
-    agentRuntimeConfig?.model ??
-    SUMMARIZATION_DEFAULTS.model;
-
-  const parameters = {
-    temperature: SUMMARIZATION_DEFAULTS.temperature,
-    ...globalConfig?.parameters,
-    ...agentOverride?.parameters,
-  };
-
-  const prompt = agentOverride?.prompt ?? globalConfig?.prompt;
-
   return {
-    enabled: globalConfig?.enabled !== false,
+    enabled: globalConfig?.enabled !== false && hasProvider && hasModel && hasPrompt,
     provider,
     model,
     parameters,
@@ -259,6 +247,12 @@ export function createSummarizeFn({
     const resolved = resolveConfig(agentId);
     if (!resolved.enabled) {
       throw new Error('Summarization is disabled for this agent');
+    }
+    if (!resolved.provider || !resolved.model) {
+      throw new Error('Summarization provider/model must be configured');
+    }
+    if (!resolved.prompt || !resolved.prompt.trim()) {
+      throw new Error('Summarization prompt must be configured');
     }
     const promptOverride = normalizePromptOverride(resolved.prompt);
     const summarizePrompt = buildSummarizationPrompt(messagesToRefine, promptOverride);
@@ -388,15 +382,12 @@ export function buildSummarizationPrompt(
   messagesToRefine: BaseMessage[],
   customPrompt?: string,
 ): string {
-  const prompt = customPrompt?.trim().length ? customPrompt.trim() : DEFAULT_SUMMARIZE_PROMPT;
+  const prompt = customPrompt?.trim().length ? customPrompt.trim() : '';
+  if (!prompt) {
+    throw new Error('Summarization prompt must be configured');
+  }
   const transcript = getBufferString(messagesToRefine);
   return `${prompt}\n\nConversation:\n${transcript}`;
-}
-
-export function createDeferredPersistSummary(): PersistSummaryFn {
-  return async () => ({
-    status: 'deferred',
-  });
 }
 
 export function createSummarizeHandler(options: SummarizeOptions): EventHandler {
@@ -461,6 +452,7 @@ export function createSummarizeHandler(options: SummarizeOptions): EventHandler 
 
         resolve(result);
       } catch (error) {
+        logger.error('Error during summarization', error);
         const normalizedError = fail(error);
         await onStatusChange?.({
           status: 'failed',

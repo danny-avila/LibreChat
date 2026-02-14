@@ -13,6 +13,7 @@ const {
   resolveSummarizationLLMConfig,
 } = require('@librechat/api');
 const {
+  ContentTypes,
   EModelEndpoint,
   isAgentsEndpoint,
   getResponseSender,
@@ -78,6 +79,119 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
     }
+  };
+}
+
+/**
+ * Returns the canonical DB messageId from a LangChain BaseMessage when available.
+ * @param {BaseMessage | Record<string, unknown> | undefined} message
+ * @returns {string | undefined}
+ */
+function extractBaseMessageId(message) {
+  if (!message || typeof message !== 'object') {
+    return undefined;
+  }
+
+  const candidates = [
+    message.id,
+    message.messageId,
+    message.lc_kwargs?.id,
+    message.kwargs?.id,
+    message.additional_kwargs?.messageId,
+    message.lc_kwargs?.additional_kwargs?.messageId,
+    message.kwargs?.additional_kwargs?.messageId,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Creates a summary persistence handler that writes summary content blocks to MongoDB.
+ * @param {ServerRequest} req
+ * @returns {import('@librechat/api').PersistSummaryFn}
+ */
+function createPersistSummary(req) {
+  return async ({ summary, messagesToRefine }) => {
+    const userId = req?.user?.id;
+    if (!userId) {
+      logger.warn('[initializeClient] Skipping summary persistence: missing req.user.id');
+      return;
+    }
+
+    let targetMessageId;
+    for (let index = messagesToRefine.length - 1; index >= 0; index--) {
+      targetMessageId = extractBaseMessageId(messagesToRefine[index]);
+      if (targetMessageId) {
+        break;
+      }
+    }
+
+    if (!targetMessageId) {
+      logger.warn(
+        '[initializeClient] Skipping summary persistence: unable to resolve target messageId',
+      );
+      return;
+    }
+
+    const existingMessage = await db.getMessage({ user: userId, messageId: targetMessageId });
+    if (!existingMessage) {
+      logger.warn(
+        `[initializeClient] Skipping summary persistence: target message not found (${targetMessageId})`,
+      );
+      return;
+    }
+
+    const existingContent = Array.isArray(existingMessage.content)
+      ? [...existingMessage.content]
+      : [];
+    const summaryPart = {
+      type: ContentTypes.SUMMARY,
+      text: summary.text,
+      tokenCount: summary.tokenCount,
+      model: summary.model,
+      provider: summary.provider,
+      createdAt: new Date().toISOString(),
+    };
+
+    let targetContentIndex = -1;
+    for (let index = existingContent.length - 1; index >= 0; index--) {
+      if (existingContent[index]?.type === ContentTypes.SUMMARY) {
+        targetContentIndex = index;
+        break;
+      }
+    }
+
+    if (targetContentIndex >= 0) {
+      existingContent[targetContentIndex] = summaryPart;
+    } else {
+      existingContent.push(summaryPart);
+      targetContentIndex = existingContent.length - 1;
+    }
+
+    await db.updateMessage(
+      req,
+      {
+        messageId: targetMessageId,
+        summary: summary.text,
+        summaryTokenCount: summary.tokenCount,
+        content: existingContent,
+      },
+      {
+        context: 'api/server/services/Endpoints/agents/initialize.js - createPersistSummary',
+      },
+    );
+
+    return {
+      status: 'persisted',
+      targetMessageId,
+      targetContentIndex,
+    };
   };
 }
 
@@ -178,6 +292,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       summarizationOptions = {
         enabled: true,
         summarize,
+        persistSummary: createPersistSummary(req),
       };
     } catch (error) {
       logger.error(

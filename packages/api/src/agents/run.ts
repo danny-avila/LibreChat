@@ -19,6 +19,24 @@ import { resolveHeaders, createSafeUser } from '~/utils/env';
 
 type RuntimeSummarizationConfig = {
   enabled?: boolean;
+  provider?: string;
+  model?: string;
+  parameters?: Record<string, unknown>;
+  prompt?: string;
+  agents?: Record<
+    string,
+    {
+      enabled?: boolean;
+      provider?: string;
+      model?: string;
+      parameters?: Record<string, unknown>;
+      prompt?: string;
+      trigger?: {
+        type: string;
+        value: number;
+      };
+    }
+  >;
   trigger?: {
     type: string;
     value: number;
@@ -243,6 +261,24 @@ export async function createRun({
     const resolvedSummarizationConfig = (agent.summarization ?? summarizationConfig) as
       | RuntimeSummarizationConfig
       | undefined;
+    const perAgentSummarizationOverride = resolvedSummarizationConfig?.agents?.[agent.id] as
+      | RuntimeSummarizationConfig
+      | undefined;
+    const resolvedSummarizationProvider =
+      perAgentSummarizationOverride?.provider ?? resolvedSummarizationConfig?.provider;
+    const resolvedSummarizationModel =
+      perAgentSummarizationOverride?.model ?? resolvedSummarizationConfig?.model;
+    const resolvedSummarizationPrompt =
+      perAgentSummarizationOverride?.prompt ?? resolvedSummarizationConfig?.prompt;
+    const hasSummarizationProvider =
+      typeof resolvedSummarizationProvider === 'string' &&
+      resolvedSummarizationProvider.trim().length > 0;
+    const hasSummarizationModel =
+      typeof resolvedSummarizationModel === 'string' &&
+      resolvedSummarizationModel.trim().length > 0;
+    const hasSummarizationPrompt =
+      typeof resolvedSummarizationPrompt === 'string' &&
+      resolvedSummarizationPrompt.trim().length > 0;
 
     const provider =
       (providerEndpointMap[
@@ -330,10 +366,19 @@ export async function createRun({
       useLegacyContent: agent.useLegacyContent ?? false,
       discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
       summarizationEnabled:
-        resolvedSummarizationConfig != null && resolvedSummarizationConfig.enabled !== false,
+        resolvedSummarizationConfig != null &&
+        resolvedSummarizationConfig.enabled !== false &&
+        hasSummarizationProvider &&
+        hasSummarizationModel &&
+        hasSummarizationPrompt,
       summarizationConfig: resolvedSummarizationConfig
         ? {
+            enabled: resolvedSummarizationConfig.enabled,
             trigger: resolvedSummarizationConfig.trigger,
+            provider: resolvedSummarizationConfig.provider,
+            model: resolvedSummarizationConfig.model,
+            parameters: resolvedSummarizationConfig.parameters,
+            prompt: resolvedSummarizationConfig.prompt,
           }
         : undefined,
     };

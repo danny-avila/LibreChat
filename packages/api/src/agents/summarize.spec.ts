@@ -32,23 +32,23 @@ describe('buildSummarizationPrompt', () => {
     expect(prompt).toContain('AI: Hi there');
   });
 
-  it('uses default prompt when none provided', () => {
-    const prompt = buildSummarizationPrompt([new HumanMessage('Hello')]);
-    expect(prompt).toContain('context continuity');
-    expect(prompt).toContain('Human: Hello');
+  it('throws when prompt is not configured', () => {
+    expect(() => buildSummarizationPrompt([new HumanMessage('Hello')])).toThrow(
+      'Summarization prompt must be configured',
+    );
   });
 });
 
 describe('resolveSummarizationLLMConfig', () => {
-  it('returns defaults when no config provided', () => {
+  it('returns disabled when no config is provided', () => {
     const resolved = resolveSummarizationLLMConfig({ agentId: 'agent_1' });
-    expect(resolved.provider).toBe('openAI');
-    expect(resolved.model).toBe('gpt-4.1-mini');
-    expect(resolved.parameters).toMatchObject({ temperature: 0.3 });
-    expect(resolved.enabled).toBe(true);
+    expect(resolved.provider).toBeUndefined();
+    expect(resolved.model).toBeUndefined();
+    expect(resolved.parameters).toEqual({});
+    expect(resolved.enabled).toBe(false);
   });
 
-  it('uses global config over defaults', () => {
+  it('uses global config directly', () => {
     const resolved = resolveSummarizationLLMConfig({
       agentId: 'agent_1',
       globalConfig: {
@@ -68,11 +68,12 @@ describe('resolveSummarizationLLMConfig', () => {
   it('uses agent runtime config as fallback for provider/model', () => {
     const resolved = resolveSummarizationLLMConfig({
       agentId: 'agent_1',
-      globalConfig: { enabled: true },
+      globalConfig: { enabled: true, prompt: 'Configured prompt' },
       agentRuntimeConfig: { provider: 'google', model: 'gemini-2.5-flash' },
     });
     expect(resolved.provider).toBe('google');
     expect(resolved.model).toBe('gemini-2.5-flash');
+    expect(resolved.enabled).toBe(true);
   });
 
   it('per-agent override takes highest precedence', () => {
@@ -82,6 +83,7 @@ describe('resolveSummarizationLLMConfig', () => {
         enabled: true,
         provider: 'openAI',
         model: 'gpt-4.1-mini',
+        prompt: 'Global prompt',
         agents: {
           agent_special: {
             provider: 'anthropic',
@@ -103,6 +105,8 @@ describe('resolveSummarizationLLMConfig', () => {
       globalConfig: {
         enabled: true,
         provider: 'openAI',
+        model: 'gpt-4.1-mini',
+        prompt: 'Global prompt',
         agents: {
           agent_disabled: { enabled: false },
         },
@@ -171,6 +175,7 @@ describe('createSummarizeFn', () => {
       provider: 'openAI',
       model: 'gpt-4.1-mini',
       parameters: {},
+      prompt: 'Config-driven prompt',
     });
     const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
       provider: resolved.provider as Providers,
@@ -195,6 +200,7 @@ describe('createSummarizeFn', () => {
       provider: 'openAI',
       model: 'gpt-4.1-mini',
       parameters: {},
+      prompt: 'Configured prompt',
     });
     const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
       provider: resolved.provider as Providers,
@@ -222,6 +228,7 @@ describe('createSummarizeFn', () => {
       provider: 'openAI',
       model: 'gpt-4.1-mini',
       parameters: {},
+      prompt: 'Configured prompt',
     });
     const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
       provider: resolved.provider as Providers,
@@ -251,6 +258,7 @@ describe('createSummarizeFn', () => {
         minMessagesForSplit: 2,
         maxInputTokensForSinglePass: 1,
       },
+      prompt: 'Configured prompt',
     });
     const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
       provider: resolved.provider as Providers,
@@ -301,6 +309,7 @@ describe('createSummarizeFn', () => {
         minMessagesForSplit: 2,
         maxInputTokensForSinglePass: 999999,
       },
+      prompt: 'Configured prompt',
     });
     const getProviderOptions: GetProviderOptionsFn = async (resolved) => ({
       provider: resolved.provider as Providers,

@@ -5,7 +5,6 @@ const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-pr
 const {
   sendEvent,
   createSummarizeHandler,
-  createDeferredPersistSummary,
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
@@ -251,7 +250,7 @@ function getDefaultHandlers({
   if (summarizationOptions?.enabled === true) {
     handlers[GraphEvents.ON_SUMMARIZE] = createSummarizeHandler({
       summarize: summarizationOptions.summarize,
-      persistSummary: summarizationOptions.persistSummary ?? createDeferredPersistSummary(),
+      persistSummary: summarizationOptions.persistSummary,
       onStatusChange: async (status) => {
         await emitEvent(res, streamId, {
           event: 'on_summarize_status',

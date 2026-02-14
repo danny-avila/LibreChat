@@ -19,7 +19,6 @@ const {
   getTransactionsConfig,
   createSummarizeHandler,
   createToolExecuteHandler,
-  createDeferredPersistSummary,
   resolveSummarizationLLMConfig,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
@@ -314,7 +313,6 @@ const OpenAIChatCompletionController = async (req, res) => {
         });
         summarizeHandler = createSummarizeHandler({
           summarize,
-          persistSummary: createDeferredPersistSummary(),
           onStatusChange: async (status) => {
             if (isStreaming && !res.writableEnded) {
               res.write(`event: on_summarize_status\ndata: ${JSON.stringify(status)}\n\n`);
