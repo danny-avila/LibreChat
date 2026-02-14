@@ -26,8 +26,8 @@ export function useApplyModelSpecEffects() {
     }) => {
       if (specName == null || !specName) {
         if (startupConfig?.modelSpecs?.list?.length) {
-          /** Specs are configured but none selected — reset ephemeral agent so
-           *  BadgeRowContext can fill in from localStorage (non-spec defaults). */
+          /** Specs are configured but none selected — reset ephemeral agent to null
+           *  so BadgeRowContext fills all values (tool toggles + MCP) from localStorage. */
           updateEphemeralAgent((convoId ?? Constants.NEW_CONVO) || Constants.NEW_CONVO, null);
         }
         return;

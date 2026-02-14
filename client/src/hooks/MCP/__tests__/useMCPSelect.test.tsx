@@ -449,7 +449,7 @@ describe('useMCPSelect', () => {
       expect(result.current.mcpHook.mcpValues).toEqual(['initial-value']);
     });
 
-    it('should handle ephemeralAgent with clear mcp value', async () => {
+    it('should handle ephemeralAgent being reset to null', async () => {
       // Create a shared wrapper
       const { Wrapper, servers } = createWrapper(['server1', 'server2']);
 
@@ -471,16 +471,15 @@ describe('useMCPSelect', () => {
         expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
       });
 
-      // Set ephemeralAgent with clear value
+      // Reset ephemeralAgent to null (simulating non-spec reset)
       act(() => {
-        result.current.setEphemeralAgent({
-          mcp: [Constants.mcp_clear as string],
-        });
+        result.current.setEphemeralAgent(null);
       });
 
-      // mcpValues should be cleared
+      // mcpValues should remain unchanged since null ephemeral agent
+      // doesn't trigger the sync effect (mcps.length === 0)
       await waitFor(() => {
-        expect(result.current.mcpHook.mcpValues).toEqual([]);
+        expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
       });
     });
 
