@@ -102,6 +102,7 @@ export enum BedrockProviders {
   MistralAI = 'mistral',
   Moonshot = 'moonshot',
   MoonshotAI = 'moonshotai',
+  OpenAI = 'openai',
   StabilityAI = 'stability',
   ZAI = 'zai',
 }

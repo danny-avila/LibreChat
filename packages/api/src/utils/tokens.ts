@@ -310,6 +310,11 @@ const amazonModels = {
   'nova-premier': 995000, // -5000 from max
 };
 
+const openAIBedrockModels = {
+  'openai.gpt-oss-20b': 128000,
+  'openai.gpt-oss-120b': 128000,
+};
+
 const bedrockModels = {
   ...anthropicModels,
   ...mistralModels,
@@ -319,6 +324,7 @@ const bedrockModels = {
   ...metaModels,
   ...ai21Models,
   ...amazonModels,
+  ...openAIBedrockModels,
 };
 
 const xAIModels = {
