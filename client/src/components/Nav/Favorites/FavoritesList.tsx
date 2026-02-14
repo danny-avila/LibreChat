@@ -8,10 +8,10 @@ import { useQueries } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useFavorites, useLocalize, useShowMarketplace, useNewConvo } from '~/hooks';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import type { AgentQueryResult } from '~/common';
 import useSelectMention from '~/hooks/Input/useSelectMention';
-import { useGetEndpointsQuery } from '~/data-provider';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
@@ -130,9 +130,23 @@ export default function FavoritesList({
   const agentsMap = useAgentsMapContext();
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const { data: endpointsConfig = {} as t.TEndpointsConfig } = useGetEndpointsQuery();
+  const { data: startupConfig } = useGetStartupConfig();
 
-  const { onSelectEndpoint } = useSelectMention({
-    modelSpecs: [],
+  const modelSpecs = useMemo(
+    () => startupConfig?.modelSpecs?.list ?? [],
+    [startupConfig?.modelSpecs?.list],
+  );
+
+  const specsMap = useMemo(() => {
+    const map: Record<string, t.TModelSpec> = {};
+    for (const spec of modelSpecs) {
+      map[spec.name] = spec;
+    }
+    return map;
+  }, [modelSpecs]);
+
+  const { onSelectEndpoint, onSelectSpec } = useSelectMention({
+    modelSpecs,
     conversation,
     assistantsMap,
     endpointsConfig,
@@ -333,6 +347,28 @@ export default function FavoritesList({
                       type="agent"
                       onSelectEndpoint={onSelectEndpoint}
                       onRemoveFocus={handleRemoveFocus}
+                    />
+                  </DraggableFavoriteItem>
+                );
+              } else if (fav.spec) {
+                const spec = specsMap[fav.spec];
+                if (!spec) {
+                  return null;
+                }
+                return (
+                  <DraggableFavoriteItem
+                    key={`spec-${fav.spec}`}
+                    id={`spec-${fav.spec}`}
+                    index={index}
+                    moveItem={moveItem}
+                    onDrop={handleDrop}
+                  >
+                    <FavoriteItem
+                      item={spec}
+                      type="spec"
+                      onSelectSpec={onSelectSpec}
+                      onRemoveFocus={handleRemoveFocus}
+                      endpointsConfig={endpointsConfig}
                     />
                   </DraggableFavoriteItem>
                 );

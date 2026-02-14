@@ -148,6 +148,7 @@ const userSchema = new Schema<IUser>(
           agentId: String, // for agent
           model: String, // for model
           endpoint: String, // for model
+          spec: String, // for model spec
         },
       ],
       default: [],

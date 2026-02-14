@@ -4,6 +4,7 @@ export type Favorite = {
   agentId?: string;
   model?: string;
   endpoint?: string;
+  spec?: string;
 };
 
 export type FavoriteModel = {
