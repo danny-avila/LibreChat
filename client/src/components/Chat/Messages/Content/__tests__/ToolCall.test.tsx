@@ -4,6 +4,9 @@ import { RecoilRoot } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import ToolCall from '../ToolCall';
 
+const mockMCPAppMount = jest.fn();
+const mockMCPAppUnmount = jest.fn();
+
 // Mock dependencies
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: any) => {
@@ -36,6 +39,25 @@ jest.mock('../ToolCallInfo', () => ({
     </div>
   ),
 }));
+
+jest.mock('../MCPApp', () => {
+  const React = require('react');
+  return {
+    __esModule: true,
+    MCPAppInline: ({ artifact }: any) => {
+      React.useEffect(() => {
+        mockMCPAppMount();
+        return () => mockMCPAppUnmount();
+      }, []);
+
+      return React.createElement(
+        'div',
+        { 'data-testid': 'mcp-app-inline' },
+        artifact?.resourceUri ?? 'missing-resource-uri',
+      );
+    },
+  };
+});
 
 jest.mock('../ProgressText', () => ({
   __esModule: true,
@@ -186,6 +208,53 @@ describe('ToolCall', () => {
       renderWithRecoil(<ToolCall {...mockProps} attachments={[]} />);
 
       expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('MCP app rendering stability', () => {
+    it('should keep MCP app mounted across transient attachment updates', () => {
+      const mcpAttachment = {
+        type: Tools.mcp_app,
+        messageId: 'msg-mcp',
+        toolCallId: 'tool-mcp',
+        conversationId: 'conv-mcp',
+        [Tools.mcp_app]: {
+          serverName: 'calendar',
+          resourceUri: 'ui://calendar/app',
+          toolResult: { ok: true },
+          toolArguments: { eventId: '123' },
+        },
+      };
+
+      const { rerender } = render(
+        <RecoilRoot>
+          <ToolCall {...mockProps} attachments={[mcpAttachment]} />
+        </RecoilRoot>,
+      );
+
+      expect(screen.getByTestId('mcp-app-inline')).toBeInTheDocument();
+      expect(mockMCPAppMount).toHaveBeenCalledTimes(1);
+      expect(mockMCPAppUnmount).not.toHaveBeenCalled();
+
+      rerender(
+        <RecoilRoot>
+          <ToolCall {...mockProps} attachments={undefined} />
+        </RecoilRoot>,
+      );
+
+      expect(screen.getByTestId('mcp-app-inline')).toBeInTheDocument();
+      expect(mockMCPAppMount).toHaveBeenCalledTimes(1);
+      expect(mockMCPAppUnmount).not.toHaveBeenCalled();
+
+      rerender(
+        <RecoilRoot>
+          <ToolCall {...mockProps} attachments={[mcpAttachment]} />
+        </RecoilRoot>,
+      );
+
+      expect(screen.getByTestId('mcp-app-inline')).toBeInTheDocument();
+      expect(mockMCPAppMount).toHaveBeenCalledTimes(1);
+      expect(mockMCPAppUnmount).not.toHaveBeenCalled();
     });
   });
 

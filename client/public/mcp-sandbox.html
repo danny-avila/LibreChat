@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html style="height:100%;margin:0">
+<head>
+  <meta charset="utf-8">
+  <title>MCP App Sandbox</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+    body { position: relative; }
+    iframe { width: 100%; height: 100%; border: none; display: block; background: transparent; }
+  </style>
+</head>
+<body>
+  <script>
+    'use strict';
+
+    let innerFrame = null;
+    const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
+    const parentOrigin = (() => {
+      try {
+        if (document.referrer) {
+          return new URL(document.referrer).origin;
+        }
+      } catch {
+        // Fall back to wildcard when referrer is unavailable.
+      }
+      return '*';
+    })();
+    const SANDBOX_BASE_STYLE =
+      '<style data-librechat-mcp-base-style>' +
+      'html,body{margin:0;padding:0;min-height:100%;background:transparent;}' +
+      'body{box-sizing:border-box;}' +
+      '*,*::before,*::after{box-sizing:border-box;}' +
+      '</style>';
+
+    function notifyReady() {
+      window.parent.postMessage(
+        {
+          jsonrpc: '2.0',
+          method: 'ui/notifications/sandbox-proxy-ready',
+          params: {},
+        },
+        parentOrigin
+      );
+    }
+
+    window.addEventListener('message', (event) => {
+      if (event.source === window.parent && parentOrigin !== '*' && event.origin !== parentOrigin) {
+        return;
+      }
+
+      let msg;
+      try {
+        msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      } catch {
+        return;
+      }
+
+      if (!msg || msg.jsonrpc !== '2.0') return;
+
+      if (event.source === window.parent) {
+        if (msg.method === 'ui/notifications/sandbox-resource-ready') {
+          createInnerFrame(msg.params);
+          return;
+        }
+        if (innerFrame && innerFrame.contentWindow) {
+          innerFrame.contentWindow.postMessage(msg, '*');
+        }
+        return;
+      }
+
+      if (innerFrame && event.source === innerFrame.contentWindow) {
+        if (msg.method && msg.method.startsWith(SANDBOX_PREFIX)) {
+          console.warn('[MCP Sandbox] Blocked sandbox method from inner frame:', msg.method);
+          return;
+        }
+        window.parent.postMessage(msg, parentOrigin);
+      }
+    });
+
+    function createInnerFrame(params) {
+      const { html, csp, permissions } = params;
+
+      if (innerFrame) {
+        innerFrame.remove();
+      }
+
+      innerFrame = document.createElement('iframe');
+      innerFrame.sandbox = 'allow-scripts';
+      const allow = buildAllowAttribute(permissions);
+      if (allow) {
+        innerFrame.allow = allow;
+      }
+
+      const cspMeta = buildCspMeta(csp);
+      const fullHtml = injectIntoHead(html, cspMeta + SANDBOX_BASE_STYLE);
+
+      const blob = new Blob([fullHtml], { type: 'text/html' });
+      innerFrame.src = URL.createObjectURL(blob);
+
+      innerFrame.style.width = '100%';
+      innerFrame.style.height = '100%';
+      innerFrame.style.border = 'none';
+      innerFrame.style.display = 'block';
+
+      document.body.appendChild(innerFrame);
+    }
+
+    function injectIntoHead(html, injection) {
+      if (typeof html !== 'string' || !html.length) {
+        return '<!DOCTYPE html><html><head>' + injection + '</head><body></body></html>';
+      }
+
+      if (/<head[^>]*>/i.test(html)) {
+        return html.replace(/<head([^>]*)>/i, '<head$1>' + injection);
+      }
+
+      if (/<html[^>]*>/i.test(html)) {
+        return html.replace(/<html([^>]*)>/i, '<html$1><head>' + injection + '</head>');
+      }
+
+      return '<!DOCTYPE html><html><head>' + injection + '</head><body>' + html + '</body></html>';
+    }
+
+    function buildAllowAttribute(permissions) {
+      if (!permissions) return '';
+      if (typeof permissions === 'string') return permissions;
+      if (typeof permissions !== 'object') return '';
+
+      const allow = [];
+      if (permissions.camera) allow.push('camera');
+      if (permissions.microphone) allow.push('microphone');
+      if (permissions.geolocation) allow.push('geolocation');
+      if (permissions.clipboardWrite) allow.push('clipboard-write');
+      return allow.join('; ');
+    }
+
+    function buildCspMeta(csp) {
+      const policy = typeof csp === 'string' ? csp : buildCspPolicy(csp || {});
+      if (!policy) return '';
+      return '<meta http-equiv="Content-Security-Policy" content="' + escapeHtml(policy) + '">';
+    }
+
+    function buildCspPolicy(csp) {
+      if (!csp || typeof csp !== 'object') return '';
+
+      const resourceDomains = toDomainList(csp.resourceDomains);
+      const connectDomains = toDomainList(csp.connectDomains);
+      const frameDomains = toDomainList(csp.frameDomains) || "'none'";
+      const baseUri = toDomainList(csp.baseUriDomains) || "'self'";
+      const connectDirective = connectDomains ? connectDomains : "'none'";
+
+      return [
+        "default-src 'none'",
+        ("script-src 'self' 'unsafe-inline' " + resourceDomains).trim(),
+        ("style-src 'self' 'unsafe-inline' " + resourceDomains).trim(),
+        ("connect-src " + connectDirective).trim(),
+        ("img-src 'self' data: blob: " + resourceDomains).trim(),
+        ("font-src 'self' " + (resourceDomains || '')).trim(),
+        ("media-src 'self' data: " + resourceDomains).trim(),
+        "frame-src " + frameDomains,
+        "object-src 'none'",
+        "base-uri " + baseUri
+      ].join('; ');
+    }
+
+    function toDomainList(value) {
+      return Array.isArray(value) ? value.join(' ') : '';
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    notifyReady();
+  </script>
+</body>
+</html>

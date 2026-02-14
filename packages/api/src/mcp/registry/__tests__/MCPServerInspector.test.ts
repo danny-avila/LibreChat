@@ -384,5 +384,69 @@ describe('MCPServerInspector', () => {
 
       expect(result).toEqual({});
     });
+
+    it('should exclude app-only tools from model-visible tool list', async () => {
+      mockConnection.client.listTools = jest.fn().mockResolvedValue({
+        tools: [
+          {
+            name: 'model_tool',
+            description: 'Model visible tool',
+            inputSchema: { type: 'object', properties: {} },
+            _meta: { ui: { visibility: ['model', 'app'] } },
+          },
+          {
+            name: 'app_tool',
+            description: 'App only tool',
+            inputSchema: { type: 'object', properties: {} },
+            _meta: { ui: { visibility: ['app'] } },
+          },
+        ],
+      });
+
+      const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
+
+      expect(result).toEqual({
+        model_tool_mcp_my_server: {
+          type: 'function',
+          function: {
+            name: 'model_tool_mcp_my_server',
+            description: 'Model visible tool',
+            parameters: { type: 'object', properties: {} },
+          },
+          _meta: { ui: { visibility: ['model', 'app'] } },
+        },
+      });
+      expect(result.app_tool_mcp_my_server).toBeUndefined();
+    });
+
+    it('should return all tools from getAllToolFunctions while preserving model filter', async () => {
+      mockConnection.client.listTools = jest.fn().mockResolvedValue({
+        tools: [
+          {
+            name: 'model_tool',
+            description: 'Model visible tool',
+            inputSchema: { type: 'object', properties: {} },
+            _meta: { ui: { visibility: ['model', 'app'] } },
+          },
+          {
+            name: 'app_tool',
+            description: 'App only tool',
+            inputSchema: { type: 'object', properties: {} },
+            _meta: { ui: { visibility: ['app'] } },
+          },
+        ],
+      });
+
+      const { modelTools, allTools } = await MCPServerInspector.getAllToolFunctions(
+        'my_server',
+        mockConnection,
+      );
+
+      expect(Object.keys(modelTools)).toEqual(['model_tool_mcp_my_server']);
+      expect(Object.keys(allTools).sort()).toEqual([
+        'app_tool_mcp_my_server',
+        'model_tool_mcp_my_server',
+      ]);
+    });
   });
 });

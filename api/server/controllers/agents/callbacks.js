@@ -393,6 +393,28 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       );
     }
 
+    if (req.config?.mcpSettings?.apps !== false && output.artifact[Tools.mcp_app]) {
+      artifactPromises.push(
+        (async () => {
+          const attachment = {
+            type: Tools.mcp_app,
+            messageId: metadata.run_id,
+            toolCallId: output.tool_call_id,
+            conversationId: metadata.thread_id,
+            [Tools.mcp_app]: output.artifact[Tools.mcp_app],
+          };
+          if (!streamId && !res.headersSent) {
+            return attachment;
+          }
+          writeAttachment(res, streamId, attachment);
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing mcp_app artifact:', error);
+          return null;
+        }),
+      );
+    }
+
     if (output.artifact[Tools.web_search]) {
       artifactPromises.push(
         (async () => {
@@ -590,6 +612,25 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           return attachment;
         })().catch((error) => {
           logger.error('Error processing artifact content:', error);
+          return null;
+        }),
+      );
+    }
+
+    if (req.config?.mcpSettings?.apps !== false && output.artifact[Tools.mcp_app]) {
+      artifactPromises.push(
+        (async () => {
+          const attachment = {
+            type: Tools.mcp_app,
+            toolCallId: output.tool_call_id,
+            [Tools.mcp_app]: output.artifact[Tools.mcp_app],
+          };
+          if (res.headersSent && !res.writableEnded) {
+            writeResponsesAttachment(res, tracker, attachment, metadata);
+          }
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing mcp_app artifact:', error);
           return null;
         }),
       );

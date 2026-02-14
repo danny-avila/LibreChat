@@ -1,6 +1,6 @@
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
-import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolResultSchema, ReadResourceResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { GraphTokenResolver } from '~/utils/graph';
@@ -8,6 +8,7 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
 import type * as t from './types';
+import { Constants } from 'librechat-data-provider';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersRegistry } from './registry/MCPServersRegistry';
@@ -225,6 +226,144 @@ Please follow these instructions when using tools from the respective MCP server
   }
 
   /**
+   * Returns all tool functions (including app-only) for a given server connection.
+   */
+  private async getToolsFromConnection(
+    serverName: string,
+    connection: MCPConnection,
+  ): Promise<t.LCAvailableTools> {
+    try {
+      const { allTools } = await MCPServerInspector.getAllToolFunctions(serverName, connection);
+      return allTools;
+    } catch (error) {
+      logger.warn(
+        `[getToolsFromConnection] Error getting all tools for server ${serverName}`,
+        error,
+      );
+      return {};
+    }
+  }
+
+  /**
+   * Gets an existing connection (app-level or user-specific) without creating new user connections.
+   * Useful for MCP App bridge endpoints that need an already-established connection.
+   */
+  public async getExistingConnection(
+    userId: string,
+    serverName: string,
+  ): Promise<MCPConnection | null> {
+    try {
+      const appConnection = await this.appConnections?.get(serverName);
+      if (appConnection) {
+        return appConnection;
+      }
+
+      const userConnections = this.getUserConnections(userId);
+      if (!userConnections?.has(serverName)) {
+        return null;
+      }
+
+      const connection = userConnections.get(serverName)!;
+      if (await connection.isConnected()) {
+        return connection;
+      }
+
+      return null;
+    } catch (error) {
+      logger.warn(
+        `[getExistingConnection] Error getting connection for server ${serverName}`,
+        error,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Returns all tool functions for a server (including app-only tools),
+   * looking up the connection by userId and serverName.
+   */
+  public async getAllToolsForServer(
+    userId: string,
+    serverName: string,
+  ): Promise<t.LCAvailableTools | null> {
+    try {
+      const appConnection = await this.appConnections?.get(serverName);
+      if (appConnection) {
+        const { allTools } = await MCPServerInspector.getAllToolFunctions(
+          serverName,
+          appConnection,
+        );
+        return allTools;
+      }
+
+      const userConnections = this.getUserConnections(userId);
+      if (!userConnections?.has(serverName)) {
+        return null;
+      }
+
+      const { allTools } = await MCPServerInspector.getAllToolFunctions(
+        serverName,
+        userConnections.get(serverName)!,
+      );
+      return allTools;
+    } catch (error) {
+      logger.warn(
+        `[getAllToolsForServer] Error getting tools for server ${serverName}`,
+        error,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Reads a resource from an MCP server via an existing connection.
+   * Used by the MCP App bridge to fetch UI resources.
+   */
+  public async readResource(userId: string, serverName: string, uri: string) {
+    const connection = await this.getExistingConnection(userId, serverName);
+    if (!connection) {
+      throw new Error(`MCP server "${serverName}" not found or not connected`);
+    }
+
+    return connection.client.request(
+      {
+        method: 'resources/read',
+        params: { uri },
+      },
+      ReadResourceResultSchema,
+      { timeout: connection.timeout },
+    );
+  }
+
+  /**
+   * Executes a tool call from an MCP App iframe.
+   * Does not perform visibility validation — callers should check tool visibility first.
+   */
+  public async appToolCall(
+    userId: string,
+    serverName: string,
+    toolName: string,
+    toolArguments?: Record<string, unknown>,
+  ) {
+    const connection = await this.getExistingConnection(userId, serverName);
+    if (!connection) {
+      throw new Error(`MCP server "${serverName}" not found or not connected`);
+    }
+
+    return connection.client.request(
+      {
+        method: 'tools/call',
+        params: {
+          name: toolName,
+          arguments: toolArguments || {},
+        },
+      },
+      CallToolResultSchema,
+      { timeout: connection.timeout },
+    );
+  }
+
+  /**
    * Calls a tool on an MCP server, using either a user-specific connection
    * (if userId is provided) or an app-level connection. Updates the last activity timestamp
    * for user-specific connections upon successful call initiation.
@@ -293,7 +432,7 @@ Please follow these instructions when using tools from the respective MCP server
       const rawConfig = (await MCPServersRegistry.getInstance().getServerConfig(
         serverName,
         userId,
-      )) as t.MCPOptions;
+      )) as t.ParsedServerConfig;
 
       // Pre-process Graph token placeholders (async) before sync processMCPEnv
       const graphProcessedConfig = await preProcessGraphTokens(rawConfig, {
@@ -330,7 +469,28 @@ Please follow these instructions when using tools from the respective MCP server
         this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
-      return formatToolContent(result as t.MCPToolCallResponse, provider);
+
+      const resultMeta = (result as t.MCPToolCallResponse)?._meta;
+      const toolKey = `${toolName}${Constants.mcp_delimiter}${serverName}`;
+      const configMeta = rawConfig?.toolFunctions?.[toolKey]?._meta;
+
+      // Prefer call result metadata, then cached config metadata, then live tools/list fallback.
+      let uiMeta =
+        (resultMeta?.ui as { resourceUri?: string; visibility?: string[] } | undefined) ??
+        (configMeta?.ui as { resourceUri?: string; visibility?: string[] } | undefined);
+
+      if (!uiMeta) {
+        const allTools = await this.getToolsFromConnection(serverName, connection);
+        uiMeta = allTools?.[toolKey]?._meta?.ui as
+          | { resourceUri?: string; visibility?: string[] }
+          | undefined;
+      }
+
+      return formatToolContent(result as t.MCPToolCallResponse, provider, {
+        toolUiMeta: uiMeta,
+        serverName,
+        toolArguments,
+      });
     } catch (error) {
       // Log with context and re-throw or handle as needed
       logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
