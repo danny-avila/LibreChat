@@ -12,8 +12,7 @@ import {
   BreadcrumbSeparator,
 } from '@librechat/client';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
-import AdvancedSwitch from '~/components/Prompts/AdvancedSwitch';
-import AdminSettings from '~/components/Prompts/AdminSettings';
+import { AdvancedSwitch, AdminSettings } from '~/components/Prompts';
 import { useDashboardContext } from '~/Providers';
 import store from '~/store';
 

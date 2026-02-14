@@ -1,4 +1,5 @@
 const express = require('express');
+const { ObjectId } = require('mongodb');
 const { logger } = require('@librechat/data-schemas');
 const {
   generateCheckAccess,
@@ -20,6 +21,7 @@ const {
 } = require('librechat-data-provider');
 const {
   getListPromptGroupsByAccess,
+  incrementPromptGroupUsage,
   makePromptProduction,
   updatePromptGroup,
   deletePromptGroup,
@@ -102,11 +104,10 @@ router.get(
 router.get('/all', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, category, ...otherFilters } = req.query;
+    const { name, category } = req.query;
     const { filter, searchShared, searchSharedOnly } = buildPromptGroupFilter({
       name,
       category,
-      ...otherFilters,
     });
 
     let accessibleIds = await findAccessibleResources({
@@ -157,12 +158,11 @@ router.get('/all', async (req, res) => {
 router.get('/groups', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { pageSize, limit, cursor, name, category, ...otherFilters } = req.query;
+    const { pageSize, limit, cursor, name, category } = req.query;
 
     const { filter, searchShared, searchSharedOnly } = buildPromptGroupFilter({
       name,
       category,
-      ...otherFilters,
     });
 
     let actualLimit = limit;
@@ -299,6 +299,16 @@ const addPromptToGroup = async (req, res) => {
       return res.status(400).send({ error: 'Prompt is required' });
     }
 
+    if (typeof prompt.prompt !== 'string' || !prompt.prompt.trim()) {
+      return res
+        .status(400)
+        .send({ error: 'Prompt text is required and must be a non-empty string' });
+    }
+
+    if (prompt.type !== 'text' && prompt.type !== 'chat') {
+      return res.status(400).send({ error: 'Prompt type must be "text" or "chat"' });
+    }
+
     // Ensure the prompt is associated with the correct group
     prompt.groupId = groupId;
 
@@ -327,6 +337,30 @@ router.post(
     requiredPermission: PermissionBits.EDIT,
   }),
   addPromptToGroup,
+);
+
+/**
+ * Records a prompt group usage (increments numberOfGenerations)
+ * POST /groups/:groupId/use
+ */
+router.post(
+  '/groups/:groupId/use',
+  canAccessPromptGroupResource({
+    requiredPermission: PermissionBits.VIEW,
+  }),
+  async (req, res) => {
+    try {
+      const { groupId } = req.params;
+      const result = await incrementPromptGroupUsage(groupId);
+      res.status(200).send(result);
+    } catch (error) {
+      logger.error('[recordPromptUsage]', error);
+      if (error.message === 'Prompt group not found') {
+        return res.status(404).send({ error: 'Prompt group not found' });
+      }
+      res.status(500).send({ error: 'Error recording prompt usage' });
+    }
+  },
 );
 
 /**
@@ -410,6 +444,10 @@ router.get('/', async (req, res) => {
 
     // If requesting prompts for a specific group, check permissions
     if (groupId) {
+      if (!/^[a-f\d]{24}$/i.test(groupId)) {
+        return res.status(400).send({ error: 'Invalid groupId' });
+      }
+
       const permissions = await getEffectivePermissions({
         userId: req.user.id,
         role: req.user.role,
@@ -424,7 +462,7 @@ router.get('/', async (req, res) => {
       }
 
       // If user has access, fetch all prompts in the group (not just their own)
-      const prompts = await getPrompts({ groupId });
+      const prompts = await getPrompts({ groupId: new ObjectId(groupId) });
       return res.status(200).send(prompts);
     }
 

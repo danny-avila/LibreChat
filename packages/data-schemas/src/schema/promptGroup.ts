@@ -65,6 +65,6 @@ const promptGroupSchema = new Schema<IPromptGroupDocument>(
   },
 );
 
-promptGroupSchema.index({ createdAt: 1, updatedAt: 1 });
+promptGroupSchema.index({ numberOfGenerations: -1, updatedAt: -1, _id: 1 });
 
 export default promptGroupSchema;
