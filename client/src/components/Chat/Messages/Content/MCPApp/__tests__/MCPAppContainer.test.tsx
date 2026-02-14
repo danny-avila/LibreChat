@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import MCPAppContainer from '../MCPAppContainer';
+import { MessagesViewContext } from '~/Providers/MessagesViewContext';
 
 const bridgeInstances: Array<{
   options: any;
@@ -35,13 +36,40 @@ jest.mock('../createMCPAppBridge', () => ({
 }));
 
 describe('MCPAppContainer fullscreen lifecycle', () => {
+  const ask = jest.fn();
+  const setMcpAppModelContext = jest.fn();
+  const viewContextValue = {
+    conversation: null,
+    conversationId: null,
+    isSubmitting: false,
+    abortScroll: false,
+    setAbortScroll: jest.fn(),
+    ask,
+    regenerate: jest.fn(),
+    handleContinue: jest.fn(),
+    mcpAppModelContext: null,
+    setMcpAppModelContext,
+    index: 0,
+    latestMessage: null,
+    setLatestMessage: jest.fn(),
+    getMessages: jest.fn(() => []),
+    setMessages: jest.fn(),
+  } as const;
+
+  const renderWithContext = (node: React.ReactNode) =>
+    render(<MessagesViewContext.Provider value={viewContextValue as any}>{node}</MessagesViewContext.Provider>);
+
   beforeEach(() => {
     bridgeInstances.length = 0;
     jest.clearAllMocks();
+    (global.fetch as unknown as jest.Mock | undefined)?.mockReset?.();
+    global.fetch = jest.fn().mockImplementation(
+      () => new Promise(() => undefined),
+    ) as unknown as typeof fetch;
   });
 
   it('keeps the same bridge/iframe instance when switching to fullscreen', async () => {
-    render(
+    renderWithContext(
       <MCPAppContainer
         html="<html><head></head><body>app</body></html>"
         resourceMeta={null}
@@ -80,7 +108,7 @@ describe('MCPAppContainer fullscreen lifecycle', () => {
   });
 
   it('does not re-send sandbox resource on fullscreen transition, preserving app state', async () => {
-    render(
+    renderWithContext(
       <MCPAppContainer
         html="<html><head></head><body>app</body></html>"
         resourceMeta={null}
@@ -126,7 +154,7 @@ describe('MCPAppContainer fullscreen lifecycle', () => {
   });
 
   it('restores inline view after closing fullscreen without remounting bridge', async () => {
-    const { container } = render(
+    const { container } = renderWithContext(
       <MCPAppContainer
         html="<html><head></head><body>app</body></html>"
         resourceMeta={null}
@@ -163,7 +191,7 @@ describe('MCPAppContainer fullscreen lifecycle', () => {
   });
 
   it('preserves inline requested height after fullscreen close', async () => {
-    const { container } = render(
+    const { container } = renderWithContext(
       <MCPAppContainer
         html="<html><head></head><body>app</body></html>"
         resourceMeta={null}
@@ -204,7 +232,7 @@ describe('MCPAppContainer fullscreen lifecycle', () => {
   });
 
   it('enforces maxHeight from resource metadata for inline resize requests', () => {
-    const { container } = render(
+    const { container } = renderWithContext(
       <MCPAppContainer
         html="<html><head></head><body>app</body></html>"
         resourceMeta={{ ui: { maxHeight: 280 } }}
@@ -224,7 +252,7 @@ describe('MCPAppContainer fullscreen lifecycle', () => {
   });
 
   it('keeps inline mode when fullscreen is disallowed by resource metadata', async () => {
-    render(
+    renderWithContext(
       <MCPAppContainer
         html="<html><head></head><body>app</body></html>"
         resourceMeta={{ ui: { allowFullscreen: false } }}
@@ -247,7 +275,7 @@ describe('MCPAppContainer fullscreen lifecycle', () => {
   });
 
   it('uses flush inline geometry without right-edge overdraw', async () => {
-    const { container } = render(
+    const { container } = renderWithContext(
       <MCPAppContainer
         html="<html><head></head><body>app</body></html>"
         resourceMeta={null}
@@ -309,5 +337,66 @@ describe('MCPAppContainer fullscreen lifecycle', () => {
       expect(portalWrapper.style.width).toBe('345.25px');
       expect(portalWrapper.style.clipPath).toMatch(/^inset\(40px 0(?:px)? 0px 0(?:px)?\)$/);
     });
+  });
+
+  it('loads sandbox from opaque-origin data URL bootstrap', async () => {
+    (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: async () => '<!DOCTYPE html><html><body>sandbox</body></html>',
+    });
+
+    renderWithContext(
+      <MCPAppContainer
+        html="<html><head></head><body>app</body></html>"
+        resourceMeta={null}
+        serverName="calendar"
+        toolResult={{ ok: true }}
+        toolArguments={{ id: '123' }}
+      />,
+    );
+
+    const iframe = screen.getByTitle('MCP App') as HTMLIFrameElement;
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/api/mcp/sandbox', {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      expect(iframe.getAttribute('src')).toContain('data:text/html');
+    });
+  });
+
+  it('forwards ui/message and ui/update-model-context callbacks into chat context handlers', () => {
+    renderWithContext(
+      <MCPAppContainer
+        html="<html><head></head><body>app</body></html>"
+        resourceMeta={null}
+        serverName="calendar"
+        toolResult={{ ok: true }}
+        toolArguments={{ id: '123' }}
+      />,
+    );
+
+    expect(bridgeInstances).toHaveLength(1);
+    act(() => {
+      bridgeInstances[0].options.onMessage({ role: 'user', content: [{ type: 'text', text: 'hello' }] });
+    });
+    expect(ask).toHaveBeenCalledWith({ text: 'hello' });
+
+    act(() => {
+      bridgeInstances[0].options.onModelContextUpdate({
+        content: [{ type: 'text', text: 'ctx' }],
+        structuredContent: { key: 'value' },
+      });
+    });
+    expect(setMcpAppModelContext).toHaveBeenCalledWith({
+      content: [{ type: 'text', text: 'ctx' }],
+      structuredContent: { key: 'value' },
+    });
+
+    act(() => {
+      bridgeInstances[0].options.onModelContextUpdate({ content: [], structuredContent: {} });
+    });
+    expect(setMcpAppModelContext).toHaveBeenCalledWith(null);
   });
 });

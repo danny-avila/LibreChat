@@ -29,6 +29,10 @@ interface JsonRpcMessage {
   error?: { code: number; message: string; data?: unknown };
 }
 
+type AppCapabilities = {
+  availableDisplayModes?: Array<'inline' | 'fullscreen' | 'pip'>;
+};
+
 export class MCPAppBridge {
   private iframe: HTMLIFrameElement;
   private serverName: string;
@@ -45,6 +49,7 @@ export class MCPAppBridge {
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
   private displayMode: DisplayMode;
+  private appAvailableDisplayModes: Set<DisplayMode> | null = null;
 
   constructor(options: MCPAppBridgeOptions) {
     this.iframe = options.iframe;
@@ -134,7 +139,10 @@ export class MCPAppBridge {
   ): void {
     this.displayMode = displayMode;
     const hostContext = this.getHostContext(theme);
-    this.sendNotification('ui/notifications/host-context-changed', hostContext);
+    this.sendNotification(
+      'ui/notifications/host-context-changed',
+      hostContext as unknown as Record<string, unknown>,
+    );
   }
 
   async teardownResource(params: Record<string, unknown> = {}): Promise<unknown> {
@@ -206,15 +214,61 @@ export class MCPAppBridge {
     }
 
     this.initialPayloadSent = true;
-    if (this.options.toolArguments) {
-      this.sendNotification('ui/notifications/tool-input', {
-        arguments: this.options.toolArguments,
-      });
-    }
+    this.sendNotification('ui/notifications/tool-input', {
+      arguments: this.options.toolArguments ?? {},
+    });
     if (this.options.toolResult) {
       const result = this.options.toolResult as Record<string, unknown>;
       this.sendNotification('ui/notifications/tool-result', result);
     }
+  }
+
+  private isCancellationError(error: unknown): boolean {
+    if (!error) {
+      return false;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes('abort') ||
+      normalized.includes('cancel') ||
+      normalized.includes('canceled') ||
+      normalized.includes('cancelled')
+    );
+  }
+
+  private sendToolCancelled(reason?: string): void {
+    this.sendNotification('ui/notifications/tool-cancelled', {
+      reason: reason ?? 'cancelled',
+    });
+  }
+
+  private normalizeMode(mode: unknown): DisplayMode {
+    return mode === 'fullscreen' || mode === 'pip' ? mode : 'inline';
+  }
+
+  private isHostModeAllowed(mode: DisplayMode): boolean {
+    if (mode === 'pip') {
+      return false;
+    }
+    if (mode === 'fullscreen' && this.options.allowFullscreen === false) {
+      return false;
+    }
+    return true;
+  }
+
+  private isAppModeAllowed(mode: DisplayMode): boolean {
+    if (!this.appAvailableDisplayModes || this.appAvailableDisplayModes.size === 0) {
+      return true;
+    }
+    return this.appAvailableDisplayModes.has(mode);
+  }
+
+  private resolveDisplayMode(mode: DisplayMode): DisplayMode {
+    if (!this.isHostModeAllowed(mode) || !this.isAppModeAllowed(mode)) {
+      return 'inline';
+    }
+    return mode;
   }
 
   private handleMessage(event: MessageEvent): void {
@@ -277,6 +331,14 @@ export class MCPAppBridge {
       switch (method) {
         case 'ui/initialize': {
           this.initialized = true;
+          const appCapabilities = (params as { appCapabilities?: AppCapabilities } | undefined)
+            ?.appCapabilities;
+          const appModes = Array.isArray(appCapabilities?.availableDisplayModes)
+            ? appCapabilities?.availableDisplayModes
+                .map((mode) => this.normalizeMode(mode))
+                .filter((mode, index, list) => list.indexOf(mode) === index)
+            : [];
+          this.appAvailableDisplayModes = appModes.length > 0 ? new Set(appModes) : null;
           const hostContext = this.getHostContext(this.options.theme);
           const result = {
             protocolVersion: '2026-01-26',
@@ -312,14 +374,21 @@ export class MCPAppBridge {
           break;
 
         case 'tools/call': {
-          const toolName = (params as Record<string, unknown>)?.name as string;
-          const toolArgs =
-            ((params as Record<string, unknown>)?.arguments as Record<string, unknown>) || {};
-          const result = await callMCPAppTool(this.serverName, toolName, toolArgs);
-          if (id !== undefined) {
-            this.sendResponse(id, result);
+          try {
+            const toolName = (params as Record<string, unknown>)?.name as string;
+            const toolArgs =
+              ((params as Record<string, unknown>)?.arguments as Record<string, unknown>) || {};
+            const result = await callMCPAppTool(this.serverName, toolName, toolArgs);
+            if (id !== undefined) {
+              this.sendResponse(id, result);
+            }
+            break;
+          } catch (error) {
+            if (this.isCancellationError(error)) {
+              this.sendToolCancelled(error instanceof Error ? error.message : undefined);
+            }
+            throw error;
           }
-          break;
         }
 
         case 'resources/read': {
@@ -367,16 +436,14 @@ export class MCPAppBridge {
         }
 
         case 'ui/request-display-mode': {
-          const requestedMode =
-            ((params as Record<string, unknown>)?.mode as 'inline' | 'fullscreen' | 'pip') ?? 'inline';
-          let actualMode: 'inline' | 'fullscreen' | 'pip' = 'inline';
-          if (requestedMode === 'fullscreen' && this.options.allowFullscreen === false) {
-            actualMode = 'inline';
-          } else if (this.options.onDisplayModeRequest) {
-            actualMode = this.options.onDisplayModeRequest(requestedMode);
-          } else {
-            actualMode = requestedMode;
+          const requestedMode = this.normalizeMode((params as Record<string, unknown>)?.mode);
+          let actualMode: DisplayMode = this.resolveDisplayMode(requestedMode);
+          if (actualMode !== 'inline' && this.options.onDisplayModeRequest) {
+            actualMode = this.normalizeMode(this.options.onDisplayModeRequest(actualMode));
+          } else if (actualMode === 'inline' && this.options.onDisplayModeRequest) {
+            actualMode = this.normalizeMode(this.options.onDisplayModeRequest('inline'));
           }
+          actualMode = this.resolveDisplayMode(actualMode);
           this.displayMode = actualMode;
           if (id !== undefined) {
             this.sendResponse(id, { mode: actualMode });

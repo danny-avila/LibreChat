@@ -1,4 +1,10 @@
 import { MCPAppBridge } from '../MCPAppBridge';
+import { callMCPAppTool } from '../mcpAppUtils';
+
+jest.mock('../mcpAppUtils', () => ({
+  callMCPAppTool: jest.fn(),
+  fetchMCPResource: jest.fn(),
+}));
 
 function createBridge(overrides?: Partial<ConstructorParameters<typeof MCPAppBridge>[0]>) {
   const postMessage = jest.fn();
@@ -69,6 +75,30 @@ describe('MCPAppBridge protocol compatibility', () => {
       tools: { call: true },
       resources: { read: true },
     });
+  });
+
+  it('sends tool-input exactly once after initialized, including empty arguments', () => {
+    const { bridge, postMessage, contentWindow } = createBridge({
+      toolArguments: undefined,
+    });
+    bridge.start();
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: contentWindow,
+        data: {
+          jsonrpc: '2.0',
+          method: 'ui/notifications/initialized',
+          params: {},
+        },
+      }),
+    );
+
+    const toolInputNotifications = postMessage.mock.calls
+      .map((call) => call[0])
+      .filter((msg) => msg?.method === 'ui/notifications/tool-input');
+    expect(toolInputNotifications).toHaveLength(1);
+    expect(toolInputNotifications[0].params).toEqual({ arguments: {} });
   });
 
   it('handles display mode requests and content-block ui/message payloads', () => {
@@ -170,7 +200,7 @@ describe('MCPAppBridge protocol compatibility', () => {
       }),
     );
 
-    expect(onDisplayModeRequest).not.toHaveBeenCalled();
+    expect(onDisplayModeRequest).toHaveBeenCalledWith('inline');
     const modeResponse = postMessage.mock.calls.find((call) => call[0]?.id === 4)?.[0];
     expect(modeResponse.result).toEqual({ mode: 'inline' });
 
@@ -195,5 +225,85 @@ describe('MCPAppBridge protocol compatibility', () => {
         availableDisplayModes: ['inline'],
       }),
     );
+  });
+
+  it('enforces app-declared availableDisplayModes from ui/initialize', () => {
+    const onDisplayModeRequest = jest.fn().mockReturnValue('fullscreen');
+    const { bridge, postMessage, contentWindow } = createBridge({
+      onDisplayModeRequest,
+    });
+    bridge.start();
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: contentWindow,
+        data: {
+          jsonrpc: '2.0',
+          id: 8,
+          method: 'ui/initialize',
+          params: {
+            protocolVersion: '2026-01-26',
+            appInfo: { name: 'app', version: '1.0.0' },
+            appCapabilities: {
+              availableDisplayModes: ['inline'],
+            },
+          },
+        },
+      }),
+    );
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: contentWindow,
+        data: {
+          jsonrpc: '2.0',
+          id: 9,
+          method: 'ui/request-display-mode',
+          params: { mode: 'fullscreen' },
+        },
+      }),
+    );
+
+    const modeResponse = postMessage.mock.calls.find((call) => call[0]?.id === 9)?.[0];
+    expect(modeResponse.result).toEqual({ mode: 'inline' });
+    expect(onDisplayModeRequest).toHaveBeenCalledWith('inline');
+    expect(onDisplayModeRequest).not.toHaveBeenCalledWith('fullscreen');
+  });
+
+  it('sends tool-cancelled notification when app tool call is cancelled', async () => {
+    (callMCPAppTool as jest.Mock).mockRejectedValueOnce(new Error('request cancelled'));
+    const { bridge, postMessage, contentWindow } = createBridge();
+    bridge.start();
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: contentWindow,
+        data: {
+          jsonrpc: '2.0',
+          method: 'ui/notifications/initialized',
+          params: {},
+        },
+      }),
+    );
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: contentWindow,
+        data: {
+          jsonrpc: '2.0',
+          id: 10,
+          method: 'tools/call',
+          params: { name: 'test', arguments: {} },
+        },
+      }),
+    );
+
+    await Promise.resolve();
+
+    const toolCancelled = postMessage.mock.calls
+      .map((call) => call[0])
+      .find((msg) => msg?.method === 'ui/notifications/tool-cancelled');
+    expect(toolCancelled).toBeDefined();
+    expect(toolCancelled.params).toEqual({ reason: 'request cancelled' });
   });
 });

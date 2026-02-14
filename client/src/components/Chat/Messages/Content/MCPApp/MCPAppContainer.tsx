@@ -5,6 +5,7 @@ import { createMCPAppBridge, type MCPAppBridgeLike } from './createMCPAppBridge'
 import type { McpUiResourceCsp, McpUiResourcePermissions } from './mcpAppUtils';
 import { normalizePermissions } from './mcpAppUtils';
 import { mainTextareaId } from '~/common';
+import { MessagesViewContext } from '~/Providers/MessagesViewContext';
 
 interface ResourceMeta {
   ui?: {
@@ -17,6 +18,85 @@ interface ResourceMeta {
 }
 
 const DEFAULT_MAX_HEIGHT = 800;
+const SANDBOX_ENDPOINT = '/api/mcp/sandbox';
+
+function buildOpaqueSandboxSrc(html: string): string {
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+function getTextFromContentBlock(block: unknown): string {
+  if (typeof block === 'string') {
+    return block;
+  }
+  if (!block || typeof block !== 'object') {
+    return '';
+  }
+  const maybeRecord = block as Record<string, unknown>;
+  if (maybeRecord.type === 'text' && typeof maybeRecord.text === 'string') {
+    return maybeRecord.text;
+  }
+  if (
+    maybeRecord.type === 'text' &&
+    maybeRecord.text &&
+    typeof maybeRecord.text === 'object' &&
+    typeof (maybeRecord.text as Record<string, unknown>).value === 'string'
+  ) {
+    return (maybeRecord.text as Record<string, unknown>).value as string;
+  }
+  return '';
+}
+
+function messageContentToText(content: unknown): string {
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+  if (Array.isArray(content)) {
+    const text = content.map(getTextFromContentBlock).filter(Boolean).join('\n').trim();
+    if (text.length > 0) {
+      return text;
+    }
+    try {
+      return JSON.stringify(content);
+    } catch {
+      return '';
+    }
+  }
+  if (content == null) {
+    return '';
+  }
+  try {
+    return JSON.stringify(content);
+  } catch {
+    return '';
+  }
+}
+
+function normalizeModelContextPayload(context: unknown): Record<string, unknown> | null {
+  if (!context || typeof context !== 'object') {
+    return null;
+  }
+  const payload = context as Record<string, unknown>;
+  const content = payload.content;
+  const structuredContent = payload.structuredContent;
+  const hasContent = Array.isArray(content) && content.length > 0;
+  const hasStructured =
+    structuredContent != null &&
+    typeof structuredContent === 'object' &&
+    Object.keys(structuredContent as Record<string, unknown>).length > 0;
+
+  if (!hasContent && !hasStructured) {
+    return null;
+  }
+
+  const normalized: Record<string, unknown> = {};
+  if (hasContent) {
+    normalized.content = content;
+  }
+  if (hasStructured) {
+    normalized.structuredContent = structuredContent;
+  }
+  return normalized;
+}
 
 function resolveMaxHeight(maxHeight: unknown): number {
   const parsed = Number(maxHeight);
@@ -45,6 +125,9 @@ export default function MCPAppContainer({
   toolResult,
   toolArguments,
 }: MCPAppContainerProps) {
+  const messagesViewContext = useContext(MessagesViewContext);
+  const ask = messagesViewContext?.ask;
+  const setMcpAppModelContext = messagesViewContext?.setMcpAppModelContext;
   const [inlineAnchorNode, setInlineAnchorNode] = useState<HTMLDivElement | null>(null);
   const inlineAnchorRef = useCallback((node: HTMLDivElement | null) => {
     setInlineAnchorNode((prev) => (prev === node ? prev : node));
@@ -66,11 +149,16 @@ export default function MCPAppContainer({
   const [composerViewportTop, setComposerViewportTop] = useState<number | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [displayMode, setDisplayMode] = useState<'inline' | 'fullscreen'>('inline');
+  const [sandboxSrc, setSandboxSrc] = useState<string>('about:blank');
   const displayModeRef = useRef<'inline' | 'fullscreen'>('inline');
   const sandboxReadyRef = useRef(false);
 
   const { theme: themeMode } = useContext(ThemeContext);
   const theme = isDark(themeMode) ? 'dark' : 'light';
+  const askRef = useRef(ask);
+  askRef.current = ask;
+  const setMcpAppModelContextRef = useRef(setMcpAppModelContext);
+  setMcpAppModelContextRef.current = setMcpAppModelContext;
 
   // Store stable refs for values that shouldn't trigger bridge recreation
   const htmlRef = useRef(html);
@@ -93,6 +181,35 @@ export default function MCPAppContainer({
     const permissions = normalizePermissions(resourceMetaRef.current?.ui?.permissions);
     const csp = resourceMetaRef.current?.ui?.csp;
     bridgeRef.current.sendResourceToSandbox(htmlRef.current, csp, permissions);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const response = await fetch(SANDBOX_ENDPOINT, {
+          method: 'GET',
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to load MCP sandbox template (${response.status})`);
+        }
+        const htmlTemplate = await response.text();
+        if (!active) {
+          return;
+        }
+        setSandboxSrc(buildOpaqueSandboxSrc(htmlTemplate));
+      } catch (error) {
+        console.error('[MCPAppContainer] Failed to bootstrap opaque sandbox source:', error);
+        if (active) {
+          setSandboxSrc(SANDBOX_ENDPOINT);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -133,6 +250,21 @@ export default function MCPAppContainer({
       },
       onOpenLink: (url) => {
         window.open(url, '_blank', 'noopener,noreferrer');
+      },
+      onMessage: ({ content }) => {
+        const text = messageContentToText(content);
+        const askHandler = askRef.current;
+        if (!text || !askHandler) {
+          return;
+        }
+        askHandler({ text });
+      },
+      onModelContextUpdate: (context) => {
+        const setContext = setMcpAppModelContextRef.current;
+        if (!setContext) {
+          return;
+        }
+        setContext(normalizeModelContextPayload(context));
       },
       onDisplayModeRequest: (mode) => {
         const allowFullscreen = isFullscreenAllowed(resourceMetaRef.current?.ui?.allowFullscreen);
@@ -443,7 +575,7 @@ export default function MCPAppContainer({
                 <iframe
                   ref={iframeRef}
                   sandbox="allow-scripts allow-same-origin"
-                  src="/api/mcp/sandbox"
+                  src={sandboxSrc}
                   style={{
                     width: '100%',
                     height: '100%',

@@ -207,7 +207,7 @@ actions:
 #     - 'http://internal:8080'    # Protocol and port restricted
 #   apps: true                    # Enable MCP Apps support (default: true)
 #   appSettings:
-#     allowedConnectDomains: []   # Additional CSP connect-src domains for MCP Apps
+#     allowedConnectDomains: []   # Compatibility extension: host-added connect-src domains merged with app-declared CSP
 #     blockedDomains: []          # Domains blocked for all MCP Apps
 #     maxHeight: 800              # Max iframe height in pixels
 #     allowFullscreen: true       # Whether to allow fullscreen mode

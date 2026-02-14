@@ -32,6 +32,7 @@ export class MCPAppBridgeSDKAdapter {
         >[0]['permissions'];
       }
     | null = null;
+  private appAvailableDisplayModes: Set<'inline' | 'fullscreen' | 'pip'> | null = null;
 
   constructor(options: MCPAppBridgeOptions) {
     this.iframe = options.iframe;
@@ -96,13 +97,20 @@ export class MCPAppBridgeSDKAdapter {
     );
 
     bridge.oncalltool = async (params) => {
-      const args = (params.arguments as Record<string, unknown>) ?? {};
-      return (await callMCPAppTool(this.serverName, params.name, args)) as {
-        content?: unknown[];
-        structuredContent?: Record<string, unknown>;
-        isError?: boolean;
-        _meta?: Record<string, unknown>;
-      };
+      try {
+        const args = (params.arguments as Record<string, unknown>) ?? {};
+        return (await callMCPAppTool(this.serverName, params.name, args)) as {
+          content?: unknown[];
+          structuredContent?: Record<string, unknown>;
+          isError?: boolean;
+          _meta?: Record<string, unknown>;
+        };
+      } catch (error) {
+        if (this.isCancellationError(error)) {
+          void bridge.sendToolCancelled({ reason: error instanceof Error ? error.message : 'cancelled' });
+        }
+        throw error;
+      }
     };
 
     bridge.onreadresource = async (params) => {
@@ -140,13 +148,12 @@ export class MCPAppBridgeSDKAdapter {
     };
 
     bridge.onrequestdisplaymode = async (params) => {
-      const requestedMode = params.mode ?? 'inline';
-      const actualMode =
-        requestedMode === 'fullscreen' && this.options.allowFullscreen === false
-          ? 'inline'
-          : this.options.onDisplayModeRequest
-            ? this.options.onDisplayModeRequest(requestedMode)
-            : requestedMode;
+      const requestedMode = this.normalizeMode(params.mode);
+      let actualMode = this.resolveDisplayMode(requestedMode);
+      if (this.options.onDisplayModeRequest) {
+        actualMode = this.normalizeMode(this.options.onDisplayModeRequest(actualMode));
+      }
+      actualMode = this.resolveDisplayMode(actualMode);
       this.displayMode = actualMode;
       return { mode: actualMode };
     };
@@ -162,6 +169,14 @@ export class MCPAppBridgeSDKAdapter {
 
     bridge.oninitialized = () => {
       this.viewInitialized = true;
+      const appCapabilities = (bridge as unknown as { getAppCapabilities?: () => unknown })
+        .getAppCapabilities?.() as { availableDisplayModes?: string[] } | undefined;
+      const modes = Array.isArray(appCapabilities?.availableDisplayModes)
+        ? appCapabilities.availableDisplayModes
+            .map((mode) => this.normalizeMode(mode))
+            .filter((mode, index, list) => list.indexOf(mode) === index)
+        : [];
+      this.appAvailableDisplayModes = modes.length > 0 ? new Set(modes) : null;
       this.flushInitialPayloads();
       this.flushPendingState();
     };
@@ -186,12 +201,52 @@ export class MCPAppBridgeSDKAdapter {
     }
 
     this.initialPayloadSent = true;
-    if (this.options.toolArguments) {
-      void this.bridge.sendToolInput({ arguments: this.options.toolArguments });
-    }
+    void this.bridge.sendToolInput({ arguments: this.options.toolArguments ?? {} });
     if (this.options.toolResult) {
       void this.bridge.sendToolResult(this.options.toolResult as Record<string, unknown>);
     }
+  }
+
+  private isCancellationError(error: unknown): boolean {
+    if (!error) {
+      return false;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes('abort') ||
+      normalized.includes('cancel') ||
+      normalized.includes('canceled') ||
+      normalized.includes('cancelled')
+    );
+  }
+
+  private normalizeMode(mode: unknown): 'inline' | 'fullscreen' | 'pip' {
+    return mode === 'fullscreen' || mode === 'pip' ? mode : 'inline';
+  }
+
+  private isHostModeAllowed(mode: 'inline' | 'fullscreen' | 'pip'): boolean {
+    if (mode === 'pip') {
+      return false;
+    }
+    if (mode === 'fullscreen' && this.options.allowFullscreen === false) {
+      return false;
+    }
+    return true;
+  }
+
+  private isAppModeAllowed(mode: 'inline' | 'fullscreen' | 'pip'): boolean {
+    if (!this.appAvailableDisplayModes || this.appAvailableDisplayModes.size === 0) {
+      return true;
+    }
+    return this.appAvailableDisplayModes.has(mode);
+  }
+
+  private resolveDisplayMode(mode: 'inline' | 'fullscreen' | 'pip'): 'inline' | 'fullscreen' | 'pip' {
+    if (!this.isHostModeAllowed(mode) || !this.isAppModeAllowed(mode)) {
+      return 'inline';
+    }
+    return mode;
   }
 
   private flushPendingState(): void {

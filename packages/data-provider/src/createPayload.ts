@@ -13,6 +13,7 @@ export default function createPayload(submission: t.TSubmission) {
     conversation,
     editedContent,
     ephemeralAgent,
+    mcpAppModelContext,
     endpointOption,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
@@ -37,6 +38,7 @@ export default function createPayload(submission: t.TSubmission) {
     isTemporary,
     isRegenerate,
     editedContent,
+    mcpAppModelContext,
     conversationId,
     isContinued: !!(isEdited && isContinued),
     ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
