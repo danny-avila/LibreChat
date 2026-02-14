@@ -304,8 +304,15 @@ meilisearch:
   persistence:
     enabled: true
     storageClass: ""
-  image: 
+  image:
     tag: "v1.7.3"
   auth:
     # Use an existing Kubernetes secret for the MEILI_MASTER_KEY
     existingMasterKeySecret: "librechat-credentials-env"
+
+# Redis Parameters
+redis:
+  enabled: false
+  architecture: standalone
+  auth:
+    enabled: false
