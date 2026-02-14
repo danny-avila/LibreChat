@@ -39,7 +39,6 @@ const {
   PermissionTypes,
   isAgentsEndpoint,
   isEphemeralAgentId,
-  bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
@@ -69,17 +68,11 @@ const omitTitleOptions = new Set([
  * @param {Agent} agent
  * @param {string} endpoint
  */
-const payloadParser = ({ req, agent, endpoint }) => {
+const payloadParser = ({ req, endpoint }) => {
   if (isAgentsEndpoint(endpoint)) {
-    return { model: undefined };
-  } else if (endpoint === EModelEndpoint.bedrock) {
-    const parsedValues = bedrockInputSchema.parse(agent.model_parameters);
-    if (parsedValues.thinking == null) {
-      parsedValues.thinking = false;
-    }
-    return parsedValues;
+    return;
   }
-  return req.body.endpointOption.model_parameters;
+  return req.body?.endpointOption?.model_parameters;
 };
 
 function createTokenCounter(encoding) {
@@ -296,14 +289,9 @@ class AgentClient extends BaseClient {
   checkVisionRequest() {}
 
   getSaveOptions() {
-    // TODO:
-    // would need to be override settings; otherwise, model needs to be undefined
-    // model: this.override.model,
-    // instructions: this.override.instructions,
-    // additional_instructions: this.override.additional_instructions,
     let runOptions = {};
     try {
-      runOptions = payloadParser(this.options);
+      runOptions = payloadParser(this.options) ?? {};
     } catch (error) {
       logger.error(
         '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
@@ -314,14 +302,14 @@ class AgentClient extends BaseClient {
     return removeNullishValues(
       Object.assign(
         {
+          spec: this.options.spec,
+          iconURL: this.options.iconURL,
           endpoint: this.options.endpoint,
           agent_id: this.options.agent.id,
           modelLabel: this.options.modelLabel,
-          maxContextTokens: this.options.maxContextTokens,
           resendFiles: this.options.resendFiles,
           imageDetail: this.options.imageDetail,
-          spec: this.options.spec,
-          iconURL: this.options.iconURL,
+          maxContextTokens: this.maxContextTokens,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
