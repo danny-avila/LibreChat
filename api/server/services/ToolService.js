@@ -466,6 +466,7 @@ async function processRequiredActions(client, requiredActions) {
       }
 
       // We've already decrypted the metadata, so we can pass it directly
+      const _allowedDomains = appConfig?.actions?.allowedDomains;
       tool = await createActionTool({
         userId: client.req.user.id,
         res: client.res,
@@ -473,6 +474,7 @@ async function processRequiredActions(client, requiredActions) {
         requestBuilder,
         // Note: intentionally not passing zodSchema, name, and description for assistants API
         encrypted, // Pass the encrypted values for OAuth flow
+        useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
       });
       if (!tool) {
         logger.warn(
@@ -1239,6 +1241,7 @@ async function loadAgentTools({
     const zodSchema = zodSchemas[functionName];
 
     if (requestBuilder) {
+      const _allowedDomains = appConfig?.actions?.allowedDomains;
       const tool = await createActionTool({
         userId: req.user.id,
         res,
@@ -1249,6 +1252,7 @@ async function loadAgentTools({
         name: toolName,
         description: functionSig.description,
         streamId,
+        useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
       });
 
       if (!tool) {
@@ -1510,6 +1514,7 @@ async function loadActionToolsForExecution({
     });
   }
 
+  const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
   for (const toolName of actionToolNames) {
     let currentDomain = '';
     for (const domain of domainMap.keys()) {
@@ -1526,7 +1531,6 @@ async function loadActionToolsForExecution({
 
     const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
       processedActionSets.get(currentDomain);
-    const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
     const normalizedDomain = currentDomain.replace(domainSeparatorRegex, '_');
     const functionName = toolName.replace(`${actionDelimiter}${normalizedDomain}`, '');
     const functionSig = functionSignatures.find((sig) => sig.name === functionName);
@@ -1547,6 +1551,7 @@ async function loadActionToolsForExecution({
       requestBuilder,
       name: toolName,
       description: functionSig?.description ?? '',
+      useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
     });
 
     if (!tool) {

@@ -2,7 +2,13 @@ import { useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, Constants, dataService, getEndpointField } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  Constants,
+  dataService,
+  getEndpointField,
+  getDefaultParamsEndpoint,
+} from 'librechat-data-provider';
 import type {
   TEndpointsConfig,
   TStartupConfig,
@@ -106,11 +112,13 @@ const useNavigateToConvo = (index = 0) => {
 
       const models = modelsConfig?.[defaultEndpoint ?? ''] ?? [];
 
+      const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, defaultEndpoint);
       convo = buildDefaultConvo({
         models,
         conversation,
         endpoint: defaultEndpoint,
         lastConversationSetup: conversation,
+        defaultParamsEndpoint,
       });
     }
     clearAllConversations(true);

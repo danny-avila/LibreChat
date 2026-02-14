@@ -1,11 +1,20 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
+jest.mock('node:dns/promises', () => ({
+  lookup: jest.fn(),
+}));
+
+import { lookup } from 'node:dns/promises';
 import {
   extractMCPServerDomain,
   isActionDomainAllowed,
   isEmailDomainAllowed,
   isMCPDomainAllowed,
+  isPrivateIP,
   isSSRFTarget,
+  resolveHostnameSSRF,
 } from './domain';
+
+const mockedLookup = lookup as jest.MockedFunction<typeof lookup>;
 
 describe('isEmailDomainAllowed', () => {
   afterEach(() => {
@@ -192,7 +201,154 @@ describe('isSSRFTarget', () => {
   });
 });
 
+describe('isPrivateIP', () => {
+  describe('IPv4 private ranges', () => {
+    it('should detect loopback addresses', () => {
+      expect(isPrivateIP('127.0.0.1')).toBe(true);
+      expect(isPrivateIP('127.255.255.255')).toBe(true);
+    });
+
+    it('should detect 10.x.x.x private range', () => {
+      expect(isPrivateIP('10.0.0.1')).toBe(true);
+      expect(isPrivateIP('10.255.255.255')).toBe(true);
+    });
+
+    it('should detect 172.16-31.x.x private range', () => {
+      expect(isPrivateIP('172.16.0.1')).toBe(true);
+      expect(isPrivateIP('172.31.255.255')).toBe(true);
+      expect(isPrivateIP('172.15.0.1')).toBe(false);
+      expect(isPrivateIP('172.32.0.1')).toBe(false);
+    });
+
+    it('should detect 192.168.x.x private range', () => {
+      expect(isPrivateIP('192.168.0.1')).toBe(true);
+      expect(isPrivateIP('192.168.255.255')).toBe(true);
+    });
+
+    it('should detect 169.254.x.x link-local range', () => {
+      expect(isPrivateIP('169.254.169.254')).toBe(true);
+      expect(isPrivateIP('169.254.0.1')).toBe(true);
+    });
+
+    it('should detect 0.0.0.0', () => {
+      expect(isPrivateIP('0.0.0.0')).toBe(true);
+    });
+
+    it('should allow public IPs', () => {
+      expect(isPrivateIP('8.8.8.8')).toBe(false);
+      expect(isPrivateIP('1.1.1.1')).toBe(false);
+      expect(isPrivateIP('93.184.216.34')).toBe(false);
+    });
+  });
+
+  describe('IPv6 private ranges', () => {
+    it('should detect loopback', () => {
+      expect(isPrivateIP('::1')).toBe(true);
+      expect(isPrivateIP('::')).toBe(true);
+      expect(isPrivateIP('[::1]')).toBe(true);
+    });
+
+    it('should detect unique local (fc/fd) and link-local (fe80)', () => {
+      expect(isPrivateIP('fc00::1')).toBe(true);
+      expect(isPrivateIP('fd00::1')).toBe(true);
+      expect(isPrivateIP('fe80::1')).toBe(true);
+    });
+  });
+
+  describe('IPv4-mapped IPv6 addresses', () => {
+    it('should detect private IPs in IPv4-mapped IPv6 form', () => {
+      expect(isPrivateIP('::ffff:169.254.169.254')).toBe(true);
+      expect(isPrivateIP('::ffff:127.0.0.1')).toBe(true);
+      expect(isPrivateIP('::ffff:10.0.0.1')).toBe(true);
+      expect(isPrivateIP('::ffff:192.168.1.1')).toBe(true);
+    });
+
+    it('should allow public IPs in IPv4-mapped IPv6 form', () => {
+      expect(isPrivateIP('::ffff:8.8.8.8')).toBe(false);
+      expect(isPrivateIP('::ffff:93.184.216.34')).toBe(false);
+    });
+  });
+});
+
+describe('resolveHostnameSSRF', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should detect domains that resolve to private IPs (nip.io bypass)', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '169.254.169.254', family: 4 }] as never);
+    expect(await resolveHostnameSSRF('169.254.169.254.nip.io')).toBe(true);
+  });
+
+  it('should detect domains that resolve to loopback', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '127.0.0.1', family: 4 }] as never);
+    expect(await resolveHostnameSSRF('loopback.example.com')).toBe(true);
+  });
+
+  it('should detect when any resolved address is private', async () => {
+    mockedLookup.mockResolvedValueOnce([
+      { address: '93.184.216.34', family: 4 },
+      { address: '10.0.0.1', family: 4 },
+    ] as never);
+    expect(await resolveHostnameSSRF('dual.example.com')).toBe(true);
+  });
+
+  it('should allow domains that resolve to public IPs', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '93.184.216.34', family: 4 }] as never);
+    expect(await resolveHostnameSSRF('example.com')).toBe(false);
+  });
+
+  it('should skip literal IPv4 addresses (handled by isSSRFTarget)', async () => {
+    expect(await resolveHostnameSSRF('169.254.169.254')).toBe(false);
+    expect(mockedLookup).not.toHaveBeenCalled();
+  });
+
+  it('should skip literal IPv6 addresses', async () => {
+    expect(await resolveHostnameSSRF('::1')).toBe(false);
+    expect(mockedLookup).not.toHaveBeenCalled();
+  });
+
+  it('should fail open on DNS resolution failure', async () => {
+    mockedLookup.mockRejectedValueOnce(new Error('ENOTFOUND'));
+    expect(await resolveHostnameSSRF('nonexistent.example.com')).toBe(false);
+  });
+});
+
+describe('isActionDomainAllowed - DNS resolution SSRF protection', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should block domains resolving to cloud metadata IP (169.254.169.254)', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '169.254.169.254', family: 4 }] as never);
+    expect(await isActionDomainAllowed('169.254.169.254.nip.io', null)).toBe(false);
+  });
+
+  it('should block domains resolving to private 10.x range', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '10.0.0.5', family: 4 }] as never);
+    expect(await isActionDomainAllowed('internal.attacker.com', null)).toBe(false);
+  });
+
+  it('should block domains resolving to 172.16.x range', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '172.16.0.1', family: 4 }] as never);
+    expect(await isActionDomainAllowed('docker.attacker.com', null)).toBe(false);
+  });
+
+  it('should allow domains resolving to public IPs when no allowlist', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '93.184.216.34', family: 4 }] as never);
+    expect(await isActionDomainAllowed('example.com', null)).toBe(true);
+  });
+
+  it('should not perform DNS check when allowedDomains is configured', async () => {
+    expect(await isActionDomainAllowed('example.com', ['example.com'])).toBe(true);
+    expect(mockedLookup).not.toHaveBeenCalled();
+  });
+});
+
 describe('isActionDomainAllowed', () => {
+  beforeEach(() => {
+    mockedLookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+  });
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -541,6 +697,9 @@ describe('extractMCPServerDomain', () => {
 });
 
 describe('isMCPDomainAllowed', () => {
+  beforeEach(() => {
+    mockedLookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+  });
   afterEach(() => {
     jest.clearAllMocks();
   });

@@ -28,7 +28,10 @@ export interface MCPServerDefinition {
 // The init states (isInitializing, isCancellable, etc.) are stored in the global Jotai atom
 type PollIntervals = Record<string, NodeJS.Timeout | null>;
 
-export function useMCPServerManager({ conversationId }: { conversationId?: string | null } = {}) {
+export function useMCPServerManager({
+  conversationId,
+  storageContextKey,
+}: { conversationId?: string | null; storageContextKey?: string } = {}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
@@ -73,6 +76,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({
     conversationId,
+    storageContextKey,
     servers: selectableServers,
   });
   const mcpValuesRef = useRef(mcpValues);
