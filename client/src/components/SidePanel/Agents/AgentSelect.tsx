@@ -2,13 +2,17 @@ import { EarthIcon } from 'lucide-react';
 import { ControlCombobox } from '@librechat/client';
 import { useCallback, useEffect, useRef } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
-import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
+import {
+  AgentCapabilities,
+  defaultAgentFormValues,
+  validateVisionModel,
+} from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { TAgentCapabilities, AgentForm } from '~/common';
 import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
 import { useLocalize, useAgentDefaultPermissionLevel } from '~/hooks';
-import { useListAgentsQuery } from '~/data-provider';
+import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
 
@@ -27,6 +31,7 @@ export default function AgentSelect({
   const lastSelectedAgent = useRef<string | null>(null);
   const { control, reset } = useFormContext();
   const permissionLevel = useAgentDefaultPermissionLevel();
+  const { data: startupConfig } = useGetStartupConfig();
 
   const { data: agents = null } = useListAgentsQuery(
     { requiredPermission: permissionLevel },
@@ -54,10 +59,28 @@ export default function AgentSelect({
         icon: isGlobal ? <EarthIcon className={'icon-lg text-green-400'} /> : null,
       };
 
+      // Get vision from top-level agent or from latest version if not present
+      // If not explicitly set, automatically determine from model
+      const explicitVision =
+        fullAgent.vision ?? fullAgent.versions?.[fullAgent.versions.length - 1]?.vision;
+      const agentModel =
+        (fullAgent.model_parameters as { model?: string })?.model ?? fullAgent.model;
+      const agentVision =
+        explicitVision !== undefined
+          ? explicitVision
+          : agentModel
+            ? validateVisionModel({
+                model: agentModel,
+                modelSpecs: startupConfig?.modelSpecs,
+                availableModels: startupConfig?.availableModels,
+              })
+            : false;
+
       const capabilities: TAgentCapabilities = {
         [AgentCapabilities.web_search]: false,
         [AgentCapabilities.file_search]: false,
         [AgentCapabilities.execute_code]: false,
+        [AgentCapabilities.vision]: agentVision,
         [AgentCapabilities.end_after_tools]: false,
         [AgentCapabilities.hide_sequential_outputs]: false,
       };
