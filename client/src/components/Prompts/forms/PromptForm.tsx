@@ -83,7 +83,6 @@ const VersionsPanel = React.memo(
               )}
               onClick={() => {
                 if (!selectedPrompt) {
-                  console.warn('No prompt is selected');
                   return;
                 }
                 const { _id: promptVersionId = '', prompt } = selectedPrompt;
@@ -358,7 +357,7 @@ const PromptForm = () => {
   const handleUpdateOneliner = useCallback(
     (oneliner: string) => {
       if (!group || !group._id) {
-        return console.warn('Group not found');
+        return;
       }
       debouncedUpdateOneliner(group._id, oneliner, updateGroupMutation.mutate);
     },
@@ -368,7 +367,7 @@ const PromptForm = () => {
   const handleUpdateCommand = useCallback(
     (command: string) => {
       if (!group || !group._id) {
-        return console.warn('Group not found');
+        return;
       }
       debouncedUpdateCommand(group._id, command, updateGroupMutation.mutate);
     },
