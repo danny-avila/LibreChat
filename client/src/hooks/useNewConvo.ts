@@ -300,8 +300,42 @@ const useNewConvo = (index = 0) => {
 
       let preset = _preset;
       const result = getDefaultModelSpec(startupConfig);
-      const defaultModelSpec = result?.default ?? result?.last;
-      if (
+
+      // Prefer last used spec over default spec for better user experience
+      const defaultModelSpec = result?.last ?? result?.default;
+
+      // Check for last used agent_id that might be outside of modelSpecs
+      const lastAgentId = localStorage.getItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`);
+
+      // Get the last conversation setup to determine what was most recently selected
+      // This is the most reliable way to know if a custom agent was selected after a modelSpec
+      const lastConvoSetup = JSON.parse(
+        localStorage.getItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_${index}`) ?? '{}',
+      );
+      const lastConvoAgentId = lastConvoSetup?.agent_id;
+      const lastConvoSpec = lastConvoSetup?.spec;
+
+      // Use lastAgentId if:
+      // 1. No preset passed AND no template AND lastAgentId exists
+      // 2. AND the last conversation had this agent_id without a spec (custom agent selection)
+      //    OR there's no defaultModelSpec at all
+      // This ensures:
+      // - Custom agent selection (no spec) is remembered
+      // - ModelSpec selections (has spec) take priority when they were the last action
+      const shouldUseLastAgent =
+        !_preset &&
+        lastAgentId &&
+        Object.keys(_template).length === 0 &&
+        ((!lastConvoSpec && lastConvoAgentId === lastAgentId) || !defaultModelSpec);
+
+      if (shouldUseLastAgent) {
+        // Create a preset for the last used agent outside of modelSpecs
+        preset = {
+          endpoint: EModelEndpoint.agents,
+          agent_id: lastAgentId,
+        };
+        logger.log('conversation', 'Using last used agent_id outside modelSpecs', lastAgentId);
+      } else if (
         !preset &&
         startupConfig &&
         (startupConfig.modelSpecs?.prioritize === true ||
@@ -355,6 +389,7 @@ const useNewConvo = (index = 0) => {
       );
     },
     [
+      index,
       files,
       setFiles,
       saveDrafts,

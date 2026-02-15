@@ -269,8 +269,8 @@ export function applyModelSpecEphemeralAgent({
 
 /**
  * Gets default model spec from config and user preferences.
- * Priority: admin default → last selected → first spec (when prioritize=true or modelSelect disabled).
- * Otherwise: admin default or last conversation spec.
+ * Returns both admin default and last selected spec when available.
+ * Priority for usage: last selected → admin default → first spec (when prioritize=true or modelSelect disabled).
  */
 export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
   | {
@@ -284,20 +284,30 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
     return;
   }
   const defaultSpec = list?.find((spec) => spec.default);
+
+  // Try to get last selected spec from localStorage
+  const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
+  let lastSelectedSpec = lastSelectedSpecName
+    ? list?.find((spec) => spec.name === lastSelectedSpecName)
+    : undefined;
+
+  // Fallback: try to get spec from last conversation setup
+  if (!lastSelectedSpec) {
+    const lastConversationSetup = JSON.parse(
+      localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}',
+    );
+    if (lastConversationSetup.spec) {
+      lastSelectedSpec = list?.find((spec) => spec.name === lastConversationSetup.spec);
+    }
+  }
+
   if (prioritize === true || !interfaceConfig?.modelSelect) {
-    const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
-    const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
-    return { default: defaultSpec || lastSelectedSpec || list?.[0] };
-  } else if (defaultSpec) {
-    return { default: defaultSpec };
+    // When prioritize is true or modelSelect is disabled, return the effective spec as default
+    return { default: lastSelectedSpec || defaultSpec || list?.[0], last: lastSelectedSpec };
   }
-  const lastConversationSetup = JSON.parse(
-    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}',
-  );
-  if (!lastConversationSetup.spec) {
-    return;
-  }
-  return { last: list?.find((spec) => spec.name === lastConversationSetup.spec) };
+
+  // Return both default and last, allowing consumer to choose priority
+  return { default: defaultSpec, last: lastSelectedSpec };
 }
 
 export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
