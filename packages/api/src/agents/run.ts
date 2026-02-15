@@ -26,6 +26,21 @@ type RuntimeSummarizationConfig = {
   stream?: boolean;
   reserveTokensRatio?: number;
   maxSummaryTokens?: number;
+  /** Absolute minimum tokens reserved for summarization output. */
+  minReserveTokens?: number;
+  /** Position-based context pruning configuration. */
+  contextPruning?: {
+    enabled?: boolean;
+    keepLastAssistants?: number;
+    softTrimRatio?: number;
+    hardClearRatio?: number;
+    minPrunableToolChars?: number;
+  };
+  /** Overflow recovery configuration. */
+  overflowRecovery?: {
+    enabled?: boolean;
+    maxAttempts?: number;
+  };
   agents?: Record<
     string,
     {
@@ -204,6 +219,11 @@ type RunAgent = Omit<Agent, 'tools'> & {
   hasDeferredTools?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
+  /**
+   * Maximum characters allowed in a single tool result before truncation.
+   * Overrides the default computed from maxContextTokens.
+   */
+  maxToolResultChars?: number;
 };
 
 /**
@@ -401,6 +421,10 @@ export async function createRun({
           }
         : undefined,
       initialSummary,
+      minReserveTokens: resolvedSummarizationConfig?.minReserveTokens,
+      contextPruningConfig: resolvedSummarizationConfig?.contextPruning,
+      overflowRecoveryConfig: resolvedSummarizationConfig?.overflowRecovery,
+      maxToolResultChars: agent.maxToolResultChars,
     };
     agentInputs.push(agentInput);
   };
