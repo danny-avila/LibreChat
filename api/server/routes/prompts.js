@@ -351,6 +351,9 @@ router.post(
   async (req, res) => {
     try {
       const { groupId } = req.params;
+      if (!/^[a-f\d]{24}$/i.test(groupId)) {
+        return res.status(400).send({ error: 'Invalid groupId' });
+      }
       const result = await incrementPromptGroupUsage(groupId);
       res.status(200).send(result);
     } catch (error) {

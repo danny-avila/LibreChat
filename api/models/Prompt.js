@@ -262,7 +262,7 @@ async function getListPromptGroupsByAccess({
   if (after && typeof after === 'string' && after !== 'undefined' && after !== 'null') {
     try {
       const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
-      const { numberOfGenerations, updatedAt, _id } = cursor;
+      const { numberOfGenerations = 0, updatedAt, _id } = cursor;
 
       const cursorCondition = {
         $or: [
