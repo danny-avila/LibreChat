@@ -156,13 +156,13 @@ export class RedisJobStore implements IJobStore {
     // For cluster mode, we can't pipeline keys on different slots
     // The job key uses hash tag {streamId}, runningJobs and userJobs are on different slots
     if (this.isCluster) {
-      await this.redis.hmset(key, this.serializeJob(job));
+      await this.redis.hset(key, this.serializeJob(job));
       await this.redis.expire(key, this.ttl.running);
       await this.redis.sadd(KEYS.runningJobs, streamId);
       await this.redis.sadd(userJobsKey, streamId);
     } else {
       const pipeline = this.redis.pipeline();
-      pipeline.hmset(key, this.serializeJob(job));
+      pipeline.hset(key, this.serializeJob(job));
       pipeline.expire(key, this.ttl.running);
       pipeline.sadd(KEYS.runningJobs, streamId);
       pipeline.sadd(userJobsKey, streamId);
@@ -183,17 +183,23 @@ export class RedisJobStore implements IJobStore {
 
   async updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void> {
     const key = KEYS.job(streamId);
-    const exists = await this.redis.exists(key);
-    if (!exists) {
-      return;
-    }
 
     const serialized = this.serializeJob(updates as SerializableJobData);
     if (Object.keys(serialized).length === 0) {
       return;
     }
 
-    await this.redis.hmset(key, serialized);
+    const fields = Object.entries(serialized).flat();
+    const updated = await this.redis.eval(
+      'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], unpack(ARGV)) return 1 else return 0 end',
+      1,
+      key,
+      ...fields,
+    );
+
+    if (updated === 0) {
+      return;
+    }
 
     // If status changed to complete/error/aborted, update TTL and remove from running set
     // Note: userJobs cleanup is handled lazily via self-healing in getActiveJobIdsByUser

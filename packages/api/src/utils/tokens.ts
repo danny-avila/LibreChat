@@ -197,6 +197,8 @@ const moonshotModels = {
   'moonshot.kimi-k2.5': 262144,
   'moonshot.kimi-k2-thinking': 262144,
   'moonshot.kimi-k2-0711': 131072,
+  'moonshotai.kimi': 262144,
+  'moonshotai.kimi-k2.5': 262144,
 };
 
 const metaModels = {
@@ -308,6 +310,11 @@ const amazonModels = {
   'nova-premier': 995000, // -5000 from max
 };
 
+const openAIBedrockModels = {
+  'openai.gpt-oss-20b': 128000,
+  'openai.gpt-oss-120b': 128000,
+};
+
 const bedrockModels = {
   ...anthropicModels,
   ...mistralModels,
@@ -317,6 +324,7 @@ const bedrockModels = {
   ...metaModels,
   ...ai21Models,
   ...amazonModels,
+  ...openAIBedrockModels,
 };
 
 const xAIModels = {

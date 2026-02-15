@@ -2,7 +2,12 @@
 // zod.spec.ts
 import { z } from 'zod';
 import type { JsonSchemaType } from '@librechat/data-schemas';
-import { resolveJsonSchemaRefs, convertJsonSchemaToZod, convertWithResolvedRefs } from '../zod';
+import {
+  convertWithResolvedRefs,
+  convertJsonSchemaToZod,
+  resolveJsonSchemaRefs,
+  normalizeJsonSchema,
+} from '../zod';
 
 describe('convertJsonSchemaToZod', () => {
   describe('integer type handling', () => {
@@ -206,7 +211,7 @@ describe('convertJsonSchemaToZod', () => {
         type: 'number' as const,
         enum: [1, 2, 3, 5, 8, 13],
       };
-      const zodSchema = convertWithResolvedRefs(schema as JsonSchemaType);
+      const zodSchema = convertWithResolvedRefs(schema as unknown as JsonSchemaType);
 
       expect(zodSchema?.parse(1)).toBe(1);
       expect(zodSchema?.parse(13)).toBe(13);
@@ -2000,5 +2005,191 @@ describe('convertJsonSchemaToZod', () => {
       const result = zodSchema?.parse(testData);
       expect(result?.config).toEqual({});
     });
+  });
+});
+
+describe('normalizeJsonSchema', () => {
+  it('should convert const to enum', () => {
+    const schema = { type: 'string', const: 'hello' } as any;
+    const result = normalizeJsonSchema(schema);
+    expect(result).toEqual({ type: 'string', enum: ['hello'] });
+    expect(result).not.toHaveProperty('const');
+  });
+
+  it('should preserve existing enum when const is also present', () => {
+    const schema = { type: 'string', const: 'hello', enum: ['hello', 'world'] } as any;
+    const result = normalizeJsonSchema(schema);
+    expect(result).toEqual({ type: 'string', enum: ['hello', 'world'] });
+    expect(result).not.toHaveProperty('const');
+  });
+
+  it('should handle non-string const values (number, boolean, null)', () => {
+    expect(normalizeJsonSchema({ type: 'number', const: 42 } as any)).toEqual({
+      type: 'number',
+      enum: [42],
+    });
+    expect(normalizeJsonSchema({ type: 'boolean', const: true } as any)).toEqual({
+      type: 'boolean',
+      enum: [true],
+    });
+    expect(normalizeJsonSchema({ type: 'string', const: null } as any)).toEqual({
+      type: 'string',
+      enum: [null],
+    });
+  });
+
+  it('should recursively normalize nested object properties', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        mode: { type: 'string', const: 'advanced' },
+        count: { type: 'number', const: 5 },
+        name: { type: 'string', description: 'A name' },
+      },
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result.properties.mode).toEqual({ type: 'string', enum: ['advanced'] });
+    expect(result.properties.count).toEqual({ type: 'number', enum: [5] });
+    expect(result.properties.name).toEqual({ type: 'string', description: 'A name' });
+  });
+
+  it('should normalize inside oneOf/anyOf/allOf arrays', () => {
+    const schema = {
+      type: 'object',
+      oneOf: [
+        { type: 'object', properties: { kind: { type: 'string', const: 'A' } } },
+        { type: 'object', properties: { kind: { type: 'string', const: 'B' } } },
+      ],
+      anyOf: [{ type: 'string', const: 'x' }],
+      allOf: [{ type: 'number', const: 1 }],
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result.oneOf[0].properties.kind).toEqual({ type: 'string', enum: ['A'] });
+    expect(result.oneOf[1].properties.kind).toEqual({ type: 'string', enum: ['B'] });
+    expect(result.anyOf[0]).toEqual({ type: 'string', enum: ['x'] });
+    expect(result.allOf[0]).toEqual({ type: 'number', enum: [1] });
+  });
+
+  it('should normalize array items with const', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'string', const: 'fixed' },
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result.items).toEqual({ type: 'string', enum: ['fixed'] });
+  });
+
+  it('should normalize additionalProperties with const', () => {
+    const schema = {
+      type: 'object',
+      additionalProperties: { type: 'string', const: 'val' },
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result.additionalProperties).toEqual({ type: 'string', enum: ['val'] });
+  });
+
+  it('should handle null, undefined, and primitive inputs safely', () => {
+    expect(normalizeJsonSchema(null as any)).toBeNull();
+    expect(normalizeJsonSchema(undefined as any)).toBeUndefined();
+    expect(normalizeJsonSchema('string' as any)).toBe('string');
+    expect(normalizeJsonSchema(42 as any)).toBe(42);
+    expect(normalizeJsonSchema(true as any)).toBe(true);
+  });
+
+  it('should be a no-op when no const is present', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name' },
+        age: { type: 'number' },
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['name'],
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result).toEqual(schema);
+  });
+
+  it('should handle a Tavily-like schema pattern with const', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The search query',
+        },
+        search_depth: {
+          type: 'string',
+          const: 'advanced',
+          description: 'The depth of the search',
+        },
+        topic: {
+          type: 'string',
+          enum: ['general', 'news'],
+          description: 'The search topic',
+        },
+        include_answer: {
+          type: 'boolean',
+          const: true,
+        },
+        max_results: {
+          type: 'number',
+          const: 5,
+        },
+      },
+      required: ['query'],
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+
+    // const fields should be converted to enum
+    expect(result.properties.search_depth).toEqual({
+      type: 'string',
+      enum: ['advanced'],
+      description: 'The depth of the search',
+    });
+    expect(result.properties.include_answer).toEqual({
+      type: 'boolean',
+      enum: [true],
+    });
+    expect(result.properties.max_results).toEqual({
+      type: 'number',
+      enum: [5],
+    });
+
+    // Existing enum should be preserved
+    expect(result.properties.topic).toEqual({
+      type: 'string',
+      enum: ['general', 'news'],
+      description: 'The search topic',
+    });
+
+    // Non-const fields should be unchanged
+    expect(result.properties.query).toEqual({
+      type: 'string',
+      description: 'The search query',
+    });
+
+    // Top-level fields preserved
+    expect(result.required).toEqual(['query']);
+    expect(result.type).toBe('object');
+  });
+
+  it('should handle arrays at the top level', () => {
+    const schemas = [
+      { type: 'string', const: 'a' },
+      { type: 'number', const: 1 },
+    ] as any;
+
+    const result = normalizeJsonSchema(schemas);
+    expect(result).toEqual([
+      { type: 'string', enum: ['a'] },
+      { type: 'number', enum: [1] },
+    ]);
   });
 });
