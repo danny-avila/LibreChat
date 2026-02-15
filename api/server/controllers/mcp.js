@@ -14,6 +14,8 @@ const {
 const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
+const { createAPITools, isAPIRegistryServer } = require('~/server/services/APIRegistry');
+const OpenAPIParser = require('~/server/services/APIRegistry/OpenAPIParser');
 
 /**
  * Handles MCP-specific errors and sends appropriate HTTP responses.
@@ -87,6 +89,46 @@ const getMCPTools = async (req, res) => {
         continue;
       }
 
+      // Check if this is an API Registry server
+      const serverConfig = mcpConfig[serverName];
+      if (isAPIRegistryServer(serverConfig)) {
+        // Generate tools from API Registry configuration
+        try {
+          const apiTools = await createAPITools({
+            serverName,
+            userId,
+            userMCPAuthMap: {},
+          });
+          
+          // Convert API tools to the format expected by getMCPTools
+          const serverTools = {};
+          for (const tool of apiTools) {
+            const toolKey = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
+            serverTools[toolKey] = {
+              function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.inputSchema,
+              },
+            };
+          }
+          
+          serverToolsMap.set(serverName, serverTools);
+          
+          // Cache the tools
+          if (Object.keys(serverTools).length > 0) {
+            cacheMCPServerTools({ userId, serverName, serverTools }).catch((err) =>
+              logger.error(`[getMCPTools] Failed to cache API tools for ${serverName}:`, err),
+            );
+          }
+          continue;
+        } catch (error) {
+          logger.error(`[getMCPTools] Error generating API tools for ${serverName}:`, error);
+          continue;
+        }
+      }
+
+      // Regular MCP server handling
       let serverTools;
       try {
         serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
