@@ -104,7 +104,7 @@ describe('AgentClient - recordCollectedUsage', () => {
         collectedUsage,
         balance: { enabled: true },
         transactions: { enabled: true },
-      });
+      }, {});
 
       expect(mockSpendTokens).toHaveBeenCalledTimes(1);
       expect(mockSpendTokens).toHaveBeenCalledWith(
@@ -114,6 +114,7 @@ describe('AgentClient - recordCollectedUsage', () => {
           model: 'gpt-4',
         }),
         { promptTokens: 100, completionTokens: 50 },
+        expect.any(Object),
       );
       expect(client.usage.input_tokens).toBe(100);
       expect(client.usage.output_tokens).toBe(50);
@@ -286,7 +287,7 @@ describe('AgentClient - recordCollectedUsage', () => {
         collectedUsage,
         balance: { enabled: true },
         transactions: { enabled: true },
-      });
+      }, {});
 
       // input_tokens should be first entry's input (initial context)
       expect(client.usage.input_tokens).toBe(31596);
@@ -301,11 +302,13 @@ describe('AgentClient - recordCollectedUsage', () => {
         1,
         expect.objectContaining({ model: 'claude-opus-4-5-20251101' }),
         { promptTokens: 31596, completionTokens: 151 },
+        expect.any(Object),
       );
       expect(mockSpendTokens).toHaveBeenNthCalledWith(
         5,
         expect.objectContaining({ model: 'claude-opus-4-5-20251101' }),
         { promptTokens: 257440, completionTokens: 2217 },
+        expect.any(Object),
       );
     });
 
@@ -325,7 +328,7 @@ describe('AgentClient - recordCollectedUsage', () => {
         collectedUsage,
         balance: { enabled: true },
         transactions: { enabled: true },
-      });
+      }, {});
 
       expect(client.usage.input_tokens).toBe(263406);
       expect(client.usage.output_tokens).toBe(257);
@@ -334,6 +337,7 @@ describe('AgentClient - recordCollectedUsage', () => {
       expect(mockSpendTokens).toHaveBeenCalledWith(
         expect.objectContaining({ model: 'claude-opus-4-5-20251101' }),
         { promptTokens: 263406, completionTokens: 257 },
+        expect.any(Object),
       );
     });
 
@@ -612,10 +616,11 @@ describe('AgentClient - recordCollectedUsage', () => {
         collectedUsage,
         balance: { enabled: true },
         transactions: { enabled: true },
-      });
+      }, {});
 
       expect(mockSpendTokens).toHaveBeenCalledWith(
         expect.objectContaining({ model: 'gpt-4-turbo' }),
+        expect.any(Object),
         expect.any(Object),
       );
     });
@@ -628,10 +633,11 @@ describe('AgentClient - recordCollectedUsage', () => {
         collectedUsage,
         balance: { enabled: true },
         transactions: { enabled: true },
-      });
+      }, {});
 
       expect(mockSpendTokens).toHaveBeenCalledWith(
         expect.objectContaining({ model: 'param-model' }),
+        expect.any(Object),
         expect.any(Object),
       );
     });
@@ -644,10 +650,11 @@ describe('AgentClient - recordCollectedUsage', () => {
         collectedUsage,
         balance: { enabled: true },
         transactions: { enabled: true },
-      });
+      }, {});
 
       expect(mockSpendTokens).toHaveBeenCalledWith(
         expect.objectContaining({ model: 'client-model' }),
+        expect.any(Object),
         expect.any(Object),
       );
     });
@@ -655,14 +662,18 @@ describe('AgentClient - recordCollectedUsage', () => {
     it('should fallback to agent model_parameters.model as last resort', async () => {
       const collectedUsage = [{ input_tokens: 100, output_tokens: 50 }];
 
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
+      await client.recordCollectedUsage(
+        {
+          collectedUsage,
+          balance: { enabled: true },
+          transactions: { enabled: true },
+        },
+        {}
+      );
 
       expect(mockSpendTokens).toHaveBeenCalledWith(
         expect.objectContaining({ model: 'gpt-4' }),
+        expect.any(Object),
         expect.any(Object),
       );
     });

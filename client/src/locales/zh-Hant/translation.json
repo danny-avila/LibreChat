@@ -585,6 +585,7 @@
   "com_ui_avatar": "大頭照",
   "com_ui_back_to_chat": "返回對話",
   "com_ui_back_to_prompts": "返回提示",
+  "com_ui_balance_tokens_left": "剩餘{{0}}個令牌",
   "com_ui_bookmark_delete_confirm": "你確定要刪除這個書籤嗎？",
   "com_ui_bookmarks": "書籤",
   "com_ui_bookmarks_add": "新增書籤",

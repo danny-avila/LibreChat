@@ -701,6 +701,7 @@
   "com_ui_back_to_builder": "Вернуться в конструктор",
   "com_ui_back_to_chat": "Вернуться к чату",
   "com_ui_back_to_prompts": "Вернуться к промтам",
+  "com_ui_balance_tokens_left": "{{0}} токенов осталось",
   "com_ui_backup_code_number": "Код #{{number}}",
   "com_ui_backup_codes": "Резервные коды",
   "com_ui_backup_codes_regenerate_error": "Произошла ошибка при повторной генерации резервных кодов",

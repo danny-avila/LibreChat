@@ -251,6 +251,7 @@
   "com_ui_all": "tất cả",
   "com_ui_archive": "Lưu trữ",
   "com_ui_archive_error": "Không thể lưu trữ cuộc trò chuyện",
+  "com_ui_balance_tokens_left": "Còn {{0}} token",
   "com_ui_bookmark_delete_confirm": "Bạn có chắc chắn muốn xóa dấu trang này không?",
   "com_ui_bookmarks": "Dấu trang",
   "com_ui_bookmarks_add_to_conversation": "Thêm vào cuộc hội thoại hiện tại",

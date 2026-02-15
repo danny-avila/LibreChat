@@ -28,6 +28,7 @@ function buildUpdateFields(
   if (!userRecord) {
     updateFields.user = userId;
     updateFields.tokenCredits = config.startBalance;
+    updateFields.perSpecTokenCredits = {};
   }
 
   if (userRecord?.tokenCredits == null && config.startBalance != null) {

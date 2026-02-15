@@ -485,6 +485,7 @@
   "com_ui_azure": "Azure",
   "com_ui_back_to_chat": "Vissza a csevegéshez",
   "com_ui_back_to_prompts": "Vissza a promptokhoz",
+  "com_ui_balance_tokens_left": "{{0}} token maradt",
   "com_ui_backup_codes": "Biztonsági mentési kódok",
   "com_ui_backup_codes_regenerate_error": "Hiba történt a biztonsági mentési kódok újragenerálása során",
   "com_ui_backup_codes_regenerated": "A biztonsági mentési kódok sikeresen újragenerálva",

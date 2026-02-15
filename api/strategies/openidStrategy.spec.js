@@ -202,7 +202,7 @@ describe('setupOpenId', () => {
         email: userinfo.email,
         name: `${userinfo.given_name} ${userinfo.family_name}`,
       }),
-      { enabled: false },
+      expect.any(Object),
       true,
       true,
     );
@@ -222,7 +222,7 @@ describe('setupOpenId', () => {
     expect(user.username).toBe(expectUsername);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: expectUsername }),
-      { enabled: false },
+      expect.any(Object),
       true,
       true,
     );
@@ -242,7 +242,7 @@ describe('setupOpenId', () => {
     expect(user.username).toBe(expectUsername);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: expectUsername }),
-      { enabled: false },
+      { balance: { enabled: false } },
       true,
       true,
     );
@@ -260,7 +260,7 @@ describe('setupOpenId', () => {
     expect(user.username).toBe(userinfo.sub);
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({ username: userinfo.sub }),
-      { enabled: false },
+      expect.any(Object),
       true,
       true,
     );

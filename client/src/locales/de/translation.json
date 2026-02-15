@@ -731,6 +731,7 @@
   "com_ui_back_to_builder": "Zurück zum Ersteller",
   "com_ui_back_to_chat": "Zurück zum Chat",
   "com_ui_back_to_prompts": "Zurück zu den Prompts",
+  "com_ui_balance_tokens_left": "{{0}} Token übrig",
   "com_ui_backup_code_number": "Code #{{number}}",
   "com_ui_backup_codes": "Backup-Codes",
   "com_ui_backup_codes_regenerate_error": "Beim Neuerstellen der Backup-Codes ist ein Fehler aufgetreten.",

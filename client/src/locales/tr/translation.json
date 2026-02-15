@@ -436,6 +436,7 @@
   "com_ui_avatar": "Avatar",
   "com_ui_back_to_chat": "Sohbete Dön",
   "com_ui_back_to_prompts": "İstemlere Dön",
+  "com_ui_balance_tokens_left": "{{0}} token kaldı",
   "com_ui_bookmark_delete_confirm": "Bu yer imini silmek istediğinizden emin misiniz?",
   "com_ui_bookmarks": "Yer İmleri",
   "com_ui_bookmarks_add": "Yer İmi Ekle",

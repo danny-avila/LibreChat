@@ -143,8 +143,10 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
         name: fullName,
         role,
       };
-      const balanceConfig = getBalanceConfig(appConfig);
-      const userId = await createUser(user, balanceConfig);
+      const userId = await createUser(user, {
+        ...appConfig,
+        balance: getBalanceConfig(appConfig),
+      });
       user._id = userId;
     } else {
       // Users registered in LDAP are assumed to have their user information managed in LDAP,

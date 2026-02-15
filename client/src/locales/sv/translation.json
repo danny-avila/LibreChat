@@ -410,6 +410,7 @@
   "com_ui_all": "alla",
   "com_ui_archive": "Arkiv",
   "com_ui_archive_error": "Kunde inte arkivera chatt",
+  "com_ui_balance_tokens_left": "{{0}} tokens kvar",
   "com_ui_bookmark_delete_confirm": "Är du säker på att du vill ta bort detta bokmärke?",
   "com_ui_bookmarks": "Bokmärken",
   "com_ui_bookmarks_add_to_conversation": "Lägg till i nuvarande konversation",

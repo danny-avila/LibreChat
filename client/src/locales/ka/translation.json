@@ -61,5 +61,6 @@
   "com_nav_lang_traditional_chinese": "ჩინური ტრადიციული",
   "com_nav_lang_turkish": "თურქული",
   "com_nav_lang_vietnamese": "ვიეტნამური",
-  "com_nav_language": "ენა"
+  "com_nav_language": "ენა",
+  "com_ui_balance_tokens_left": "{{0}} ტოკენი დარჩა"
 }

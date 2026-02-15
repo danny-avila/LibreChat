@@ -514,6 +514,7 @@
   "com_ui_azure": "Azure",
   "com_ui_back_to_chat": "Torna al xat",
   "com_ui_back_to_prompts": "Torna als prompts",
+  "com_ui_balance_tokens_left": "{{0}} tokens restants",
   "com_ui_backup_codes": "Codis de recuperació",
   "com_ui_backup_codes_regenerate_error": "S'ha produït un error en regenerar els codis de recuperació",
   "com_ui_backup_codes_regenerated": "Els codis de recuperació s'han regenerat correctament",

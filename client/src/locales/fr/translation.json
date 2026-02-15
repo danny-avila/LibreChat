@@ -688,6 +688,7 @@
   "com_ui_back_to_builder": "Retour au constructeur",
   "com_ui_back_to_chat": "Retour à la discussion",
   "com_ui_back_to_prompts": "Retour aux Prompts",
+  "com_ui_balance_tokens_left": "{{0}} jetons restants",
   "com_ui_backup_code_number": "Code #{{number}}",
   "com_ui_backup_codes": "Codes de sauvegarde",
   "com_ui_backup_codes_regenerate_error": "Une erreur est survenue lors du renouvellement des codes de sauvegarde",

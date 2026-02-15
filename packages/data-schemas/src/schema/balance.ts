@@ -13,6 +13,11 @@ const balanceSchema = new Schema<t.IBalance>({
     type: Number,
     default: 0,
   },
+  perSpecTokenCredits: {
+    type: Map,
+    of: Number,
+    default: null,
+  },
   // Automatic refill settings
   autoRefillEnabled: {
     type: Boolean,
