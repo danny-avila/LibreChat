@@ -23,6 +23,7 @@ type RuntimeSummarizationConfig = {
   model?: string;
   parameters?: Record<string, unknown>;
   prompt?: string;
+  stream?: boolean;
   agents?: Record<
     string,
     {
@@ -31,6 +32,7 @@ type RuntimeSummarizationConfig = {
       model?: string;
       parameters?: Record<string, unknown>;
       prompt?: string;
+      stream?: boolean;
       trigger?: {
         type: string;
         value: number;
@@ -271,17 +273,12 @@ export async function createRun({
       perAgentSummarizationOverride?.provider ?? resolvedSummarizationConfig?.provider;
     const resolvedSummarizationModel =
       perAgentSummarizationOverride?.model ?? resolvedSummarizationConfig?.model;
-    const resolvedSummarizationPrompt =
-      perAgentSummarizationOverride?.prompt ?? resolvedSummarizationConfig?.prompt;
     const hasSummarizationProvider =
       typeof resolvedSummarizationProvider === 'string' &&
       resolvedSummarizationProvider.trim().length > 0;
     const hasSummarizationModel =
       typeof resolvedSummarizationModel === 'string' &&
       resolvedSummarizationModel.trim().length > 0;
-    const hasSummarizationPrompt =
-      typeof resolvedSummarizationPrompt === 'string' &&
-      resolvedSummarizationPrompt.trim().length > 0;
 
     const provider =
       (providerEndpointMap[
@@ -372,8 +369,7 @@ export async function createRun({
         resolvedSummarizationConfig != null &&
         resolvedSummarizationConfig.enabled !== false &&
         hasSummarizationProvider &&
-        hasSummarizationModel &&
-        hasSummarizationPrompt,
+        hasSummarizationModel,
       summarizationConfig: resolvedSummarizationConfig
         ? {
             enabled: resolvedSummarizationConfig.enabled,
@@ -382,6 +378,7 @@ export async function createRun({
             model: resolvedSummarizationConfig.model,
             parameters: resolvedSummarizationConfig.parameters,
             prompt: resolvedSummarizationConfig.prompt,
+            stream: resolvedSummarizationConfig.stream,
           }
         : undefined,
       initialSummary,

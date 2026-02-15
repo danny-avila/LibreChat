@@ -255,14 +255,28 @@ const Summary = memo(({ text, model, provider, tokenCount, summarizing }: Summar
 
   if (summarizing) {
     return (
-      <div className="mb-2 pb-2 pt-2">
-        <SummaryButton
-          isExpanded={false}
-          onClick={handleClick}
-          label={label}
-          meta={meta}
-          showCopyButton={false}
-        />
+      <div className="group/reasoning">
+        <div className="group/summary-container">
+          <div className="mb-2 pb-2 pt-2">
+            <SummaryButton
+              isExpanded={!!text}
+              onClick={handleClick}
+              label={label}
+              meta={meta}
+              showCopyButton={false}
+            />
+          </div>
+          {text && (
+            <div
+              className="mb-4 grid transition-all duration-300 ease-out"
+              style={{ gridTemplateRows: '1fr' }}
+            >
+              <div className="relative overflow-hidden">
+                <SummaryContent>{text}</SummaryContent>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   }

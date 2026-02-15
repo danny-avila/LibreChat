@@ -53,6 +53,8 @@ export namespace Agents {
     | MessageContentImageUrl
     | MessageContentVideoUrl
     | MessageContentInputAudio
+    | SummaryContentPart
+    | ToolCallContent
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | (Record<string, any> & { type?: ContentTypes | string })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -314,6 +316,27 @@ export namespace Agents {
     | ContentTypes.VIDEO_URL
     | ContentTypes.INPUT_AUDIO
     | string;
+
+  export interface SummarizeStartEvent {
+    agentId: string;
+    provider: string;
+    model?: string;
+    messagesToRefineCount: number;
+    summaryVersion: number;
+  }
+
+  export interface SummarizeDeltaEvent {
+    id: string;
+    delta: {
+      summary: SummaryContentPart;
+    };
+  }
+
+  export interface SummarizeCompleteEvent {
+    agentId: string;
+    summary: SummaryContentPart;
+    error?: string;
+  }
 }
 
 export type ToolCallResult = {
