@@ -282,7 +282,6 @@ const PromptForm = () => {
 
       const groupId = selectedPrompt.groupId || group?._id;
       if (!groupId) {
-        console.error('No groupId available');
         return;
       }
 

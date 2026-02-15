@@ -61,7 +61,7 @@ function PromptsCommand({
   submitPrompt: (textPrompt: string) => void;
 }) {
   const localize = useLocalize();
-  const recordUsage = useRecordPromptUsage();
+  const { mutate: recordUsage } = useRecordPromptUsage();
   const { allPromptGroups, hasAccess } = usePromptGroupsContext();
   const { data, isLoading } = allPromptGroups;
 
@@ -110,7 +110,7 @@ function PromptsCommand({
       } else {
         submitPrompt(group.productionPrompt?.prompt ?? '');
         if (group._id) {
-          recordUsage.mutate(group._id);
+          recordUsage(group._id);
         }
       }
     },
