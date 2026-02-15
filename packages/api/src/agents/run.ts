@@ -24,6 +24,8 @@ type RuntimeSummarizationConfig = {
   parameters?: Record<string, unknown>;
   prompt?: string;
   stream?: boolean;
+  reserveTokensRatio?: number;
+  maxSummaryTokens?: number;
   agents?: Record<
     string,
     {
@@ -33,6 +35,7 @@ type RuntimeSummarizationConfig = {
       parameters?: Record<string, unknown>;
       prompt?: string;
       stream?: boolean;
+      maxSummaryTokens?: number;
       trigger?: {
         type: string;
         value: number;
@@ -190,6 +193,8 @@ export function getReasoningKey(
 type RunAgent = Omit<Agent, 'tools'> & {
   tools?: GenericTool[];
   maxContextTokens?: number;
+  /** Pre-ratio context budget from initializeAgent. */
+  baseContextTokens?: number;
   useLegacyContent?: boolean;
   toolContextMap?: Record<string, string>;
   toolRegistry?: LCToolRegistry;
@@ -351,6 +356,17 @@ export async function createRun({
       }
     }
 
+    // Apply configurable reserve ratio when available, falling back to the
+    // pre-computed maxContextTokens from initializeAgent.
+    const reserveRatio = resolvedSummarizationConfig?.reserveTokensRatio;
+    const effectiveMaxContextTokens =
+      reserveRatio != null &&
+      reserveRatio > 0 &&
+      reserveRatio < 1 &&
+      agent.baseContextTokens != null
+        ? Math.max(1024, Math.round(agent.baseContextTokens * (1 - reserveRatio)))
+        : agent.maxContextTokens;
+
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     const agentInput: AgentInputs = {
       provider,
@@ -362,7 +378,7 @@ export async function createRun({
       instructions: systemContent,
       name: agent.name ?? undefined,
       toolRegistry: agent.toolRegistry,
-      maxContextTokens: agent.maxContextTokens,
+      maxContextTokens: effectiveMaxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
       discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
       summarizationEnabled:
@@ -379,6 +395,9 @@ export async function createRun({
             parameters: resolvedSummarizationConfig.parameters,
             prompt: resolvedSummarizationConfig.prompt,
             stream: resolvedSummarizationConfig.stream,
+            maxSummaryTokens:
+              perAgentSummarizationOverride?.maxSummaryTokens ??
+              resolvedSummarizationConfig.maxSummaryTokens,
           }
         : undefined,
       initialSummary,

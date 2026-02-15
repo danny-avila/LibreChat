@@ -959,6 +959,7 @@ export const summarizationAgentOverrideSchema = z.object({
   parameters: z.record(z.any()).optional(),
   prompt: z.string().optional(),
   stream: z.boolean().optional(),
+  maxSummaryTokens: z.number().positive().optional(),
 });
 
 export const summarizationConfigSchema = z.object({
@@ -969,6 +970,8 @@ export const summarizationConfigSchema = z.object({
   trigger: summarizationTriggerSchema.optional(),
   prompt: z.string().optional(),
   stream: z.boolean().optional(),
+  reserveTokensRatio: z.number().min(0).max(1).optional(),
+  maxSummaryTokens: z.number().positive().optional(),
   agents: z.record(summarizationAgentOverrideSchema).optional(),
 });
 

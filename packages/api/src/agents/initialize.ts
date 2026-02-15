@@ -40,6 +40,8 @@ export type InitializedAgent = Agent & {
   attachments: IMongoFile[];
   toolContextMap: Record<string, unknown>;
   maxContextTokens: number;
+  /** Pre-ratio context budget (agentMaxContextNum - maxOutputTokensNum). Used by createRun to apply a configurable reserve ratio. */
+  baseContextTokens?: number;
   useLegacyContent: boolean;
   resendFiles: boolean;
   tool_resources?: AgentToolResources;
@@ -396,6 +398,9 @@ export async function initializeAgent(
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || 18000;
   const maxOutputTokensNum = Number(maxOutputTokens) || 0;
+  const baseContextTokens = agentMaxContextNum - maxOutputTokensNum;
+
+  const DEFAULT_RESERVE_RATIO = 0.05;
 
   const finalAttachments: IMongoFile[] = (primedAttachments ?? [])
     .filter((a): a is TFile => a != null)
@@ -409,6 +414,7 @@ export async function initializeAgent(
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    baseContextTokens,
     attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
@@ -416,7 +422,7 @@ export async function initializeAgent(
     maxContextTokens:
       maxContextTokens != null && maxContextTokens > 0
         ? maxContextTokens
-        : Math.round((agentMaxContextNum - maxOutputTokensNum) * 0.9),
+        : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
   };
 
   return initializedAgent;
