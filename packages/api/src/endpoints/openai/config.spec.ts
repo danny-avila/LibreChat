@@ -1859,4 +1859,101 @@ describe('getOpenAIConfig', () => {
       });
     });
   });
+
+  describe('Entra ID Authentication', () => {
+    it('should handle Entra ID authentication in Azure configuration', () => {
+      const azure = {
+        azureOpenAIApiInstanceName: 'test-instance',
+        azureOpenAIApiDeploymentName: 'test-deployment',
+        azureOpenAIApiVersion: '2023-05-15',
+        azureOpenAIApiKey: 'entra-id-placeholder',
+      };
+
+      const result = getOpenAIConfig(mockApiKey, { azure });
+
+      expect(result.llmConfig).toMatchObject({
+        ...azure,
+        model: 'test-deployment',
+      });
+    });
+
+    it('should not validate the Entra ID placeholder as a real API key', () => {
+      const azure = {
+        azureOpenAIApiInstanceName: 'test-instance',
+        azureOpenAIApiDeploymentName: 'test-deployment',
+        azureOpenAIApiVersion: '2023-05-15',
+        azureOpenAIApiKey: 'entra-id-placeholder',
+      };
+
+      const result = getOpenAIConfig('entra-id-placeholder', { azure });
+
+      // The placeholder should pass through without validation errors
+      expect(result.llmConfig).toMatchObject({
+        ...azure,
+        model: 'test-deployment',
+      });
+      // Verify the placeholder is preserved in the config
+      expect((result.llmConfig as Record<string, unknown>).azureOpenAIApiKey).toBe(
+        'entra-id-placeholder',
+      );
+    });
+
+    it('should maintain backward compatibility with real API keys when Entra ID is not used', () => {
+      const azure = {
+        azureOpenAIApiInstanceName: 'test-instance',
+        azureOpenAIApiDeploymentName: 'test-deployment',
+        azureOpenAIApiVersion: '2023-05-15',
+        azureOpenAIApiKey: 'real-azure-api-key-12345',
+      };
+
+      const result = getOpenAIConfig(mockApiKey, { azure });
+
+      expect(result.llmConfig).toMatchObject({
+        ...azure,
+        model: 'test-deployment',
+      });
+      // Verify real API key is preserved
+      expect((result.llmConfig as Record<string, unknown>).azureOpenAIApiKey).toBe(
+        'real-azure-api-key-12345',
+      );
+    });
+
+    it('should handle configuration where both placeholder and real key structure exist', () => {
+      // This tests the scenario where the config structure supports both modes
+      const azureWithPlaceholder = {
+        azureOpenAIApiInstanceName: 'test-instance',
+        azureOpenAIApiDeploymentName: 'test-deployment',
+        azureOpenAIApiVersion: '2023-05-15',
+        azureOpenAIApiKey: 'entra-id-placeholder',
+      };
+
+      const azureWithRealKey = {
+        azureOpenAIApiInstanceName: 'test-instance',
+        azureOpenAIApiDeploymentName: 'test-deployment',
+        azureOpenAIApiVersion: '2023-05-15',
+        azureOpenAIApiKey: 'real-azure-api-key-12345',
+      };
+
+      const resultWithPlaceholder = getOpenAIConfig(mockApiKey, { azure: azureWithPlaceholder });
+      const resultWithRealKey = getOpenAIConfig(mockApiKey, { azure: azureWithRealKey });
+
+      // Both should work correctly
+      expect(resultWithPlaceholder.llmConfig).toMatchObject({
+        ...azureWithPlaceholder,
+        model: 'test-deployment',
+      });
+      expect(resultWithRealKey.llmConfig).toMatchObject({
+        ...azureWithRealKey,
+        model: 'test-deployment',
+      });
+
+      // Verify they have different API keys
+      expect((resultWithPlaceholder.llmConfig as Record<string, unknown>).azureOpenAIApiKey).toBe(
+        'entra-id-placeholder',
+      );
+      expect((resultWithRealKey.llmConfig as Record<string, unknown>).azureOpenAIApiKey).toBe(
+        'real-azure-api-key-12345',
+      );
+    });
+  });
 });
