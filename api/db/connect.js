@@ -41,7 +41,7 @@ if (!cached) {
 }
 
 mongoose.connection.on('error', (err) => {
-  logger.error('[connectDb] MongoDB connection error:', err.message);
+  logger.error('[connectDb] MongoDB connection error:', err);
 });
 
 async function connectDb() {

@@ -251,10 +251,14 @@ process.on('uncaughtException', (err) => {
     return;
   }
 
+  if (isEnabled(process.env.CRASH_ON_UNCAUGHT_EXCEPTION)) {
+    process.exit(1);
+  }
+
   logger.error('Unhandled error encountered. The app will continue running.', {
-    name: err.name,
-    message: err.message,
-    stack: err.stack,
+    name: err?.name,
+    message: err?.message,
+    stack: err?.stack,
   });
 });
 
