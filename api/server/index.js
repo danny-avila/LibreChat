@@ -259,10 +259,9 @@ process.on('uncaughtException', (err) => {
       err.message.includes('ECONNREFUSED') ||
       err.message.includes('ECONNRESET'))
   ) {
-    logger.error(
-      'A MongoDB connection error occurred. The app will continue running.',
-      { message: err.message },
-    );
+    logger.error('A MongoDB connection error occurred. The app will continue running.', {
+      message: err.message,
+    });
     return;
   }
 
