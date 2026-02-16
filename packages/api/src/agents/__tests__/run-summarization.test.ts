@@ -245,6 +245,7 @@ describe('summarizationConfig field passthrough', () => {
         prompt: 'Summarize this conversation',
         updatePrompt: 'Update the existing summary with new messages',
         stream: false,
+        reserveTokensRatio: 0.1,
         maxSummaryTokens: 4096,
       },
     });
@@ -258,6 +259,7 @@ describe('summarizationConfig field passthrough', () => {
     expect(config.prompt).toBe('Summarize this conversation');
     expect(config.updatePrompt).toBe('Update the existing summary with new messages');
     expect(config.stream).toBe(false);
+    expect(config.reserveRatio).toBe(0.1);
     expect(config.maxSummaryTokens).toBe(4096);
   });
 

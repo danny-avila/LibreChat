@@ -469,6 +469,16 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+        on_agent_log: {
+          handle: (_event, data) => {
+            const logFn = logger[data.level] ?? logger.info;
+            logFn(`[agentus:${data.scope}] ${data.message}`, {
+              ...data.data,
+              runId: data.runId,
+              agentId: data.agentId,
+            });
+          },
+        },
         ...(summarizationConfig?.enabled !== false
           ? {
               on_summarize_start: {
@@ -649,6 +659,16 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+        on_agent_log: {
+          handle: (_event, data) => {
+            const logFn = logger[data.level] ?? logger.info;
+            logFn(`[agentus:${data.scope}] ${data.message}`, {
+              ...data.data,
+              runId: data.runId,
+              agentId: data.agentId,
+            });
+          },
+        },
         ...(summarizationConfig?.enabled !== false
           ? {
               on_summarize_start: { handle: () => {} },

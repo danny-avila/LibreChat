@@ -419,6 +419,7 @@ export async function createRun({
             prompt: resolvedSummarizationConfig.prompt,
             updatePrompt: resolvedSummarizationConfig.updatePrompt,
             stream: resolvedSummarizationConfig.stream,
+            reserveRatio: resolvedSummarizationConfig.reserveTokensRatio,
             maxSummaryTokens:
               perAgentSummarizationOverride?.maxSummaryTokens ??
               resolvedSummarizationConfig.maxSummaryTokens,

@@ -280,6 +280,7 @@ function getDefaultHandlers({
     };
     handlers[GraphEvents.ON_SUMMARIZE_COMPLETE] = {
       handle: async (_event, data) => {
+        aggregateContent({ event: GraphEvents.ON_SUMMARIZE_COMPLETE, data });
         await emitEvent(res, streamId, {
           event: GraphEvents.ON_SUMMARIZE_COMPLETE,
           data,
@@ -287,6 +288,17 @@ function getDefaultHandlers({
       },
     };
   }
+
+  handlers[GraphEvents.ON_AGENT_LOG] = {
+    handle: (_event, data) => {
+      const logFn = logger[data.level] ?? logger.info;
+      logFn(`[agentus:${data.scope}] ${data.message}`, {
+        ...data.data,
+        runId: data.runId,
+        agentId: data.agentId,
+      });
+    },
+  };
 
   return handlers;
 }

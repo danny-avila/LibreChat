@@ -668,19 +668,19 @@ export default function useStepHandler({
           }
         } else {
           announcePolite({ message: 'summarize_completed', isStatus: true });
-          // Finalize: set summarizing=false and apply full summary metadata
+          // Replace accumulated delta text with the authoritative final summary.
+          // Multi-stage summarization streams deltas from each chunk, which
+          // concatenate in updateContent.  The complete event carries only the
+          // correct final text from the last stage.
           const currentMessages = getMessages() || [];
           const lastMessage = currentMessages[currentMessages.length - 1];
           if (lastMessage && Array.isArray(lastMessage.content)) {
             const updated = lastMessage.content.map((part) => {
               if (part?.type === ContentTypes.SUMMARY && (part as SummaryContentPart).summarizing) {
                 return {
-                  ...part,
                   ...(completeData.summary ?? {}),
-                  // Keep the accumulated text if complete event has no text
-                  text: completeData.summary?.text || (part as SummaryContentPart).text,
                   summarizing: false,
-                };
+                } as SummaryContentPart;
               }
               return part;
             });
