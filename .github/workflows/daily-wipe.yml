@@ -2,24 +2,24 @@ name: Monthly Balance Expiry Janitor
 on:
   schedule:
     - cron: '0 16 * * *' # Runs daily at midnight PH time
-  workflow_dispatch: # Allows manual testing
+  workflow_dispatch: 
 
 jobs:
   expire:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # 1. Get your code
+      - uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4 # 2. Prepare the environment
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           
       - name: Install Dependencies
-        run: npm install mongoose # 3. Install the database tool
+        # Added the flag to bypass version conflicts
+        run: npm install mongoose --legacy-peer-deps 
         
       - name: Run Expiry Script
-        run: node api/scripts/expireBalances.js # 4. Run your wipe script
+        run: node api/scripts/expireBalances.js
         env:
-          # This uses the secret you saved in GitHub Settings
           MONGO_URI: ${{ secrets.MONGO_URI }}
