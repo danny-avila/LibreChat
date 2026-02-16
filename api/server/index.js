@@ -252,12 +252,10 @@ process.on('uncaughtException', (err) => {
   }
 
   if (
-    err.message &&
-    (err.message.includes('timed out') ||
-      err.message.includes('MongoNetworkError') ||
-      err.message.includes('MongoServerSelectionError') ||
-      err.message.includes('ECONNREFUSED') ||
-      err.message.includes('ECONNRESET'))
+    err.name === 'MongoNetworkError' ||
+    err.name === 'MongoServerSelectionError' ||
+    err.name === 'MongoNetworkTimeoutError' ||
+    (err.message && /connection \d+ to .+:\d+ timed out/.test(err.message))
   ) {
     logger.error('A MongoDB connection error occurred. The app will continue running.', {
       message: err.message,
