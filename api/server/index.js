@@ -251,19 +251,11 @@ process.on('uncaughtException', (err) => {
     return;
   }
 
-  if (
-    err.name === 'MongoNetworkError' ||
-    err.name === 'MongoServerSelectionError' ||
-    err.name === 'MongoNetworkTimeoutError' ||
-    (err.message && /connection \d+ to .+:\d+ timed out/.test(err.message))
-  ) {
-    logger.error('A MongoDB connection error occurred. The app will continue running.', {
-      message: err.message,
-    });
-    return;
-  }
-
-  process.exit(1);
+  logger.error('Unhandled error encountered. The app will continue running.', {
+    name: err.name,
+    message: err.message,
+    stack: err.stack,
+  });
 });
 
 /** Export app for easier testing purposes */
