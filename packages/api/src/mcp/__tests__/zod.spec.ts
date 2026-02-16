@@ -1604,6 +1604,34 @@ describe('convertJsonSchemaToZod', () => {
       expect(() => zodSchema?.parse(testData)).not.toThrow();
     });
 
+    it('should strip $defs from the resolved output', () => {
+      const schemaWithDefs = {
+        type: 'object' as const,
+        properties: {
+          item: { $ref: '#/$defs/Item' },
+        },
+        $defs: {
+          Item: {
+            type: 'object' as const,
+            properties: {
+              name: { type: 'string' as const },
+            },
+          },
+        },
+      };
+
+      const resolved = resolveJsonSchemaRefs(schemaWithDefs);
+      // $defs should NOT be in the output — it was only used for resolution
+      expect(resolved).not.toHaveProperty('$defs');
+      // The $ref should be resolved inline
+      expect(resolved.properties?.item).toEqual({
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+        },
+      });
+    });
+
     it('should handle various edge cases safely', () => {
       // Test with null/undefined
       expect(resolveJsonSchemaRefs(null as any)).toBeNull();
@@ -2191,5 +2219,145 @@ describe('normalizeJsonSchema', () => {
       { type: 'string', enum: ['a'] },
       { type: 'number', enum: [1] },
     ]);
+  });
+
+  it('should strip vendor extension fields (x-* prefixed keys)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        travelMode: {
+          type: 'string',
+          enum: ['DRIVE', 'BICYCLE', 'TRANSIT', 'WALK'],
+          'x-google-enum-descriptions': ['By car', 'By bicycle', 'By public transit', 'By walking'],
+          description: 'Mode of travel',
+        },
+      },
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result.properties.travelMode).toEqual({
+      type: 'string',
+      enum: ['DRIVE', 'BICYCLE', 'TRANSIT', 'WALK'],
+      description: 'Mode of travel',
+    });
+    expect(result.properties.travelMode).not.toHaveProperty('x-google-enum-descriptions');
+  });
+
+  it('should strip x-* fields at all nesting levels', () => {
+    const schema = {
+      type: 'object',
+      'x-custom-root': true,
+      properties: {
+        outer: {
+          type: 'object',
+          'x-custom-outer': 'value',
+          properties: {
+            inner: {
+              type: 'string',
+              'x-custom-inner': 42,
+            },
+          },
+        },
+        arr: {
+          type: 'array',
+          items: {
+            type: 'string',
+            'x-item-meta': 'something',
+          },
+        },
+      },
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result).not.toHaveProperty('x-custom-root');
+    expect(result.properties.outer).not.toHaveProperty('x-custom-outer');
+    expect(result.properties.outer.properties.inner).not.toHaveProperty('x-custom-inner');
+    expect(result.properties.arr.items).not.toHaveProperty('x-item-meta');
+    // Standard fields should be preserved
+    expect(result.type).toBe('object');
+    expect(result.properties.outer.type).toBe('object');
+    expect(result.properties.outer.properties.inner.type).toBe('string');
+    expect(result.properties.arr.items.type).toBe('string');
+  });
+
+  it('should strip $defs and definitions as a safety net', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+      },
+      $defs: {
+        SomeType: { type: 'string' },
+      },
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result).not.toHaveProperty('$defs');
+    expect(result.type).toBe('object');
+    expect(result.properties.name).toEqual({ type: 'string' });
+  });
+
+  it('should strip x-* fields inside oneOf/anyOf/allOf', () => {
+    const schema = {
+      type: 'object',
+      oneOf: [
+        { type: 'string', 'x-meta': 'a' },
+        { type: 'number', 'x-meta': 'b' },
+      ],
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result.oneOf[0]).toEqual({ type: 'string' });
+    expect(result.oneOf[1]).toEqual({ type: 'number' });
+  });
+
+  it('should handle a Google Maps MCP-like schema with $defs and x-google-enum-descriptions', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        origin: { type: 'string', description: 'Starting address' },
+        destination: { type: 'string', description: 'Ending address' },
+        travelMode: {
+          type: 'string',
+          enum: ['DRIVE', 'BICYCLE', 'TRANSIT', 'WALK'],
+          'x-google-enum-descriptions': ['By car', 'By bicycle', 'By public transit', 'By walking'],
+        },
+        waypoints: {
+          type: 'array',
+          items: { $ref: '#/$defs/Waypoint' },
+        },
+      },
+      required: ['origin', 'destination'],
+      $defs: {
+        Waypoint: {
+          type: 'object',
+          properties: {
+            location: { type: 'string' },
+            stopover: { type: 'boolean' },
+          },
+        },
+      },
+    } as any;
+
+    // First resolve refs, then normalize
+    const resolved = resolveJsonSchemaRefs(schema);
+    const result = normalizeJsonSchema(resolved);
+
+    // $defs should be stripped (by both resolveJsonSchemaRefs and normalizeJsonSchema)
+    expect(result).not.toHaveProperty('$defs');
+    // x-google-enum-descriptions should be stripped
+    expect(result.properties.travelMode).not.toHaveProperty('x-google-enum-descriptions');
+    // $ref should be resolved inline
+    expect(result.properties.waypoints.items).not.toHaveProperty('$ref');
+    expect(result.properties.waypoints.items).toEqual({
+      type: 'object',
+      properties: {
+        location: { type: 'string' },
+        stopover: { type: 'boolean' },
+      },
+    });
+    // Standard fields preserved
+    expect(result.properties.travelMode.enum).toEqual(['DRIVE', 'BICYCLE', 'TRANSIT', 'WALK']);
+    expect(result.properties.origin).toEqual({ type: 'string', description: 'Starting address' });
   });
 });
