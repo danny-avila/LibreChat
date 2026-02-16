@@ -23,6 +23,8 @@ type RuntimeSummarizationConfig = {
   model?: string;
   parameters?: Record<string, unknown>;
   prompt?: string;
+  /** Prompt used when updating an existing summary with new messages. Falls back to `prompt` if not set. */
+  updatePrompt?: string;
   stream?: boolean;
   reserveTokensRatio?: number;
   maxSummaryTokens?: number;
@@ -49,6 +51,7 @@ type RuntimeSummarizationConfig = {
       model?: string;
       parameters?: Record<string, unknown>;
       prompt?: string;
+      updatePrompt?: string;
       stream?: boolean;
       maxSummaryTokens?: number;
       trigger?: {
@@ -414,6 +417,7 @@ export async function createRun({
             model: resolvedSummarizationConfig.model,
             parameters: resolvedSummarizationConfig.parameters,
             prompt: resolvedSummarizationConfig.prompt,
+            updatePrompt: resolvedSummarizationConfig.updatePrompt,
             stream: resolvedSummarizationConfig.stream,
             maxSummaryTokens:
               perAgentSummarizationOverride?.maxSummaryTokens ??

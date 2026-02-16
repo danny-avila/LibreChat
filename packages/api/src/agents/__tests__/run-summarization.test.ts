@@ -243,6 +243,7 @@ describe('summarizationConfig field passthrough', () => {
         model: 'claude-3-haiku',
         parameters: { temperature: 0.2 },
         prompt: 'Summarize this conversation',
+        updatePrompt: 'Update the existing summary with new messages',
         stream: false,
         maxSummaryTokens: 4096,
       },
@@ -255,6 +256,7 @@ describe('summarizationConfig field passthrough', () => {
     expect(config.model).toBe('claude-3-haiku');
     expect(config.parameters).toEqual({ temperature: 0.2 });
     expect(config.prompt).toBe('Summarize this conversation');
+    expect(config.updatePrompt).toBe('Update the existing summary with new messages');
     expect(config.stream).toBe(false);
     expect(config.maxSummaryTokens).toBe(4096);
   });

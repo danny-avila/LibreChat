@@ -958,6 +958,8 @@ export const summarizationAgentOverrideSchema = z.object({
   model: z.string().optional(),
   parameters: z.record(z.any()).optional(),
   prompt: z.string().optional(),
+  /** Prompt used when updating an existing summary with new messages. Falls back to `prompt` if not set. */
+  updatePrompt: z.string().optional(),
   stream: z.boolean().optional(),
   maxSummaryTokens: z.number().positive().optional(),
 });
@@ -982,6 +984,8 @@ export const summarizationConfigSchema = z.object({
   parameters: z.record(z.any()).optional(),
   trigger: summarizationTriggerSchema.optional(),
   prompt: z.string().optional(),
+  /** Prompt used when updating an existing summary with new messages. Falls back to `prompt` if not set. */
+  updatePrompt: z.string().optional(),
   stream: z.boolean().optional(),
   reserveTokensRatio: z.number().min(0).max(1).optional(),
   maxSummaryTokens: z.number().positive().optional(),
