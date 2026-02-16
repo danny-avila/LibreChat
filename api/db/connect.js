@@ -65,6 +65,12 @@ async function connectDb() {
     logger.info('Mongo Connection options');
     logger.info(JSON.stringify(opts, null, 2));
     mongoose.set('strictQuery', true);
+    if (!cached.errorListenerRegistered) {
+      mongoose.connection.on('error', (err) => {
+        logger.error('[connectDb] MongoDB connection error:', err.message);
+      });
+      cached.errorListenerRegistered = true;
+    }
     cached.promise = mongoose.connect(MONGO_URI, opts).then((mongoose) => {
       return mongoose;
     });

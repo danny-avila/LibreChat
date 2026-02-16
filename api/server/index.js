@@ -251,6 +251,21 @@ process.on('uncaughtException', (err) => {
     return;
   }
 
+  if (
+    err.message &&
+    (err.message.includes('timed out') ||
+      err.message.includes('MongoNetworkError') ||
+      err.message.includes('MongoServerSelectionError') ||
+      err.message.includes('ECONNREFUSED') ||
+      err.message.includes('ECONNRESET'))
+  ) {
+    logger.error(
+      'A MongoDB connection error occurred. The app will continue running.',
+      { message: err.message },
+    );
+    return;
+  }
+
   process.exit(1);
 });
 
