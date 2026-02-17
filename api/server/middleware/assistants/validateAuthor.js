@@ -1,5 +1,5 @@
 const { SystemRoles } = require('librechat-data-provider');
-const { getAssistant } = require('~/models/Assistant');
+const { getAssistant } = require('~/models');
 
 /**
  * Checks if the assistant is supported or excluded

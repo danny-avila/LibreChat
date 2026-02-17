@@ -10,8 +10,9 @@ const {
 } = require('librechat-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { canAccessResource } = require('./canAccessResource');
-const { getRoleByName } = require('~/models/Role');
-const { getAgent } = require('~/models/Agent');
+const db = require('~/models');
+
+const { getRoleByName, getAgent } = db;
 
 /**
  * Resolves custom agent ID (e.g., "agent_abc123") to a MongoDB document.

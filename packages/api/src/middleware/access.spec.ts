@@ -216,12 +216,12 @@ describe('access middleware', () => {
 
       defaultParams.getRoleByName.mockResolvedValue(mockRole);
 
-      const checkObject = {};
+      const checkObject = { id: 'agent123' };
 
       const result = await checkAccess({
         ...defaultParams,
         permissions: [Permissions.USE, Permissions.SHARE],
-        bodyProps: {} as Record<Permissions, string[]>,
+        bodyProps: { [Permissions.SHARE]: ['id'] } as Record<Permissions, string[]>,
         checkObject,
       });
       expect(result).toBe(true);
@@ -333,12 +333,12 @@ describe('access middleware', () => {
       } as unknown as IRole;
 
       mockGetRoleByName.mockResolvedValue(mockRole);
-      mockReq.body = {};
+      mockReq.body = { id: 'agent123' };
 
       const middleware = generateCheckAccess({
         permissionType: PermissionTypes.AGENTS,
         permissions: [Permissions.USE, Permissions.CREATE, Permissions.SHARE],
-        bodyProps: {} as Record<Permissions, string[]>,
+        bodyProps: { [Permissions.SHARE]: ['id'] } as Record<Permissions, string[]>,
         getRoleByName: mockGetRoleByName,
       });
 

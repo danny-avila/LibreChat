@@ -6,7 +6,6 @@ const {
   checkAgentPermissionsMigration,
   checkPromptPermissionsMigration,
 } = require('@librechat/api');
-const { Agent, PromptGroup } = require('~/db/models');
 const { findRoleByIdentifier } = require('~/models');
 
 /**
@@ -20,7 +19,7 @@ async function checkMigrations() {
       methods: {
         findRoleByIdentifier,
       },
-      AgentModel: Agent,
+      AgentModel: mongoose.models.Agent,
     });
     logAgentMigrationWarning(agentMigrationResult);
   } catch (error) {
@@ -32,7 +31,7 @@ async function checkMigrations() {
       methods: {
         findRoleByIdentifier,
       },
-      PromptGroupModel: PromptGroup,
+      PromptGroupModel: mongoose.models.PromptGroup,
     });
     logPromptMigrationWarning(promptMigrationResult);
   } catch (error) {

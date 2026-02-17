@@ -20,16 +20,22 @@ const {
   getEffectivePermissionsForResources: getEffectivePermissionsForResourcesACL,
   grantPermission: grantPermissionACL,
   findEntriesByPrincipalsAndResource,
+  findRolesByResourceType,
+  findPublicResourceIds,
+  bulkWriteAclEntries,
   findGroupByExternalId,
   findRoleByIdentifier,
+  deleteAclEntries,
   getUserPrincipals,
+  findGroupByQuery,
+  updateGroupById,
+  bulkUpdateGroups,
   hasPermission,
   createGroup,
   createUser,
   updateUser,
   findUser,
 } = require('~/models');
-const { AclEntry, AccessRole, Group } = require('~/db/models');
 
 /** @type {boolean|null} */
 let transactionSupportCache = null;
@@ -280,17 +286,9 @@ const findPubliclyAccessibleResources = async ({ resourceType, requiredPermissio
 
     validateResourceType(resourceType);
 
-    // Find all public ACL entries where the public principal has at least the required permission bits
-    const entries = await AclEntry.find({
-      principalType: PrincipalType.PUBLIC,
-      resourceType,
-      permBits: { $bitsAllSet: requiredPermissions },
-    }).distinct('resourceId');
-
-    return entries;
+    return await findPublicResourceIds(resourceType, requiredPermissions);
   } catch (error) {
     logger.error(`[PermissionService.findPubliclyAccessibleResources] Error: ${error.message}`);
-    // Re-throw validation errors
     if (error.message.includes('requiredPermissions must be')) {
       throw error;
     }
@@ -307,7 +305,7 @@ const findPubliclyAccessibleResources = async ({ resourceType, requiredPermissio
 const getAvailableRoles = async ({ resourceType }) => {
   validateResourceType(resourceType);
 
-  return await AccessRole.find({ resourceType }).lean();
+  return await findRolesByResourceType(resourceType);
 };
 
 /**
@@ -428,7 +426,7 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
     let existingGroup = await findGroupByExternalId(principal.idOnTheSource, 'entra');
 
     if (!existingGroup && principal.email) {
-      existingGroup = await Group.findOne({ email: principal.email.toLowerCase() }).lean();
+      existingGroup = await findGroupByQuery({ email: principal.email.toLowerCase() });
     }
 
     if (existingGroup) {
@@ -457,7 +455,7 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
       }
 
       if (needsUpdate) {
-        await Group.findByIdAndUpdate(existingGroup._id, { $set: updateData }, { new: true });
+        await updateGroupById(existingGroup._id, updateData);
       }
 
       return existingGroup._id.toString();
@@ -525,7 +523,7 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
 
     const sessionOptions = session ? { session } : {};
 
-    await Group.updateMany(
+    await bulkUpdateGroups(
       {
         idOnTheSource: { $in: allGroupIds },
         source: 'entra',
@@ -535,7 +533,7 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       sessionOptions,
     );
 
-    await Group.updateMany(
+    await bulkUpdateGroups(
       {
         source: 'entra',
         memberIds: user.idOnTheSource,
@@ -633,7 +631,7 @@ const bulkUpdateResourcePermissions = async ({
 
     const sessionOptions = localSession ? { session: localSession } : {};
 
-    const roles = await AccessRole.find({ resourceType }).lean();
+    const roles = await findRolesByResourceType(resourceType);
     const rolesMap = new Map();
     roles.forEach((role) => {
       rolesMap.set(role.accessRoleId, role);
@@ -737,7 +735,7 @@ const bulkUpdateResourcePermissions = async ({
     }
 
     if (bulkWrites.length > 0) {
-      await AclEntry.bulkWrite(bulkWrites, sessionOptions);
+      await bulkWriteAclEntries(bulkWrites, sessionOptions);
     }
 
     const deleteQueries = [];
@@ -778,12 +776,7 @@ const bulkUpdateResourcePermissions = async ({
     }
 
     if (deleteQueries.length > 0) {
-      await AclEntry.deleteMany(
-        {
-          $or: deleteQueries,
-        },
-        sessionOptions,
-      );
+      await deleteAclEntries({ $or: deleteQueries }, sessionOptions);
     }
 
     if (shouldEndSession && supportsTransactions) {
@@ -870,7 +863,7 @@ const removeAllPermissions = async ({ resourceType, resourceId }) => {
       throw new Error(`Invalid resource ID: ${resourceId}`);
     }
 
-    const result = await AclEntry.deleteMany({
+    const result = await deleteAclEntries({
       resourceType,
       resourceId,
     });

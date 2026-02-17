@@ -101,17 +101,13 @@ jest.mock('~/server/services/ToolService', () => ({
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/spendTokens', () => ({
-  spendTokens: mockSpendTokens,
-  spendStructuredTokens: mockSpendStructuredTokens,
-}));
-
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
 const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
 jest.mock('~/models/tx', () => ({
   getMultiplier: mockGetMultiplier,
   getCacheMultiplier: mockGetCacheMultiplier,
 }));
+
 
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
@@ -122,25 +118,11 @@ jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/Conversation', () => ({
-  getConvoFiles: jest.fn().mockResolvedValue([]),
-  saveConvo: jest.fn().mockResolvedValue({}),
-  getConvo: jest.fn().mockResolvedValue(null),
-}));
-
-jest.mock('~/models/Agent', () => ({
-  getAgent: jest.fn().mockResolvedValue({
-    id: 'agent-123',
-    name: 'Test Agent',
-    provider: 'anthropic',
-    model_parameters: { model: 'claude-3' },
-  }),
-  getAgents: jest.fn().mockResolvedValue([]),
-}));
-
 const mockUpdateBalance = jest.fn().mockResolvedValue({});
 const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
+
 jest.mock('~/models', () => ({
+  getAgent: jest.fn().mockResolvedValue({ id: 'agent-123', name: 'Test Agent' }),
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn().mockResolvedValue([]),
@@ -152,6 +134,11 @@ jest.mock('~/models', () => ({
   getCodeGeneratedFiles: jest.fn(),
   updateBalance: mockUpdateBalance,
   bulkInsertTransactions: mockBulkInsertTransactions,
+  spendTokens: mockSpendTokens,
+  spendStructuredTokens: mockSpendStructuredTokens,
+  getConvoFiles: jest.fn().mockResolvedValue([]),
+  saveConvo: jest.fn().mockResolvedValue({}),
+  getConvo: jest.fn().mockResolvedValue(null),
 }));
 
 describe('createResponse controller', () => {

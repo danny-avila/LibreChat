@@ -9,16 +9,19 @@ const { enrichRemoteAgentPrincipals, backfillRemoteAgentPermissions } = require(
 const {
   bulkUpdateResourcePermissions,
   ensureGroupPrincipalExists,
+  getResourcePermissionsMap,
+  findAccessibleResources,
   getEffectivePermissions,
   ensurePrincipalExists,
   getAvailableRoles,
-  findAccessibleResources,
-  getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
 const {
   searchPrincipals: searchLocalPrincipals,
   sortPrincipalsByRelevance,
   calculateRelevanceScore,
+  findRoleByIdentifier,
+  aggregateAclEntries,
+  bulkWriteAclEntries,
 } = require('~/models');
 const {
   entraIdPrincipalFeatureEnabled,
@@ -217,8 +220,7 @@ const getResourcePermissions = async (req, res) => {
     const { resourceType, resourceId } = req.params;
     validateResourceType(resourceType);
 
-    // Use aggregation pipeline for efficient single-query data retrieval
-    const results = await AclEntry.aggregate([
+    const results = await aggregateAclEntries([
       // Match ACL entries for this resource
       {
         $match: {
@@ -314,7 +316,12 @@ const getResourcePermissions = async (req, res) => {
     }
 
     if (resourceType === ResourceType.REMOTE_AGENT) {
-      const enricherDeps = { AclEntry, AccessRole, logger };
+      const enricherDeps = {
+        aggregateAclEntries,
+        bulkWriteAclEntries,
+        findRoleByIdentifier,
+        logger,
+      };
       const enrichResult = await enrichRemoteAgentPrincipals(enricherDeps, resourceId, principals);
       principals = enrichResult.principals;
       backfillRemoteAgentPermissions(enricherDeps, resourceId, enrichResult.entriesToBackfill);

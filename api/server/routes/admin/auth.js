@@ -11,15 +11,16 @@ const {
 } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
+const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 const { getOpenIdConfig } = require('~/strategies');
 const middleware = require('~/server/middleware');
-const { Balance } = require('~/db/models');
 
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
-  Balance,
+  findBalanceByUser,
+  upsertBalanceFields,
 });
 
 const router = express.Router();

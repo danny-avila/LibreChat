@@ -367,12 +367,12 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
     const parsedConfigs: Record<string, ParsedServerConfig> = {};
     const directData = directResults.data || [];
-    const directServerNames = new Set(directData.map((s) => s.serverName));
+    const directServerNames = new Set(directData.map((s: MCPServerDocument) => s.serverName));
 
     const directParsed = await Promise.all(
-      directData.map((s) => this.mapDBServerToParsedConfig(s)),
+      directData.map((s: MCPServerDocument) => this.mapDBServerToParsedConfig(s)),
     );
-    directData.forEach((s, i) => {
+    directData.forEach((s: MCPServerDocument, i: number) => {
       parsedConfigs[s.serverName] = directParsed[i];
     });
 
@@ -385,9 +385,9 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
       const agentData = agentServers.data || [];
       const agentParsed = await Promise.all(
-        agentData.map((s) => this.mapDBServerToParsedConfig(s)),
+        agentData.map((s: MCPServerDocument) => this.mapDBServerToParsedConfig(s)),
       );
-      agentData.forEach((s, i) => {
+      agentData.forEach((s: MCPServerDocument, i: number) => {
         parsedConfigs[s.serverName] = { ...agentParsed[i], consumeOnly: true };
       });
     }
