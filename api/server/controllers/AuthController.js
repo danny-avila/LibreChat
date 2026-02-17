@@ -79,7 +79,12 @@ const refreshController = async (req, res) => {
 
     try {
       const openIdConfig = getOpenIdConfig();
-      const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
+      const refreshParams = process.env.OPENID_SCOPE ? { scope: process.env.OPENID_SCOPE } : {};
+      const tokenset = await openIdClient.refreshTokenGrant(
+        openIdConfig,
+        refreshToken,
+        refreshParams,
+      );
       const claims = tokenset.claims();
       const { user, error, migration } = await findOpenIDUser({
         findUser,
