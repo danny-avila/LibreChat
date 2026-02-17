@@ -78,6 +78,14 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
   };
 }
 
+/**
+ * Initializes the AgentClient for a given request/response cycle.
+ * @param {Object} params
+ * @param {Express.Request} params.req
+ * @param {Express.Response} params.res
+ * @param {AbortSignal} params.signal
+ * @param {Object} params.endpointOption
+ */
 const initializeClient = async ({ req, res, signal, endpointOption }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
@@ -131,9 +139,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolEndCallback,
   };
 
+  const summarizationOptions =
+    appConfig?.summarization?.enabled === false ? { enabled: false } : { enabled: true };
+
   const eventHandlers = getDefaultHandlers({
     res,
     toolExecuteOptions,
+    summarizationOptions,
     aggregateContent,
     toolEndCallback,
     collectedUsage,

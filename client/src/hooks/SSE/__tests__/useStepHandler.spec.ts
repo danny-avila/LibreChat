@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { StepTypes, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+import { StepTypes, StepEvents, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
   EventSubmission,
@@ -155,7 +155,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -174,7 +174,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(consoleSpy).toHaveBeenCalledWith('No message id found in run step event');
@@ -194,7 +194,7 @@ describe('useStepHandler', () => {
       });
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -210,7 +210,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -235,7 +235,7 @@ describe('useStepHandler', () => {
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_message_delta', data: createMessageDelta(stepId, 'Hello') },
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta(stepId, 'Hello') },
           submission,
         );
       });
@@ -245,7 +245,7 @@ describe('useStepHandler', () => {
       const runStep = createRunStep({ id: stepId });
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -266,7 +266,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission({ userMessage: userMsg });
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -289,7 +289,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
@@ -315,7 +315,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       mockSetMessages.mockClear();
@@ -330,7 +330,10 @@ describe('useStepHandler', () => {
       };
 
       act(() => {
-        result.current.stepHandler({ event: 'on_agent_update', data: agentUpdate }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_AGENT_UPDATE, data: agentUpdate },
+          submission,
+        );
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -352,7 +355,10 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_agent_update', data: agentUpdate }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_AGENT_UPDATE, data: agentUpdate },
+          submission,
+        );
       });
 
       expect(consoleSpy).toHaveBeenCalledWith('No message id found in agent update event');
@@ -371,7 +377,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       mockSetMessages.mockClear();
@@ -379,7 +385,10 @@ describe('useStepHandler', () => {
       const messageDelta = createMessageDelta('step-1', 'Hello');
 
       act(() => {
-        result.current.stepHandler({ event: 'on_message_delta', data: messageDelta }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: messageDelta },
+          submission,
+        );
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -397,7 +406,10 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_message_delta', data: messageDelta }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: messageDelta },
+          submission,
+        );
       });
 
       expect(mockSetMessages).not.toHaveBeenCalled();
@@ -413,19 +425,19 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_message_delta', data: createMessageDelta('step-1', 'Hello ') },
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'Hello ') },
           submission,
         );
       });
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_message_delta', data: createMessageDelta('step-1', 'World') },
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'World') },
           submission,
         );
       });
@@ -447,7 +459,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       mockSetMessages.mockClear();
@@ -458,7 +470,10 @@ describe('useStepHandler', () => {
       };
 
       act(() => {
-        result.current.stepHandler({ event: 'on_message_delta', data: messageDelta }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: messageDelta },
+          submission,
+        );
       });
 
       expect(mockSetMessages).not.toHaveBeenCalled();
@@ -476,7 +491,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       mockSetMessages.mockClear();
@@ -485,7 +500,7 @@ describe('useStepHandler', () => {
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_reasoning_delta', data: reasoningDelta },
+          { event: StepEvents.ON_REASONING_DELTA, data: reasoningDelta },
           submission,
         );
       });
@@ -506,7 +521,7 @@ describe('useStepHandler', () => {
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_reasoning_delta', data: reasoningDelta },
+          { event: StepEvents.ON_REASONING_DELTA, data: reasoningDelta },
           submission,
         );
       });
@@ -524,19 +539,19 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_reasoning_delta', data: createReasoningDelta('step-1', 'First ') },
+          { event: StepEvents.ON_REASONING_DELTA, data: createReasoningDelta('step-1', 'First ') },
           submission,
         );
       });
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_reasoning_delta', data: createReasoningDelta('step-1', 'thought') },
+          { event: StepEvents.ON_REASONING_DELTA, data: createReasoningDelta('step-1', 'thought') },
           submission,
         );
       });
@@ -560,7 +575,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       mockSetMessages.mockClear();
@@ -574,7 +589,10 @@ describe('useStepHandler', () => {
       };
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step_delta', data: runStepDelta }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP_DELTA, data: runStepDelta },
+          submission,
+        );
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -593,7 +611,10 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step_delta', data: runStepDelta }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP_DELTA, data: runStepDelta },
+          submission,
+        );
       });
 
       expect(mockSetMessages).not.toHaveBeenCalled();
@@ -609,7 +630,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       mockSetMessages.mockClear();
@@ -625,7 +646,10 @@ describe('useStepHandler', () => {
       };
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step_delta', data: runStepDelta }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP_DELTA, data: runStepDelta },
+          submission,
+        );
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -649,7 +673,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       mockSetMessages.mockClear();
@@ -671,8 +695,8 @@ describe('useStepHandler', () => {
       act(() => {
         result.current.stepHandler(
           {
-            event: 'on_run_step_completed',
-            data: completedEvent as unknown as Agents.ToolEndEvent,
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: completedEvent as { result: Agents.ToolEndEvent },
           },
           submission,
         );
@@ -710,8 +734,8 @@ describe('useStepHandler', () => {
       act(() => {
         result.current.stepHandler(
           {
-            event: 'on_run_step_completed',
-            data: completedEvent as unknown as Agents.ToolEndEvent,
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: completedEvent as { result: Agents.ToolEndEvent },
           },
           submission,
         );
@@ -735,7 +759,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       act(() => {
@@ -746,7 +770,7 @@ describe('useStepHandler', () => {
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_message_delta', data: createMessageDelta('step-1', 'Test') },
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'Test') },
           submission,
         );
       });
@@ -772,12 +796,12 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_message_delta', data: createMessageDelta('step-1', ' more') },
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', ' more') },
           submission,
         );
       });
@@ -824,7 +848,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockAnnouncePolite).toHaveBeenCalledWith({ message: 'composing', isStatus: true });
@@ -842,7 +866,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockAnnouncePolite).not.toHaveBeenCalled();
@@ -872,7 +896,7 @@ describe('useStepHandler', () => {
       });
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -891,15 +915,15 @@ describe('useStepHandler', () => {
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_message_delta', data: createMessageDelta(stepId, 'First ') },
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta(stepId, 'First ') },
           submission,
         );
         result.current.stepHandler(
-          { event: 'on_message_delta', data: createMessageDelta(stepId, 'Second ') },
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta(stepId, 'Second ') },
           submission,
         );
         result.current.stepHandler(
-          { event: 'on_message_delta', data: createMessageDelta(stepId, 'Third') },
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta(stepId, 'Third') },
           submission,
         );
       });
@@ -909,7 +933,7 @@ describe('useStepHandler', () => {
       const runStep = createRunStep({ id: stepId });
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -931,11 +955,14 @@ describe('useStepHandler', () => {
 
       act(() => {
         result.current.stepHandler(
-          { event: 'on_reasoning_delta', data: createReasoningDelta(stepId, 'Thinking...') },
+          {
+            event: StepEvents.ON_REASONING_DELTA,
+            data: createReasoningDelta(stepId, 'Thinking...'),
+          },
           submission,
         );
         result.current.stepHandler(
-          { event: 'on_message_delta', data: createMessageDelta(stepId, 'Response') },
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta(stepId, 'Response') },
           submission,
         );
       });
@@ -945,7 +972,7 @@ describe('useStepHandler', () => {
       const runStep = createRunStep({ id: stepId });
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -971,7 +998,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       const textDelta: Agents.MessageDeltaEvent = {
@@ -980,7 +1007,10 @@ describe('useStepHandler', () => {
       };
 
       act(() => {
-        result.current.stepHandler({ event: 'on_message_delta', data: textDelta }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: textDelta },
+          submission,
+        );
       });
 
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -1004,7 +1034,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -1019,7 +1049,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -1035,7 +1065,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       const messageDelta: Agents.MessageDeltaEvent = {
@@ -1049,7 +1079,10 @@ describe('useStepHandler', () => {
       };
 
       act(() => {
-        result.current.stepHandler({ event: 'on_message_delta', data: messageDelta }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: messageDelta },
+          submission,
+        );
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
@@ -1065,7 +1098,7 @@ describe('useStepHandler', () => {
       const submission = createSubmission();
 
       act(() => {
-        result.current.stepHandler({ event: 'on_run_step', data: runStep }, submission);
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
       });
 
       mockSetMessages.mockClear();
@@ -1076,7 +1109,10 @@ describe('useStepHandler', () => {
       };
 
       act(() => {
-        result.current.stepHandler({ event: 'on_message_delta', data: messageDelta }, submission);
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: messageDelta },
+          submission,
+        );
       });
 
       expect(mockSetMessages).not.toHaveBeenCalled();
