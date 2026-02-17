@@ -177,9 +177,9 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
     setMemory,
     createMemory,
     deleteMemory,
-    deleteAllUserMemories,
     getAllUserMemories,
     getFormattedMemories,
+    deleteAllUserMemories,
   };
 }
 
