@@ -22,9 +22,7 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const AgentClient = require('~/server/controllers/agents/client');
-const { getConvoFiles } = require('~/models/Conversation');
 const { processAddedConvo } = require('./addedConvo');
-const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -191,10 +189,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       isInitialAgent: true,
     },
     {
-      getConvoFiles,
       getFiles: db.getFiles,
       getUserKey: db.getUserKey,
       getMessages: db.getMessages,
+      getConvoFiles: db.getConvoFiles,
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
@@ -226,7 +224,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const skippedAgentIds = new Set();
 
   async function processAgent(agentId) {
-    const agent = await getAgent({ id: agentId });
+    const agent = await db.getAgent({ id: agentId });
     if (!agent) {
       logger.warn(
         `[processAgent] Handoff agent ${agentId} not found, skipping (orphaned reference)`,
@@ -260,10 +258,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         allowedProviders,
       },
       {
-        getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
+        getConvoFiles: db.getConvoFiles,
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getUserCodeFiles: db.getUserCodeFiles,

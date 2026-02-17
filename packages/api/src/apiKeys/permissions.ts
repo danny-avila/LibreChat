@@ -1,10 +1,11 @@
+import { Types } from 'mongoose';
 import {
   ResourceType,
   PrincipalType,
   PermissionBits,
   AccessRoleIds,
 } from 'librechat-data-provider';
-import type { Types, Model } from 'mongoose';
+import type { PipelineStage, AnyBulkWriteOperation } from 'mongoose';
 
 export interface Principal {
   type: string;
@@ -19,20 +20,14 @@ export interface Principal {
 }
 
 export interface EnricherDependencies {
-  AclEntry: Model<{
-    principalType: string;
-    principalId: Types.ObjectId;
-    resourceType: string;
-    resourceId: Types.ObjectId;
-    permBits: number;
-    roleId: Types.ObjectId;
-    grantedBy: Types.ObjectId;
-    grantedAt: Date;
-  }>;
-  AccessRole: Model<{
-    accessRoleId: string;
-    permBits: number;
-  }>;
+  aggregateAclEntries: (pipeline: PipelineStage[]) => Promise<Record<string, unknown>[]>;
+  bulkWriteAclEntries: (
+    ops: AnyBulkWriteOperation<unknown>[],
+    options?: Record<string, unknown>,
+  ) => Promise<unknown>;
+  findRoleByIdentifier: (
+    accessRoleId: string,
+  ) => Promise<{ _id: Types.ObjectId; permBits: number } | null>;
   logger: { error: (msg: string, ...args: unknown[]) => void };
 }
 
@@ -47,14 +42,12 @@ export async function enrichRemoteAgentPrincipals(
   resourceId: string | Types.ObjectId,
   principals: Principal[],
 ): Promise<EnrichResult> {
-  const { AclEntry } = deps;
-
   const resourceObjectId =
     typeof resourceId === 'string' && /^[a-f\d]{24}$/i.test(resourceId)
-      ? deps.AclEntry.base.Types.ObjectId.createFromHexString(resourceId)
+      ? Types.ObjectId.createFromHexString(resourceId)
       : resourceId;
 
-  const agentOwnerEntries = await AclEntry.aggregate([
+  const agentOwnerEntries = await deps.aggregateAclEntries([
     {
       $match: {
         resourceType: ResourceType.AGENT,
@@ -87,24 +80,28 @@ export async function enrichRemoteAgentPrincipals(
       continue;
     }
 
+    const userInfo = entry.userInfo as Record<string, unknown>;
+    const principalId = entry.principalId as Types.ObjectId;
+
     const alreadyIncluded = enrichedPrincipals.some(
-      (p) => p.type === PrincipalType.USER && p.id === entry.principalId.toString(),
+      (p) => p.type === PrincipalType.USER && p.id === principalId.toString(),
     );
 
     if (!alreadyIncluded) {
       enrichedPrincipals.unshift({
         type: PrincipalType.USER,
-        id: entry.userInfo._id.toString(),
-        name: entry.userInfo.name || entry.userInfo.username,
-        email: entry.userInfo.email,
-        avatar: entry.userInfo.avatar,
+        id: (userInfo._id as Types.ObjectId).toString(),
+        name: (userInfo.name || userInfo.username) as string,
+        email: userInfo.email as string,
+        avatar: userInfo.avatar as string,
         source: 'local',
-        idOnTheSource: entry.userInfo.idOnTheSource || entry.userInfo._id.toString(),
+        idOnTheSource:
+          (userInfo.idOnTheSource as string) || (userInfo._id as Types.ObjectId).toString(),
         accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
         isImplicit: true,
       });
 
-      entriesToBackfill.push(entry.principalId);
+      entriesToBackfill.push(principalId);
     }
   }
 
@@ -121,15 +118,15 @@ export function backfillRemoteAgentPermissions(
     return;
   }
 
-  const { AclEntry, AccessRole, logger } = deps;
+  const { logger } = deps;
 
   const resourceObjectId =
     typeof resourceId === 'string' && /^[a-f\d]{24}$/i.test(resourceId)
-      ? AclEntry.base.Types.ObjectId.createFromHexString(resourceId)
+      ? Types.ObjectId.createFromHexString(resourceId)
       : resourceId;
 
-  AccessRole.findOne({ accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER })
-    .lean()
+  deps
+    .findRoleByIdentifier(AccessRoleIds.REMOTE_AGENT_OWNER)
     .then((role) => {
       if (!role) {
         logger.error('[backfillRemoteAgentPermissions] REMOTE_AGENT_OWNER role not found');
@@ -161,9 +158,9 @@ export function backfillRemoteAgentPermissions(
         },
       }));
 
-      return AclEntry.bulkWrite(bulkOps, { ordered: false });
+      return deps.bulkWriteAclEntries(bulkOps, { ordered: false });
     })
-    .catch((err) => {
+    .catch((err: unknown) => {
       logger.error('[backfillRemoteAgentPermissions] Failed to backfill:', err);
     });
 }

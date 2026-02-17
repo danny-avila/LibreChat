@@ -25,11 +25,12 @@ const {
   deletePromptGroup,
   createPromptGroup,
   getPromptGroup,
+  getRoleByName,
   deletePrompt,
   getPrompts,
   savePrompt,
   getPrompt,
-} = require('~/models/Prompt');
+} = require('~/models');
 const {
   canAccessPromptGroupResource,
   canAccessPromptViaGroup,
@@ -41,7 +42,6 @@ const {
   findAccessibleResources,
   grantPermission,
 } = require('~/server/services/PermissionService');
-const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 

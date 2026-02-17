@@ -21,6 +21,7 @@ const {
   GenerationJobManager,
   getTransactionsConfig,
   createMemoryProcessor,
+  loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
 } = require('@librechat/api');
@@ -43,15 +44,14 @@ const {
   isEphemeralAgentId,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
-const { getConvoFiles } = require('~/models/Conversation');
+const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
-const { getRoleByName } = require('~/models/Role');
-const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
+
+const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -409,7 +409,7 @@ class AgentClient extends BaseClient {
       user,
       permissionType: PermissionTypes.MEMORIES,
       permissions: [Permissions.USE],
-      getRoleByName,
+      getRoleByName: db.getRoleByName,
     });
 
     if (!hasAccess) {
@@ -469,9 +469,9 @@ class AgentClient extends BaseClient {
         },
       },
       {
-        getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
+        getConvoFiles: db.getConvoFiles,
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
@@ -670,7 +670,7 @@ class AgentClient extends BaseClient {
       };
 
       if (cache_creation > 0 || cache_read > 0) {
-        spendStructuredTokens(txMetadata, {
+        db.spendStructuredTokens(txMetadata, {
           promptTokens: {
             input: usage.input_tokens,
             write: cache_creation,
@@ -685,7 +685,7 @@ class AgentClient extends BaseClient {
         });
         continue;
       }
-      spendTokens(txMetadata, {
+      db.spendTokens(txMetadata, {
         promptTokens: usage.input_tokens,
         completionTokens: usage.output_tokens,
       }).catch((err) => {
@@ -1180,7 +1180,7 @@ class AgentClient extends BaseClient {
     context = 'message',
   }) {
     try {
-      await spendTokens(
+      await db.spendTokens(
         {
           model,
           context,
@@ -1198,7 +1198,7 @@ class AgentClient extends BaseClient {
         'reasoning_tokens' in usage &&
         typeof usage.reasoning_tokens === 'number'
       ) {
-        await spendTokens(
+        await db.spendTokens(
           {
             model,
             balance,

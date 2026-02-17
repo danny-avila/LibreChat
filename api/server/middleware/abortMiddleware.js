@@ -1,17 +1,16 @@
 const { logger } = require('@librechat/data-schemas');
+const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
 const {
-  countTokens,
   isEnabled,
   sendEvent,
+  countTokens,
   GenerationJobManager,
   sanitizeMessageForTransmit,
 } = require('@librechat/api');
-const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { spendTokens, spendStructuredTokens, saveMessage, getConvo } = require('~/models');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
-const { saveMessage, getConvo } = require('~/models');
 const { abortRun } = require('./abortRun');
 
 /**
@@ -154,7 +153,11 @@ async function abortMessage(req, res) {
   }
 
   await saveMessage(
-    req,
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     { ...responseMessage, user: userId },
     { context: 'api/server/middleware/abortMiddleware.js' },
   );

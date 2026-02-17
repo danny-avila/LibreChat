@@ -19,8 +19,7 @@ const {
   getTransactionsConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { spendTokens } = require('~/models/spendTokens');
-const { getFiles } = require('~/models/File');
+const { spendTokens, getFiles } = require('~/models');
 
 /**
  * Configure proxy support for Google APIs

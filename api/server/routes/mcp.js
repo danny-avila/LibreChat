@@ -37,13 +37,11 @@ const {
 } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
-const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const { findPluginAuthsByKeys } = require('~/models');
-const { getRoleByName } = require('~/models/Role');
 const { getLogStores } = require('~/cache');
+const db = require('~/models');
 
 const router = Router();
 
@@ -206,9 +204,9 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           userId: flowState.userId,
           serverName,
           tokens,
-          createToken,
-          updateToken,
-          findToken,
+          createToken: db.createToken,
+          updateToken: db.updateToken,
+          findToken: db.findToken,
           clientInfo: flowState.clientInfo,
           metadata: flowState.metadata,
         });
@@ -246,10 +244,10 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           serverName,
           flowManager,
           tokenMethods: {
-            findToken,
-            updateToken,
-            createToken,
-            deleteTokens,
+            findToken: db.findToken,
+            updateToken: db.updateToken,
+            createToken: db.createToken,
+            deleteTokens: db.deleteTokens,
           },
         });
 
@@ -466,7 +464,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, setOAuthSession, async 
       userMCPAuthMap = await getUserMCPAuthMap({
         userId: user.id,
         servers: [serverName],
-        findPluginAuthsByKeys,
+        findPluginAuthsByKeys: db.findPluginAuthsByKeys,
       });
     }
 
@@ -666,13 +664,13 @@ MCP Server CRUD Routes (User-Managed MCP Servers)
 const checkMCPUsePermissions = generateCheckAccess({
   permissionType: PermissionTypes.MCP_SERVERS,
   permissions: [Permissions.USE],
-  getRoleByName,
+  getRoleByName: db.getRoleByName,
 });
 
 const checkMCPCreate = generateCheckAccess({
   permissionType: PermissionTypes.MCP_SERVERS,
   permissions: [Permissions.USE, Permissions.CREATE],
-  getRoleByName,
+  getRoleByName: db.getRoleByName,
 });
 
 /**
