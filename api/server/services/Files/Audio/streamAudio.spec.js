@@ -3,7 +3,7 @@ const { createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 jest.mock('keyv');
 
 const globalCache = {};
-jest.mock('~/models/Message', () => {
+jest.mock('~/models', () => {
   return {
     getMessage: jest.fn().mockImplementation((messageId) => {
       return globalCache[messageId] || null;

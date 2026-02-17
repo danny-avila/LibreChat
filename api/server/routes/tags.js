@@ -8,9 +8,9 @@ const {
   createConversationTag,
   deleteConversationTag,
   getConversationTags,
-} = require('~/models/ConversationTag');
+  getRoleByName,
+} = require('~/models');
 const { requireJwtAuth } = require('~/server/middleware');
-const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 

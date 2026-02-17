@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { PrincipalType, PermissionTypes, Permissions } = require('librechat-data-provider');
-const { getRoleByName } = require('~/models/Role');
+const { getRoleByName } = require('~/models');
 
 /**
  * Middleware to check if user has permission to access people picker functionality

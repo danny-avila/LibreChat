@@ -364,12 +364,12 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
     const parsedConfigs: Record<string, ParsedServerConfig> = {};
     const directData = directResults.data || [];
-    const directServerNames = new Set(directData.map((s) => s.serverName));
+    const directServerNames = new Set(directData.map((s: MCPServerDocument) => s.serverName));
 
     const directParsed = await Promise.all(
-      directData.map((s) => this.mapDBServerToParsedConfig(s)),
+      directData.map((s: MCPServerDocument) => this.mapDBServerToParsedConfig(s)),
     );
-    directData.forEach((s, i) => {
+    directData.forEach((s: MCPServerDocument, i: number) => {
       parsedConfigs[s.serverName] = directParsed[i];
     });
 
@@ -382,9 +382,9 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
       const agentData = agentServers.data || [];
       const agentParsed = await Promise.all(
-        agentData.map((s) => this.mapDBServerToParsedConfig(s)),
+        agentData.map((s: MCPServerDocument) => this.mapDBServerToParsedConfig(s)),
       );
-      agentData.forEach((s, i) => {
+      agentData.forEach((s: MCPServerDocument, i: number) => {
         parsedConfigs[s.serverName] = { ...agentParsed[i], consumeOnly: true };
       });
     }
@@ -457,7 +457,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     };
 
     // Remove key field since it's user-provided (destructure to omit, not set to undefined)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     const { key: _removed, ...apiKeyWithoutKey } = result.apiKey!;
     result.apiKey = apiKeyWithoutKey;
 
@@ -521,7 +521,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           '[ServerConfigsDB.decryptConfig] Failed to decrypt apiKey.key, returning config without key',
           error,
         );
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
         const { key: _removedKey, ...apiKeyWithoutKey } = result.apiKey;
         result.apiKey = apiKeyWithoutKey;
       }
@@ -542,7 +542,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           '[ServerConfigsDB.decryptConfig] Failed to decrypt client_secret, returning config without secret',
           error,
         );
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
         const { client_secret: _removed, ...oauthWithoutSecret } = oauthConfig;
         result = {
           ...result,

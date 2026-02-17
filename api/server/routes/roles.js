@@ -12,7 +12,7 @@ const {
   remoteAgentsPermissionsSchema,
 } = require('librechat-data-provider');
 const { checkAdmin, requireJwtAuth } = require('~/server/middleware');
-const { updateRoleByName, getRoleByName } = require('~/models/Role');
+const { updateRoleByName, getRoleByName } = require('~/models');
 
 const router = express.Router();
 router.use(requireJwtAuth);

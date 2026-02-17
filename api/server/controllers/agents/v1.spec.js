@@ -30,15 +30,6 @@ jest.mock('~/server/services/Files/process', () => ({
   filterFile: jest.fn(),
 }));
 
-jest.mock('~/models/Action', () => ({
-  updateAction: jest.fn(),
-  getActions: jest.fn().mockResolvedValue([]),
-}));
-
-jest.mock('~/models/File', () => ({
-  deleteFileByFilter: jest.fn(),
-}));
-
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
   findPubliclyAccessibleResources: jest.fn().mockResolvedValue([]),
@@ -47,9 +38,18 @@ jest.mock('~/server/services/PermissionService', () => ({
   checkPermission: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('~/models', () => ({
-  getCategoriesWithCounts: jest.fn(),
-}));
+jest.mock('~/models', () => {
+  const mongoose = require('mongoose');
+  const { createMethods } = require('@librechat/data-schemas');
+  const methods = createMethods(mongoose, {
+    removeAllPermissions: jest.fn().mockResolvedValue(undefined),
+  });
+  return {
+    ...methods,
+    getCategoriesWithCounts: jest.fn(),
+    deleteFileByFilter: jest.fn(),
+  };
+});
 
 // Mock cache for S3 avatar refresh tests
 const mockCache = {

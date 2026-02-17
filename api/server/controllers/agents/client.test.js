@@ -15,13 +15,15 @@ jest.mock('@librechat/api', () => ({
   checkAccess: jest.fn(),
   initializeAgent: jest.fn(),
   createMemoryProcessor: jest.fn(),
-}));
-
-jest.mock('~/models/Agent', () => ({
   loadAgent: jest.fn(),
 }));
 
-jest.mock('~/models/Role', () => ({
+jest.mock('~/server/services/Config', () => ({
+  getMCPServerTools: jest.fn(),
+}));
+
+jest.mock('~/models', () => ({
+  getAgent: jest.fn(),
   getRoleByName: jest.fn(),
 }));
 
@@ -2137,7 +2139,7 @@ describe('AgentClient - titleConvo', () => {
       };
 
       mockCheckAccess = require('@librechat/api').checkAccess;
-      mockLoadAgent = require('~/models/Agent').loadAgent;
+      mockLoadAgent = require('@librechat/api').loadAgent;
       mockInitializeAgent = require('@librechat/api').initializeAgent;
       mockCreateMemoryProcessor = require('@librechat/api').createMemoryProcessor;
     });
@@ -2194,6 +2196,7 @@ describe('AgentClient - titleConvo', () => {
         expect.objectContaining({
           agent_id: differentAgentId,
         }),
+        expect.any(Object),
       );
       expect(mockInitializeAgent).toHaveBeenCalledWith(
         expect.objectContaining({

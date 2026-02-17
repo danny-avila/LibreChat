@@ -6,7 +6,7 @@ const {
   isEphemeralAgentId,
 } = require('librechat-data-provider');
 const { canAccessResource } = require('./canAccessResource');
-const { getAgent } = require('~/models/Agent');
+const { getAgent } = require('~/models');
 
 /**
  * Agent ID resolver function for agent_id from request body

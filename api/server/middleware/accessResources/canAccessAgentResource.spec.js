@@ -3,7 +3,7 @@ const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { canAccessAgentResource } = require('./canAccessAgentResource');
 const { User, Role, AclEntry } = require('~/db/models');
-const { createAgent } = require('~/models/Agent');
+const { createAgent } = require('~/models');
 
 describe('canAccessAgentResource middleware', () => {
   let mongoServer;
@@ -373,7 +373,7 @@ describe('canAccessAgentResource middleware', () => {
       jest.clearAllMocks();
 
       // Update the agent
-      const { updateAgent } = require('~/models/Agent');
+      const { updateAgent } = require('~/models');
       await updateAgent({ id: agentId }, { description: 'Updated description' });
 
       // Test edit access

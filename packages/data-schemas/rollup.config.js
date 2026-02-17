@@ -29,7 +29,7 @@ export default {
     commonjs(),
     // Compile TypeScript files and generate type declarations
     typescript({
-      tsconfig: './tsconfig.json',
+      tsconfig: './tsconfig.build.json',
       declaration: true,
       declarationDir: 'dist/types',
       rootDir: 'src',

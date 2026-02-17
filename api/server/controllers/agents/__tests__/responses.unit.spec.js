@@ -101,11 +101,6 @@ jest.mock('~/server/services/ToolService', () => ({
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/spendTokens', () => ({
-  spendTokens: mockSpendTokens,
-  spendStructuredTokens: mockSpendStructuredTokens,
-}));
-
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
   createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
@@ -115,23 +110,8 @@ jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/Conversation', () => ({
-  getConvoFiles: jest.fn().mockResolvedValue([]),
-  saveConvo: jest.fn().mockResolvedValue({}),
-  getConvo: jest.fn().mockResolvedValue(null),
-}));
-
-jest.mock('~/models/Agent', () => ({
-  getAgent: jest.fn().mockResolvedValue({
-    id: 'agent-123',
-    name: 'Test Agent',
-    provider: 'anthropic',
-    model_parameters: { model: 'claude-3' },
-  }),
-  getAgents: jest.fn().mockResolvedValue([]),
-}));
-
 jest.mock('~/models', () => ({
+  getAgent: jest.fn().mockResolvedValue({ id: 'agent-123', name: 'Test Agent' }),
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn().mockResolvedValue([]),
@@ -141,6 +121,11 @@ jest.mock('~/models', () => ({
   getUserCodeFiles: jest.fn(),
   getToolFilesByIds: jest.fn(),
   getCodeGeneratedFiles: jest.fn(),
+  spendTokens: mockSpendTokens,
+  spendStructuredTokens: mockSpendStructuredTokens,
+  getConvoFiles: jest.fn().mockResolvedValue([]),
+  saveConvo: jest.fn().mockResolvedValue({}),
+  getConvo: jest.fn().mockResolvedValue(null),
 }));
 
 describe('createResponse controller', () => {

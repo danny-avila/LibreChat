@@ -5,7 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const { createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { ResourceType, PermissionBits } = require('librechat-data-provider');
-const { createAgent } = require('~/models/Agent');
+const { createAgent } = require('~/models');
 
 /**
  * Mock the PermissionsController to isolate route testing

@@ -32,26 +32,24 @@ const {
   listModels,
 } = require('~/server/controllers/agents/responses');
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
-const { validateAgentApiKey, findUser } = require('~/models');
 const { configMiddleware } = require('~/server/middleware');
-const { getRoleByName } = require('~/models/Role');
-const { getAgent } = require('~/models/Agent');
+const db = require('~/models');
 
 const router = express.Router();
 
 const requireApiKeyAuth = createRequireApiKeyAuth({
-  validateAgentApiKey,
-  findUser,
+  validateAgentApiKey: db.validateAgentApiKey,
+  findUser: db.findUser,
 });
 
 const checkRemoteAgentsFeature = generateCheckAccess({
   permissionType: PermissionTypes.REMOTE_AGENTS,
   permissions: [Permissions.USE],
-  getRoleByName,
+  getRoleByName: db.getRoleByName,
 });
 
 const checkAgentPermission = createCheckRemoteAgentAccess({
-  getAgent,
+  getAgent: db.getAgent,
   getEffectivePermissions,
 });
 

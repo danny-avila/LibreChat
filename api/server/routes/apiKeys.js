@@ -6,9 +6,9 @@ const {
   createAgentApiKey,
   deleteAgentApiKey,
   listAgentApiKeys,
+  getRoleByName,
 } = require('~/models');
 const { requireJwtAuth } = require('~/server/middleware');
-const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 

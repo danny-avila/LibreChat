@@ -9,11 +9,6 @@
 const mockSpendTokens = jest.fn().mockResolvedValue();
 const mockSpendStructuredTokens = jest.fn().mockResolvedValue();
 
-jest.mock('~/models/spendTokens', () => ({
-  spendTokens: (...args) => mockSpendTokens(...args),
-  spendStructuredTokens: (...args) => mockSpendStructuredTokens(...args),
-}));
-
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
@@ -52,6 +47,8 @@ jest.mock('~/server/middleware/error', () => ({
 jest.mock('~/models', () => ({
   saveMessage: jest.fn().mockResolvedValue(),
   getConvo: jest.fn().mockResolvedValue({ title: 'Test Chat' }),
+  spendTokens: (...args) => mockSpendTokens(...args),
+  spendStructuredTokens: (...args) => mockSpendStructuredTokens(...args),
 }));
 
 jest.mock('./abortRun', () => ({
