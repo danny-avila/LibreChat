@@ -270,6 +270,15 @@ export default defineConfig(({ command }) => ({
       '@tanstack/react-query',
       '@tanstack/react-table',
       '@tanstack/react-virtual',
+      // Prevent duplicate i18n/jotai instances (safe to dedupe — no nested version conflicts)
+      'i18next',
+      'react-i18next',
+      'i18next-browser-languagedetector',
+      'jotai',
+      '@ariakit/react',
+      '@ariakit/react-core',
+      '@headlessui/react',
+      'react-hook-form',
     ],
   },
 }));

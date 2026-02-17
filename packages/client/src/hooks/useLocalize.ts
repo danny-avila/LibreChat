@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { TOptions } from 'i18next';
 import { useAtomValue } from 'jotai';
 import { useTranslation } from 'react-i18next';
-import { resources } from '~/locales/i18n';
+import type { resources } from '~/locales/i18n';
 import { langAtom } from '~/store';
 
 export type TranslationKeys = keyof typeof resources.en.translation;

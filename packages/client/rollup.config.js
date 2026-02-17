@@ -100,6 +100,22 @@ export default {
     '@ariakit/react',
     '@ariakit/react-core',
     '@headlessui/react',
+    // Externalize i18n libs — package has its own i18n.ts which creates a
+    // second instance if bundled, causing NO_I18NEXT_INSTANCE errors
+    'i18next',
+    'react-i18next',
+    'i18next-browser-languagedetector',
+    // Externalize other context-bearing peer deps to avoid duplicates
+    'jotai',
+    'framer-motion',
+    '@react-spring/web',
+    'react-hook-form',
+    'react-resizable-panels',
+    'react-textarea-autosize',
+    'lucide-react',
+    'class-variance-authority',
+    'clsx',
+    'tailwind-merge',
   ],
   preserveSymlinks: true,
   plugins,
