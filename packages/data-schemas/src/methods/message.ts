@@ -1,16 +1,59 @@
-import type { FilterQuery, Model } from 'mongoose';
+import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import logger from '~/config/winston';
-import type { IMessage } from '~/types';
+import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import type { AppConfig, IMessage } from '~/types';
 
 /** Simple UUID v4 regex to replace zod validation */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export interface MessageDeps {
-  /** Creates an expiration date for temporary chats. Injected from @librechat/api. */
-  createTempChatExpirationDate?: (interfaceConfig?: unknown) => Date;
+export interface MessageMethods {
+  saveMessage(
+    ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
+    params: Partial<IMessage> & { newMessageId?: string },
+    metadata?: { context?: string },
+  ): Promise<IMessage | null | undefined>;
+  bulkSaveMessages(
+    messages: Array<Partial<IMessage>>,
+    overrideTimestamp?: boolean,
+  ): Promise<unknown>;
+  recordMessage(params: {
+    user: string;
+    endpoint?: string;
+    messageId: string;
+    conversationId?: string;
+    parentMessageId?: string;
+    [key: string]: unknown;
+  }): Promise<IMessage | null>;
+  updateMessageText(userId: string, params: { messageId: string; text: string }): Promise<void>;
+  updateMessage(
+    userId: string,
+    message: Partial<IMessage> & { newMessageId?: string },
+    metadata?: { context?: string },
+  ): Promise<Partial<IMessage>>;
+  deleteMessagesSince(
+    userId: string,
+    params: { messageId: string; conversationId: string },
+  ): Promise<DeleteResult>;
+  getMessages(filter: FilterQuery<IMessage>, select?: string): Promise<IMessage[]>;
+  getMessage(params: { user: string; messageId: string }): Promise<IMessage | null>;
+  getMessagesByCursor(
+    filter: FilterQuery<IMessage>,
+    options?: {
+      sortField?: string;
+      sortOrder?: 1 | -1;
+      limit?: number;
+      cursor?: string | null;
+    },
+  ): Promise<{ messages: IMessage[]; nextCursor: string | null }>;
+  searchMessages(
+    query: string,
+    searchOptions: Partial<IMessage>,
+    hydrate?: boolean,
+  ): Promise<unknown>;
+  deleteMessages(filter: FilterQuery<IMessage>): Promise<DeleteResult>;
 }
 
-export function createMessageMethods(mongoose: typeof import('mongoose'), deps: MessageDeps = {}) {
+export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
   /**
    * Saves a message in the database.
    */
@@ -22,9 +65,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose'), deps: 
     }: {
       userId: string;
       isTemporary?: boolean;
-      interfaceConfig?: unknown;
+      interfaceConfig?: AppConfig['interfaceConfig'];
     },
-    params: Record<string, unknown>,
+    params: Partial<IMessage> & { newMessageId?: string },
     metadata?: { context?: string },
   ) {
     if (!userId) {
@@ -47,9 +90,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose'), deps: 
         messageId: params.newMessageId || params.messageId,
       };
 
-      if (isTemporary && deps.createTempChatExpirationDate) {
+      if (isTemporary) {
         try {
-          update.expiredAt = deps.createTempChatExpirationDate(interfaceConfig);
+          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
@@ -92,20 +135,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose'), deps: 
             return existingMessage.toObject();
           }
 
-          return {
-            ...params,
-            messageId: params.messageId,
-            user: userId,
-          };
+          return undefined;
         } catch (findError) {
           logger.warn(
             `Could not retrieve existing message with ID ${params.messageId}: ${(findError as Error).message}`,
           );
-          return {
-            ...params,
-            messageId: params.messageId,
-            user: userId,
-          };
+          return undefined;
         }
       }
 
@@ -362,5 +397,3 @@ export function createMessageMethods(mongoose: typeof import('mongoose'), deps: 
     deleteMessages,
   };
 }
-
-export type MessageMethods = ReturnType<typeof createMessageMethods>;

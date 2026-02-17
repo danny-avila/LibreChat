@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import type { TMessage } from 'librechat-data-provider';
 import { buildTree } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createModels } from '~/models';
@@ -98,10 +99,10 @@ describe('Conversation Structure Tests', () => {
     const retrievedMessages = await getMessages({ conversationId, user: userId });
 
     // Build tree
-    const tree = buildTree({ messages: retrievedMessages });
+    const tree = buildTree({ messages: retrievedMessages as TMessage[] });
 
     // Check if the tree is incorrect (folded/corrupted)
-    expect(tree.length).toBeGreaterThan(1); // Should have multiple root messages, indicating corruption
+    expect(tree!.length).toBeGreaterThan(1); // Should have multiple root messages, indicating corruption
   });
 
   test('Fix: Conversation structure maintained with more than 16 messages', async () => {
@@ -125,17 +126,17 @@ describe('Conversation Structure Tests', () => {
     const retrievedMessages = await getMessages({ conversationId, user: userId });
 
     // Build tree
-    const tree = buildTree({ messages: retrievedMessages });
+    const tree = buildTree({ messages: retrievedMessages as TMessage[] });
 
     // Check if the tree is correct
-    expect(tree.length).toBe(1); // Should have only one root message
-    let currentNode = tree[0];
+    expect(tree!.length).toBe(1); // Should have only one root message
+    let currentNode = tree![0];
     for (let i = 1; i < 20; i++) {
-      expect(currentNode.children.length).toBe(1);
-      currentNode = currentNode.children[0];
+      expect(currentNode.children!.length).toBe(1);
+      currentNode = currentNode.children![0];
       expect(currentNode.text).toBe(`Message ${i}`);
     }
-    expect(currentNode.children.length).toBe(0); // Last message should have no children
+    expect(currentNode.children!.length).toBe(0); // Last message should have no children
   });
 
   test('Simulate MongoDB ordering issue with more than 16 messages and close timestamps', async () => {
@@ -159,8 +160,8 @@ describe('Conversation Structure Tests', () => {
 
     await bulkSaveMessages(messages, true);
     const retrievedMessages = await getMessages({ conversationId, user: userId });
-    const tree = buildTree({ messages: retrievedMessages });
-    expect(tree.length).toBeGreaterThan(1);
+    const tree = buildTree({ messages: retrievedMessages as TMessage[] });
+    expect(tree!.length).toBeGreaterThan(1);
   });
 
   test('Fix: Preserve order with more than 16 messages by maintaining original timestamps', async () => {
@@ -189,17 +190,17 @@ describe('Conversation Structure Tests', () => {
     const retrievedMessages = await getMessages({ conversationId, user: userId });
 
     // Build tree
-    const tree = buildTree({ messages: retrievedMessages });
+    const tree = buildTree({ messages: retrievedMessages as TMessage[] });
 
     // Check if the tree is correct
-    expect(tree.length).toBe(1); // Should have only one root message
-    let currentNode = tree[0];
+    expect(tree!.length).toBe(1); // Should have only one root message
+    let currentNode = tree![0];
     for (let i = 1; i < 20; i++) {
-      expect(currentNode.children.length).toBe(1);
-      currentNode = currentNode.children[0];
+      expect(currentNode.children!.length).toBe(1);
+      currentNode = currentNode.children![0];
       expect(currentNode.text).toBe(`Message ${i}`);
     }
-    expect(currentNode.children.length).toBe(0); // Last message should have no children
+    expect(currentNode.children!.length).toBe(0); // Last message should have no children
   });
 
   test('Random order dates between parent and children messages', async () => {
@@ -262,16 +263,16 @@ describe('Conversation Structure Tests', () => {
     );
 
     // Build tree
-    const tree = buildTree({ messages: retrievedMessages });
+    const tree = buildTree({ messages: retrievedMessages as TMessage[] });
 
     // Debug log to see the tree structure
     console.log(
       'Tree structure:',
-      tree.map((root) => ({
+      tree!.map((root) => ({
         messageId: root.messageId,
-        children: root.children.map((child) => ({
+        children: root.children!.map((child) => ({
           messageId: child.messageId,
-          children: child.children.map((grandchild) => ({
+          children: child.children!.map((grandchild) => ({
             messageId: grandchild.messageId,
           })),
         })),
@@ -283,14 +284,14 @@ describe('Conversation Structure Tests', () => {
 
     // Check if messages are properly linked
     const parentMsg = retrievedMessages.find((msg) => msg.messageId === 'parent');
-    expect(parentMsg.parentMessageId).toBeNull(); // Parent should have null parentMessageId
+    expect(parentMsg!.parentMessageId).toBeNull(); // Parent should have null parentMessageId
 
     const childMsg1 = retrievedMessages.find((msg) => msg.messageId === 'child1');
-    expect(childMsg1.parentMessageId).toBe('parent');
+    expect(childMsg1!.parentMessageId).toBe('parent');
 
     // Then check tree structure
-    expect(tree.length).toBe(1); // Should have only one root message
-    expect(tree[0].messageId).toBe('parent');
-    expect(tree[0].children.length).toBe(2); // Should have two children
+    expect(tree!.length).toBe(1); // Should have only one root message
+    expect(tree![0].messageId).toBe('parent');
+    expect(tree![0].children!.length).toBe(2); // Should have two children
   });
 });

@@ -1,10 +1,9 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createTempChatExpirationDate } from './test-helpers';
-import { createModels } from '~/models';
-import { createMessageMethods } from './message';
 import type { IMessage } from '..';
+import { createMessageMethods } from './message';
+import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -31,7 +30,7 @@ beforeAll(async () => {
   Object.assign(mongoose.models, models);
   Message = mongoose.models.Message;
 
-  const methods = createMessageMethods(mongoose, { createTempChatExpirationDate });
+  const methods = createMessageMethods(mongoose);
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
   updateMessage = methods.updateMessage;
@@ -49,12 +48,16 @@ afterAll(async () => {
 });
 
 describe('Message Operations', () => {
-  let mockCtx: { userId: string; isTemporary?: boolean; interfaceConfig?: unknown };
-  let mockMessageData: {
-    messageId: string;
-    conversationId: string;
-    text: string;
-    user: string;
+  let mockCtx: {
+    userId: string;
+    isTemporary?: boolean;
+    interfaceConfig?: { temporaryChatRetention?: number };
+  };
+  let mockMessageData: Partial<IMessage> = {
+    messageId: 'msg123',
+    conversationId: uuidv4(),
+    text: 'Hello, world!',
+    user: 'user123',
   };
 
   beforeEach(async () => {
@@ -80,14 +83,14 @@ describe('Message Operations', () => {
     it('should save a message for an authenticated user', async () => {
       const result = await saveMessage(mockCtx, mockMessageData);
 
-      expect(result.messageId).toBe('msg123');
-      expect(result.user).toBe('user123');
-      expect(result.text).toBe('Hello, world!');
+      expect(result?.messageId).toBe('msg123');
+      expect(result?.user).toBe('user123');
+      expect(result?.text).toBe('Hello, world!');
 
       // Verify the message was actually saved to the database
       const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
       expect(savedMessage).toBeTruthy();
-      expect(savedMessage.text).toBe('Hello, world!');
+      expect(savedMessage?.text).toBe('Hello, world!');
     });
 
     it('should throw an error for unauthenticated user', async () => {
@@ -112,7 +115,7 @@ describe('Message Operations', () => {
 
       // Verify the update
       const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
-      expect(updatedMessage.text).toBe('Updated text');
+      expect(updatedMessage?.text).toBe('Updated text');
     });
   });
 
@@ -126,12 +129,12 @@ describe('Message Operations', () => {
         text: 'Updated text',
       });
 
-      expect(result.messageId).toBe('msg123');
-      expect(result.text).toBe('Updated text');
+      expect(result?.messageId).toBe('msg123');
+      expect(result?.text).toBe('Updated text');
 
       // Verify in database
       const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
-      expect(updatedMessage.text).toBe('Updated text');
+      expect(updatedMessage?.text).toBe('Updated text');
     });
 
     it('should throw an error if message is not found', async () => {
@@ -271,7 +274,7 @@ describe('Message Operations', () => {
         messageId: victimMessageId,
         user: 'victim123',
       });
-      expect(originalMessage.text).toBe('Victim message');
+      expect(originalMessage?.text).toBe('Victim message');
     });
 
     it("should not allow deleting messages from another user's conversation", async () => {
@@ -303,7 +306,7 @@ describe('Message Operations', () => {
         user: 'victim123',
       });
       expect(victimMessage).toBeTruthy();
-      expect(victimMessage.text).toBe('Victim message');
+      expect(victimMessage?.text).toBe('Victim message');
     });
 
     it("should not allow inserting a new message into another user's conversation", async () => {
@@ -321,12 +324,12 @@ describe('Message Operations', () => {
       );
 
       expect(result).toBeTruthy();
-      expect(result.user).toBe('attacker123');
+      expect(result?.user).toBe('attacker123');
 
       // Verify the message was saved with the attacker's user ID, not as an anonymous message
       const savedMessage = await Message.findOne({ messageId: 'new-msg-123' });
-      expect(savedMessage.user).toBe('attacker123');
-      expect(savedMessage.conversationId).toBe(victimConversationId);
+      expect(savedMessage?.user).toBe('attacker123');
+      expect(savedMessage?.conversationId).toBe(victimConversationId);
     });
 
     it('should allow retrieving messages from any conversation', async () => {
@@ -366,13 +369,13 @@ describe('Message Operations', () => {
       const result = await saveMessage(mockCtx, mockMessageData);
       const afterSave = new Date();
 
-      expect(result.messageId).toBe('msg123');
-      expect(result.expiredAt).toBeDefined();
-      expect(result.expiredAt).toBeInstanceOf(Date);
+      expect(result?.messageId).toBe('msg123');
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeInstanceOf(Date);
 
       // Verify expiredAt is approximately 24 hours in the future
       const expectedExpirationTime = new Date(beforeSave.getTime() + 24 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -387,8 +390,8 @@ describe('Message Operations', () => {
 
       const result = await saveMessage(mockCtx, mockMessageData);
 
-      expect(result.messageId).toBe('msg123');
-      expect(result.expiredAt).toBeNull();
+      expect(result?.messageId).toBe('msg123');
+      expect(result?.expiredAt).toBeNull();
     });
 
     it('should save a message without expiredAt when isTemporary is not provided', async () => {
@@ -396,8 +399,8 @@ describe('Message Operations', () => {
 
       const result = await saveMessage(mockCtx, mockMessageData);
 
-      expect(result.messageId).toBe('msg123');
-      expect(result.expiredAt).toBeNull();
+      expect(result?.messageId).toBe('msg123');
+      expect(result?.expiredAt).toBeNull();
     });
 
     it('should use custom retention period from config', async () => {
@@ -409,11 +412,11 @@ describe('Message Operations', () => {
       const beforeSave = new Date();
       const result = await saveMessage(mockCtx, mockMessageData);
 
-      expect(result.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeDefined();
 
       // Verify expiredAt is approximately 48 hours in the future
       const expectedExpirationTime = new Date(beforeSave.getTime() + 48 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -432,11 +435,11 @@ describe('Message Operations', () => {
       const beforeSave = new Date();
       const result = await saveMessage(mockCtx, mockMessageData);
 
-      expect(result.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeDefined();
 
       // Verify expiredAt is approximately 1 hour in the future (minimum)
       const expectedExpirationTime = new Date(beforeSave.getTime() + 1 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -455,11 +458,11 @@ describe('Message Operations', () => {
       const beforeSave = new Date();
       const result = await saveMessage(mockCtx, mockMessageData);
 
-      expect(result.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeDefined();
 
       // Verify expiredAt is approximately 8760 hours (1 year) in the future
       const expectedExpirationTime = new Date(beforeSave.getTime() + 8760 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -480,13 +483,13 @@ describe('Message Operations', () => {
       const afterSave = new Date();
 
       // Should still save the message with default retention period (30 days)
-      expect(result.messageId).toBe('msg123');
-      expect(result.expiredAt).toBeDefined();
-      expect(result.expiredAt).toBeInstanceOf(Date);
+      expect(result?.messageId).toBe('msg123');
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeInstanceOf(Date);
 
       // Verify expiredAt is approximately 30 days in the future (720 hours)
       const expectedExpirationTime = new Date(beforeSave.getTime() + 720 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -505,11 +508,11 @@ describe('Message Operations', () => {
       const beforeSave = new Date();
       const result = await saveMessage(mockCtx, mockMessageData);
 
-      expect(result.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeDefined();
 
       // Default retention is 30 days (720 hours)
       const expectedExpirationTime = new Date(beforeSave.getTime() + 30 * 24 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -525,7 +528,7 @@ describe('Message Operations', () => {
 
       mockCtx.isTemporary = true;
       const savedMessage = await saveMessage(mockCtx, mockMessageData);
-      const originalExpiredAt = savedMessage.expiredAt;
+      const originalExpiredAt = savedMessage?.expiredAt;
 
       // Now update the message without isTemporary flag
       mockCtx.isTemporary = undefined;
@@ -535,11 +538,11 @@ describe('Message Operations', () => {
       });
 
       // expiredAt should not be in the returned updated message object
-      expect(updatedMessage.expiredAt).toBeUndefined();
+      expect(updatedMessage?.expiredAt).toBeUndefined();
 
       // Verify in database that expiredAt wasn't changed
       const dbMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
-      expect(dbMessage.expiredAt).toEqual(originalExpiredAt);
+      expect(dbMessage?.expiredAt).toEqual(originalExpiredAt);
     });
 
     it('should preserve expiredAt when saving existing temporary message', async () => {
@@ -548,7 +551,7 @@ describe('Message Operations', () => {
 
       mockCtx.isTemporary = true;
       const firstSave = await saveMessage(mockCtx, mockMessageData);
-      const originalExpiredAt = firstSave.expiredAt;
+      const originalExpiredAt = firstSave?.expiredAt;
 
       // Wait a bit to ensure time difference
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -558,10 +561,10 @@ describe('Message Operations', () => {
       const secondSave = await saveMessage(mockCtx, updatedData);
 
       // Should update text but create new expiredAt
-      expect(secondSave.text).toBe('Updated text');
-      expect(secondSave.expiredAt).toBeDefined();
-      expect(new Date(secondSave.expiredAt).getTime()).toBeGreaterThan(
-        new Date(originalExpiredAt).getTime(),
+      expect(secondSave?.text).toBe('Updated text');
+      expect(secondSave?.expiredAt).toBeDefined();
+      expect(new Date(secondSave?.expiredAt ?? 0).getTime()).toBeGreaterThan(
+        new Date(originalExpiredAt ?? 0).getTime(),
       );
     });
 
@@ -595,8 +598,8 @@ describe('Message Operations', () => {
       const bulk1 = savedMessages.find((m) => m.messageId === 'bulk1');
       const bulk2 = savedMessages.find((m) => m.messageId === 'bulk2');
 
-      expect(bulk1.expiredAt).toBeDefined();
-      expect(bulk2.expiredAt).toBeNull();
+      expect(bulk1?.expiredAt).toBeDefined();
+      expect(bulk2?.expiredAt).toBeNull();
     });
   });
 
@@ -779,10 +782,10 @@ describe('Message Operations', () => {
       });
 
       // Should be sorted by createdAt DESC (newest first) by default
-      expect(result.messages).toHaveLength(3);
-      expect((result.messages[0] as { messageId: string }).messageId).toBe(msg3!.messageId);
-      expect((result.messages[1] as { messageId: string }).messageId).toBe(msg2!.messageId);
-      expect((result.messages[2] as { messageId: string }).messageId).toBe(msg1!.messageId);
+      expect(result?.messages).toHaveLength(3);
+      expect((result?.messages[0] as { messageId: string }).messageId).toBe(msg3!.messageId);
+      expect((result?.messages[1] as { messageId: string }).messageId).toBe(msg2!.messageId);
+      expect((result?.messages[2] as { messageId: string }).messageId).toBe(msg1!.messageId);
     });
 
     it('should support ascending sort direction', async () => {
@@ -806,9 +809,9 @@ describe('Message Operations', () => {
       });
 
       // Should be sorted by createdAt ASC (oldest first)
-      expect(result.messages).toHaveLength(2);
-      expect((result.messages[0] as { messageId: string }).messageId).toBe(msg1!.messageId);
-      expect((result.messages[1] as { messageId: string }).messageId).toBe(msg2!.messageId);
+      expect(result?.messages).toHaveLength(2);
+      expect((result?.messages[0] as { messageId: string }).messageId).toBe(msg1!.messageId);
+      expect((result?.messages[1] as { messageId: string }).messageId).toBe(msg2!.messageId);
     });
 
     it('should handle empty conversation', async () => {
@@ -819,8 +822,8 @@ describe('Message Operations', () => {
         user: 'user123',
       });
 
-      expect(result.messages).toHaveLength(0);
-      expect(result.nextCursor).toBeNull();
+      expect(result?.messages).toHaveLength(0);
+      expect(result?.nextCursor).toBeNull();
     });
 
     it('should only return messages for the specified user', async () => {
@@ -853,8 +856,8 @@ describe('Message Operations', () => {
       });
 
       // Should only return user123's message
-      expect(result.messages).toHaveLength(1);
-      expect((result.messages[0] as { user: string }).user).toBe('user123');
+      expect(result?.messages).toHaveLength(1);
+      expect((result?.messages[0] as { user: string }).user).toBe('user123');
     });
 
     it('should handle exactly pageSize number of messages (no next page)', async () => {
@@ -873,8 +876,8 @@ describe('Message Operations', () => {
         pageSize: 25,
       });
 
-      expect(result.messages).toHaveLength(25);
-      expect(result.nextCursor).toBeNull(); // No next page
+      expect(result?.messages).toHaveLength(25);
+      expect(result?.nextCursor).toBeNull(); // No next page
     });
 
     it('should handle pageSize of 1', async () => {
@@ -899,8 +902,8 @@ describe('Message Operations', () => {
           cursor,
         });
 
-        allMessages.push(...result.messages);
-        cursor = result.nextCursor;
+        allMessages.push(...(result?.messages ?? []));
+        cursor = result?.nextCursor;
 
         if (!cursor) {
           break;
@@ -931,7 +934,7 @@ describe('Message Operations', () => {
       });
 
       // All messages should be returned
-      expect(result.messages).toHaveLength(5);
+      expect(result?.messages).toHaveLength(5);
     });
   });
 });

@@ -82,10 +82,6 @@ export type AllMethods = UserMethods &
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
-  /** Creates an expiration date for temporary chats. From @librechat/api. */
-  createTempChatExpirationDate?: (interfaceConfig?: unknown) => Date;
-  /** Escapes special regex characters. From @librechat/api. */
-  escapeRegExp?: (s: string) => string;
   /** Matches a model name to a canonical key. From @librechat/api. */
   matchModelName?: (model: string, endpoint?: string) => string | undefined;
   /** Finds the first key in values whose key is a substring of model. From @librechat/api. */
@@ -124,17 +120,12 @@ export function createMethods(
     createStructuredTransaction: transactionMethods.createStructuredTransaction,
   });
 
-  // Tier 2: message methods need createTempChatExpirationDate
-  const messageMethods = createMessageMethods(mongoose, {
-    createTempChatExpirationDate: deps.createTempChatExpirationDate,
-  });
+  const messageMethods = createMessageMethods(mongoose);
 
-  // Tier 2: conversation methods need createTempChatExpirationDate + message methods
-  const conversationMethods = createConversationMethods(
-    mongoose,
-    { createTempChatExpirationDate: deps.createTempChatExpirationDate },
-    { getMessages: messageMethods.getMessages, deleteMessages: messageMethods.deleteMessages },
-  );
+  const conversationMethods = createConversationMethods(mongoose, {
+    getMessages: messageMethods.getMessages,
+    deleteMessages: messageMethods.deleteMessages,
+  });
 
   // ACL entry methods (used internally for removeAllPermissions)
   const aclEntryMethods = createAclEntryMethods(mongoose);
@@ -147,11 +138,7 @@ export function createMethods(
       await aclEntryMethods.deleteAclEntries({ resourceType, resourceId });
     });
 
-  // Tier 3: prompt methods need escapeRegExp + removeAllPermissions
-  const promptDeps: PromptDeps = {
-    escapeRegExp: deps.escapeRegExp ?? ((s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
-    removeAllPermissions,
-  };
+  const promptDeps: PromptDeps = { removeAllPermissions };
   const promptMethods = createPromptMethods(mongoose, promptDeps);
 
   // Role methods with optional cache injection

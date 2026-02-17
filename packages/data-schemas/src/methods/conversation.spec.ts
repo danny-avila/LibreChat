@@ -1,11 +1,10 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { IConversation } from '..';
+import type { IConversation } from '../types';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createTempChatExpirationDate } from './test-helpers';
-import { createModels } from '~/models';
-import { createConversationMethods } from './conversation';
+import { ConversationMethods, createConversationMethods } from './conversation';
+import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -22,7 +21,7 @@ let modelsToCleanup: string[] = [];
 const getMessages = jest.fn().mockResolvedValue([]);
 const deleteMessages = jest.fn().mockResolvedValue({ deletedCount: 0 });
 
-let methods: ReturnType<typeof createConversationMethods>;
+let methods: ConversationMethods;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -33,11 +32,7 @@ beforeAll(async () => {
   Object.assign(mongoose.models, models);
   Conversation = mongoose.models.Conversation as mongoose.Model<IConversation>;
 
-  methods = createConversationMethods(
-    mongoose,
-    { createTempChatExpirationDate },
-    { getMessages, deleteMessages },
-  );
+  methods = createConversationMethods(mongoose, { getMessages, deleteMessages });
 
   await mongoose.connect(mongoUri);
 });
@@ -58,22 +53,25 @@ afterAll(async () => {
   await mongoServer.stop();
 });
 
-const {
-  saveConvo,
-  getConvo,
-  getConvoTitle,
-  getConvoFiles,
-  deleteConvos,
-  getConvosByCursor,
-  getConvosQueried,
-  deleteNullOrEmptyConversations,
-  searchConversation,
-} = new Proxy({} as ReturnType<typeof createConversationMethods>, {
-  get(_target, prop: string) {
-    return (...args: unknown[]) =>
-      (methods as Record<string, (...a: unknown[]) => unknown>)[prop](...args);
-  },
-});
+const saveConvo = (...args: Parameters<ConversationMethods['saveConvo']>) =>
+  methods.saveConvo(...args) as Promise<IConversation | null>;
+const getConvo = (...args: Parameters<ConversationMethods['getConvo']>) =>
+  methods.getConvo(...args);
+const getConvoTitle = (...args: Parameters<ConversationMethods['getConvoTitle']>) =>
+  methods.getConvoTitle(...args);
+const getConvoFiles = (...args: Parameters<ConversationMethods['getConvoFiles']>) =>
+  methods.getConvoFiles(...args);
+const deleteConvos = (...args: Parameters<ConversationMethods['deleteConvos']>) =>
+  methods.deleteConvos(...args);
+const getConvosByCursor = (...args: Parameters<ConversationMethods['getConvosByCursor']>) =>
+  methods.getConvosByCursor(...args);
+const getConvosQueried = (...args: Parameters<ConversationMethods['getConvosQueried']>) =>
+  methods.getConvosQueried(...args);
+const deleteNullOrEmptyConversations = (
+  ...args: Parameters<ConversationMethods['deleteNullOrEmptyConversations']>
+) => methods.deleteNullOrEmptyConversations(...args);
+const searchConversation = (...args: Parameters<ConversationMethods['searchConversation']>) =>
+  methods.searchConversation(...args);
 
 describe('Conversation Operations', () => {
   let mockCtx: {
@@ -114,18 +112,18 @@ describe('Conversation Operations', () => {
     it('should save a conversation for an authenticated user', async () => {
       const result = await saveConvo(mockCtx, mockConversationData);
 
-      expect(result.conversationId).toBe(mockConversationData.conversationId);
-      expect(result.user).toBe('user123');
-      expect(result.title).toBe('Test Conversation');
-      expect(result.endpoint).toBe(EModelEndpoint.openAI);
+      expect(result?.conversationId).toBe(mockConversationData.conversationId);
+      expect(result?.user).toBe('user123');
+      expect(result?.title).toBe('Test Conversation');
+      expect(result?.endpoint).toBe(EModelEndpoint.openAI);
 
       // Verify the conversation was actually saved to the database
-      const savedConvo = await Conversation.findOne({
+      const savedConvo = await Conversation.findOne<IConversation>({
         conversationId: mockConversationData.conversationId,
         user: 'user123',
       });
       expect(savedConvo).toBeTruthy();
-      expect(savedConvo.title).toBe('Test Conversation');
+      expect(savedConvo?.title).toBe('Test Conversation');
     });
 
     it('should query messages when saving a conversation', async () => {
@@ -149,7 +147,7 @@ describe('Conversation Operations', () => {
         newConversationId,
       });
 
-      expect(result.conversationId).toBe(newConversationId);
+      expect(result?.conversationId).toBe(newConversationId);
     });
 
     it('should not create a conversation when noUpsert is true and conversation does not exist', async () => {
@@ -176,8 +174,8 @@ describe('Conversation Operations', () => {
       );
 
       expect(result).not.toBeNull();
-      expect(result.title).toBe('Updated Title');
-      expect(result.conversationId).toBe(mockConversationData.conversationId);
+      expect(result?.title).toBe('Updated Title');
+      expect(result?.conversationId).toBe(mockConversationData.conversationId);
     });
 
     it('should still upsert by default when noUpsert is not provided', async () => {
@@ -189,8 +187,8 @@ describe('Conversation Operations', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result.conversationId).toBe(newId);
-      expect(result.title).toBe('New Conversation');
+      expect(result?.conversationId).toBe(newId);
+      expect(result?.title).toBe('New Conversation');
     });
 
     it('should handle unsetFields metadata', async () => {
@@ -200,10 +198,10 @@ describe('Conversation Operations', () => {
 
       await saveConvo(mockCtx, mockConversationData, metadata);
 
-      const savedConvo = await Conversation.findOne({
+      const savedConvo = await Conversation.findOne<IConversation & { someField?: string }>({
         conversationId: mockConversationData.conversationId,
       });
-      expect(savedConvo.someField).toBeUndefined();
+      expect(savedConvo?.someField).toBeUndefined();
     });
   });
 
@@ -216,12 +214,12 @@ describe('Conversation Operations', () => {
       const result = await saveConvo(mockCtx, mockConversationData);
       const afterSave = new Date();
 
-      expect(result.conversationId).toBe(mockConversationData.conversationId);
-      expect(result.expiredAt).toBeDefined();
-      expect(result.expiredAt).toBeInstanceOf(Date);
+      expect(result?.conversationId).toBe(mockConversationData.conversationId);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeInstanceOf(Date);
 
       const expectedExpirationTime = new Date(beforeSave.getTime() + 24 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -236,8 +234,8 @@ describe('Conversation Operations', () => {
 
       const result = await saveConvo(mockCtx, mockConversationData);
 
-      expect(result.conversationId).toBe(mockConversationData.conversationId);
-      expect(result.expiredAt).toBeNull();
+      expect(result?.conversationId).toBe(mockConversationData.conversationId);
+      expect(result?.expiredAt).toBeNull();
     });
 
     it('should save a conversation without expiredAt when isTemporary is not provided', async () => {
@@ -245,8 +243,8 @@ describe('Conversation Operations', () => {
 
       const result = await saveConvo(mockCtx, mockConversationData);
 
-      expect(result.conversationId).toBe(mockConversationData.conversationId);
-      expect(result.expiredAt).toBeNull();
+      expect(result?.conversationId).toBe(mockConversationData.conversationId);
+      expect(result?.expiredAt).toBeNull();
     });
 
     it('should use custom retention period from config', async () => {
@@ -256,11 +254,11 @@ describe('Conversation Operations', () => {
       const beforeSave = new Date();
       const result = await saveConvo(mockCtx, mockConversationData);
 
-      expect(result.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeDefined();
 
       // Verify expiredAt is approximately 48 hours in the future
       const expectedExpirationTime = new Date(beforeSave.getTime() + 48 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -278,11 +276,11 @@ describe('Conversation Operations', () => {
       const beforeSave = new Date();
       const result = await saveConvo(mockCtx, mockConversationData);
 
-      expect(result.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeDefined();
 
       // Verify expiredAt is approximately 1 hour in the future (minimum)
       const expectedExpirationTime = new Date(beforeSave.getTime() + 1 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -300,11 +298,11 @@ describe('Conversation Operations', () => {
       const beforeSave = new Date();
       const result = await saveConvo(mockCtx, mockConversationData);
 
-      expect(result.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeDefined();
 
       // Verify expiredAt is approximately 8760 hours (1 year) in the future
       const expectedExpirationTime = new Date(beforeSave.getTime() + 8760 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -324,13 +322,13 @@ describe('Conversation Operations', () => {
       const afterSave = new Date();
 
       // Should still save the conversation with default retention period (30 days)
-      expect(result.conversationId).toBe(mockConversationData.conversationId);
-      expect(result.expiredAt).toBeDefined();
-      expect(result.expiredAt).toBeInstanceOf(Date);
+      expect(result?.conversationId).toBe(mockConversationData.conversationId);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeInstanceOf(Date);
 
       // Verify expiredAt is approximately 30 days in the future (720 hours)
       const expectedExpirationTime = new Date(beforeSave.getTime() + 720 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -348,11 +346,11 @@ describe('Conversation Operations', () => {
       const beforeSave = new Date();
       const result = await saveConvo(mockCtx, mockConversationData);
 
-      expect(result.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeDefined();
 
       // Default retention is 30 days (720 hours)
       const expectedExpirationTime = new Date(beforeSave.getTime() + 30 * 24 * 60 * 60 * 1000);
-      const actualExpirationTime = new Date(result.expiredAt);
+      const actualExpirationTime = new Date(result?.expiredAt ?? 0);
 
       expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
         expectedExpirationTime.getTime() - 1000,
@@ -367,7 +365,7 @@ describe('Conversation Operations', () => {
       mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
       mockCtx.isTemporary = true;
       const firstSave = await saveConvo(mockCtx, mockConversationData);
-      const originalExpiredAt = firstSave.expiredAt;
+      const originalExpiredAt = firstSave?.expiredAt ?? new Date(0);
 
       // Wait a bit to ensure time difference
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -377,9 +375,9 @@ describe('Conversation Operations', () => {
       const secondSave = await saveConvo(mockCtx, updatedData);
 
       // Should update title and create new expiredAt
-      expect(secondSave.title).toBe('Updated Title');
-      expect(secondSave.expiredAt).toBeDefined();
-      expect(new Date(secondSave.expiredAt).getTime()).toBeGreaterThan(
+      expect(secondSave?.title).toBe('Updated Title');
+      expect(secondSave?.expiredAt).toBeDefined();
+      expect(new Date(secondSave?.expiredAt ?? 0).getTime()).toBeGreaterThan(
         new Date(originalExpiredAt).getTime(),
       );
     });
@@ -388,15 +386,15 @@ describe('Conversation Operations', () => {
       // First save a non-temporary conversation
       mockCtx.isTemporary = false;
       const firstSave = await saveConvo(mockCtx, mockConversationData);
-      expect(firstSave.expiredAt).toBeNull();
+      expect(firstSave?.expiredAt).toBeNull();
 
       // Update without isTemporary flag
       mockCtx.isTemporary = undefined;
       const updatedData = { ...mockConversationData, title: 'Updated Title' };
       const secondSave = await saveConvo(mockCtx, updatedData);
 
-      expect(secondSave.title).toBe('Updated Title');
-      expect(secondSave.expiredAt).toBeNull();
+      expect(secondSave?.title).toBe('Updated Title');
+      expect(secondSave?.expiredAt).toBeNull();
     });
 
     it('should filter out expired conversations in getConvosByCursor', async () => {
@@ -425,8 +423,8 @@ describe('Conversation Operations', () => {
       const result = await getConvosByCursor('user123');
 
       // Should only return conversations with null or non-existent expiredAt
-      expect(result.conversations).toHaveLength(1);
-      expect(result.conversations[0].conversationId).toBe(nonExpiredConvo.conversationId);
+      expect(result?.conversations).toHaveLength(1);
+      expect(result?.conversations[0]?.conversationId).toBe(nonExpiredConvo.conversationId);
     });
 
     it('should filter out expired conversations in getConvosQueried', async () => {
@@ -455,10 +453,10 @@ describe('Conversation Operations', () => {
       const result = await getConvosQueried('user123', convoIds);
 
       // Should only return the non-expired conversation
-      expect(result.conversations).toHaveLength(1);
-      expect(result.conversations[0].conversationId).toBe(nonExpiredConvo.conversationId);
-      expect(result.convoMap[nonExpiredConvo.conversationId]).toBeDefined();
-      expect(result.convoMap[expiredConvo.conversationId]).toBeUndefined();
+      expect(result?.conversations).toHaveLength(1);
+      expect(result?.conversations[0].conversationId).toBe(nonExpiredConvo.conversationId);
+      expect(result?.convoMap[nonExpiredConvo.conversationId]).toBeDefined();
+      expect(result?.convoMap[expiredConvo.conversationId]).toBeUndefined();
     });
   });
 
@@ -584,8 +582,8 @@ describe('Conversation Operations', () => {
         conversationId: mockConversationData.conversationId,
       });
 
-      expect(result.deletedCount).toBe(1);
-      expect(result.messages.deletedCount).toBe(5);
+      expect(result?.deletedCount).toBe(1);
+      expect(result?.messages.deletedCount).toBe(5);
       expect(deleteMessages).toHaveBeenCalledWith({
         conversationId: { $in: [mockConversationData.conversationId] },
       });
@@ -620,8 +618,8 @@ describe('Conversation Operations', () => {
 
       const result = await deleteNullOrEmptyConversations();
 
-      expect(result.conversations.deletedCount).toBe(0); // No invalid conversations to delete
-      expect(result.messages.deletedCount).toBe(0);
+      expect(result?.conversations.deletedCount).toBe(0); // No invalid conversations to delete
+      expect(result?.messages.deletedCount).toBe(0);
 
       // Verify valid conversation remains
       const remainingConvos = await Conversation.find({});
@@ -710,7 +708,7 @@ describe('Conversation Operations', () => {
       const baseTime = new Date('2026-01-01T12:00:00.000Z');
 
       // Create exactly 26 conversations
-      const convos: unknown[] = [];
+      const convos: (IConversation | null)[] = [];
       for (let i = 0; i < 26; i++) {
         const updatedAt = new Date(baseTime.getTime() - i * 60000);
         const convo = await createConvoWithTimestamps(i, updatedAt, updatedAt);
@@ -728,7 +726,7 @@ describe('Conversation Operations', () => {
 
       // Item 26 should NOT be in page 1
       const page1Ids = page1.conversations.map((c: IConversation) => c.conversationId);
-      expect(page1Ids).not.toContain(item26.conversationId);
+      expect(page1Ids).not.toContain(item26!.conversationId);
 
       // Fetch second page
       const page2 = await getConvosByCursor('user123', {
@@ -738,7 +736,7 @@ describe('Conversation Operations', () => {
 
       // Item 26 MUST be in page 2 (this was the bug - it was being skipped)
       expect(page2.conversations).toHaveLength(1);
-      expect(page2.conversations[0].conversationId).toBe(item26.conversationId);
+      expect(page2.conversations[0].conversationId).toBe(item26!.conversationId);
     });
 
     it('should sort by updatedAt DESC by default', async () => {
@@ -765,10 +763,10 @@ describe('Conversation Operations', () => {
       const result = await getConvosByCursor('user123');
 
       // Should be sorted by updatedAt DESC (most recent first)
-      expect(result.conversations).toHaveLength(3);
-      expect(result.conversations[0].conversationId).toBe(convo1!.conversationId); // Jan 3 updatedAt
-      expect(result.conversations[1].conversationId).toBe(convo2!.conversationId); // Jan 2 updatedAt
-      expect(result.conversations[2].conversationId).toBe(convo3!.conversationId); // Jan 1 updatedAt
+      expect(result?.conversations).toHaveLength(3);
+      expect(result?.conversations[0].conversationId).toBe(convo1!.conversationId); // Jan 3 updatedAt
+      expect(result?.conversations[1].conversationId).toBe(convo2!.conversationId); // Jan 2 updatedAt
+      expect(result?.conversations[2].conversationId).toBe(convo3!.conversationId); // Jan 1 updatedAt
     });
 
     it('should handle conversations with same updatedAt (tie-breaker)', async () => {
@@ -782,9 +780,9 @@ describe('Conversation Operations', () => {
       const result = await getConvosByCursor('user123');
 
       // All 3 should be returned (no skipping due to same timestamps)
-      expect(result.conversations).toHaveLength(3);
+      expect(result?.conversations).toHaveLength(3);
 
-      const returnedIds = result.conversations.map((c: IConversation) => c.conversationId);
+      const returnedIds = result?.conversations.map((c: IConversation) => c.conversationId);
       expect(returnedIds).toContain(convo1!.conversationId);
       expect(returnedIds).toContain(convo2!.conversationId);
       expect(returnedIds).toContain(convo3!.conversationId);
@@ -852,7 +850,7 @@ describe('Conversation Operations', () => {
       const lastReturnedItem = page1.conversations[24] as IConversation;
 
       expect(new Date(decodedCursor.primary).getTime()).toBe(
-        new Date(lastReturnedItem.updatedAt).getTime(),
+        new Date(lastReturnedItem.updatedAt ?? 0).getTime(),
       );
     });
 
@@ -871,26 +869,26 @@ describe('Conversation Operations', () => {
       );
 
       // Verify timestamps were set correctly
-      expect(new Date(convo1!.createdAt).getTime()).toBe(
+      expect(new Date(convo1!.createdAt ?? 0).getTime()).toBe(
         new Date('2026-01-03T00:00:00.000Z').getTime(),
       );
-      expect(new Date(convo2!.createdAt).getTime()).toBe(
+      expect(new Date(convo2!.createdAt ?? 0).getTime()).toBe(
         new Date('2026-01-01T00:00:00.000Z').getTime(),
       );
 
       const result = await getConvosByCursor('user123', { sortBy: 'createdAt' });
 
       // Should be sorted by createdAt DESC
-      expect(result.conversations).toHaveLength(2);
-      expect(result.conversations[0].conversationId).toBe(convo1!.conversationId); // Jan 3 createdAt
-      expect(result.conversations[1].conversationId).toBe(convo2!.conversationId); // Jan 1 createdAt
+      expect(result?.conversations).toHaveLength(2);
+      expect(result?.conversations[0].conversationId).toBe(convo1!.conversationId); // Jan 3 createdAt
+      expect(result?.conversations[1].conversationId).toBe(convo2!.conversationId); // Jan 1 createdAt
     });
 
     it('should handle empty result set gracefully', async () => {
       const result = await getConvosByCursor('user123');
 
-      expect(result.conversations).toHaveLength(0);
-      expect(result.nextCursor).toBeNull();
+      expect(result?.conversations).toHaveLength(0);
+      expect(result?.nextCursor).toBeNull();
     });
 
     it('should handle exactly limit number of conversations (no next page)', async () => {
@@ -904,8 +902,8 @@ describe('Conversation Operations', () => {
 
       const result = await getConvosByCursor('user123', { limit: 25 });
 
-      expect(result.conversations).toHaveLength(25);
-      expect(result.nextCursor).toBeNull(); // No next page
+      expect(result?.conversations).toHaveLength(25);
+      expect(result?.nextCursor).toBeNull(); // No next page
     });
   });
 });

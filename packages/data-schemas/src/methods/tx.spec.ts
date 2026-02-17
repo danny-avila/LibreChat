@@ -241,6 +241,7 @@ describe('getMultiplier', () => {
   });
 
   it('should return defaultRate if tokenType is provided but not found in tokenValues', () => {
+    // @ts-expect-error: intentionally passing invalid tokenType to test error handling
     expect(getMultiplier({ valueKey: '8k', tokenType: 'unknownType' })).toBe(defaultRate);
   });
 
@@ -530,7 +531,7 @@ describe('AWS Bedrock Model Tests', () => {
     const results = awsModels.map((model) => {
       const valueKey = getValueKey(model, EModelEndpoint.bedrock);
       const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
-      return tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
+      return tokenValues[valueKey!].prompt && multiplier === tokenValues[valueKey!].prompt;
     });
     expect(results.every(Boolean)).toBe(true);
   });
@@ -539,7 +540,7 @@ describe('AWS Bedrock Model Tests', () => {
     const results = awsModels.map((model) => {
       const valueKey = getValueKey(model, EModelEndpoint.bedrock);
       const multiplier = getMultiplier({ valueKey, tokenType: 'completion' });
-      return tokenValues[valueKey].completion && multiplier === tokenValues[valueKey].completion;
+      return tokenValues[valueKey!].completion && multiplier === tokenValues[valueKey!].completion;
     });
     expect(results.every(Boolean)).toBe(true);
   });
@@ -795,7 +796,7 @@ describe('Deepseek Model Tests', () => {
     const results = deepseekModels.map((model) => {
       const valueKey = getValueKey(model);
       const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
-      return tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
+      return tokenValues[valueKey!].prompt && multiplier === tokenValues[valueKey!].prompt;
     });
     expect(results.every(Boolean)).toBe(true);
   });
@@ -804,7 +805,7 @@ describe('Deepseek Model Tests', () => {
     const results = deepseekModels.map((model) => {
       const valueKey = getValueKey(model);
       const multiplier = getMultiplier({ valueKey, tokenType: 'completion' });
-      return tokenValues[valueKey].completion && multiplier === tokenValues[valueKey].completion;
+      return tokenValues[valueKey!].completion && multiplier === tokenValues[valueKey!].completion;
     });
     expect(results.every(Boolean)).toBe(true);
   });
@@ -814,7 +815,7 @@ describe('Deepseek Model Tests', () => {
     const valueKey = getValueKey(model);
     expect(valueKey).toBe(model);
     const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
-    const result = tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
+    const result = tokenValues[valueKey!].prompt && multiplier === tokenValues[valueKey!].prompt;
     expect(result).toBe(true);
   });
 
@@ -1279,6 +1280,7 @@ describe('getCacheMultiplier', () => {
 
   it('should return null if cacheType is provided but not found in cacheTokenValues', () => {
     expect(
+      // @ts-expect-error: intentionally passing invalid cacheType to test error handling
       getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'unknownType' }),
     ).toBeNull();
   });
@@ -1383,8 +1385,8 @@ describe('Google Model Tests', () => {
     });
 
     results.forEach(({ valueKey, promptRate, completionRate }) => {
-      expect(promptRate).toBe(tokenValues[valueKey].prompt);
-      expect(completionRate).toBe(tokenValues[valueKey].completion);
+      expect(promptRate).toBe(tokenValues[valueKey!].prompt);
+      expect(completionRate).toBe(tokenValues[valueKey!].completion);
     });
   });
 
@@ -1977,7 +1979,7 @@ describe('Premium Token Pricing', () => {
 
   it('should return null from getPremiumRate when inputTokenCount is undefined or null', () => {
     expect(getPremiumRate(premiumModel, 'prompt', undefined)).toBeNull();
-    expect(getPremiumRate(premiumModel, 'prompt', null)).toBeNull();
+    expect(getPremiumRate(premiumModel, 'prompt', undefined)).toBeNull();
   });
 
   it('should return null from getPremiumRate for models without premium pricing', () => {

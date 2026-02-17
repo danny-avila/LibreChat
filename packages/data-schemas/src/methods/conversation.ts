@@ -1,33 +1,24 @@
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import logger from '~/config/winston';
-import type { IConversation, IMessage } from '~/types';
-
-export interface ConversationDeps {
-  /** Creates an expiration date for temporary chats. Injected from @librechat/api. */
-  createTempChatExpirationDate?: (interfaceConfig?: unknown) => Date;
-}
-
-export interface ConversationMessageMethods {
-  getMessages: (filter: FilterQuery<IMessage>, select?: string) => Promise<unknown[]>;
-  deleteMessages: (filter: FilterQuery<IMessage>) => Promise<{ deletedCount: number }>;
-}
+import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import type { AppConfig, IConversation } from '~/types';
+import type { MessageMethods } from './message';
+import type { DeleteResult } from 'mongoose';
 
 export interface ConversationMethods {
-  getConvoFiles: (conversationId: string) => Promise<string[]>;
-  searchConversation: (
-    conversationId: string,
-  ) => Promise<Pick<IConversation, 'conversationId' | 'user'> | null>;
-  deleteNullOrEmptyConversations: () => Promise<{
-    conversations: { deletedCount: number };
-    messages: { deletedCount: number };
+  getConvoFiles(conversationId: string): Promise<string[]>;
+  searchConversation(conversationId: string): Promise<IConversation | null>;
+  deleteNullOrEmptyConversations(): Promise<{
+    conversations: { deletedCount?: number };
+    messages: { deletedCount?: number };
   }>;
-  saveConvo: (
-    ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: unknown },
-    convo: { conversationId: string; newConversationId?: string; [key: string]: unknown },
+  saveConvo(
+    ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
+    data: { conversationId: string; newConversationId?: string; [key: string]: unknown },
     metadata?: { context?: string; unsetFields?: Record<string, number>; noUpsert?: boolean },
-  ) => Promise<unknown>;
-  bulkSaveConvos: (conversations: Array<Record<string, unknown>>) => Promise<unknown>;
-  getConvosByCursor: (
+  ): Promise<IConversation | { message: string } | null>;
+  bulkSaveConvos(conversations: Array<Record<string, unknown>>): Promise<unknown>;
+  getConvosByCursor(
     user: string,
     options?: {
       cursor?: string | null;
@@ -38,29 +29,28 @@ export interface ConversationMethods {
       sortBy?: string;
       sortDirection?: string;
     },
-  ) => Promise<{ conversations: unknown[]; nextCursor: string | null }>;
-  getConvosQueried: (
+  ): Promise<{ conversations: IConversation[]; nextCursor: string | null }>;
+  getConvosQueried(
     user: string,
     convoIds: Array<{ conversationId: string }> | null,
     cursor?: string | null,
     limit?: number,
-  ) => Promise<{
-    conversations: unknown[];
+  ): Promise<{
+    conversations: IConversation[];
     nextCursor: string | null;
     convoMap: Record<string, unknown>;
   }>;
-  getConvo: (user: string, conversationId: string) => Promise<IConversation | null>;
-  getConvoTitle: (user: string, conversationId: string) => Promise<string | null>;
-  deleteConvos: (
+  getConvo(user: string, conversationId: string): Promise<IConversation | null>;
+  getConvoTitle(user: string, conversationId: string): Promise<string | null>;
+  deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
-  ) => Promise<Record<string, unknown>>;
+  ): Promise<DeleteResult & { messages: DeleteResult }>;
 }
 
 export function createConversationMethods(
   mongoose: typeof import('mongoose'),
-  deps: ConversationDeps = {},
-  messageMethods?: ConversationMessageMethods,
+  messageMethods?: Pick<MessageMethods, 'getMessages' | 'deleteMessages'>,
 ): ConversationMethods {
   function getMessageMethods() {
     if (!messageMethods) {
@@ -154,7 +144,7 @@ export function createConversationMethods(
     }: {
       userId: string;
       isTemporary?: boolean;
-      interfaceConfig?: unknown;
+      interfaceConfig?: AppConfig['interfaceConfig'];
     },
     {
       conversationId,
@@ -182,9 +172,9 @@ export function createConversationMethods(
         update.conversationId = newConversationId;
       }
 
-      if (isTemporary && deps.createTempChatExpirationDate) {
+      if (isTemporary) {
         try {
-          update.expiredAt = deps.createTempChatExpirationDate(interfaceConfig);
+          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveConvo\` context: ${metadata?.context}`);

@@ -1,19 +1,12 @@
 const mongoose = require('mongoose');
 const { createMethods } = require('@librechat/data-schemas');
-const {
-  escapeRegExp,
-  matchModelName,
-  findMatchingPattern,
-  createTempChatExpirationDate,
-} = require('@librechat/api');
+const { matchModelName, findMatchingPattern } = require('@librechat/api');
 const getLogStores = require('~/cache/getLogStores');
 
 const methods = createMethods(mongoose, {
-  escapeRegExp,
   matchModelName,
   findMatchingPattern,
   getCache: getLogStores,
-  createTempChatExpirationDate,
 });
 
 const seedDatabase = async () => {

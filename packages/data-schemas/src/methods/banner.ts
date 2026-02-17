@@ -1,12 +1,12 @@
 import type { Model } from 'mongoose';
 import logger from '~/config/winston';
-import type { IBanner } from '~/types';
+import type { IBanner, IUser } from '~/types';
 
 export function createBannerMethods(mongoose: typeof import('mongoose')) {
   /**
    * Retrieves the current active banner.
    */
-  async function getBanner(user?: string | null): Promise<IBanner | null> {
+  async function getBanner(user?: IUser | null): Promise<IBanner | null> {
     try {
       const Banner = mongoose.models.Banner as Model<IBanner>;
       const now = new Date();
@@ -16,7 +16,7 @@ export function createBannerMethods(mongoose: typeof import('mongoose')) {
         type: 'banner',
       }).lean()) as IBanner | null;
 
-      if (!banner || banner.isPublic || user) {
+      if (!banner || banner.isPublic || user != null) {
         return banner;
       }
 

@@ -1,11 +1,10 @@
 import type { Model, Types } from 'mongoose';
 import { SystemRoles, ResourceType, SystemCategories } from 'librechat-data-provider';
-import logger from '~/config/winston';
 import type { IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
+import { escapeRegExp } from '~/utils/string';
+import logger from '~/config/winston';
 
 export interface PromptDeps {
-  /** Escapes special regex characters. Injected from @librechat/api. */
-  escapeRegExp: (s: string) => string;
   /** Removes all ACL permissions for a resource. Injected from PermissionService. */
   removeAllPermissions: (params: { resourceType: string; resourceId: unknown }) => Promise<void>;
 }
@@ -54,7 +53,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       };
 
       if (name) {
-        (query as Record<string, unknown>).name = new RegExp(deps.escapeRegExp(name), 'i');
+        (query as Record<string, unknown>).name = new RegExp(escapeRegExp(name), 'i');
       }
       if (!query.category) {
         delete query.category;
@@ -100,7 +99,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       const validatedPageSize = Math.max(parseInt(String(pageSize), 10), 1);
 
       if (name) {
-        (query as Record<string, unknown>).name = new RegExp(deps.escapeRegExp(name), 'i');
+        (query as Record<string, unknown>).name = new RegExp(escapeRegExp(name), 'i');
       }
       if (!query.category) {
         delete query.category;

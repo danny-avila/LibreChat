@@ -5,8 +5,8 @@ import {
   permissionsSchema,
   removeNullishValues,
 } from 'librechat-data-provider';
-import logger from '~/config/winston';
 import type { IRole } from '~/types';
+import logger from '~/config/winston';
 
 export interface RoleDeps {
   /** Returns a cache store for the given key. Injected from getLogStores. */

@@ -109,7 +109,7 @@ describe('spendTokens', () => {
     // Verify balance was updated
     const balance = await Balance.findOne({ user: userId });
     expect(balance).toBeDefined();
-    expect(balance.tokenCredits).toBeLessThan(10000); // Balance should be reduced
+    expect(balance!.tokenCredits).toBeLessThan(10000); // Balance should be reduced
   });
 
   it('should handle zero completion tokens', async () => {
@@ -141,7 +141,7 @@ describe('spendTokens', () => {
     expect(transactions[0].tokenType).toBe('completion');
     // In JavaScript -0 and 0 are different but functionally equivalent
     // Use Math.abs to handle both 0 and -0
-    expect(Math.abs(transactions[0].rawAmount)).toBe(0);
+    expect(Math.abs(transactions[0].rawAmount!)).toBe(0);
 
     // Check prompt transaction
     expect(transactions[1].tokenType).toBe('prompt');
@@ -193,7 +193,7 @@ describe('spendTokens', () => {
 
     // Verify balance was not updated (should still be 10000)
     const balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(10000);
+    expect(balance!.tokenCredits).toBe(10000);
   });
 
   it('should not allow balance to go below zero when spending tokens', async () => {
@@ -226,7 +226,7 @@ describe('spendTokens', () => {
     // Verify balance was reduced to exactly 0, not negative
     const balance = await Balance.findOne({ user: userId });
     expect(balance).toBeDefined();
-    expect(balance.tokenCredits).toBe(0);
+    expect(balance!.tokenCredits).toBe(0);
 
     // Check that the transaction records show the adjusted values
     const transactionResults = await Promise.all(
@@ -274,7 +274,7 @@ describe('spendTokens', () => {
 
     // Check balance after first transaction
     let balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(0);
+    expect(balance!.tokenCredits).toBe(0);
 
     // Second transaction - should keep balance at 0, not make it negative or increase it
     const txData2 = {
@@ -294,7 +294,7 @@ describe('spendTokens', () => {
 
     // Check balance after second transaction - should still be 0
     balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(0);
+    expect(balance!.tokenCredits).toBe(0);
 
     // Verify all transactions were created
     const transactions = await Transaction.find({ user: userId });
@@ -329,7 +329,7 @@ describe('spendTokens', () => {
     console.log('Direct Transaction.create result:', directResult);
 
     // The completion value should never be positive
-    expect(directResult.completion).not.toBeGreaterThan(0);
+    expect(directResult!.completion).not.toBeGreaterThan(0);
   });
 
   it('should ensure tokenValue is always negative for spending tokens', async () => {
@@ -401,7 +401,7 @@ describe('spendTokens', () => {
 
     // Check balance after first transaction
     let balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(0);
+    expect(balance!.tokenCredits).toBe(0);
 
     // Second transaction - should keep balance at 0, not make it negative or increase it
     const txData2 = {
@@ -425,7 +425,7 @@ describe('spendTokens', () => {
 
     // Check balance after second transaction - should still be 0
     balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(0);
+    expect(balance!.tokenCredits).toBe(0);
 
     // Verify all transactions were created
     const transactions = await Transaction.find({ user: userId });
@@ -483,7 +483,7 @@ describe('spendTokens', () => {
     // Verify balance was reduced to exactly 0, not negative
     const balance = await Balance.findOne({ user: userId });
     expect(balance).toBeDefined();
-    expect(balance.tokenCredits).toBe(0);
+    expect(balance!.tokenCredits).toBe(0);
 
     // The result should show the adjusted values
     expect(result).toEqual({
@@ -597,10 +597,10 @@ describe('spendTokens', () => {
     console.log('Initial balance:', initialBalance);
     console.log('Expected total spend:', expectedTotalSpend);
     console.log('Expected final balance:', expectedFinalBalance);
-    console.log('Actual final balance:', finalBalance.tokenCredits);
+    console.log('Actual final balance:', finalBalance!.tokenCredits);
 
     // Allow for small rounding differences
-    expect(finalBalance.tokenCredits).toBeCloseTo(expectedFinalBalance, 0);
+    expect(finalBalance!.tokenCredits).toBeCloseTo(expectedFinalBalance, 0);
 
     // Verify all transactions were created
     const transactions = await Transaction.find({
@@ -617,19 +617,19 @@ describe('spendTokens', () => {
     let totalTokenValue = 0;
     transactions.forEach((tx) => {
       console.log(`${tx.tokenType}: rawAmount=${tx.rawAmount}, tokenValue=${tx.tokenValue}`);
-      totalTokenValue += tx.tokenValue;
+      totalTokenValue += tx.tokenValue!;
     });
     console.log('Total token value from transactions:', totalTokenValue);
 
     // The difference between expected and actual is significant
     // This is likely due to the multipliers being different in the test environment
     // Let's adjust our expectation based on the actual transactions
-    const actualSpend = initialBalance - finalBalance.tokenCredits;
+    const actualSpend = initialBalance - finalBalance!.tokenCredits;
     console.log('Actual spend:', actualSpend);
 
     // Instead of checking the exact balance, let's verify that:
     // 1. The balance was reduced (tokens were spent)
-    expect(finalBalance.tokenCredits).toBeLessThan(initialBalance);
+    expect(finalBalance!.tokenCredits).toBeLessThan(initialBalance);
     // 2. The total token value from transactions matches the actual spend
     expect(Math.abs(totalTokenValue)).toBeCloseTo(actualSpend, -3); // Allow for larger differences
   });
@@ -672,10 +672,10 @@ describe('spendTokens', () => {
     console.log('Initial balance (Increase Test):', initialBalance);
     console.log(`Performed ${numberOfRefills} refills of ${refillAmount} each.`);
     console.log('Expected final balance (Increase Test):', expectedFinalBalance);
-    console.log('Actual final balance (Increase Test):', finalBalance.tokenCredits);
+    console.log('Actual final balance (Increase Test):', finalBalance!.tokenCredits);
 
     // Use toBeCloseTo for safety, though toBe should work for integer math
-    expect(finalBalance.tokenCredits).toBeCloseTo(expectedFinalBalance, 0);
+    expect(finalBalance!.tokenCredits).toBeCloseTo(expectedFinalBalance, 0);
 
     // Verify all transactions were created
     const transactions = await Transaction.find({
@@ -692,7 +692,8 @@ describe('spendTokens', () => {
       // Adjust this based on the actual return structure.
       // Let's assume it returns { balance: newBalance, transaction: { rawAmount: ... } }
       // Or perhaps we check the transaction.rawAmount directly
-      return sum + (result?.transaction?.rawAmount || 0);
+      const r = result as Record<string, Record<string, unknown>>;
+      return sum + ((r?.transaction?.rawAmount as number) || 0);
     }, 0);
     console.log('Total increment reported by results:', totalIncrementReported);
     expect(totalIncrementReported).toBe(expectedFinalBalance - initialBalance);
@@ -703,7 +704,7 @@ describe('spendTokens', () => {
       // For refills, rawAmount is positive, and tokenValue might be calculated based on it
       // Let's assume tokenValue directly reflects the increment for simplicity here
       // If calculation is involved, adjust accordingly
-      totalTokenValueFromDb += tx.rawAmount; // Or tx.tokenValue if that holds the increment
+      totalTokenValueFromDb += tx.rawAmount!; // Or tx.tokenValue if that holds the increment
     });
     console.log('Total rawAmount from DB transactions:', totalTokenValueFromDb);
     expect(totalTokenValueFromDb).toBeCloseTo(expectedFinalBalance - initialBalance, 0);
@@ -763,7 +764,7 @@ describe('spendTokens', () => {
     // Verify balance was updated
     const balance = await Balance.findOne({ user: userId });
     expect(balance).toBeDefined();
-    expect(balance.tokenCredits).toBeLessThan(10000); // Balance should be reduced
+    expect(balance!.tokenCredits).toBeLessThan(10000); // Balance should be reduced
   });
 
   describe('premium token pricing', () => {
@@ -792,7 +793,7 @@ describe('spendTokens', () => {
         promptTokens * tokenValues[model].prompt + completionTokens * tokenValues[model].completion;
 
       const balance = await Balance.findOne({ user: userId });
-      expect(balance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+      expect(balance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
     });
 
     it('should charge premium rates for claude-opus-4-6 when prompt tokens exceed threshold', async () => {
@@ -821,7 +822,7 @@ describe('spendTokens', () => {
         completionTokens * premiumTokenValues[model].completion;
 
       const balance = await Balance.findOne({ user: userId });
-      expect(balance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+      expect(balance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
     });
 
     it('should charge premium rates for both prompt and completion in structured tokens when above threshold', async () => {
@@ -858,12 +859,12 @@ describe('spendTokens', () => {
 
       const expectedPromptCost =
         tokenUsage.promptTokens.input * premiumPromptRate +
-        tokenUsage.promptTokens.write * writeRate +
-        tokenUsage.promptTokens.read * readRate;
+        tokenUsage.promptTokens.write * (writeRate ?? 0) +
+        tokenUsage.promptTokens.read * (readRate ?? 0);
       const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
 
-      expect(result.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
-      expect(result.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
+      expect(result?.prompt?.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result?.completion?.completion).toBeCloseTo(-expectedCompletionCost, 0);
     });
 
     it('should charge standard rates for structured tokens when below threshold', async () => {
@@ -900,12 +901,12 @@ describe('spendTokens', () => {
 
       const expectedPromptCost =
         tokenUsage.promptTokens.input * standardPromptRate +
-        tokenUsage.promptTokens.write * writeRate +
-        tokenUsage.promptTokens.read * readRate;
+        tokenUsage.promptTokens.write * (writeRate ?? 0) +
+        tokenUsage.promptTokens.read * (readRate ?? 0);
       const expectedCompletionCost = tokenUsage.completionTokens * standardCompletionRate;
 
-      expect(result.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
-      expect(result.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
+      expect(result?.prompt?.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result?.completion?.completion).toBeCloseTo(-expectedCompletionCost, 0);
     });
 
     it('should not apply premium pricing to non-premium models regardless of prompt size', async () => {
@@ -933,7 +934,7 @@ describe('spendTokens', () => {
         promptTokens * tokenValues[model].prompt + completionTokens * tokenValues[model].completion;
 
       const balance = await Balance.findOne({ user: userId });
-      expect(balance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+      expect(balance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
     });
   });
 
@@ -959,11 +960,11 @@ describe('spendTokens', () => {
       const completionTx = transactions.find((t) => t.tokenType === 'completion');
       const promptTx = transactions.find((t) => t.tokenType === 'prompt');
 
-      expect(Math.abs(promptTx.rawAmount)).toBe(0);
-      expect(completionTx.rawAmount).toBe(-100);
+      expect(Math.abs(promptTx?.rawAmount ?? 0)).toBe(0);
+      expect(completionTx?.rawAmount).toBe(-100);
 
       const standardCompletionRate = tokenValues['claude-opus-4-6'].completion;
-      expect(completionTx.rate).toBe(standardCompletionRate);
+      expect(completionTx?.rate).toBe(standardCompletionRate);
     });
 
     it('should use normalized inputTokenCount for premium threshold check on completion', async () => {
@@ -993,8 +994,8 @@ describe('spendTokens', () => {
 
       const premiumPromptRate = premiumTokenValues[model].prompt;
       const premiumCompletionRate = premiumTokenValues[model].completion;
-      expect(promptTx.rate).toBe(premiumPromptRate);
-      expect(completionTx.rate).toBe(premiumCompletionRate);
+      expect(promptTx?.rate).toBe(premiumPromptRate);
+      expect(completionTx?.rate).toBe(premiumCompletionRate);
     });
 
     it('should keep inputTokenCount as zero when promptTokens is zero', async () => {
@@ -1017,10 +1018,10 @@ describe('spendTokens', () => {
       const completionTx = transactions.find((t) => t.tokenType === 'completion');
       const promptTx = transactions.find((t) => t.tokenType === 'prompt');
 
-      expect(Math.abs(promptTx.rawAmount)).toBe(0);
+      expect(Math.abs(promptTx?.rawAmount ?? 0)).toBe(0);
 
       const standardCompletionRate = tokenValues['claude-opus-4-6'].completion;
-      expect(completionTx.rate).toBe(standardCompletionRate);
+      expect(completionTx?.rate).toBe(standardCompletionRate);
     });
 
     it('should not trigger premium pricing with negative promptTokens on premium model', async () => {
@@ -1045,7 +1046,7 @@ describe('spendTokens', () => {
       const completionTx = transactions.find((t) => t.tokenType === 'completion');
 
       const standardCompletionRate = tokenValues[model].completion;
-      expect(completionTx.rate).toBe(standardCompletionRate);
+      expect(completionTx?.rate).toBe(standardCompletionRate);
     });
 
     it('should normalize negative structured token values to zero in spendStructuredTokens', async () => {
@@ -1079,14 +1080,14 @@ describe('spendTokens', () => {
       const completionTx = transactions.find((t) => t.tokenType === 'completion');
       const promptTx = transactions.find((t) => t.tokenType === 'prompt');
 
-      expect(Math.abs(promptTx.inputTokens)).toBe(0);
-      expect(promptTx.writeTokens).toBe(-50);
-      expect(Math.abs(promptTx.readTokens)).toBe(0);
+      expect(Math.abs(promptTx?.inputTokens ?? 0)).toBe(0);
+      expect(promptTx?.writeTokens).toBe(-50);
+      expect(Math.abs(promptTx?.readTokens ?? 0)).toBe(0);
 
-      expect(Math.abs(completionTx.rawAmount)).toBe(0);
+      expect(Math.abs(completionTx?.rawAmount ?? 0)).toBe(0);
 
       const standardRate = tokenValues[model].completion;
-      expect(completionTx.rate).toBe(standardRate);
+      expect(completionTx?.rate).toBe(standardRate);
     });
   });
 });
