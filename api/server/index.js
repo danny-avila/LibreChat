@@ -297,6 +297,35 @@ const startServer = async () => {
     console.error('[ERROR] Stack:', e.stack);
   }
 
+  // Audit Admin routes (CEO-only, feature-gated)
+  try {
+    const FeatureService = require('./services/FeatureService');
+
+    if (FeatureService.shouldLoadRoutes('audit')) {
+      const { requireJwtAuth } = require('./middleware');
+      const requireCEORole = require('./middleware/requireCEORole');
+      const { requireFeature } = require('./middleware/featureGuard');
+      const auditAdminRoutes = require('./routes/auditAdmin');
+
+      app.use(
+        '/api/admin/audits',
+        requireJwtAuth,
+        requireCEORole,
+        requireFeature('audit'),
+        auditAdminRoutes,
+      );
+
+      console.log(`[OK] Audit admin routes loaded for ${FeatureService.getBusinessName()}`);
+    } else {
+      console.log(
+        `[SKIP] Audit admin routes (feature disabled for ${FeatureService.getBusinessName()})`,
+      );
+    }
+  } catch (e) {
+    console.log('[SKIP] Audit admin routes (error loading)');
+    console.error('[ERROR] Audit admin routes error:', e.message);
+  }
+
   // Error Controller
   if (ErrorController) {
     app.use(ErrorController);
@@ -333,6 +362,14 @@ const startServer = async () => {
       logger.info(`Server listening on all interfaces at port ${port}.`);
     } else {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
+    }
+
+    // Log feature configuration
+    try {
+      const FeatureService = require('./services/FeatureService');
+      FeatureService.logStartupConfig();
+    } catch (e) {
+      logger.warn('[WARN] Failed to log feature configuration:', e.message);
     }
 
     if (initializeMCPs) await initializeMCPs();

@@ -5,6 +5,9 @@ import CEOProjectsTable from './CEO/CEOProjectsTable';
 import CEOStrategicTools from './CEO/CEOStrategicTools';
 import CEOReportView from './CEO/CEOReportView';
 import CEOUserManagement from './CEO/CEOUserManagement';
+import { AuditManagementPage } from '~/components/Audit';
+import { useFeatureFlag } from '~/hooks/useFeatureFlag';
+import { FEATURES } from '~/constants/businesses';
 
 // --- TYPES ---
 interface Project {
@@ -31,7 +34,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
   console.log('👤 [CEODashboard] Profile data:', profile);
   console.log('🔑 [CEODashboard] Profile type:', profile?.profileType);
   console.log('📋 [CEODashboard] Allowed workflows:', profile?.allowedWorkflows);
-  
+
   const { showToast } = useToastContext();
   const reportSectionRef = useRef<HTMLDivElement>(null); // Ref untuk auto-scroll
 
@@ -48,28 +51,47 @@ export default function CEODashboard({ profile }: { profile: any }) {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [creating, setCreating] = useState(false);
-  
+
   // Edit modals
   const [editingTask, setEditingTask] = useState<any | null>(null);
   const [editingProject, setEditingProject] = useState<any | null>(null);
   const [editingTicket, setEditingTicket] = useState<any | null>(null);
-  
+
   // Tab state
-  const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'tasks' | 'tickets' | 'analytics' | 'users'>('overview');
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'projects' | 'tasks' | 'tickets' | 'analytics' | 'users' | 'audit'
+  >('overview');
+
+  // Feature flags
+  const { isEnabled: isAuditEnabled } = useFeatureFlag(FEATURES.AUDIT);
 
   // Form states
   const [projectForm, setProjectForm] = useState({
-    name: '', description: '', status: 'active', progress: 0,
-    budget: 0, spent: 0, startDate: '', deadline: '', managerId: '',
+    name: '',
+    description: '',
+    status: 'active',
+    progress: 0,
+    budget: 0,
+    spent: 0,
+    startDate: '',
+    deadline: '',
+    managerId: '',
   });
   const [taskForm, setTaskForm] = useState({
-    title: '', description: '', assignedTo: '', priority: 'medium',
-    status: 'pending', dueDate: '',
+    title: '',
+    description: '',
+    assignedTo: '',
+    priority: 'medium',
+    status: 'pending',
+    dueDate: '',
   });
   const [ticketForm, setTicketForm] = useState({
-    subject: '', description: '', priority: 'medium', userId: '',
+    subject: '',
+    description: '',
+    priority: 'medium',
+    userId: '',
   });
-  
+
   // Users list for dropdowns
   const [users, setUsers] = useState<any[]>([]);
 
@@ -86,24 +108,27 @@ export default function CEODashboard({ profile }: { profile: any }) {
       console.log('🌐 [safeFetch] Making request to:', url);
       const response = await fetch(url, options);
       console.log('📡 [safeFetch] Response status:', response.status, response.statusText);
-      console.log('📡 [safeFetch] Response headers:', Object.fromEntries(response.headers.entries()));
-      
+      console.log(
+        '📡 [safeFetch] Response headers:',
+        Object.fromEntries(response.headers.entries()),
+      );
+
       if (!response.ok) {
         const errText = await response.text();
         console.error('❌ [safeFetch] Error response body (full):', errText);
         console.error('❌ [safeFetch] Status:', response.status);
         throw new Error(`Server Error (${response.status}): ${errText.substring(0, 200)}`);
       }
-      
+
       const contentType = response.headers.get('content-type');
       console.log('📄 [safeFetch] Content-Type:', contentType);
-      
+
       if (contentType && contentType.includes('application/json')) {
         const data = await response.json();
         console.log('✅ [safeFetch] JSON parsed successfully');
         return data;
       }
-      
+
       const textResponse = await response.text();
       console.error('❌ [safeFetch] Non-JSON response:', textResponse);
       throw new Error('Invalid response format (Not JSON)');
@@ -121,7 +146,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
     try {
       const payload = { profileType: 'ceo', action: 'list' };
       console.log('📤 [CEODashboard] Request payload:', payload);
-      
+
       const result = await safeFetch(`${n8nBaseUrl}/webhook/librechat/project-status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -242,7 +267,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
           messages: [
             {
               role: 'system',
-              content: `You are a Senior Executive Assistant analyzing dashboard data for a CEO. 
+              content: `You are a Senior Executive Assistant analyzing dashboard data for a CEO.
               Output MUST be valid JSON with this structure:
               {
                 "summary": "A 2-3 sentence executive summary highlighting performance and risks.",
@@ -274,7 +299,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
     console.log('🚀 [Workflow] Executing workflow:', wf);
     console.log('📋 [Workflow] Workflow ID:', wf.workflowId);
     console.log('📋 [Workflow] Workflow Name:', wf.workflowName);
-    
+
     const id = (wf.workflowId || '').toLowerCase();
     const name = (wf.workflowName || '').toLowerCase();
 
@@ -293,12 +318,16 @@ export default function CEODashboard({ profile }: { profile: any }) {
     }
 
     // Check if this is Update/Delete operation (not implemented yet)
-    if (id.includes('update') || id.includes('delete') || 
-        name.includes('update') || name.includes('delete')) {
+    if (
+      id.includes('update') ||
+      id.includes('delete') ||
+      name.includes('update') ||
+      name.includes('delete')
+    ) {
       alert(`"${wf.workflowName}" is not yet implemented in the dashboard.`);
       return;
     }
-    
+
     setExecutingId(wf.workflowId);
 
     try {
@@ -328,16 +357,16 @@ export default function CEODashboard({ profile }: { profile: any }) {
           period: 'last_30_days',
           _context: {
             profile: {
-              profileType: 'ceo'
-            }
-          }
+              profileType: 'ceo',
+            },
+          },
         };
       } else {
         // Company Metrics expects simple format
         payload = { profileType: 'ceo' };
       }
       console.log('📤 [Workflow] Request payload:', payload);
-      
+
       const n8nResult = await safeFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -351,7 +380,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
       // Handle variasi struktur response N8N
       const rawData = Array.isArray(n8nResult) ? n8nResult[0] : n8nResult.data || n8nResult;
       console.log('🔍 [Workflow] Raw data extracted:', rawData);
-      
+
       const metricsData = rawData.data || rawData.json || rawData;
       console.log('📊 [Workflow] Final metrics data:', metricsData);
       console.log('📊 [Workflow] Metrics keys:', metricsData ? Object.keys(metricsData) : 'null');
@@ -409,7 +438,17 @@ export default function CEODashboard({ profile }: { profile: any }) {
       const result = await response.json();
       showToast({ message: `Project created: ${result.projectId}`, status: 'success' });
       setShowProjectModal(false);
-      setProjectForm({ name: '', description: '', status: 'active', progress: 0, budget: 0, spent: 0, startDate: '', deadline: '', managerId: '' });
+      setProjectForm({
+        name: '',
+        description: '',
+        status: 'active',
+        progress: 0,
+        budget: 0,
+        spent: 0,
+        startDate: '',
+        deadline: '',
+        managerId: '',
+      });
       fetchDashboardData(); // Refresh projects
     } catch (error: any) {
       showToast({ message: error.message, status: 'error' });
@@ -431,7 +470,14 @@ export default function CEODashboard({ profile }: { profile: any }) {
       const result = await response.json();
       showToast({ message: `Task created: ${result.taskId}`, status: 'success' });
       setShowTaskModal(false);
-      setTaskForm({ title: '', description: '', assignedTo: '', priority: 'medium', status: 'pending', dueDate: '' });
+      setTaskForm({
+        title: '',
+        description: '',
+        assignedTo: '',
+        priority: 'medium',
+        status: 'pending',
+        dueDate: '',
+      });
       fetchTasks(); // Refresh tasks list
     } catch (error: any) {
       showToast({ message: error.message, status: 'error' });
@@ -479,7 +525,17 @@ export default function CEODashboard({ profile }: { profile: any }) {
       if (!response.ok) throw new Error('Failed to update project');
       showToast({ message: 'Project updated successfully', status: 'success' });
       setEditingProject(null);
-      setProjectForm({ name: '', description: '', status: 'active', progress: 0, budget: 0, spent: 0, startDate: '', deadline: '', managerId: '' });
+      setProjectForm({
+        name: '',
+        description: '',
+        status: 'active',
+        progress: 0,
+        budget: 0,
+        spent: 0,
+        startDate: '',
+        deadline: '',
+        managerId: '',
+      });
       fetchDashboardData(); // Refresh projects
     } catch (error: any) {
       showToast({ message: error.message, status: 'error' });
@@ -504,7 +560,14 @@ export default function CEODashboard({ profile }: { profile: any }) {
       if (!response.ok) throw new Error('Failed to update task');
       showToast({ message: 'Task updated successfully', status: 'success' });
       setEditingTask(null);
-      setTaskForm({ title: '', description: '', assignedTo: '', priority: 'medium', status: 'pending', dueDate: '' });
+      setTaskForm({
+        title: '',
+        description: '',
+        assignedTo: '',
+        priority: 'medium',
+        status: 'pending',
+        dueDate: '',
+      });
       fetchTasks(); // Refresh tasks
     } catch (error: any) {
       showToast({ message: error.message, status: 'error' });
@@ -544,7 +607,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
     console.log('📊 [KPI] Calculating KPI stats...');
     console.log('📊 [KPI] Projects data:', projects);
     console.log('📊 [KPI] Number of projects:', projects.length);
-    
+
     const totalBudget = projects.reduce((acc, p) => acc + (p.budget || 0), 0);
     const totalSpent = projects.reduce((acc, p) => acc + (p.spent || 0), 0);
     const activeCount = projects.filter((p) => p.status === 'active').length;
@@ -562,7 +625,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
 
     console.log('📈 [KPI] Estimated Revenue:', estimatedRevenue);
     console.log('📊 [KPI] Margin:', margin + '%');
-    
+
     const stats = [
       {
         title: 'Total Budget',
@@ -621,7 +684,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
         bg: parseFloat(margin) > 20 ? 'bg-green-50' : 'bg-yellow-50',
       },
     ];
-    
+
     console.log('✅ [KPI] Stats calculated:', stats);
     return stats;
   }, [projects]);
@@ -633,6 +696,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
     { id: 'tickets', label: 'Tickets', icon: '🎫', count: tickets.length },
     { id: 'analytics', label: 'Analytics', icon: '📈' },
     { id: 'users', label: 'Users', icon: '👥', count: users.length },
+    ...(isAuditEnabled ? [{ id: 'audit', label: 'Audit', icon: '🔍' }] : []),
   ];
 
   return (
@@ -681,9 +745,11 @@ export default function CEODashboard({ profile }: { profile: any }) {
               <span>{tab.icon}</span>
               <span>{tab.label}</span>
               {tab.count !== undefined && (
-                <span className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
-                  activeTab === tab.id ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
-                }`}>
+                <span
+                  className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
+                    activeTab === tab.id ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
                   {tab.count}
                 </span>
               )}
@@ -763,12 +829,24 @@ export default function CEODashboard({ profile }: { profile: any }) {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Task</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Assigned To</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Priority</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Due Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Task
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Assigned To
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Priority
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Due Date
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
@@ -778,18 +856,28 @@ export default function CEODashboard({ profile }: { profile: any }) {
                         <div className="text-sm font-medium text-gray-900">{task.title}</div>
                         <div className="text-sm text-gray-500">{task.description}</div>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{task.assignedName || task.assignedTo}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                        {task.assignedName || task.assignedTo}
+                      </td>
                       <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2 text-xs font-semibold ${
-                          task.priority === 'high' ? 'bg-red-100 text-red-800' :
-                          task.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-green-100 text-green-800'
-                        }`}>
+                        <span
+                          className={`inline-flex rounded-full px-2 text-xs font-semibold ${
+                            task.priority === 'high'
+                              ? 'bg-red-100 text-red-800'
+                              : task.priority === 'medium'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-green-100 text-green-800'
+                          }`}
+                        >
                           {task.priority}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{task.status}</td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{task.dueDate || '-'}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                        {task.status}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                        {task.dueDate || '-'}
+                      </td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm">
                         <button
                           onClick={() => {
@@ -848,33 +936,55 @@ export default function CEODashboard({ profile }: { profile: any }) {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Ticket ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Subject</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">User</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Priority</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Ticket ID
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Subject
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      User
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Priority
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {tickets.map((ticket, idx) => (
                     <tr key={idx} className="hover:bg-gray-50">
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{ticket.ticketId}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
+                        {ticket.ticketId}
+                      </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-medium text-gray-900">{ticket.subject}</div>
                         <div className="text-sm text-gray-500">{ticket.description}</div>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{ticket.userId}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                        {ticket.userId}
+                      </td>
                       <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2 text-xs font-semibold ${
-                          ticket.priority === 'high' ? 'bg-red-100 text-red-800' :
-                          ticket.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-green-100 text-green-800'
-                        }`}>
+                        <span
+                          className={`inline-flex rounded-full px-2 text-xs font-semibold ${
+                            ticket.priority === 'high'
+                              ? 'bg-red-100 text-red-800'
+                              : ticket.priority === 'medium'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-green-100 text-green-800'
+                          }`}
+                        >
                           {ticket.priority}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{ticket.status}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                        {ticket.status}
+                      </td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm">
                         <button
                           onClick={() => {
@@ -920,6 +1030,12 @@ export default function CEODashboard({ profile }: { profile: any }) {
 
       {activeTab === 'users' && <CEOUserManagement />}
 
+      {activeTab === 'audit' && isAuditEnabled && (
+        <div className="space-y-4">
+          <AuditManagementPage />
+        </div>
+      )}
+
       {/* CREATE PROJECT MODAL - Rendered from CEOQuickActions forms */}
       {showProjectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
@@ -928,56 +1044,132 @@ export default function CEODashboard({ profile }: { profile: any }) {
             <form onSubmit={handleCreateProject} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Project Name *</label>
-                  <input type="text" value={projectForm.name} onChange={(e) => setProjectForm({ ...projectForm, name: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required />
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    Project Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={projectForm.name}
+                    onChange={(e) => setProjectForm({ ...projectForm, name: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    required
+                  />
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
-                  <textarea value={projectForm.description} onChange={(e) => setProjectForm({ ...projectForm, description: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" rows={3} />
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    Description
+                  </label>
+                  <textarea
+                    value={projectForm.description}
+                    onChange={(e) =>
+                      setProjectForm({ ...projectForm, description: e.target.value })
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    rows={3}
+                  />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
-                  <select value={projectForm.status} onChange={(e) => setProjectForm({ ...projectForm, status: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                  <select
+                    value={projectForm.status}
+                    onChange={(e) => setProjectForm({ ...projectForm, status: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  >
                     <option value="active">Active</option>
                     <option value="pending">Pending</option>
                     <option value="completed">Completed</option>
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Progress (%)</label>
-                  <input type="number" min="0" max="100" value={projectForm.progress} onChange={(e) => setProjectForm({ ...projectForm, progress: parseInt(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    Progress (%)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={projectForm.progress}
+                    onChange={(e) =>
+                      setProjectForm({ ...projectForm, progress: parseInt(e.target.value) || 0 })
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Budget</label>
-                  <input type="number" value={projectForm.budget} onChange={(e) => setProjectForm({ ...projectForm, budget: parseInt(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                  <input
+                    type="number"
+                    value={projectForm.budget}
+                    onChange={(e) =>
+                      setProjectForm({ ...projectForm, budget: parseInt(e.target.value) || 0 })
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Spent</label>
-                  <input type="number" value={projectForm.spent} onChange={(e) => setProjectForm({ ...projectForm, spent: parseInt(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                  <input
+                    type="number"
+                    value={projectForm.spent}
+                    onChange={(e) =>
+                      setProjectForm({ ...projectForm, spent: parseInt(e.target.value) || 0 })
+                    }
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Start Date</label>
-                  <input type="date" value={projectForm.startDate} onChange={(e) => setProjectForm({ ...projectForm, startDate: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                  <input
+                    type="date"
+                    value={projectForm.startDate}
+                    onChange={(e) => setProjectForm({ ...projectForm, startDate: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">Deadline</label>
-                  <input type="date" value={projectForm.deadline} onChange={(e) => setProjectForm({ ...projectForm, deadline: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                  <input
+                    type="date"
+                    value={projectForm.deadline}
+                    onChange={(e) => setProjectForm({ ...projectForm, deadline: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Project Manager</label>
-                  <select value={projectForm.managerId} onChange={(e) => setProjectForm({ ...projectForm, managerId: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    Project Manager
+                  </label>
+                  <select
+                    value={projectForm.managerId}
+                    onChange={(e) => setProjectForm({ ...projectForm, managerId: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  >
                     <option value="">No manager assigned</option>
-                    {users.filter(u => u.profileType !== 'customer').map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name} ({user.email}) - {user.profileType}
-                      </option>
-                    ))}
+                    {users
+                      .filter((u) => u.profileType !== 'customer')
+                      .map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name} ({user.email}) - {user.profileType}
+                        </option>
+                      ))}
                   </select>
                 </div>
               </div>
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowProjectModal(false)} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
-                <button type="submit" disabled={creating} className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50">{creating ? 'Creating...' : 'Create Project'}</button>
+                <button
+                  type="button"
+                  onClick={() => setShowProjectModal(false)}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {creating ? 'Creating...' : 'Create Project'}
+                </button>
               </div>
             </form>
           </div>
@@ -992,15 +1184,33 @@ export default function CEODashboard({ profile }: { profile: any }) {
             <form onSubmit={handleCreateTask} className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Title *</label>
-                <input type="text" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required />
+                <input
+                  type="text"
+                  value={taskForm.title}
+                  onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  required
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
-                <textarea value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" rows={3} />
+                <textarea
+                  value={taskForm.description}
+                  onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  rows={3}
+                />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Assigned To *</label>
-                <select value={taskForm.assignedTo} onChange={(e) => setTaskForm({ ...taskForm, assignedTo: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Assigned To *
+                </label>
+                <select
+                  value={taskForm.assignedTo}
+                  onChange={(e) => setTaskForm({ ...taskForm, assignedTo: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  required
+                >
                   <option value="">Select a user...</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>
@@ -1011,7 +1221,11 @@ export default function CEODashboard({ profile }: { profile: any }) {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
-                <select value={taskForm.priority} onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                <select
+                  value={taskForm.priority}
+                  onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
@@ -1019,11 +1233,28 @@ export default function CEODashboard({ profile }: { profile: any }) {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Due Date</label>
-                <input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                <input
+                  type="date"
+                  value={taskForm.dueDate}
+                  onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                />
               </div>
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowTaskModal(false)} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
-                <button type="submit" disabled={creating} className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50">{creating ? 'Creating...' : 'Create Task'}</button>
+                <button
+                  type="button"
+                  onClick={() => setShowTaskModal(false)}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+                >
+                  {creating ? 'Creating...' : 'Create Task'}
+                </button>
               </div>
             </form>
           </div>
@@ -1038,15 +1269,33 @@ export default function CEODashboard({ profile }: { profile: any }) {
             <form onSubmit={handleUpdateTask} className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Title *</label>
-                <input type="text" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required />
+                <input
+                  type="text"
+                  value={taskForm.title}
+                  onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  required
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
-                <textarea value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" rows={3} />
+                <textarea
+                  value={taskForm.description}
+                  onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  rows={3}
+                />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Assigned To *</label>
-                <select value={taskForm.assignedTo} onChange={(e) => setTaskForm({ ...taskForm, assignedTo: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Assigned To *
+                </label>
+                <select
+                  value={taskForm.assignedTo}
+                  onChange={(e) => setTaskForm({ ...taskForm, assignedTo: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  required
+                >
                   <option value="">Select a user...</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>
@@ -1057,7 +1306,11 @@ export default function CEODashboard({ profile }: { profile: any }) {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
-                <select value={taskForm.priority} onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                <select
+                  value={taskForm.priority}
+                  onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
@@ -1065,7 +1318,11 @@ export default function CEODashboard({ profile }: { profile: any }) {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
-                <select value={taskForm.status} onChange={(e) => setTaskForm({ ...taskForm, status: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                <select
+                  value={taskForm.status}
+                  onChange={(e) => setTaskForm({ ...taskForm, status: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                >
                   <option value="pending">Pending</option>
                   <option value="in-progress">In Progress</option>
                   <option value="completed">Completed</option>
@@ -1073,14 +1330,38 @@ export default function CEODashboard({ profile }: { profile: any }) {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Due Date</label>
-                <input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+                <input
+                  type="date"
+                  value={taskForm.dueDate}
+                  onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                />
               </div>
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => {
-                  setEditingTask(null);
-                  setTaskForm({ title: '', description: '', assignedTo: '', priority: 'medium', status: 'pending', dueDate: '' });
-                }} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
-                <button type="submit" disabled={creating} className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50">{creating ? 'Updating...' : 'Update Task'}</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTask(null);
+                    setTaskForm({
+                      title: '',
+                      description: '',
+                      assignedTo: '',
+                      priority: 'medium',
+                      status: 'pending',
+                      dueDate: '',
+                    });
+                  }}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+                >
+                  {creating ? 'Updating...' : 'Update Task'}
+                </button>
               </div>
             </form>
           </div>
@@ -1095,15 +1376,33 @@ export default function CEODashboard({ profile }: { profile: any }) {
             <form onSubmit={handleCreateTicket} className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Subject *</label>
-                <input type="text" value={ticketForm.subject} onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required />
+                <input
+                  type="text"
+                  value={ticketForm.subject}
+                  onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  required
+                />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Description *</label>
-                <textarea value={ticketForm.description} onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" rows={4} required />
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Description *
+                </label>
+                <textarea
+                  value={ticketForm.description}
+                  onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  rows={4}
+                  required
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
-                <select value={ticketForm.priority} onChange={(e) => setTicketForm({ ...ticketForm, priority: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                <select
+                  value={ticketForm.priority}
+                  onChange={(e) => setTicketForm({ ...ticketForm, priority: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
@@ -1111,7 +1410,12 @@ export default function CEODashboard({ profile }: { profile: any }) {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">User *</label>
-                <select value={ticketForm.userId} onChange={(e) => setTicketForm({ ...ticketForm, userId: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required>
+                <select
+                  value={ticketForm.userId}
+                  onChange={(e) => setTicketForm({ ...ticketForm, userId: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  required
+                >
                   <option value="">Select a user...</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>
@@ -1121,8 +1425,20 @@ export default function CEODashboard({ profile }: { profile: any }) {
                 </select>
               </div>
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowTicketModal(false)} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
-                <button type="submit" disabled={creating} className="flex-1 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-50">{creating ? 'Creating...' : 'Create Ticket'}</button>
+                <button
+                  type="button"
+                  onClick={() => setShowTicketModal(false)}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="flex-1 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-50"
+                >
+                  {creating ? 'Creating...' : 'Create Ticket'}
+                </button>
               </div>
             </form>
           </div>
@@ -1137,11 +1453,21 @@ export default function CEODashboard({ profile }: { profile: any }) {
             <form onSubmit={handleUpdateTicket} className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Ticket ID</label>
-                <input type="text" value={editingTicket.ticketId} disabled className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm" />
+                <input
+                  type="text"
+                  value={editingTicket.ticketId}
+                  disabled
+                  className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Status *</label>
-                <select value={ticketForm.subject} onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" required>
+                <select
+                  value={ticketForm.subject}
+                  onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  required
+                >
                   <option value="open">Open</option>
                   <option value="in-progress">In Progress</option>
                   <option value="closed">Closed</option>
@@ -1149,18 +1475,34 @@ export default function CEODashboard({ profile }: { profile: any }) {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
-                <select value={ticketForm.priority} onChange={(e) => setTicketForm({ ...ticketForm, priority: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                <select
+                  value={ticketForm.priority}
+                  onChange={(e) => setTicketForm({ ...ticketForm, priority: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
                 </select>
               </div>
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => {
-                  setEditingTicket(null);
-                  setTicketForm({ subject: '', description: '', priority: 'medium', userId: '' });
-                }} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
-                <button type="submit" disabled={creating} className="flex-1 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-50">{creating ? 'Updating...' : 'Update Ticket'}</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTicket(null);
+                    setTicketForm({ subject: '', description: '', priority: 'medium', userId: '' });
+                  }}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="flex-1 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-50"
+                >
+                  {creating ? 'Updating...' : 'Update Ticket'}
+                </button>
               </div>
             </form>
           </div>

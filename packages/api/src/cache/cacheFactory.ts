@@ -28,7 +28,8 @@ import { violationFile } from './keyvFiles';
 export const standardCache = (namespace: string, ttl?: number, fallbackStore?: object): Keyv => {
   if (keyvRedisClient && !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(namespace)) {
     try {
-      const keyvRedis = new KeyvRedis(keyvRedisClient);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const keyvRedis = new KeyvRedis(keyvRedisClient as any);
       const cache = new Keyv(keyvRedis, { namespace, ttl });
       keyvRedis.namespace = cacheConfig.REDIS_KEY_PREFIX;
       keyvRedis.keyPrefixSeparator = cacheConfig.GLOBAL_PREFIX_SEPARATOR;

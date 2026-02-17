@@ -13,6 +13,7 @@ const { getProjectByName } = require('~/models/Project');
 const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 const { mcpServersRegistry } = require('@librechat/api');
+const FeatureService = require('~/server/services/FeatureService');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -70,6 +71,13 @@ router.get('/', async function (req, res) {
   if (cachedStartupConfig) {
     const appConfig = await getAppConfig({ role: req.user?.role });
     await getMCPServers(cachedStartupConfig, appConfig);
+
+    // Add feature configuration to cached config
+    const featureConfig = FeatureService.getFeatureConfig();
+    cachedStartupConfig.businessName = featureConfig.businessName;
+    cachedStartupConfig.businessDisplayName = featureConfig.businessDisplayName;
+    cachedStartupConfig.enabledFeatures = featureConfig.enabledFeatures;
+
     res.send(cachedStartupConfig);
     return;
   }
@@ -191,10 +199,32 @@ router.get('/', async function (req, res) {
 
     await cache.set(CacheKeys.STARTUP_CONFIG, payload);
     await getMCPServers(payload, appConfig);
+
+    // Add feature configuration to startup config
+    const featureConfig = FeatureService.getFeatureConfig();
+    payload.businessName = featureConfig.businessName;
+    payload.businessDisplayName = featureConfig.businessDisplayName;
+    payload.enabledFeatures = featureConfig.enabledFeatures;
+
     return res.status(200).send(payload);
   } catch (err) {
     logger.error('Error in startup config', err);
     return res.status(500).send({ error: err.message });
+  }
+});
+
+/**
+ * Get feature configuration
+ * Returns business name and enabled features
+ * GET /api/config/features
+ */
+router.get('/features', function (req, res) {
+  try {
+    const featureConfig = FeatureService.getFeatureConfig();
+    return res.status(200).json(featureConfig);
+  } catch (err) {
+    logger.error('Error getting feature config', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 

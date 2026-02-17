@@ -100,7 +100,6 @@
   },
   "homepage": "https://librechat.ai/",
   "devDependencies": {
-    "concurrently": "^8.2.2",
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.3.1",
@@ -108,6 +107,7 @@
     "@playwright/test": "^1.56.1",
     "@types/react-virtualized": "^9.22.0",
     "caniuse-lite": "^1.0.30001741",
+    "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "elliptic": "^6.6.1",
     "eslint": "^9.39.1",
@@ -160,8 +160,10 @@
     ]
   },
   "dependencies": {
+    "@opentelemetry/exporter-trace-otlp-http": "^0.212.0",
     "bcryptjs": "^3.0.3",
     "mongodb": "^6.21.0",
+    "sharp": "^0.34.5",
     "xml-crypto": "^6.1.2"
   }
 }
