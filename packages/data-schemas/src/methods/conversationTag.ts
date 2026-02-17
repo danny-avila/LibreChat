@@ -284,11 +284,26 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     }
   }
 
+  /**
+   * Deletes all conversation tags matching the given filter.
+   */
+  async function deleteConversationTags(filter: Record<string, unknown>): Promise<number> {
+    try {
+      const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
+      const result = await ConversationTag.deleteMany(filter);
+      return result.deletedCount;
+    } catch (error) {
+      logger.error('[deleteConversationTags] Error deleting conversation tags', error);
+      throw new Error('Error deleting conversation tags');
+    }
+  }
+
   return {
     getConversationTags,
     createConversationTag,
     updateConversationTag,
     deleteConversationTag,
+    deleteConversationTags,
     bulkIncrementTagCounts,
     updateTagsForConversation,
   };

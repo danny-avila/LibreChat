@@ -11,7 +11,7 @@ const {
 } = require('librechat-data-provider');
 
 // Mock the config/connect module to prevent connection attempts during tests
-jest.mock('../../config/connect', () => jest.fn().mockResolvedValue(true));
+jest.mock('../connect', () => jest.fn().mockResolvedValue(true));
 
 // Disable console for tests
 logger.silent = true;
@@ -78,7 +78,7 @@ describe('PromptGroup Migration Script', () => {
     });
 
     // Import migration function
-    const migration = require('../../config/migrate-prompt-permissions');
+    const migration = require('../migrate-prompt-permissions');
     migrateToPromptGroupPermissions = migration.migrateToPromptGroupPermissions;
   });
 

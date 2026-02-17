@@ -63,8 +63,13 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
     const title = await generateTitle({ openai, text, responseText });
     await titleCache.set(key, title, 120000);
 
+    const reqCtx = {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    };
     await saveConvo(
-      req,
+      reqCtx,
       {
         conversationId,
         title,
@@ -76,7 +81,11 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
     const fallbackTitle = text.length > 40 ? text.substring(0, 37) + '...' : text;
     await titleCache.set(key, fallbackTitle, 120000);
     await saveConvo(
-      req,
+      {
+        userId: req?.user?.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
       {
         conversationId,
         title: fallbackTitle,

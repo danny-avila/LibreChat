@@ -16,9 +16,22 @@ jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
 }));
 
-jest.mock('~/models', () => ({
-  getRoleByName: jest.fn(),
-}));
+jest.mock('~/models', () => {
+  const mongoose = require('mongoose');
+  const { createMethods } = require('@librechat/data-schemas');
+  const methods = createMethods(mongoose, {
+    removeAllPermissions: async ({ resourceType, resourceId }) => {
+      const AclEntry = mongoose.models.AclEntry;
+      if (AclEntry) {
+        await AclEntry.deleteMany({ resourceType, resourceId });
+      }
+    },
+  });
+  return {
+    ...methods,
+    getRoleByName: jest.fn(),
+  };
+});
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),

@@ -1,9 +1,7 @@
 const { duplicateAgent } = require('../v1');
-const { getAgent, createAgent } = require('~/models/Agent');
-const { getActions } = require('~/models');
+const { getAgent, createAgent, getActions } = require('~/models');
 const { nanoid } = require('nanoid');
 
-jest.mock('~/models/Agent');
 jest.mock('~/models');
 jest.mock('nanoid');
 

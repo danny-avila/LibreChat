@@ -15,10 +15,11 @@ jest.mock('@librechat/api', () => ({
   checkAccess: jest.fn(),
   initializeAgent: jest.fn(),
   createMemoryProcessor: jest.fn(),
+  loadAgent: jest.fn(),
 }));
 
-jest.mock('~/models/Agent', () => ({
-  loadAgent: jest.fn(),
+jest.mock('~/server/services/Config', () => ({
+  getMCPServerTools: jest.fn(),
 }));
 
 jest.mock('~/models', () => ({
@@ -2137,7 +2138,7 @@ describe('AgentClient - titleConvo', () => {
       };
 
       mockCheckAccess = require('@librechat/api').checkAccess;
-      mockLoadAgent = require('~/models/Agent').loadAgent;
+      mockLoadAgent = require('@librechat/api').loadAgent;
       mockInitializeAgent = require('@librechat/api').initializeAgent;
       mockCreateMemoryProcessor = require('@librechat/api').createMemoryProcessor;
     });

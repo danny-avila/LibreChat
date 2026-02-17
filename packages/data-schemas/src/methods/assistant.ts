@@ -48,9 +48,19 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')) {
     return await Assistant.findOneAndDelete(searchParams);
   }
 
+  /**
+   * Deletes all assistants matching the given search parameters.
+   */
+  async function deleteAssistants(searchParams: FilterQuery<IAssistant>): Promise<number> {
+    const Assistant = mongoose.models.Assistant as Model<IAssistant>;
+    const result = await Assistant.deleteMany(searchParams);
+    return result.deletedCount;
+  }
+
   return {
     updateAssistantDoc,
     deleteAssistant,
+    deleteAssistants,
     getAssistants,
     getAssistant,
   };

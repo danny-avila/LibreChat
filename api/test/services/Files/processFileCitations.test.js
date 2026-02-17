@@ -7,9 +7,7 @@ const {
 
 // Mock dependencies
 jest.mock('~/models', () => ({
-  Files: {
-    find: jest.fn().mockResolvedValue([]),
-  },
+  getFiles: jest.fn().mockResolvedValue([]),
   getRoleByName: jest.fn(),
 }));
 
@@ -176,7 +174,7 @@ describe('processFileCitations', () => {
   });
 
   describe('enhanceSourcesWithMetadata', () => {
-    const { Files } = require('~/models');
+    const { getFiles } = require('~/models');
     const mockCustomConfig = {
       fileStrategy: 'local',
     };
@@ -201,7 +199,7 @@ describe('processFileCitations', () => {
         },
       ];
 
-      Files.find.mockResolvedValue([
+      getFiles.mockResolvedValue([
         {
           file_id: 'file_123',
           filename: 'example_from_db.pdf',
@@ -216,7 +214,7 @@ describe('processFileCitations', () => {
 
       const result = await enhanceSourcesWithMetadata(sources, mockCustomConfig);
 
-      expect(Files.find).toHaveBeenCalledWith({ file_id: { $in: ['file_123', 'file_456'] } });
+      expect(getFiles).toHaveBeenCalledWith({ file_id: { $in: ['file_123', 'file_456'] } });
       expect(result).toHaveLength(2);
 
       expect(result[0]).toEqual({
@@ -255,7 +253,7 @@ describe('processFileCitations', () => {
         },
       ];
 
-      Files.find.mockResolvedValue([
+      getFiles.mockResolvedValue([
         {
           file_id: 'file_123',
           filename: 'example_from_db.pdf',
@@ -289,7 +287,7 @@ describe('processFileCitations', () => {
         },
       ];
 
-      Files.find.mockResolvedValue([]);
+      getFiles.mockResolvedValue([]);
 
       const result = await enhanceSourcesWithMetadata(sources, mockCustomConfig);
 
@@ -314,7 +312,7 @@ describe('processFileCitations', () => {
         },
       ];
 
-      Files.find.mockRejectedValue(new Error('Database error'));
+      getFiles.mockRejectedValue(new Error('Database error'));
 
       const result = await enhanceSourcesWithMetadata(sources, mockCustomConfig);
 
@@ -336,14 +334,14 @@ describe('processFileCitations', () => {
         { fileId: 'file_456', fileName: 'doc2.pdf', relevance: 0.7, type: 'file' },
       ];
 
-      Files.find.mockResolvedValue([
+      getFiles.mockResolvedValue([
         { file_id: 'file_123', filename: 'document1.pdf', source: 's3' },
         { file_id: 'file_456', filename: 'document2.pdf', source: 'local' },
       ]);
 
       await enhanceSourcesWithMetadata(sources, mockCustomConfig);
 
-      expect(Files.find).toHaveBeenCalledWith({ file_id: { $in: ['file_123', 'file_456'] } });
+      expect(getFiles).toHaveBeenCalledWith({ file_id: { $in: ['file_123', 'file_456'] } });
     });
   });
 });

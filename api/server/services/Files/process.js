@@ -26,16 +26,15 @@ const {
   resizeImageBuffer,
 } = require('~/server/services/Files/images');
 const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
-const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { createFile, updateFileUsage, deleteFiles } = require('~/models');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
+const db = require('~/models');
 
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
@@ -210,7 +209,7 @@ const processDeleteRequest = async ({ req, files }) => {
 
   if (agentFiles.length > 0) {
     promises.push(
-      removeAgentResourceFiles({
+      db.removeAgentResourceFiles({
         agent_id: req.body.agent_id,
         files: agentFiles,
       }),
@@ -218,7 +217,7 @@ const processDeleteRequest = async ({ req, files }) => {
   }
 
   await Promise.allSettled(promises);
-  await deleteFiles(resolvedFileIds);
+  await db.deleteFiles(resolvedFileIds);
 };
 
 /**
@@ -250,7 +249,7 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, c
       dimensions = {},
     } = (await saveURL({ userId, URL, fileName, basePath })) || {};
     const filepath = await getFileURL({ fileName: `${userId}/${fileName}`, basePath });
-    return await createFile(
+    return await db.createFile(
       {
         user: userId,
         file_id: v4(),
@@ -296,7 +295,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
     endpoint,
   });
 
-  const result = await createFile(
+  const result = await db.createFile(
     {
       user: req.user.id,
       file_id,
@@ -348,7 +347,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
   }
   const fileName = `${file_id}-${filename}`;
   const filepath = await saveBuffer({ userId: req.user.id, fileName, buffer });
-  return await createFile(
+  return await db.createFile(
     {
       user: req.user.id,
       file_id,
@@ -434,7 +433,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
     filepath = result.filepath;
   }
 
-  const result = await createFile(
+  const result = await db.createFile(
     {
       user: req.user.id,
       file_id: id ?? file_id,
@@ -538,14 +537,14 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       });
 
       if (!messageAttachment && tool_resource) {
-        await addAgentResourceFile({
-          req,
+        await db.addAgentResourceFile({
           file_id,
           agent_id,
           tool_resource,
+          updatingUserId: req?.user?.id,
         });
       }
-      const result = await createFile(fileInfo, true);
+      const result = await db.createFile(fileInfo, true);
       return res
         .status(200)
         .json({ message: 'Agent file uploaded and processed successfully', ...result });
@@ -655,11 +654,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   let filepath = _filepath;
 
   if (!messageAttachment && tool_resource) {
-    await addAgentResourceFile({
-      req,
+    await db.addAgentResourceFile({
       file_id,
       agent_id,
       tool_resource,
+      updatingUserId: req?.user?.id,
     });
   }
 
@@ -690,7 +689,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     width,
   });
 
-  const result = await createFile(fileInfo, true);
+  const result = await db.createFile(fileInfo, true);
 
   res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
 };
@@ -736,10 +735,10 @@ const processOpenAIFile = async ({
   };
 
   if (saveFile) {
-    await createFile(file, true);
+    await db.createFile(file, true);
   } else if (updateUsage) {
     try {
-      await updateFileUsage({ file_id });
+      await db.updateFileUsage({ file_id });
     } catch (error) {
       logger.error('Error updating file usage', error);
     }
@@ -777,7 +776,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     file_id,
     filename,
   };
-  createFile(file, true);
+  db.createFile(file, true);
   return file;
 };
 
@@ -921,7 +920,7 @@ async function saveBase64Image(
     fileName: filename,
     buffer: image.buffer,
   });
-  return await createFile(
+  return await db.createFile(
     {
       type,
       source,

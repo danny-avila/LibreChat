@@ -1,39 +1,91 @@
-const mongoose = require('mongoose');
-const { v4: uuidv4 } = require('uuid');
-const { EModelEndpoint } = require('librechat-data-provider');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+import mongoose from 'mongoose';
+import { v4 as uuidv4 } from 'uuid';
+import { EModelEndpoint } from 'librechat-data-provider';
+import type { IConversation } from '..';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { createTempChatExpirationDate } from './test-helpers';
+import { createModels } from '~/models';
+import { createConversationMethods } from './conversation';
+
+jest.mock('~/config/winston', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
+}));
+
+let mongoServer: InstanceType<typeof MongoMemoryServer>;
+let Conversation: mongoose.Model<IConversation>;
+let modelsToCleanup: string[] = [];
+
+// Mock message methods (same as original test mocking ./Message)
+const getMessages = jest.fn().mockResolvedValue([]);
+const deleteMessages = jest.fn().mockResolvedValue({ deletedCount: 0 });
+
+let methods: ReturnType<typeof createConversationMethods>;
+
+beforeAll(async () => {
+  mongoServer = await MongoMemoryServer.create();
+  const mongoUri = mongoServer.getUri();
+
+  const models = createModels(mongoose);
+  modelsToCleanup = Object.keys(models);
+  Object.assign(mongoose.models, models);
+  Conversation = mongoose.models.Conversation as mongoose.Model<IConversation>;
+
+  methods = createConversationMethods(
+    mongoose,
+    { createTempChatExpirationDate },
+    { getMessages, deleteMessages },
+  );
+
+  await mongoose.connect(mongoUri);
+});
+
+afterAll(async () => {
+  const collections = mongoose.connection.collections;
+  for (const key in collections) {
+    await collections[key].deleteMany({});
+  }
+
+  for (const modelName of modelsToCleanup) {
+    if (mongoose.models[modelName]) {
+      delete mongoose.models[modelName];
+    }
+  }
+
+  await mongoose.disconnect();
+  await mongoServer.stop();
+});
+
 const {
-  deleteNullOrEmptyConversations,
-  searchConversation,
-  getConvosByCursor,
-  getConvosQueried,
-  getConvoFiles,
-  getConvoTitle,
-  deleteConvos,
   saveConvo,
   getConvo,
-} = require('./Conversation');
-jest.mock('~/server/services/Config/app');
-jest.mock('./Message');
-const { getMessages, deleteMessages } = require('./Message');
-
-const { Conversation } = require('~/db/models');
+  getConvoTitle,
+  getConvoFiles,
+  deleteConvos,
+  getConvosByCursor,
+  getConvosQueried,
+  deleteNullOrEmptyConversations,
+  searchConversation,
+} = new Proxy({} as ReturnType<typeof createConversationMethods>, {
+  get(_target, prop: string) {
+    return (...args: unknown[]) =>
+      (methods as Record<string, (...a: unknown[]) => unknown>)[prop](...args);
+  },
+});
 
 describe('Conversation Operations', () => {
-  let mongoServer;
-  let mockReq;
-  let mockConversationData;
-
-  beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    const mongoUri = mongoServer.getUri();
-    await mongoose.connect(mongoUri);
-  });
-
-  afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
-  });
+  let mockCtx: {
+    userId: string;
+    isTemporary?: boolean;
+    interfaceConfig?: { temporaryChatRetention?: number };
+  };
+  let mockConversationData: {
+    conversationId: string;
+    title: string;
+    endpoint: string;
+  };
 
   beforeEach(async () => {
     // Clear database
@@ -41,18 +93,13 @@ describe('Conversation Operations', () => {
 
     // Reset mocks
     jest.clearAllMocks();
-
-    // Default mock implementations
     getMessages.mockResolvedValue([]);
     deleteMessages.mockResolvedValue({ deletedCount: 0 });
 
-    mockReq = {
-      user: { id: 'user123' },
-      body: {},
-      config: {
-        interfaceConfig: {
-          temporaryChatRetention: 24, // Default 24 hours
-        },
+    mockCtx = {
+      userId: 'user123',
+      interfaceConfig: {
+        temporaryChatRetention: 24, // Default 24 hours
       },
     };
 
@@ -65,7 +112,7 @@ describe('Conversation Operations', () => {
 
   describe('saveConvo', () => {
     it('should save a conversation for an authenticated user', async () => {
-      const result = await saveConvo(mockReq, mockConversationData);
+      const result = await saveConvo(mockCtx, mockConversationData);
 
       expect(result.conversationId).toBe(mockConversationData.conversationId);
       expect(result.user).toBe('user123');
@@ -83,11 +130,10 @@ describe('Conversation Operations', () => {
 
     it('should query messages when saving a conversation', async () => {
       // Mock messages as ObjectIds
-      const mongoose = require('mongoose');
       const mockMessages = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];
       getMessages.mockResolvedValue(mockMessages);
 
-      await saveConvo(mockReq, mockConversationData);
+      await saveConvo(mockCtx, mockConversationData);
 
       // Verify that getMessages was called with correct parameters
       expect(getMessages).toHaveBeenCalledWith(
@@ -98,7 +144,7 @@ describe('Conversation Operations', () => {
 
     it('should handle newConversationId when provided', async () => {
       const newConversationId = uuidv4();
-      const result = await saveConvo(mockReq, {
+      const result = await saveConvo(mockCtx, {
         ...mockConversationData,
         newConversationId,
       });
@@ -109,7 +155,7 @@ describe('Conversation Operations', () => {
     it('should not create a conversation when noUpsert is true and conversation does not exist', async () => {
       const nonExistentId = uuidv4();
       const result = await saveConvo(
-        mockReq,
+        mockCtx,
         { conversationId: nonExistentId, title: 'Ghost Title' },
         { noUpsert: true },
       );
@@ -121,10 +167,10 @@ describe('Conversation Operations', () => {
     });
 
     it('should update an existing conversation when noUpsert is true', async () => {
-      await saveConvo(mockReq, mockConversationData);
+      await saveConvo(mockCtx, mockConversationData);
 
       const result = await saveConvo(
-        mockReq,
+        mockCtx,
         { conversationId: mockConversationData.conversationId, title: 'Updated Title' },
         { noUpsert: true },
       );
@@ -136,7 +182,7 @@ describe('Conversation Operations', () => {
 
     it('should still upsert by default when noUpsert is not provided', async () => {
       const newId = uuidv4();
-      const result = await saveConvo(mockReq, {
+      const result = await saveConvo(mockCtx, {
         conversationId: newId,
         title: 'New Conversation',
         endpoint: EModelEndpoint.openAI,
@@ -152,7 +198,7 @@ describe('Conversation Operations', () => {
         unsetFields: { someField: 1 },
       };
 
-      await saveConvo(mockReq, mockConversationData, metadata);
+      await saveConvo(mockCtx, mockConversationData, metadata);
 
       const savedConvo = await Conversation.findOne({
         conversationId: mockConversationData.conversationId,
@@ -163,12 +209,11 @@ describe('Conversation Operations', () => {
 
   describe('isTemporary conversation handling', () => {
     it('should save a conversation with expiredAt when isTemporary is true', async () => {
-      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
-
-      mockReq.body = { isTemporary: true };
+      mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveConvo(mockReq, mockConversationData);
+      const result = await saveConvo(mockCtx, mockConversationData);
       const afterSave = new Date();
 
       expect(result.conversationId).toBe(mockConversationData.conversationId);
@@ -187,30 +232,29 @@ describe('Conversation Operations', () => {
     });
 
     it('should save a conversation without expiredAt when isTemporary is false', async () => {
-      mockReq.body = { isTemporary: false };
+      mockCtx.isTemporary = false;
 
-      const result = await saveConvo(mockReq, mockConversationData);
+      const result = await saveConvo(mockCtx, mockConversationData);
 
       expect(result.conversationId).toBe(mockConversationData.conversationId);
       expect(result.expiredAt).toBeNull();
     });
 
     it('should save a conversation without expiredAt when isTemporary is not provided', async () => {
-      mockReq.body = {};
+      mockCtx.isTemporary = undefined;
 
-      const result = await saveConvo(mockReq, mockConversationData);
+      const result = await saveConvo(mockCtx, mockConversationData);
 
       expect(result.conversationId).toBe(mockConversationData.conversationId);
       expect(result.expiredAt).toBeNull();
     });
 
     it('should use custom retention period from config', async () => {
-      mockReq.config.interfaceConfig.temporaryChatRetention = 48;
-
-      mockReq.body = { isTemporary: true };
+      mockCtx.interfaceConfig = { temporaryChatRetention: 48 };
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveConvo(mockReq, mockConversationData);
+      const result = await saveConvo(mockCtx, mockConversationData);
 
       expect(result.expiredAt).toBeDefined();
 
@@ -228,12 +272,11 @@ describe('Conversation Operations', () => {
 
     it('should handle minimum retention period (1 hour)', async () => {
       // Mock app config with less than minimum retention
-      mockReq.config.interfaceConfig.temporaryChatRetention = 0.5; // Half hour - should be clamped to 1 hour
-
-      mockReq.body = { isTemporary: true };
+      mockCtx.interfaceConfig = { temporaryChatRetention: 0.5 }; // Half hour - should be clamped to 1 hour
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveConvo(mockReq, mockConversationData);
+      const result = await saveConvo(mockCtx, mockConversationData);
 
       expect(result.expiredAt).toBeDefined();
 
@@ -251,12 +294,11 @@ describe('Conversation Operations', () => {
 
     it('should handle maximum retention period (8760 hours)', async () => {
       // Mock app config with more than maximum retention
-      mockReq.config.interfaceConfig.temporaryChatRetention = 10000; // Should be clamped to 8760 hours
-
-      mockReq.body = { isTemporary: true };
+      mockCtx.interfaceConfig = { temporaryChatRetention: 10000 }; // Should be clamped to 8760 hours
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveConvo(mockReq, mockConversationData);
+      const result = await saveConvo(mockCtx, mockConversationData);
 
       expect(result.expiredAt).toBeDefined();
 
@@ -274,12 +316,11 @@ describe('Conversation Operations', () => {
 
     it('should handle missing config gracefully', async () => {
       // Simulate missing config - should use default retention period
-      delete mockReq.config;
-
-      mockReq.body = { isTemporary: true };
+      mockCtx.interfaceConfig = undefined;
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveConvo(mockReq, mockConversationData);
+      const result = await saveConvo(mockCtx, mockConversationData);
       const afterSave = new Date();
 
       // Should still save the conversation with default retention period (30 days)
@@ -301,12 +342,11 @@ describe('Conversation Operations', () => {
 
     it('should use default retention when config is not provided', async () => {
       // Mock getAppConfig to return empty config
-      mockReq.config = {}; // Empty config
-
-      mockReq.body = { isTemporary: true };
+      mockCtx.interfaceConfig = undefined; // Empty config
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveConvo(mockReq, mockConversationData);
+      const result = await saveConvo(mockCtx, mockConversationData);
 
       expect(result.expiredAt).toBeDefined();
 
@@ -324,10 +364,9 @@ describe('Conversation Operations', () => {
 
     it('should update expiredAt when saving existing temporary conversation', async () => {
       // First save a temporary conversation
-      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
-
-      mockReq.body = { isTemporary: true };
-      const firstSave = await saveConvo(mockReq, mockConversationData);
+      mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
+      mockCtx.isTemporary = true;
+      const firstSave = await saveConvo(mockCtx, mockConversationData);
       const originalExpiredAt = firstSave.expiredAt;
 
       // Wait a bit to ensure time difference
@@ -335,7 +374,7 @@ describe('Conversation Operations', () => {
 
       // Save again with same conversationId but different title
       const updatedData = { ...mockConversationData, title: 'Updated Title' };
-      const secondSave = await saveConvo(mockReq, updatedData);
+      const secondSave = await saveConvo(mockCtx, updatedData);
 
       // Should update title and create new expiredAt
       expect(secondSave.title).toBe('Updated Title');
@@ -347,14 +386,14 @@ describe('Conversation Operations', () => {
 
     it('should not set expiredAt when updating non-temporary conversation', async () => {
       // First save a non-temporary conversation
-      mockReq.body = { isTemporary: false };
-      const firstSave = await saveConvo(mockReq, mockConversationData);
+      mockCtx.isTemporary = false;
+      const firstSave = await saveConvo(mockCtx, mockConversationData);
       expect(firstSave.expiredAt).toBeNull();
 
       // Update without isTemporary flag
-      mockReq.body = {};
+      mockCtx.isTemporary = undefined;
       const updatedData = { ...mockConversationData, title: 'Updated Title' };
-      const secondSave = await saveConvo(mockReq, updatedData);
+      const secondSave = await saveConvo(mockCtx, updatedData);
 
       expect(secondSave.title).toBe('Updated Title');
       expect(secondSave.expiredAt).toBeNull();
@@ -381,7 +420,7 @@ describe('Conversation Operations', () => {
       });
 
       // Mock Meili search
-      Conversation.meiliSearch = jest.fn().mockResolvedValue({ hits: [] });
+      Object.assign(Conversation, { meiliSearch: jest.fn().mockResolvedValue({ hits: [] }) });
 
       const result = await getConvosByCursor('user123');
 
@@ -435,9 +474,9 @@ describe('Conversation Operations', () => {
       const result = await searchConversation(mockConversationData.conversationId);
 
       expect(result).toBeTruthy();
-      expect(result.conversationId).toBe(mockConversationData.conversationId);
-      expect(result.user).toBe('user123');
-      expect(result.title).toBeUndefined(); // Only returns conversationId and user
+      expect(result!.conversationId).toBe(mockConversationData.conversationId);
+      expect(result!.user).toBe('user123');
+      expect((result as unknown as { title?: string }).title).toBeUndefined(); // Only returns conversationId and user
     });
 
     it('should return null if conversation not found', async () => {
@@ -457,9 +496,9 @@ describe('Conversation Operations', () => {
 
       const result = await getConvo('user123', mockConversationData.conversationId);
 
-      expect(result.conversationId).toBe(mockConversationData.conversationId);
-      expect(result.user).toBe('user123');
-      expect(result.title).toBe('Test Conversation');
+      expect(result!.conversationId).toBe(mockConversationData.conversationId);
+      expect(result!.user).toBe('user123');
+      expect(result!.title).toBe('Test Conversation');
     });
 
     it('should return null if conversation not found', async () => {
@@ -596,7 +635,7 @@ describe('Conversation Operations', () => {
       // Force a database error by disconnecting
       await mongoose.disconnect();
 
-      const result = await saveConvo(mockReq, mockConversationData);
+      const result = await saveConvo(mockCtx, mockConversationData);
 
       expect(result).toEqual({ message: 'Error saving conversation' });
 
@@ -610,7 +649,7 @@ describe('Conversation Operations', () => {
      * Helper to create conversations with specific timestamps
      * Uses collection.insertOne to bypass Mongoose timestamps entirely
      */
-    const createConvoWithTimestamps = async (index, createdAt, updatedAt) => {
+    const createConvoWithTimestamps = async (index: number, createdAt: Date, updatedAt: Date) => {
       const conversationId = uuidv4();
       // Use collection-level insert to bypass Mongoose timestamps
       await Conversation.collection.insertOne({
@@ -629,7 +668,7 @@ describe('Conversation Operations', () => {
     it('should not skip conversations at page boundaries', async () => {
       // Create 30 conversations to ensure pagination (limit is 25)
       const baseTime = new Date('2026-01-01T00:00:00.000Z');
-      const convos = [];
+      const convos: unknown[] = [];
 
       for (let i = 0; i < 30; i++) {
         const updatedAt = new Date(baseTime.getTime() - i * 60000); // Each 1 minute apart
@@ -655,8 +694,8 @@ describe('Conversation Operations', () => {
 
       // Verify no duplicates and no gaps
       const allIds = [
-        ...page1.conversations.map((c) => c.conversationId),
-        ...page2.conversations.map((c) => c.conversationId),
+        ...page1.conversations.map((c: IConversation) => c.conversationId),
+        ...page2.conversations.map((c: IConversation) => c.conversationId),
       ];
       const uniqueIds = new Set(allIds);
 
@@ -671,7 +710,7 @@ describe('Conversation Operations', () => {
       const baseTime = new Date('2026-01-01T12:00:00.000Z');
 
       // Create exactly 26 conversations
-      const convos = [];
+      const convos: unknown[] = [];
       for (let i = 0; i < 26; i++) {
         const updatedAt = new Date(baseTime.getTime() - i * 60000);
         const convo = await createConvoWithTimestamps(i, updatedAt, updatedAt);
@@ -688,7 +727,7 @@ describe('Conversation Operations', () => {
       expect(page1.nextCursor).toBeTruthy();
 
       // Item 26 should NOT be in page 1
-      const page1Ids = page1.conversations.map((c) => c.conversationId);
+      const page1Ids = page1.conversations.map((c: IConversation) => c.conversationId);
       expect(page1Ids).not.toContain(item26.conversationId);
 
       // Fetch second page
@@ -727,9 +766,9 @@ describe('Conversation Operations', () => {
 
       // Should be sorted by updatedAt DESC (most recent first)
       expect(result.conversations).toHaveLength(3);
-      expect(result.conversations[0].conversationId).toBe(convo1.conversationId); // Jan 3 updatedAt
-      expect(result.conversations[1].conversationId).toBe(convo2.conversationId); // Jan 2 updatedAt
-      expect(result.conversations[2].conversationId).toBe(convo3.conversationId); // Jan 1 updatedAt
+      expect(result.conversations[0].conversationId).toBe(convo1!.conversationId); // Jan 3 updatedAt
+      expect(result.conversations[1].conversationId).toBe(convo2!.conversationId); // Jan 2 updatedAt
+      expect(result.conversations[2].conversationId).toBe(convo3!.conversationId); // Jan 1 updatedAt
     });
 
     it('should handle conversations with same updatedAt (tie-breaker)', async () => {
@@ -745,10 +784,10 @@ describe('Conversation Operations', () => {
       // All 3 should be returned (no skipping due to same timestamps)
       expect(result.conversations).toHaveLength(3);
 
-      const returnedIds = result.conversations.map((c) => c.conversationId);
-      expect(returnedIds).toContain(convo1.conversationId);
-      expect(returnedIds).toContain(convo2.conversationId);
-      expect(returnedIds).toContain(convo3.conversationId);
+      const returnedIds = result.conversations.map((c: IConversation) => c.conversationId);
+      expect(returnedIds).toContain(convo1!.conversationId);
+      expect(returnedIds).toContain(convo2!.conversationId);
+      expect(returnedIds).toContain(convo3!.conversationId);
     });
 
     it('should handle cursor pagination with conversations updated during pagination', async () => {
@@ -805,10 +844,12 @@ describe('Conversation Operations', () => {
       const page1 = await getConvosByCursor('user123', { limit: 25 });
 
       // Decode the cursor to verify it's based on the last RETURNED item
-      const decodedCursor = JSON.parse(Buffer.from(page1.nextCursor, 'base64').toString());
+      const decodedCursor = JSON.parse(
+        Buffer.from(page1.nextCursor as string, 'base64').toString(),
+      );
 
       // The cursor should match the last item in page1 (item at index 24)
-      const lastReturnedItem = page1.conversations[24];
+      const lastReturnedItem = page1.conversations[24] as IConversation;
 
       expect(new Date(decodedCursor.primary).getTime()).toBe(
         new Date(lastReturnedItem.updatedAt).getTime(),
@@ -830,10 +871,10 @@ describe('Conversation Operations', () => {
       );
 
       // Verify timestamps were set correctly
-      expect(new Date(convo1.createdAt).getTime()).toBe(
+      expect(new Date(convo1!.createdAt).getTime()).toBe(
         new Date('2026-01-03T00:00:00.000Z').getTime(),
       );
-      expect(new Date(convo2.createdAt).getTime()).toBe(
+      expect(new Date(convo2!.createdAt).getTime()).toBe(
         new Date('2026-01-01T00:00:00.000Z').getTime(),
       );
 
@@ -841,8 +882,8 @@ describe('Conversation Operations', () => {
 
       // Should be sorted by createdAt DESC
       expect(result.conversations).toHaveLength(2);
-      expect(result.conversations[0].conversationId).toBe(convo1.conversationId); // Jan 3 createdAt
-      expect(result.conversations[1].conversationId).toBe(convo2.conversationId); // Jan 1 createdAt
+      expect(result.conversations[0].conversationId).toBe(convo1!.conversationId); // Jan 3 createdAt
+      expect(result.conversations[1].conversationId).toBe(convo2!.conversationId); // Jan 1 createdAt
     });
 
     it('should handle empty result set gracefully', async () => {

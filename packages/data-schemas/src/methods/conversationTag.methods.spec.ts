@@ -1,13 +1,38 @@
-const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
-const { ConversationTag, Conversation } = require('~/db/models');
-const { deleteConversationTag } = require('./ConversationTag');
+import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { createConversationTagMethods } from './conversationTag';
+import { createModels } from '~/models';
+import type { IConversationTag } from '~/schema/conversationTag';
+import type { IConversation } from '..';
 
-let mongoServer;
+jest.mock('~/config/winston', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
+}));
+
+let mongoServer: InstanceType<typeof MongoMemoryServer>;
+let ConversationTag: mongoose.Model<IConversationTag>;
+let Conversation: mongoose.Model<IConversation>;
+let deleteConversationTag: ReturnType<typeof createConversationTagMethods>['deleteConversationTag'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  const mongoUri = mongoServer.getUri();
+
+  // Register models
+  const models = createModels(mongoose);
+  Object.assign(mongoose.models, models);
+
+  ConversationTag = mongoose.models.ConversationTag;
+  Conversation = mongoose.models.Conversation;
+
+  // Create methods from factory
+  const methods = createConversationTagMethods(mongoose);
+  deleteConversationTag = methods.deleteConversationTag;
+
+  await mongoose.connect(mongoUri);
 });
 
 afterAll(async () => {
@@ -47,7 +72,7 @@ describe('ConversationTag model - $pullAll operations', () => {
       const result = await deleteConversationTag(userId, 'temp');
 
       expect(result).toBeDefined();
-      expect(result.tag).toBe('temp');
+      expect(result!.tag).toBe('temp');
 
       const remaining = await ConversationTag.find({ user: userId }).lean();
       expect(remaining).toHaveLength(0);
@@ -91,8 +116,8 @@ describe('ConversationTag model - $pullAll operations', () => {
       const myConvo = await Conversation.findOne({ conversationId: 'mine' }).lean();
       const theirConvo = await Conversation.findOne({ conversationId: 'theirs' }).lean();
 
-      expect(myConvo.tags).toEqual([]);
-      expect(theirConvo.tags).toEqual(['shared-name']);
+      expect(myConvo?.tags).toEqual([]);
+      expect(theirConvo?.tags).toEqual(['shared-name']);
     });
 
     it('should handle duplicate tags in conversations correctly', async () => {
@@ -108,7 +133,7 @@ describe('ConversationTag model - $pullAll operations', () => {
       await deleteConversationTag(userId, 'dup');
 
       const updated = await Conversation.findById(conv._id).lean();
-      expect(updated.tags).toEqual(['other']);
+      expect(updated?.tags).toEqual(['other']);
     });
   });
 });

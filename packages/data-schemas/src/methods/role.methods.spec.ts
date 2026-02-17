@@ -1,30 +1,34 @@
-const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
-const {
-  SystemRoles,
-  Permissions,
-  roleDefaults,
-  PermissionTypes,
-} = require('librechat-data-provider');
-const getLogStores = require('~/cache/getLogStores');
-const { getRoleByName, updateAccessPermissions, initializeRoles } = require('~/models');
-const { Role } = require('~/db/models');
+import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { SystemRoles, Permissions, roleDefaults, PermissionTypes } from 'librechat-data-provider';
+import type { IRole, RolePermissions } from '..';
+import { createRoleMethods } from './role';
+import { createModels } from '../models';
 
-// Mock the cache
-jest.mock('~/cache/getLogStores', () =>
-  jest.fn().mockReturnValue({
-    get: jest.fn(),
-    set: jest.fn(),
-    del: jest.fn(),
-  }),
-);
+const mockCache = {
+  get: jest.fn(),
+  set: jest.fn(),
+  del: jest.fn(),
+};
 
-let mongoServer;
+const mockGetCache = jest.fn().mockReturnValue(mockCache);
+
+let Role: mongoose.Model<IRole>;
+let getRoleByName: ReturnType<typeof createRoleMethods>['getRoleByName'];
+let updateAccessPermissions: ReturnType<typeof createRoleMethods>['updateAccessPermissions'];
+let initializeRoles: ReturnType<typeof createRoleMethods>['initializeRoles'];
+let mongoServer: MongoMemoryServer;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
   await mongoose.connect(mongoUri);
+  createModels(mongoose);
+  Role = mongoose.models.Role;
+  const methods = createRoleMethods(mongoose, { getCache: mockGetCache });
+  getRoleByName = methods.getRoleByName;
+  updateAccessPermissions = methods.updateAccessPermissions;
+  initializeRoles = methods.initializeRoles;
 });
 
 afterAll(async () => {
@@ -34,7 +38,10 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await Role.deleteMany({});
-  getLogStores.mockClear();
+  mockGetCache.mockClear();
+  mockCache.get.mockClear();
+  mockCache.set.mockClear();
+  mockCache.del.mockClear();
 });
 
 describe('updateAccessPermissions', () => {
@@ -270,9 +277,9 @@ describe('initializeRoles', () => {
     });
 
     // Example: Check default values for ADMIN role
-    expect(adminRole.permissions[PermissionTypes.PROMPTS].SHARE).toBe(true);
-    expect(adminRole.permissions[PermissionTypes.BOOKMARKS].USE).toBe(true);
-    expect(adminRole.permissions[PermissionTypes.AGENTS].CREATE).toBe(true);
+    expect(adminRole.permissions[PermissionTypes.PROMPTS]?.SHARE).toBe(true);
+    expect(adminRole.permissions[PermissionTypes.BOOKMARKS]?.USE).toBe(true);
+    expect(adminRole.permissions[PermissionTypes.AGENTS]?.CREATE).toBe(true);
   });
 
   it('should not modify existing permissions for existing roles', async () => {
@@ -317,9 +324,9 @@ describe('initializeRoles', () => {
 
     const userRole = await getRoleByName(SystemRoles.USER);
     expect(userRole.permissions[PermissionTypes.AGENTS]).toBeDefined();
-    expect(userRole.permissions[PermissionTypes.AGENTS].CREATE).toBeDefined();
-    expect(userRole.permissions[PermissionTypes.AGENTS].USE).toBeDefined();
-    expect(userRole.permissions[PermissionTypes.AGENTS].SHARE).toBeDefined();
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.CREATE).toBeDefined();
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.USE).toBeDefined();
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.SHARE).toBeDefined();
   });
 
   it('should handle multiple runs without duplicating or modifying data', async () => {
@@ -332,8 +339,8 @@ describe('initializeRoles', () => {
     expect(adminRoles).toHaveLength(1);
     expect(userRoles).toHaveLength(1);
 
-    const adminPerms = adminRoles[0].toObject().permissions;
-    const userPerms = userRoles[0].toObject().permissions;
+    const adminPerms = adminRoles[0].toObject().permissions as RolePermissions;
+    const userPerms = userRoles[0].toObject().permissions as RolePermissions;
     Object.values(PermissionTypes).forEach((permType) => {
       expect(adminPerms[permType]).toBeDefined();
       expect(userPerms[permType]).toBeDefined();
@@ -362,9 +369,9 @@ describe('initializeRoles', () => {
       partialAdminRole.permissions[PermissionTypes.PROMPTS],
     );
     expect(adminRole.permissions[PermissionTypes.AGENTS]).toBeDefined();
-    expect(adminRole.permissions[PermissionTypes.AGENTS].CREATE).toBeDefined();
-    expect(adminRole.permissions[PermissionTypes.AGENTS].USE).toBeDefined();
-    expect(adminRole.permissions[PermissionTypes.AGENTS].SHARE).toBeDefined();
+    expect(adminRole.permissions[PermissionTypes.AGENTS]?.CREATE).toBeDefined();
+    expect(adminRole.permissions[PermissionTypes.AGENTS]?.USE).toBeDefined();
+    expect(adminRole.permissions[PermissionTypes.AGENTS]?.SHARE).toBeDefined();
   });
 
   it('should include MULTI_CONVO permissions when creating default roles', async () => {
@@ -375,10 +382,10 @@ describe('initializeRoles', () => {
 
     expect(adminRole.permissions[PermissionTypes.MULTI_CONVO]).toBeDefined();
     expect(userRole.permissions[PermissionTypes.MULTI_CONVO]).toBeDefined();
-    expect(adminRole.permissions[PermissionTypes.MULTI_CONVO].USE).toBe(
+    expect(adminRole.permissions[PermissionTypes.MULTI_CONVO]?.USE).toBe(
       roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MULTI_CONVO].USE,
     );
-    expect(userRole.permissions[PermissionTypes.MULTI_CONVO].USE).toBe(
+    expect(userRole.permissions[PermissionTypes.MULTI_CONVO]?.USE).toBe(
       roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MULTI_CONVO].USE,
     );
   });
@@ -399,6 +406,6 @@ describe('initializeRoles', () => {
 
     const userRole = await getRoleByName(SystemRoles.USER);
     expect(userRole.permissions[PermissionTypes.MULTI_CONVO]).toBeDefined();
-    expect(userRole.permissions[PermissionTypes.MULTI_CONVO].USE).toBeDefined();
+    expect(userRole.permissions[PermissionTypes.MULTI_CONVO]?.USE).toBeDefined();
   });
 });

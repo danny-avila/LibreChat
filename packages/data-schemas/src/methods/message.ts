@@ -298,6 +298,56 @@ export function createMessageMethods(mongoose: typeof import('mongoose'), deps: 
     }
   }
 
+  /**
+   * Retrieves paginated messages with custom sorting and cursor support.
+   */
+  async function getMessagesByCursor(
+    filter: FilterQuery<IMessage>,
+    options: {
+      sortField?: string;
+      sortOrder?: 1 | -1;
+      limit?: number;
+      cursor?: string | null;
+    } = {},
+  ) {
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const { sortField = 'createdAt', sortOrder = -1, limit = 25, cursor } = options;
+    const queryFilter = { ...filter };
+    if (cursor) {
+      queryFilter[sortField] = sortOrder === 1 ? { $gt: cursor } : { $lt: cursor };
+    }
+    const messages = await Message.find(queryFilter)
+      .sort({ [sortField]: sortOrder })
+      .limit(limit + 1)
+      .lean();
+
+    let nextCursor: string | null = null;
+    if (messages.length > limit) {
+      messages.pop();
+      const last = messages[messages.length - 1] as Record<string, unknown>;
+      nextCursor = String(last[sortField] ?? '');
+    }
+    return { messages, nextCursor };
+  }
+
+  /**
+   * Performs a MeiliSearch query on the Message collection.
+   * Requires the meilisearch plugin to be registered on the Message model.
+   */
+  async function searchMessages(
+    query: string,
+    searchOptions: Record<string, unknown>,
+    hydrate?: boolean,
+  ) {
+    const Message = mongoose.models.Message as Model<IMessage> & {
+      meiliSearch?: (q: string, opts: Record<string, unknown>, h?: boolean) => Promise<unknown>;
+    };
+    if (typeof Message.meiliSearch !== 'function') {
+      throw new Error('MeiliSearch plugin not registered on Message model');
+    }
+    return Message.meiliSearch(query, searchOptions, hydrate);
+  }
+
   return {
     saveMessage,
     bulkSaveMessages,
@@ -307,6 +357,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose'), deps: 
     deleteMessagesSince,
     getMessages,
     getMessage,
+    getMessagesByCursor,
+    searchMessages,
     deleteMessages,
   };
 }

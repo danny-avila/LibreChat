@@ -8,7 +8,7 @@ const {
   EModelEndpoint,
   PermissionTypes,
 } = require('librechat-data-provider');
-const { getRoleByName, Files } = require('~/models');
+const { getRoleByName, getFiles } = require('~/models');
 
 /**
  * Process file search results from tool calls
@@ -126,7 +126,7 @@ async function enhanceSourcesWithMetadata(sources, appConfig) {
 
   let fileMetadataMap = {};
   try {
-    const files = await Files.find({ file_id: { $in: fileIds } });
+    const files = await getFiles({ file_id: { $in: fileIds } });
     fileMetadataMap = files.reduce((map, file) => {
       map[file.file_id] = file;
       return map;

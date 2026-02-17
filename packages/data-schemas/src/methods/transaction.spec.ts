@@ -1,14 +1,62 @@
-const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
-const { spendTokens, spendStructuredTokens } = require('./spendTokens');
-const { getMultiplier, getCacheMultiplier, premiumTokenValues, tokenValues } = require('./tx');
-const { createTransaction, createStructuredTransaction } = require('./Transaction');
-const { Balance, Transaction } = require('~/db/models');
+import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { matchModelName, findMatchingPattern } from './test-helpers';
+import { createModels } from '~/models';
+import { createTxMethods, tokenValues, premiumTokenValues } from './tx';
+import { createTransactionMethods } from './transaction';
+import { createSpendTokensMethods } from './spendTokens';
+import type { ITransaction } from '~/schema/transaction';
+import type { IBalance } from '..';
 
-let mongoServer;
+jest.mock('~/config/winston', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
+}));
+
+let mongoServer: InstanceType<typeof MongoMemoryServer>;
+let Balance: mongoose.Model<IBalance>;
+let Transaction: mongoose.Model<ITransaction>;
+let spendTokens: ReturnType<typeof createSpendTokensMethods>['spendTokens'];
+let spendStructuredTokens: ReturnType<typeof createSpendTokensMethods>['spendStructuredTokens'];
+let createTransaction: ReturnType<typeof createTransactionMethods>['createTransaction'];
+let createStructuredTransaction: ReturnType<
+  typeof createTransactionMethods
+>['createStructuredTransaction'];
+let getMultiplier: ReturnType<typeof createTxMethods>['getMultiplier'];
+let getCacheMultiplier: ReturnType<typeof createTxMethods>['getCacheMultiplier'];
+
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
+
+  // Register models
+  const models = createModels(mongoose);
+  Object.assign(mongoose.models, models);
+
+  Balance = mongoose.models.Balance;
+  Transaction = mongoose.models.Transaction;
+
+  // Create methods from factories (following the chain in methods/index.ts)
+  const txMethods = createTxMethods(mongoose, { matchModelName, findMatchingPattern });
+  getMultiplier = txMethods.getMultiplier;
+  getCacheMultiplier = txMethods.getCacheMultiplier;
+
+  const transactionMethods = createTransactionMethods(mongoose, {
+    getMultiplier: txMethods.getMultiplier,
+    getCacheMultiplier: txMethods.getCacheMultiplier,
+  });
+  createTransaction = transactionMethods.createTransaction;
+  createStructuredTransaction = transactionMethods.createStructuredTransaction;
+
+  const spendMethods = createSpendTokensMethods(mongoose, {
+    createTransaction: transactionMethods.createTransaction,
+    createStructuredTransaction: transactionMethods.createStructuredTransaction,
+  });
+  spendTokens = spendMethods.spendTokens;
+  spendStructuredTokens = spendMethods.spendStructuredTokens;
+
   await mongoose.connect(mongoUri);
 });
 

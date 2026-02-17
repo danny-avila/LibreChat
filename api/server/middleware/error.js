@@ -48,7 +48,11 @@ const sendError = async (req, res, options, callback) => {
 
   if (shouldSaveMessage) {
     await saveMessage(
-      req,
+      {
+        userId: req?.user?.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
       { ...errorMessage, user },
       {
         context: 'api/server/utils/streamResponse.js - sendError',

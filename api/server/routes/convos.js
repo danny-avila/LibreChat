@@ -178,7 +178,11 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
 
   try {
     const dbResponse = await saveConvo(
-      req,
+      {
+        userId: req?.user?.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
       { conversationId, isArchived },
       { context: `POST /api/convos/archive ${conversationId}` },
     );
@@ -218,7 +222,11 @@ router.post('/update', validateConvoAccess, async (req, res) => {
 
   try {
     const dbResponse = await saveConvo(
-      req,
+      {
+        userId: req?.user?.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
       { conversationId, title: sanitizedTitle },
       { context: `POST /api/convos/update ${conversationId}` },
     );

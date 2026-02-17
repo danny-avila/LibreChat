@@ -7,7 +7,7 @@ export interface PromptDeps {
   /** Escapes special regex characters. Injected from @librechat/api. */
   escapeRegExp: (s: string) => string;
   /** Removes all ACL permissions for a resource. Injected from PermissionService. */
-  removeAllPermissions: (params: { resourceType: string; resourceId: string }) => Promise<void>;
+  removeAllPermissions: (params: { resourceType: string; resourceId: unknown }) => Promise<void>;
 }
 
 export function createPromptMethods(mongoose: typeof import('mongoose'), deps: PromptDeps) {
@@ -341,7 +341,10 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
   /**
    * Save a prompt.
    */
-  async function savePrompt(saveData: { prompt: Record<string, unknown>; author: string }) {
+  async function savePrompt(saveData: {
+    prompt: Record<string, unknown>;
+    author: string | Types.ObjectId;
+  }) {
     try {
       const Prompt = mongoose.models.Prompt as Model<IPrompt>;
       const { prompt, author } = saveData;
@@ -477,9 +480,9 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
     author,
     role,
   }: {
-    promptId: string;
-    groupId: string;
-    author: string;
+    promptId: string | Types.ObjectId;
+    groupId: string | Types.ObjectId;
+    author: string | Types.ObjectId;
     role?: string;
   }) {
     const Prompt = mongoose.models.Prompt as Model<IPrompt>;

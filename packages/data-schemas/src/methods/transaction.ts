@@ -313,9 +313,33 @@ export function createTransactionMethods(
     return Balance.findOne({ user }).lean();
   }
 
+  /** Upserts balance fields for a user. */
+  async function upsertBalanceFields(
+    user: string,
+    fields: Record<string, unknown>,
+  ): Promise<unknown> {
+    const Balance = mongoose.models.Balance as Model<IBalance>;
+    return Balance.findOneAndUpdate({ user }, { $set: fields }, { upsert: true, new: true }).lean();
+  }
+
+  /** Deletes transactions matching a filter. */
+  async function deleteTransactions(filter: Record<string, unknown>) {
+    const Transaction = mongoose.models.Transaction;
+    return Transaction.deleteMany(filter);
+  }
+
+  /** Deletes balance records matching a filter. */
+  async function deleteBalances(filter: Record<string, unknown>) {
+    const Balance = mongoose.models.Balance as Model<IBalance>;
+    return Balance.deleteMany(filter);
+  }
+
   return {
     findBalanceByUser,
+    upsertBalanceFields,
     getTransactions,
+    deleteTransactions,
+    deleteBalances,
     createTransaction,
     createAutoRefillTransaction,
     createStructuredTransaction,

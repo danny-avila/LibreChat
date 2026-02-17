@@ -1,61 +1,119 @@
-const originalEnv = {
-  CREDS_KEY: process.env.CREDS_KEY,
-  CREDS_IV: process.env.CREDS_IV,
+import mongoose from 'mongoose';
+import { v4 as uuidv4 } from 'uuid';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import {
+  AccessRoleIds,
+  ResourceType,
+  PrincipalType,
+  PrincipalModel,
+  EToolResources,
+} from 'librechat-data-provider';
+import type {
+  UpdateWithAggregationPipeline,
+  RootFilterQuery,
+  QueryOptions,
+  UpdateQuery,
+} from 'mongoose';
+import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
+import { createAgentMethods, type AgentMethods } from './agent';
+import { createModels } from '~/models';
+
+/** Version snapshot stored in `IAgent.versions[]`. Extends the base omit with runtime-only fields. */
+type VersionEntry = Omit<IAgent, 'versions'> & {
+  __v?: number;
+  versions?: unknown;
+  version?: number;
+  updatedBy?: mongoose.Types.ObjectId;
 };
 
-process.env.CREDS_KEY = '0123456789abcdef0123456789abcdef';
-process.env.CREDS_IV = '0123456789abcdef';
-
-jest.mock('~/server/services/Config', () => ({
-  getCachedTools: jest.fn(),
-  getMCPServerTools: jest.fn(),
+jest.mock('~/config/winston', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
 }));
 
-const mongoose = require('mongoose');
-const { v4: uuidv4 } = require('uuid');
-const { agentSchema } = require('@librechat/data-schemas');
-const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
-const {
-  getAgent,
-  loadAgent,
-  createAgent,
-  updateAgent,
-  deleteAgent,
-  deleteUserAgents,
-  revertAgentVersion,
-  addAgentResourceFile,
-  getListAgentsByAccess,
-  removeAgentResourceFiles,
-  generateActionMetadataHash,
-} = require('./Agent');
-const permissionService = require('~/server/services/PermissionService');
-const { getCachedTools, getMCPServerTools } = require('~/server/services/Config');
-const { AclEntry, User } = require('~/db/models');
+let mongoServer: InstanceType<typeof MongoMemoryServer>;
+let Agent: mongoose.Model<IAgent>;
+let AclEntry: mongoose.Model<IAclEntry>;
+let User: mongoose.Model<IUser>;
+let AccessRole: mongoose.Model<IAccessRole>;
+let modelsToCleanup: string[] = [];
+let methods: ReturnType<typeof createAgentMethods>;
 
-/**
- * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
- */
-let Agent;
+let createAgent: AgentMethods['createAgent'];
+let getAgent: AgentMethods['getAgent'];
+let updateAgent: AgentMethods['updateAgent'];
+let deleteAgent: AgentMethods['deleteAgent'];
+let deleteUserAgents: AgentMethods['deleteUserAgents'];
+let revertAgentVersion: AgentMethods['revertAgentVersion'];
+let addAgentResourceFile: AgentMethods['addAgentResourceFile'];
+let removeAgentResourceFiles: AgentMethods['removeAgentResourceFiles'];
+let getListAgentsByAccess: AgentMethods['getListAgentsByAccess'];
+let generateActionMetadataHash: AgentMethods['generateActionMetadataHash'];
 
-describe('models/Agent', () => {
+const getActions = jest.fn().mockResolvedValue([]);
+
+beforeAll(async () => {
+  mongoServer = await MongoMemoryServer.create();
+  const mongoUri = mongoServer.getUri();
+
+  const models = createModels(mongoose);
+  modelsToCleanup = Object.keys(models);
+  Agent = mongoose.models.Agent as mongoose.Model<IAgent>;
+  AclEntry = mongoose.models.AclEntry as mongoose.Model<IAclEntry>;
+  User = mongoose.models.User as mongoose.Model<IUser>;
+  AccessRole = mongoose.models.AccessRole as mongoose.Model<IAccessRole>;
+
+  const removeAllPermissions = async ({
+    resourceType,
+    resourceId,
+  }: {
+    resourceType: string;
+    resourceId: unknown;
+  }) => {
+    await AclEntry.deleteMany({ resourceType, resourceId });
+  };
+
+  methods = createAgentMethods(mongoose, { removeAllPermissions, getActions });
+  createAgent = methods.createAgent;
+  getAgent = methods.getAgent;
+  updateAgent = methods.updateAgent;
+  deleteAgent = methods.deleteAgent;
+  deleteUserAgents = methods.deleteUserAgents;
+  revertAgentVersion = methods.revertAgentVersion;
+  addAgentResourceFile = methods.addAgentResourceFile;
+  removeAgentResourceFiles = methods.removeAgentResourceFiles;
+  getListAgentsByAccess = methods.getListAgentsByAccess;
+  generateActionMetadataHash = methods.generateActionMetadataHash;
+
+  await mongoose.connect(mongoUri);
+
+  await AccessRole.create({
+    accessRoleId: AccessRoleIds.AGENT_OWNER,
+    name: 'Owner',
+    description: 'Full control over agents',
+    resourceType: ResourceType.AGENT,
+    permBits: 15,
+  });
+}, 30000);
+
+afterAll(async () => {
+  const collections = mongoose.connection.collections;
+  for (const key in collections) {
+    await collections[key].deleteMany({});
+  }
+  for (const modelName of modelsToCleanup) {
+    if (mongoose.models[modelName]) {
+      delete (mongoose.models as Record<string, unknown>)[modelName];
+    }
+  }
+  await mongoose.disconnect();
+  await mongoServer.stop();
+});
+
+describe('Agent Methods', () => {
   describe('Agent Resource File Operations', () => {
-    let mongoServer;
-
-    beforeAll(async () => {
-      mongoServer = await MongoMemoryServer.create();
-      const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-      await mongoose.connect(mongoUri);
-    }, 20000);
-
-    afterAll(async () => {
-      await mongoose.disconnect();
-      await mongoServer.stop();
-      process.env.CREDS_KEY = originalEnv.CREDS_KEY;
-      process.env.CREDS_IV = originalEnv.CREDS_IV;
-    });
-
     beforeEach(async () => {
       await Agent.deleteMany({});
       await User.deleteMany({});
@@ -72,10 +130,10 @@ describe('models/Agent', () => {
         file_id: fileId,
       });
 
-      expect(updatedAgent.tools).toContain(toolResource);
-      expect(Array.isArray(updatedAgent.tools)).toBe(true);
+      expect(updatedAgent!.tools).toContain(toolResource);
+      expect(Array.isArray(updatedAgent!.tools)).toBe(true);
       // Should not duplicate
-      const count = updatedAgent.tools.filter((t) => t === toolResource).length;
+      const count = updatedAgent!.tools?.filter((t) => t === toolResource).length ?? 0;
       expect(count).toBe(1);
     });
 
@@ -99,9 +157,9 @@ describe('models/Agent', () => {
         file_id: fileId2,
       });
 
-      expect(updatedAgent.tools).toContain(toolResource);
-      expect(Array.isArray(updatedAgent.tools)).toBe(true);
-      const count = updatedAgent.tools.filter((t) => t === toolResource).length;
+      expect(updatedAgent!.tools).toContain(toolResource);
+      expect(Array.isArray(updatedAgent!.tools)).toBe(true);
+      const count = updatedAgent!.tools?.filter((t) => t === toolResource).length ?? 0;
       expect(count).toBe(1);
     });
 
@@ -115,9 +173,13 @@ describe('models/Agent', () => {
       await Promise.all(additionPromises);
 
       const updatedAgent = await Agent.findOne({ id: agent.id });
-      expect(updatedAgent.tool_resources.test_tool.file_ids).toBeDefined();
-      expect(updatedAgent.tool_resources.test_tool.file_ids).toHaveLength(10);
-      expect(new Set(updatedAgent.tool_resources.test_tool.file_ids).size).toBe(10);
+      expect(updatedAgent?.tool_resources?.[EToolResources.execute_code]?.file_ids).toBeDefined();
+      expect(updatedAgent?.tool_resources?.[EToolResources.execute_code]?.file_ids).toHaveLength(
+        10,
+      );
+      expect(
+        new Set(updatedAgent?.tool_resources?.[EToolResources.execute_code]?.file_ids).size,
+      ).toBe(10);
     });
 
     test('should handle concurrent additions and removals', async () => {
@@ -127,18 +189,18 @@ describe('models/Agent', () => {
       await Promise.all(createFileOperations(agent.id, initialFileIds, 'add'));
 
       const newFileIds = Array.from({ length: 5 }, () => uuidv4());
-      const operations = [
+      const operations: Promise<IAgent>[] = [
         ...newFileIds.map((fileId) =>
           addAgentResourceFile({
             agent_id: agent.id,
-            tool_resource: 'test_tool',
+            tool_resource: EToolResources.execute_code,
             file_id: fileId,
           }),
         ),
         ...initialFileIds.map((fileId) =>
           removeAgentResourceFiles({
             agent_id: agent.id,
-            files: [{ tool_resource: 'test_tool', file_id: fileId }],
+            files: [{ tool_resource: EToolResources.execute_code, file_id: fileId }],
           }),
         ),
       ];
@@ -146,8 +208,8 @@ describe('models/Agent', () => {
       await Promise.all(operations);
 
       const updatedAgent = await Agent.findOne({ id: agent.id });
-      expect(updatedAgent.tool_resources.test_tool.file_ids).toBeDefined();
-      expect(updatedAgent.tool_resources.test_tool.file_ids).toHaveLength(5);
+      expect(updatedAgent?.tool_resources?.[EToolResources.execute_code]?.file_ids).toBeDefined();
+      expect(updatedAgent?.tool_resources?.[EToolResources.execute_code]?.file_ids).toHaveLength(5);
     });
 
     test('should initialize array when adding to non-existent tool resource', async () => {
@@ -156,13 +218,13 @@ describe('models/Agent', () => {
 
       const updatedAgent = await addAgentResourceFile({
         agent_id: agent.id,
-        tool_resource: 'new_tool',
+        tool_resource: EToolResources.context,
         file_id: fileId,
       });
 
-      expect(updatedAgent.tool_resources.new_tool.file_ids).toBeDefined();
-      expect(updatedAgent.tool_resources.new_tool.file_ids).toHaveLength(1);
-      expect(updatedAgent.tool_resources.new_tool.file_ids[0]).toBe(fileId);
+      expect(updatedAgent?.tool_resources?.[EToolResources.context]?.file_ids).toBeDefined();
+      expect(updatedAgent?.tool_resources?.[EToolResources.context]?.file_ids).toHaveLength(1);
+      expect(updatedAgent?.tool_resources?.[EToolResources.context]?.file_ids?.[0]).toBe(fileId);
     });
 
     test('should handle rapid sequential modifications to same tool resource', async () => {
@@ -172,27 +234,33 @@ describe('models/Agent', () => {
       for (let i = 0; i < 10; i++) {
         await addAgentResourceFile({
           agent_id: agent.id,
-          tool_resource: 'test_tool',
+          tool_resource: EToolResources.execute_code,
           file_id: `${fileId}_${i}`,
         });
 
         if (i % 2 === 0) {
           await removeAgentResourceFiles({
             agent_id: agent.id,
-            files: [{ tool_resource: 'test_tool', file_id: `${fileId}_${i}` }],
+            files: [{ tool_resource: EToolResources.execute_code, file_id: `${fileId}_${i}` }],
           });
         }
       }
 
       const updatedAgent = await Agent.findOne({ id: agent.id });
-      expect(updatedAgent.tool_resources.test_tool.file_ids).toBeDefined();
-      expect(Array.isArray(updatedAgent.tool_resources.test_tool.file_ids)).toBe(true);
+      expect(updatedAgent?.tool_resources?.[EToolResources.execute_code]?.file_ids).toBeDefined();
+      expect(
+        Array.isArray(updatedAgent!.tool_resources![EToolResources.execute_code]!.file_ids),
+      ).toBe(true);
     });
 
     test('should handle multiple tool resources concurrently', async () => {
       const agent = await createBasicAgent();
-      const toolResources = ['tool1', 'tool2', 'tool3'];
-      const operations = [];
+      const toolResources = [
+        EToolResources.file_search,
+        EToolResources.execute_code,
+        EToolResources.image_edit,
+      ] as const;
+      const operations: Promise<IAgent>[] = [];
 
       toolResources.forEach((tool) => {
         const fileIds = Array.from({ length: 5 }, () => uuidv4());
@@ -211,8 +279,8 @@ describe('models/Agent', () => {
 
       const updatedAgent = await Agent.findOne({ id: agent.id });
       toolResources.forEach((tool) => {
-        expect(updatedAgent.tool_resources[tool].file_ids).toBeDefined();
-        expect(updatedAgent.tool_resources[tool].file_ids).toHaveLength(5);
+        expect(updatedAgent!.tool_resources![tool]!.file_ids).toBeDefined();
+        expect(updatedAgent!.tool_resources![tool]!.file_ids).toHaveLength(5);
       });
     });
 
@@ -241,7 +309,7 @@ describe('models/Agent', () => {
         if (setupFile) {
           await addAgentResourceFile({
             agent_id: agent.id,
-            tool_resource: 'test_tool',
+            tool_resource: EToolResources.execute_code,
             file_id: fileId,
           });
         }
@@ -250,19 +318,19 @@ describe('models/Agent', () => {
           operation === 'add'
             ? addAgentResourceFile({
                 agent_id: agent.id,
-                tool_resource: 'test_tool',
+                tool_resource: EToolResources.execute_code,
                 file_id: fileId,
               })
             : removeAgentResourceFiles({
                 agent_id: agent.id,
-                files: [{ tool_resource: 'test_tool', file_id: fileId }],
+                files: [{ tool_resource: EToolResources.execute_code, file_id: fileId }],
               }),
         );
 
         await Promise.all(promises);
 
         const updatedAgent = await Agent.findOne({ id: agent.id });
-        const fileIds = updatedAgent.tool_resources?.test_tool?.file_ids ?? [];
+        const fileIds = updatedAgent?.tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
 
         expect(fileIds).toHaveLength(expectedLength);
         if (expectedContains) {
@@ -279,27 +347,27 @@ describe('models/Agent', () => {
 
       await addAgentResourceFile({
         agent_id: agent.id,
-        tool_resource: 'test_tool',
+        tool_resource: EToolResources.execute_code,
         file_id: fileId,
       });
 
-      const operations = [
+      const operations: Promise<IAgent>[] = [
         addAgentResourceFile({
           agent_id: agent.id,
-          tool_resource: 'test_tool',
+          tool_resource: EToolResources.execute_code,
           file_id: fileId,
         }),
         removeAgentResourceFiles({
           agent_id: agent.id,
-          files: [{ tool_resource: 'test_tool', file_id: fileId }],
+          files: [{ tool_resource: EToolResources.execute_code, file_id: fileId }],
         }),
       ];
 
       await Promise.all(operations);
 
       const updatedAgent = await Agent.findOne({ id: agent.id });
-      const finalFileIds = updatedAgent.tool_resources.test_tool.file_ids;
-      const count = finalFileIds.filter((id) => id === fileId).length;
+      const finalFileIds = updatedAgent!.tool_resources![EToolResources.execute_code]!.file_ids!;
+      const count = finalFileIds.filter((id: string) => id === fileId).length;
 
       expect(count).toBeLessThanOrEqual(1);
       if (count === 0) {
@@ -319,7 +387,7 @@ describe('models/Agent', () => {
         fileIds.map((fileId) =>
           addAgentResourceFile({
             agent_id: agent.id,
-            tool_resource: 'test_tool',
+            tool_resource: EToolResources.execute_code,
             file_id: fileId,
           }),
         ),
@@ -329,7 +397,7 @@ describe('models/Agent', () => {
       const removalPromises = fileIds.map((fileId) =>
         removeAgentResourceFiles({
           agent_id: agent.id,
-          files: [{ tool_resource: 'test_tool', file_id: fileId }],
+          files: [{ tool_resource: EToolResources.execute_code, file_id: fileId }],
         }),
       );
 
@@ -337,7 +405,8 @@ describe('models/Agent', () => {
 
       const updatedAgent = await Agent.findOne({ id: agent.id });
       // Check if the array is empty or the tool resource itself is removed
-      const finalFileIds = updatedAgent.tool_resources?.test_tool?.file_ids ?? [];
+      const finalFileIds =
+        updatedAgent?.tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
       expect(finalFileIds).toHaveLength(0);
     });
 
@@ -361,7 +430,7 @@ describe('models/Agent', () => {
       ])('addAgentResourceFile with $name', ({ needsAgent, params, shouldResolve, error }) => {
         test(`should ${shouldResolve ? 'resolve' : 'reject'}`, async () => {
           const agent = needsAgent ? await createBasicAgent() : null;
-          const agent_id = needsAgent ? agent.id : `agent_${uuidv4()}`;
+          const agent_id = needsAgent ? agent!.id : `agent_${uuidv4()}`;
 
           if (shouldResolve) {
             await expect(addAgentResourceFile({ agent_id, ...params })).resolves.toBeDefined();
@@ -374,7 +443,7 @@ describe('models/Agent', () => {
       describe.each([
         {
           name: 'empty files array',
-          files: [],
+          files: [] as { tool_resource: string; file_id: string }[],
           needsAgent: true,
           shouldResolve: true,
         },
@@ -394,7 +463,7 @@ describe('models/Agent', () => {
       ])('removeAgentResourceFiles with $name', ({ files, needsAgent, shouldResolve, error }) => {
         test(`should ${shouldResolve ? 'resolve' : 'reject'}`, async () => {
           const agent = needsAgent ? await createBasicAgent() : null;
-          const agent_id = needsAgent ? agent.id : `agent_${uuidv4()}`;
+          const agent_id = needsAgent ? agent!.id : `agent_${uuidv4()}`;
 
           if (shouldResolve) {
             const result = await removeAgentResourceFiles({ agent_id, files });
@@ -411,36 +480,10 @@ describe('models/Agent', () => {
   });
 
   describe('Agent CRUD Operations', () => {
-    let mongoServer;
-    let AccessRole;
-
-    beforeAll(async () => {
-      mongoServer = await MongoMemoryServer.create();
-      const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-      await mongoose.connect(mongoUri);
-
-      // Initialize models
-      const dbModels = require('~/db/models');
-      AccessRole = dbModels.AccessRole;
-
-      // Create necessary access roles for agents
-      await AccessRole.create({
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
-        name: 'Owner',
-        description: 'Full control over agents',
-        resourceType: ResourceType.AGENT,
-        permBits: 15, // VIEW | EDIT | DELETE | SHARE
-      });
-    }, 20000);
-
-    afterAll(async () => {
-      await mongoose.disconnect();
-      await mongoServer.stop();
-    });
-
     beforeEach(async () => {
       await Agent.deleteMany({});
+      await User.deleteMany({});
+      await AclEntry.deleteMany({});
     });
 
     test('should create and get an agent', async () => {
@@ -461,9 +504,9 @@ describe('models/Agent', () => {
 
       const retrievedAgent = await getAgent({ id: agentId });
       expect(retrievedAgent).toBeDefined();
-      expect(retrievedAgent.id).toBe(agentId);
-      expect(retrievedAgent.name).toBe('Test Agent');
-      expect(retrievedAgent.description).toBe('Test description');
+      expect(retrievedAgent!.id).toBe(agentId);
+      expect(retrievedAgent!.name).toBe('Test Agent');
+      expect(retrievedAgent!.description).toBe('Test description');
     });
 
     test('should delete an agent', async () => {
@@ -501,8 +544,9 @@ describe('models/Agent', () => {
       });
 
       // Grant permissions (simulating sharing)
-      await permissionService.grantPermission({
+      await AclEntry.create({
         principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
         principalId: authorId,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
@@ -564,15 +608,15 @@ describe('models/Agent', () => {
 
       // Verify edge exists before deletion
       const sourceAgentBefore = await getAgent({ id: sourceAgentId });
-      expect(sourceAgentBefore.edges).toHaveLength(1);
-      expect(sourceAgentBefore.edges[0].to).toBe(targetAgentId);
+      expect(sourceAgentBefore!.edges).toHaveLength(1);
+      expect(sourceAgentBefore!.edges![0].to).toBe(targetAgentId);
 
       // Delete the target agent
       await deleteAgent({ id: targetAgentId });
 
       // Verify the edge is removed from source agent
       const sourceAgentAfter = await getAgent({ id: sourceAgentId });
-      expect(sourceAgentAfter.edges).toHaveLength(0);
+      expect(sourceAgentAfter!.edges).toHaveLength(0);
     });
 
     test('should remove agent from user favorites when agent is deleted', async () => {
@@ -600,8 +644,10 @@ describe('models/Agent', () => {
 
       // Verify user has agent in favorites
       const userBefore = await User.findById(userId);
-      expect(userBefore.favorites).toHaveLength(2);
-      expect(userBefore.favorites.some((f) => f.agentId === agentId)).toBe(true);
+      expect(userBefore!.favorites).toHaveLength(2);
+      expect(
+        userBefore!.favorites!.some((f: Record<string, unknown>) => f.agentId === agentId),
+      ).toBe(true);
 
       // Delete the agent
       await deleteAgent({ id: agentId });
@@ -612,9 +658,13 @@ describe('models/Agent', () => {
 
       // Verify agent is removed from user favorites
       const userAfter = await User.findById(userId);
-      expect(userAfter.favorites).toHaveLength(1);
-      expect(userAfter.favorites.some((f) => f.agentId === agentId)).toBe(false);
-      expect(userAfter.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
+      expect(userAfter!.favorites).toHaveLength(1);
+      expect(
+        userAfter!.favorites!.some((f: Record<string, unknown>) => f.agentId === agentId),
+      ).toBe(false);
+      expect(userAfter!.favorites!.some((f: Record<string, unknown>) => f.model === 'gpt-4')).toBe(
+        true,
+      );
     });
 
     test('should remove agent from multiple users favorites when agent is deleted', async () => {
@@ -656,9 +706,11 @@ describe('models/Agent', () => {
       const user1After = await User.findById(user1Id);
       const user2After = await User.findById(user2Id);
 
-      expect(user1After.favorites).toHaveLength(0);
-      expect(user2After.favorites).toHaveLength(1);
-      expect(user2After.favorites.some((f) => f.agentId === agentId)).toBe(false);
+      expect(user1After!.favorites).toHaveLength(0);
+      expect(user2After!.favorites).toHaveLength(1);
+      expect(
+        user2After!.favorites!.some((f: Record<string, unknown>) => f.agentId === agentId),
+      ).toBe(false);
     });
 
     test('should preserve other agents in database when one agent is deleted', async () => {
@@ -705,9 +757,9 @@ describe('models/Agent', () => {
       const keptAgent1 = await getAgent({ id: agentToKeep1Id });
       const keptAgent2 = await getAgent({ id: agentToKeep2Id });
       expect(keptAgent1).not.toBeNull();
-      expect(keptAgent1.name).toBe('Agent To Keep 1');
+      expect(keptAgent1!.name).toBe('Agent To Keep 1');
       expect(keptAgent2).not.toBeNull();
-      expect(keptAgent2.name).toBe('Agent To Keep 2');
+      expect(keptAgent2!.name).toBe('Agent To Keep 2');
     });
 
     test('should preserve other agents in user favorites when one agent is deleted', async () => {
@@ -757,17 +809,23 @@ describe('models/Agent', () => {
 
       // Verify user has all three agents in favorites
       const userBefore = await User.findById(userId);
-      expect(userBefore.favorites).toHaveLength(3);
+      expect(userBefore!.favorites).toHaveLength(3);
 
       // Delete one agent
       await deleteAgent({ id: agentToDeleteId });
 
       // Verify only the deleted agent is removed from favorites
       const userAfter = await User.findById(userId);
-      expect(userAfter.favorites).toHaveLength(2);
-      expect(userAfter.favorites.some((f) => f.agentId === agentToDeleteId)).toBe(false);
-      expect(userAfter.favorites.some((f) => f.agentId === agentToKeep1Id)).toBe(true);
-      expect(userAfter.favorites.some((f) => f.agentId === agentToKeep2Id)).toBe(true);
+      expect(userAfter!.favorites).toHaveLength(2);
+      expect(
+        userAfter!.favorites?.some((f: Record<string, unknown>) => f.agentId === agentToDeleteId),
+      ).toBe(false);
+      expect(
+        userAfter!.favorites?.some((f: Record<string, unknown>) => f.agentId === agentToKeep1Id),
+      ).toBe(true);
+      expect(
+        userAfter!.favorites?.some((f: Record<string, unknown>) => f.agentId === agentToKeep2Id),
+      ).toBe(true);
     });
 
     test('should not affect users who do not have deleted agent in favorites', async () => {
@@ -817,15 +875,27 @@ describe('models/Agent', () => {
 
       // Verify user with deleted agent has it removed
       const userWithDeleted = await User.findById(userWithDeletedAgentId);
-      expect(userWithDeleted.favorites).toHaveLength(1);
-      expect(userWithDeleted.favorites.some((f) => f.agentId === agentToDeleteId)).toBe(false);
-      expect(userWithDeleted.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
+      expect(userWithDeleted!.favorites).toHaveLength(1);
+      expect(
+        userWithDeleted!.favorites!.some(
+          (f: Record<string, unknown>) => f.agentId === agentToDeleteId,
+        ),
+      ).toBe(false);
+      expect(
+        userWithDeleted!.favorites!.some((f: Record<string, unknown>) => f.model === 'gpt-4'),
+      ).toBe(true);
 
       // Verify user without deleted agent is completely unaffected
       const userWithoutDeleted = await User.findById(userWithoutDeletedAgentId);
-      expect(userWithoutDeleted.favorites).toHaveLength(2);
-      expect(userWithoutDeleted.favorites.some((f) => f.agentId === otherAgentId)).toBe(true);
-      expect(userWithoutDeleted.favorites.some((f) => f.model === 'claude-3')).toBe(true);
+      expect(userWithoutDeleted!.favorites).toHaveLength(2);
+      expect(
+        userWithoutDeleted!.favorites!.some(
+          (f: Record<string, unknown>) => f.agentId === otherAgentId,
+        ),
+      ).toBe(true);
+      expect(
+        userWithoutDeleted!.favorites!.some((f: Record<string, unknown>) => f.model === 'claude-3'),
+      ).toBe(true);
     });
 
     test('should remove all user agents from favorites when deleteUserAgents is called', async () => {
@@ -879,7 +949,7 @@ describe('models/Agent', () => {
 
       // Verify user has all favorites
       const userBefore = await User.findById(userId);
-      expect(userBefore.favorites).toHaveLength(4);
+      expect(userBefore!.favorites).toHaveLength(4);
 
       // Delete all agents by the author
       await deleteUserAgents(authorId.toString());
@@ -893,11 +963,21 @@ describe('models/Agent', () => {
 
       // Verify user favorites: author's agents removed, others remain
       const userAfter = await User.findById(userId);
-      expect(userAfter.favorites).toHaveLength(2);
-      expect(userAfter.favorites.some((f) => f.agentId === agent1Id)).toBe(false);
-      expect(userAfter.favorites.some((f) => f.agentId === agent2Id)).toBe(false);
-      expect(userAfter.favorites.some((f) => f.agentId === otherAuthorAgentId)).toBe(true);
-      expect(userAfter.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
+      expect(userAfter!.favorites).toHaveLength(2);
+      expect(
+        userAfter!.favorites!.some((f: Record<string, unknown>) => f.agentId === agent1Id),
+      ).toBe(false);
+      expect(
+        userAfter!.favorites!.some((f: Record<string, unknown>) => f.agentId === agent2Id),
+      ).toBe(false);
+      expect(
+        userAfter!.favorites!.some(
+          (f: Record<string, unknown>) => f.agentId === otherAuthorAgentId,
+        ),
+      ).toBe(true);
+      expect(userAfter!.favorites!.some((f: Record<string, unknown>) => f.model === 'gpt-4')).toBe(
+        true,
+      );
     });
 
     test('should handle deleteUserAgents when agents are in multiple users favorites', async () => {
@@ -957,18 +1037,26 @@ describe('models/Agent', () => {
 
       // Verify all users' favorites are correctly updated
       const user1After = await User.findById(user1Id);
-      expect(user1After.favorites).toHaveLength(0);
+      expect(user1After!.favorites).toHaveLength(0);
 
       const user2After = await User.findById(user2Id);
-      expect(user2After.favorites).toHaveLength(1);
-      expect(user2After.favorites.some((f) => f.agentId === agent1Id)).toBe(false);
-      expect(user2After.favorites.some((f) => f.model === 'claude-3')).toBe(true);
+      expect(user2After!.favorites).toHaveLength(1);
+      expect(
+        user2After!.favorites!.some((f: Record<string, unknown>) => f.agentId === agent1Id),
+      ).toBe(false);
+      expect(
+        user2After!.favorites!.some((f: Record<string, unknown>) => f.model === 'claude-3'),
+      ).toBe(true);
 
       // User 3 should be completely unaffected
       const user3After = await User.findById(user3Id);
-      expect(user3After.favorites).toHaveLength(2);
-      expect(user3After.favorites.some((f) => f.agentId === unrelatedAgentId)).toBe(true);
-      expect(user3After.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
+      expect(user3After!.favorites).toHaveLength(2);
+      expect(
+        user3After!.favorites!.some((f: Record<string, unknown>) => f.agentId === unrelatedAgentId),
+      ).toBe(true);
+      expect(user3After!.favorites!.some((f: Record<string, unknown>) => f.model === 'gpt-4')).toBe(
+        true,
+      );
     });
 
     test('should handle deleteUserAgents when user has no agents', async () => {
@@ -1004,9 +1092,13 @@ describe('models/Agent', () => {
 
       // Verify user favorites are unchanged
       const userAfter = await User.findById(userId);
-      expect(userAfter.favorites).toHaveLength(2);
-      expect(userAfter.favorites.some((f) => f.agentId === existingAgentId)).toBe(true);
-      expect(userAfter.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
+      expect(userAfter!.favorites).toHaveLength(2);
+      expect(
+        userAfter!.favorites!.some((f: Record<string, unknown>) => f.agentId === existingAgentId),
+      ).toBe(true);
+      expect(userAfter!.favorites!.some((f: Record<string, unknown>) => f.model === 'gpt-4')).toBe(
+        true,
+      );
     });
 
     test('should handle deleteUserAgents when agents are not in any favorites', async () => {
@@ -1055,70 +1147,17 @@ describe('models/Agent', () => {
 
       // Verify user favorites are unchanged
       const userAfter = await User.findById(userId);
-      expect(userAfter.favorites).toHaveLength(1);
-      expect(userAfter.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
-    });
-
-    test('should handle ephemeral agent loading', async () => {
-      const agentId = 'ephemeral_test';
-      const endpoint = 'openai';
-
-      const originalModule = jest.requireActual('librechat-data-provider');
-
-      const mockDataProvider = {
-        ...originalModule,
-        Constants: {
-          ...originalModule.Constants,
-          EPHEMERAL_AGENT_ID: 'ephemeral_test',
-        },
-      };
-
-      jest.doMock('librechat-data-provider', () => mockDataProvider);
-
-      expect(agentId).toBeDefined();
-      expect(endpoint).toBeDefined();
-
-      jest.dontMock('librechat-data-provider');
-    });
-
-    test('should handle loadAgent functionality and errors', async () => {
-      const agentId = `agent_${uuidv4()}`;
-      const authorId = new mongoose.Types.ObjectId();
-
-      await createAgent({
-        id: agentId,
-        name: 'Test Load Agent',
-        provider: 'test',
-        model: 'test-model',
-        author: authorId,
-        tools: ['tool1', 'tool2'],
-      });
-
-      const agent = await getAgent({ id: agentId });
-
-      expect(agent).toBeDefined();
-      expect(agent.id).toBe(agentId);
-      expect(agent.name).toBe('Test Load Agent');
-      expect(agent.tools).toEqual(expect.arrayContaining(['tool1', 'tool2']));
-
-      const mockLoadAgent = jest.fn().mockResolvedValue(agent);
-      const loadedAgent = await mockLoadAgent();
-      expect(loadedAgent).toBeDefined();
-      expect(loadedAgent.id).toBe(agentId);
-
-      const nonExistentId = `agent_${uuidv4()}`;
-      const nonExistentAgent = await getAgent({ id: nonExistentId });
-      expect(nonExistentAgent).toBeNull();
-
-      const mockLoadAgentError = jest.fn().mockRejectedValue(new Error('No agent found with ID'));
-      await expect(mockLoadAgentError()).rejects.toThrow('No agent found with ID');
+      expect(userAfter!.favorites).toHaveLength(1);
+      expect(userAfter!.favorites!.some((f: Record<string, unknown>) => f.model === 'gpt-4')).toBe(
+        true,
+      );
     });
 
     describe('Edge Cases', () => {
       test.each([
         {
           name: 'getAgent with undefined search parameters',
-          fn: () => getAgent(undefined),
+          fn: () => getAgent(undefined as unknown as Parameters<typeof getAgent>[0]),
           expected: null,
         },
         {
@@ -1134,20 +1173,6 @@ describe('models/Agent', () => {
   });
 
   describe('Agent Version History', () => {
-    let mongoServer;
-
-    beforeAll(async () => {
-      mongoServer = await MongoMemoryServer.create();
-      const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-      await mongoose.connect(mongoUri);
-    }, 20000);
-
-    afterAll(async () => {
-      await mongoose.disconnect();
-      await mongoServer.stop();
-    });
-
     beforeEach(async () => {
       await Agent.deleteMany({});
     });
@@ -1155,12 +1180,12 @@ describe('models/Agent', () => {
     test('should create an agent with a single entry in versions array', async () => {
       const agent = await createBasicAgent();
 
-      expect(agent.versions).toBeDefined();
+      expect(agent!.versions).toBeDefined();
       expect(Array.isArray(agent.versions)).toBe(true);
-      expect(agent.versions).toHaveLength(1);
-      expect(agent.versions[0].name).toBe('Test Agent');
-      expect(agent.versions[0].provider).toBe('test');
-      expect(agent.versions[0].model).toBe('test-model');
+      expect(agent!.versions).toHaveLength(1);
+      expect(agent!.versions![0].name).toBe('Test Agent');
+      expect(agent!.versions![0].provider).toBe('test');
+      expect(agent!.versions![0].model).toBe('test-model');
     });
 
     test('should accumulate version history across multiple updates', async () => {
@@ -1182,29 +1207,29 @@ describe('models/Agent', () => {
       await updateAgent({ id: agentId }, { name: 'Third Name', model: 'new-model' });
       const finalAgent = await updateAgent({ id: agentId }, { description: 'Final description' });
 
-      expect(finalAgent.versions).toBeDefined();
-      expect(Array.isArray(finalAgent.versions)).toBe(true);
-      expect(finalAgent.versions).toHaveLength(4);
+      expect(finalAgent!.versions).toBeDefined();
+      expect(Array.isArray(finalAgent!.versions)).toBe(true);
+      expect(finalAgent!.versions).toHaveLength(4);
 
-      expect(finalAgent.versions[0].name).toBe('First Name');
-      expect(finalAgent.versions[0].description).toBe('First description');
-      expect(finalAgent.versions[0].model).toBe('test-model');
+      expect(finalAgent!.versions![0].name).toBe('First Name');
+      expect(finalAgent!.versions![0].description).toBe('First description');
+      expect(finalAgent!.versions![0].model).toBe('test-model');
 
-      expect(finalAgent.versions[1].name).toBe('Second Name');
-      expect(finalAgent.versions[1].description).toBe('Second description');
-      expect(finalAgent.versions[1].model).toBe('test-model');
+      expect(finalAgent!.versions![1].name).toBe('Second Name');
+      expect(finalAgent!.versions![1].description).toBe('Second description');
+      expect(finalAgent!.versions![1].model).toBe('test-model');
 
-      expect(finalAgent.versions[2].name).toBe('Third Name');
-      expect(finalAgent.versions[2].description).toBe('Second description');
-      expect(finalAgent.versions[2].model).toBe('new-model');
+      expect(finalAgent!.versions![2].name).toBe('Third Name');
+      expect(finalAgent!.versions![2].description).toBe('Second description');
+      expect(finalAgent!.versions![2].model).toBe('new-model');
 
-      expect(finalAgent.versions[3].name).toBe('Third Name');
-      expect(finalAgent.versions[3].description).toBe('Final description');
-      expect(finalAgent.versions[3].model).toBe('new-model');
+      expect(finalAgent!.versions![3].name).toBe('Third Name');
+      expect(finalAgent!.versions![3].description).toBe('Final description');
+      expect(finalAgent!.versions![3].model).toBe('new-model');
 
-      expect(finalAgent.name).toBe('Third Name');
-      expect(finalAgent.description).toBe('Final description');
-      expect(finalAgent.model).toBe('new-model');
+      expect(finalAgent!.name).toBe('Third Name');
+      expect(finalAgent!.description).toBe('Final description');
+      expect(finalAgent!.model).toBe('new-model');
     });
 
     test('should not include metadata fields in version history', async () => {
@@ -1219,14 +1244,14 @@ describe('models/Agent', () => {
 
       const updatedAgent = await updateAgent({ id: agentId }, { description: 'New description' });
 
-      expect(updatedAgent.versions).toHaveLength(2);
-      expect(updatedAgent.versions[0]._id).toBeUndefined();
-      expect(updatedAgent.versions[0].__v).toBeUndefined();
-      expect(updatedAgent.versions[0].name).toBe('Test Agent');
-      expect(updatedAgent.versions[0].author).toBeUndefined();
+      expect(updatedAgent!.versions).toHaveLength(2);
+      expect(updatedAgent!.versions![0]._id).toBeUndefined();
+      expect((updatedAgent!.versions![0] as VersionEntry).__v).toBeUndefined();
+      expect(updatedAgent!.versions![0].name).toBe('Test Agent');
+      expect(updatedAgent!.versions![0].author).toBeUndefined();
 
-      expect(updatedAgent.versions[1]._id).toBeUndefined();
-      expect(updatedAgent.versions[1].__v).toBeUndefined();
+      expect(updatedAgent!.versions![1]._id).toBeUndefined();
+      expect((updatedAgent!.versions![1] as VersionEntry).__v).toBeUndefined();
     });
 
     test('should not recursively include previous versions', async () => {
@@ -1243,10 +1268,10 @@ describe('models/Agent', () => {
       await updateAgent({ id: agentId }, { name: 'Updated Name 2' });
       const finalAgent = await updateAgent({ id: agentId }, { name: 'Updated Name 3' });
 
-      expect(finalAgent.versions).toHaveLength(4);
+      expect(finalAgent!.versions).toHaveLength(4);
 
-      finalAgent.versions.forEach((version) => {
-        expect(version.versions).toBeUndefined();
+      finalAgent!.versions!.forEach((version) => {
+        expect((version as VersionEntry).versions).toBeUndefined();
       });
     });
 
@@ -1272,10 +1297,10 @@ describe('models/Agent', () => {
       );
 
       const firstUpdate = await getAgent({ id: agentId });
-      expect(firstUpdate.description).toBe('Updated description');
-      expect(firstUpdate.tools).toContain('tool1');
-      expect(firstUpdate.tools).toContain('tool2');
-      expect(firstUpdate.versions).toHaveLength(2);
+      expect(firstUpdate!.description).toBe('Updated description');
+      expect(firstUpdate!.tools).toContain('tool1');
+      expect(firstUpdate!.tools).toContain('tool2');
+      expect(firstUpdate!.versions).toHaveLength(2);
 
       await updateAgent(
         { id: agentId },
@@ -1285,11 +1310,11 @@ describe('models/Agent', () => {
       );
 
       const secondUpdate = await getAgent({ id: agentId });
-      expect(secondUpdate.tools).toHaveLength(2);
-      expect(secondUpdate.tools).toContain('tool2');
-      expect(secondUpdate.tools).toContain('tool3');
-      expect(secondUpdate.tools).not.toContain('tool1');
-      expect(secondUpdate.versions).toHaveLength(3);
+      expect(secondUpdate!.tools).toHaveLength(2);
+      expect(secondUpdate!.tools).toContain('tool2');
+      expect(secondUpdate!.tools).toContain('tool3');
+      expect(secondUpdate!.tools).not.toContain('tool1');
+      expect(secondUpdate!.versions).toHaveLength(3);
 
       await updateAgent(
         { id: agentId },
@@ -1299,9 +1324,9 @@ describe('models/Agent', () => {
       );
 
       const thirdUpdate = await getAgent({ id: agentId });
-      const toolCount = thirdUpdate.tools.filter((t) => t === 'tool3').length;
+      const toolCount = thirdUpdate!.tools!.filter((t) => t === 'tool3').length;
       expect(toolCount).toBe(2);
-      expect(thirdUpdate.versions).toHaveLength(4);
+      expect(thirdUpdate!.versions).toHaveLength(4);
     });
 
     test('should handle parameter objects correctly', async () => {
@@ -1322,8 +1347,8 @@ describe('models/Agent', () => {
         { model_parameters: { temperature: 0.8 } },
       );
 
-      expect(updatedAgent.versions).toHaveLength(2);
-      expect(updatedAgent.model_parameters.temperature).toBe(0.8);
+      expect(updatedAgent!.versions).toHaveLength(2);
+      expect(updatedAgent!.model_parameters?.temperature).toBe(0.8);
 
       await updateAgent(
         { id: agentId },
@@ -1336,15 +1361,15 @@ describe('models/Agent', () => {
       );
 
       const complexAgent = await getAgent({ id: agentId });
-      expect(complexAgent.versions).toHaveLength(3);
-      expect(complexAgent.model_parameters.temperature).toBe(0.8);
-      expect(complexAgent.model_parameters.max_tokens).toBe(1000);
+      expect(complexAgent!.versions).toHaveLength(3);
+      expect(complexAgent!.model_parameters?.temperature).toBe(0.8);
+      expect(complexAgent!.model_parameters?.max_tokens).toBe(1000);
 
       await updateAgent({ id: agentId }, { model_parameters: {} });
 
       const emptyParamsAgent = await getAgent({ id: agentId });
-      expect(emptyParamsAgent.versions).toHaveLength(4);
-      expect(emptyParamsAgent.model_parameters).toEqual({});
+      expect(emptyParamsAgent!.versions).toHaveLength(4);
+      expect(emptyParamsAgent!.model_parameters).toEqual({});
     });
 
     test('should not create new version for duplicate updates', async () => {
@@ -1363,15 +1388,15 @@ describe('models/Agent', () => {
         });
 
         const updatedAgent = await updateAgent({ id: testAgentId }, testCase.update);
-        expect(updatedAgent.versions).toHaveLength(2); // No new version created
+        expect(updatedAgent!.versions).toHaveLength(2); // No new version created
 
         // Update with duplicate data should succeed but not create a new version
         const duplicateUpdate = await updateAgent({ id: testAgentId }, testCase.duplicate);
 
-        expect(duplicateUpdate.versions).toHaveLength(2); // No new version created
+        expect(duplicateUpdate!.versions).toHaveLength(2); // No new version created
 
         const agent = await getAgent({ id: testAgentId });
-        expect(agent.versions).toHaveLength(2);
+        expect(agent!.versions).toHaveLength(2);
       }
     });
 
@@ -1395,9 +1420,11 @@ describe('models/Agent', () => {
         { updatingUserId: updatingUser.toString() },
       );
 
-      expect(updatedAgent.versions).toHaveLength(2);
-      expect(updatedAgent.versions[1].updatedBy.toString()).toBe(updatingUser.toString());
-      expect(updatedAgent.author.toString()).toBe(originalAuthor.toString());
+      expect(updatedAgent!.versions).toHaveLength(2);
+      expect((updatedAgent!.versions![1] as VersionEntry)?.updatedBy?.toString()).toBe(
+        updatingUser.toString(),
+      );
+      expect(updatedAgent!.author.toString()).toBe(originalAuthor.toString());
     });
 
     test('should include updatedBy even when the original author updates the agent', async () => {
@@ -1419,9 +1446,11 @@ describe('models/Agent', () => {
         { updatingUserId: originalAuthor.toString() },
       );
 
-      expect(updatedAgent.versions).toHaveLength(2);
-      expect(updatedAgent.versions[1].updatedBy.toString()).toBe(originalAuthor.toString());
-      expect(updatedAgent.author.toString()).toBe(originalAuthor.toString());
+      expect(updatedAgent!.versions).toHaveLength(2);
+      expect((updatedAgent!.versions![1] as VersionEntry)?.updatedBy?.toString()).toBe(
+        originalAuthor.toString(),
+      );
+      expect(updatedAgent!.author.toString()).toBe(originalAuthor.toString());
     });
 
     test('should track multiple different users updating the same agent', async () => {
@@ -1468,20 +1497,21 @@ describe('models/Agent', () => {
         { updatingUserId: user3.toString() },
       );
 
-      expect(finalAgent.versions).toHaveLength(5);
-      expect(finalAgent.author.toString()).toBe(originalAuthor.toString());
+      expect(finalAgent!.versions).toHaveLength(5);
+      expect(finalAgent!.author.toString()).toBe(originalAuthor.toString());
 
       // Check that each version has the correct updatedBy
-      expect(finalAgent.versions[0].updatedBy).toBeUndefined(); // Initial creation has no updatedBy
-      expect(finalAgent.versions[1].updatedBy.toString()).toBe(user1.toString());
-      expect(finalAgent.versions[2].updatedBy.toString()).toBe(originalAuthor.toString());
-      expect(finalAgent.versions[3].updatedBy.toString()).toBe(user2.toString());
-      expect(finalAgent.versions[4].updatedBy.toString()).toBe(user3.toString());
+      const versions = finalAgent!.versions! as VersionEntry[];
+      expect(versions[0]?.updatedBy).toBeUndefined(); // Initial creation has no updatedBy
+      expect(versions[1]?.updatedBy?.toString()).toBe(user1.toString());
+      expect(versions[2]?.updatedBy?.toString()).toBe(originalAuthor.toString());
+      expect(versions[3]?.updatedBy?.toString()).toBe(user2.toString());
+      expect(versions[4]?.updatedBy?.toString()).toBe(user3.toString());
 
       // Verify the final state
-      expect(finalAgent.name).toBe('Updated by User 2');
-      expect(finalAgent.description).toBe('Final update by User 3');
-      expect(finalAgent.model).toBe('new-model');
+      expect(finalAgent!.name).toBe('Updated by User 2');
+      expect(finalAgent!.description).toBe('Final update by User 3');
+      expect(finalAgent!.model).toBe('new-model');
     });
 
     test('should preserve original author during agent restoration', async () => {
@@ -1504,7 +1534,6 @@ describe('models/Agent', () => {
         { updatingUserId: updatingUser.toString() },
       );
 
-      const { revertAgentVersion } = require('./Agent');
       const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
 
       expect(revertedAgent.author.toString()).toBe(originalAuthor.toString());
@@ -1535,7 +1564,7 @@ describe('models/Agent', () => {
         { updatingUserId: authorId.toString(), forceVersion: true },
       );
 
-      expect(firstUpdate.versions).toHaveLength(2);
+      expect(firstUpdate!.versions).toHaveLength(2);
 
       // Second update with same data but forceVersion should still create a version
       const secondUpdate = await updateAgent(
@@ -1544,7 +1573,7 @@ describe('models/Agent', () => {
         { updatingUserId: authorId.toString(), forceVersion: true },
       );
 
-      expect(secondUpdate.versions).toHaveLength(3);
+      expect(secondUpdate!.versions).toHaveLength(3);
 
       // Update without forceVersion and no changes should not create a version
       const duplicateUpdate = await updateAgent(
@@ -1553,7 +1582,7 @@ describe('models/Agent', () => {
         { updatingUserId: authorId.toString(), forceVersion: false },
       );
 
-      expect(duplicateUpdate.versions).toHaveLength(3); // No new version created
+      expect(duplicateUpdate!.versions).toHaveLength(3); // No new version created
     });
 
     test('should handle isDuplicateVersion with arrays containing null/undefined values', async () => {
@@ -1572,8 +1601,8 @@ describe('models/Agent', () => {
       // Update with same array but different null/undefined arrangement
       const updatedAgent = await updateAgent({ id: agentId }, { tools: ['tool1', 'tool2'] });
 
-      expect(updatedAgent.versions).toHaveLength(2);
-      expect(updatedAgent.tools).toEqual(['tool1', 'tool2']);
+      expect(updatedAgent!.versions).toHaveLength(2);
+      expect(updatedAgent!.tools).toEqual(['tool1', 'tool2']);
     });
 
     test('should handle isDuplicateVersion with empty objects in tool_kwargs', async () => {
@@ -1606,7 +1635,7 @@ describe('models/Agent', () => {
       );
 
       // Should create new version as order matters for arrays
-      expect(updatedAgent.versions).toHaveLength(2);
+      expect(updatedAgent!.versions).toHaveLength(2);
     });
 
     test('should handle isDuplicateVersion with mixed primitive and object arrays', async () => {
@@ -1629,7 +1658,7 @@ describe('models/Agent', () => {
       );
 
       // Should create new version as types differ
-      expect(updatedAgent.versions).toHaveLength(2);
+      expect(updatedAgent!.versions).toHaveLength(2);
     });
 
     test('should handle isDuplicateVersion with deeply nested objects', async () => {
@@ -1673,7 +1702,7 @@ describe('models/Agent', () => {
       // Since we're updating back to the same model_parameters but with a different description,
       // it should create a new version
       const agent = await getAgent({ id: agentId });
-      expect(agent.versions).toHaveLength(3);
+      expect(agent!.versions).toHaveLength(3);
     });
 
     test('should handle version comparison with special field types', async () => {
@@ -1692,7 +1721,7 @@ describe('models/Agent', () => {
       // Update with a real field change first
       const firstUpdate = await updateAgent({ id: agentId }, { description: 'New description' });
 
-      expect(firstUpdate.versions).toHaveLength(2);
+      expect(firstUpdate!.versions).toHaveLength(2);
 
       // Update with model parameters change
       const secondUpdate = await updateAgent(
@@ -1700,7 +1729,7 @@ describe('models/Agent', () => {
         { model_parameters: { temperature: 0.8 } },
       );
 
-      expect(secondUpdate.versions).toHaveLength(3);
+      expect(secondUpdate!.versions).toHaveLength(3);
     });
 
     test('should detect changes in support_contact fields', async () => {
@@ -1731,9 +1760,9 @@ describe('models/Agent', () => {
         },
       );
 
-      expect(firstUpdate.versions).toHaveLength(2);
-      expect(firstUpdate.support_contact.name).toBe('Updated Support');
-      expect(firstUpdate.support_contact.email).toBe('initial@support.com');
+      expect(firstUpdate!.versions).toHaveLength(2);
+      expect(firstUpdate!.support_contact?.name).toBe('Updated Support');
+      expect(firstUpdate!.support_contact?.email).toBe('initial@support.com');
 
       // Update support_contact email only
       const secondUpdate = await updateAgent(
@@ -1746,8 +1775,8 @@ describe('models/Agent', () => {
         },
       );
 
-      expect(secondUpdate.versions).toHaveLength(3);
-      expect(secondUpdate.support_contact.email).toBe('updated@support.com');
+      expect(secondUpdate!.versions).toHaveLength(3);
+      expect(secondUpdate!.support_contact?.email).toBe('updated@support.com');
 
       // Try to update with same support_contact - should be detected as duplicate but return successfully
       const duplicateUpdate = await updateAgent(
@@ -1761,9 +1790,9 @@ describe('models/Agent', () => {
       );
 
       // Should not create a new version
-      expect(duplicateUpdate.versions).toHaveLength(3);
-      expect(duplicateUpdate.version).toBe(3);
-      expect(duplicateUpdate.support_contact.email).toBe('updated@support.com');
+      expect(duplicateUpdate?.versions).toHaveLength(3);
+      expect((duplicateUpdate as IAgent & { version?: number })?.version).toBe(3);
+      expect(duplicateUpdate?.support_contact?.email).toBe('updated@support.com');
     });
 
     test('should handle support_contact from empty to populated', async () => {
@@ -1793,9 +1822,9 @@ describe('models/Agent', () => {
         },
       );
 
-      expect(updated.versions).toHaveLength(2);
-      expect(updated.support_contact.name).toBe('New Support Team');
-      expect(updated.support_contact.email).toBe('support@example.com');
+      expect(updated?.versions).toHaveLength(2);
+      expect(updated?.support_contact?.name).toBe('New Support Team');
+      expect(updated?.support_contact?.email).toBe('support@example.com');
     });
 
     test('should handle support_contact edge cases in isDuplicateVersion', async () => {
@@ -1823,8 +1852,8 @@ describe('models/Agent', () => {
         },
       );
 
-      expect(emptyUpdate.versions).toHaveLength(2);
-      expect(emptyUpdate.support_contact).toEqual({});
+      expect(emptyUpdate?.versions).toHaveLength(2);
+      expect(emptyUpdate?.support_contact).toEqual({});
 
       // Update back to populated support_contact
       const repopulated = await updateAgent(
@@ -1837,16 +1866,16 @@ describe('models/Agent', () => {
         },
       );
 
-      expect(repopulated.versions).toHaveLength(3);
+      expect(repopulated?.versions).toHaveLength(3);
 
       // Verify all versions have correct support_contact
       const finalAgent = await getAgent({ id: agentId });
-      expect(finalAgent.versions[0].support_contact).toEqual({
+      expect(finalAgent!.versions![0]?.support_contact).toEqual({
         name: 'Support',
         email: 'support@test.com',
       });
-      expect(finalAgent.versions[1].support_contact).toEqual({});
-      expect(finalAgent.versions[2].support_contact).toEqual({
+      expect(finalAgent!.versions![1]?.support_contact).toEqual({});
+      expect(finalAgent!.versions![2]?.support_contact).toEqual({
         name: 'Support',
         email: 'support@test.com',
       });
@@ -1893,22 +1922,22 @@ describe('models/Agent', () => {
       const finalAgent = await getAgent({ id: agentId });
 
       // Verify version history
-      expect(finalAgent.versions).toHaveLength(3);
-      expect(finalAgent.versions[0].support_contact).toEqual({
+      expect(finalAgent!.versions).toHaveLength(3);
+      expect(finalAgent!.versions![0]?.support_contact).toEqual({
         name: 'Initial Contact',
         email: 'initial@test.com',
       });
-      expect(finalAgent.versions[1].support_contact).toEqual({
+      expect(finalAgent!.versions![1]?.support_contact).toEqual({
         name: 'Second Contact',
         email: 'second@test.com',
       });
-      expect(finalAgent.versions[2].support_contact).toEqual({
+      expect(finalAgent!.versions![2]?.support_contact).toEqual({
         name: 'Third Contact',
         email: 'third@test.com',
       });
 
       // Current state should match last version
-      expect(finalAgent.support_contact).toEqual({
+      expect(finalAgent!.support_contact).toEqual({
         name: 'Third Contact',
         email: 'third@test.com',
       });
@@ -1943,9 +1972,9 @@ describe('models/Agent', () => {
         },
       );
 
-      expect(updated.versions).toHaveLength(2);
-      expect(updated.support_contact.name).toBe('New Name');
-      expect(updated.support_contact.email).toBe('');
+      expect(updated?.versions).toHaveLength(2);
+      expect(updated?.support_contact?.name).toBe('New Name');
+      expect(updated?.support_contact?.email).toBe('');
 
       // Verify isDuplicateVersion works with partial changes - should return successfully without creating new version
       const duplicateUpdate = await updateAgent(
@@ -1959,10 +1988,10 @@ describe('models/Agent', () => {
       );
 
       // Should not create a new version since content is the same
-      expect(duplicateUpdate.versions).toHaveLength(2);
-      expect(duplicateUpdate.version).toBe(2);
-      expect(duplicateUpdate.support_contact.name).toBe('New Name');
-      expect(duplicateUpdate.support_contact.email).toBe('');
+      expect(duplicateUpdate?.versions).toHaveLength(2);
+      expect((duplicateUpdate as IAgent & { version?: number })?.version).toBe(2);
+      expect(duplicateUpdate?.support_contact?.name).toBe('New Name');
+      expect(duplicateUpdate?.support_contact?.email).toBe('');
     });
 
     // Edge Cases
@@ -1985,7 +2014,7 @@ describe('models/Agent', () => {
     ])('addAgentResourceFile with $name', ({ needsAgent, params, shouldResolve, error }) => {
       test(`should ${shouldResolve ? 'resolve' : 'reject'}`, async () => {
         const agent = needsAgent ? await createBasicAgent() : null;
-        const agent_id = needsAgent ? agent.id : `agent_${uuidv4()}`;
+        const agent_id = needsAgent ? agent!.id : `agent_${uuidv4()}`;
 
         if (shouldResolve) {
           await expect(addAgentResourceFile({ agent_id, ...params })).resolves.toBeDefined();
@@ -2018,7 +2047,7 @@ describe('models/Agent', () => {
     ])('removeAgentResourceFiles with $name', ({ files, needsAgent, shouldResolve, error }) => {
       test(`should ${shouldResolve ? 'resolve' : 'reject'}`, async () => {
         const agent = needsAgent ? await createBasicAgent() : null;
-        const agent_id = needsAgent ? agent.id : `agent_${uuidv4()}`;
+        const agent_id = needsAgent ? agent!.id : `agent_${uuidv4()}`;
 
         if (shouldResolve) {
           const result = await removeAgentResourceFiles({ agent_id, files });
@@ -2050,8 +2079,8 @@ describe('models/Agent', () => {
         }
 
         const agent = await getAgent({ id: agentId });
-        expect(agent.versions).toHaveLength(21);
-        expect(agent.description).toBe('Version 19');
+        expect(agent!.versions).toHaveLength(21);
+        expect(agent!.description).toBe('Version 19');
       });
 
       test('should handle revertAgentVersion with invalid version index', async () => {
@@ -2092,27 +2121,13 @@ describe('models/Agent', () => {
         const updatedAgent = await updateAgent({ id: agentId }, {});
 
         expect(updatedAgent).toBeDefined();
-        expect(updatedAgent.name).toBe('Test Agent');
-        expect(updatedAgent.versions).toHaveLength(1);
+        expect(updatedAgent!.name).toBe('Test Agent');
+        expect(updatedAgent!.versions).toHaveLength(1);
       });
     });
   });
 
   describe('Action Metadata and Hash Generation', () => {
-    let mongoServer;
-
-    beforeAll(async () => {
-      mongoServer = await MongoMemoryServer.create();
-      const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-      await mongoose.connect(mongoUri);
-    }, 20000);
-
-    afterAll(async () => {
-      await mongoose.disconnect();
-      await mongoServer.stop();
-    });
-
     beforeEach(async () => {
       await Agent.deleteMany({});
     });
@@ -2280,330 +2295,9 @@ describe('models/Agent', () => {
     });
   });
 
-  describe('Load Agent Functionality', () => {
-    let mongoServer;
-
-    beforeAll(async () => {
-      mongoServer = await MongoMemoryServer.create();
-      const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-      await mongoose.connect(mongoUri);
-    }, 20000);
-
-    afterAll(async () => {
-      await mongoose.disconnect();
-      await mongoServer.stop();
-    });
-
-    beforeEach(async () => {
-      await Agent.deleteMany({});
-    });
-
-    test('should return null when agent_id is not provided', async () => {
-      const mockReq = { user: { id: 'user123' } };
-      const result = await loadAgent({
-        req: mockReq,
-        agent_id: null,
-        endpoint: 'openai',
-        model_parameters: { model: 'gpt-4' },
-      });
-
-      expect(result).toBeNull();
-    });
-
-    test('should return null when agent_id is empty string', async () => {
-      const mockReq = { user: { id: 'user123' } };
-      const result = await loadAgent({
-        req: mockReq,
-        agent_id: '',
-        endpoint: 'openai',
-        model_parameters: { model: 'gpt-4' },
-      });
-
-      expect(result).toBeNull();
-    });
-
-    test('should test ephemeral agent loading logic', async () => {
-      const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
-
-      getCachedTools.mockResolvedValue({
-        tool1_mcp_server1: {},
-        tool2_mcp_server2: {},
-        another_tool: {},
-      });
-
-      // Mock getMCPServerTools to return tools for each server
-      getMCPServerTools.mockImplementation(async (_userId, server) => {
-        if (server === 'server1') {
-          return { tool1_mcp_server1: {} };
-        } else if (server === 'server2') {
-          return { tool2_mcp_server2: {} };
-        }
-        return null;
-      });
-
-      const mockReq = {
-        user: { id: 'user123' },
-        body: {
-          promptPrefix: 'Test instructions',
-          ephemeralAgent: {
-            execute_code: true,
-            web_search: true,
-            mcp: ['server1', 'server2'],
-          },
-        },
-      };
-
-      const result = await loadAgent({
-        req: mockReq,
-        agent_id: EPHEMERAL_AGENT_ID,
-        endpoint: 'openai',
-        model_parameters: { model: 'gpt-4', temperature: 0.7 },
-      });
-
-      if (result) {
-        // Ephemeral agent ID is encoded with endpoint and model
-        expect(result.id).toBe('openai__gpt-4');
-        expect(result.instructions).toBe('Test instructions');
-        expect(result.provider).toBe('openai');
-        expect(result.model).toBe('gpt-4');
-        expect(result.model_parameters.temperature).toBe(0.7);
-        expect(result.tools).toContain('execute_code');
-        expect(result.tools).toContain('web_search');
-        expect(result.tools).toContain('tool1_mcp_server1');
-        expect(result.tools).toContain('tool2_mcp_server2');
-      } else {
-        expect(result).toBeNull();
-      }
-    });
-
-    test('should return null for non-existent agent', async () => {
-      const mockReq = { user: { id: 'user123' } };
-      const result = await loadAgent({
-        req: mockReq,
-        agent_id: 'agent_non_existent',
-        endpoint: 'openai',
-        model_parameters: { model: 'gpt-4' },
-      });
-
-      expect(result).toBeNull();
-    });
-
-    test('should load agent when user is the author', async () => {
-      const userId = new mongoose.Types.ObjectId();
-      const agentId = `agent_${uuidv4()}`;
-
-      await createAgent({
-        id: agentId,
-        name: 'Test Agent',
-        provider: 'openai',
-        model: 'gpt-4',
-        author: userId,
-        description: 'Test description',
-        tools: ['web_search'],
-      });
-
-      const mockReq = { user: { id: userId.toString() } };
-      const result = await loadAgent({
-        req: mockReq,
-        agent_id: agentId,
-        endpoint: 'openai',
-        model_parameters: { model: 'gpt-4' },
-      });
-
-      expect(result).toBeDefined();
-      expect(result.id).toBe(agentId);
-      expect(result.name).toBe('Test Agent');
-      expect(result.author.toString()).toBe(userId.toString());
-      expect(result.version).toBe(1);
-    });
-
-    test('should return agent even when user is not author (permissions checked at route level)', async () => {
-      const authorId = new mongoose.Types.ObjectId();
-      const userId = new mongoose.Types.ObjectId();
-      const agentId = `agent_${uuidv4()}`;
-
-      await createAgent({
-        id: agentId,
-        name: 'Test Agent',
-        provider: 'openai',
-        model: 'gpt-4',
-        author: authorId,
-      });
-
-      const mockReq = { user: { id: userId.toString() } };
-      const result = await loadAgent({
-        req: mockReq,
-        agent_id: agentId,
-        endpoint: 'openai',
-        model_parameters: { model: 'gpt-4' },
-      });
-
-      // With the new permission system, loadAgent returns the agent regardless of permissions
-      // Permission checks are handled at the route level via middleware
-      expect(result).toBeTruthy();
-      expect(result.id).toBe(agentId);
-      expect(result.name).toBe('Test Agent');
-    });
-
-    test('should handle ephemeral agent with no MCP servers', async () => {
-      const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
-
-      getCachedTools.mockResolvedValue({});
-
-      const mockReq = {
-        user: { id: 'user123' },
-        body: {
-          promptPrefix: 'Simple instructions',
-          ephemeralAgent: {
-            execute_code: false,
-            web_search: false,
-            mcp: [],
-          },
-        },
-      };
-
-      const result = await loadAgent({
-        req: mockReq,
-        agent_id: EPHEMERAL_AGENT_ID,
-        endpoint: 'openai',
-        model_parameters: { model: 'gpt-3.5-turbo' },
-      });
-
-      if (result) {
-        expect(result.tools).toEqual([]);
-        expect(result.instructions).toBe('Simple instructions');
-      } else {
-        expect(result).toBeFalsy();
-      }
-    });
-
-    test('should handle ephemeral agent with undefined ephemeralAgent in body', async () => {
-      const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
-
-      getCachedTools.mockResolvedValue({});
-
-      const mockReq = {
-        user: { id: 'user123' },
-        body: {
-          promptPrefix: 'Basic instructions',
-        },
-      };
-
-      const result = await loadAgent({
-        req: mockReq,
-        agent_id: EPHEMERAL_AGENT_ID,
-        endpoint: 'openai',
-        model_parameters: { model: 'gpt-4' },
-      });
-
-      if (result) {
-        expect(result.tools).toEqual([]);
-      } else {
-        expect(result).toBeFalsy();
-      }
-    });
-
-    describe('Edge Cases', () => {
-      test('should handle loadAgent with malformed req object', async () => {
-        const result = await loadAgent({
-          req: null,
-          agent_id: 'agent_test',
-          endpoint: 'openai',
-          model_parameters: { model: 'gpt-4' },
-        });
-
-        expect(result).toBeNull();
-      });
-
-      test('should handle ephemeral agent with extremely large tool list', async () => {
-        const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
-
-        const largeToolList = Array.from({ length: 100 }, (_, i) => `tool_${i}_mcp_server1`);
-        const availableTools = largeToolList.reduce((acc, tool) => {
-          acc[tool] = {};
-          return acc;
-        }, {});
-
-        getCachedTools.mockResolvedValue(availableTools);
-
-        // Mock getMCPServerTools to return all tools for server1
-        getMCPServerTools.mockImplementation(async (_userId, server) => {
-          if (server === 'server1') {
-            return availableTools; // All 100 tools belong to server1
-          }
-          return null;
-        });
-
-        const mockReq = {
-          user: { id: 'user123' },
-          body: {
-            promptPrefix: 'Test',
-            ephemeralAgent: {
-              execute_code: true,
-              web_search: true,
-              mcp: ['server1'],
-            },
-          },
-        };
-
-        const result = await loadAgent({
-          req: mockReq,
-          agent_id: EPHEMERAL_AGENT_ID,
-          endpoint: 'openai',
-          model_parameters: { model: 'gpt-4' },
-        });
-
-        if (result) {
-          expect(result.tools.length).toBeGreaterThan(100);
-        }
-      });
-
-      test('should return agent from different project (permissions checked at route level)', async () => {
-        const authorId = new mongoose.Types.ObjectId();
-        const userId = new mongoose.Types.ObjectId();
-        const agentId = `agent_${uuidv4()}`;
-
-        await createAgent({
-          id: agentId,
-          name: 'Project Agent',
-          provider: 'openai',
-          model: 'gpt-4',
-          author: authorId,
-        });
-
-        const mockReq = { user: { id: userId.toString() } };
-        const result = await loadAgent({
-          req: mockReq,
-          agent_id: agentId,
-          endpoint: 'openai',
-          model_parameters: { model: 'gpt-4' },
-        });
-
-        // With the new permission system, loadAgent returns the agent regardless of permissions
-        // Permission checks are handled at the route level via middleware
-        expect(result).toBeTruthy();
-        expect(result.id).toBe(agentId);
-        expect(result.name).toBe('Project Agent');
-      });
-    });
-  });
+  /* Load Agent Functionality tests moved to api/models/Agent.spec.js */
 
   describe('Agent Edge Cases and Error Handling', () => {
-    let mongoServer;
-
-    beforeAll(async () => {
-      mongoServer = await MongoMemoryServer.create();
-      const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-      await mongoose.connect(mongoUri);
-    }, 20000);
-
-    afterAll(async () => {
-      await mongoose.disconnect();
-      await mongoServer.stop();
-    });
-
     beforeEach(async () => {
       await Agent.deleteMany({});
     });
@@ -2622,8 +2316,8 @@ describe('models/Agent', () => {
       expect(agent).toBeDefined();
       expect(agent.id).toBe(agentId);
       expect(agent.versions).toHaveLength(1);
-      expect(agent.versions[0].provider).toBe('test');
-      expect(agent.versions[0].model).toBe('test-model');
+      expect(agent.versions![0]?.provider).toBe('test');
+      expect(agent.versions![0]?.model).toBe('test-model');
     });
 
     test('should handle agent creation with all optional fields', async () => {
@@ -2653,10 +2347,10 @@ describe('models/Agent', () => {
       expect(agent.instructions).toBe('Complex instructions');
       expect(agent.tools).toEqual(['tool1', 'tool2']);
       expect(agent.actions).toEqual(['action1', 'action2']);
-      expect(agent.model_parameters.temperature).toBe(0.8);
-      expect(agent.model_parameters.max_tokens).toBe(1000);
+      expect(agent.model_parameters?.temperature).toBe(0.8);
+      expect(agent.model_parameters?.max_tokens).toBe(1000);
       expect(agent.avatar).toBe('https://example.com/avatar.png');
-      expect(agent.tool_resources.file_search.file_ids).toEqual(['file1', 'file2']);
+      expect(agent.tool_resources?.file_search?.file_ids).toEqual(['file1', 'file2']);
     });
 
     test('should handle updateAgent with empty update object', async () => {
@@ -2674,8 +2368,8 @@ describe('models/Agent', () => {
       const updatedAgent = await updateAgent({ id: agentId }, {});
 
       expect(updatedAgent).toBeDefined();
-      expect(updatedAgent.name).toBe('Test Agent');
-      expect(updatedAgent.versions).toHaveLength(1); // No new version should be created
+      expect(updatedAgent!.name).toBe('Test Agent');
+      expect(updatedAgent!.versions).toHaveLength(1); // No new version should be created
     });
 
     test('should handle concurrent updates to different agents', async () => {
@@ -2705,10 +2399,10 @@ describe('models/Agent', () => {
         updateAgent({ id: agent2Id }, { description: 'Updated Agent 2' }),
       ]);
 
-      expect(updated1.description).toBe('Updated Agent 1');
-      expect(updated2.description).toBe('Updated Agent 2');
-      expect(updated1.versions).toHaveLength(2);
-      expect(updated2.versions).toHaveLength(2);
+      expect(updated1?.description).toBe('Updated Agent 1');
+      expect(updated2?.description).toBe('Updated Agent 2');
+      expect(updated1?.versions).toHaveLength(2);
+      expect(updated2?.versions).toHaveLength(2);
     });
 
     test('should handle agent deletion with non-existent ID', async () => {
@@ -2740,10 +2434,10 @@ describe('models/Agent', () => {
         },
       );
 
-      expect(updatedAgent.name).toBe('Updated Name');
-      expect(updatedAgent.tools).toContain('tool1');
-      expect(updatedAgent.tools).toContain('tool2');
-      expect(updatedAgent.versions).toHaveLength(2);
+      expect(updatedAgent!.name).toBe('Updated Name');
+      expect(updatedAgent!.tools).toContain('tool1');
+      expect(updatedAgent!.tools).toContain('tool2');
+      expect(updatedAgent!.versions).toHaveLength(2);
     });
 
     test('should handle revertAgentVersion with invalid version index', async () => {
@@ -2770,11 +2464,9 @@ describe('models/Agent', () => {
 
     test('should handle addAgentResourceFile with non-existent agent', async () => {
       const nonExistentId = `agent_${uuidv4()}`;
-      const mockReq = { user: { id: 'user123' } };
 
       await expect(
         addAgentResourceFile({
-          req: mockReq,
           agent_id: nonExistentId,
           tool_resource: 'file_search',
           file_id: 'file123',
@@ -2815,8 +2507,8 @@ describe('models/Agent', () => {
         },
       );
 
-      expect(firstUpdate.tools).toContain('tool1');
-      expect(firstUpdate.tools).toContain('tool2');
+      expect(firstUpdate!.tools).toContain('tool1');
+      expect(firstUpdate!.tools).toContain('tool2');
 
       // Second update with direct field update and $addToSet
       const secondUpdate = await updateAgent(
@@ -2828,13 +2520,13 @@ describe('models/Agent', () => {
         },
       );
 
-      expect(secondUpdate.name).toBe('Updated Agent');
-      expect(secondUpdate.model_parameters.temperature).toBe(0.8);
-      expect(secondUpdate.model_parameters.max_tokens).toBe(500);
-      expect(secondUpdate.tools).toContain('tool1');
-      expect(secondUpdate.tools).toContain('tool2');
-      expect(secondUpdate.tools).toContain('tool3');
-      expect(secondUpdate.versions).toHaveLength(3);
+      expect(secondUpdate!.name).toBe('Updated Agent');
+      expect(secondUpdate!.model_parameters?.temperature).toBe(0.8);
+      expect(secondUpdate!.model_parameters?.max_tokens).toBe(500);
+      expect(secondUpdate!.tools).toContain('tool1');
+      expect(secondUpdate!.tools).toContain('tool2');
+      expect(secondUpdate!.tools).toContain('tool3');
+      expect(secondUpdate!.versions).toHaveLength(3);
     });
 
     test('should preserve version order in versions array', async () => {
@@ -2853,12 +2545,12 @@ describe('models/Agent', () => {
       await updateAgent({ id: agentId }, { name: 'Version 3' });
       const finalAgent = await updateAgent({ id: agentId }, { name: 'Version 4' });
 
-      expect(finalAgent.versions).toHaveLength(4);
-      expect(finalAgent.versions[0].name).toBe('Version 1');
-      expect(finalAgent.versions[1].name).toBe('Version 2');
-      expect(finalAgent.versions[2].name).toBe('Version 3');
-      expect(finalAgent.versions[3].name).toBe('Version 4');
-      expect(finalAgent.name).toBe('Version 4');
+      expect(finalAgent!.versions).toHaveLength(4);
+      expect(finalAgent!.versions![0]?.name).toBe('Version 1');
+      expect(finalAgent!.versions![1]?.name).toBe('Version 2');
+      expect(finalAgent!.versions![2]?.name).toBe('Version 3');
+      expect(finalAgent!.versions![3]?.name).toBe('Version 4');
+      expect(finalAgent!.name).toBe('Version 4');
     });
 
     test('should handle revertAgentVersion properly', async () => {
@@ -2907,8 +2599,8 @@ describe('models/Agent', () => {
       );
 
       expect(updatedAgent).toBeDefined();
-      expect(updatedAgent.description).toBe('Updated description');
-      expect(updatedAgent.versions).toHaveLength(2);
+      expect(updatedAgent!.description).toBe('Updated description');
+      expect(updatedAgent!.versions).toHaveLength(2);
     });
 
     test('should handle updateAgent with combined MongoDB operators', async () => {
@@ -2934,10 +2626,10 @@ describe('models/Agent', () => {
       );
 
       expect(updatedAgent).toBeDefined();
-      expect(updatedAgent.name).toBe('Updated Name');
-      expect(updatedAgent.tools).toContain('tool1');
-      expect(updatedAgent.tools).toContain('tool2');
-      expect(updatedAgent.versions).toHaveLength(2);
+      expect(updatedAgent!.name).toBe('Updated Name');
+      expect(updatedAgent!.tools).toContain('tool1');
+      expect(updatedAgent!.tools).toContain('tool2');
+      expect(updatedAgent!.versions).toHaveLength(2);
     });
 
     test('should handle updateAgent when agent does not exist', async () => {
@@ -3018,54 +2710,6 @@ describe('models/Agent', () => {
       Agent.findOneAndUpdate = originalFindOneAndUpdate;
     });
 
-    test('should handle loadEphemeralAgent with malformed MCP tool names', async () => {
-      const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
-
-      getCachedTools.mockResolvedValue({
-        malformed_tool_name: {}, // No mcp delimiter
-        tool__server1: {}, // Wrong delimiter
-        tool_mcp_server1: {}, // Correct format
-        tool_mcp_server2: {}, // Different server
-      });
-
-      // Mock getMCPServerTools to return only tools matching the server
-      getMCPServerTools.mockImplementation(async (_userId, server) => {
-        if (server === 'server1') {
-          // Only return tool that correctly matches server1 format
-          return { tool_mcp_server1: {} };
-        } else if (server === 'server2') {
-          return { tool_mcp_server2: {} };
-        }
-        return null;
-      });
-
-      const mockReq = {
-        user: { id: 'user123' },
-        body: {
-          promptPrefix: 'Test instructions',
-          ephemeralAgent: {
-            execute_code: false,
-            web_search: false,
-            mcp: ['server1'],
-          },
-        },
-      };
-
-      const result = await loadAgent({
-        req: mockReq,
-        agent_id: EPHEMERAL_AGENT_ID,
-        endpoint: 'openai',
-        model_parameters: { model: 'gpt-4' },
-      });
-
-      if (result) {
-        expect(result.tools).toEqual(['tool_mcp_server1']);
-        expect(result.tools).not.toContain('malformed_tool_name');
-        expect(result.tools).not.toContain('tool__server1');
-        expect(result.tools).not.toContain('tool_mcp_server2');
-      }
-    });
-
     test('should handle addAgentResourceFile when array initialization fails', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
@@ -3086,7 +2730,10 @@ describe('models/Agent', () => {
           updateOneCalled = true;
           return Promise.reject(new Error('Database error'));
         }
-        return originalUpdateOne.apply(Agent, args);
+        return originalUpdateOne.apply(
+          Agent,
+          args as [update: UpdateQuery<IAgent> | UpdateWithAggregationPipeline],
+        );
       });
 
       try {
@@ -3098,8 +2745,8 @@ describe('models/Agent', () => {
 
         expect(result).toBeDefined();
         expect(result.tools).toContain('new_tool');
-      } catch (error) {
-        expect(error.message).toBe('Database error');
+      } catch (error: unknown) {
+        expect((error as Error).message).toBe('Database error');
       }
 
       Agent.updateOne = originalUpdateOne;
@@ -3107,20 +2754,6 @@ describe('models/Agent', () => {
   });
 
   describe('Agent IDs Field in Version Detection', () => {
-    let mongoServer;
-
-    beforeAll(async () => {
-      mongoServer = await MongoMemoryServer.create();
-      const mongoUri = mongoServer.getUri();
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-      await mongoose.connect(mongoUri);
-    }, 20000);
-
-    afterAll(async () => {
-      await mongoose.disconnect();
-      await mongoServer.stop();
-    });
-
     beforeEach(async () => {
       await Agent.deleteMany({});
     });
@@ -3147,8 +2780,8 @@ describe('models/Agent', () => {
       );
 
       // Since agent_ids is no longer excluded, this should create a new version
-      expect(updated.versions).toHaveLength(2);
-      expect(updated.agent_ids).toEqual(['agent1', 'agent2', 'agent3']);
+      expect(updated?.versions).toHaveLength(2);
+      expect(updated?.agent_ids).toEqual(['agent1', 'agent2', 'agent3']);
     });
 
     test('should detect duplicate version if agent_ids is updated to same value', async () => {
@@ -3168,14 +2801,14 @@ describe('models/Agent', () => {
         { id: agentId },
         { agent_ids: ['agent1', 'agent2', 'agent3'] },
       );
-      expect(updatedAgent.versions).toHaveLength(2);
+      expect(updatedAgent!.versions).toHaveLength(2);
 
       // Update with same agent_ids should succeed but not create a new version
       const duplicateUpdate = await updateAgent(
         { id: agentId },
         { agent_ids: ['agent1', 'agent2', 'agent3'] },
       );
-      expect(duplicateUpdate.versions).toHaveLength(2); // No new version created
+      expect(duplicateUpdate?.versions).toHaveLength(2); // No new version created
     });
 
     test('should handle agent_ids field alongside other fields', async () => {
@@ -3200,15 +2833,15 @@ describe('models/Agent', () => {
         },
       );
 
-      expect(updated.versions).toHaveLength(2);
-      expect(updated.agent_ids).toEqual(['agent1', 'agent2']);
-      expect(updated.description).toBe('Updated description');
+      expect(updated?.versions).toHaveLength(2);
+      expect(updated?.agent_ids).toEqual(['agent1', 'agent2']);
+      expect(updated?.description).toBe('Updated description');
 
       const updated2 = await updateAgent({ id: agentId }, { description: 'Another description' });
 
-      expect(updated2.versions).toHaveLength(3);
-      expect(updated2.agent_ids).toEqual(['agent1', 'agent2']);
-      expect(updated2.description).toBe('Another description');
+      expect(updated2?.versions).toHaveLength(3);
+      expect(updated2?.agent_ids).toEqual(['agent1', 'agent2']);
+      expect(updated2?.description).toBe('Another description');
     });
 
     test('should preserve agent_ids in version history', async () => {
@@ -3230,11 +2863,11 @@ describe('models/Agent', () => {
 
       const finalAgent = await getAgent({ id: agentId });
 
-      expect(finalAgent.versions).toHaveLength(3);
-      expect(finalAgent.versions[0].agent_ids).toEqual(['agent1']);
-      expect(finalAgent.versions[1].agent_ids).toEqual(['agent1', 'agent2']);
-      expect(finalAgent.versions[2].agent_ids).toEqual(['agent3']);
-      expect(finalAgent.agent_ids).toEqual(['agent3']);
+      expect(finalAgent!.versions).toHaveLength(3);
+      expect(finalAgent!.versions![0]?.agent_ids).toEqual(['agent1']);
+      expect(finalAgent!.versions![1]?.agent_ids).toEqual(['agent1', 'agent2']);
+      expect(finalAgent!.versions![2]?.agent_ids).toEqual(['agent3']);
+      expect(finalAgent!.agent_ids).toEqual(['agent3']);
     });
 
     test('should handle empty agent_ids arrays', async () => {
@@ -3252,13 +2885,13 @@ describe('models/Agent', () => {
 
       const updated = await updateAgent({ id: agentId }, { agent_ids: [] });
 
-      expect(updated.versions).toHaveLength(2);
-      expect(updated.agent_ids).toEqual([]);
+      expect(updated?.versions).toHaveLength(2);
+      expect(updated?.agent_ids).toEqual([]);
 
       // Update with same empty agent_ids should succeed but not create a new version
       const duplicateUpdate = await updateAgent({ id: agentId }, { agent_ids: [] });
-      expect(duplicateUpdate.versions).toHaveLength(2); // No new version created
-      expect(duplicateUpdate.agent_ids).toEqual([]);
+      expect(duplicateUpdate?.versions).toHaveLength(2); // No new version created
+      expect(duplicateUpdate?.agent_ids).toEqual([]);
     });
 
     test('should handle agent without agent_ids field', async () => {
@@ -3277,27 +2910,13 @@ describe('models/Agent', () => {
 
       const updated = await updateAgent({ id: agentId }, { agent_ids: ['agent1'] });
 
-      expect(updated.versions).toHaveLength(2);
-      expect(updated.agent_ids).toEqual(['agent1']);
+      expect(updated?.versions).toHaveLength(2);
+      expect(updated?.agent_ids).toEqual(['agent1']);
     });
   });
 });
 
 describe('Support Contact Field', () => {
-  let mongoServer;
-
-  beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    const mongoUri = mongoServer.getUri();
-    Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-    await mongoose.connect(mongoUri);
-  }, 20000);
-
-  afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
-  });
-
   beforeEach(async () => {
     await Agent.deleteMany({});
   });
@@ -3321,18 +2940,18 @@ describe('Support Contact Field', () => {
 
     // Verify support_contact is stored correctly
     expect(agent.support_contact).toBeDefined();
-    expect(agent.support_contact.name).toBe('Support Team');
-    expect(agent.support_contact.email).toBe('support@example.com');
+    expect(agent.support_contact?.name).toBe('Support Team');
+    expect(agent.support_contact?.email).toBe('support@example.com');
 
     // Verify no _id field is created in support_contact
-    expect(agent.support_contact._id).toBeUndefined();
+    expect((agent.support_contact as Record<string, unknown>)?._id).toBeUndefined();
 
     // Fetch from database to double-check
     const dbAgent = await Agent.findOne({ id: agentData.id });
-    expect(dbAgent.support_contact).toBeDefined();
-    expect(dbAgent.support_contact.name).toBe('Support Team');
-    expect(dbAgent.support_contact.email).toBe('support@example.com');
-    expect(dbAgent.support_contact._id).toBeUndefined();
+    expect(dbAgent?.support_contact).toBeDefined();
+    expect(dbAgent?.support_contact?.name).toBe('Support Team');
+    expect(dbAgent?.support_contact?.email).toBe('support@example.com');
+    expect((dbAgent?.support_contact as Record<string, unknown>)?._id).toBeUndefined();
   });
 
   it('should handle empty support_contact correctly', async () => {
@@ -3350,7 +2969,7 @@ describe('Support Contact Field', () => {
 
     // Verify empty support_contact is stored as empty object
     expect(agent.support_contact).toEqual({});
-    expect(agent.support_contact._id).toBeUndefined();
+    expect((agent.support_contact as Record<string, unknown>)?._id).toBeUndefined();
   });
 
   it('should handle missing support_contact correctly', async () => {
@@ -3370,11 +2989,12 @@ describe('Support Contact Field', () => {
   });
 
   describe('getListAgentsByAccess - Security Tests', () => {
-    let userA, userB;
-    let agentA1, agentA2, agentA3;
+    let userA: mongoose.Types.ObjectId, userB: mongoose.Types.ObjectId;
+    let agentA1: Awaited<ReturnType<AgentMethods['createAgent']>>,
+      agentA2: Awaited<ReturnType<AgentMethods['createAgent']>>,
+      agentA3: Awaited<ReturnType<AgentMethods['createAgent']>>;
 
     beforeEach(async () => {
-      Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
       await Agent.deleteMany({});
       await AclEntry.deleteMany({});
 
@@ -3437,7 +3057,7 @@ describe('Support Contact Field', () => {
 
     test('should only return agents in accessibleIds list', async () => {
       // Give User B access to only one of User A's agents
-      const accessibleIds = [agentA1._id];
+      const accessibleIds = [agentA1._id] as mongoose.Types.ObjectId[];
 
       const result = await getListAgentsByAccess({
         accessibleIds,
@@ -3451,7 +3071,7 @@ describe('Support Contact Field', () => {
 
     test('should return multiple accessible agents when provided', async () => {
       // Give User B access to two of User A's agents
-      const accessibleIds = [agentA1._id, agentA3._id];
+      const accessibleIds = [agentA1._id, agentA3._id] as mongoose.Types.ObjectId[];
 
       const result = await getListAgentsByAccess({
         accessibleIds,
@@ -3467,7 +3087,7 @@ describe('Support Contact Field', () => {
 
     test('should respect other query parameters while enforcing accessibleIds', async () => {
       // Give access to all agents but filter by name
-      const accessibleIds = [agentA1._id, agentA2._id, agentA3._id];
+      const accessibleIds = [agentA1._id, agentA2._id, agentA3._id] as mongoose.Types.ObjectId[];
 
       const result = await getListAgentsByAccess({
         accessibleIds,
@@ -3494,7 +3114,9 @@ describe('Support Contact Field', () => {
       }
 
       // Give access to all agents
-      const allAgentIds = [agentA1, agentA2, agentA3, ...moreAgents].map((a) => a._id);
+      const allAgentIds = [agentA1, agentA2, agentA3, ...moreAgents].map(
+        (a) => a._id,
+      ) as mongoose.Types.ObjectId[];
 
       // First page
       const page1 = await getListAgentsByAccess({
@@ -3561,7 +3183,7 @@ describe('Support Contact Field', () => {
       });
 
       // Give User B access to one of User A's agents
-      const accessibleIds = [agentA1._id, agentB1._id];
+      const accessibleIds = [agentA1._id, agentB1._id] as mongoose.Types.ObjectId[];
 
       // Filter by author should further restrict the results
       const result = await getListAgentsByAccess({
@@ -3595,13 +3217,17 @@ function createTestIds() {
   };
 }
 
-function createFileOperations(agentId, fileIds, operation = 'add') {
+function createFileOperations(agentId: string, fileIds: string[], operation = 'add') {
   return fileIds.map((fileId) =>
     operation === 'add'
-      ? addAgentResourceFile({ agent_id: agentId, tool_resource: 'test_tool', file_id: fileId })
+      ? addAgentResourceFile({
+          agent_id: agentId,
+          tool_resource: EToolResources.execute_code,
+          file_id: fileId,
+        })
       : removeAgentResourceFiles({
           agent_id: agentId,
-          files: [{ tool_resource: 'test_tool', file_id: fileId }],
+          files: [{ tool_resource: EToolResources.execute_code, file_id: fileId }],
         }),
   );
 }
@@ -3615,7 +3241,14 @@ function mockFindOneAndUpdateError(errorOnCall = 1) {
     if (callCount === errorOnCall) {
       throw new Error('Database connection lost');
     }
-    return original.apply(Agent, args);
+    return original.apply(
+      Agent,
+      args as [
+        filter?: RootFilterQuery<IAgent> | undefined,
+        update?: UpdateQuery<IAgent> | undefined,
+        options?: QueryOptions<IAgent> | null | undefined,
+      ],
+    );
   });
 
   return () => {

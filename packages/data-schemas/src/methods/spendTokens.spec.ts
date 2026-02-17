@@ -1,30 +1,60 @@
-const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
-const { createTransaction, createAutoRefillTransaction } = require('./Transaction');
-const { tokenValues, premiumTokenValues, getCacheMultiplier } = require('./tx');
-const { spendTokens, spendStructuredTokens } = require('./spendTokens');
+import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { matchModelName, findMatchingPattern } from './test-helpers';
+import { createModels } from '~/models';
+import { createTxMethods, tokenValues, premiumTokenValues } from './tx';
+import { createTransactionMethods } from './transaction';
+import { createSpendTokensMethods } from './spendTokens';
+import type { ITransaction } from '~/schema/transaction';
+import type { IBalance } from '..';
 
-require('~/db/models');
-
-jest.mock('~/config', () => ({
-  logger: {
-    debug: jest.fn(),
-    error: jest.fn(),
-  },
+jest.mock('~/config/winston', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
 }));
 
+let mongoServer: InstanceType<typeof MongoMemoryServer>;
+let spendTokens: ReturnType<typeof createSpendTokensMethods>['spendTokens'];
+let spendStructuredTokens: ReturnType<typeof createSpendTokensMethods>['spendStructuredTokens'];
+let createTransaction: ReturnType<typeof createTransactionMethods>['createTransaction'];
+let createAutoRefillTransaction: ReturnType<
+  typeof createTransactionMethods
+>['createAutoRefillTransaction'];
+let getCacheMultiplier: ReturnType<typeof createTxMethods>['getCacheMultiplier'];
+
 describe('spendTokens', () => {
-  let mongoServer;
-  let userId;
-  let Transaction;
-  let Balance;
+  let userId: mongoose.Types.ObjectId;
+  let Transaction: mongoose.Model<ITransaction>;
+  let Balance: mongoose.Model<IBalance>;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
 
-    Transaction = mongoose.model('Transaction');
-    Balance = mongoose.model('Balance');
+    const models = createModels(mongoose);
+    Object.assign(mongoose.models, models);
+
+    Transaction = mongoose.models.Transaction;
+    Balance = mongoose.models.Balance;
+
+    const txMethods = createTxMethods(mongoose, { matchModelName, findMatchingPattern });
+    getCacheMultiplier = txMethods.getCacheMultiplier;
+
+    const transactionMethods = createTransactionMethods(mongoose, {
+      getMultiplier: txMethods.getMultiplier,
+      getCacheMultiplier: txMethods.getCacheMultiplier,
+    });
+    createTransaction = transactionMethods.createTransaction;
+    createAutoRefillTransaction = transactionMethods.createAutoRefillTransaction;
+
+    const spendMethods = createSpendTokensMethods(mongoose, {
+      createTransaction: transactionMethods.createTransaction,
+      createStructuredTransaction: transactionMethods.createStructuredTransaction,
+    });
+    spendTokens = spendMethods.spendTokens;
+    spendStructuredTokens = spendMethods.spendStructuredTokens;
   });
 
   afterAll(async () => {
@@ -275,7 +305,7 @@ describe('spendTokens', () => {
 
     // Log the transaction details for debugging
     console.log('Transaction details:');
-    transactionDetails.forEach((tx, i) => {
+    transactionDetails.forEach((tx, i: number) => {
       console.log(`Transaction ${i + 1}:`, {
         tokenType: tx.tokenType,
         rawAmount: tx.rawAmount,
@@ -406,7 +436,7 @@ describe('spendTokens', () => {
 
     // Log the transaction details for debugging
     console.log('Structured transaction details:');
-    transactionDetails.forEach((tx, i) => {
+    transactionDetails.forEach((tx, i: number) => {
       console.log(`Transaction ${i + 1}:`, {
         tokenType: tx.tokenType,
         rawAmount: tx.rawAmount,
@@ -494,7 +524,7 @@ describe('spendTokens', () => {
     }));
 
     // Process all transactions concurrently to simulate race conditions
-    const promises = [];
+    const promises: Promise<unknown>[] = [];
     let expectedTotalSpend = 0;
 
     for (let i = 0; i < collectedUsage.length; i++) {
@@ -616,7 +646,7 @@ describe('spendTokens', () => {
     const numberOfRefills = 25;
     const refillAmount = 1000;
 
-    const promises = [];
+    const promises: Promise<unknown>[] = [];
     for (let i = 0; i < numberOfRefills; i++) {
       promises.push(
         createAutoRefillTransaction({
@@ -657,7 +687,7 @@ describe('spendTokens', () => {
     expect(transactions.length).toBe(numberOfRefills);
 
     // Optional: Verify the sum of increments from the results matches the balance change
-    const totalIncrementReported = results.reduce((sum, result) => {
+    const totalIncrementReported = results.reduce((sum: number, result) => {
       // Assuming createAutoRefillTransaction returns an object with the increment amount
       // Adjust this based on the actual return structure.
       // Let's assume it returns { balance: newBalance, transaction: { rawAmount: ... } }

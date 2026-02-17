@@ -7,8 +7,8 @@ const {
   AnnotationTypes,
   defaultOrderQuery,
 } = require('librechat-data-provider');
-const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { recordMessage, getMessages, spendTokens, saveConvo } = require('~/models');
+const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 
 /**
  * Initializes a new thread or adds messages to an existing thread.
@@ -108,9 +108,15 @@ async function saveUserMessage(req, params) {
   }
 
   const message = await recordMessage(userMessage);
-  await saveConvo(req, convo, {
-    context: 'api/server/services/Threads/manage.js #saveUserMessage',
-  });
+  await saveConvo(
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
+    convo,
+    { context: 'api/server/services/Threads/manage.js #saveUserMessage' },
+  );
   return message;
 }
 
@@ -159,7 +165,11 @@ async function saveAssistantMessage(req, params) {
   });
 
   await saveConvo(
-    req,
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     {
       endpoint: params.endpoint,
       conversationId: params.conversationId,
@@ -351,7 +361,11 @@ async function syncMessages({
   await Promise.all(recordPromises);
 
   await saveConvo(
-    openai.req,
+    {
+      userId: openai.req?.user?.id,
+      isTemporary: openai.req?.body?.isTemporary,
+      interfaceConfig: openai.req?.config?.interfaceConfig,
+    },
     {
       conversationId,
       file_ids: attached_file_ids,

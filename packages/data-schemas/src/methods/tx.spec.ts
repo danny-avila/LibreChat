@@ -1,16 +1,18 @@
 /** Note: No hard-coded values should be used in this file. */
-const { maxTokensMap } = require('@librechat/api');
-const { EModelEndpoint } = require('librechat-data-provider');
-const {
-  defaultRate,
+import { matchModelName, findMatchingPattern } from './test-helpers';
+import { EModelEndpoint } from 'librechat-data-provider';
+import {
+  createTxMethods,
   tokenValues,
-  getValueKey,
-  getMultiplier,
-  getPremiumRate,
   cacheTokenValues,
-  getCacheMultiplier,
   premiumTokenValues,
-} = require('./tx');
+  defaultRate,
+} from './tx';
+
+const { getValueKey, getMultiplier, getPremiumRate, getCacheMultiplier } = createTxMethods(
+  {} as typeof import('mongoose'),
+  { matchModelName, findMatchingPattern },
+);
 
 describe('getValueKey', () => {
   it('should return "16k" for model name containing "gpt-3.5-turbo-16k"', () => {
@@ -2077,118 +2079,5 @@ describe('Premium Token Pricing', () => {
   });
 });
 
-describe('tokens.ts and tx.js sync validation', () => {
-  it('should resolve all models in maxTokensMap to pricing via getValueKey', () => {
-    const tokensKeys = Object.keys(maxTokensMap[EModelEndpoint.openAI]);
-    const txKeys = Object.keys(tokenValues);
-
-    const unresolved = [];
-
-    tokensKeys.forEach((key) => {
-      // Skip legacy token size mappings (e.g., '4k', '8k', '16k', '32k')
-      if (/^\d+k$/.test(key)) return;
-
-      // Skip generic pattern keys (end with '-' or ':')
-      if (key.endsWith('-') || key.endsWith(':')) return;
-
-      // Try to resolve via getValueKey
-      const resolvedKey = getValueKey(key);
-
-      // If it resolves and the resolved key has pricing, success
-      if (resolvedKey && txKeys.includes(resolvedKey)) return;
-
-      // If it resolves to a legacy key (4k, 8k, etc), also OK
-      if (resolvedKey && /^\d+k$/.test(resolvedKey)) return;
-
-      // If we get here, this model can't get pricing - flag it
-      unresolved.push({
-        key,
-        resolvedKey: resolvedKey || 'undefined',
-        context: maxTokensMap[EModelEndpoint.openAI][key],
-      });
-    });
-
-    if (unresolved.length > 0) {
-      console.log('\nModels that cannot resolve to pricing via getValueKey:');
-      unresolved.forEach(({ key, resolvedKey, context }) => {
-        console.log(`  - '${key}' → '${resolvedKey}' (context: ${context})`);
-      });
-    }
-
-    expect(unresolved).toEqual([]);
-  });
-
-  it('should not have redundant dated variants with same pricing and context as base model', () => {
-    const txKeys = Object.keys(tokenValues);
-    const redundant = [];
-
-    txKeys.forEach((key) => {
-      // Check if this is a dated variant (ends with -YYYY-MM-DD)
-      if (key.match(/.*-\d{4}-\d{2}-\d{2}$/)) {
-        const baseKey = key.replace(/-\d{4}-\d{2}-\d{2}$/, '');
-
-        if (txKeys.includes(baseKey)) {
-          const variantPricing = tokenValues[key];
-          const basePricing = tokenValues[baseKey];
-          const variantContext = maxTokensMap[EModelEndpoint.openAI][key];
-          const baseContext = maxTokensMap[EModelEndpoint.openAI][baseKey];
-
-          const samePricing =
-            variantPricing.prompt === basePricing.prompt &&
-            variantPricing.completion === basePricing.completion;
-          const sameContext = variantContext === baseContext;
-
-          if (samePricing && sameContext) {
-            redundant.push({
-              key,
-              baseKey,
-              pricing: `${variantPricing.prompt}/${variantPricing.completion}`,
-              context: variantContext,
-            });
-          }
-        }
-      }
-    });
-
-    if (redundant.length > 0) {
-      console.log('\nRedundant dated variants found (same pricing and context as base):');
-      redundant.forEach(({ key, baseKey, pricing, context }) => {
-        console.log(`  - '${key}' → '${baseKey}' (pricing: ${pricing}, context: ${context})`);
-        console.log(`    Can be removed - pattern matching will handle it`);
-      });
-    }
-
-    expect(redundant).toEqual([]);
-  });
-
-  it('should have context windows in tokens.ts for all models with pricing in tx.js (openAI catch-all)', () => {
-    const txKeys = Object.keys(tokenValues);
-    const missingContext = [];
-
-    txKeys.forEach((key) => {
-      // Skip legacy token size mappings (4k, 8k, 16k, 32k)
-      if (/^\d+k$/.test(key)) return;
-
-      // Check if this model has a context window defined
-      const context = maxTokensMap[EModelEndpoint.openAI][key];
-
-      if (!context) {
-        const pricing = tokenValues[key];
-        missingContext.push({
-          key,
-          pricing: `${pricing.prompt}/${pricing.completion}`,
-        });
-      }
-    });
-
-    if (missingContext.length > 0) {
-      console.log('\nModels with pricing but missing context in tokens.ts:');
-      missingContext.forEach(({ key, pricing }) => {
-        console.log(`  - '${key}' (pricing: ${pricing})`);
-        console.log(`    Add to tokens.ts openAIModels/bedrockModels/etc.`);
-      });
-    }
-
-    expect(missingContext).toEqual([]);
-  });
-});
+// Cross-package sync validation tests (tokens.ts ↔ tx.ts) moved to
+// packages/api tests since they require maxTokensMap from @librechat/api.

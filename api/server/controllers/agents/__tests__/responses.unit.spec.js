@@ -124,6 +124,7 @@ jest.mock('~/models/Agent', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  getAgent: jest.fn().mockResolvedValue({ id: 'agent-123', name: 'Test Agent' }),
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn().mockResolvedValue([]),

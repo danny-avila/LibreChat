@@ -29,10 +29,7 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getConvoFiles } = require('~/models');
-const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
-const { spendTokens, spendStructuredTokens } = db;
 
 /**
  * Creates a tool loader function for the agent.
@@ -144,7 +141,7 @@ const OpenAIChatCompletionController = async (req, res) => {
   const agentId = request.model;
 
   // Look up the agent
-  const agent = await getAgent({ id: agentId });
+  const agent = await db.getAgent({ id: agentId });
   if (!agent) {
     return sendErrorResponse(
       res,
@@ -211,7 +208,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         isInitialAgent: true,
       },
       {
-        getConvoFiles,
+        getConvoFiles: db.getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
@@ -505,7 +502,7 @@ const OpenAIChatCompletionController = async (req, res) => {
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
     recordCollectedUsage(
-      { spendTokens, spendStructuredTokens },
+      { spendTokens: db.spendTokens, spendStructuredTokens: db.spendStructuredTokens },
       {
         user: userId,
         conversationId,
@@ -607,7 +604,7 @@ const ListModelsController = async (req, res) => {
     // Get the accessible agents
     let agents = [];
     if (accessibleAgentIds.length > 0) {
-      agents = await getAgents({ _id: { $in: accessibleAgentIds } });
+      agents = await db.getAgents({ _id: { $in: accessibleAgentIds } });
     }
 
     const models = agents.map((agent) => ({
@@ -650,7 +647,7 @@ const GetModelController = async (req, res) => {
       return sendErrorResponse(res, 401, 'Authentication required', 'auth_error');
     }
 
-    const agent = await getAgent({ id: model });
+    const agent = await db.getAgent({ id: model });
 
     if (!agent) {
       return sendErrorResponse(

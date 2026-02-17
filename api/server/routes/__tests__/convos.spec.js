@@ -518,7 +518,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockArchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ user: { id: 'test-user-123' } }),
+        expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: true },
         { context: `POST /api/convos/archive ${mockConversationId}` },
       );
@@ -547,7 +547,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockUnarchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ user: { id: 'test-user-123' } }),
+        expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: false },
         { context: `POST /api/convos/archive ${mockConversationId}` },
       );

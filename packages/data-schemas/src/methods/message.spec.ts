@@ -1,52 +1,70 @@
-const mongoose = require('mongoose');
-const { v4: uuidv4 } = require('uuid');
-const { messageSchema } = require('@librechat/data-schemas');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+import mongoose from 'mongoose';
+import { v4 as uuidv4 } from 'uuid';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { createTempChatExpirationDate } from './test-helpers';
+import { createModels } from '~/models';
+import { createMessageMethods } from './message';
+import type { IMessage } from '..';
 
-const {
-  saveMessage,
-  getMessages,
-  updateMessage,
-  deleteMessages,
-  bulkSaveMessages,
-  updateMessageText,
-  deleteMessagesSince,
-} = require('./Message');
+jest.mock('~/config/winston', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
+}));
 
-jest.mock('~/server/services/Config/app');
+let mongoServer: InstanceType<typeof MongoMemoryServer>;
+let Message: mongoose.Model<IMessage>;
+let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
+let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
+let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
+let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
+let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
+let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
+let deleteMessagesSince: ReturnType<typeof createMessageMethods>['deleteMessagesSince'];
 
-/**
- * @type {import('mongoose').Model<import('@librechat/data-schemas').IMessage>}
- */
-let Message;
+beforeAll(async () => {
+  mongoServer = await MongoMemoryServer.create();
+  const mongoUri = mongoServer.getUri();
+
+  const models = createModels(mongoose);
+  Object.assign(mongoose.models, models);
+  Message = mongoose.models.Message;
+
+  const methods = createMessageMethods(mongoose, { createTempChatExpirationDate });
+  saveMessage = methods.saveMessage;
+  getMessages = methods.getMessages;
+  updateMessage = methods.updateMessage;
+  deleteMessages = methods.deleteMessages;
+  bulkSaveMessages = methods.bulkSaveMessages;
+  updateMessageText = methods.updateMessageText;
+  deleteMessagesSince = methods.deleteMessagesSince;
+
+  await mongoose.connect(mongoUri);
+});
+
+afterAll(async () => {
+  await mongoose.disconnect();
+  await mongoServer.stop();
+});
 
 describe('Message Operations', () => {
-  let mongoServer;
-  let mockReq;
-  let mockMessageData;
-
-  beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    const mongoUri = mongoServer.getUri();
-    Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
-    await mongoose.connect(mongoUri);
-  });
-
-  afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
-  });
+  let mockCtx: { userId: string; isTemporary?: boolean; interfaceConfig?: unknown };
+  let mockMessageData: {
+    messageId: string;
+    conversationId: string;
+    text: string;
+    user: string;
+  };
 
   beforeEach(async () => {
     // Clear database
     await Message.deleteMany({});
 
-    mockReq = {
-      user: { id: 'user123' },
-      config: {
-        interfaceConfig: {
-          temporaryChatRetention: 24, // Default 24 hours
-        },
+    mockCtx = {
+      userId: 'user123',
+      interfaceConfig: {
+        temporaryChatRetention: 24, // Default 24 hours
       },
     };
 
@@ -60,7 +78,7 @@ describe('Message Operations', () => {
 
   describe('saveMessage', () => {
     it('should save a message for an authenticated user', async () => {
-      const result = await saveMessage(mockReq, mockMessageData);
+      const result = await saveMessage(mockCtx, mockMessageData);
 
       expect(result.messageId).toBe('msg123');
       expect(result.user).toBe('user123');
@@ -73,13 +91,13 @@ describe('Message Operations', () => {
     });
 
     it('should throw an error for unauthenticated user', async () => {
-      mockReq.user = null;
-      await expect(saveMessage(mockReq, mockMessageData)).rejects.toThrow('User not authenticated');
+      mockCtx.userId = null as unknown as string;
+      await expect(saveMessage(mockCtx, mockMessageData)).rejects.toThrow('User not authenticated');
     });
 
     it('should handle invalid conversation ID gracefully', async () => {
       mockMessageData.conversationId = 'invalid-id';
-      const result = await saveMessage(mockReq, mockMessageData);
+      const result = await saveMessage(mockCtx, mockMessageData);
       expect(result).toBeUndefined();
     });
   });
@@ -87,10 +105,10 @@ describe('Message Operations', () => {
   describe('updateMessageText', () => {
     it('should update message text for the authenticated user', async () => {
       // First save a message
-      await saveMessage(mockReq, mockMessageData);
+      await saveMessage(mockCtx, mockMessageData);
 
       // Then update it
-      await updateMessageText(mockReq, { messageId: 'msg123', text: 'Updated text' });
+      await updateMessageText(mockCtx.userId, { messageId: 'msg123', text: 'Updated text' });
 
       // Verify the update
       const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
@@ -101,9 +119,12 @@ describe('Message Operations', () => {
   describe('updateMessage', () => {
     it('should update a message for the authenticated user', async () => {
       // First save a message
-      await saveMessage(mockReq, mockMessageData);
+      await saveMessage(mockCtx, mockMessageData);
 
-      const result = await updateMessage(mockReq, { messageId: 'msg123', text: 'Updated text' });
+      const result = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        text: 'Updated text',
+      });
 
       expect(result.messageId).toBe('msg123');
       expect(result.text).toBe('Updated text');
@@ -115,7 +136,7 @@ describe('Message Operations', () => {
 
     it('should throw an error if message is not found', async () => {
       await expect(
-        updateMessage(mockReq, { messageId: 'nonexistent', text: 'Test' }),
+        updateMessage(mockCtx.userId, { messageId: 'nonexistent', text: 'Test' }),
       ).rejects.toThrow('Message not found or user not authorized.');
     });
   });
@@ -125,21 +146,21 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
 
       // Create multiple messages in the same conversation
-      await saveMessage(mockReq, {
+      await saveMessage(mockCtx, {
         messageId: 'msg1',
         conversationId,
         text: 'First message',
         user: 'user123',
       });
 
-      await saveMessage(mockReq, {
+      await saveMessage(mockCtx, {
         messageId: 'msg2',
         conversationId,
         text: 'Second message',
         user: 'user123',
       });
 
-      await saveMessage(mockReq, {
+      await saveMessage(mockCtx, {
         messageId: 'msg3',
         conversationId,
         text: 'Third message',
@@ -147,7 +168,7 @@ describe('Message Operations', () => {
       });
 
       // Delete messages since message2 (this should only delete messages created AFTER msg2)
-      await deleteMessagesSince(mockReq, {
+      await deleteMessagesSince(mockCtx.userId, {
         messageId: 'msg2',
         conversationId,
       });
@@ -161,7 +182,7 @@ describe('Message Operations', () => {
     });
 
     it('should return undefined if no message is found', async () => {
-      const result = await deleteMessagesSince(mockReq, {
+      const result = await deleteMessagesSince(mockCtx.userId, {
         messageId: 'nonexistent',
         conversationId: 'convo123',
       });
@@ -174,14 +195,14 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
 
       // Save some messages
-      await saveMessage(mockReq, {
+      await saveMessage(mockCtx, {
         messageId: 'msg1',
         conversationId,
         text: 'First message',
         user: 'user123',
       });
 
-      await saveMessage(mockReq, {
+      await saveMessage(mockCtx, {
         messageId: 'msg2',
         conversationId,
         text: 'Second message',
@@ -198,9 +219,9 @@ describe('Message Operations', () => {
   describe('deleteMessages', () => {
     it('should delete messages with the correct filter', async () => {
       // Save some messages for different users
-      await saveMessage(mockReq, mockMessageData);
+      await saveMessage(mockCtx, mockMessageData);
       await saveMessage(
-        { user: { id: 'user456' } },
+        { userId: 'user456' },
         {
           messageId: 'msg456',
           conversationId: uuidv4(),
@@ -222,22 +243,23 @@ describe('Message Operations', () => {
 
   describe('Conversation Hijacking Prevention', () => {
     it("should not allow editing a message in another user's conversation", async () => {
-      const attackerReq = { user: { id: 'attacker123' } };
       const victimConversationId = uuidv4();
       const victimMessageId = 'victim-msg-123';
 
       // First, save a message as the victim (but we'll try to edit as attacker)
-      const victimReq = { user: { id: 'victim123' } };
-      await saveMessage(victimReq, {
-        messageId: victimMessageId,
-        conversationId: victimConversationId,
-        text: 'Victim message',
-        user: 'victim123',
-      });
+      await saveMessage(
+        { userId: 'victim123' },
+        {
+          messageId: victimMessageId,
+          conversationId: victimConversationId,
+          text: 'Victim message',
+          user: 'victim123',
+        },
+      );
 
       // Attacker tries to edit the victim's message
       await expect(
-        updateMessage(attackerReq, {
+        updateMessage('attacker123', {
           messageId: victimMessageId,
           conversationId: victimConversationId,
           text: 'Hacked message',
@@ -253,21 +275,22 @@ describe('Message Operations', () => {
     });
 
     it("should not allow deleting messages from another user's conversation", async () => {
-      const attackerReq = { user: { id: 'attacker123' } };
       const victimConversationId = uuidv4();
       const victimMessageId = 'victim-msg-123';
 
       // Save a message as the victim
-      const victimReq = { user: { id: 'victim123' } };
-      await saveMessage(victimReq, {
-        messageId: victimMessageId,
-        conversationId: victimConversationId,
-        text: 'Victim message',
-        user: 'victim123',
-      });
+      await saveMessage(
+        { userId: 'victim123' },
+        {
+          messageId: victimMessageId,
+          conversationId: victimConversationId,
+          text: 'Victim message',
+          user: 'victim123',
+        },
+      );
 
       // Attacker tries to delete from victim's conversation
-      const result = await deleteMessagesSince(attackerReq, {
+      const result = await deleteMessagesSince('attacker123', {
         messageId: victimMessageId,
         conversationId: victimConversationId,
       });
@@ -284,16 +307,18 @@ describe('Message Operations', () => {
     });
 
     it("should not allow inserting a new message into another user's conversation", async () => {
-      const attackerReq = { user: { id: 'attacker123' } };
       const victimConversationId = uuidv4();
 
       // Attacker tries to save a message - this should succeed but with attacker's user ID
-      const result = await saveMessage(attackerReq, {
-        conversationId: victimConversationId,
-        text: 'Inserted malicious message',
-        messageId: 'new-msg-123',
-        user: 'attacker123',
-      });
+      const result = await saveMessage(
+        { userId: 'attacker123' },
+        {
+          conversationId: victimConversationId,
+          text: 'Inserted malicious message',
+          messageId: 'new-msg-123',
+          user: 'attacker123',
+        },
+      );
 
       expect(result).toBeTruthy();
       expect(result.user).toBe('attacker123');
@@ -308,13 +333,15 @@ describe('Message Operations', () => {
       const victimConversationId = uuidv4();
 
       // Save a message in the victim's conversation
-      const victimReq = { user: { id: 'victim123' } };
-      await saveMessage(victimReq, {
-        messageId: 'victim-msg',
-        conversationId: victimConversationId,
-        text: 'Victim message',
-        user: 'victim123',
-      });
+      await saveMessage(
+        { userId: 'victim123' },
+        {
+          messageId: 'victim-msg',
+          conversationId: victimConversationId,
+          text: 'Victim message',
+          user: 'victim123',
+        },
+      );
 
       // Anyone should be able to retrieve messages by conversation ID
       const messages = await getMessages({ conversationId: victimConversationId });
@@ -331,12 +358,12 @@ describe('Message Operations', () => {
 
     it('should save a message with expiredAt when isTemporary is true', async () => {
       // Mock app config with 24 hour retention
-      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
+      mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
 
-      mockReq.body = { isTemporary: true };
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveMessage(mockReq, mockMessageData);
+      const result = await saveMessage(mockCtx, mockMessageData);
       const afterSave = new Date();
 
       expect(result.messageId).toBe('msg123');
@@ -356,19 +383,18 @@ describe('Message Operations', () => {
     });
 
     it('should save a message without expiredAt when isTemporary is false', async () => {
-      mockReq.body = { isTemporary: false };
+      mockCtx.isTemporary = false;
 
-      const result = await saveMessage(mockReq, mockMessageData);
+      const result = await saveMessage(mockCtx, mockMessageData);
 
       expect(result.messageId).toBe('msg123');
       expect(result.expiredAt).toBeNull();
     });
 
     it('should save a message without expiredAt when isTemporary is not provided', async () => {
-      // No isTemporary in body
-      mockReq.body = {};
+      // No isTemporary set
 
-      const result = await saveMessage(mockReq, mockMessageData);
+      const result = await saveMessage(mockCtx, mockMessageData);
 
       expect(result.messageId).toBe('msg123');
       expect(result.expiredAt).toBeNull();
@@ -376,12 +402,12 @@ describe('Message Operations', () => {
 
     it('should use custom retention period from config', async () => {
       // Mock app config with 48 hour retention
-      mockReq.config.interfaceConfig.temporaryChatRetention = 48;
+      mockCtx.interfaceConfig = { temporaryChatRetention: 48 };
 
-      mockReq.body = { isTemporary: true };
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveMessage(mockReq, mockMessageData);
+      const result = await saveMessage(mockCtx, mockMessageData);
 
       expect(result.expiredAt).toBeDefined();
 
@@ -399,12 +425,12 @@ describe('Message Operations', () => {
 
     it('should handle minimum retention period (1 hour)', async () => {
       // Mock app config with less than minimum retention
-      mockReq.config.interfaceConfig.temporaryChatRetention = 0.5; // Half hour - should be clamped to 1 hour
+      mockCtx.interfaceConfig = { temporaryChatRetention: 0.5 }; // Half hour - should be clamped to 1 hour
 
-      mockReq.body = { isTemporary: true };
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveMessage(mockReq, mockMessageData);
+      const result = await saveMessage(mockCtx, mockMessageData);
 
       expect(result.expiredAt).toBeDefined();
 
@@ -422,12 +448,12 @@ describe('Message Operations', () => {
 
     it('should handle maximum retention period (8760 hours)', async () => {
       // Mock app config with more than maximum retention
-      mockReq.config.interfaceConfig.temporaryChatRetention = 10000; // Should be clamped to 8760 hours
+      mockCtx.interfaceConfig = { temporaryChatRetention: 10000 }; // Should be clamped to 8760 hours
 
-      mockReq.body = { isTemporary: true };
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveMessage(mockReq, mockMessageData);
+      const result = await saveMessage(mockCtx, mockMessageData);
 
       expect(result.expiredAt).toBeDefined();
 
@@ -445,12 +471,12 @@ describe('Message Operations', () => {
 
     it('should handle missing config gracefully', async () => {
       // Simulate missing config - should use default retention period
-      delete mockReq.config;
+      delete mockCtx.interfaceConfig;
 
-      mockReq.body = { isTemporary: true };
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveMessage(mockReq, mockMessageData);
+      const result = await saveMessage(mockCtx, mockMessageData);
       const afterSave = new Date();
 
       // Should still save the message with default retention period (30 days)
@@ -472,12 +498,12 @@ describe('Message Operations', () => {
 
     it('should use default retention when config is not provided', async () => {
       // Mock getAppConfig to return empty config
-      mockReq.config = {}; // Empty config
+      mockCtx.interfaceConfig = undefined; // Empty config
 
-      mockReq.body = { isTemporary: true };
+      mockCtx.isTemporary = true;
 
       const beforeSave = new Date();
-      const result = await saveMessage(mockReq, mockMessageData);
+      const result = await saveMessage(mockCtx, mockMessageData);
 
       expect(result.expiredAt).toBeDefined();
 
@@ -495,15 +521,15 @@ describe('Message Operations', () => {
 
     it('should not update expiredAt on message update', async () => {
       // First save a temporary message
-      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
+      mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
 
-      mockReq.body = { isTemporary: true };
-      const savedMessage = await saveMessage(mockReq, mockMessageData);
+      mockCtx.isTemporary = true;
+      const savedMessage = await saveMessage(mockCtx, mockMessageData);
       const originalExpiredAt = savedMessage.expiredAt;
 
       // Now update the message without isTemporary flag
-      mockReq.body = {};
-      const updatedMessage = await updateMessage(mockReq, {
+      mockCtx.isTemporary = undefined;
+      const updatedMessage = await updateMessage(mockCtx.userId, {
         messageId: 'msg123',
         text: 'Updated text',
       });
@@ -518,10 +544,10 @@ describe('Message Operations', () => {
 
     it('should preserve expiredAt when saving existing temporary message', async () => {
       // First save a temporary message
-      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
+      mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
 
-      mockReq.body = { isTemporary: true };
-      const firstSave = await saveMessage(mockReq, mockMessageData);
+      mockCtx.isTemporary = true;
+      const firstSave = await saveMessage(mockCtx, mockMessageData);
       const originalExpiredAt = firstSave.expiredAt;
 
       // Wait a bit to ensure time difference
@@ -529,7 +555,7 @@ describe('Message Operations', () => {
 
       // Save again with same messageId but different text
       const updatedData = { ...mockMessageData, text: 'Updated text' };
-      const secondSave = await saveMessage(mockReq, updatedData);
+      const secondSave = await saveMessage(mockCtx, updatedData);
 
       // Should update text but create new expiredAt
       expect(secondSave.text).toBe('Updated text');
@@ -579,7 +605,11 @@ describe('Message Operations', () => {
      * Helper to create messages with specific timestamps
      * Uses collection.insertOne to bypass Mongoose timestamps
      */
-    const createMessageWithTimestamp = async (index, conversationId, createdAt) => {
+    const createMessageWithTimestamp = async (
+      index: number,
+      conversationId: string,
+      createdAt: Date,
+    ) => {
       const messageId = uuidv4();
       await Message.collection.insertOne({
         messageId,
@@ -601,15 +631,22 @@ describe('Message Operations', () => {
       conversationId,
       user,
       pageSize = 25,
-      cursor = null,
+      cursor = null as string | null,
       sortBy = 'createdAt',
       sortDirection = 'desc',
+    }: {
+      conversationId: string;
+      user: string;
+      pageSize?: number;
+      cursor?: string | null;
+      sortBy?: string;
+      sortDirection?: string;
     }) => {
       const sortOrder = sortDirection === 'asc' ? 1 : -1;
       const sortField = ['createdAt', 'updatedAt'].includes(sortBy) ? sortBy : 'createdAt';
       const cursorOperator = sortDirection === 'asc' ? '$gt' : '$lt';
 
-      const filter = { conversationId, user };
+      const filter: Record<string, unknown> = { conversationId, user };
       if (cursor) {
         filter[sortField] = { [cursorOperator]: new Date(cursor) };
       }
@@ -619,11 +656,13 @@ describe('Message Operations', () => {
         .limit(pageSize + 1)
         .lean();
 
-      let nextCursor = null;
+      let nextCursor: string | null = null;
       if (messages.length > pageSize) {
         messages.pop(); // Remove extra item used to detect next page
         // Create cursor from the last RETURNED item (not the popped one)
-        nextCursor = messages[messages.length - 1][sortField];
+        nextCursor = (messages[messages.length - 1] as Record<string, unknown>)[
+          sortField
+        ] as string;
       }
 
       return { messages, nextCursor };
@@ -677,7 +716,7 @@ describe('Message Operations', () => {
       const baseTime = new Date('2026-01-01T12:00:00.000Z');
 
       // Create exactly 26 messages
-      const messages = [];
+      const messages: (IMessage | null)[] = [];
       for (let i = 0; i < 26; i++) {
         const createdAt = new Date(baseTime.getTime() - i * 60000);
         const msg = await createMessageWithTimestamp(i, conversationId, createdAt);
@@ -699,7 +738,7 @@ describe('Message Operations', () => {
 
       // Item 26 should NOT be in page 1
       const page1Ids = page1.messages.map((m) => m.messageId);
-      expect(page1Ids).not.toContain(item26.messageId);
+      expect(page1Ids).not.toContain(item26!.messageId);
 
       // Fetch second page
       const page2 = await getMessagesByCursor({
@@ -711,7 +750,7 @@ describe('Message Operations', () => {
 
       // Item 26 MUST be in page 2 (this was the bug - it was being skipped)
       expect(page2.messages).toHaveLength(1);
-      expect(page2.messages[0].messageId).toBe(item26.messageId);
+      expect((page2.messages[0] as { messageId: string }).messageId).toBe(item26!.messageId);
     });
 
     it('should sort by createdAt DESC by default', async () => {
@@ -741,9 +780,9 @@ describe('Message Operations', () => {
 
       // Should be sorted by createdAt DESC (newest first) by default
       expect(result.messages).toHaveLength(3);
-      expect(result.messages[0].messageId).toBe(msg3.messageId);
-      expect(result.messages[1].messageId).toBe(msg2.messageId);
-      expect(result.messages[2].messageId).toBe(msg1.messageId);
+      expect((result.messages[0] as { messageId: string }).messageId).toBe(msg3!.messageId);
+      expect((result.messages[1] as { messageId: string }).messageId).toBe(msg2!.messageId);
+      expect((result.messages[2] as { messageId: string }).messageId).toBe(msg1!.messageId);
     });
 
     it('should support ascending sort direction', async () => {
@@ -768,8 +807,8 @@ describe('Message Operations', () => {
 
       // Should be sorted by createdAt ASC (oldest first)
       expect(result.messages).toHaveLength(2);
-      expect(result.messages[0].messageId).toBe(msg1.messageId);
-      expect(result.messages[1].messageId).toBe(msg2.messageId);
+      expect((result.messages[0] as { messageId: string }).messageId).toBe(msg1!.messageId);
+      expect((result.messages[1] as { messageId: string }).messageId).toBe(msg2!.messageId);
     });
 
     it('should handle empty conversation', async () => {
@@ -815,7 +854,7 @@ describe('Message Operations', () => {
 
       // Should only return user123's message
       expect(result.messages).toHaveLength(1);
-      expect(result.messages[0].user).toBe('user123');
+      expect((result.messages[0] as { user: string }).user).toBe('user123');
     });
 
     it('should handle exactly pageSize number of messages (no next page)', async () => {
@@ -849,8 +888,8 @@ describe('Message Operations', () => {
       }
 
       // Fetch with pageSize 1
-      let cursor = null;
-      const allMessages = [];
+      let cursor: string | null = null;
+      const allMessages: unknown[] = [];
 
       for (let page = 0; page < 5; page++) {
         const result = await getMessagesByCursor({
@@ -870,7 +909,7 @@ describe('Message Operations', () => {
 
       // Should get all 3 messages without duplicates
       expect(allMessages).toHaveLength(3);
-      const uniqueIds = new Set(allMessages.map((m) => m.messageId));
+      const uniqueIds = new Set(allMessages.map((m) => (m as { messageId: string }).messageId));
       expect(uniqueIds.size).toBe(3);
     });
 
@@ -879,7 +918,7 @@ describe('Message Operations', () => {
       const sameTime = new Date('2026-01-01T12:00:00.000Z');
 
       // Create multiple messages with the exact same timestamp
-      const messages = [];
+      const messages: (IMessage | null)[] = [];
       for (let i = 0; i < 5; i++) {
         const msg = await createMessageWithTimestamp(i, conversationId, sameTime);
         messages.push(msg);

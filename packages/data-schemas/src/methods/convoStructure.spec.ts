@@ -1,13 +1,34 @@
-const mongoose = require('mongoose');
-const { buildTree } = require('librechat-data-provider');
-const { MongoMemoryServer } = require('mongodb-memory-server');
-const { getMessages, bulkSaveMessages } = require('./Message');
-const { Message } = require('~/db/models');
+import mongoose from 'mongoose';
+import { buildTree } from 'librechat-data-provider';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { createModels } from '~/models';
+import { createMessageMethods } from './message';
+import type { IMessage } from '..';
 
-let mongod;
+jest.mock('~/config/winston', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
+}));
+
+let mongod: InstanceType<typeof MongoMemoryServer>;
+let Message: mongoose.Model<IMessage>;
+let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
+let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
+
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   const uri = mongod.getUri();
+
+  const models = createModels(mongoose);
+  Object.assign(mongoose.models, models);
+  Message = mongoose.models.Message;
+
+  const methods = createMessageMethods(mongoose);
+  getMessages = methods.getMessages;
+  bulkSaveMessages = methods.bulkSaveMessages;
+
   await mongoose.connect(uri);
 });
 
@@ -61,11 +82,13 @@ describe('Conversation Structure Tests', () => {
 
     // Add common properties to all messages
     messages.forEach((msg) => {
-      msg.conversationId = conversationId;
-      msg.user = userId;
-      msg.isCreatedByUser = false;
-      msg.error = false;
-      msg.unfinished = false;
+      Object.assign(msg, {
+        conversationId,
+        user: userId,
+        isCreatedByUser: false,
+        error: false,
+        unfinished: false,
+      });
     });
 
     // Save messages with overrideTimestamp omitted (default is false)
@@ -131,9 +154,7 @@ describe('Conversation Structure Tests', () => {
 
     // Add common properties to all messages
     messages.forEach((msg) => {
-      msg.isCreatedByUser = false;
-      msg.error = false;
-      msg.unfinished = false;
+      Object.assign(msg, { isCreatedByUser: false, error: false, unfinished: false });
     });
 
     await bulkSaveMessages(messages, true);
@@ -158,9 +179,7 @@ describe('Conversation Structure Tests', () => {
 
     // Add common properties to all messages
     messages.forEach((msg) => {
-      msg.isCreatedByUser = false;
-      msg.error = false;
-      msg.unfinished = false;
+      Object.assign(msg, { isCreatedByUser: false, error: false, unfinished: false });
     });
 
     // Save messages with overriding timestamps (preserve original timestamps)
@@ -217,11 +236,13 @@ describe('Conversation Structure Tests', () => {
 
     // Add common properties to all messages
     messages.forEach((msg) => {
-      msg.conversationId = conversationId;
-      msg.user = userId;
-      msg.isCreatedByUser = false;
-      msg.error = false;
-      msg.unfinished = false;
+      Object.assign(msg, {
+        conversationId,
+        user: userId,
+        isCreatedByUser: false,
+        error: false,
+        unfinished: false,
+      });
     });
 
     // Save messages with overrideTimestamp set to true

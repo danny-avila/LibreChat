@@ -153,7 +153,11 @@ async function abortMessage(req, res) {
   }
 
   await saveMessage(
-    req,
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     { ...responseMessage, user: userId },
     { context: 'api/server/middleware/abortMiddleware.js' },
   );

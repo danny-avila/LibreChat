@@ -1,6 +1,12 @@
 import { Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
-import type { Model, DeleteResult, ClientSession } from 'mongoose';
+import type {
+  AnyBulkWriteOperation,
+  ClientSession,
+  PipelineStage,
+  DeleteResult,
+  Model,
+} from 'mongoose';
 import type { IAclEntry } from '~/types';
 
 export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
@@ -349,6 +355,58 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     return entries;
   }
 
+  /**
+   * Deletes ACL entries matching the given filter.
+   * @param filter - MongoDB filter query
+   * @param options - Optional query options (e.g., { session })
+   */
+  async function deleteAclEntries(
+    filter: Record<string, unknown>,
+    options?: { session?: ClientSession },
+  ): Promise<DeleteResult> {
+    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
+    return AclEntry.deleteMany(filter, options || {});
+  }
+
+  /**
+   * Performs a bulk write operation on ACL entries.
+   * @param ops - Array of bulk write operations
+   * @param options - Optional query options (e.g., { session })
+   */
+  async function bulkWriteAclEntries(
+    ops: AnyBulkWriteOperation<IAclEntry>[],
+    options?: { session?: ClientSession },
+  ) {
+    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
+    return AclEntry.bulkWrite(ops, options || {});
+  }
+
+  /**
+   * Finds all publicly accessible resource IDs for a given resource type.
+   * @param resourceType - The type of resource
+   * @param requiredPermissions - Required permission bits
+   */
+  async function findPublicResourceIds(
+    resourceType: string,
+    requiredPermissions: number,
+  ): Promise<Types.ObjectId[]> {
+    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
+    return AclEntry.find({
+      principalType: PrincipalType.PUBLIC,
+      resourceType,
+      permBits: { $bitsAllSet: requiredPermissions },
+    }).distinct('resourceId');
+  }
+
+  /**
+   * Runs an aggregation pipeline on the AclEntry collection.
+   * @param pipeline - MongoDB aggregation pipeline stages
+   */
+  async function aggregateAclEntries(pipeline: PipelineStage[]) {
+    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
+    return AclEntry.aggregate(pipeline);
+  }
+
   return {
     findEntriesByPrincipal,
     findEntriesByResource,
@@ -360,6 +418,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     revokePermission,
     modifyPermissionBits,
     findAccessibleResources,
+    deleteAclEntries,
+    bulkWriteAclEntries,
+    findPublicResourceIds,
+    aggregateAclEntries,
   };
 }
 

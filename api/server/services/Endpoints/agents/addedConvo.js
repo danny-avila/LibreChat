@@ -1,12 +1,15 @@
 const { logger } = require('@librechat/data-schemas');
-const { initializeAgent, validateAgentModel } = require('@librechat/api');
-const { loadAddedAgent, setGetAgent, ADDED_AGENT_ID } = require('~/models/loadAddedAgent');
-const { getConvoFiles } = require('~/models');
-const { getAgent } = require('~/models/Agent');
+const {
+  initializeAgent,
+  validateAgentModel,
+  loadAddedAgent: loadAddedAgentFn,
+  ADDED_AGENT_ID,
+} = require('@librechat/api');
+const { getMCPServerTools } = require('~/server/services/Config');
 const db = require('~/models');
 
-// Initialize the getAgent dependency
-setGetAgent(getAgent);
+const loadAddedAgent = (params) =>
+  loadAddedAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 /**
  * Process addedConvo for parallel agent execution.
@@ -99,7 +102,7 @@ const processAddedConvo = async ({
         allowedProviders,
       },
       {
-        getConvoFiles,
+        getConvoFiles: db.getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,

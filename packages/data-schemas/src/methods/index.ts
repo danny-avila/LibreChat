@@ -45,6 +45,8 @@ import {
 import { createTransactionMethods, type TransactionMethods } from './transaction';
 import { createSpendTokensMethods, type SpendTokensMethods } from './spendTokens';
 import { createPromptMethods, type PromptMethods, type PromptDeps } from './prompt';
+/* Tier 5 — Agent */
+import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate };
 
@@ -75,7 +77,8 @@ export type AllMethods = UserMethods &
   TxMethods &
   TransactionMethods &
   SpendTokensMethods &
-  PromptMethods;
+  PromptMethods &
+  AgentMethods;
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
@@ -88,7 +91,7 @@ export interface CreateMethodsDeps {
   /** Finds the first key in values whose key is a substring of model. From @librechat/api. */
   findMatchingPattern?: (model: string, values: Record<string, unknown>) => string | undefined;
   /** Removes all ACL permissions for a resource. From PermissionService. */
-  removeAllPermissions?: (params: { resourceType: string; resourceId: string }) => Promise<void>;
+  removeAllPermissions?: (params: { resourceType: string; resourceId: unknown }) => Promise<void>;
   /** Returns a cache store for the given key. From getLogStores. */
   getCache?: RoleDeps['getCache'];
 }
@@ -133,16 +136,37 @@ export function createMethods(
     { getMessages: messageMethods.getMessages, deleteMessages: messageMethods.deleteMessages },
   );
 
+  // ACL entry methods (used internally for removeAllPermissions)
+  const aclEntryMethods = createAclEntryMethods(mongoose);
+
+  // Internal removeAllPermissions: use deleteAclEntries from aclEntryMethods
+  // instead of requiring it as an external dep from PermissionService
+  const removeAllPermissions =
+    deps.removeAllPermissions ??
+    (async ({ resourceType, resourceId }: { resourceType: string; resourceId: unknown }) => {
+      await aclEntryMethods.deleteAclEntries({ resourceType, resourceId });
+    });
+
   // Tier 3: prompt methods need escapeRegExp + removeAllPermissions
   const promptDeps: PromptDeps = {
     escapeRegExp: deps.escapeRegExp ?? ((s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
-    removeAllPermissions: deps.removeAllPermissions ?? (async () => {}),
+    removeAllPermissions,
   };
   const promptMethods = createPromptMethods(mongoose, promptDeps);
 
   // Role methods with optional cache injection
   const roleDeps: RoleDeps = { getCache: deps.getCache };
   const roleMethods = createRoleMethods(mongoose, roleDeps);
+
+  // Tier 1: action methods (created as variable for agent dependency)
+  const actionMethods = createActionMethods(mongoose);
+
+  // Tier 5: agent methods need removeAllPermissions + getActions
+  const agentDeps: AgentDeps = {
+    removeAllPermissions,
+    getActions: actionMethods.getActions,
+  };
+  const agentMethods = createAgentMethods(mongoose, agentDeps);
 
   return {
     ...createUserMethods(mongoose),
@@ -157,11 +181,11 @@ export function createMethods(
     ...createMCPServerMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
     ...createUserGroupMethods(mongoose),
-    ...createAclEntryMethods(mongoose),
+    ...aclEntryMethods,
     ...createShareMethods(mongoose),
     ...createPluginAuthMethods(mongoose),
     /* Tier 1 */
-    ...createActionMethods(mongoose),
+    ...actionMethods,
     ...createAssistantMethods(mongoose),
     ...createBannerMethods(mongoose),
     ...createToolCallMethods(mongoose),
@@ -176,6 +200,8 @@ export function createMethods(
     ...transactionMethods,
     ...spendTokensMethods,
     ...promptMethods,
+    /* Tier 5 */
+    ...agentMethods,
   };
 }
 
@@ -208,4 +234,5 @@ export type {
   TransactionMethods,
   SpendTokensMethods,
   PromptMethods,
+  AgentMethods,
 };
