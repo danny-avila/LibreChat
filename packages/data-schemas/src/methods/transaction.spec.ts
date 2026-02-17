@@ -256,8 +256,8 @@ describe('Structured Token Spending Tests', () => {
     // Calculate expected costs.
     const expectedPromptCost =
       tokenUsage.promptTokens.input * promptMultiplier +
-      tokenUsage.promptTokens.write * writeMultiplier +
-      tokenUsage.promptTokens.read * readMultiplier;
+      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
+      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
     const expectedCompletionCost = tokenUsage.completionTokens * completionMultiplier;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
     const expectedBalance = initialBalance - expectedTotalCost;
@@ -823,8 +823,8 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * premiumPromptRate +
-      tokenUsage.promptTokens.write * writeMultiplier +
-      tokenUsage.promptTokens.read * readMultiplier;
+      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
+      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
     const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
 
@@ -874,8 +874,8 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * standardPromptRate +
-      tokenUsage.promptTokens.write * writeMultiplier +
-      tokenUsage.promptTokens.read * readMultiplier;
+      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
+      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
     const expectedCompletionCost = tokenUsage.completionTokens * standardCompletionRate;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
 
