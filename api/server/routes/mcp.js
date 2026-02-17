@@ -41,8 +41,7 @@ const { findToken, updateToken, createToken, deleteTokens } = require('~/models'
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const { findPluginAuthsByKeys } = require('~/models');
-const { getRoleByName } = require('~/models/Role');
+const { findPluginAuthsByKeys, getRoleByName } = require('~/models');
 const { getLogStores } = require('~/cache');
 
 const router = Router();

@@ -10,13 +10,19 @@ const {
   createForkLimiters,
   configMiddleware,
 } = require('~/server/middleware');
-const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
-const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
+const {
+  deleteAllSharedLinks,
+  deleteConvoSharedLink,
+  deleteToolCalls,
+  getConvosByCursor,
+  deleteConvos,
+  getConvo,
+  saveConvo,
+} = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
-const { deleteToolCalls } = require('~/models/ToolCall');
 const getLogStores = require('~/cache/getLogStores');
 
 const assistantClients = {

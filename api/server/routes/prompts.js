@@ -29,7 +29,8 @@ const {
   getPrompts,
   savePrompt,
   getPrompt,
-} = require('~/models/Prompt');
+  getRoleByName,
+} = require('~/models');
 const {
   canAccessPromptGroupResource,
   canAccessPromptViaGroup,
@@ -41,7 +42,6 @@ const {
   findAccessibleResources,
   grantPermission,
 } = require('~/server/services/PermissionService');
-const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 

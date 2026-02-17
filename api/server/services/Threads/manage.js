@@ -8,9 +8,7 @@ const {
   defaultOrderQuery,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
-const { recordMessage, getMessages } = require('~/models/Message');
-const { spendTokens } = require('~/models/spendTokens');
-const { saveConvo } = require('~/models/Conversation');
+const { recordMessage, getMessages, spendTokens, saveConvo } = require('~/models');
 
 /**
  * Initializes a new thread or adds messages to an existing thread.

@@ -8,8 +8,7 @@ const {
   EModelEndpoint,
   PermissionTypes,
 } = require('librechat-data-provider');
-const { getRoleByName } = require('~/models/Role');
-const { Files } = require('~/models');
+const { getRoleByName, Files } = require('~/models');
 
 /**
  * Process file search results from tool calls

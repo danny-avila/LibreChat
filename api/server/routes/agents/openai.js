@@ -29,9 +29,8 @@ const {
   GetModelController,
 } = require('~/server/controllers/agents/openai');
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
-const { validateAgentApiKey, findUser } = require('~/models');
+const { validateAgentApiKey, findUser, getRoleByName } = require('~/models');
 const { configMiddleware } = require('~/server/middleware');
-const { getRoleByName } = require('~/models/Role');
 const { getAgent } = require('~/models/Agent');
 
 const router = express.Router();

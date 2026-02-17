@@ -80,21 +80,12 @@ jest.mock('~/server/services/ToolService', () => ({
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/spendTokens', () => ({
-  spendTokens: mockSpendTokens,
-  spendStructuredTokens: mockSpendStructuredTokens,
-}));
-
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
 }));
 
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
-}));
-
-jest.mock('~/models/Conversation', () => ({
-  getConvoFiles: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock('~/models/Agent', () => ({
@@ -115,6 +106,9 @@ jest.mock('~/models', () => ({
   getUserCodeFiles: jest.fn(),
   getToolFilesByIds: jest.fn(),
   getCodeGeneratedFiles: jest.fn(),
+  spendTokens: mockSpendTokens,
+  spendStructuredTokens: mockSpendStructuredTokens,
+  getConvoFiles: jest.fn().mockResolvedValue([]),
 }));
 
 describe('OpenAIChatCompletionController', () => {

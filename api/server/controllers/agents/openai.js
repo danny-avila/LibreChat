@@ -29,10 +29,10 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getConvoFiles } = require('~/models/Conversation');
+const { getConvoFiles } = require('~/models');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
+const { spendTokens, spendStructuredTokens } = db;
 
 /**
  * Creates a tool loader function for the agent.

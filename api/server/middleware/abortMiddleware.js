@@ -7,11 +7,10 @@ const {
   sanitizeMessageForTransmit,
 } = require('@librechat/api');
 const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
-const { saveMessage, getConvo } = require('~/models');
+const { spendTokens, spendStructuredTokens, saveMessage, getConvo } = require('~/models');
 const { abortRun } = require('./abortRun');
 
 /**

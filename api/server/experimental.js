@@ -23,7 +23,8 @@ const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
-const { updateInterfacePermissions } = require('~/models/interface');
+const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
+const { getRoleByName, updateAccessPermissions } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
@@ -221,7 +222,7 @@ if (cluster.isMaster) {
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
     await performStartupChecks(appConfig);
-    await updateInterfacePermissions(appConfig);
+    await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
 
     /** Load index.html for SPA serving */
     const indexPath = path.join(appConfig.paths.dist, 'index.html');

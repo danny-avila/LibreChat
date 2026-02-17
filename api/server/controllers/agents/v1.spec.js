@@ -30,11 +30,6 @@ jest.mock('~/server/services/Files/process', () => ({
   filterFile: jest.fn(),
 }));
 
-jest.mock('~/models/Action', () => ({
-  updateAction: jest.fn(),
-  getActions: jest.fn().mockResolvedValue([]),
-}));
-
 jest.mock('~/models/File', () => ({
   deleteFileByFilter: jest.fn(),
 }));
@@ -49,6 +44,8 @@ jest.mock('~/server/services/PermissionService', () => ({
 
 jest.mock('~/models', () => ({
   getCategoriesWithCounts: jest.fn(),
+  updateAction: jest.fn(),
+  getActions: jest.fn().mockResolvedValue([]),
 }));
 
 // Mock cache for S3 avatar refresh tests

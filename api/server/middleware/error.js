@@ -2,8 +2,7 @@ const crypto = require('crypto');
 const { logger } = require('@librechat/data-schemas');
 const { parseConvo } = require('librechat-data-provider');
 const { sendEvent, handleError, sanitizeMessageForTransmit } = require('@librechat/api');
-const { saveMessage, getMessages } = require('~/models/Message');
-const { getConvo } = require('~/models/Conversation');
+const { saveMessage, getMessages, getConvo } = require('~/models');
 
 /**
  * Processes an error with provided options, saves the error message and sends a corresponding SSE response

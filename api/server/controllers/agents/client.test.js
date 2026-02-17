@@ -21,7 +21,7 @@ jest.mock('~/models/Agent', () => ({
   loadAgent: jest.fn(),
 }));
 
-jest.mock('~/models/Role', () => ({
+jest.mock('~/models', () => ({
   getRoleByName: jest.fn(),
 }));
 

@@ -5,7 +5,7 @@ const {
   parseTextParts,
   findLastSeparatorIndex,
 } = require('librechat-data-provider');
-const { getMessage } = require('~/models/Message');
+const { getMessage } = require('~/models');
 const { getLogStores } = require('~/cache');
 
 /**

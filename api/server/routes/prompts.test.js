@@ -16,7 +16,7 @@ jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
 }));
 
-jest.mock('~/models/Role', () => ({
+jest.mock('~/models', () => ({
   getRoleByName: jest.fn(),
 }));
 
@@ -153,7 +153,7 @@ async function setupTestData() {
   };
 
   // Mock getRoleByName
-  const { getRoleByName } = require('~/models/Role');
+  const { getRoleByName } = require('~/models');
   getRoleByName.mockImplementation((roleName) => {
     switch (roleName) {
       case SystemRoles.USER:

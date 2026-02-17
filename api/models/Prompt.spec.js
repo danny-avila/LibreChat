@@ -37,7 +37,7 @@ beforeAll(async () => {
   User = dbModels.User;
   Group = dbModels.Group;
 
-  promptFns = require('~/models/Prompt');
+  promptFns = require('~/models');
   permissionService = require('~/server/services/PermissionService');
 
   // Create test data

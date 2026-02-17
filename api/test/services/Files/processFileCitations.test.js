@@ -10,9 +10,6 @@ jest.mock('~/models', () => ({
   Files: {
     find: jest.fn().mockResolvedValue([]),
   },
-}));
-
-jest.mock('~/models/Role', () => ({
   getRoleByName: jest.fn(),
 }));
 

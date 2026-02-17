@@ -307,7 +307,14 @@ export function createTransactionMethods(
     }
   }
 
+  /** Retrieves a user's balance record. */
+  async function findBalanceByUser(user: string): Promise<IBalance | null> {
+    const Balance = mongoose.models.Balance as Model<IBalance>;
+    return Balance.findOne({ user }).lean();
+  }
+
   return {
+    findBalanceByUser,
     getTransactions,
     createTransaction,
     createAutoRefillTransaction,

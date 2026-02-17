@@ -31,20 +31,14 @@ jest.mock('@librechat/data-schemas', () => ({
   })),
 }));
 
-jest.mock('~/models/Conversation', () => ({
+jest.mock('~/models', () => ({
   getConvosByCursor: jest.fn(),
   getConvo: jest.fn(),
   deleteConvos: jest.fn(),
   saveConvo: jest.fn(),
-}));
-
-jest.mock('~/models/ToolCall', () => ({
-  deleteToolCalls: jest.fn(),
-}));
-
-jest.mock('~/models', () => ({
   deleteAllSharedLinks: jest.fn(),
   deleteConvoSharedLink: jest.fn(),
+  deleteToolCalls: jest.fn(),
 }));
 
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
@@ -108,9 +102,13 @@ jest.mock('~/server/services/Endpoints/assistants', () => ({
 describe('Convos Routes', () => {
   let app;
   let convosRouter;
-  const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
-  const { deleteConvos, saveConvo } = require('~/models/Conversation');
-  const { deleteToolCalls } = require('~/models/ToolCall');
+  const {
+    deleteAllSharedLinks,
+    deleteConvoSharedLink,
+    deleteToolCalls,
+    deleteConvos,
+    saveConvo,
+  } = require('~/models');
 
   beforeAll(() => {
     convosRouter = require('../convos');

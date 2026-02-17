@@ -1,7 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { initializeAgent, validateAgentModel } = require('@librechat/api');
 const { loadAddedAgent, setGetAgent, ADDED_AGENT_ID } = require('~/models/loadAddedAgent');
-const { getConvoFiles } = require('~/models/Conversation');
+const { getConvoFiles } = require('~/models');
 const { getAgent } = require('~/models/Agent');
 const db = require('~/models');
 

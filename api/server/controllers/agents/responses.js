@@ -41,10 +41,10 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getConvoFiles, saveConvo, getConvo } = require('~/models');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
+const { spendTokens, spendStructuredTokens } = db;
 
 /** @type {import('@librechat/api').AppConfig | null} */
 let appConfig = null;

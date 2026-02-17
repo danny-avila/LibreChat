@@ -14,7 +14,7 @@ const { EModelEndpoint } = require('librechat-data-provider');
 const mockSpendTokens = jest.fn().mockResolvedValue();
 const mockSpendStructuredTokens = jest.fn().mockResolvedValue();
 
-jest.mock('~/models/spendTokens', () => ({
+jest.mock('~/models', () => ({
   spendTokens: (...args) => mockSpendTokens(...args),
   spendStructuredTokens: (...args) => mockSpendStructuredTokens(...args),
 }));

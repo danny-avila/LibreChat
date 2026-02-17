@@ -31,9 +31,8 @@ const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
 const { sendResponse } = require('~/server/middleware/error');
-const { getTransactions } = require('~/models/Transaction');
+const { getTransactions, getConvo } = require('~/models');
 const { checkBalance } = require('~/models/balanceMethods');
-const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { getOpenAIClient } = require('./helpers');
 

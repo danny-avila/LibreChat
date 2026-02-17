@@ -15,9 +15,8 @@ const {
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getAgent, updateAgent, getListAgentsByAccess } = require('~/models/Agent');
-const { updateAction, getActions, deleteAction } = require('~/models/Action');
+const { updateAction, getActions, deleteAction, getRoleByName } = require('~/models');
 const { canAccessAgentResource } = require('~/server/middleware');
-const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 

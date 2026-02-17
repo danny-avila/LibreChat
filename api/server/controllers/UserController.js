@@ -11,9 +11,12 @@ const {
   deleteAllSharedLinks,
   updateUserPlugins,
   deleteUserById,
+  deleteUserPrompts,
   deleteMessages,
   deletePresets,
   deleteUserKey,
+  deleteToolCalls,
+  deleteUserAgents,
   deleteConvos,
   deleteFiles,
   updateUser,
@@ -40,9 +43,6 @@ const { invalidateCachedTools } = require('~/server/services/Config/getCachedToo
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getAppConfig } = require('~/server/services/Config');
-const { deleteToolCalls } = require('~/models/ToolCall');
-const { deleteUserPrompts } = require('~/models/Prompt');
-const { deleteUserAgents } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
 
 const getUserController = async (req, res) => {
@@ -263,7 +263,7 @@ const deleteUserController = async (req, res) => {
     await Assistant.deleteMany({ user: user.id }); // delete user assistants
     await ConversationTag.deleteMany({ user: user.id }); // delete user conversation tags
     await MemoryEntry.deleteMany({ userId: user.id }); // delete user memory entries
-    await deleteUserPrompts(req, user.id); // delete user prompts
+    await deleteUserPrompts(user.id); // delete user prompts
     await Action.deleteMany({ user: user.id }); // delete user actions
     await Token.deleteMany({ userId: user.id }); // delete user OAuth tokens
     await Group.updateMany({ memberIds: user.id }, { $pullAll: { memberIds: [user.id] } });

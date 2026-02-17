@@ -14,7 +14,7 @@ const { mcp_all, mcp_delimiter } = require('librechat-data-provider').Constants;
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { Agent, AclEntry, User } = require('~/db/models');
-const { getActions } = require('./Action');
+const { getActions } = require('./index');
 
 /**
  * Extracts unique MCP server names from tools array

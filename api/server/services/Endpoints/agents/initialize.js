@@ -22,7 +22,7 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const AgentClient = require('~/server/controllers/agents/client');
-const { getConvoFiles } = require('~/models/Conversation');
+const { getConvoFiles } = require('~/models');
 const { processAddedConvo } = require('./addedConvo');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');

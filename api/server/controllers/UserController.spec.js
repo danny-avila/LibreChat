@@ -27,6 +27,8 @@ jest.mock('~/models', () => ({
   updateUser: jest.fn(),
   findToken: jest.fn(),
   getFiles: jest.fn().mockResolvedValue([]),
+  deleteToolCalls: jest.fn().mockResolvedValue(undefined),
+  deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('~/server/services/PluginService', () => ({
@@ -53,14 +55,6 @@ jest.mock('~/server/services/Config', () => ({
   getMCPManager: jest.fn(),
   getFlowStateManager: jest.fn(),
   getMCPServersRegistry: jest.fn(),
-}));
-
-jest.mock('~/models/ToolCall', () => ({
-  deleteToolCalls: jest.fn().mockResolvedValue(undefined),
-}));
-
-jest.mock('~/models/Prompt', () => ({
-  deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('~/models/Agent', () => ({

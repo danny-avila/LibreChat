@@ -7,9 +7,9 @@ const {
   createMemory,
   deleteMemory,
   setMemory,
+  getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
-const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 
