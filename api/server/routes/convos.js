@@ -12,18 +12,10 @@ const {
 } = require('~/server/middleware');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
-const {
-  deleteAllSharedLinks,
-  deleteConvoSharedLink,
-  deleteToolCalls,
-  getConvosByCursor,
-  deleteConvos,
-  getConvo,
-  saveConvo,
-} = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const getLogStores = require('~/cache/getLogStores');
+const db = require('~/models');
 
 const assistantClients = {
   [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
@@ -47,7 +39,7 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    const result = await getConvosByCursor(req.user.id, {
+    const result = await db.getConvosByCursor(req.user.id, {
       cursor,
       limit,
       isArchived,
@@ -65,7 +57,7 @@ router.get('/', async (req, res) => {
 
 router.get('/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
-  const convo = await getConvo(req.user.id, conversationId);
+  const convo = await db.getConvo(req.user.id, conversationId);
 
   if (convo) {
     res.status(200).json(convo);
@@ -134,10 +126,10 @@ router.delete('/', async (req, res) => {
   }
 
   try {
-    const dbResponse = await deleteConvos(req.user.id, filter);
+    const dbResponse = await db.deleteConvos(req.user.id, filter);
     if (filter.conversationId) {
-      await deleteToolCalls(req.user.id, filter.conversationId);
-      await deleteConvoSharedLink(req.user.id, filter.conversationId);
+      await db.deleteToolCalls(req.user.id, filter.conversationId);
+      await db.deleteConvoSharedLink(req.user.id, filter.conversationId);
     }
     res.status(201).json(dbResponse);
   } catch (error) {
@@ -148,9 +140,9 @@ router.delete('/', async (req, res) => {
 
 router.delete('/all', async (req, res) => {
   try {
-    const dbResponse = await deleteConvos(req.user.id, {});
-    await deleteToolCalls(req.user.id);
-    await deleteAllSharedLinks(req.user.id);
+    const dbResponse = await db.deleteConvos(req.user.id, {});
+    await db.deleteToolCalls(req.user.id);
+    await db.deleteAllSharedLinks(req.user.id);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);
@@ -177,7 +169,7 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
   }
 
   try {
-    const dbResponse = await saveConvo(
+    const dbResponse = await db.saveConvo(
       {
         userId: req?.user?.id,
         isTemporary: req?.body?.isTemporary,
@@ -221,7 +213,7 @@ router.post('/update', validateConvoAccess, async (req, res) => {
   const sanitizedTitle = title.trim().slice(0, MAX_CONVO_TITLE_LENGTH);
 
   try {
-    const dbResponse = await saveConvo(
+    const dbResponse = await db.saveConvo(
       {
         userId: req?.user?.id,
         isTemporary: req?.body?.isTemporary,

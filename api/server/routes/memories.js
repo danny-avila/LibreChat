@@ -4,10 +4,10 @@ const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
   toggleUserMemories,
+  getRoleByName,
   createMemory,
   deleteMemory,
   setMemory,
-  getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 

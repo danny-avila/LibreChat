@@ -25,11 +25,11 @@ const {
   deletePromptGroup,
   createPromptGroup,
   getPromptGroup,
+  getRoleByName,
   deletePrompt,
   getPrompts,
   savePrompt,
   getPrompt,
-  getRoleByName,
 } = require('~/models');
 const {
   canAccessPromptGroupResource,

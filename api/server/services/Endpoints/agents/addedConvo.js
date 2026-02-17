@@ -1,9 +1,9 @@
 const { logger } = require('@librechat/data-schemas');
 const {
+  ADDED_AGENT_ID,
   initializeAgent,
   validateAgentModel,
   loadAddedAgent: loadAddedAgentFn,
-  ADDED_AGENT_ID,
 } = require('@librechat/api');
 const { getMCPServerTools } = require('~/server/services/Config');
 const db = require('~/models');
@@ -102,10 +102,10 @@ const processAddedConvo = async ({
         allowedProviders,
       },
       {
-        getConvoFiles: db.getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
+        getConvoFiles: db.getConvoFiles,
         updateFilesUsage: db.updateFilesUsage,
         getUserCodeFiles: db.getUserCodeFiles,
         getUserKeyValues: db.getUserKeyValues,
