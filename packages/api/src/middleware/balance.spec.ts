@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { logger, balanceSchema } from '@librechat/data-schemas';
 import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
-import type { IBalance } from '@librechat/data-schemas';
+import type { IBalance, IBalanceUpdate } from '@librechat/data-schemas';
 import { createSetBalanceConfig } from './balance';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -18,8 +18,12 @@ let Balance: mongoose.Model<IBalance>;
 const findBalanceByUser = (userId: string) =>
   Balance.findOne({ user: userId }).lean() as Promise<IBalance | null>;
 
-const upsertBalanceFields = (userId: string, fields: Record<string, unknown>) =>
-  Balance.findOneAndUpdate({ user: userId }, { $set: fields }, { upsert: true, new: true }).lean();
+const upsertBalanceFields = (userId: string, fields: IBalanceUpdate) =>
+  Balance.findOneAndUpdate(
+    { user: userId },
+    { $set: fields },
+    { upsert: true, new: true },
+  ).lean() as Promise<IBalance | null>;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();

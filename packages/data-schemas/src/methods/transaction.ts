@@ -1,7 +1,7 @@
-import type { FilterQuery, Model, Types } from 'mongoose';
 import logger from '~/config/winston';
-import type { IBalance } from '~/types';
+import type { FilterQuery, Model, Types } from 'mongoose';
 import type { ITransaction } from '~/schema/transaction';
+import type { IBalance, IBalanceUpdate } from '~/types';
 
 const cancelRate = 1.15;
 
@@ -180,7 +180,7 @@ export function createTransactionMethods(
   }: {
     user: string;
     incrementValue: number;
-    setValues?: Partial<IBalance>;
+    setValues?: IBalanceUpdate;
   }): Promise<IBalance> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     const maxRetries = 10;
@@ -275,7 +275,7 @@ export function createTransactionMethods(
     const balanceResponse = await updateBalance({
       user: transaction.user as string,
       incrementValue: txData.rawAmount ?? 0,
-      setValues: { lastRefill: new Date() } as Partial<IBalance>,
+      setValues: { lastRefill: new Date() },
     });
     const result = {
       rate: transaction.rate as number,
@@ -386,7 +386,7 @@ export function createTransactionMethods(
   /** Upserts balance fields for a user. */
   async function upsertBalanceFields(
     user: string,
-    fields: Partial<IBalance>,
+    fields: IBalanceUpdate,
   ): Promise<IBalance | null> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     return Balance.findOneAndUpdate({ user }, { $set: fields }, { upsert: true, new: true }).lean();

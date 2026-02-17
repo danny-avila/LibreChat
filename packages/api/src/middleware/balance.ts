@@ -1,13 +1,20 @@
 import { logger } from '@librechat/data-schemas';
+import type {
+  IBalanceUpdate,
+  BalanceConfig,
+  AppConfig,
+  ObjectId,
+  IBalance,
+  IUser,
+} from '@librechat/data-schemas';
 import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
-import type { IBalance, IUser, BalanceConfig, ObjectId, AppConfig } from '@librechat/data-schemas';
 import type { BalanceUpdateFields } from '~/types';
 import { getBalanceConfig } from '~/app/config';
 
 export interface BalanceMiddlewareOptions {
   getAppConfig: (options?: { role?: string; refresh?: boolean }) => Promise<AppConfig>;
   findBalanceByUser: (userId: string) => Promise<IBalance | null>;
-  upsertBalanceFields: (userId: string, fields: Record<string, unknown>) => Promise<unknown>;
+  upsertBalanceFields: (userId: string, fields: IBalanceUpdate) => Promise<IBalance | null>;
 }
 
 /**
