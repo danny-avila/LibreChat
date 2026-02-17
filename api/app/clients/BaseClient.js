@@ -3,6 +3,7 @@ const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const {
   countTokens,
+  checkBalance,
   getBalanceConfig,
   buildMessageFiles,
   extractFileContext,
@@ -23,18 +24,11 @@ const {
   supportsBalanceCheck,
   isBedrockDocumentType,
 } = require('librechat-data-provider');
-const {
-  updateMessage,
-  getMessages,
-  saveMessage,
-  saveConvo,
-  getConvo,
-  getFiles,
-} = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
+const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
+const db = require('~/models');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -700,18 +694,26 @@ class BaseClient {
       balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
-      await checkBalance({
-        req: this.options.req,
-        res: this.options.res,
-        txData: {
-          user: this.user,
-          tokenType: 'prompt',
-          amount: promptTokens,
-          endpoint: this.options.endpoint,
-          model: this.modelOptions?.model ?? this.model,
-          endpointTokenConfig: this.options.endpointTokenConfig,
+      await checkBalance(
+        {
+          req: this.options.req,
+          res: this.options.res,
+          txData: {
+            user: this.user,
+            tokenType: 'prompt',
+            amount: promptTokens,
+            endpoint: this.options.endpoint,
+            model: this.modelOptions?.model ?? this.model,
+            endpointTokenConfig: this.options.endpointTokenConfig,
+          },
         },
-      });
+        {
+          logViolation,
+          getMultiplier: db.getMultiplier,
+          findBalanceByUser: db.findBalanceByUser,
+          createAutoRefillTransaction: db.createAutoRefillTransaction,
+        },
+      );
     }
 
     const { completion, metadata } = await this.sendCompletion(payload, opts);
@@ -909,7 +911,7 @@ class BaseClient {
   async loadHistory(conversationId, parentMessageId = null) {
     logger.debug('[BaseClient] Loading history:', { conversationId, parentMessageId });
 
-    const messages = (await getMessages({ conversationId })) ?? [];
+    const messages = (await db.getMessages({ conversationId })) ?? [];
 
     if (messages.length === 0) {
       return [];
@@ -965,8 +967,13 @@ class BaseClient {
     }
 
     const hasAddedConvo = this.options?.req?.body?.addedConvo != null;
-    const savedMessage = await saveMessage(
-      this.options?.req,
+    const reqCtx = {
+      userId: this.options?.req?.user?.id,
+      isTemporary: this.options?.req?.body?.isTemporary,
+      interfaceConfig: this.options?.req?.config?.interfaceConfig,
+    };
+    const savedMessage = await db.saveMessage(
+      reqCtx,
       {
         ...message,
         endpoint: this.options.endpoint,
@@ -991,7 +998,7 @@ class BaseClient {
     const existingConvo =
       this.fetchedConvo === true
         ? null
-        : await getConvo(this.options?.req?.user?.id, message.conversationId);
+        : await db.getConvo(this.options?.req?.user?.id, message.conversationId);
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
@@ -1018,7 +1025,7 @@ class BaseClient {
       }
     }
 
-    const conversation = await saveConvo(this.options?.req, fieldsToKeep, {
+    const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
     });
@@ -1031,7 +1038,7 @@ class BaseClient {
    * @param {Partial<TMessage>} message
    */
   async updateMessageInDatabase(message) {
-    await updateMessage(this.options.req, message);
+    await db.updateMessage(this.options?.req?.user?.id, message);
   }
 
   /**
@@ -1431,7 +1438,7 @@ class BaseClient {
         return message;
       }
 
-      const files = await getFiles(
+      const files = await db.getFiles(
         {
           file_id: { $in: fileIds },
         },

@@ -10,8 +10,8 @@ const {
   messageUserLimiter,
 } = require('~/server/middleware');
 const { saveMessage } = require('~/models');
-const openai = require('./openai');
 const responses = require('./responses');
+const openai = require('./openai');
 const { v1 } = require('./v1');
 const chat = require('./chat');
 
@@ -253,9 +253,15 @@ router.post('/chat/abort', async (req, res) => {
       };
 
       try {
-        await saveMessage(req, responseMessage, {
-          context: 'api/server/routes/agents/index.js - abort endpoint',
-        });
+        await saveMessage(
+          {
+            userId: req?.user?.id,
+            isTemporary: req?.body?.isTemporary,
+            interfaceConfig: req?.config?.interfaceConfig,
+          },
+          responseMessage,
+          { context: 'api/server/routes/agents/index.js - abort endpoint' },
+        );
         logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
       } catch (saveError) {
         logger.error(`[AgentStream] Failed to save partial response: ${saveError.message}`);
