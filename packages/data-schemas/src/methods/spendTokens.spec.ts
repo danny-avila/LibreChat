@@ -1034,8 +1034,8 @@ describe('spendTokens', () => {
         tokenUsage.promptTokens.read * readRate;
       const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
 
-      expect(result.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
-      expect(result.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
+      expect(result?.prompt?.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result?.completion?.completion).toBeCloseTo(-expectedCompletionCost, 0);
     });
 
     it('should not apply premium pricing to non-premium models regardless of prompt size', async () => {
