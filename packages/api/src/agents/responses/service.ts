@@ -143,7 +143,7 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
         content = messageItem.content;
       } else if (Array.isArray(messageItem.content)) {
         content = messageItem.content.map((part) => {
-          if (part.type === 'input_text') {
+          if (part.type === 'input_text' || part.type === 'output_text') {
             return { type: 'text', text: part.text };
           }
           if (part.type === 'input_image') {
