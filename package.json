@@ -163,7 +163,8 @@
       "micromark-extension-math": {
         "katex": "^0.16.21"
       }
-    }
+    },
+    "langsmith": "0.4.12"
   },
   "nodemonConfig": {
     "ignore": [
