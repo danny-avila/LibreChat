@@ -15,5 +15,5 @@ export * from './responses';
 export * from './run';
 export * from './tools';
 export * from './validation';
-export * from './loadAddedAgent';
-export * from './loadAgent';
+export * from './added';
+export * from './load';

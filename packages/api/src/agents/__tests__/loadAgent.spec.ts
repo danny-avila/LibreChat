@@ -4,8 +4,8 @@ import { Constants } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { agentSchema, createMethods } from '@librechat/data-schemas';
 import type { AgentModelParameters } from 'librechat-data-provider';
-import type { LoadAgentParams, LoadAgentDeps } from '../loadAgent';
-import { loadAgent } from '../loadAgent';
+import type { LoadAgentParams, LoadAgentDeps } from '../load';
+import { loadAgent } from '../load';
 
 let Agent: mongoose.Model<unknown>;
 let createAgent: ReturnType<typeof createMethods>['createAgent'];
