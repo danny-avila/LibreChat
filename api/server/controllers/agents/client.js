@@ -25,6 +25,7 @@ const {
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
+  hydrateMissingIndexTokenCounts,
 } = require('@librechat/api');
 const {
   Callback,
@@ -61,9 +62,6 @@ class AgentClient extends BaseClient {
     /** The current client class
      * @type {string} */
     this.clientName = EModelEndpoint.agents;
-
-    /** @type {'discard' | 'summarize'} */
-    this.contextStrategy = 'discard';
 
     /** @deprecated @type {true} - Is a Chat Completion Request */
     this.isChatCompletion = true;
@@ -216,7 +214,6 @@ class AgentClient extends BaseClient {
           }))
         : []),
     ];
-
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
@@ -243,6 +240,9 @@ class AgentClient extends BaseClient {
       );
     }
 
+    /** @type {Record<number, number>} */
+    const canonicalTokenCountMap = {};
+    let promptTokenTotal = 0;
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
         message,
@@ -262,8 +262,7 @@ class AgentClient extends BaseClient {
         }
       }
 
-      const needsTokenCount =
-        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.fileContext;
+      const needsTokenCount = !orderedMessages[i].tokenCount || message.fileContext;
 
       /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
@@ -289,8 +288,17 @@ class AgentClient extends BaseClient {
         }
       }
 
+      const tokenCount = Number(orderedMessages[i].tokenCount);
+      const normalizedTokenCount = Number.isFinite(tokenCount) && tokenCount > 0 ? tokenCount : 0;
+      canonicalTokenCountMap[i] = normalizedTokenCount;
+      promptTokenTotal += normalizedTokenCount;
+
       return formattedMessage;
     });
+
+    payload = formattedMessages;
+    messages = orderedMessages;
+    promptTokens = promptTokenTotal;
 
     /**
      * Build shared run context - applies to ALL agents in the run.
@@ -324,16 +332,8 @@ class AgentClient extends BaseClient {
     /** @type {Record<string, number> | undefined} */
     let tokenCountMap;
 
-    if (this.contextStrategy) {
-      ({ payload, promptTokens, tokenCountMap, messages } = await this.handleContextStrategy({
-        orderedMessages,
-        formattedMessages,
-      }));
-    }
-
-    for (let i = 0; i < messages.length; i++) {
-      this.indexTokenCountMap[i] = messages[i].tokenCount;
-    }
+    /** Preserve canonical pre-format token counts for all history entering graph formatting */
+    this.indexTokenCountMap = canonicalTokenCountMap;
 
     const result = {
       tokenCountMap,
@@ -745,11 +745,17 @@ class AgentClient extends BaseClient {
       };
 
       const toolSet = buildToolSet(this.options.agent);
-      let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
-        payload,
-        this.indexTokenCountMap,
-        toolSet,
-      );
+      const tokenCounter = createTokenCounter(this.getEncoding());
+      let {
+        messages: initialMessages,
+        indexTokenCountMap,
+        summary: initialSummary,
+      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet);
+      indexTokenCountMap = hydrateMissingIndexTokenCounts({
+        messages: initialMessages,
+        indexTokenCountMap,
+        tokenCounter,
+      });
 
       /**
        * @param {BaseMessage[]} messages
@@ -807,12 +813,14 @@ class AgentClient extends BaseClient {
           agents,
           messages,
           indexTokenCountMap,
+          initialSummary,
           runId: this.responseMessageId,
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
-          tokenCounter: createTokenCounter(this.getEncoding()),
+          summarizationConfig: appConfig?.summarization,
+          tokenCounter,
         });
 
         if (!run) {
@@ -1058,6 +1066,7 @@ class AgentClient extends BaseClient {
         titlePrompt: endpointConfig?.titlePrompt,
         titlePromptTemplate: endpointConfig?.titlePromptTemplate,
         chainOptions: {
+          runName: 'TitleRun',
           signal: abortController.signal,
           callbacks: [
             {
