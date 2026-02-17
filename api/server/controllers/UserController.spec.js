@@ -14,20 +14,40 @@ jest.mock('@librechat/data-schemas', () => {
   };
 });
 
-jest.mock('~/models', () => ({
-  deleteAllUserSessions: jest.fn().mockResolvedValue(undefined),
-  deleteAllSharedLinks: jest.fn().mockResolvedValue(undefined),
-  updateUserPlugins: jest.fn(),
-  deleteUserById: jest.fn().mockResolvedValue(undefined),
-  deleteMessages: jest.fn().mockResolvedValue(undefined),
-  deletePresets: jest.fn().mockResolvedValue(undefined),
-  deleteUserKey: jest.fn().mockResolvedValue(undefined),
-  deleteConvos: jest.fn().mockResolvedValue(undefined),
-  deleteFiles: jest.fn().mockResolvedValue(undefined),
-  updateUser: jest.fn(),
-  findToken: jest.fn(),
-  getFiles: jest.fn().mockResolvedValue([]),
-}));
+jest.mock('~/models', () => {
+  const _mongoose = require('mongoose');
+  return {
+    deleteAllUserSessions: jest.fn().mockResolvedValue(undefined),
+    deleteAllSharedLinks: jest.fn().mockResolvedValue(undefined),
+    deleteAllAgentApiKeys: jest.fn().mockResolvedValue(undefined),
+    deleteConversationTags: jest.fn().mockResolvedValue(undefined),
+    deleteAllUserMemories: jest.fn().mockResolvedValue(undefined),
+    deleteTransactions: jest.fn().mockResolvedValue(undefined),
+    deleteAclEntries: jest.fn().mockResolvedValue(undefined),
+    updateUserPlugins: jest.fn(),
+    deleteAssistants: jest.fn().mockResolvedValue(undefined),
+    deleteUserById: jest.fn().mockResolvedValue(undefined),
+    deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
+    deleteMessages: jest.fn().mockResolvedValue(undefined),
+    deleteBalances: jest.fn().mockResolvedValue(undefined),
+    deleteActions: jest.fn().mockResolvedValue(undefined),
+    deletePresets: jest.fn().mockResolvedValue(undefined),
+    deleteUserKey: jest.fn().mockResolvedValue(undefined),
+    deleteToolCalls: jest.fn().mockResolvedValue(undefined),
+    deleteUserAgents: jest.fn().mockResolvedValue(undefined),
+    deleteTokens: jest.fn().mockResolvedValue(undefined),
+    deleteConvos: jest.fn().mockResolvedValue(undefined),
+    deleteFiles: jest.fn().mockResolvedValue(undefined),
+    updateUser: jest.fn(),
+    getUserById: jest.fn().mockResolvedValue(null),
+    findToken: jest.fn(),
+    getFiles: jest.fn().mockResolvedValue([]),
+    removeUserFromAllGroups: jest.fn().mockImplementation(async (userId) => {
+      const Group = _mongoose.models.Group;
+      await Group.updateMany({ memberIds: userId }, { $pullAll: { memberIds: [userId] } });
+    }),
+  };
+});
 
 jest.mock('~/server/services/PluginService', () => ({
   updateUserPluginAuth: jest.fn(),
@@ -53,18 +73,6 @@ jest.mock('~/server/services/Config', () => ({
   getMCPManager: jest.fn(),
   getFlowStateManager: jest.fn(),
   getMCPServersRegistry: jest.fn(),
-}));
-
-jest.mock('~/models/ToolCall', () => ({
-  deleteToolCalls: jest.fn().mockResolvedValue(undefined),
-}));
-
-jest.mock('~/models/Prompt', () => ({
-  deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
-}));
-
-jest.mock('~/models/Agent', () => ({
-  deleteUserAgents: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('~/cache', () => ({

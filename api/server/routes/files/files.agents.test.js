@@ -10,8 +10,7 @@ const {
   ResourceType,
   PrincipalType,
 } = require('librechat-data-provider');
-const { createAgent } = require('~/models/Agent');
-const { createFile } = require('~/models');
+const { createAgent, createFile } = require('~/models');
 
 // Only mock the external dependencies that we don't want to test
 jest.mock('~/server/services/Files/process', () => ({

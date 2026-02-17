@@ -22,6 +22,7 @@ const {
   GenerationJobManager,
   getTransactionsConfig,
   createMemoryProcessor,
+  loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
 } = require('@librechat/api');
@@ -45,17 +46,16 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { updateBalance, bulkInsertTransactions } = require('~/models');
 const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { createContextHandlers } = require('~/app/clients/prompts');
-const { getConvoFiles } = require('~/models/Conversation');
+const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
-const { getRoleByName } = require('~/models/Role');
-const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
+
+const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -413,7 +413,7 @@ class AgentClient extends BaseClient {
       user,
       permissionType: PermissionTypes.MEMORIES,
       permissions: [Permissions.USE],
-      getRoleByName,
+      getRoleByName: db.getRoleByName,
     });
 
     if (!hasAccess) {
@@ -473,9 +473,9 @@ class AgentClient extends BaseClient {
         },
       },
       {
-        getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
+        getConvoFiles: db.getConvoFiles,
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
@@ -631,8 +631,8 @@ class AgentClient extends BaseClient {
   }) {
     const result = await recordCollectedUsage(
       {
-        spendTokens,
-        spendStructuredTokens,
+        spendTokens: db.spendTokens,
+        spendStructuredTokens: db.spendStructuredTokens,
         pricing: { getMultiplier, getCacheMultiplier },
         bulkWriteOps: { insertMany: bulkInsertTransactions, updateBalance },
       },
@@ -1134,7 +1134,7 @@ class AgentClient extends BaseClient {
     context = 'message',
   }) {
     try {
-      await spendTokens(
+      await db.spendTokens(
         {
           model,
           context,
@@ -1153,7 +1153,7 @@ class AgentClient extends BaseClient {
         'reasoning_tokens' in usage &&
         typeof usage.reasoning_tokens === 'number'
       ) {
-        await spendTokens(
+        await db.spendTokens(
           {
             model,
             balance,
