@@ -1,21 +1,30 @@
 import logger from '~/config/winston';
+import type { TxData, TransactionResult } from './transaction';
+
+/** Base transaction context passed by callers — does not include fields added internally */
+export interface SpendTxData {
+  user: string | import('mongoose').Types.ObjectId;
+  conversationId?: string;
+  model?: string;
+  context?: string;
+  endpointTokenConfig?: Record<string, Record<string, number>> | null;
+  balance?: { enabled?: boolean };
+  transactions?: { enabled?: boolean };
+  valueKey?: string;
+}
 
 export function createSpendTokensMethods(
   _mongoose: typeof import('mongoose'),
   transactionMethods: {
-    createTransaction: (
-      txData: Record<string, unknown>,
-    ) => Promise<Record<string, unknown> | undefined>;
-    createStructuredTransaction: (
-      txData: Record<string, unknown>,
-    ) => Promise<Record<string, unknown> | undefined>;
+    createTransaction: (txData: TxData) => Promise<TransactionResult | undefined>;
+    createStructuredTransaction: (txData: TxData) => Promise<TransactionResult | undefined>;
   },
 ) {
   /**
    * Creates up to two transactions to record the spending of tokens.
    */
   async function spendTokens(
-    txData: Record<string, unknown>,
+    txData: SpendTxData,
     tokenUsage: { promptTokens?: number; completionTokens?: number },
   ) {
     const { promptTokens, completionTokens } = tokenUsage;
@@ -25,8 +34,7 @@ export function createSpendTokensMethods(
       } | Token usage: `,
       { promptTokens, completionTokens },
     );
-    let prompt: Record<string, unknown> | undefined,
-      completion: Record<string, unknown> | undefined;
+    let prompt: TransactionResult | undefined, completion: TransactionResult | undefined;
     const normalizedPromptTokens = Math.max(promptTokens ?? 0, 0);
     try {
       if (promptTokens !== undefined) {
@@ -68,7 +76,7 @@ export function createSpendTokensMethods(
    * Creates transactions to record the spending of structured tokens.
    */
   async function spendStructuredTokens(
-    txData: Record<string, unknown>,
+    txData: SpendTxData,
     tokenUsage: {
       promptTokens?: { input?: number; write?: number; read?: number };
       completionTokens?: number;
@@ -81,8 +89,7 @@ export function createSpendTokensMethods(
       } | Token usage: `,
       { promptTokens, completionTokens },
     );
-    let prompt: Record<string, unknown> | undefined,
-      completion: Record<string, unknown> | undefined;
+    let prompt: TransactionResult | undefined, completion: TransactionResult | undefined;
     try {
       if (promptTokens) {
         const input = Math.max(promptTokens.input ?? 0, 0);

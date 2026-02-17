@@ -1,12 +1,13 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { matchModelName, findMatchingPattern } from './test-helpers';
-import { createModels } from '~/models';
-import { createTxMethods, tokenValues, premiumTokenValues } from './tx';
-import { createTransactionMethods } from './transaction';
-import { createSpendTokensMethods } from './spendTokens';
 import type { ITransaction } from '~/schema/transaction';
+import type { TxData } from './transaction';
 import type { IBalance } from '..';
+import { createTxMethods, tokenValues, premiumTokenValues } from './tx';
+import { matchModelName, findMatchingPattern } from './test-helpers';
+import { createSpendTokensMethods } from './spendTokens';
+import { createTransactionMethods } from './transaction';
+import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -101,7 +102,7 @@ describe('Regular Token Spending Tests', () => {
     const expectedTotalCost = 100 * promptMultiplier + 50 * completionMultiplier;
     const expectedBalance = initialBalance - expectedTotalCost;
 
-    expect(updatedBalance.tokenCredits).toBeCloseTo(expectedBalance, 0);
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(expectedBalance, 0);
   });
 
   test('spendTokens should handle zero completion tokens', async () => {
@@ -132,7 +133,7 @@ describe('Regular Token Spending Tests', () => {
     const updatedBalance = await Balance.findOne({ user: userId });
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const expectedCost = 100 * promptMultiplier;
-    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
   });
 
   test('spendTokens should handle undefined token counts', async () => {
@@ -185,7 +186,7 @@ describe('Regular Token Spending Tests', () => {
     const updatedBalance = await Balance.findOne({ user: userId });
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const expectedCost = 100 * promptMultiplier;
-    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
   });
 
   test('spendTokens should not update balance when balance feature is disabled', async () => {
@@ -214,7 +215,7 @@ describe('Regular Token Spending Tests', () => {
 
     // Assert: Balance should remain unchanged.
     const updatedBalance = await Balance.findOne({ user: userId });
-    expect(updatedBalance.tokenCredits).toBe(initialBalance);
+    expect(updatedBalance?.tokenCredits).toBe(initialBalance);
   });
 });
 
@@ -255,23 +256,25 @@ describe('Structured Token Spending Tests', () => {
     // Calculate expected costs.
     const expectedPromptCost =
       tokenUsage.promptTokens.input * promptMultiplier +
-      tokenUsage.promptTokens.write * writeMultiplier +
-      tokenUsage.promptTokens.read * readMultiplier;
+      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
+      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
     const expectedCompletionCost = tokenUsage.completionTokens * completionMultiplier;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
     const expectedBalance = initialBalance - expectedTotalCost;
 
     // Assert
-    expect(result.completion.balance).toBeLessThan(initialBalance);
+    expect(result?.completion?.balance).toBeLessThan(initialBalance);
     const allowedDifference = 100;
-    expect(Math.abs(result.completion.balance - expectedBalance)).toBeLessThan(allowedDifference);
-    const balanceDecrease = initialBalance - result.completion.balance;
+    expect(Math.abs((result?.completion?.balance ?? 0) - expectedBalance)).toBeLessThan(
+      allowedDifference,
+    );
+    const balanceDecrease = initialBalance - (result?.completion?.balance ?? 0);
     expect(balanceDecrease).toBeCloseTo(expectedTotalCost, 0);
 
     const expectedPromptTokenValue = -expectedPromptCost;
     const expectedCompletionTokenValue = -expectedCompletionCost;
-    expect(result.prompt.prompt).toBeCloseTo(expectedPromptTokenValue, 1);
-    expect(result.completion.completion).toBe(expectedCompletionTokenValue);
+    expect(result?.prompt?.prompt).toBeCloseTo(expectedPromptTokenValue, 1);
+    expect(result?.completion?.completion).toBe(expectedCompletionTokenValue);
   });
 
   test('should handle zero completion tokens in structured spending', async () => {
@@ -304,7 +307,7 @@ describe('Structured Token Spending Tests', () => {
     // Assert
     expect(result.prompt).toBeDefined();
     expect(result.completion).toBeUndefined();
-    expect(result.prompt.prompt).toBeLessThan(0);
+    expect(result?.prompt?.prompt).toBeLessThan(0);
   });
 
   test('should handle only prompt tokens in structured spending', async () => {
@@ -336,7 +339,7 @@ describe('Structured Token Spending Tests', () => {
     // Assert
     expect(result.prompt).toBeDefined();
     expect(result.completion).toBeUndefined();
-    expect(result.prompt.prompt).toBeLessThan(0);
+    expect(result?.prompt?.prompt).toBeLessThan(0);
   });
 
   test('should handle undefined token counts in structured spending', async () => {
@@ -395,7 +398,7 @@ describe('Structured Token Spending Tests', () => {
 
     // Assert:
     // (Assuming a multiplier for completion of 15 and a cancel rate of 1.15 as noted in the original test.)
-    expect(result.completion.completion).toBeCloseTo(-50 * 15 * 1.15, 0);
+    expect(result?.completion?.completion).toBeCloseTo(-50 * 15 * 1.15, 0);
   });
 });
 
@@ -407,7 +410,7 @@ describe('NaN Handling Tests', () => {
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'gpt-3.5-turbo';
-    const txData = {
+    const txData: TxData = {
       user: userId,
       conversationId: 'test-conversation-id',
       model,
@@ -424,7 +427,7 @@ describe('NaN Handling Tests', () => {
     // Assert: No transaction should be created and balance remains unchanged.
     expect(result).toBeUndefined();
     const balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(initialBalance);
+    expect(balance?.tokenCredits).toBe(initialBalance);
   });
 });
 
@@ -436,7 +439,7 @@ describe('Transactions Config Tests', () => {
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'gpt-3.5-turbo';
-    const txData = {
+    const txData: TxData = {
       user: userId,
       conversationId: 'test-conversation-id',
       model,
@@ -455,7 +458,7 @@ describe('Transactions Config Tests', () => {
     const transactions = await Transaction.find({ user: userId });
     expect(transactions).toHaveLength(0);
     const balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(initialBalance);
+    expect(balance?.tokenCredits).toBe(initialBalance);
   });
 
   test('createTransaction should save when transactions.enabled is true', async () => {
@@ -465,7 +468,7 @@ describe('Transactions Config Tests', () => {
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'gpt-3.5-turbo';
-    const txData = {
+    const txData: TxData = {
       user: userId,
       conversationId: 'test-conversation-id',
       model,
@@ -482,7 +485,7 @@ describe('Transactions Config Tests', () => {
 
     // Assert: Transaction should be created
     expect(result).toBeDefined();
-    expect(result.balance).toBeLessThan(initialBalance);
+    expect(result?.balance).toBeLessThan(initialBalance);
     const transactions = await Transaction.find({ user: userId });
     expect(transactions).toHaveLength(1);
     expect(transactions[0].rawAmount).toBe(-100);
@@ -495,7 +498,7 @@ describe('Transactions Config Tests', () => {
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'gpt-3.5-turbo';
-    const txData = {
+    const txData: TxData = {
       user: userId,
       conversationId: 'test-conversation-id',
       model,
@@ -512,7 +515,7 @@ describe('Transactions Config Tests', () => {
 
     // Assert: Transaction should be created (backward compatibility)
     expect(result).toBeDefined();
-    expect(result.balance).toBeLessThan(initialBalance);
+    expect(result?.balance).toBeLessThan(initialBalance);
     const transactions = await Transaction.find({ user: userId });
     expect(transactions).toHaveLength(1);
   });
@@ -524,7 +527,7 @@ describe('Transactions Config Tests', () => {
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'gpt-3.5-turbo';
-    const txData = {
+    const txData: TxData = {
       user: userId,
       conversationId: 'test-conversation-id',
       model,
@@ -545,7 +548,7 @@ describe('Transactions Config Tests', () => {
     expect(transactions).toHaveLength(1);
     expect(transactions[0].rawAmount).toBe(-100);
     const balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(initialBalance);
+    expect(balance?.tokenCredits).toBe(initialBalance);
   });
 
   test('createStructuredTransaction should not save when transactions.enabled is false', async () => {
@@ -555,7 +558,7 @@ describe('Transactions Config Tests', () => {
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'claude-3-5-sonnet';
-    const txData = {
+    const txData: TxData = {
       user: userId,
       conversationId: 'test-conversation-id',
       model,
@@ -575,7 +578,7 @@ describe('Transactions Config Tests', () => {
     const transactions = await Transaction.find({ user: userId });
     expect(transactions).toHaveLength(0);
     const balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(initialBalance);
+    expect(balance?.tokenCredits).toBe(initialBalance);
   });
 
   test('createStructuredTransaction should save transaction but not update balance when balance is disabled but transactions enabled', async () => {
@@ -585,7 +588,7 @@ describe('Transactions Config Tests', () => {
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
     const model = 'claude-3-5-sonnet';
-    const txData = {
+    const txData: TxData = {
       user: userId,
       conversationId: 'test-conversation-id',
       model,
@@ -609,7 +612,7 @@ describe('Transactions Config Tests', () => {
     expect(transactions[0].writeTokens).toBe(-100);
     expect(transactions[0].readTokens).toBe(-5);
     const balance = await Balance.findOne({ user: userId });
-    expect(balance.tokenCredits).toBe(initialBalance);
+    expect(balance?.tokenCredits).toBe(initialBalance);
   });
 });
 
@@ -633,11 +636,11 @@ describe('calculateTokenValue Edge Cases', () => {
     });
 
     const expectedRate = getMultiplier({ model, tokenType: 'prompt' });
-    expect(result.rate).toBe(expectedRate);
+    expect(result?.rate).toBe(expectedRate);
 
     const tx = await Transaction.findOne({ user: userId });
-    expect(tx.tokenValue).toBe(-promptTokens * expectedRate);
-    expect(tx.rate).toBe(expectedRate);
+    expect(tx?.tokenValue).toBe(-promptTokens * expectedRate);
+    expect(tx?.rate).toBe(expectedRate);
   });
 
   test('should derive valueKey and apply correct rate for an unknown model with tokenType', async () => {
@@ -656,9 +659,9 @@ describe('calculateTokenValue Edge Cases', () => {
     });
 
     const tx = await Transaction.findOne({ user: userId });
-    expect(tx.rate).toBeDefined();
-    expect(tx.rate).toBeGreaterThan(0);
-    expect(tx.tokenValue).toBe(tx.rawAmount * tx.rate);
+    expect(tx?.rate).toBeDefined();
+    expect(tx?.rate).toBeGreaterThan(0);
+    expect(tx?.tokenValue).toBe((tx?.rawAmount ?? 0) * (tx?.rate ?? 0));
   });
 
   test('should correctly apply model-derived multiplier without valueKey for completion', async () => {
@@ -681,10 +684,10 @@ describe('calculateTokenValue Edge Cases', () => {
 
     const expectedRate = getMultiplier({ model, tokenType: 'completion' });
     expect(expectedRate).toBe(tokenValues[model].completion);
-    expect(result.rate).toBe(expectedRate);
+    expect(result?.rate).toBe(expectedRate);
 
     const updatedBalance = await Balance.findOne({ user: userId });
-    expect(updatedBalance.tokenCredits).toBeCloseTo(
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(
       initialBalance - completionTokens * expectedRate,
       0,
     );
@@ -718,7 +721,7 @@ describe('Premium Token Pricing Integration Tests', () => {
       promptTokens * standardPromptRate + completionTokens * standardCompletionRate;
 
     const updatedBalance = await Balance.findOne({ user: userId });
-    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
   });
 
   test('spendTokens should apply premium pricing when prompt tokens exceed premium threshold', async () => {
@@ -747,7 +750,7 @@ describe('Premium Token Pricing Integration Tests', () => {
       promptTokens * premiumPromptRate + completionTokens * premiumCompletionRate;
 
     const updatedBalance = await Balance.findOne({ user: userId });
-    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
   });
 
   test('spendTokens should apply standard pricing at exactly the premium threshold', async () => {
@@ -776,7 +779,7 @@ describe('Premium Token Pricing Integration Tests', () => {
       promptTokens * standardPromptRate + completionTokens * standardCompletionRate;
 
     const updatedBalance = await Balance.findOne({ user: userId });
-    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
   });
 
   test('spendStructuredTokens should apply premium pricing when total input tokens exceed threshold', async () => {
@@ -815,14 +818,14 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * premiumPromptRate +
-      tokenUsage.promptTokens.write * writeMultiplier +
-      tokenUsage.promptTokens.read * readMultiplier;
+      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
+      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
     const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
 
     const updatedBalance = await Balance.findOne({ user: userId });
     expect(totalInput).toBeGreaterThan(premiumTokenValues[model].threshold);
-    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
   });
 
   test('spendStructuredTokens should apply standard pricing when total input tokens are below threshold', async () => {
@@ -861,14 +864,14 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * standardPromptRate +
-      tokenUsage.promptTokens.write * writeMultiplier +
-      tokenUsage.promptTokens.read * readMultiplier;
+      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
+      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
     const expectedCompletionCost = tokenUsage.completionTokens * standardCompletionRate;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
 
     const updatedBalance = await Balance.findOne({ user: userId });
     expect(totalInput).toBeLessThanOrEqual(premiumTokenValues[model].threshold);
-    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
   });
 
   test('non-premium models should not be affected by inputTokenCount regardless of prompt size', async () => {
@@ -897,6 +900,6 @@ describe('Premium Token Pricing Integration Tests', () => {
       promptTokens * standardPromptRate + completionTokens * standardCompletionRate;
 
     const updatedBalance = await Balance.findOne({ user: userId });
-    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
   });
 });

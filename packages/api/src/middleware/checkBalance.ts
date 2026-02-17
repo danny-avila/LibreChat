@@ -1,5 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { ViolationTypes } from 'librechat-data-provider';
+import type { ServerRequest } from '~/types/http';
+import type { Response } from 'express';
 
 type TimeUnit = 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
 
@@ -141,7 +143,7 @@ async function checkBalanceRecord(
  * Throws an error with the balance info if insufficient funds.
  */
 export async function checkBalance(
-  { req, res, txData }: { req: unknown; res: unknown; txData: TxData },
+  { req, res, txData }: { req: ServerRequest; res: Response; txData: TxData },
   deps: CheckBalanceDeps,
 ): Promise<boolean> {
   const { canSpend, balance, tokenCost } = await checkBalanceRecord(txData, deps);

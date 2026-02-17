@@ -1,51 +1,121 @@
-import type { Model } from 'mongoose';
+import type { FilterQuery, Model, Types } from 'mongoose';
 import logger from '~/config/winston';
 import type { IBalance } from '~/types';
+import type { ITransaction } from '~/schema/transaction';
 
 const cancelRate = 1.15;
+
+type MultiplierParams = {
+  model?: string;
+  valueKey?: string;
+  tokenType?: 'prompt' | 'completion';
+  inputTokenCount?: number;
+  endpointTokenConfig?: Record<string, Record<string, number>>;
+};
+
+type CacheMultiplierParams = {
+  cacheType?: 'write' | 'read';
+  model?: string;
+  endpointTokenConfig?: Record<string, Record<string, number>>;
+};
+
+/** Fields read/written by the internal token value calculators */
+interface InternalTxDoc {
+  valueKey?: string;
+  tokenType?: 'prompt' | 'completion' | 'credits';
+  model?: string;
+  endpointTokenConfig?: Record<string, Record<string, number>> | null;
+  inputTokenCount?: number;
+  rawAmount?: number;
+  context?: string;
+  rate?: number;
+  tokenValue?: number;
+  rateDetail?: Record<string, number>;
+  inputTokens?: number;
+  writeTokens?: number;
+  readTokens?: number;
+}
+
+/** Input data for creating a transaction */
+export interface TxData {
+  user: string | Types.ObjectId;
+  conversationId?: string;
+  model?: string;
+  context?: string;
+  tokenType?: 'prompt' | 'completion' | 'credits';
+  rawAmount?: number;
+  valueKey?: string;
+  endpointTokenConfig?: Record<string, Record<string, number>> | null;
+  inputTokenCount?: number;
+  inputTokens?: number;
+  writeTokens?: number;
+  readTokens?: number;
+  balance?: { enabled?: boolean };
+  transactions?: { enabled?: boolean };
+}
+
+/** Return value from a successful transaction that also updates the balance */
+export interface TransactionResult {
+  rate: number;
+  user: string;
+  balance: number;
+  prompt?: number;
+  completion?: number;
+  credits?: number;
+}
 
 export function createTransactionMethods(
   mongoose: typeof import('mongoose'),
   txMethods: {
-    getMultiplier: (params: Record<string, unknown>) => number;
-    getCacheMultiplier: (params: Record<string, unknown>) => number | null;
+    getMultiplier: (params: MultiplierParams) => number;
+    getCacheMultiplier: (params: CacheMultiplierParams) => number | null;
   },
 ) {
   /** Calculate and set the tokenValue for a transaction */
-  function calculateTokenValue(txn: Record<string, unknown>) {
+  function calculateTokenValue(txn: InternalTxDoc) {
     const { valueKey, tokenType, model, endpointTokenConfig, inputTokenCount } = txn;
     const multiplier = Math.abs(
-      txMethods.getMultiplier({ valueKey, tokenType, model, endpointTokenConfig, inputTokenCount }),
+      txMethods.getMultiplier({
+        valueKey,
+        tokenType: tokenType as 'prompt' | 'completion' | undefined,
+        model,
+        endpointTokenConfig: endpointTokenConfig ?? undefined,
+        inputTokenCount,
+      }),
     );
     txn.rate = multiplier;
-    txn.tokenValue = (txn.rawAmount as number) * multiplier;
+    txn.tokenValue = (txn.rawAmount ?? 0) * multiplier;
     if (txn.context && txn.tokenType === 'completion' && txn.context === 'incomplete') {
-      txn.tokenValue = Math.ceil((txn.tokenValue as number) * cancelRate);
-      txn.rate = (txn.rate as number) * cancelRate;
+      txn.tokenValue = Math.ceil((txn.tokenValue ?? 0) * cancelRate);
+      txn.rate = (txn.rate ?? 0) * cancelRate;
     }
   }
 
   /** Calculate token value for structured tokens */
-  function calculateStructuredTokenValue(txn: Record<string, unknown>) {
+  function calculateStructuredTokenValue(txn: InternalTxDoc) {
     if (!txn.tokenType) {
       txn.tokenValue = txn.rawAmount;
       return;
     }
 
     const { model, endpointTokenConfig, inputTokenCount } = txn;
+    const etConfig = endpointTokenConfig ?? undefined;
 
     if (txn.tokenType === 'prompt') {
       const inputMultiplier = txMethods.getMultiplier({
         tokenType: 'prompt',
         model,
-        endpointTokenConfig,
+        endpointTokenConfig: etConfig,
         inputTokenCount,
       });
       const writeMultiplier =
-        txMethods.getCacheMultiplier({ cacheType: 'write', model, endpointTokenConfig }) ??
-        inputMultiplier;
+        txMethods.getCacheMultiplier({
+          cacheType: 'write',
+          model,
+          endpointTokenConfig: etConfig,
+        }) ?? inputMultiplier;
       const readMultiplier =
-        txMethods.getCacheMultiplier({ cacheType: 'read', model, endpointTokenConfig }) ??
+        txMethods.getCacheMultiplier({ cacheType: 'read', model, endpointTokenConfig: etConfig }) ??
         inputMultiplier;
 
       txn.rateDetail = {
@@ -55,24 +125,24 @@ export function createTransactionMethods(
       };
 
       const totalPromptTokens =
-        Math.abs((txn.inputTokens as number) || 0) +
-        Math.abs((txn.writeTokens as number) || 0) +
-        Math.abs((txn.readTokens as number) || 0);
+        Math.abs(txn.inputTokens ?? 0) +
+        Math.abs(txn.writeTokens ?? 0) +
+        Math.abs(txn.readTokens ?? 0);
 
       if (totalPromptTokens > 0) {
         txn.rate =
-          (Math.abs(inputMultiplier * ((txn.inputTokens as number) || 0)) +
-            Math.abs(writeMultiplier * ((txn.writeTokens as number) || 0)) +
-            Math.abs(readMultiplier * ((txn.readTokens as number) || 0))) /
+          (Math.abs(inputMultiplier * (txn.inputTokens ?? 0)) +
+            Math.abs(writeMultiplier * (txn.writeTokens ?? 0)) +
+            Math.abs(readMultiplier * (txn.readTokens ?? 0))) /
           totalPromptTokens;
       } else {
         txn.rate = Math.abs(inputMultiplier);
       }
 
       txn.tokenValue = -(
-        Math.abs((txn.inputTokens as number) || 0) * inputMultiplier +
-        Math.abs((txn.writeTokens as number) || 0) * writeMultiplier +
-        Math.abs((txn.readTokens as number) || 0) * readMultiplier
+        Math.abs(txn.inputTokens ?? 0) * inputMultiplier +
+        Math.abs(txn.writeTokens ?? 0) * writeMultiplier +
+        Math.abs(txn.readTokens ?? 0) * readMultiplier
       );
 
       txn.rawAmount = -totalPromptTokens;
@@ -80,23 +150,20 @@ export function createTransactionMethods(
       const multiplier = txMethods.getMultiplier({
         tokenType: txn.tokenType,
         model,
-        endpointTokenConfig,
+        endpointTokenConfig: etConfig,
         inputTokenCount,
       });
       txn.rate = Math.abs(multiplier);
-      txn.tokenValue = -Math.abs(txn.rawAmount as number) * multiplier;
-      txn.rawAmount = -Math.abs(txn.rawAmount as number);
+      txn.tokenValue = -Math.abs(txn.rawAmount ?? 0) * multiplier;
+      txn.rawAmount = -Math.abs(txn.rawAmount ?? 0);
     }
 
     if (txn.context && txn.tokenType === 'completion' && txn.context === 'incomplete') {
-      txn.tokenValue = Math.ceil((txn.tokenValue as number) * cancelRate);
-      txn.rate = (txn.rate as number) * cancelRate;
+      txn.tokenValue = Math.ceil((txn.tokenValue ?? 0) * cancelRate);
+      txn.rate = (txn.rate ?? 0) * cancelRate;
       if (txn.rateDetail) {
         txn.rateDetail = Object.fromEntries(
-          Object.entries(txn.rateDetail as Record<string, number>).map(([k, v]) => [
-            k,
-            v * cancelRate,
-          ]),
+          Object.entries(txn.rateDetail).map(([k, v]) => [k, v * cancelRate]),
         );
       }
     }
@@ -104,6 +171,7 @@ export function createTransactionMethods(
 
   /**
    * Updates a user's token balance using optimistic concurrency control.
+   * Always returns an IBalance or throws after exhausting retries.
    */
   async function updateBalance({
     user,
@@ -112,8 +180,8 @@ export function createTransactionMethods(
   }: {
     user: string;
     incrementValue: number;
-    setValues?: Record<string, unknown>;
-  }) {
+    setValues?: Partial<IBalance>;
+  }): Promise<IBalance> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     const maxRetries = 10;
     let delay = 50;
@@ -134,7 +202,7 @@ export function createTransactionMethods(
           },
         };
 
-        let updatedBalance = null;
+        let updatedBalance: IBalance | null = null;
         if (currentBalanceDoc) {
           updatedBalance = await Balance.findOneAndUpdate(
             { user, tokenCredits: currentCredits },
@@ -193,8 +261,8 @@ export function createTransactionMethods(
   /**
    * Creates an auto-refill transaction that also updates balance.
    */
-  async function createAutoRefillTransaction(txData: Record<string, unknown>) {
-    if (txData.rawAmount != null && isNaN(txData.rawAmount as number)) {
+  async function createAutoRefillTransaction(txData: TxData) {
+    if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
       return;
     }
     const Transaction = mongoose.models.Transaction;
@@ -206,29 +274,29 @@ export function createTransactionMethods(
 
     const balanceResponse = await updateBalance({
       user: transaction.user as string,
-      incrementValue: txData.rawAmount as number,
-      setValues: { lastRefill: new Date() },
+      incrementValue: txData.rawAmount ?? 0,
+      setValues: { lastRefill: new Date() } as Partial<IBalance>,
     });
-    const result: Record<string, unknown> = {
-      rate: transaction.rate,
-      user: transaction.user.toString(),
-      balance: (balanceResponse as Record<string, unknown>).tokenCredits,
+    const result = {
+      rate: transaction.rate as number,
+      user: transaction.user.toString() as string,
+      balance: balanceResponse.tokenCredits,
+      transaction,
     };
     logger.debug('[Balance.check] Auto-refill performed', result);
-    result.transaction = transaction;
     return result;
   }
 
   /**
    * Creates a transaction and updates the balance.
    */
-  async function createTransaction(_txData: Record<string, unknown>) {
+  async function createTransaction(_txData: TxData): Promise<TransactionResult | undefined> {
     const { balance, transactions, ...txData } = _txData;
-    if (txData.rawAmount != null && isNaN(txData.rawAmount as number)) {
+    if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
       return;
     }
 
-    if ((transactions as Record<string, unknown>)?.enabled === false) {
+    if (transactions?.enabled === false) {
       return;
     }
 
@@ -239,7 +307,7 @@ export function createTransactionMethods(
     calculateTokenValue(transaction);
 
     await transaction.save();
-    if (!(balance as Record<string, unknown>)?.enabled) {
+    if (!balance?.enabled) {
       return;
     }
 
@@ -250,19 +318,21 @@ export function createTransactionMethods(
     });
 
     return {
-      rate: transaction.rate,
-      user: transaction.user.toString(),
-      balance: (balanceResponse as Record<string, unknown>).tokenCredits,
+      rate: transaction.rate as number,
+      user: transaction.user.toString() as string,
+      balance: balanceResponse.tokenCredits,
       [transaction.tokenType as string]: incrementValue,
-    };
+    } as TransactionResult;
   }
 
   /**
    * Creates a structured transaction and updates the balance.
    */
-  async function createStructuredTransaction(_txData: Record<string, unknown>) {
+  async function createStructuredTransaction(
+    _txData: TxData,
+  ): Promise<TransactionResult | undefined> {
     const { balance, transactions, ...txData } = _txData;
-    if ((transactions as Record<string, unknown>)?.enabled === false) {
+    if (transactions?.enabled === false) {
       return;
     }
 
@@ -275,7 +345,7 @@ export function createTransactionMethods(
 
     await transaction.save();
 
-    if (!(balance as Record<string, unknown>)?.enabled) {
+    if (!balance?.enabled) {
       return;
     }
 
@@ -287,17 +357,17 @@ export function createTransactionMethods(
     });
 
     return {
-      rate: transaction.rate,
-      user: transaction.user.toString(),
-      balance: (balanceResponse as Record<string, unknown>).tokenCredits,
+      rate: transaction.rate as number,
+      user: transaction.user.toString() as string,
+      balance: balanceResponse.tokenCredits,
       [transaction.tokenType as string]: incrementValue,
-    };
+    } as TransactionResult;
   }
 
   /**
    * Queries and retrieves transactions based on a given filter.
    */
-  async function getTransactions(filter: Record<string, unknown>) {
+  async function getTransactions(filter: FilterQuery<ITransaction>) {
     try {
       const Transaction = mongoose.models.Transaction;
       return await Transaction.find(filter).lean();
@@ -316,20 +386,20 @@ export function createTransactionMethods(
   /** Upserts balance fields for a user. */
   async function upsertBalanceFields(
     user: string,
-    fields: Record<string, unknown>,
-  ): Promise<unknown> {
+    fields: Partial<IBalance>,
+  ): Promise<IBalance | null> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     return Balance.findOneAndUpdate({ user }, { $set: fields }, { upsert: true, new: true }).lean();
   }
 
   /** Deletes transactions matching a filter. */
-  async function deleteTransactions(filter: Record<string, unknown>) {
+  async function deleteTransactions(filter: FilterQuery<ITransaction>) {
     const Transaction = mongoose.models.Transaction;
     return Transaction.deleteMany(filter);
   }
 
   /** Deletes balance records matching a filter. */
-  async function deleteBalances(filter: Record<string, unknown>) {
+  async function deleteBalances(filter: FilterQuery<IBalance>) {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     return Balance.deleteMany(filter);
   }
