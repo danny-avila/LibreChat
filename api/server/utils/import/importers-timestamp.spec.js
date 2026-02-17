@@ -3,10 +3,8 @@ const { ImportBatchBuilder } = require('./importBatchBuilder');
 const { getImporter } = require('./importers');
 
 // Mock the database methods
-jest.mock('~/models/Conversation', () => ({
+jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn(),
-}));
-jest.mock('~/models/Message', () => ({
   bulkSaveMessages: jest.fn(),
 }));
 jest.mock('~/cache/getLogStores');
