@@ -356,6 +356,32 @@ class BaseClient {
 
         update.summary = tokenCountMap.summaryMessage.content;
         update.summaryTokenCount = tokenCountMap.summaryMessage.tokenCount;
+
+        const summaryContentBlock = {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: tokenCountMap.summaryMessage.content }],
+          tokenCount: tokenCountMap.summaryMessage.tokenCount,
+          createdAt: new Date().toISOString(),
+        };
+        let existingContent = [];
+        if (Array.isArray(message.content)) {
+          existingContent = [...message.content];
+        } else if (message.content) {
+          existingContent = [{ type: ContentTypes.TEXT, text: message.content }];
+        }
+        let existingSummaryIndex = -1;
+        for (let index = existingContent.length - 1; index >= 0; index--) {
+          if (existingContent[index]?.type === ContentTypes.SUMMARY) {
+            existingSummaryIndex = index;
+            break;
+          }
+        }
+        if (existingSummaryIndex >= 0) {
+          existingContent[existingSummaryIndex] = summaryContentBlock;
+        } else {
+          existingContent.push(summaryContentBlock);
+        }
+        update.content = existingContent;
       }
 
       if (message.tokenCount && !update.summaryTokenCount) {
@@ -934,10 +960,24 @@ class BaseClient {
       return _messages;
     }
 
-    // Find the latest message with a 'summary' property
     for (let i = _messages.length - 1; i >= 0; i--) {
-      if (_messages[i]?.summary) {
-        this.previous_summary = _messages[i];
+      const msg = _messages[i];
+      if (!msg) {
+        continue;
+      }
+
+      const summaryBlock = BaseClient.findSummaryContentBlock(msg);
+      if (summaryBlock) {
+        this.previous_summary = {
+          ...msg,
+          summary: BaseClient.getSummaryText(summaryBlock),
+          summaryTokenCount: summaryBlock.tokenCount,
+        };
+        break;
+      }
+
+      if (msg.summary) {
+        this.previous_summary = msg;
         break;
       }
     }
@@ -1041,6 +1081,32 @@ class BaseClient {
     await db.updateMessage(this.options?.req?.user?.id, message);
   }
 
+  /** Extracts text from a summary block (handles both legacy `text` field and new `content` array format). */
+  static getSummaryText(summaryBlock) {
+    if (Array.isArray(summaryBlock.content)) {
+      return summaryBlock.content.map((b) => b.text ?? '').join('');
+    }
+    if (typeof summaryBlock.content === 'string') {
+      return summaryBlock.content;
+    }
+    return summaryBlock.text ?? '';
+  }
+
+  /** Finds the last summary content block in a message's content array (last-summary-wins). */
+  static findSummaryContentBlock(message) {
+    if (!Array.isArray(message?.content)) {
+      return null;
+    }
+    let lastSummary = null;
+    for (const part of message.content) {
+      // Accepts both new format (content: []) and legacy DB format (text: string)
+      if (part?.type === ContentTypes.SUMMARY && (part.content || part.text)) {
+        lastSummary = part;
+      }
+    }
+    return lastSummary;
+  }
+
   /**
    * Iterate through messages, building an array based on the parentMessageId.
    *
@@ -1095,20 +1161,35 @@ class BaseClient {
         break;
       }
 
-      if (summary && message.summary) {
-        message.role = 'system';
-        message.text = message.summary;
+      let resolved = message;
+      let hasSummary = false;
+      if (summary) {
+        const summaryBlock = BaseClient.findSummaryContentBlock(message);
+        if (summaryBlock) {
+          const summaryText = BaseClient.getSummaryText(summaryBlock);
+          resolved = {
+            ...message,
+            role: 'system',
+            content: [{ type: ContentTypes.TEXT, text: summaryText }],
+            tokenCount: summaryBlock.tokenCount,
+          };
+          hasSummary = true;
+        } else if (message.summary) {
+          resolved = {
+            ...message,
+            role: 'system',
+            content: [{ type: ContentTypes.TEXT, text: message.summary }],
+            tokenCount: message.summaryTokenCount ?? message.tokenCount,
+          };
+          hasSummary = true;
+        }
       }
 
-      if (summary && message.summaryTokenCount) {
-        message.tokenCount = message.summaryTokenCount;
-      }
-
-      const shouldMap = mapMethod != null && (mapCondition != null ? mapCondition(message) : true);
-      const processedMessage = shouldMap ? mapMethod(message) : message;
+      const shouldMap = mapMethod != null && (mapCondition != null ? mapCondition(resolved) : true);
+      const processedMessage = shouldMap ? mapMethod(resolved) : resolved;
       orderedMessages.push(processedMessage);
 
-      if (summary && message.summary) {
+      if (hasSummary) {
         break;
       }
 

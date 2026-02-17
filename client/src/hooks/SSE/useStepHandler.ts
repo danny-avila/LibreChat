@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import {
   Constants,
   StepTypes,
+  StepEvents,
   ContentTypes,
   ToolCallTypes,
   getNonEmptyValue,
@@ -13,6 +14,7 @@ import type {
   ContentMetadata,
   EventSubmission,
   TMessageContentParts,
+  SummaryContentPart,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
@@ -27,20 +29,16 @@ type TUseStepHandler = {
   lastAnnouncementTimeRef: React.MutableRefObject<number>;
 };
 
-type TStepEvent = {
-  event: string;
-  data:
-    | Agents.MessageDeltaEvent
-    | Agents.ReasoningDeltaEvent
-    | Agents.RunStepDeltaEvent
-    | Agents.AgentUpdate
-    | Agents.RunStep
-    | Agents.ToolEndEvent
-    | {
-        runId?: string;
-        message: string;
-      };
-};
+type TStepEvent =
+  | { event: StepEvents.ON_RUN_STEP; data: Agents.RunStep }
+  | { event: StepEvents.ON_AGENT_UPDATE; data: Agents.AgentUpdate }
+  | { event: StepEvents.ON_MESSAGE_DELTA; data: Agents.MessageDeltaEvent }
+  | { event: StepEvents.ON_REASONING_DELTA; data: Agents.ReasoningDeltaEvent }
+  | { event: StepEvents.ON_RUN_STEP_DELTA; data: Agents.RunStepDeltaEvent }
+  | { event: StepEvents.ON_RUN_STEP_COMPLETED; data: { result: Agents.ToolEndEvent } }
+  | { event: StepEvents.ON_SUMMARIZE_START; data: Agents.SummarizeStartEvent }
+  | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
+  | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent };
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
 
@@ -52,6 +50,7 @@ type AllContentTypes =
   | ContentTypes.TOOL_CALL
   | ContentTypes.IMAGE_FILE
   | ContentTypes.IMAGE_URL
+  | ContentTypes.SUMMARY
   | ContentTypes.ERROR;
 
 export default function useStepHandler({
@@ -138,7 +137,7 @@ export default function useStepHandler({
         text: (currentContent.text || '') + contentPart.text,
       };
 
-      if (contentPart.tool_call_ids != null) {
+      if ('tool_call_ids' in contentPart && contentPart.tool_call_ids != null) {
         update.tool_call_ids = contentPart.tool_call_ids;
       }
       updatedContent[index] = update;
@@ -172,6 +171,13 @@ export default function useStepHandler({
       };
       updatedContent[index] = {
         ...currentContent,
+      };
+    } else if (contentType === ContentTypes.SUMMARY) {
+      const currentSummary = updatedContent[index] as SummaryContentPart | undefined;
+      const incoming = contentPart as SummaryContentPart;
+      updatedContent[index] = {
+        ...incoming,
+        content: [...(currentSummary?.content ?? []), ...(incoming.content ?? [])],
       };
     } else if (contentType === ContentTypes.TOOL_CALL && 'tool_call' in contentPart) {
       const existingContent = updatedContent[index] as Agents.ToolCallContent | undefined;
@@ -243,7 +249,7 @@ export default function useStepHandler({
   };
 
   const stepHandler = useCallback(
-    ({ event, data }: TStepEvent, submission: EventSubmission) => {
+    (stepEvent: TStepEvent, submission: EventSubmission) => {
       const messages = getMessages() || [];
       const { userMessage } = submission;
       let parentMessageId = userMessage.messageId;
@@ -260,8 +266,8 @@ export default function useStepHandler({
         initialContent = submission?.initialResponse?.content ?? initialContent;
       }
 
-      if (event === 'on_run_step') {
-        const runStep = data as Agents.RunStep;
+      if (stepEvent.event === StepEvents.ON_RUN_STEP) {
+        const runStep = stepEvent.data;
         let responseMessageId = runStep.runId ?? '';
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
           responseMessageId = submission?.initialResponse?.messageId ?? '';
@@ -355,15 +361,38 @@ export default function useStepHandler({
           setMessages(updatedMessages);
         }
 
+        if (runStep.summary != null) {
+          const summaryPart: SummaryContentPart = {
+            type: ContentTypes.SUMMARY,
+            content: [],
+            summarizing: true,
+            model: runStep.summary.model,
+            provider: runStep.summary.provider,
+          };
+
+          let updatedResponse = { ...(messageMap.current.get(responseMessageId) ?? response) };
+          updatedResponse = updateContent(
+            updatedResponse,
+            contentIndex,
+            summaryPart,
+            false,
+            getStepMetadata(runStep),
+          );
+
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+        }
+
         const bufferedDeltas = pendingDeltaBuffer.current.get(runStep.id);
         if (bufferedDeltas && bufferedDeltas.length > 0) {
           pendingDeltaBuffer.current.delete(runStep.id);
           for (const bufferedDelta of bufferedDeltas) {
-            stepHandler({ event: bufferedDelta.event, data: bufferedDelta.data }, submission);
+            stepHandler(bufferedDelta, submission);
           }
         }
-      } else if (event === 'on_agent_update') {
-        const { agent_update } = data as Agents.AgentUpdate;
+      } else if (stepEvent.event === StepEvents.ON_AGENT_UPDATE) {
+        const { agent_update } = stepEvent.data;
         let responseMessageId = agent_update.runId || '';
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
           responseMessageId = submission?.initialResponse?.messageId ?? '';
@@ -385,7 +414,7 @@ export default function useStepHandler({
           const updatedResponse = updateContent(
             response,
             currentIndex,
-            data,
+            stepEvent.data,
             false,
             agentUpdateMeta,
           );
@@ -393,8 +422,8 @@ export default function useStepHandler({
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
-      } else if (event === 'on_message_delta') {
-        const messageDelta = data as Agents.MessageDeltaEvent;
+      } else if (stepEvent.event === StepEvents.ON_MESSAGE_DELTA) {
+        const messageDelta = stepEvent.data;
         const runStep = stepMap.current.get(messageDelta.id);
         let responseMessageId = runStep?.runId ?? '';
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
@@ -404,7 +433,7 @@ export default function useStepHandler({
 
         if (!runStep || !responseMessageId) {
           const buffer = pendingDeltaBuffer.current.get(messageDelta.id) ?? [];
-          buffer.push({ event: 'on_message_delta', data: messageDelta });
+          buffer.push({ event: StepEvents.ON_MESSAGE_DELTA, data: messageDelta });
           pendingDeltaBuffer.current.set(messageDelta.id, buffer);
           return;
         }
@@ -436,8 +465,8 @@ export default function useStepHandler({
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
-      } else if (event === 'on_reasoning_delta') {
-        const reasoningDelta = data as Agents.ReasoningDeltaEvent;
+      } else if (stepEvent.event === StepEvents.ON_REASONING_DELTA) {
+        const reasoningDelta = stepEvent.data;
         const runStep = stepMap.current.get(reasoningDelta.id);
         let responseMessageId = runStep?.runId ?? '';
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
@@ -447,7 +476,7 @@ export default function useStepHandler({
 
         if (!runStep || !responseMessageId) {
           const buffer = pendingDeltaBuffer.current.get(reasoningDelta.id) ?? [];
-          buffer.push({ event: 'on_reasoning_delta', data: reasoningDelta });
+          buffer.push({ event: StepEvents.ON_REASONING_DELTA, data: reasoningDelta });
           pendingDeltaBuffer.current.set(reasoningDelta.id, buffer);
           return;
         }
@@ -479,8 +508,8 @@ export default function useStepHandler({
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
-      } else if (event === 'on_run_step_delta') {
-        const runStepDelta = data as Agents.RunStepDeltaEvent;
+      } else if (stepEvent.event === StepEvents.ON_RUN_STEP_DELTA) {
+        const runStepDelta = stepEvent.data;
         const runStep = stepMap.current.get(runStepDelta.id);
         let responseMessageId = runStep?.runId ?? '';
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
@@ -490,7 +519,7 @@ export default function useStepHandler({
 
         if (!runStep || !responseMessageId) {
           const buffer = pendingDeltaBuffer.current.get(runStepDelta.id) ?? [];
-          buffer.push({ event: 'on_run_step_delta', data: runStepDelta });
+          buffer.push({ event: StepEvents.ON_RUN_STEP_DELTA, data: runStepDelta });
           pendingDeltaBuffer.current.set(runStepDelta.id, buffer);
           return;
         }
@@ -538,8 +567,8 @@ export default function useStepHandler({
 
           setMessages(updatedMessages);
         }
-      } else if (event === 'on_run_step_completed') {
-        const { result } = data as unknown as { result: Agents.ToolEndEvent };
+      } else if (stepEvent.event === StepEvents.ON_RUN_STEP_COMPLETED) {
+        const { result } = stepEvent.data;
 
         const { id: stepId } = result;
 
@@ -580,6 +609,95 @@ export default function useStepHandler({
           );
 
           setMessages(updatedMessages);
+        }
+      } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_START) {
+        announcePolite({ message: 'summarize_started', isStatus: true });
+      } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_DELTA) {
+        const deltaData = stepEvent.data;
+        const runStep = stepMap.current.get(deltaData.id);
+        let responseMessageId = runStep?.runId ?? '';
+        if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
+          responseMessageId = submission?.initialResponse?.messageId ?? '';
+          parentMessageId = submission?.initialResponse?.parentMessageId ?? '';
+        }
+
+        if (!runStep || !responseMessageId) {
+          const buffer = pendingDeltaBuffer.current.get(deltaData.id) ?? [];
+          buffer.push({ event: StepEvents.ON_SUMMARIZE_DELTA, data: deltaData });
+          pendingDeltaBuffer.current.set(deltaData.id, buffer);
+          return;
+        }
+
+        const response = messageMap.current.get(responseMessageId);
+        if (response) {
+          const contentPart: SummaryContentPart = {
+            ...deltaData.delta.summary,
+            summarizing: true,
+          };
+
+          const contentIndex = runStep.index + initialContent.length;
+          const updatedResponse = updateContent(
+            response,
+            contentIndex,
+            contentPart,
+            false,
+            getStepMetadata(runStep),
+          );
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+        }
+      } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_COMPLETE) {
+        const completeData = stepEvent.data;
+        const completeRunStep = stepMap.current.get(completeData.id);
+        let completeMessageId = completeRunStep?.runId ?? '';
+        if (completeMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
+          completeMessageId = submission?.initialResponse?.messageId ?? '';
+        }
+
+        const targetMessage = messageMap.current.get(completeMessageId);
+        if (!targetMessage || !Array.isArray(targetMessage.content)) {
+          return;
+        }
+
+        const currentMessages = getMessages() || [];
+        const targetIndex = currentMessages.findIndex((m) => m.messageId === completeMessageId);
+
+        if (completeData.error) {
+          announcePolite({ message: 'summarize_failed', isStatus: true });
+          const filtered = targetMessage.content.filter(
+            (part) =>
+              part?.type !== ContentTypes.SUMMARY || !(part as SummaryContentPart).summarizing,
+          );
+          if (filtered.length !== targetMessage.content.length) {
+            const cleaned = { ...targetMessage, content: filtered };
+            messageMap.current.set(completeMessageId, cleaned);
+            if (targetIndex >= 0) {
+              const updated = [...currentMessages];
+              updated[targetIndex] = cleaned;
+              setMessages(updated);
+            }
+          }
+        } else {
+          announcePolite({ message: 'summarize_completed', isStatus: true });
+          let didFinalize = false;
+          const updatedContent = targetMessage.content.map((part) => {
+            if (part?.type === ContentTypes.SUMMARY && (part as SummaryContentPart).summarizing) {
+              if (!completeData.summary) {
+                return part;
+              }
+              didFinalize = true;
+              return { ...completeData.summary, summarizing: false } as SummaryContentPart;
+            }
+            return part;
+          });
+          if (didFinalize && targetIndex >= 0) {
+            const finalized = { ...targetMessage, content: updatedContent };
+            messageMap.current.set(completeMessageId, finalized);
+            const updated = [...currentMessages];
+            updated[targetIndex] = finalized;
+            setMessages(updated);
+          }
         }
       }
 
