@@ -66,8 +66,7 @@
     "meilisearch": "^0.38.0",
     "mongoose": "^8.12.1",
     "nanoid": "^3.3.7",
-    "winston": "^3.17.0",
-    "winston-daily-rotate-file": "^5.0.0"
+    "winston": "^3.17.0"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
@@ -80,6 +79,7 @@
     "librechat"
   ],
   "dependencies": {
-    "file-stream-rotator": "^0.6.1"
+    "file-stream-rotator": "^0.6.1",
+    "winston-daily-rotate-file": "^5.0.0"
   }
 }

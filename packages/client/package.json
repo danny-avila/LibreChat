@@ -92,5 +92,8 @@
     "rollup-plugin-typescript2": "^0.35.0",
     "tailwindcss-radix": "^2.8.0",
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@emotion/is-prop-valid": "^1.4.0"
   }
 }

@@ -15,7 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const plugins = [
-  peerDepsExternal(),
+  // peerDepsExternal(), // Temporarily disabled to bundle dependencies for main app
   alias({
     entries: [{ find: '~', replacement: pathResolve(__dirname, 'src') }],
   }),
@@ -68,9 +68,15 @@ export default {
     },
   ],
   external: [
-    ...Object.keys(pkg.peerDependencies || {}),
+    // Only externalize React/React-DOM to avoid bundling them twice
+    'react',
+    'react-dom',
     'react/jsx-runtime',
     'react/jsx-dev-runtime',
+    // External these heavy deps that are already in main client
+    '@tanstack/react-query',
+    '@tanstack/react-table',
+    '@tanstack/react-virtual',
   ],
   preserveSymlinks: true,
   plugins,
