@@ -3,9 +3,8 @@
     "target": "ES2019",
     "module": "ESNext",
     "moduleResolution": "node",
-    "declaration": true,
-    "declarationDir": "dist/types",
-    "outDir": "dist",
+    "declaration": false,
+    "noEmit": true,
     "strict": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -19,5 +18,5 @@
     }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "exclude": ["node_modules", "dist"]
 }
