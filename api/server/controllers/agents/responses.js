@@ -36,10 +36,7 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
-const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
 /** @type {import('@librechat/api').AppConfig | null} */
@@ -214,8 +211,12 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
  * @returns {Promise<void>}
  */
 async function saveConversation(req, conversationId, agentId, agent) {
-  await saveConvo(
-    req,
+  await db.saveConvo(
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     {
       conversationId,
       endpoint: EModelEndpoint.agents,
@@ -279,7 +280,7 @@ const createResponse = async (req, res) => {
   const isStreaming = request.stream === true;
 
   // Look up the agent
-  const agent = await getAgent({ id: agentId });
+  const agent = await db.getAgent({ id: agentId });
   if (!agent) {
     return sendResponsesErrorResponse(
       res,
@@ -342,7 +343,7 @@ const createResponse = async (req, res) => {
         isInitialAgent: true,
       },
       {
-        getConvoFiles,
+        getConvoFiles: db.getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
@@ -512,8 +513,8 @@ const createResponse = async (req, res) => {
       const transactionsConfig = getTransactionsConfig(req.config);
       recordCollectedUsage(
         {
-          spendTokens,
-          spendStructuredTokens,
+          spendTokens: db.spendTokens,
+          spendStructuredTokens: db.spendStructuredTokens,
           pricing: { getMultiplier, getCacheMultiplier },
           bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
         },
@@ -667,8 +668,8 @@ const createResponse = async (req, res) => {
       const transactionsConfig = getTransactionsConfig(req.config);
       recordCollectedUsage(
         {
-          spendTokens,
-          spendStructuredTokens,
+          spendTokens: db.spendTokens,
+          spendStructuredTokens: db.spendStructuredTokens,
           pricing: { getMultiplier, getCacheMultiplier },
           bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
         },
@@ -769,7 +770,7 @@ const listModels = async (req, res) => {
     // Get the accessible agents
     let agents = [];
     if (accessibleAgentIds.length > 0) {
-      agents = await getAgents({ _id: { $in: accessibleAgentIds } });
+      agents = await db.getAgents({ _id: { $in: accessibleAgentIds } });
     }
 
     // Convert to models format
@@ -819,7 +820,7 @@ const getResponse = async (req, res) => {
 
     // The responseId could be either the response ID or the conversation ID
     // Try to find a conversation with this ID
-    const conversation = await getConvo(userId, responseId);
+    const conversation = await db.getConvo(userId, responseId);
 
     if (!conversation) {
       return sendResponsesErrorResponse(
