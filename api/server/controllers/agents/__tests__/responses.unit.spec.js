@@ -113,16 +113,6 @@ jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/Agent', () => ({
-  getAgent: jest.fn().mockResolvedValue({
-    id: 'agent-123',
-    name: 'Test Agent',
-    provider: 'anthropic',
-    model_parameters: { model: 'claude-3' },
-  }),
-  getAgents: jest.fn().mockResolvedValue([]),
-}));
-
 jest.mock('~/models', () => ({
   getAgent: jest.fn().mockResolvedValue({ id: 'agent-123', name: 'Test Agent' }),
   getFiles: jest.fn(),

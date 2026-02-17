@@ -23,6 +23,7 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  getAgent: jest.fn(),
   getRoleByName: jest.fn(),
 }));
 
@@ -2195,6 +2196,7 @@ describe('AgentClient - titleConvo', () => {
         expect.objectContaining({
           agent_id: differentAgentId,
         }),
+        expect.any(Object),
       );
       expect(mockInitializeAgent).toHaveBeenCalledWith(
         expect.objectContaining({
