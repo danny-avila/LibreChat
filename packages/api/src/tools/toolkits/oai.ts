@@ -135,83 +135,13 @@ export const oaiToolkit = {
   image_gen_oai: {
     name: 'image_gen_oai' as const,
     description: getImageGenDescription(),
-    schema: z.object({
-      prompt: z.string().max(4000).describe(getImageGenPromptDescription()),
-      background: z
-        .enum(['transparent', 'opaque', 'auto'])
-        .optional()
-        .describe(
-          'Sets transparency for the background. Must be one of transparent, opaque or auto (default). When transparent, the output format should be png or webp.',
-        ),
-      /*
-        n: z
-          .number()
-          .int()
-          .min(1)
-          .max(10)
-          .optional()
-          .describe('The number of images to generate. Must be between 1 and 10.'),
-        output_compression: z
-          .number()
-          .int()
-          .min(0)
-          .max(100)
-          .optional()
-          .describe('The compression level (0-100%) for webp or jpeg formats. Defaults to 100.'),
-           */
-      quality: z
-        .enum(['auto', 'high', 'medium', 'low'])
-        .optional()
-        .describe('The quality of the image. One of auto (default), high, medium, or low.'),
-      size: z
-        .enum(['auto', '1024x1024', '1536x1024', '1024x1536'])
-        .optional()
-        .describe(
-          'The size of the generated image. One of 1024x1024, 1536x1024 (landscape), 1024x1536 (portrait), or auto (default).',
-        ),
-    }),
+    schema: imageGenOaiJsonSchema,
     responseFormat: 'content_and_artifact' as const,
   } as const,
   image_edit_oai: {
     name: 'image_edit_oai' as const,
     description: getImageEditDescription(),
-    schema: z.object({
-      image_ids: z
-        .array(z.string())
-        .min(1)
-        .describe(
-          `
-IDs (image ID strings) of previously generated or uploaded images that should guide the edit.
-
-Guidelines:
-- If the user's request depends on any prior image(s), copy their image IDs into the \`image_ids\` array (in the same order the user refers to them).  
-- Never invent or hallucinate IDs; only use IDs that are still visible in the conversation context.
-- If no earlier image is relevant, omit the field entirely.
-`.trim(),
-        ),
-      prompt: z.string().max(4000).describe(getImageEditPromptDescription()),
-      /*
-        n: z
-          .number()
-          .int()
-          .min(1)
-          .max(10)
-          .optional()
-          .describe('The number of images to generate. Must be between 1 and 10. Defaults to 1.'),
-        */
-      quality: z
-        .enum(['auto', 'high', 'medium', 'low'])
-        .optional()
-        .describe(
-          'The quality of the image. One of auto (default), high, medium, or low. High/medium/low only supported for gpt-image-1.',
-        ),
-      size: z
-        .enum(['auto', '1024x1024', '1536x1024', '1024x1536', '256x256', '512x512'])
-        .optional()
-        .describe(
-          'The size of the generated images. For gpt-image-1: auto (default), 1024x1024, 1536x1024, 1024x1536. For dall-e-2: 256x256, 512x512, 1024x1024.',
-        ),
-    }),
+    schema: imageEditOaiJsonSchema,
     responseFormat: 'content_and_artifact' as const,
   },
 } as const;
