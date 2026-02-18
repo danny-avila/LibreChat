@@ -1,19 +1,25 @@
 import { useEffect } from 'react';
-import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
+import { Spinner, useToastContext } from '@librechat/client';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
+import {
+  useNewConvo,
+  useAppStartup,
+  useAssistantListMap,
+  useIdChangeEffect,
+  useLocalize,
+} from '~/hooks';
 import { useGetConvoIdQuery, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
-import { useNewConvo, useAppStartup, useAssistantListMap, useIdChangeEffect } from '~/hooks';
-import { getDefaultModelSpec, getModelSpecPreset, logger } from '~/utils';
+import { getDefaultModelSpec, getModelSpecPreset, logger, isNotFoundError } from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
+import { NotificationSeverity } from '~/common';
 import useAuthRedirect from './useAuthRedirect';
 import temporaryStore from '~/store/temporary';
 import store from '~/store';
-import axios from 'axios';
 
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
@@ -34,6 +40,8 @@ export default function ChatRoute() {
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
 
   const modelsQuery = useGetModelsQuery({
     enabled: isAuthenticated,
@@ -93,12 +101,11 @@ export default function ChatRoute() {
         keepLatestMessage: true,
       });
       hasSetConversation.current = true;
-    } else if (
-      initialConvoQuery.isError &&
-      axios.isAxiosError(initialConvoQuery.error) &&
-      initialConvoQuery.error.response?.status === 404
-    ) {
-      // If we get a 404, the conversation doesn't exist - reroute to a new conversation
+    } else if (initialConvoQuery.isError && isNotFoundError(initialConvoQuery.error)) {
+      showToast({
+        message: localize('com_ui_conversation_not_found'),
+        severity: NotificationSeverity.WARNING,
+      });
       newConversation();
       hasSetConversation.current = true;
     } else if (
@@ -134,6 +141,7 @@ export default function ChatRoute() {
     roles,
     startupConfig,
     initialConvoQuery.data,
+    initialConvoQuery.isError,
     endpointsQuery.data,
     modelsQuery.data,
     assistantListMap,
