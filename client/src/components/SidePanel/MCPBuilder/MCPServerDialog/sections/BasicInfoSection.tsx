@@ -1,9 +1,9 @@
 import { useFormContext } from 'react-hook-form';
-import { Input, Label, TextareaAutosize } from '@librechat/client';
+import { Input, Label, Textarea } from '@librechat/client';
+import type { MCPServerFormData } from '../hooks/useMCPServerForm';
+import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
-import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 
 export default function BasicInfoSection() {
   const localize = useLocalize();
@@ -36,13 +36,19 @@ export default function BasicInfoSection() {
           <MCPIcon icon={iconValue} onIconChange={handleIconChange} />
         </div>
         <div className="w-full space-y-1.5 sm:flex-1">
-          <Label htmlFor="title" className="text-sm font-medium">
-            {localize('com_ui_name')} <span className="text-text-secondary">*</span>
+          <Label htmlFor="mcp-title" className="text-sm font-medium">
+            {localize('com_ui_name')}{' '}
+            <span aria-hidden="true" className="text-text-secondary">
+              *
+            </span>
+            <span className="sr-only">{localize('com_ui_field_required')}</span>
           </Label>
           <Input
-            id="title"
+            id="mcp-title"
             autoComplete="off"
             placeholder={localize('com_agents_mcp_name_placeholder')}
+            aria-invalid={errors.title ? 'true' : 'false'}
+            aria-describedby={errors.title ? 'mcp-title-error' : undefined}
             {...register('title', {
               required: localize('com_ui_field_required'),
               pattern: {
@@ -50,26 +56,26 @@ export default function BasicInfoSection() {
                 message: localize('com_ui_mcp_title_invalid'),
               },
             })}
-            className={cn(errors.title && 'border-red-500 focus:border-red-500')}
+            className={cn(errors.title && 'border-border-destructive')}
           />
-          {errors.title && <p className="text-xs text-red-500">{errors.title.message}</p>}
+          {errors.title && (
+            <p id="mcp-title-error" role="alert" className="text-xs text-text-destructive">
+              {errors.title.message}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Description - always visible, full width */}
+      {/* Description */}
       <div className="space-y-1.5">
-        <Label htmlFor="description" className="text-sm font-medium">
+        <Label htmlFor="mcp-description" className="text-sm font-medium">
           {localize('com_ui_description')}{' '}
           <span className="text-xs text-text-secondary">{localize('com_ui_optional')}</span>
         </Label>
-        <TextareaAutosize
-          id="description"
-          aria-label={localize('com_ui_description')}
+        <Textarea
+          id="mcp-description"
           placeholder={localize('com_agents_mcp_description_placeholder')}
           {...register('description')}
-          minRows={2}
-          maxRows={4}
-          className="w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none"
         />
       </div>
     </div>

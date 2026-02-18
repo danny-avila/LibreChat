@@ -46,7 +46,7 @@ export default function MCPTools({
               return null;
             }
 
-            if (serverInfo.isConnected) {
+            if (serverInfo?.tools?.length && serverInfo.tools.length > 0) {
               return (
                 <MCPTool key={`${serverInfo.serverName}-${agentId}`} serverInfo={serverInfo} />
               );

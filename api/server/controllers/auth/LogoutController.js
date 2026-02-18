@@ -22,6 +22,7 @@ const logoutController = async (req, res) => {
 
     res.clearCookie('refreshToken');
     res.clearCookie('openid_access_token');
+    res.clearCookie('openid_id_token');
     res.clearCookie('openid_user_id');
     res.clearCookie('token_provider');
     const response = { message };

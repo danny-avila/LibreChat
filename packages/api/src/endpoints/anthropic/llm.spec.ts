@@ -121,6 +121,39 @@ describe('getLLMConfig', () => {
     });
   });
 
+  it('should add "context-1m" beta header for claude-sonnet-4-6 model', () => {
+    const modelOptions = {
+      model: 'claude-sonnet-4-6',
+      promptCache: true,
+    };
+    const result = getLLMConfig('test-key', { modelOptions });
+    const clientOptions = result.llmConfig.clientOptions;
+    expect(clientOptions?.defaultHeaders).toBeDefined();
+    expect(clientOptions?.defaultHeaders).toHaveProperty('anthropic-beta');
+    const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string>;
+    expect(defaultHeaders['anthropic-beta']).toBe('context-1m-2025-08-07');
+    expect(result.llmConfig.promptCache).toBe(true);
+  });
+
+  it('should add "context-1m" beta header for claude-sonnet-4-6 model formats', () => {
+    const modelVariations = [
+      'claude-sonnet-4-6',
+      'claude-sonnet-4-6-20260101',
+      'anthropic/claude-sonnet-4-6',
+    ];
+
+    modelVariations.forEach((model) => {
+      const modelOptions = { model, promptCache: true };
+      const result = getLLMConfig('test-key', { modelOptions });
+      const clientOptions = result.llmConfig.clientOptions;
+      expect(clientOptions?.defaultHeaders).toBeDefined();
+      expect(clientOptions?.defaultHeaders).toHaveProperty('anthropic-beta');
+      const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string>;
+      expect(defaultHeaders['anthropic-beta']).toBe('context-1m-2025-08-07');
+      expect(result.llmConfig.promptCache).toBe(true);
+    });
+  });
+
   it('should pass promptCache boolean for claude-opus-4-5 model (no beta header needed)', () => {
     const modelOptions = {
       model: 'claude-opus-4-5',
@@ -961,6 +994,51 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig.invocationKwargs?.output_config).toEqual({
           effort: AnthropicEffort.low,
         });
+      });
+
+      it('should use adaptive thinking for Sonnet 4.6 instead of enabled + budget_tokens', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-sonnet-4-6',
+            thinking: true,
+            thinkingBudget: 10000,
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('adaptive');
+        expect(result.llmConfig.thinking).not.toHaveProperty('budget_tokens');
+        expect(result.llmConfig.maxTokens).toBe(64000);
+      });
+
+      it('should set effort via output_config for Sonnet 4.6', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-sonnet-4-6',
+            thinking: true,
+            effort: AnthropicEffort.high,
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('adaptive');
+        expect(result.llmConfig.invocationKwargs).toHaveProperty('output_config');
+        expect(result.llmConfig.invocationKwargs?.output_config).toEqual({
+          effort: AnthropicEffort.high,
+        });
+      });
+
+      it('should exclude topP/topK for Sonnet 4.6 with adaptive thinking', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-sonnet-4-6',
+            thinking: true,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('adaptive');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
       });
 
       it('should NOT set adaptive thinking or effort for non-adaptive models', () => {

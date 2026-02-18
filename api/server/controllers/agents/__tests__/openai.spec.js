@@ -30,9 +30,6 @@ jest.mock('@librechat/agents', () => ({
     messages: [],
     indexTokenCountMap: {},
   }),
-  ChatModelStreamHandler: jest.fn().mockImplementation(() => ({
-    handle: jest.fn(),
-  })),
 }));
 
 jest.mock('@librechat/api', () => ({

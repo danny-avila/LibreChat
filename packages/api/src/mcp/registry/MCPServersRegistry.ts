@@ -77,6 +77,15 @@ export class MCPServersRegistry {
     return MCPServersRegistry.instance;
   }
 
+  public getAllowedDomains(): string[] | null | undefined {
+    return this.allowedDomains;
+  }
+
+  /** Returns true when no explicit allowedDomains allowlist is configured, enabling SSRF TOCTOU protection */
+  public shouldEnableSSRFProtection(): boolean {
+    return !Array.isArray(this.allowedDomains) || this.allowedDomains.length === 0;
+  }
+
   public async getServerConfig(
     serverName: string,
     userId?: string,
