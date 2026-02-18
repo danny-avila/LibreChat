@@ -170,7 +170,7 @@ claude-flow
 hive-mind-prompt-*.txt
 
 # Kubernetes Secrets & Data
-k8s-ovh/kubeconfig.yml
+helm/kubeconfig.yml
 k8s-ovh/02-secrets.yaml
 vectordb-data/
 k8s-data/
@@ -204,3 +204,4 @@ k8s-local/
 .husky/
 .vscode/
 k8s-local/
+helm/kubeconfig.yml
