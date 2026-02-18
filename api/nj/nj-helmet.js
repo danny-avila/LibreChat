@@ -27,6 +27,7 @@ function njContentSecurityPolicy() {
         'https://*.google-analytics.com',
         'https://*.analytics.google.com',
         'https://*.googletagmanager.com',
+        'https://www.google.com/ccm/collect',
         'https://*.nj.gov',
       ],
       frameSrc: ["'self'", 'https://www.googletagmanager.com'],
