@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useToastContext } from '@librechat/client';
+import { useAuthContext } from '~/hooks/AuthContext';
 import CEOKpiStats from './CEO/CEOKpiStats';
 import CEOProjectsTable from './CEO/CEOProjectsTable';
 import CEOStrategicTools from './CEO/CEOStrategicTools';
@@ -8,6 +9,8 @@ import CEOUserManagement from './CEO/CEOUserManagement';
 import { AuditManagementPage } from '~/components/Audit';
 import { useFeatureFlag } from '~/hooks/useFeatureFlag';
 import { FEATURES } from '~/constants/businesses';
+import CEOSignageOrdersWidget from './CEO/CEOSignageOrdersWidget';
+import ConfirmActionModal from './Modals/ConfirmActionModal';
 
 // --- TYPES ---
 interface Project {
@@ -29,6 +32,22 @@ interface AnalysisReport {
   timestamp: string;
 }
 
+interface SignageOrder {
+  orderId: string;
+  customerId: string;
+  customerName?: string;
+  customerEmail?: string;
+  type: 'print' | 'buy' | string;
+  copies?: number;
+  totalAmount?: number;
+  amountPaid?: number;
+  paid?: boolean;
+  status: string;
+  assignedTo?: string;
+  assignedToName?: string;
+  createdAt?: string;
+}
+
 export default function CEODashboard({ profile }: { profile: any }) {
   console.log('🎯 [CEODashboard] Component mounted/rendered');
   console.log('👤 [CEODashboard] Profile data:', profile);
@@ -36,6 +55,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
   console.log('📋 [CEODashboard] Allowed workflows:', profile?.allowedWorkflows);
 
   const { showToast } = useToastContext();
+  const { token } = useAuthContext();
   const reportSectionRef = useRef<HTMLDivElement>(null); // Ref untuk auto-scroll
 
   // --- STATE ---
@@ -43,6 +63,17 @@ export default function CEODashboard({ profile }: { profile: any }) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [orders, setOrders] = useState<SignageOrder[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | 'all'>('all');
+  const [orderActionId, setOrderActionId] = useState<string | null>(null);
+  
+  // Confirmation modal state
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'approve' | 'reject' | null;
+    orderId: string | null;
+  }>({ type: null, orderId: null });
 
   // Workflow Execution State
   const [executingId, setExecutingId] = useState<string | null>(null);
@@ -59,7 +90,9 @@ export default function CEODashboard({ profile }: { profile: any }) {
 
   // Tab state
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'projects' | 'tasks' | 'tickets' | 'analytics' | 'users' | 'audit'
+    
+    'overview' | 'projects' | 'tasks' | 'tickets' | 'orders' | 'analytics' | 'users' | 'audit'
+  
   >('overview');
 
   // Feature flags
@@ -192,6 +225,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
     fetchUsers(); // Load users for dropdowns
     fetchTasks(); // Load tasks
     fetchTickets(); // Load tickets
+    fetchOrders(); // Load signage orders
   }, []);
 
   // Fetch users for dropdowns
@@ -204,6 +238,137 @@ export default function CEODashboard({ profile }: { profile: any }) {
       }
     } catch (error) {
       console.error('Failed to fetch users:', error);
+    }
+  };
+
+  // Fetch signage orders from LibreChat proxy -> PDF Builder
+  const fetchOrders = async (customerId: string | 'all' = 'all') => {
+    if (!token) {
+      setOrdersError('Please log in to view orders.');
+      setOrdersLoading(false);
+      return;
+    }
+    try {
+      setOrdersLoading(true);
+      setOrdersError(null);
+
+      const params = new URLSearchParams();
+      if (customerId !== 'all') {
+        params.set('customerId', customerId);
+      }
+      const query = params.toString() ? `?${params.toString()}` : '';
+
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const response = await fetch(`/api/signage/orders${query}`, {
+        credentials: 'include',
+        headers,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Failed to load orders (${response.status})`);
+      }
+
+      const data = await response.json();
+      // Expect either an array, { orders: [...] }, or { data: [...] }
+      const list: SignageOrder[] = Array.isArray(data)
+        ? data
+        : data.orders || data.data || [];
+      setOrders(list);
+    } catch (error: any) {
+      console.error('Failed to fetch orders:', error);
+      setOrdersError(error.message || 'Failed to load orders');
+      setOrders([]);
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
+
+  const handleApproveOrder = async (orderId: string, approved: boolean) => {
+    try {
+      setOrderActionId(orderId);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const response = await fetch(`/api/signage/orders/${orderId}`, {
+        method: 'PATCH',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ approved }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Failed to update order');
+      }
+      await fetchOrders(selectedCustomerId);
+      showToast({
+        message: approved ? 'Order approved' : 'Order rejected',
+        status: 'success',
+      });
+      setConfirmAction({ type: null, orderId: null });
+    } catch (error: any) {
+      console.error('Failed to approve/reject order:', error);
+      showToast({ message: error.message || 'Update failed', status: 'error' });
+    } finally {
+      setOrderActionId(null);
+    }
+  };
+
+  const handleMarkPaid = async (orderId: string) => {
+    try {
+      setOrderActionId(orderId);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const response = await fetch(`/api/signage/orders/${orderId}`, {
+        method: 'PATCH',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ paid: true }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Failed to mark as paid');
+      }
+      await fetchOrders(selectedCustomerId);
+      showToast({ message: 'Order marked as paid', status: 'success' });
+    } catch (error: any) {
+      console.error('Failed to mark order as paid:', error);
+      showToast({ message: error.message || 'Update failed', status: 'error' });
+    } finally {
+      setOrderActionId(null);
+    }
+  };
+
+  const handleAssignEmployee = async (orderId: string, employeeId: string) => {
+    try {
+      setOrderActionId(orderId);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const response = await fetch(`/api/signage/orders/${orderId}`, {
+        method: 'PATCH',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ assignedTo: employeeId || null }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Failed to assign employee');
+      }
+      await fetchOrders(selectedCustomerId);
+      showToast({ message: 'Order assignment updated', status: 'success' });
+    } catch (error: any) {
+      console.error('Failed to assign employee:', error);
+      showToast({ message: error.message || 'Update failed', status: 'error' });
+    } finally {
+      setOrderActionId(null);
     }
   };
 
@@ -689,11 +854,45 @@ export default function CEODashboard({ profile }: { profile: any }) {
     return stats;
   }, [projects]);
 
+  // --- SIGNAGE ORDERS KPI STATS ---
+  const signageOrdersStats = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const ordersToday = orders.filter((o) => {
+      if (!o.createdAt) return false;
+      const orderDate = new Date(o.createdAt);
+      orderDate.setHours(0, 0, 0, 0);
+      return orderDate.getTime() === today.getTime();
+    });
+
+    const revenueToday = ordersToday.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    
+    const outstanding = orders
+      .filter((o) => !o.paid)
+      .reduce((sum, o) => sum + (o.totalAmount || 0) - (o.amountPaid || 0), 0);
+
+    const statusCounts = {
+      pending: orders.filter((o) => o.status === 'pending_approval' || o.status === 'pending').length,
+      printing: orders.filter((o) => o.status === 'printing').length,
+      completed: orders.filter((o) => o.status === 'delivered' || o.status === 'completed').length,
+    };
+
+    return {
+      ordersToday: ordersToday.length,
+      revenueToday,
+      outstanding,
+      totalOrders: orders.length,
+      statusCounts,
+    };
+  }, [orders]);
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: '📊' },
     { id: 'projects', label: 'Projects', icon: '🗂️', count: projects.length },
     { id: 'tasks', label: 'Tasks', icon: '✅', count: tasks.length },
     { id: 'tickets', label: 'Tickets', icon: '🎫', count: tickets.length },
+    { id: 'orders', label: 'Signage Orders', icon: '🖨️', count: orders.length },
     { id: 'analytics', label: 'Analytics', icon: '📈' },
     { id: 'users', label: 'Users', icon: '👥', count: users.length },
     ...(isAuditEnabled ? [{ id: 'audit', label: 'Audit', icon: '🔍' }] : []),
@@ -721,6 +920,7 @@ export default function CEODashboard({ profile }: { profile: any }) {
               fetchTasks();
               fetchTickets();
               fetchUsers();
+              fetchOrders(selectedCustomerId);
             }}
             className="rounded-lg px-3 py-1 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50"
           >
@@ -767,6 +967,10 @@ export default function CEODashboard({ profile }: { profile: any }) {
               <CEOProjectsTable projects={projects} />
             </div>
             <div className="space-y-6">
+              <CEOSignageOrdersWidget
+                stats={signageOrdersStats}
+                onViewAll={() => setActiveTab('orders')}
+              />
               <CEOStrategicTools
                 profile={profile}
                 executingId={executingId}
@@ -1005,6 +1209,181 @@ export default function CEODashboard({ profile }: { profile: any }) {
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'orders' && (
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <h2 className="text-xl font-bold text-gray-900">Signage Orders</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedCustomerId}
+                onChange={(e) => {
+                  const value = e.target.value as string | 'all';
+                  setSelectedCustomerId(value);
+                  fetchOrders(value);
+                }}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              >
+                <option value="all">All customers</option>
+                {users
+                  .filter((u) => u.profileType === 'customer')
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name || u.email}
+                    </option>
+                  ))}
+              </select>
+              <button
+                onClick={() => fetchOrders(selectedCustomerId)}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+              >
+                Refresh Orders
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            {ordersLoading ? (
+              <div className="flex h-64 items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+              </div>
+            ) : ordersError ? (
+              <div className="flex h-64 flex-col items-center justify-center text-red-500">
+                <p className="mb-2 text-sm font-medium">Failed to load orders</p>
+                <p className="text-xs">{ordersError}</p>
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="flex h-64 flex-col items-center justify-center text-gray-500">
+                <span className="mb-2 text-4xl">🖨️</span>
+                <p>No signage orders found</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Order #
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Customer
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Type
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Copies
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Amount
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Paid?
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Assigned To
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {orders.map((order, idx) => {
+                      const isBusy = orderActionId === order.orderId;
+                      const customerLabel =
+                        order.customerName ||
+                        order.customerEmail ||
+                        users.find((u) => u.id === order.customerId)?.name ||
+                        users.find((u) => u.id === order.customerId)?.email ||
+                        order.customerId;
+                      const assignedUser =
+                        users.find((u) => u.id === order.assignedTo) || null;
+                      return (
+                        <tr key={order.orderId || idx}>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                            {order.orderId}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                            {customerLabel}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                            {order.type}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                            {order.copies ?? '-'}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                            {order.totalAmount != null ? `$${order.totalAmount}` : '-'}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                            {order.status}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                            {order.paid ? 'Yes' : 'No'}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                            <select
+                              value={order.assignedTo || ''}
+                              onChange={(e) =>
+                                handleAssignEmployee(order.orderId, e.target.value)
+                              }
+                              className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none"
+                              disabled={isBusy}
+                            >
+                              <option value="">Unassigned</option>
+                              {users
+                                .filter((u) => u.profileType === 'employee')
+                                .map((u) => (
+                                  <option key={u.id} value={u.id}>
+                                    {u.name || u.email}
+                                  </option>
+                                ))}
+                            </select>
+                            {assignedUser && (
+                              <div className="mt-1 text-xs text-gray-500">
+                                {assignedUser.name || assignedUser.email}
+                              </div>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={() => setConfirmAction({ type: 'approve', orderId: order.orderId })}
+                                disabled={isBusy}
+                                className="rounded bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => setConfirmAction({ type: 'reject', orderId: order.orderId })}
+                                disabled={isBusy}
+                                className="rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                              <button
+                                onClick={() => handleMarkPaid(order.orderId)}
+                                disabled={isBusy || order.paid}
+                                className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                Mark Paid
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
@@ -1508,6 +1887,26 @@ export default function CEODashboard({ profile }: { profile: any }) {
           </div>
         </div>
       )}
+
+      {/* CONFIRMATION MODAL FOR APPROVE/REJECT */}
+      <ConfirmActionModal
+        open={confirmAction.type !== null}
+        title={confirmAction.type === 'approve' ? 'Approve Order' : 'Reject Order'}
+        message={
+          confirmAction.type === 'approve'
+            ? 'Are you sure you want to approve this order? This will allow the order to proceed to production.'
+            : 'Are you sure you want to reject this order? This action cannot be undone.'
+        }
+        confirmLabel={confirmAction.type === 'approve' ? 'Approve' : 'Reject'}
+        confirmColor={confirmAction.type === 'approve' ? 'green' : 'red'}
+        isProcessing={orderActionId === confirmAction.orderId}
+        onConfirm={() => {
+          if (confirmAction.orderId) {
+            handleApproveOrder(confirmAction.orderId, confirmAction.type === 'approve');
+          }
+        }}
+        onClose={() => setConfirmAction({ type: null, orderId: null })}
+      />
     </div>
   );
 }

@@ -326,6 +326,16 @@ const startServer = async () => {
     console.error('[ERROR] Audit admin routes error:', e.message);
   }
 
+  // Signage orders proxy routes (PDF Builder integration)
+  try {
+    const signageOrdersRoutes = require('./routes/signageOrders');
+    app.use('/api/signage', signageOrdersRoutes);
+    console.log('[OK] Signage orders routes loaded');
+  } catch (e) {
+    console.log('[SKIP] Signage orders routes (error loading)');
+    console.error('[ERROR] Signage orders routes error:', e.message);
+  }
+
   // Error Controller
   if (ErrorController) {
     app.use(ErrorController);
