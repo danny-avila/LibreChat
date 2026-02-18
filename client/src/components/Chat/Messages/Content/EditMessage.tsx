@@ -127,10 +127,10 @@ const EditMessage = ({
         e.preventDefault();
         submitButtonRef.current?.click();
       }
-      if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        saveButtonRef.current?.click();
-      }
+      // if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+      //   e.preventDefault();
+      //   saveButtonRef.current?.click();
+      // }
       if (e.key === 'Escape') {
         e.preventDefault();
         enterEdit(true);
@@ -183,7 +183,7 @@ const EditMessage = ({
             </button>
           }
         />
-        <TooltipAnchor
+        {/* <TooltipAnchor
           description="Shift + Enter"
           render={
             <button
@@ -195,7 +195,7 @@ const EditMessage = ({
               {localize('com_ui_save')}
             </button>
           }
-        />
+        /> */}
         <TooltipAnchor
           description="Esc"
           render={
