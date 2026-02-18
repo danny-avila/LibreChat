@@ -51,6 +51,21 @@ const envVars = {
   isProd: isProd
 }
 
+const commonTags = {
+  Project: "AIAssistantService",
+  ManagedBy: "CDK",
+  Environment: tagEnv,
+  Agency: "997",
+  Org: "0005",
+  CloudPortfolioId: "0293"
+};
+
+function applyTags(stack: cdk.Stack) {
+  Object.entries(commonTags).forEach(([key, value]) => {
+    cdk.Tags.of(stack).add(key, value);
+  });
+}
+
 if (isProd) {
   const databaseStack = new DatabaseStack(app, "DatabaseStack", {
     env: env,
@@ -58,9 +73,7 @@ if (isProd) {
     deployPG: false
   });
 
-  cdk.Tags.of(databaseStack).add("Project", "AIAssistantService");
-  cdk.Tags.of(databaseStack).add("ManagedBy", "CDK");
-  cdk.Tags.of(databaseStack).add("Environment", tagEnv);
+  applyTags(databaseStack);
 }
 
 const ecsStack = new EcsStack(app, "EcsStack", {
@@ -83,14 +96,6 @@ const monitoringStack = new MonitoringStack(app, "MonitoringStack", {
   service: ecsStack.service,
 });
 
-cdk.Tags.of(ecsStack).add("Project", "AIAssistantService");
-cdk.Tags.of(ecsStack).add("ManagedBy", "CDK");
-cdk.Tags.of(ecsStack).add("Environment", tagEnv);
-
-cdk.Tags.of(cognitoStack).add("Project", "AIAssistantService");
-cdk.Tags.of(cognitoStack).add("ManagedBy", "CDK");
-cdk.Tags.of(cognitoStack).add("Environment", tagEnv);
-
-cdk.Tags.of(monitoringStack).add("Project", "AIAssistantService");
-cdk.Tags.of(monitoringStack).add("ManagedBy", "CDK");
-cdk.Tags.of(monitoringStack).add("Environment", tagEnv);
+applyTags(ecsStack);
+applyTags(cognitoStack);
+applyTags(monitoringStack);
