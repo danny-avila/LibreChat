@@ -20,6 +20,7 @@ function njContentSecurityPolicy() {
         'https://*.google-analytics.com',
         'https://*.googletagmanager.com',
         'https://*.nj.gov',
+        'blob:',
         'data:',
       ],
       connectSrc: [
