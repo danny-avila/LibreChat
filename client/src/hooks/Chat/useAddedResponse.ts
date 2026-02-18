@@ -1,7 +1,12 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { getEndpointField, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  getEndpointField,
+  LocalStorageKeys,
+  isAssistantsEndpoint,
+  getDefaultParamsEndpoint,
+} from 'librechat-data-provider';
 import type { TEndpointsConfig, EModelEndpoint, TConversation } from 'librechat-data-provider';
 import type { AssistantListItem, NewConversationParams } from '~/common';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
@@ -84,11 +89,13 @@ export default function useAddedResponse() {
       }
 
       const models = modelsConfig?.[defaultEndpoint ?? ''] ?? [];
+      const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, defaultEndpoint);
       newConversation = buildDefaultConvo({
         conversation: newConversation,
         lastConversationSetup: preset as TConversation,
         endpoint: defaultEndpoint ?? ('' as EModelEndpoint),
         models,
+        defaultParamsEndpoint,
       });
 
       if (preset?.title != null && preset.title !== '') {
