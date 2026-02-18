@@ -562,7 +562,14 @@ const OpenAIChatCompletionController = async (req, res) => {
       writeSSE(res, '[DONE]');
       res.end();
     } else {
-      sendErrorResponse(res, 500, errorMessage, 'server_error');
+      // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
+      const statusCode =
+        typeof error?.status === 'number' && error.status >= 400 && error.status < 600
+          ? error.status
+          : 500;
+      const errorType =
+        statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';
+      sendErrorResponse(res, statusCode, errorMessage, errorType);
     }
   }
 };
