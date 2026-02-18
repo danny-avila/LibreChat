@@ -65,6 +65,10 @@ export default function ModelPanel({
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
 
+  const disableModelParameters = useMemo(() => {
+    const agentsConfig = endpointsConfig?.agents as t.TAgentsEndpoint | undefined;
+    return agentsConfig?.disableModelParameters ?? false;
+  }, [endpointsConfig]);
   const bedrockRegions = useMemo(() => {
     return endpointsConfig?.[provider]?.availableRegions ?? [];
   }, [endpointsConfig, provider]);
@@ -217,7 +221,7 @@ export default function ModelPanel({
         </div>
       </div>
       {/* Model Parameters */}
-      {parameters && (
+      {parameters && !disableModelParameters && (
         <div className="h-auto max-w-full overflow-x-hidden p-2">
           <div className="grid grid-cols-2 gap-4">
             {/* This is the parent element containing all settings */}
@@ -248,14 +252,16 @@ export default function ModelPanel({
         </div>
       )}
       {/* Reset Parameters Button */}
-      <button
-        type="button"
-        onClick={handleResetParameters}
-        className="btn btn-neutral my-1 flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
-      >
-        <RotateCcw className="h-4 w-4" aria-hidden="true" />
-        {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
-      </button>
+      {!disableModelParameters && (
+        <button
+          type="button"
+          onClick={handleResetParameters}
+          className="btn btn-neutral my-1 flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
+        >
+          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+          {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
+        </button>
+      )}
     </div>
   );
 }

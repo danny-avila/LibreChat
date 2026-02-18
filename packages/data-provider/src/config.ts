@@ -291,6 +291,12 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      disableModelParameters: z.boolean().optional().default(false),
+      /**
+       * Forces agents to use only pre-configured model specs
+       * When true, users can only select from modelSpecs, not arbitrary model/provider combinations
+       */
+      forceModelSpecs: z.boolean().optional().default(false),
     }),
   )
   .default({
@@ -299,6 +305,8 @@ export const agentsEndpointSchema = baseEndpointSchema
     maxCitations: 30,
     maxCitationsPerFile: 7,
     minRelevanceScore: 0.45,
+    disableModelParameters: false,
+    forceModelSpecs: false,
   });
 
 export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;

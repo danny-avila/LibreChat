@@ -74,7 +74,7 @@ async function getEndpointsConfig(req) {
     };
   }
   if (mergedConfig[EModelEndpoint.agents] && appConfig?.endpoints?.[EModelEndpoint.agents]) {
-    const { disableBuilder, capabilities, allowedProviders, ..._rest } =
+    const { disableBuilder, capabilities, allowedProviders, disableModelParameters, forceModelSpecs, ..._rest } =
       appConfig.endpoints[EModelEndpoint.agents];
 
     mergedConfig[EModelEndpoint.agents] = {
@@ -82,6 +82,8 @@ async function getEndpointsConfig(req) {
       allowedProviders,
       disableBuilder,
       capabilities,
+      disableModelParameters,
+      forceModelSpecs,
     };
   }
 

@@ -265,6 +265,15 @@ endpoints:
   #   minRelevanceScore: 0.45
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
+  #   # (optional) Disable model parameters UI in the agent builder
+  #   # When true, users cannot adjust temperature, top-p, frequency_penalty, etc.
+  #   # This prevents non-technical users from being confused by parameter settings
+  #   # and prevents invalid parameter combinations (e.g., for Azure OpenAI models)
+  #   disableModelParameters: false
+  #   # (optional) Force agents to use only pre-configured model specs
+  #   # When true, users can only select from modelSpecs instead of arbitrary model/provider combinations
+  #   # Recommended to use with disableModelParameters for a fully curated experience
+  #   forceModelSpecs: false
 
   # Anthropic endpoint configuration with Vertex AI support
   # Use this to run Anthropic Claude models through Google Cloud Vertex AI
@@ -533,6 +542,64 @@ endpoints:
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o-mini"
+
+# Example: Using modelSpecs with disableModelParameters for non-technical users
+# This provides a curated, simplified experience where users select from pre-configured models
+# without needing to understand or adjust parameters like temperature, top-p, etc.
+#
+# endpoints:
+#   agents:
+#     disableModelParameters: true  # Hide parameter controls
+#     forceModelSpecs: true  # Only allow selection from pre-configured specs
+#     allowedProviders:
+#       - openAI
+#       - anthropic
+#
+# modelSpecs:
+#   list:
+#     - name: "gpt4-standard"
+#       label: "GPT-4 (Standard)"
+#       description: "High quality, good for complex reasoning"
+#       group: "openAI"
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o"
+#         temperature: 0.7
+#         top_p: 1
+#         max_tokens: 4096
+#
+#     - name: "gpt4-creative"
+#       label: "GPT-4 (Creative)"
+#       description: "Better for creative and open-ended tasks"
+#       group: "openAI"
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o"
+#         temperature: 1.0
+#         top_p: 1
+#         max_tokens: 4096
+#
+#     - name: "gpt4-precise"
+#       label: "GPT-4 (Precise)"
+#       description: "Most deterministic, best for factual responses"
+#       group: "openAI"
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o"
+#         temperature: 0.3
+#         top_p: 0.9
+#         max_tokens: 4096
+#
+#     - name: "claude-standard"
+#       label: "Claude 3.5 Sonnet"
+#       description: "Excellent reasoning and coding capabilities"
+#       group: "anthropic"
+#       preset:
+#         endpoint: "anthropic"
+#         model: "claude-3-5-sonnet"
+#         temperature: 0.5
+#         top_p: 1
+#         max_tokens: 4096
 
 # fileConfig:
 #   endpoints:
