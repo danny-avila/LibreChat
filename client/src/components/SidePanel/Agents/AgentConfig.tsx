@@ -33,7 +33,7 @@ import MCPTools from './MCPTools';
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
   defaultTextProps,
-  'flex w-full px-3 py-2 border-border-light bg-surface-secondary focus-visible:ring-2 focus-visible:ring-ring-primary resize-none',
+  'flex w-full px-3 py-2 border-border-light bg-surface-secondary focus-visible:ring-2 focus-visible:ring-ring-primary',
   removeFocusOutlines,
 );
 
@@ -239,10 +239,11 @@ export default function AgentConfig() {
                 {...field}
                 value={field.value ?? ''}
                 maxLength={512}
-                className={inputClass}
+                className={cn(inputClass, 'resize-none')}
                 id="description"
                 placeholder={localize('com_agents_description_placeholder')}
                 aria-label="Agent description"
+                rows={3}
               />
             )}
           />
