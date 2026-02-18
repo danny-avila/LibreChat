@@ -28,7 +28,9 @@ export const initializeS3 = (): S3Client | null => {
   const endpoint = process.env.AWS_ENDPOINT_URL;
   const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
   const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-  const forcePathStyle = ['1', 'true', 'yes'].includes((process.env.AWS_FORCE_PATH_STYLE ?? '').toLowerCase());
+  const forcePathStyle = ['1', 'true', 'yes'].includes(
+    (process.env.AWS_FORCE_PATH_STYLE ?? '').toLowerCase(),
+  );
 
   const config = {
     region,

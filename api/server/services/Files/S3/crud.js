@@ -14,7 +14,9 @@ const {
 const endpoint = process.env.AWS_ENDPOINT_URL;
 const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';
-const forcePathStyle = ['1', 'true', 'yes'].includes((process.env.AWS_FORCE_PATH_STYLE ?? '').toLowerCase());
+const forcePathStyle = ['1', 'true', 'yes'].includes(
+  (process.env.AWS_FORCE_PATH_STYLE ?? '').toLowerCase().
+);
 
 let s3UrlExpirySeconds = 2 * 60; // 2 minutes
 let s3RefreshExpiryMs = null;
@@ -256,8 +258,11 @@ function extractKeyFromS3Url(fileUrlOrKey) {
     const url = new URL(fileUrlOrKey);
 
     if (endpoint?.trim() && forcePathStyle) {
-      const endpointUrl = new URL(endpoint)
-      const startPos = endpointUrl.pathname.length + (endpointUrl.pathname.endsWith('/') ? 2 : 1) + bucketName.length + 1;
+      const endpointUrl = new URL(endpoint);
+      const startPos = endpointUrl.pathname.length +
+        (endpointUrl.pathname.endsWith('/') ? 2 : 1) +
+        bucketName.length +
+        1;
       return url.pathname.substring(startPos);
     }
 
