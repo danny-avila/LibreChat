@@ -461,6 +461,7 @@ export class RedisEventTransport implements IEventTransport {
       await this.publisher.publish(channel, JSON.stringify(message));
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish done:`, err);
+      throw err;
     }
   }
 
@@ -477,6 +478,7 @@ export class RedisEventTransport implements IEventTransport {
       await this.publisher.publish(channel, JSON.stringify(message));
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish error:`, err);
+      throw err;
     }
   }
 
