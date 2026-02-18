@@ -96,9 +96,9 @@ function MCPToolSelectDialog({
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
-      // Initialize server if not connected (connects on-demand)
+      // Only initialize if no cached tools exist; skip if tools are already available from DB
       const serverInfo = mcpServersMap.get(serverName);
-      if (!serverInfo?.isConnected) {
+      if (!serverInfo?.tools?.length) {
         const result = await initializeServer(serverName);
         if (result?.oauthRequired && result.oauthUrl) {
           setIsInitializing(null);
@@ -106,7 +106,7 @@ function MCPToolSelectDialog({
         }
       }
 
-      // Add tools to form (uses cached tools from DB, refreshed by initializeServer if needed)
+      // Add tools to form (refetches from backend's persisted cache)
       await addToolsToForm(serverName);
       setIsInitializing(null);
     } catch (error) {

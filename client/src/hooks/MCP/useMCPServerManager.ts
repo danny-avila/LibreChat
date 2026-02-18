@@ -447,13 +447,9 @@ export function useMCPServerManager({
         setMCPValues(filteredValues);
       } else {
         setMCPValues([...currentValues, serverName]);
-        const serverStatus = connectionStatus?.[serverName];
-        if (serverStatus?.connectionState !== 'connected') {
-          initializeServer(serverName);
-        }
       }
     },
-    [mcpValues, setMCPValues, initializeServer, isInitializing, connectionStatus],
+    [mcpValues, setMCPValues, isInitializing],
   );
 
   const handleConfigSave = useCallback(
