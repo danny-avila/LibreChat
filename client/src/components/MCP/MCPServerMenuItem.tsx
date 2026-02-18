@@ -85,7 +85,9 @@ export default function MCPServerMenuItem({
           <span className="truncate text-sm font-medium text-text-primary">{displayName}</span>
         </div>
         {server.config?.description && (
-          <p className="truncate text-xs text-text-secondary">{server.config.description}</p>
+          <p className="truncate text-xs text-text-secondary" title={server.config.description}>
+            {server.config.description}
+          </p>
         )}
       </div>
 
