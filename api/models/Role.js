@@ -124,7 +124,9 @@ async function updateAccessPermissions(roleName, permissionsUpdate, roleData) {
         existingTypePerms &&
         'SHARED_GLOBAL' in existingTypePerms &&
         !('SHARE' in existingTypePerms) &&
-        updates[legacyPermType]
+        updates[legacyPermType] &&
+        // Don't override an explicit SHARE value the caller already provided
+        !('SHARE' in updates[legacyPermType])
       ) {
         const inheritedValue = existingTypePerms['SHARED_GLOBAL'];
         updates[legacyPermType]['SHARE'] = inheritedValue;
@@ -156,8 +158,16 @@ async function updateAccessPermissions(roleName, permissionsUpdate, roleData) {
       const existingTypePerms = currentPermissions[legacyPermType];
       if (existingTypePerms && 'SHARED_GLOBAL' in existingTypePerms) {
         if (!updates[legacyPermType]) {
-          // permType wasn't touched by the main loop; create a new copy before mutating
+          // permType wasn't in the update payload so the migration block above didn't run.
+          // Create a writable copy and handle the SHARED_GLOBAL → SHARE inheritance here
+          // to avoid removing SHARED_GLOBAL without writing SHARE (data loss).
           updatedPermissions[legacyPermType] = { ...existingTypePerms };
+          if (!('SHARE' in existingTypePerms)) {
+            updatedPermissions[legacyPermType]['SHARE'] = existingTypePerms['SHARED_GLOBAL'];
+            logger.info(
+              `Migrating '${roleName}' role ${legacyPermType}.SHARED_GLOBAL=${existingTypePerms['SHARED_GLOBAL']} → SHARE`,
+            );
+          }
         }
         delete updatedPermissions[legacyPermType]['SHARED_GLOBAL'];
         hasChanges = true;
