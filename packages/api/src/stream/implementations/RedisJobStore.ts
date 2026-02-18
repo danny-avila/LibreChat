@@ -306,7 +306,7 @@ export class RedisJobStore implements IJobStore {
     const BATCH_SIZE = 50;
     for (let i = 0; i < streamIds.length; i += BATCH_SIZE) {
       const batch = streamIds.slice(i, i + BATCH_SIZE);
-      const results = await Promise.all(
+      const results = await Promise.allSettled(
         batch.map(async (streamId) => {
           const job = await this.getJob(streamId);
 
@@ -336,7 +336,13 @@ export class RedisJobStore implements IJobStore {
           return 0;
         }),
       );
-      cleaned += results.reduce<number>((sum, v) => sum + v, 0);
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          cleaned += result.value;
+        } else {
+          logger.warn(`[RedisJobStore] Cleanup failed for a job:`, result.reason);
+        }
+      }
     }
 
     if (cleaned > 0) {
