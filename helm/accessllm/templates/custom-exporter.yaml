@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: librechat-custom-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: librechat-custom-exporter
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: librechat-custom-exporter
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+      labels:
+        app: librechat-custom-exporter
+    spec:
+      containers:
+        - name: exporter
+          image: fekihatelm/librechat-custom-exporter:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: metrics
+          env:
+            - name: MONGODB_URI
+              value: "mongodb://$(MONGO_ROOT_USER):$(MONGO_ROOT_PASS)@mongodb:27017/LibreChat?authSource=admin"
+            - name: PORT
+              value: "8000"
+            - name: SCRAPE_INTERVAL
+              value: "15"
+          envFrom:
+            - secretRef:
+                name: librechat-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: librechat-custom-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: librechat-custom-exporter
+    {{- include "accessllm.labels" . | nindent 4 }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: metrics
+  selector:
+    app: librechat-custom-exporter

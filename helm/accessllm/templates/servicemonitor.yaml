@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: librechat-custom-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: kube-prometheus-stack
+    {{- include "accessllm.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: librechat-custom-exporter
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
