@@ -18,7 +18,6 @@ const {
   findUser,
 } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
-const { getOAuthReconnectionManager } = require('~/config');
 const { getOpenIdConfig } = require('~/strategies');
 
 const registrationController = async (req, res) => {
@@ -79,7 +78,12 @@ const refreshController = async (req, res) => {
 
     try {
       const openIdConfig = getOpenIdConfig();
-      const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
+      const refreshParams = process.env.OPENID_SCOPE ? { scope: process.env.OPENID_SCOPE } : {};
+      const tokenset = await openIdClient.refreshTokenGrant(
+        openIdConfig,
+        refreshToken,
+        refreshParams,
+      );
       const claims = tokenset.claims();
       const { user, error, migration } = await findOpenIDUser({
         findUser,
@@ -160,17 +164,6 @@ const refreshController = async (req, res) => {
 
     if (session && session.expiration > new Date()) {
       const token = await setAuthTokens(userId, res, session);
-
-      // trigger OAuth MCP server reconnection asynchronously (best effort)
-      try {
-        void getOAuthReconnectionManager()
-          .reconnectServers(userId)
-          .catch((err) => {
-            logger.error('[refreshController] Error reconnecting OAuth MCP servers:', err);
-          });
-      } catch (err) {
-        logger.warn(`[refreshController] Cannot attempt OAuth MCP servers reconnection:`, err);
-      }
 
       res.status(200).send({ token, user });
     } else if (req?.query?.retry) {

@@ -775,10 +775,11 @@ describe('setupOpenId', () => {
   });
 
   it('should attach federatedTokens to user object for token propagation', async () => {
-    // Arrange - setup tokenset with access token, refresh token, and expiration
+    // Arrange - setup tokenset with access token, id token, refresh token, and expiration
     const tokensetWithTokens = {
       ...tokenset,
       access_token: 'mock_access_token_abc123',
+      id_token: 'mock_id_token_def456',
       refresh_token: 'mock_refresh_token_xyz789',
       expires_at: 1234567890,
     };
@@ -790,9 +791,29 @@ describe('setupOpenId', () => {
     expect(user.federatedTokens).toBeDefined();
     expect(user.federatedTokens).toEqual({
       access_token: 'mock_access_token_abc123',
+      id_token: 'mock_id_token_def456',
       refresh_token: 'mock_refresh_token_xyz789',
       expires_at: 1234567890,
     });
+  });
+
+  it('should include id_token in federatedTokens distinct from access_token', async () => {
+    // Arrange - use different values for access_token and id_token
+    const tokensetWithTokens = {
+      ...tokenset,
+      access_token: 'the_access_token',
+      id_token: 'the_id_token',
+      refresh_token: 'the_refresh_token',
+      expires_at: 9999999999,
+    };
+
+    // Act
+    const { user } = await validate(tokensetWithTokens);
+
+    // Assert - id_token and access_token must be different values
+    expect(user.federatedTokens.access_token).toBe('the_access_token');
+    expect(user.federatedTokens.id_token).toBe('the_id_token');
+    expect(user.federatedTokens.id_token).not.toBe(user.federatedTokens.access_token);
   });
 
   it('should include tokenset along with federatedTokens', async () => {
@@ -800,6 +821,7 @@ describe('setupOpenId', () => {
     const tokensetWithTokens = {
       ...tokenset,
       access_token: 'test_access_token',
+      id_token: 'test_id_token',
       refresh_token: 'test_refresh_token',
       expires_at: 9999999999,
     };
@@ -811,7 +833,9 @@ describe('setupOpenId', () => {
     expect(user.tokenset).toBeDefined();
     expect(user.federatedTokens).toBeDefined();
     expect(user.tokenset.access_token).toBe('test_access_token');
+    expect(user.tokenset.id_token).toBe('test_id_token');
     expect(user.federatedTokens.access_token).toBe('test_access_token');
+    expect(user.federatedTokens.id_token).toBe('test_id_token');
   });
 
   it('should set role to "ADMIN" if OPENID_ADMIN_ROLE is set and user has that role', async () => {

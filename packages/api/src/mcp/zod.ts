@@ -203,9 +203,9 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(schema)) {
-    // Skip $defs/definitions at root level to avoid infinite recursion
-    if ((key === '$defs' || key === 'definitions') && !visited.size) {
-      result[key] = value;
+    // Skip $defs/definitions — they are only used for resolving $ref and
+    // should not appear in the resolved output (e.g. Google/Gemini API rejects them).
+    if (key === '$defs' || key === 'definitions') {
       continue;
     }
 
@@ -241,6 +241,80 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
       result[key] = resolveJsonSchemaRefs(value as Record<string, unknown>, definitions, visited);
     } else {
       // Copy primitive values as is
+      result[key] = value;
+    }
+  }
+
+  return result as T;
+}
+
+/**
+ * Recursively normalizes a JSON schema for LLM API compatibility.
+ *
+ * Transformations applied:
+ * - Converts `const` values to `enum` arrays (Gemini/Vertex AI rejects `const`)
+ * - Strips vendor extension fields (`x-*` prefixed keys, e.g. `x-google-enum-descriptions`)
+ * - Strips leftover `$defs`/`definitions` blocks that may survive ref resolution
+ *
+ * @param schema - The JSON schema to normalize
+ * @returns The normalized schema
+ */
+export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T): T {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  if (Array.isArray(schema)) {
+    return schema.map((item) =>
+      item && typeof item === 'object' ? normalizeJsonSchema(item) : item,
+    ) as unknown as T;
+  }
+
+  const result: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(schema)) {
+    // Strip vendor extension fields (e.g. x-google-enum-descriptions) —
+    // these are valid in JSON Schema but rejected by Google/Gemini API.
+    if (key.startsWith('x-')) {
+      continue;
+    }
+
+    // Strip leftover $defs/definitions (should already be resolved by resolveJsonSchemaRefs,
+    // but strip as a safety net for schemas that bypass ref resolution).
+    if (key === '$defs' || key === 'definitions') {
+      continue;
+    }
+
+    if (key === 'const' && !('enum' in schema)) {
+      result['enum'] = [value];
+      continue;
+    }
+
+    if (key === 'const' && 'enum' in schema) {
+      // Skip `const` when `enum` already exists
+      continue;
+    }
+
+    if (key === 'properties' && value && typeof value === 'object' && !Array.isArray(value)) {
+      const newProps: Record<string, unknown> = {};
+      for (const [propKey, propValue] of Object.entries(value as Record<string, unknown>)) {
+        newProps[propKey] =
+          propValue && typeof propValue === 'object'
+            ? normalizeJsonSchema(propValue as Record<string, unknown>)
+            : propValue;
+      }
+      result[key] = newProps;
+    } else if (
+      (key === 'items' || key === 'additionalProperties') &&
+      value &&
+      typeof value === 'object'
+    ) {
+      result[key] = normalizeJsonSchema(value as Record<string, unknown>);
+    } else if ((key === 'oneOf' || key === 'anyOf' || key === 'allOf') && Array.isArray(value)) {
+      result[key] = value.map((item) =>
+        item && typeof item === 'object' ? normalizeJsonSchema(item) : item,
+      );
+    } else {
       result[key] = value;
     }
   }

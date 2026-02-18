@@ -30,6 +30,9 @@ coverage
 config/translations/stores/*
 client/src/localization/languages/*_missing_keys.json
 
+# Turborepo
+.turbo
+
 # Compiled Dirs (http://nodejs.org/api/addons.html)
 build/
 dist/

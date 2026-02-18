@@ -1,12 +1,7 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
+const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
-const {
-  Callback,
-  ToolEndHandler,
-  formatAgentMessages,
-  ChatModelStreamHandler,
-} = require('@librechat/agents');
 const {
   writeSSE,
   createRun,
@@ -325,18 +320,8 @@ const OpenAIChatCompletionController = async (req, res) => {
       }
     };
 
-    // Built-in handler for processing raw model stream chunks
-    const chatModelStreamHandler = new ChatModelStreamHandler();
-
     // Event handlers for OpenAI-compatible streaming
     const handlers = {
-      // Process raw model chunks and dispatch message/reasoning deltas
-      on_chat_model_stream: {
-        handle: async (event, data, metadata, graph) => {
-          await chatModelStreamHandler.handle(event, data, metadata, graph);
-        },
-      },
-
       // Text content streaming
       on_message_delta: createHandler((data) => {
         const content = data?.delta?.content;
@@ -577,7 +562,14 @@ const OpenAIChatCompletionController = async (req, res) => {
       writeSSE(res, '[DONE]');
       res.end();
     } else {
-      sendErrorResponse(res, 500, errorMessage, 'server_error');
+      // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
+      const statusCode =
+        typeof error?.status === 'number' && error.status >= 400 && error.status < 600
+          ? error.status
+          : 500;
+      const errorType =
+        statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';
+      sendErrorResponse(res, statusCode, errorMessage, errorType);
     }
   }
 };

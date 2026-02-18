@@ -590,6 +590,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     tokenset,
     federatedTokens: {
       access_token: tokenset.access_token,
+      id_token: tokenset.id_token,
       refresh_token: tokenset.refresh_token,
       expires_at: tokenset.expires_at,
     },

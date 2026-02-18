@@ -413,7 +413,10 @@ export async function initializeAgent(
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
     tools: (tools ?? []) as GenericTool[] & string[],
-    maxContextTokens: Math.round((agentMaxContextNum - maxOutputTokensNum) * 0.9),
+    maxContextTokens:
+      maxContextTokens != null && maxContextTokens > 0
+        ? maxContextTokens
+        : Math.round((agentMaxContextNum - maxOutputTokensNum) * 0.9),
   };
 
   return initializedAgent;

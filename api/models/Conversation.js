@@ -124,9 +124,14 @@ module.exports = {
         updateOperation,
         {
           new: true,
-          upsert: true,
+          upsert: metadata?.noUpsert !== true,
         },
       );
+
+      if (!conversation) {
+        logger.debug('[saveConvo] Conversation not found, skipping update');
+        return null;
+      }
 
       return conversation.toObject();
     } catch (error) {

@@ -67,9 +67,20 @@ const Part = memo(
       if (part.tool_call_ids != null && !text) {
         return null;
       }
-      /** Skip rendering if text is only whitespace to avoid empty Container */
-      if (!isLast && text.length > 0 && /^\s*$/.test(text)) {
-        return null;
+      /** Handle whitespace-only text to avoid layout shift */
+      if (text.length > 0 && /^\s*$/.test(text)) {
+        /** Show placeholder for whitespace-only last part during streaming */
+        if (isLast && showCursor) {
+          return (
+            <Container>
+              <EmptyText />
+            </Container>
+          );
+        }
+        /** Skip rendering non-last whitespace-only parts to avoid empty Container */
+        if (!isLast) {
+          return null;
+        }
       }
       return (
         <Container>

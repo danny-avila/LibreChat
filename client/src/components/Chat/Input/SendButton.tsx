@@ -42,7 +42,8 @@ const SubmitButton = React.memo(
 const SendButton = React.memo(
   forwardRef((props: SendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
     const data = useWatch({ control: props.control });
-    return <SubmitButton ref={ref} disabled={props.disabled || !data.text} />;
+    const content = data?.text?.trim();
+    return <SubmitButton ref={ref} disabled={props.disabled || !content} />;
   }),
 );
 

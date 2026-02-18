@@ -8,7 +8,37 @@ export const OAUTH_SESSION_COOKIE = 'oauth_session';
 export const OAUTH_SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
 export const OAUTH_SESSION_COOKIE_PATH = '/api';
 
-const isProduction = process.env.NODE_ENV === 'production';
+/**
+ * Determines if secure cookies should be used.
+ * Returns `true` in production unless the server is running on localhost (HTTP).
+ * This allows cookies to work on `http://localhost` during local development
+ * even when `NODE_ENV=production` (common in Docker Compose setups).
+ */
+export function shouldUseSecureCookie(): boolean {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const domainServer = process.env.DOMAIN_SERVER || '';
+
+  let hostname = '';
+  if (domainServer) {
+    try {
+      const normalized = /^https?:\/\//i.test(domainServer)
+        ? domainServer
+        : `http://${domainServer}`;
+      const url = new URL(normalized);
+      hostname = (url.hostname || '').toLowerCase();
+    } catch {
+      hostname = domainServer.toLowerCase();
+    }
+  }
+
+  const isLocalhost =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname.endsWith('.localhost');
+
+  return isProduction && !isLocalhost;
+}
 
 /** Generates an HMAC-based token for OAuth CSRF protection */
 export function generateOAuthCsrfToken(flowId: string, secret?: string): string {
@@ -23,7 +53,7 @@ export function generateOAuthCsrfToken(flowId: string, secret?: string): string 
 export function setOAuthCsrfCookie(res: Response, flowId: string, cookiePath: string): void {
   res.cookie(OAUTH_CSRF_COOKIE, generateOAuthCsrfToken(flowId), {
     httpOnly: true,
-    secure: isProduction,
+    secure: shouldUseSecureCookie(),
     sameSite: 'lax',
     maxAge: OAUTH_CSRF_MAX_AGE,
     path: cookiePath,
@@ -68,7 +98,7 @@ export function setOAuthSession(req: Request, res: Response, next: NextFunction)
 export function setOAuthSessionCookie(res: Response, userId: string): void {
   res.cookie(OAUTH_SESSION_COOKIE, generateOAuthCsrfToken(userId), {
     httpOnly: true,
-    secure: isProduction,
+    secure: shouldUseSecureCookie(),
     sameSite: 'lax',
     maxAge: OAUTH_SESSION_MAX_AGE,
     path: OAUTH_SESSION_COOKIE_PATH,

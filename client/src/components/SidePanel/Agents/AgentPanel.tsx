@@ -1,7 +1,7 @@
-import { Plus } from 'lucide-react';
 import React, { useMemo, useCallback, useRef, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { Button, useToastContext } from '@librechat/client';
-import { useWatch, useForm, FormProvider, type FieldNamesMarkedBoolean } from 'react-hook-form';
+import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
@@ -11,8 +11,10 @@ import {
   PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { AgentForm, StringOption } from '~/common';
+import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { Agent } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks/useLocalize';
+import type { AgentForm, StringOption } from '~/common';
 import {
   useCreateAgentMutation,
   useUpdateAgentMutation,
@@ -23,7 +25,6 @@ import {
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
-import type { TranslationKeys } from '~/hooks/useLocalize';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';

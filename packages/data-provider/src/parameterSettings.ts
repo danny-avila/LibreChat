@@ -952,6 +952,9 @@ export const paramSettings: Record<string, SettingsConfiguration | undefined> = 
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.DeepSeek}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Moonshot}`]: bedrockMoonshot,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.MoonshotAI}`]: bedrockMoonshot,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.OpenAI}`]: bedrockGeneral,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.ZAI}`]: bedrockGeneral,
   [EModelEndpoint.google]: googleConfig,
 };
 
@@ -1000,6 +1003,12 @@ export const presetSettings: Record<
     col1: bedrockMoonshotCol1,
     col2: bedrockMoonshotCol2,
   },
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.MoonshotAI}`]: {
+    col1: bedrockMoonshotCol1,
+    col2: bedrockMoonshotCol2,
+  },
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.OpenAI}`]: bedrockGeneralColumns,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.ZAI}`]: bedrockGeneralColumns,
   [EModelEndpoint.google]: {
     col1: googleCol1,
     col2: googleCol2,

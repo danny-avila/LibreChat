@@ -7,6 +7,7 @@ import { MCPManager } from '~/mcp/MCPManager';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 
 const DEFAULT_CONNECTION_TIMEOUT_MS = 10_000; // ms
+const RECONNECT_STAGGER_MS = 500; // ms between each server reconnection
 
 export class OAuthReconnectionManager {
   private static instance: OAuthReconnectionManager | null = null;
@@ -84,9 +85,14 @@ export class OAuthReconnectionManager {
       this.reconnectionsTracker.setActive(userId, serverName);
     }
 
-    // 3. attempt to reconnect the servers
-    for (const serverName of serversToReconnect) {
-      void this.tryReconnect(userId, serverName);
+    // 3. attempt to reconnect the servers with staggered delays to avoid connection storms
+    for (let i = 0; i < serversToReconnect.length; i++) {
+      const serverName = serversToReconnect[i];
+      if (i === 0) {
+        void this.tryReconnect(userId, serverName);
+      } else {
+        setTimeout(() => void this.tryReconnect(userId, serverName), i * RECONNECT_STAGGER_MS);
+      }
     }
   }
 

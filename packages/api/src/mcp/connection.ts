@@ -559,7 +559,11 @@ export class MCPConnection extends EventEmitter {
     }
 
     this.isReconnecting = true;
-    const backoffDelay = (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 30000);
+    const backoffDelay = (attempt: number) => {
+      const base = Math.min(1000 * Math.pow(2, attempt), 30000);
+      const jitter = Math.floor(Math.random() * 1000); // up to 1s of random jitter
+      return base + jitter;
+    };
 
     try {
       while (

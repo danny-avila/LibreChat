@@ -1162,6 +1162,56 @@ describe('Claude Model Tests', () => {
       expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-opus-4-6');
     });
   });
+
+  it('should return correct context length for Claude Sonnet 4.6 (1M)', () => {
+    expect(getModelMaxTokens('claude-sonnet-4-6', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
+    );
+    expect(getModelMaxTokens('claude-sonnet-4-6')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
+    );
+  });
+
+  it('should return correct max output tokens for Claude Sonnet 4.6 (64K)', () => {
+    const { getModelMaxOutputTokens } = require('@librechat/api');
+    expect(getModelMaxOutputTokens('claude-sonnet-4-6', EModelEndpoint.anthropic)).toBe(
+      maxOutputTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
+    );
+  });
+
+  it('should handle Claude Sonnet 4.6 model name variations', () => {
+    const modelVariations = [
+      'claude-sonnet-4-6',
+      'claude-sonnet-4-6-20260101',
+      'claude-sonnet-4-6-latest',
+      'anthropic/claude-sonnet-4-6',
+      'claude-sonnet-4-6/anthropic',
+      'claude-sonnet-4-6-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const modelKey = findMatchingPattern(model, maxTokensMap[EModelEndpoint.anthropic]);
+      expect(modelKey).toBe('claude-sonnet-4-6');
+      expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toBe(
+        maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
+      );
+    });
+  });
+
+  it('should match model names correctly for Claude Sonnet 4.6', () => {
+    const modelVariations = [
+      'claude-sonnet-4-6',
+      'claude-sonnet-4-6-20260101',
+      'claude-sonnet-4-6-latest',
+      'anthropic/claude-sonnet-4-6',
+      'claude-sonnet-4-6/anthropic',
+      'claude-sonnet-4-6-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-sonnet-4-6');
+    });
+  });
 });
 
 describe('Moonshot/Kimi Model Tests', () => {

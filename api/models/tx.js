@@ -176,6 +176,7 @@ const tokenValues = Object.assign(
     'claude-opus-4-5': { prompt: 5, completion: 25 },
     'claude-opus-4-6': { prompt: 5, completion: 25 },
     'claude-sonnet-4': { prompt: 3, completion: 15 },
+    'claude-sonnet-4-6': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
     'command-r-plus': { prompt: 3, completion: 15 },
     'command-text': { prompt: 1.5, completion: 2.0 },
@@ -309,6 +310,7 @@ const cacheTokenValues = {
   'claude-3-haiku': { write: 0.3, read: 0.03 },
   'claude-haiku-4-5': { write: 1.25, read: 0.1 },
   'claude-sonnet-4': { write: 3.75, read: 0.3 },
+  'claude-sonnet-4-6': { write: 3.75, read: 0.3 },
   'claude-opus-4': { write: 18.75, read: 1.5 },
   'claude-opus-4-5': { write: 6.25, read: 0.5 },
   'claude-opus-4-6': { write: 6.25, read: 0.5 },
@@ -337,6 +339,7 @@ const cacheTokenValues = {
  */
 const premiumTokenValues = {
   'claude-opus-4-6': { threshold: 200000, prompt: 10, completion: 37.5 },
+  'claude-sonnet-4-6': { threshold: 200000, prompt: 6, completion: 22.5 },
 };
 
 /**

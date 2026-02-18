@@ -1,4 +1,4 @@
-import { replaceSpecialVars, parseCompactConvo, parseTextParts } from '../src/parsers';
+import { replaceSpecialVars, parseConvo, parseCompactConvo, parseTextParts } from '../src/parsers';
 import { specialVariables } from '../src/config';
 import { EModelEndpoint } from '../src/schemas';
 import { ContentTypes } from '../src/types/runs';
@@ -259,6 +259,257 @@ describe('parseCompactConvo', () => {
       expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('gpt-4');
     });
+  });
+});
+
+describe('parseConvo - defaultParamsEndpoint', () => {
+  test('should strip maxOutputTokens for custom endpoint without defaultParamsEndpoint', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+      maxContextTokens: 50000,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.maxContextTokens).toBe(50000);
+    expect(result?.maxOutputTokens).toBeUndefined();
+  });
+
+  test('should preserve maxOutputTokens when defaultParamsEndpoint is anthropic', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+      topP: 0.9,
+      topK: 40,
+      maxContextTokens: 50000,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.anthropic,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.model).toBe('anthropic/claude-opus-4.5');
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.maxOutputTokens).toBe(8192);
+    expect(result?.topP).toBe(0.9);
+    expect(result?.topK).toBe(40);
+    expect(result?.maxContextTokens).toBe(50000);
+  });
+
+  test('should strip OpenAI-specific fields when defaultParamsEndpoint is anthropic', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      temperature: 0.7,
+      max_tokens: 4096,
+      top_p: 0.9,
+      presence_penalty: 0.5,
+      frequency_penalty: 0.3,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.anthropic,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.max_tokens).toBeUndefined();
+    expect(result?.top_p).toBeUndefined();
+    expect(result?.presence_penalty).toBeUndefined();
+    expect(result?.frequency_penalty).toBeUndefined();
+  });
+
+  test('should preserve max_tokens when defaultParamsEndpoint is not set (OpenAI default)', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gpt-4o',
+      temperature: 0.7,
+      max_tokens: 4096,
+      top_p: 0.9,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.max_tokens).toBe(4096);
+    expect(result?.top_p).toBe(0.9);
+  });
+
+  test('should preserve Google-specific fields when defaultParamsEndpoint is google', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gemini-pro',
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+      topP: 0.9,
+      topK: 40,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.google,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.maxOutputTokens).toBe(8192);
+    expect(result?.topP).toBe(0.9);
+    expect(result?.topK).toBe(40);
+  });
+
+  test('should not strip fields from non-custom endpoints that already have a schema', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gpt-4o',
+      temperature: 0.7,
+      max_tokens: 4096,
+      top_p: 0.9,
+    };
+
+    const result = parseConvo({
+      endpoint: EModelEndpoint.openAI,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.anthropic,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.max_tokens).toBe(4096);
+    expect(result?.top_p).toBe(0.9);
+  });
+
+  test('should not carry bedrock region to custom endpoint without defaultParamsEndpoint', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gpt-4o',
+      temperature: 0.7,
+      region: 'us-east-1',
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.region).toBeUndefined();
+  });
+
+  test('should fall back to endpointType schema when defaultParamsEndpoint is invalid', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gpt-4o',
+      temperature: 0.7,
+      max_tokens: 4096,
+      maxOutputTokens: 8192,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: 'nonexistent_endpoint',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.max_tokens).toBe(4096);
+    expect(result?.maxOutputTokens).toBeUndefined();
+  });
+});
+
+describe('parseCompactConvo - defaultParamsEndpoint', () => {
+  test('should strip maxOutputTokens for custom endpoint without defaultParamsEndpoint', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+    };
+
+    const result = parseCompactConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.maxOutputTokens).toBeUndefined();
+  });
+
+  test('should preserve maxOutputTokens when defaultParamsEndpoint is anthropic', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+      topP: 0.9,
+      maxContextTokens: 50000,
+    };
+
+    const result = parseCompactConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.anthropic,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.maxOutputTokens).toBe(8192);
+    expect(result?.topP).toBe(0.9);
+    expect(result?.maxContextTokens).toBe(50000);
+  });
+
+  test('should strip iconURL even when defaultParamsEndpoint is set', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      iconURL: 'https://malicious.com/track.png',
+      maxOutputTokens: 8192,
+    };
+
+    const result = parseCompactConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.anthropic,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.['iconURL']).toBeUndefined();
+    expect(result?.maxOutputTokens).toBe(8192);
+  });
+
+  test('should fall back to endpointType when defaultParamsEndpoint is null', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gpt-4o',
+      max_tokens: 4096,
+      maxOutputTokens: 8192,
+    };
+
+    const result = parseCompactConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: null,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.max_tokens).toBe(4096);
+    expect(result?.maxOutputTokens).toBeUndefined();
   });
 });
 
