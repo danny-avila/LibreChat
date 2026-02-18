@@ -141,13 +141,15 @@ export default function useSideNavLinks({
       });
     }
 
-    links.push({
-      title: 'com_sidepanel_attach_files',
-      label: '',
-      icon: AttachmentIcon,
-      id: 'files',
-      Component: FilesPanel,
-    });
+    if (interfaceConfig.attachFiles !== false) {
+      links.push({
+        title: 'com_sidepanel_attach_files',
+        label: '',
+        icon: AttachmentIcon,
+        id: 'files',
+        Component: FilesPanel,
+      });
+    }
 
     if (hasAccessToBookmarks) {
       links.push({
@@ -191,6 +193,7 @@ export default function useSideNavLinks({
     hasAccessToMemories,
     hasAccessToReadMemories,
     interfaceConfig.parameters,
+    interfaceConfig.attachFiles,
     endpointType,
     hasAccessToBookmarks,
     availableMCPServers,
