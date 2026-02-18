@@ -10,7 +10,10 @@ export const getResponseStatus = (error: unknown): number | undefined => {
     return error.response?.status;
   }
   if (error != null && typeof error === 'object' && 'status' in error) {
-    return (error as { status: number }).status;
+    const { status } = error as { status: unknown };
+    if (typeof status === 'number') {
+      return status;
+    }
   }
   return undefined;
 };
