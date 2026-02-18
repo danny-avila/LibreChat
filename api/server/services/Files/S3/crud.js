@@ -15,7 +15,7 @@ const endpoint = process.env.AWS_ENDPOINT_URL;
 const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';
 const forcePathStyle = ['1', 'true', 'yes'].includes(
-  (process.env.AWS_FORCE_PATH_STYLE ?? '').toLowerCase().
+  (process.env.AWS_FORCE_PATH_STYLE ?? '').toLowerCase(),
 );
 
 let s3UrlExpirySeconds = 2 * 60; // 2 minutes
