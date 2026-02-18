@@ -300,7 +300,7 @@ export default function NewJerseyGuidePage() {
           To stay updated on new features, learning resources, and all things AI, join{' '}
           <a
             href="https://public.govdelivery.com/accounts/NJGOV/signup/45878"
-            className="underline hover:decoration-2"
+            className="font-normal text-primary underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
@@ -313,7 +313,7 @@ export default function NewJerseyGuidePage() {
           and safe AI use. We are also writing resources and{' '}
           <a
             href="https://innovation.nj.gov/skills/ai-how-tos/"
-            className="underline hover:decoration-2"
+            className="font-normal text-primary underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
@@ -335,7 +335,7 @@ export default function NewJerseyGuidePage() {
           {' '}
           <a
             href="https://innovation.nj.gov/skills/"
-            className="underline hover:decoration-2"
+            className="font-normal text-primary underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
@@ -346,7 +346,7 @@ export default function NewJerseyGuidePage() {
         <li className="mb-2">
           <a
             href="https://innovation.nj.gov/skills/ai-how-tos/"
-            className="underline hover:decoration-2"
+            className="font-normal text-primary underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
@@ -360,7 +360,7 @@ export default function NewJerseyGuidePage() {
         <li className="mb-2">
           <a
             href="https://innovate-us.org/"
-            className="underline hover:decoration-2"
+            className="font-normal text-primary underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
@@ -370,7 +370,7 @@ export default function NewJerseyGuidePage() {
         <li className="mb-2">
           <a
             href="https://ai.gov.uk/knowledge-hub/prompts"
-            className="underline hover:decoration-2"
+            className="font-normal text-primary underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
@@ -380,7 +380,7 @@ export default function NewJerseyGuidePage() {
         <li className="mb-2">
           <a
             href="https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview"
-            className="underline hover:decoration-2"
+            className="font-normal text-primary underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
@@ -391,7 +391,7 @@ export default function NewJerseyGuidePage() {
           Anthropic&#39;s guidance to{' '}
           <a
             href="https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
-            className="underline hover:decoration-2"
+            className="font-normal text-primary underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
