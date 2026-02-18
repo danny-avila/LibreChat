@@ -85,7 +85,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
           {/* Content */}
           <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden">
             {/* Agent name */}
-            <Label className="line-clamp-1 text-base font-semibold text-text-primary md:text-lg mt-3">
+            <Label className="line-clamp-2 mt-3 text-base font-semibold text-text-primary md:text-lg">
               {agent.name}
             </Label>
 
