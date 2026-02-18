@@ -259,11 +259,12 @@ function extractKeyFromS3Url(fileUrlOrKey) {
 
     if (endpoint?.trim() && forcePathStyle) {
       const endpointUrl = new URL(endpoint);
-      
-      const startPos = endpointUrl.pathname.length +
+      const startPos =
+        endpointUrl.pathname.length +
         (endpointUrl.pathname.endsWith('/') ? 2 : 1) +
         bucketName.length +
         1;
+
       return url.pathname.substring(startPos);
     }
 
