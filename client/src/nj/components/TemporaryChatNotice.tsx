@@ -11,7 +11,7 @@ export default function TemporaryChatNotice() {
   return (
     <div className="mx-1 my-5 max-w-xs rounded-lg border border-[#E4E2DF] bg-presentation p-2">
       <div className="mb-1 flex items-center justify-between">
-        <h3 className="m-0 text-sm font-medium text-text-primary">Temporary chats enabled</h3>
+        <div className="m-0 text-sm font-medium text-text-primary">Temporary chats enabled</div>
         <svg className="usa-icon usa-icon--size-2" aria-hidden="true" focusable="false" role="img">
           <use href={`${icons}#info_outline`} />
         </svg>
