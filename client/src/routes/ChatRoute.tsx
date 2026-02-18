@@ -114,6 +114,11 @@ export default function ChatRoute() {
         message: localize('com_ui_conversation_not_found'),
         severity: NotificationSeverity.WARNING,
       });
+      logger.log(
+        'conversation',
+        'ChatRoute initialConvoQuery isNotFoundError',
+        initialConvoQuery.error,
+      );
       newConversation({
         modelsData: modelsQuery.data,
         ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
