@@ -114,6 +114,26 @@ async function updateAccessPermissions(roleName, permissionsUpdate, roleData) {
       }
     }
 
+    // Migrate legacy SHARED_GLOBAL → SHARE for PROMPTS and AGENTS.
+    // SHARED_GLOBAL was removed in favour of SHARE in PR #11283. If the DB still has
+    // SHARED_GLOBAL but not SHARE, inherit the value so sharing intent is preserved.
+    const legacySharedGlobalTypes = ['PROMPTS', 'AGENTS'];
+    for (const legacyPermType of legacySharedGlobalTypes) {
+      const existingTypePerms = currentPermissions[legacyPermType];
+      if (
+        existingTypePerms &&
+        'SHARED_GLOBAL' in existingTypePerms &&
+        !('SHARE' in existingTypePerms) &&
+        updates[legacyPermType]
+      ) {
+        const inheritedValue = existingTypePerms['SHARED_GLOBAL'];
+        updates[legacyPermType]['SHARE'] = inheritedValue;
+        logger.info(
+          `Migrating '${roleName}' role ${legacyPermType}.SHARED_GLOBAL=${inheritedValue} → SHARE`,
+        );
+      }
+    }
+
     for (const [permissionType, permissions] of Object.entries(updates)) {
       const currentTypePermissions = currentPermissions[permissionType] || {};
       updatedPermissions[permissionType] = { ...currentTypePermissions };
@@ -126,6 +146,24 @@ async function updateAccessPermissions(roleName, permissionsUpdate, roleData) {
             `Updating '${roleName}' role permission '${permissionType}' '${permission}' from ${currentTypePermissions[permission]} to: ${value}`,
           );
         }
+      }
+    }
+
+    // Clean up orphaned SHARED_GLOBAL fields left in DB after the schema rename.
+    // Since we $set the full permissions object, deleting from updatedPermissions
+    // is sufficient to remove the field from MongoDB.
+    for (const legacyPermType of legacySharedGlobalTypes) {
+      const existingTypePerms = currentPermissions[legacyPermType];
+      if (existingTypePerms && 'SHARED_GLOBAL' in existingTypePerms) {
+        if (!updates[legacyPermType]) {
+          // permType wasn't touched by the main loop; create a new copy before mutating
+          updatedPermissions[legacyPermType] = { ...existingTypePerms };
+        }
+        delete updatedPermissions[legacyPermType]['SHARED_GLOBAL'];
+        hasChanges = true;
+        logger.info(
+          `Removed legacy SHARED_GLOBAL field from '${roleName}' role ${legacyPermType} permissions`,
+        );
       }
     }
 

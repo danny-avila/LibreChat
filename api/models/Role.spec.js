@@ -233,6 +233,70 @@ describe('updateAccessPermissions', () => {
     expect(updatedRole.permissions[PermissionTypes.MULTI_CONVO]).toEqual({ USE: true });
   });
 
+  it('should migrate SHARED_GLOBAL=true to SHARE=true when SHARE is absent', async () => {
+    // Simulates a pre-#11283 DB document where SHARED_GLOBAL existed instead of SHARE
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: {
+        [PermissionTypes.PROMPTS]: {
+          USE: true,
+          CREATE: true,
+          SHARED_GLOBAL: true, // legacy field
+        },
+        [PermissionTypes.AGENTS]: {
+          USE: true,
+          CREATE: true,
+          SHARED_GLOBAL: false, // legacy field — user had sharing disabled
+        },
+      },
+    });
+
+    await updateAccessPermissions(SystemRoles.USER, {
+      [PermissionTypes.PROMPTS]: { SHARE: false, SHARE_PUBLIC: false },
+      [PermissionTypes.AGENTS]: { SHARE: false, SHARE_PUBLIC: false },
+    });
+
+    const updatedRole = await getRoleByName(SystemRoles.USER);
+
+    // SHARED_GLOBAL=true should be migrated to SHARE=true (preserving intent)
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARE).toBe(true);
+    // SHARED_GLOBAL=false should be migrated to SHARE=false (preserving intent)
+    expect(updatedRole.permissions[PermissionTypes.AGENTS].SHARE).toBe(false);
+
+    // SHARED_GLOBAL should be removed from the DB
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARED_GLOBAL).toBeUndefined();
+    expect(updatedRole.permissions[PermissionTypes.AGENTS].SHARED_GLOBAL).toBeUndefined();
+  });
+
+  it('should remove SHARED_GLOBAL even when the permType is not in the update payload', async () => {
+    // SHARED_GLOBAL cleanup should run even if no update was triggered for that permType
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: {
+        [PermissionTypes.PROMPTS]: {
+          USE: true,
+          CREATE: true,
+          SHARE: true, // SHARE already exists — no migration needed
+          SHARED_GLOBAL: true, // orphaned legacy field still in DB
+        },
+        [PermissionTypes.MULTI_CONVO]: { USE: false },
+      },
+    });
+
+    await updateAccessPermissions(SystemRoles.USER, {
+      [PermissionTypes.MULTI_CONVO]: { USE: true },
+    });
+
+    const updatedRole = await getRoleByName(SystemRoles.USER);
+
+    // SHARED_GLOBAL should be cleaned up even though PROMPTS was not in the update
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARED_GLOBAL).toBeUndefined();
+    // Existing SHARE should be untouched
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARE).toBe(true);
+    // The actual update should still have applied
+    expect(updatedRole.permissions[PermissionTypes.MULTI_CONVO].USE).toBe(true);
+  });
+
   it('should not update MULTI_CONVO permissions when no changes are needed', async () => {
     await new Role({
       name: SystemRoles.USER,
