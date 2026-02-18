@@ -55,7 +55,7 @@ export const DialogOverlay = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
 >(({ className, style, ...props }, ref) => {
   const depth = React.useContext(DialogDepthContext);
-  const overlayZIndex = 50 + (depth - 1) * 60;
+  const overlayZIndex = 130 + (depth - 1) * 60;
 
   return (
     <DialogPrimitive.Overlay
@@ -94,7 +94,7 @@ const DialogContent = React.forwardRef<
     ref,
   ) => {
     const depth = React.useContext(DialogDepthContext);
-    const contentZIndex = 100 + (depth - 1) * 60;
+    const contentZIndex = 140 + (depth - 1) * 60;
 
     /* Handle Escape key to prevent closing dialog if a tooltip or dropdown has focus
     (this is a workaround in order to achieve WCAG compliance which requires

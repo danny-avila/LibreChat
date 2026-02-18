@@ -9,30 +9,6 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-jest.mock('@langchain/core/tools', () => ({
-  tool: jest.fn((fn, config) => {
-    const toolInstance = { _call: fn, ...config };
-    return toolInstance;
-  }),
-}));
-
-jest.mock('@librechat/agents', () => ({
-  Providers: {
-    VERTEXAI: 'vertexai',
-    GOOGLE: 'google',
-  },
-  StepTypes: {
-    TOOL_CALLS: 'tool_calls',
-  },
-  GraphEvents: {
-    ON_RUN_STEP_DELTA: 'on_run_step_delta',
-    ON_RUN_STEP: 'on_run_step',
-  },
-  Constants: {
-    CONTENT_AND_ARTIFACT: 'content_and_artifact',
-  },
-}));
-
 // Create mock registry instance
 const mockRegistryInstance = {
   getOAuthServers: jest.fn(() => Promise.resolve(new Set())),
@@ -46,26 +22,23 @@ const mockIsMCPDomainAllowed = jest.fn(() => Promise.resolve(true));
 const mockGetAppConfig = jest.fn(() => Promise.resolve({}));
 
 jest.mock('@librechat/api', () => {
-  // Access mock via getter to avoid hoisting issues
+  const actual = jest.requireActual('@librechat/api');
   return {
-    MCPOAuthHandler: {
-      generateFlowId: jest.fn(),
-    },
+    ...actual,
     sendEvent: jest.fn(),
-    normalizeServerName: jest.fn((name) => name),
-    convertWithResolvedRefs: jest.fn((params) => params),
     get isMCPDomainAllowed() {
       return mockIsMCPDomainAllowed;
     },
-    MCPServersRegistry: {
-      getInstance: () => mockRegistryInstance,
+    GenerationJobManager: {
+      emitChunk: jest.fn(),
     },
   };
 });
 
 const { logger } = require('@librechat/data-schemas');
 const { MCPOAuthHandler } = require('@librechat/api');
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, Constants } = require('librechat-data-provider');
+const D = Constants.mcp_delimiter;
 const {
   createMCPTool,
   createMCPTools,
@@ -73,24 +46,6 @@ const {
   checkOAuthFlowStatus,
   getServerConnectionStatus,
 } = require('./MCP');
-
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: {
-    FLOWS: 'flows',
-  },
-  Constants: {
-    USE_PRELIM_RESPONSE_MESSAGE_ID: 'prelim_response_id',
-    mcp_delimiter: '::',
-    mcp_prefix: 'mcp_',
-  },
-  ContentTypes: {
-    TEXT: 'text',
-  },
-  isAssistantsEndpoint: jest.fn(() => false),
-  Time: {
-    TWO_MINUTES: 120000,
-  },
-}));
 
 jest.mock('./Config', () => ({
   loadCustomConfig: jest.fn(),
@@ -120,6 +75,10 @@ jest.mock('./Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
 }));
 
+jest.mock('./GraphTokenService', () => ({
+  getGraphApiToken: jest.fn(),
+}));
+
 describe('tests for the new helper functions used by the MCP connection status endpoints', () => {
   let mockGetMCPManager;
   let mockGetFlowStateManager;
@@ -128,6 +87,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(MCPOAuthHandler, 'generateFlowId');
 
     mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
@@ -731,7 +691,7 @@ describe('User parameter passing tests', () => {
       mockReinitMCPServer.mockResolvedValue({
         tools: [{ name: 'test-tool' }],
         availableTools: {
-          'test-tool::test-server': {
+          [`test-tool${D}test-server`]: {
             function: {
               description: 'Test tool',
               parameters: { type: 'object', properties: {} },
@@ -791,7 +751,7 @@ describe('User parameter passing tests', () => {
 
       mockReinitMCPServer.mockResolvedValue({
         availableTools: {
-          'test-tool::test-server': {
+          [`test-tool${D}test-server`]: {
             function: {
               description: 'Test tool',
               parameters: { type: 'object', properties: {} },
@@ -804,7 +764,7 @@ describe('User parameter passing tests', () => {
       await createMCPTool({
         res: mockRes,
         user: mockUser,
-        toolKey: 'test-tool::test-server',
+        toolKey: `test-tool${D}test-server`,
         provider: 'openai',
         signal: mockSignal,
         userMCPAuthMap: {},
@@ -826,7 +786,7 @@ describe('User parameter passing tests', () => {
       const mockRes = { write: jest.fn(), flush: jest.fn() };
 
       const availableTools = {
-        'test-tool::test-server': {
+        [`test-tool${D}test-server`]: {
           function: {
             description: 'Cached tool',
             parameters: { type: 'object', properties: {} },
@@ -837,7 +797,7 @@ describe('User parameter passing tests', () => {
       await createMCPTool({
         res: mockRes,
         user: mockUser,
-        toolKey: 'test-tool::test-server',
+        toolKey: `test-tool${D}test-server`,
         provider: 'openai',
         userMCPAuthMap: {},
         availableTools: availableTools,
@@ -860,8 +820,8 @@ describe('User parameter passing tests', () => {
         return Promise.resolve({
           tools: [{ name: 'tool1' }, { name: 'tool2' }],
           availableTools: {
-            'tool1::server1': { function: { description: 'Tool 1', parameters: {} } },
-            'tool2::server1': { function: { description: 'Tool 2', parameters: {} } },
+            [`tool1${D}server1`]: { function: { description: 'Tool 1', parameters: {} } },
+            [`tool2${D}server1`]: { function: { description: 'Tool 2', parameters: {} } },
           },
         });
       });
@@ -892,7 +852,7 @@ describe('User parameter passing tests', () => {
         reinitCalls.push(params);
         return Promise.resolve({
           availableTools: {
-            'my-tool::my-server': {
+            [`my-tool${D}my-server`]: {
               function: { description: 'My Tool', parameters: {} },
             },
           },
@@ -902,7 +862,7 @@ describe('User parameter passing tests', () => {
       await createMCPTool({
         res: mockRes,
         user: mockUser,
-        toolKey: 'my-tool::my-server',
+        toolKey: `my-tool${D}my-server`,
         provider: 'google',
         userMCPAuthMap: {},
         availableTools: undefined, // Force reinit
@@ -936,11 +896,11 @@ describe('User parameter passing tests', () => {
       const result = await createMCPTool({
         res: mockRes,
         user: mockUser,
-        toolKey: 'test-tool::test-server',
+        toolKey: `test-tool${D}test-server`,
         provider: 'openai',
         userMCPAuthMap: {},
         availableTools: {
-          'test-tool::test-server': {
+          [`test-tool${D}test-server`]: {
             function: {
               description: 'Test tool',
               parameters: { type: 'object', properties: {} },
@@ -983,7 +943,7 @@ describe('User parameter passing tests', () => {
       mockIsMCPDomainAllowed.mockResolvedValueOnce(true);
 
       const availableTools = {
-        'test-tool::test-server': {
+        [`test-tool${D}test-server`]: {
           function: {
             description: 'Test tool',
             parameters: { type: 'object', properties: {} },
@@ -994,7 +954,7 @@ describe('User parameter passing tests', () => {
       const result = await createMCPTool({
         res: mockRes,
         user: mockUser,
-        toolKey: 'test-tool::test-server',
+        toolKey: `test-tool${D}test-server`,
         provider: 'openai',
         userMCPAuthMap: {},
         availableTools,
@@ -1023,7 +983,7 @@ describe('User parameter passing tests', () => {
       });
 
       const availableTools = {
-        'test-tool::test-server': {
+        [`test-tool${D}test-server`]: {
           function: {
             description: 'Test tool',
             parameters: { type: 'object', properties: {} },
@@ -1034,7 +994,7 @@ describe('User parameter passing tests', () => {
       const result = await createMCPTool({
         res: mockRes,
         user: mockUser,
-        toolKey: 'test-tool::test-server',
+        toolKey: `test-tool${D}test-server`,
         provider: 'openai',
         userMCPAuthMap: {},
         availableTools,
@@ -1100,7 +1060,7 @@ describe('User parameter passing tests', () => {
       mockIsMCPDomainAllowed.mockResolvedValue(true);
 
       const availableTools = {
-        'test-tool::test-server': {
+        [`test-tool${D}test-server`]: {
           function: {
             description: 'Test tool',
             parameters: { type: 'object', properties: {} },
@@ -1112,7 +1072,7 @@ describe('User parameter passing tests', () => {
       await createMCPTool({
         res: mockRes,
         user: adminUser,
-        toolKey: 'test-tool::test-server',
+        toolKey: `test-tool${D}test-server`,
         provider: 'openai',
         userMCPAuthMap: {},
         availableTools,
@@ -1126,7 +1086,7 @@ describe('User parameter passing tests', () => {
       await createMCPTool({
         res: mockRes,
         user: regularUser,
-        toolKey: 'test-tool::test-server',
+        toolKey: `test-tool${D}test-server`,
         provider: 'openai',
         userMCPAuthMap: {},
         availableTools,
@@ -1154,7 +1114,7 @@ describe('User parameter passing tests', () => {
         return Promise.resolve({
           tools: [{ name: 'test' }],
           availableTools: {
-            'test::server': { function: { description: 'Test', parameters: {} } },
+            [`test${D}server`]: { function: { description: 'Test', parameters: {} } },
           },
         });
       });

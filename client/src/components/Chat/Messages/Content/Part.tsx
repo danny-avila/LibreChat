@@ -67,9 +67,20 @@ const Part = memo(
       if (part.tool_call_ids != null && !text) {
         return null;
       }
-      /** Skip rendering if text is only whitespace to avoid empty Container */
-      if (!isLast && text.length > 0 && /^\s*$/.test(text)) {
-        return null;
+      /** Handle whitespace-only text to avoid layout shift */
+      if (text.length > 0 && /^\s*$/.test(text)) {
+        /** Show placeholder for whitespace-only last part during streaming */
+        if (isLast && showCursor) {
+          return (
+            <Container>
+              <EmptyText />
+            </Container>
+          );
+        }
+        /** Skip rendering non-last whitespace-only parts to avoid empty Container */
+        if (!isLast) {
+          return null;
+        }
       }
       return (
         <Container>
@@ -91,7 +102,11 @@ const Part = memo(
 
       const isToolCall =
         'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
-      if (isToolCall && toolCall.name === Tools.execute_code) {
+      if (
+        isToolCall &&
+        (toolCall.name === Tools.execute_code ||
+          toolCall.name === Constants.PROGRAMMATIC_TOOL_CALLING)
+      ) {
         return (
           <ExecuteCode
             attachments={attachments}

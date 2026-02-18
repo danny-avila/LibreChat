@@ -8,18 +8,32 @@ const {
   Permissions,
 } = require('librechat-data-provider');
 const {
+  getBasePath,
   createSafeUser,
   MCPOAuthHandler,
   MCPTokenStorage,
-  getBasePath,
+  setOAuthSession,
   getUserMCPAuthMap,
+  validateOAuthCsrf,
+  OAUTH_CSRF_COOKIE,
+  setOAuthCsrfCookie,
   generateCheckAccess,
+  validateOAuthSession,
+  OAUTH_SESSION_COOKIE,
 } = require('@librechat/api');
 const {
-  getMCPManager,
-  getFlowStateManager,
+  createMCPServerController,
+  updateMCPServerController,
+  deleteMCPServerController,
+  getMCPServersList,
+  getMCPServerById,
+  getMCPTools,
+} = require('~/server/controllers/mcp');
+const {
   getOAuthReconnectionManager,
   getMCPServersRegistry,
+  getFlowStateManager,
+  getMCPManager,
 } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
@@ -27,19 +41,13 @@ const { findToken, updateToken, createToken, deleteTokens } = require('~/models'
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const { getMCPTools } = require('~/server/controllers/mcp');
 const { findPluginAuthsByKeys } = require('~/models');
 const { getRoleByName } = require('~/models/Role');
 const { getLogStores } = require('~/cache');
-const {
-  createMCPServerController,
-  getMCPServerById,
-  getMCPServersList,
-  updateMCPServerController,
-  deleteMCPServerController,
-} = require('~/server/controllers/mcp');
 
 const router = Router();
+
+const OAUTH_CSRF_COOKIE_PATH = '/api/mcp';
 
 /**
  * Get all MCP tools available to the user
@@ -53,7 +61,7 @@ router.get('/tools', requireJwtAuth, async (req, res) => {
  * Initiate OAuth flow
  * This endpoint is called when the user clicks the auth link in the UI
  */
-router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
+router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async (req, res) => {
   try {
     const { serverName } = req.params;
     const { userId, flowId } = req.query;
@@ -93,7 +101,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
 
     logger.debug('[MCP OAuth] OAuth flow initiated', { oauthFlowId, authorizationUrl });
 
-    // Redirect user to the authorization URL
+    setOAuthCsrfCookie(res, oauthFlowId, OAUTH_CSRF_COOKIE_PATH);
     res.redirect(authorizationUrl);
   } catch (error) {
     logger.error('[MCP OAuth] Failed to initiate OAuth', error);
@@ -137,6 +145,25 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     const flowId = state;
     logger.debug('[MCP OAuth] Using flow ID from state', { flowId });
+
+    const flowParts = flowId.split(':');
+    if (flowParts.length < 2 || !flowParts[0] || !flowParts[1]) {
+      logger.error('[MCP OAuth] Invalid flow ID format in state', { flowId });
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
+
+    const [flowUserId] = flowParts;
+    if (
+      !validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH) &&
+      !validateOAuthSession(req, flowUserId)
+    ) {
+      logger.error('[MCP OAuth] CSRF validation failed: no valid CSRF or session cookie', {
+        flowId,
+        hasCsrfCookie: !!req.cookies?.[OAUTH_CSRF_COOKIE],
+        hasSessionCookie: !!req.cookies?.[OAUTH_SESSION_COOKIE],
+      });
+      return res.redirect(`${basePath}/oauth/error?error=csrf_validation_failed`);
+    }
 
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
@@ -303,12 +330,46 @@ router.get('/oauth/tokens/:flowId', requireJwtAuth, async (req, res) => {
 });
 
 /**
+ * Set CSRF binding cookie for OAuth flows initiated outside of HTTP request/response
+ * (e.g. during chat via SSE). The frontend should call this before opening the OAuth URL
+ * so the callback can verify the browser matches the flow initiator.
+ */
+router.post('/:serverName/oauth/bind', requireJwtAuth, setOAuthSession, async (req, res) => {
+  try {
+    const { serverName } = req.params;
+    const user = req.user;
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const flowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+    setOAuthCsrfCookie(res, flowId, OAUTH_CSRF_COOKIE_PATH);
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('[MCP OAuth] Failed to set CSRF binding cookie', error);
+    res.status(500).json({ error: 'Failed to bind OAuth flow' });
+  }
+});
+
+/**
  * Check OAuth flow status
  * This endpoint can be used to poll the status of an OAuth flow
  */
-router.get('/oauth/status/:flowId', async (req, res) => {
+router.get('/oauth/status/:flowId', requireJwtAuth, async (req, res) => {
   try {
     const { flowId } = req.params;
+    const user = req.user;
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!flowId.startsWith(`${user.id}:`) && !flowId.startsWith('system:')) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
 
@@ -375,7 +436,7 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
  * Reinitialize MCP server
  * This endpoint allows reinitializing a specific MCP server
  */
-router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
+router.post('/:serverName/reinitialize', requireJwtAuth, setOAuthSession, async (req, res) => {
   try {
     const { serverName } = req.params;
     const user = createSafeUser(req.user);
@@ -420,6 +481,11 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     }
 
     const { success, message, oauthRequired, oauthUrl } = result;
+
+    if (oauthRequired) {
+      const flowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+      setOAuthCsrfCookie(res, flowId, OAUTH_CSRF_COOKIE_PATH);
+    }
 
     res.json({
       success,

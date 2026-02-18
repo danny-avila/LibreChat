@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { VisuallyHidden } from '@ariakit/react';
 import { Spinner, TooltipAnchor } from '@librechat/client';
 import { CheckCircle2, MousePointerClick, SettingsIcon } from 'lucide-react';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
@@ -79,12 +80,76 @@ const SettingsButton = ({
   );
 };
 
+/**
+ * Lazily-rendered content for an endpoint submenu. By extracting this into a
+ * separate component, the expensive model-list rendering (and per-item hooks
+ * such as MutationObservers in EndpointModelItem) only runs when the submenu
+ * is actually mounted — which Ariakit defers via `unmountOnHide`.
+ */
+function EndpointMenuContent({
+  endpoint,
+  endpointIndex,
+}: {
+  endpoint: Endpoint;
+  endpointIndex: number;
+}) {
+  const localize = useLocalize();
+  const { agentsMap, assistantsMap, modelSpecs, selectedValues, endpointSearchValues } =
+    useModelSelectorContext();
+  const { model: selectedModel, modelSpec: selectedSpec } = selectedValues;
+  const searchValue = endpointSearchValues[endpoint.value] || '';
+
+  const endpointSpecs = useMemo(() => {
+    if (!modelSpecs || !modelSpecs.length) {
+      return [];
+    }
+    return modelSpecs.filter((spec: TModelSpec) => spec.group === endpoint.value);
+  }, [modelSpecs, endpoint.value]);
+
+  if (isAssistantsEndpoint(endpoint.value) && endpoint.models === undefined) {
+    return (
+      <div
+        className="flex items-center justify-center p-2"
+        role="status"
+        aria-label={localize('com_ui_loading')}
+      >
+        <Spinner aria-hidden="true" />
+      </div>
+    );
+  }
+
+  const filteredModels = searchValue
+    ? filterModels(
+        endpoint,
+        (endpoint.models || []).map((model) => model.name),
+        searchValue,
+        agentsMap,
+        assistantsMap,
+      )
+    : null;
+
+  return (
+    <>
+      {endpointSpecs.map((spec: TModelSpec) => (
+        <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
+      ))}
+      {filteredModels
+        ? renderEndpointModels(
+            endpoint,
+            endpoint.models || [],
+            selectedModel,
+            filteredModels,
+            endpointIndex,
+          )
+        : endpoint.models &&
+          renderEndpointModels(endpoint, endpoint.models, selectedModel, undefined, endpointIndex)}
+    </>
+  );
+}
+
 export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
   const localize = useLocalize();
   const {
-    agentsMap,
-    assistantsMap,
-    modelSpecs,
     selectedValues,
     handleOpenKeyDialog,
     handleSelectEndpoint,
@@ -92,19 +157,7 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
     setEndpointSearchValue,
     endpointRequiresUserKey,
   } = useModelSelectorContext();
-  const {
-    model: selectedModel,
-    endpoint: selectedEndpoint,
-    modelSpec: selectedSpec,
-  } = selectedValues;
-
-  // Filter modelSpecs for this endpoint (by group matching endpoint value)
-  const endpointSpecs = useMemo(() => {
-    if (!modelSpecs || !modelSpecs.length) {
-      return [];
-    }
-    return modelSpecs.filter((spec: TModelSpec) => spec.group === endpoint.value);
-  }, [modelSpecs, endpoint.value]);
+  const { endpoint: selectedEndpoint } = selectedValues;
 
   const searchValue = endpointSearchValues[endpoint.value] || '';
   const isUserProvided = useMemo(
@@ -126,16 +179,9 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
     </div>
   );
 
+  const isEndpointSelected = selectedEndpoint === endpoint.value;
+
   if (endpoint.hasModels) {
-    const filteredModels = searchValue
-      ? filterModels(
-          endpoint,
-          (endpoint.models || []).map((model) => model.name),
-          searchValue,
-          agentsMap,
-          assistantsMap,
-        )
-      : null;
     const placeholder =
       isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)
         ? localize('com_endpoint_search_var', { 0: endpoint.label })
@@ -144,7 +190,6 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
       <Menu
         id={`endpoint-${endpoint.value}-menu`}
         key={`endpoint-${endpoint.value}-item`}
-        defaultOpen={endpoint.value === selectedEndpoint}
         searchValue={searchValue}
         onSearch={(value) => setEndpointSearchValue(endpoint.value, value)}
         combobox={<input placeholder=" " />}
@@ -153,45 +198,21 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
         label={
           <div className="group flex w-full min-w-0 items-center justify-between gap-1.5 py-1 text-sm">
             {renderIconLabel()}
-            {isUserProvided && (
-              <SettingsButton endpoint={endpoint} handleOpenKeyDialog={handleOpenKeyDialog} />
-            )}
+            <div className="flex shrink-0 items-center gap-1">
+              {isUserProvided && (
+                <SettingsButton endpoint={endpoint} handleOpenKeyDialog={handleOpenKeyDialog} />
+              )}
+              {isEndpointSelected && (
+                <>
+                  <CheckCircle2 className="size-4 shrink-0 text-text-primary" aria-hidden="true" />
+                  <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
+                </>
+              )}
+            </div>
           </div>
         }
       >
-        {isAssistantsEndpoint(endpoint.value) && endpoint.models === undefined ? (
-          <div
-            className="flex items-center justify-center p-2"
-            role="status"
-            aria-label={localize('com_ui_loading')}
-          >
-            <Spinner aria-hidden="true" />
-          </div>
-        ) : (
-          <>
-            {/* Render modelSpecs for this endpoint */}
-            {endpointSpecs.map((spec: TModelSpec) => (
-              <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
-            ))}
-            {/* Render endpoint models */}
-            {filteredModels
-              ? renderEndpointModels(
-                  endpoint,
-                  endpoint.models || [],
-                  selectedModel,
-                  filteredModels,
-                  endpointIndex,
-                )
-              : endpoint.models &&
-                renderEndpointModels(
-                  endpoint,
-                  endpoint.models,
-                  selectedModel,
-                  undefined,
-                  endpointIndex,
-                )}
-          </>
-        )}
+        <EndpointMenuContent endpoint={endpoint} endpointIndex={endpointIndex} />
       </Menu>
     );
   } else {
@@ -200,6 +221,7 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
         id={`endpoint-${endpoint.value}-menu`}
         key={`endpoint-${endpoint.value}-item`}
         onClick={() => handleSelectEndpoint(endpoint)}
+        aria-selected={isEndpointSelected || undefined}
         className="group flex w-full cursor-pointer items-center justify-between gap-1.5 py-2 text-sm"
       >
         {renderIconLabel()}
@@ -218,8 +240,11 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
               }
             />
           )}
-          {selectedEndpoint === endpoint.value && !isAssistantsNotLoaded && (
-            <CheckCircle2 className="size-4 shrink-0 text-text-primary" aria-hidden="true" />
+          {isEndpointSelected && !isAssistantsNotLoaded && (
+            <>
+              <CheckCircle2 className="size-4 shrink-0 text-text-primary" aria-hidden="true" />
+              <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
+            </>
           )}
         </div>
       </MenuItem>

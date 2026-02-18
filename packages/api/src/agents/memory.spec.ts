@@ -1,30 +1,54 @@
 import { Types } from 'mongoose';
-import type { Response } from 'express';
-import { Run } from '@librechat/agents';
+import { Run, Providers } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
-import { createSafeUser } from '~/utils/env';
+import type { Response } from 'express';
 import { processMemory } from './memory';
 
 jest.mock('~/stream/GenerationJobManager');
+
+const mockCreateSafeUser = jest.fn((user) => ({
+  id: user?.id,
+  email: user?.email,
+  name: user?.name,
+  username: user?.username,
+}));
+
+const mockResolveHeaders = jest.fn((opts) => {
+  const headers = opts.headers || {};
+  const user = opts.user || {};
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    let resolved = value as string;
+    resolved = resolved.replace(/\$\{(\w+)\}/g, (_match, envVar) => process.env[envVar] || '');
+    resolved = resolved.replace(/\{\{LIBRECHAT_USER_EMAIL\}\}/g, user.email || '');
+    resolved = resolved.replace(/\{\{LIBRECHAT_USER_ID\}\}/g, user.id || '');
+    result[key] = resolved;
+  }
+  return result;
+});
+
 jest.mock('~/utils', () => ({
   Tokenizer: {
     getTokenCount: jest.fn(() => 10),
   },
+  createSafeUser: (user: unknown) => mockCreateSafeUser(user),
+  resolveHeaders: (opts: unknown) => mockResolveHeaders(opts),
 }));
 
-jest.mock('@librechat/agents', () => ({
-  Run: {
-    create: jest.fn(() => ({
-      processStream: jest.fn(() => Promise.resolve('success')),
-    })),
-  },
-  Providers: {
-    OPENAI: 'openai',
-  },
-  GraphEvents: {
-    TOOL_END: 'tool_end',
-  },
-}));
+const { createSafeUser } = jest.requireMock('~/utils');
+
+jest.mock('@librechat/agents', () => {
+  const actual = jest.requireActual('@librechat/agents');
+  return {
+    Run: {
+      create: jest.fn(() => ({
+        processStream: jest.fn(() => Promise.resolve('success')),
+      })),
+    },
+    Providers: actual.Providers,
+    GraphEvents: actual.GraphEvents,
+  };
+});
 
 function createTestUser(overrides: Partial<IUser> = {}): IUser {
   return {
@@ -229,7 +253,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should not throw when llmConfig has no configuration', async () => {
     const llmConfig = {
-      provider: 'openai',
+      provider: Providers.OPENAI,
       model: 'gpt-4o-mini',
     };
 
@@ -262,7 +286,7 @@ describe('Memory Agent Header Resolution', () => {
     } as unknown as Partial<IUser>);
 
     const llmConfig = {
-      provider: 'openai',
+      provider: Providers.OPENAI,
       model: 'gpt-4o-mini',
       configuration: {
         defaultHeaders: {
@@ -294,5 +318,223 @@ describe('Memory Agent Header Resolution', () => {
     expect(safeUser).not.toHaveProperty('refreshToken');
     expect(safeUser).toHaveProperty('id');
     expect(safeUser).toHaveProperty('email');
+  });
+
+  it('should include instructions in user message for Bedrock provider', async () => {
+    const llmConfig = {
+      provider: Providers.BEDROCK,
+      model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    };
+
+    const { HumanMessage } = await import('@langchain/core/messages');
+    const testMessage = new HumanMessage('test chat content');
+
+    await processMemory({
+      res: mockRes,
+      userId: 'user-123',
+      setMemory: mockMemoryMethods.setMemory,
+      deleteMemory: mockMemoryMethods.deleteMemory,
+      messages: [testMessage],
+      memory: 'existing memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      validKeys: ['preferences'],
+      instructions: 'test instructions',
+      llmConfig,
+      user: testUser,
+    });
+
+    expect(Run.create as jest.Mock).toHaveBeenCalled();
+    const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
+
+    // For Bedrock, instructions should NOT be passed to graphConfig
+    expect(runConfig.graphConfig.instructions).toBeUndefined();
+    expect(runConfig.graphConfig.additional_instructions).toBeUndefined();
+  });
+
+  it('should pass instructions to graphConfig for non-Bedrock providers', async () => {
+    const llmConfig = {
+      provider: Providers.OPENAI,
+      model: 'gpt-4o-mini',
+    };
+
+    await processMemory({
+      res: mockRes,
+      userId: 'user-123',
+      setMemory: mockMemoryMethods.setMemory,
+      deleteMemory: mockMemoryMethods.deleteMemory,
+      messages: [],
+      memory: 'existing memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      validKeys: ['preferences'],
+      instructions: 'test instructions',
+      llmConfig,
+      user: testUser,
+    });
+
+    expect(Run.create as jest.Mock).toHaveBeenCalled();
+    const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
+
+    // For non-Bedrock providers, instructions should be passed to graphConfig
+    expect(runConfig.graphConfig.instructions).toBe('test instructions');
+    expect(runConfig.graphConfig.additional_instructions).toBeDefined();
+  });
+
+  it('should set temperature to 1 for Bedrock with thinking enabled', async () => {
+    const llmConfig = {
+      provider: Providers.BEDROCK,
+      model: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+      temperature: 0.7,
+      additionalModelRequestFields: {
+        thinking: {
+          type: 'enabled',
+          budget_tokens: 5000,
+        },
+      },
+    };
+
+    await processMemory({
+      res: mockRes,
+      userId: 'user-123',
+      setMemory: mockMemoryMethods.setMemory,
+      deleteMemory: mockMemoryMethods.deleteMemory,
+      messages: [],
+      memory: 'existing memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      validKeys: ['preferences'],
+      instructions: 'test instructions',
+      llmConfig,
+      user: testUser,
+    });
+
+    expect(Run.create as jest.Mock).toHaveBeenCalled();
+    const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
+
+    expect(runConfig.graphConfig.llmConfig.temperature).toBe(1);
+  });
+
+  it('should not modify temperature for Bedrock without thinking enabled', async () => {
+    const llmConfig = {
+      provider: Providers.BEDROCK,
+      model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      temperature: 0.7,
+    };
+
+    await processMemory({
+      res: mockRes,
+      userId: 'user-123',
+      setMemory: mockMemoryMethods.setMemory,
+      deleteMemory: mockMemoryMethods.deleteMemory,
+      messages: [],
+      memory: 'existing memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      validKeys: ['preferences'],
+      instructions: 'test instructions',
+      llmConfig,
+      user: testUser,
+    });
+
+    expect(Run.create as jest.Mock).toHaveBeenCalled();
+    const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
+
+    expect(runConfig.graphConfig.llmConfig.temperature).toBe(0.7);
+  });
+
+  it('should remove temperature for Anthropic with thinking enabled', async () => {
+    const llmConfig = {
+      provider: Providers.ANTHROPIC,
+      model: 'claude-sonnet-4-20250514',
+      temperature: 0.7,
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 5000,
+      },
+    };
+
+    await processMemory({
+      res: mockRes,
+      userId: 'user-123',
+      setMemory: mockMemoryMethods.setMemory,
+      deleteMemory: mockMemoryMethods.deleteMemory,
+      messages: [],
+      memory: 'existing memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      validKeys: ['preferences'],
+      instructions: 'test instructions',
+      llmConfig,
+      user: testUser,
+    });
+
+    expect(Run.create as jest.Mock).toHaveBeenCalled();
+    const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
+
+    expect(runConfig.graphConfig.llmConfig.temperature).toBeUndefined();
+    expect(runConfig.graphConfig.llmConfig.thinking).toEqual({
+      type: 'enabled',
+      budget_tokens: 5000,
+    });
+  });
+
+  it('should not modify temperature for Anthropic without thinking enabled', async () => {
+    const llmConfig = {
+      provider: Providers.ANTHROPIC,
+      model: 'claude-sonnet-4-20250514',
+      temperature: 0.7,
+    };
+
+    await processMemory({
+      res: mockRes,
+      userId: 'user-123',
+      setMemory: mockMemoryMethods.setMemory,
+      deleteMemory: mockMemoryMethods.deleteMemory,
+      messages: [],
+      memory: 'existing memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      validKeys: ['preferences'],
+      instructions: 'test instructions',
+      llmConfig,
+      user: testUser,
+    });
+
+    expect(Run.create as jest.Mock).toHaveBeenCalled();
+    const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
+
+    expect(runConfig.graphConfig.llmConfig.temperature).toBe(0.7);
+  });
+
+  it('should not modify temperature for Anthropic with thinking type not enabled', async () => {
+    const llmConfig = {
+      provider: Providers.ANTHROPIC,
+      model: 'claude-sonnet-4-20250514',
+      temperature: 0.7,
+      thinking: {
+        type: 'disabled',
+      },
+    };
+
+    await processMemory({
+      res: mockRes,
+      userId: 'user-123',
+      setMemory: mockMemoryMethods.setMemory,
+      deleteMemory: mockMemoryMethods.deleteMemory,
+      messages: [],
+      memory: 'existing memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      validKeys: ['preferences'],
+      instructions: 'test instructions',
+      llmConfig,
+      user: testUser,
+    });
+
+    expect(Run.create as jest.Mock).toHaveBeenCalled();
+    const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
+
+    expect(runConfig.graphConfig.llmConfig.temperature).toBe(0.7);
   });
 });

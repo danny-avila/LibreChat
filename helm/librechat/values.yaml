@@ -97,7 +97,6 @@ librechat:
   #         titleModel: "gpt-3.5-turbo"
   #         summarize: false
   #         summaryModel: "gpt-3.5-turbo"
-  #         forcePrompt: false
   #         modelDisplayLabel: "OpenRouter"
 
   # name of existing Yaml configmap, key must be librechat.yaml
@@ -153,6 +152,11 @@ podAnnotations: {}
 podLabels: {}
 deploymentAnnotations: {}
 deploymentLabels: {}
+
+# Enable or disable injection of service environment variables into pods.
+# When running in namespaces with many services, the injected variables can cause
+# "argument list too long" errors. Set to false to disable.
+enableServiceLinks: true
 
 podSecurityContext:
   fsGroup: 2000
@@ -300,8 +304,15 @@ meilisearch:
   persistence:
     enabled: true
     storageClass: ""
-  image: 
+  image:
     tag: "v1.7.3"
   auth:
     # Use an existing Kubernetes secret for the MEILI_MASTER_KEY
     existingMasterKeySecret: "librechat-credentials-env"
+
+# Redis Parameters
+redis:
+  enabled: false
+  architecture: standalone
+  auth:
+    enabled: false

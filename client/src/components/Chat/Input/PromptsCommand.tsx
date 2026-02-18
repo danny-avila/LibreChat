@@ -4,8 +4,8 @@ import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
-import { removeCharIfLast, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
+import { removeCharIfLast, detectVariables } from '~/utils';
 import { usePromptGroupsContext } from '~/Providers';
 import MentionItem from './MentionItem';
 import { useLocalize } from '~/hooks';
@@ -48,7 +48,7 @@ const PopoverContainer = memo(
   },
 );
 
-const ROW_HEIGHT = 40;
+const ROW_HEIGHT = 44;
 
 function PromptsCommand({
   index,
