@@ -425,8 +425,15 @@ export class RedisEventTransport implements IEventTransport {
               logger.error(`[RedisEventTransport] Error in allSubscribersLeft callback:`, err);
             }
           }
-
-          this.streams.delete(streamId);
+          /**
+           *  Preserve stream state (callbacks, abort handlers) for reconnection.
+           *  Previously this deleted the entire state, which lost the
+           *  allSubscribersLeftCallbacks and abortCallbacks registered by
+           *  GenerationJobManager.createJob(). On the next subscribe() call,
+           *  fresh state was created without those callbacks, causing
+           *  hasSubscriber to never reset and syncReorderBuffer to be skipped.
+           *  State is fully cleaned up by cleanup() when the job completes.
+           */
         }
       },
     };
