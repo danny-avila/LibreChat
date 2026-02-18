@@ -36,7 +36,7 @@
     },
     "api": {
       "name": "@librechat/backend",
-      "version": "0.8.2-rc2",
+      "version": "0.8.3-rc1",
       "dependencies": {
         "@aws-sdk/client-bedrock-runtime": "^3.941.0",
         "@aws-sdk/client-s3": "^3.758.0",
@@ -124,7 +124,7 @@
     },
     "client": {
       "name": "@librechat/frontend",
-      "version": "0.8.2-rc2",
+      "version": "0.8.3-rc1",
       "dependencies": {
         "@ariakit/react": "^0.4.15",
         "@ariakit/react-core": "^0.4.17",
@@ -409,7 +409,7 @@
     },
     "packages/data-provider": {
       "name": "librechat-data-provider",
-      "version": "0.8.231",
+      "version": "0.8.3-rc1",
       "dependencies": {
         "axios": "^1.12.1",
         "dayjs": "^1.11.13",
