@@ -101,12 +101,23 @@ export default function ChatRoute() {
         keepLatestMessage: true,
       });
       hasSetConversation.current = true;
-    } else if (initialConvoQuery.isError && isNotFoundError(initialConvoQuery.error)) {
+    } else if (
+      conversationId &&
+      endpointsQuery.data &&
+      modelsQuery.data &&
+      initialConvoQuery.isError &&
+      isNotFoundError(initialConvoQuery.error)
+    ) {
+      const result = getDefaultModelSpec(startupConfig);
+      const spec = result?.default ?? result?.last;
       showToast({
         message: localize('com_ui_conversation_not_found'),
         severity: NotificationSeverity.WARNING,
       });
-      newConversation();
+      newConversation({
+        modelsData: modelsQuery.data,
+        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
+      });
       hasSetConversation.current = true;
     } else if (
       conversationId === Constants.NEW_CONVO &&
