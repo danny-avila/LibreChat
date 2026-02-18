@@ -520,6 +520,10 @@ export type TImportResponse = {
    * The message associated with the response.
    */
   message: string;
+  /**
+   * The IDs of the imported conversations.
+   */
+  conversationIds?: string[];
 };
 
 /** Prompts */

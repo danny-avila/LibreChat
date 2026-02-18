@@ -1059,6 +1059,7 @@
   "com_ui_image_edited": "Image edited",
   "com_ui_image_gen": "Image Gen",
   "com_ui_import": "Import",
+  "com_ui_import_conversation": "Import Conversation",
   "com_ui_import_conversation_error": "There was an error importing your conversations",
   "com_ui_import_conversation_file_type_error": "Unsupported import type",
   "com_ui_import_conversation_info": "Import conversations from a JSON file",

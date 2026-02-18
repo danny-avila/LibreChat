@@ -72,6 +72,7 @@ async function importChatBotUiConvo(
     }
     await importBatchBuilder.saveBatch();
     logger.info(`user: ${requestUserId} | ChatbotUI conversation imported`);
+    return importBatchBuilder.conversations.map((c) => c.conversationId);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from ChatbotUI file`, error);
   }
@@ -177,6 +178,7 @@ async function importClaudeConvo(
 
     await importBatchBuilder.saveBatch();
     logger.info(`user: ${requestUserId} | Claude conversation imported`);
+    return importBatchBuilder.conversations.map((c) => c.conversationId);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from Claude file`, error);
   }
@@ -272,6 +274,7 @@ async function importLibreChatConvo(
     importBatchBuilder.finishConversation(jsonData.title, firstMessageDate ?? new Date(), options);
     await importBatchBuilder.saveBatch();
     logger.debug(`user: ${requestUserId} | Conversation "${jsonData.title}" imported`);
+    return importBatchBuilder.conversations.map((c) => c.conversationId);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from LibreChat file`, error);
   }
@@ -297,6 +300,7 @@ async function importChatGptConvo(
       processConversation(conv, importBatchBuilder, requestUserId);
     }
     await importBatchBuilder.saveBatch();
+    return importBatchBuilder.conversations.map((c) => c.conversationId);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from imported file`, error);
   }
