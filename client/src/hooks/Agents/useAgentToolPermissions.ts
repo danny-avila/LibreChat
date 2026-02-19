@@ -8,6 +8,8 @@ import { isEphemeralAgent } from '~/common';
 interface AgentToolPermissionsResult {
   fileSearchAllowedByAgent: boolean;
   codeAllowedByAgent: boolean;
+  /** True when the current agent has image vision enabled (shows upload-to-provider in chat input) */
+  visionEnabledByAgent: boolean;
   tools: string[] | undefined;
   provider?: string;
 }
@@ -64,9 +66,21 @@ export default function useAgentToolPermissions(
     return tools?.includes(Tools.execute_code) ?? false;
   }, [agentId, selectedAgent, tools, ephemeralAgent]);
 
+  const visionEnabledByAgent = useMemo(() => {
+    if (agentId == null || agentId === '') return false;
+    const agent = agentData ?? selectedAgent;
+    const vision = agent?.vision;
+    if (vision !== undefined) return vision;
+    const versions = (agent as { versions?: Array<{ vision?: boolean }> })?.versions;
+    return versions?.length
+      ? (versions[versions.length - 1]?.vision ?? false)
+      : false;
+  }, [agentId, agentData, selectedAgent]);
+
   return {
     fileSearchAllowedByAgent,
     codeAllowedByAgent,
+    visionEnabledByAgent,
     provider,
     tools,
   };

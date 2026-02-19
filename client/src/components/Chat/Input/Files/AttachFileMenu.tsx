@@ -85,10 +85,9 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
-    agentId,
-    ephemeralAgent,
-  );
+  const { fileSearchAllowedByAgent, codeAllowedByAgent, visionEnabledByAgent, provider } =
+    useAgentToolPermissions(agentId, ephemeralAgent);
+  const isVisionAvailable = isVisionModel || visionEnabledByAgent;
 
   const handleUploadClick = (fileType?: FileUploadType) => {
     if (!inputRef.current) {
@@ -129,7 +128,7 @@ const AttachFileMenu = ({
         isDocumentSupportedProvider(currentProvider) ||
         isAzureWithResponsesApi
       ) {
-        if (isVisionModel) {
+        if (isVisionAvailable) {
           items.push({
             label: localize('com_ui_upload_provider'),
             onClick: () => {
@@ -147,7 +146,7 @@ const AttachFileMenu = ({
           });
         }
       } else {
-        if (isVisionModel) {
+        if (isVisionAvailable) {
           items.push({
             label: localize('com_ui_upload_image_input'),
             onClick: () => {
@@ -233,7 +232,7 @@ const AttachFileMenu = ({
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
-    isVisionModel,
+    isVisionAvailable,
   ]);
 
   const menuTrigger = (

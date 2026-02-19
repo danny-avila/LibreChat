@@ -42,6 +42,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
+  validateVisionModel,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -164,7 +165,29 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Array<Partial<MongoFile>>>}
    */
   async addImageURLs(message, attachments) {
-    if (!(this.options.agent?.vision ?? false)) {
+    const agent = this.options.agent;
+    if (!agent) {
+      return attachments;
+    }
+
+    // Determine vision capability: explicit agent.vision takes precedence,
+    // otherwise check if the model supports vision
+    let isVisionCapable = false;
+    if (agent.vision !== undefined) {
+      isVisionCapable = agent.vision === true;
+    } else {
+      const agentModel =
+        agent.model_parameters?.model ?? agent.model;
+      if (agentModel) {
+        const appConfig = this.options.req?.config;
+        isVisionCapable = validateVisionModel({
+          model: agentModel,
+          modelSpecs: appConfig?.modelSpecs,
+        });
+      }
+    }
+
+    if (!isVisionCapable) {
       return attachments;
     }
 
@@ -172,7 +195,7 @@ class AgentClient extends BaseClient {
       this.options.req,
       attachments,
       {
-        provider: this.options.agent.provider,
+        provider: agent.provider,
         endpoint: this.options.endpoint,
       },
       VisionModes.agents,

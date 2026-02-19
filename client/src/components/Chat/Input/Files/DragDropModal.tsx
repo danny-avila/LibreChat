@@ -50,11 +50,10 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
   const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
   const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
-  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
-    agentId,
-    ephemeralAgent,
-  );
+  const { fileSearchAllowedByAgent, codeAllowedByAgent, visionEnabledByAgent, provider } =
+    useAgentToolPermissions(agentId, ephemeralAgent);
   const isVisionModel = useVisionModel();
+  const isVisionAvailable = isVisionModel || visionEnabledByAgent;
 
   const options = useMemo(() => {
     const _options: FileOption[] = [];
@@ -98,14 +97,15 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
         label: localize('com_ui_upload_provider'),
         value: undefined,
         icon: <FileImageIcon className="icon-md" />,
-        condition: validFileTypes && isVisionModel,
+        condition: validFileTypes && isVisionAvailable,
       });
     } else {
       _options.push({
         label: localize('com_ui_upload_image_input'),
         value: undefined,
         icon: <ImageUpIcon className="icon-md" />,
-        condition: files.every((file) => getFileType(file)?.startsWith('image/')) && isVisionModel,
+        condition:
+          files.every((file) => getFileType(file)?.startsWith('image/')) && isVisionAvailable,
       });
     }
     if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
@@ -141,7 +141,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     useResponsesApi,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
-    isVisionModel,
+    isVisionAvailable,
   ]);
 
   if (!isVisible) {
