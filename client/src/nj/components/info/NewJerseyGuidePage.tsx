@@ -213,8 +213,13 @@ export default function NewJerseyGuidePage() {
         <li className="mb-2">Files: pdf, csv, xls/xlsx, docx, .txt, .md</li>
         <li className="mb-2">Code types: python, java, js, (and others)</li>
         <li className="mb-2">Images file types: jpeg, jpg, png, gif, webp, heic, heif</li>
-        <li className="mb-2">Maximum number of files: 10 files per prompt</li>
-        <li className="mb-2">Maximum file size: 50mb for all files, can do a max of 60mb total</li>
+        <li className="mb-2">
+          Maximum number of files: 10 files per prompt (whether images or text)
+        </li>
+        <li className="mb-2">
+          Maximum file size: 50 MB max per each file, and a total maximum size of 60 MB for all
+          files uploaded per prompt size of 60 MB for all files uploaded per prompt
+        </li>
       </ul>
 
       <p className="mb-2 font-bold">
@@ -223,7 +228,7 @@ export default function NewJerseyGuidePage() {
       </p>
       <p className="mb-6">
         Employees are allowed to enter personally identifiable information (PII) and other sensitive
-        information into the NJ AI Assistant and other state-approved tools. Please see the{' '}
+        information into state-approved tools (including the NJ AI Assistant), but please see the{' '}
         <a
           href="https://innovation.nj.gov/ai-faq-state-employees/"
           className="underline hover:decoration-2"
@@ -232,7 +237,7 @@ export default function NewJerseyGuidePage() {
         >
           official FAQ
         </a>{' '}
-        for the full list and the State’s{' '}
+        for guidance before doing so. The State’s{' '}
         <a
           href="https://nj.gov/it/docs/ps/25-OIT-001-State-of-New-Jersey-Guidance-on-Responsible-Use-of-Generative-AI.pdf"
           className="underline hover:decoration-2"
@@ -241,7 +246,7 @@ export default function NewJerseyGuidePage() {
         >
           current policy
         </a>{' '}
-        on responsible use of AI technology before considering this.{' '}
+        on responsible use of AI technology also covers this topic in detail.{' '}
       </p>
 
       <p className="mb-2 font-bold">Who can see the prompts I share?</p>
