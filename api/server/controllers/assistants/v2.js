@@ -28,7 +28,7 @@ const createAssistant = async (req, res) => {
     delete assistantData.conversation_starters;
     delete assistantData.append_current_datetime;
 
-    const toolDefinitions = await getCachedTools();
+    const toolDefinitions = (await getCachedTools()) ?? {};
 
     assistantData.tools = tools
       .map((tool) => {
@@ -125,7 +125,7 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
 
   let hasFileSearch = false;
   for (const tool of updateData.tools ?? []) {
-    const toolDefinitions = await getCachedTools();
+    const toolDefinitions = (await getCachedTools()) ?? {};
     let actualTool = typeof tool === 'string' ? toolDefinitions[tool] : tool;
 
     if (!actualTool && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {

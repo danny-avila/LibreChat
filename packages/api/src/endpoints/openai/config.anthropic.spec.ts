@@ -39,12 +39,13 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
               type: 'enabled',
               budget_tokens: 2000,
             },
+            promptCache: true,
           },
         },
         configOptions: {
           baseURL: 'http://host.docker.internal:4000/v1',
           defaultHeaders: {
-            'anthropic-beta': 'prompt-caching-2024-07-31,context-1m-2025-08-07',
+            'anthropic-beta': 'context-1m-2025-08-07',
           },
         },
         tools: [],
@@ -87,13 +88,13 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
               type: 'enabled',
               budget_tokens: 3000,
             },
+            promptCache: true,
           },
         },
         configOptions: {
           baseURL: 'http://localhost:4000/v1',
           defaultHeaders: {
-            'anthropic-beta':
-              'token-efficient-tools-2025-02-19,output-128k-2025-02-19,prompt-caching-2024-07-31',
+            'anthropic-beta': 'token-efficient-tools-2025-02-19,output-128k-2025-02-19',
           },
         },
         tools: [],
@@ -135,13 +136,13 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
               user_id: 'user123',
             },
             topK: 50,
+            promptCache: true,
           },
         },
         configOptions: {
           baseURL: 'http://localhost:4000/v1',
           defaultHeaders: {
-            'anthropic-beta':
-              'token-efficient-tools-2025-02-19,output-128k-2025-02-19,prompt-caching-2024-07-31',
+            'anthropic-beta': 'token-efficient-tools-2025-02-19,output-128k-2025-02-19',
           },
         },
         tools: [],
@@ -177,19 +178,20 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
             metadata: {
               user_id: 'user456',
             },
+            promptCache: true,
           },
         },
         configOptions: {
           baseURL: 'https://api.anthropic.proxy.com/v1',
           defaultHeaders: {
-            'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
+            'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
           },
         },
         tools: [],
       });
     });
 
-    it('should apply anthropic-beta headers based on model pattern', () => {
+    it('should apply custom headers and promptCache for models that support caching', () => {
       const apiKey = 'sk-custom';
       const endpoint = 'Anthropic (via LiteLLM)';
       const options = {
@@ -220,6 +222,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
             metadata: {
               user_id: undefined,
             },
+            promptCache: true,
           },
         },
         configOptions: {
@@ -227,7 +230,6 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
           defaultHeaders: {
             'Custom-Header': 'custom-value',
             Authorization: 'Bearer custom-token',
-            'anthropic-beta': 'prompt-caching-2024-07-31',
           },
         },
         tools: [],
@@ -303,15 +305,15 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
           stream: true,
           topP: 0.9,
           maxTokens: 2048,
+          modelKwargs: {
+            promptCache: true,
+          },
           // temperature is dropped
           // modelKwargs.topK is dropped
           // modelKwargs.metadata is dropped completely
         },
         configOptions: {
           baseURL: 'http://proxy.litellm/v1',
-          defaultHeaders: {
-            'anthropic-beta': 'prompt-caching-2024-07-31',
-          },
         },
         tools: [],
       });
@@ -385,13 +387,11 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
             metadata: {
               user_id: 'searchUser',
             },
+            promptCache: true,
           },
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
-          defaultHeaders: {
-            'anthropic-beta': 'prompt-caching-2024-07-31',
-          },
         },
         tools: [
           {
@@ -434,13 +434,11 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
               user_id: 'testUser',
             },
             topK: 40,
+            promptCache: true,
           },
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
-          defaultHeaders: {
-            'anthropic-beta': 'prompt-caching-2024-07-31',
-          },
         },
         tools: [],
       });
@@ -482,15 +480,13 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
             metadata: {
               user_id: 'addUser',
             },
+            promptCache: true,
             customParam1: 'value1', // Unknown params added to modelKwargs
             customParam2: 42,
           },
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
-          defaultHeaders: {
-            'anthropic-beta': 'prompt-caching-2024-07-31',
-          },
         },
         tools: [],
       });
@@ -534,6 +530,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
             metadata: {
               user_id: 'bothUser',
             },
+            promptCache: true,
             customParam: 'customValue',
             // topK is dropped
           },
@@ -541,7 +538,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'http://litellm/v1',
           defaultHeaders: {
-            'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
+            'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
           },
         },
         tools: [],

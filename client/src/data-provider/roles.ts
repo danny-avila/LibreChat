@@ -4,14 +4,15 @@ import {
   dataService,
   promptPermissionsSchema,
   memoryPermissionsSchema,
+  mcpServersPermissionsSchema,
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
-  mcpServersPermissionsSchema,
+  remoteAgentsPermissionsSchema,
 } from 'librechat-data-provider';
 import type {
-  UseQueryOptions,
-  UseMutationResult,
   QueryObserverResult,
+  UseMutationResult,
+  UseQueryOptions,
 } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 
@@ -234,6 +235,42 @@ export const useUpdateMarketplacePermissionsMutation = (
         const error = args[0];
         if (error != null) {
           console.error('Failed to update marketplace permissions:', error);
+        }
+        if (onError) {
+          onError(...args);
+        }
+      },
+      onMutate,
+    },
+  );
+};
+
+export const useUpdateRemoteAgentsPermissionsMutation = (
+  options?: t.UpdateRemoteAgentsPermOptions,
+): UseMutationResult<
+  t.UpdatePermResponse,
+  t.TError | undefined,
+  t.UpdateRemoteAgentsPermVars,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onMutate, onSuccess, onError } = options ?? {};
+  return useMutation(
+    (variables) => {
+      remoteAgentsPermissionsSchema.partial().parse(variables.updates);
+      return dataService.updateRemoteAgentsPermissions(variables);
+    },
+    {
+      onSuccess: (data, variables, context) => {
+        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
+        if (onSuccess) {
+          onSuccess(data, variables, context);
+        }
+      },
+      onError: (...args) => {
+        const error = args[0];
+        if (error != null) {
+          console.error('Failed to update remote agents permissions:', error);
         }
         if (onError) {
           onError(...args);

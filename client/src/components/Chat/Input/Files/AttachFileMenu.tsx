@@ -94,13 +94,13 @@ const AttachFileMenu = ({
     }
     inputRef.current.value = '';
     if (fileType === 'image') {
-      inputRef.current.accept = 'image/*';
+      inputRef.current.accept = 'image/*,.heif,.heic';
     } else if (fileType === 'document') {
       inputRef.current.accept = '.pdf,application/pdf';
     } else if (fileType === 'image_document') {
-      inputRef.current.accept = 'image/*,.pdf,application/pdf';
+      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf';
     } else if (fileType === 'image_document_video_audio') {
-      inputRef.current.accept = 'image/*,.pdf,application/pdf,video/*,audio/*';
+      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
     } else {
       inputRef.current.accept = '';
     }

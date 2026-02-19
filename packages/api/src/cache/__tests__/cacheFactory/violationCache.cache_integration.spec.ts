@@ -20,6 +20,24 @@ interface ViolationData {
   };
 }
 
+/** Waits for both Redis clients (ioredis + keyv/node-redis) to be ready */
+async function waitForRedisClients() {
+  const redisClients = await import('../../redisClients');
+  const { ioredisClient, keyvRedisClientReady } = redisClients;
+
+  if (ioredisClient && ioredisClient.status !== 'ready') {
+    await new Promise<void>((resolve) => {
+      ioredisClient.once('ready', resolve);
+    });
+  }
+
+  if (keyvRedisClientReady) {
+    await keyvRedisClientReady;
+  }
+
+  return redisClients;
+}
+
 describe('violationCache', () => {
   let originalEnv: NodeJS.ProcessEnv;
 
@@ -45,16 +63,8 @@ describe('violationCache', () => {
 
   test('should create violation cache with Redis when USE_REDIS is true', async () => {
     const cacheFactory = await import('../../cacheFactory');
-    const redisClients = await import('../../redisClients');
-    const { ioredisClient } = redisClients;
+    await waitForRedisClients();
     const cache = cacheFactory.violationCache('test-violations', 60000); // 60 second TTL
-
-    // Wait for Redis connection to be ready
-    if (ioredisClient && ioredisClient.status !== 'ready') {
-      await new Promise<void>((resolve) => {
-        ioredisClient.once('ready', resolve);
-      });
-    }
 
     // Verify it returns a Keyv instance
     expect(cache).toBeDefined();
@@ -112,17 +122,9 @@ describe('violationCache', () => {
 
   test('should respect namespace prefixing', async () => {
     const cacheFactory = await import('../../cacheFactory');
-    const redisClients = await import('../../redisClients');
-    const { ioredisClient } = redisClients;
+    await waitForRedisClients();
     const cache1 = cacheFactory.violationCache('namespace1');
     const cache2 = cacheFactory.violationCache('namespace2');
-
-    // Wait for Redis connection to be ready
-    if (ioredisClient && ioredisClient.status !== 'ready') {
-      await new Promise<void>((resolve) => {
-        ioredisClient.once('ready', resolve);
-      });
-    }
 
     const testKey = 'shared-key';
     const value1: ViolationData = { namespace: 1 };
@@ -146,17 +148,9 @@ describe('violationCache', () => {
 
   test('should respect TTL settings', async () => {
     const cacheFactory = await import('../../cacheFactory');
-    const redisClients = await import('../../redisClients');
-    const { ioredisClient } = redisClients;
+    await waitForRedisClients();
     const ttl = 1000; // 1 second TTL
     const cache = cacheFactory.violationCache('ttl-test', ttl);
-
-    // Wait for Redis connection to be ready
-    if (ioredisClient && ioredisClient.status !== 'ready') {
-      await new Promise<void>((resolve) => {
-        ioredisClient.once('ready', resolve);
-      });
-    }
 
     const testKey = 'ttl-key';
     const testValue: ViolationData = { data: 'expires soon' };
@@ -178,16 +172,8 @@ describe('violationCache', () => {
 
   test('should handle complex violation data structures', async () => {
     const cacheFactory = await import('../../cacheFactory');
-    const redisClients = await import('../../redisClients');
-    const { ioredisClient } = redisClients;
+    await waitForRedisClients();
     const cache = cacheFactory.violationCache('complex-violations');
-
-    // Wait for Redis connection to be ready
-    if (ioredisClient && ioredisClient.status !== 'ready') {
-      await new Promise<void>((resolve) => {
-        ioredisClient.once('ready', resolve);
-      });
-    }
 
     const complexData: ViolationData = {
       userId: 'user123',

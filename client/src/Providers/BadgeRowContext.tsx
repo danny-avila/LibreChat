@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { Tools, Constants, LocalStorageKeys, AgentCapabilities } from 'librechat-data-provider';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
@@ -9,11 +9,13 @@ import {
   useCodeApiKeyForm,
   useToolToggle,
 } from '~/hooks';
-import { getTimestampedValue, setTimestamp } from '~/utils/timestamps';
+import { getTimestampedValue } from '~/utils/timestamps';
+import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 
 interface BadgeRowContextType {
   conversationId?: string | null;
+  storageContextKey?: string;
   agentsConfig?: TAgentsEndpoint | null;
   webSearch: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
@@ -38,34 +40,70 @@ interface BadgeRowProviderProps {
   children: React.ReactNode;
   isSubmitting?: boolean;
   conversationId?: string | null;
+  specName?: string | null;
 }
 
 export default function BadgeRowProvider({
   children,
   isSubmitting,
   conversationId,
+  specName,
 }: BadgeRowProviderProps) {
-  const lastKeyRef = useRef<string>('');
+  const lastContextKeyRef = useRef<string>('');
   const hasInitializedRef = useRef(false);
   const { agentsConfig } = useGetAgentsConfig();
+  const { data: startupConfig } = useGetStartupConfig();
   const key = conversationId ?? Constants.NEW_CONVO;
+  const hasModelSpecs = (startupConfig?.modelSpecs?.list?.length ?? 0) > 0;
+
+  /**
+   * Compute the storage context key for non-spec persistence:
+   * - `__defaults__`: specs configured but none active → shared defaults key
+   * - undefined: spec active (no persistence) or no specs configured (original behavior)
+   *
+   * When a spec is active, tool/MCP state is NOT persisted — the admin's spec
+   * configuration is always applied fresh. Only non-spec user preferences persist.
+   */
+  const storageContextKey = useMemo(() => {
+    if (!specName && hasModelSpecs) {
+      return Constants.spec_defaults_key as string;
+    }
+    return undefined;
+  }, [specName, hasModelSpecs]);
+
+  /**
+   * Compute the storage suffix for reading localStorage defaults:
+   * - New conversations read from environment key (spec or non-spec defaults)
+   * - Existing conversations read from conversation key (per-conversation state)
+   */
+  const isNewConvo = key === Constants.NEW_CONVO;
+  const storageSuffix = isNewConvo && storageContextKey ? storageContextKey : key;
 
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(key));
 
-  /** Initialize ephemeralAgent from localStorage on mount and when conversation changes */
+  /** Initialize ephemeralAgent from localStorage on mount and when conversation/spec changes.
+   *  Skipped when a spec is active — applyModelSpecEphemeralAgent handles both new conversations
+   *  (pure spec values) and existing conversations (spec values + localStorage overrides). */
   useEffect(() => {
     if (isSubmitting) {
       return;
     }
-    // Check if this is a new conversation or the first load
-    if (!hasInitializedRef.current || lastKeyRef.current !== key) {
+    if (specName) {
+      // Spec active: applyModelSpecEphemeralAgent handles all state (spec base + localStorage
+      // overrides for existing conversations). Reset init flag so switching back to non-spec
+      // triggers a fresh re-init.
+      hasInitializedRef.current = false;
+      return;
+    }
+    // Check if this is a new conversation/spec or the first load
+    if (!hasInitializedRef.current || lastContextKeyRef.current !== storageSuffix) {
       hasInitializedRef.current = true;
-      lastKeyRef.current = key;
+      lastContextKeyRef.current = storageSuffix;
 
-      const codeToggleKey = `${LocalStorageKeys.LAST_CODE_TOGGLE_}${key}`;
-      const webSearchToggleKey = `${LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_}${key}`;
-      const fileSearchToggleKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${key}`;
-      const artifactsToggleKey = `${LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_}${key}`;
+      const codeToggleKey = `${LocalStorageKeys.LAST_CODE_TOGGLE_}${storageSuffix}`;
+      const webSearchToggleKey = `${LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_}${storageSuffix}`;
+      const fileSearchToggleKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${storageSuffix}`;
+      const artifactsToggleKey = `${LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_}${storageSuffix}`;
 
       const codeToggleValue = getTimestampedValue(codeToggleKey);
       const webSearchToggleValue = getTimestampedValue(webSearchToggleKey);
@@ -106,39 +144,53 @@ export default function BadgeRowProvider({
         }
       }
 
-      /**
-       * Always set values for all tools (use defaults if not in `localStorage`)
-       * If `ephemeralAgent` is `null`, create a new object with just our tool values
-       */
-      const finalValues = {
-        [Tools.execute_code]: initialValues[Tools.execute_code] ?? false,
-        [Tools.web_search]: initialValues[Tools.web_search] ?? false,
-        [Tools.file_search]: initialValues[Tools.file_search] ?? false,
-        [AgentCapabilities.artifacts]: initialValues[AgentCapabilities.artifacts] ?? false,
-      };
+      const hasOverrides = Object.keys(initialValues).length > 0;
 
-      setEphemeralAgent((prev) => ({
-        ...(prev || {}),
-        ...finalValues,
-      }));
-
-      Object.entries(finalValues).forEach(([toolKey, value]) => {
-        if (value !== false) {
-          let storageKey = artifactsToggleKey;
-          if (toolKey === Tools.execute_code) {
-            storageKey = codeToggleKey;
-          } else if (toolKey === Tools.web_search) {
-            storageKey = webSearchToggleKey;
-          } else if (toolKey === Tools.file_search) {
-            storageKey = fileSearchToggleKey;
+      /** Read persisted MCP values from localStorage */
+      let mcpOverrides: string[] | null = null;
+      const mcpStorageKey = `${LocalStorageKeys.LAST_MCP_}${storageSuffix}`;
+      const mcpRaw = localStorage.getItem(mcpStorageKey);
+      if (mcpRaw !== null) {
+        try {
+          const parsed = JSON.parse(mcpRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            mcpOverrides = parsed;
           }
-          // Store the value and set timestamp for existing values
-          localStorage.setItem(storageKey, JSON.stringify(value));
-          setTimestamp(storageKey);
+        } catch (e) {
+          console.error('Failed to parse MCP values:', e);
         }
+      }
+
+      setEphemeralAgent((prev) => {
+        if (prev == null) {
+          /** ephemeralAgent is null — use localStorage defaults */
+          if (hasOverrides || mcpOverrides) {
+            const result = { ...initialValues };
+            if (mcpOverrides) {
+              result.mcp = mcpOverrides;
+            }
+            return result;
+          }
+          return prev;
+        }
+        /** ephemeralAgent already has values (from prior state).
+         *  Only fill in undefined keys from localStorage. */
+        let changed = false;
+        const result = { ...prev };
+        for (const [toolKey, value] of Object.entries(initialValues)) {
+          if (result[toolKey] === undefined) {
+            result[toolKey] = value;
+            changed = true;
+          }
+        }
+        if (mcpOverrides && result.mcp === undefined) {
+          result.mcp = mcpOverrides;
+          changed = true;
+        }
+        return changed ? result : prev;
       });
     }
-  }, [key, isSubmitting, setEphemeralAgent]);
+  }, [storageSuffix, specName, isSubmitting, setEphemeralAgent]);
 
   /** CodeInterpreter hooks */
   const codeApiKeyForm = useCodeApiKeyForm({});
@@ -146,6 +198,7 @@ export default function BadgeRowProvider({
 
   const codeInterpreter = useToolToggle({
     conversationId,
+    storageContextKey,
     setIsDialogOpen: setCodeDialogOpen,
     toolKey: Tools.execute_code,
     localStorageKey: LocalStorageKeys.LAST_CODE_TOGGLE_,
@@ -161,6 +214,7 @@ export default function BadgeRowProvider({
 
   const webSearch = useToolToggle({
     conversationId,
+    storageContextKey,
     toolKey: Tools.web_search,
     localStorageKey: LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_,
     setIsDialogOpen: setWebSearchDialogOpen,
@@ -173,6 +227,7 @@ export default function BadgeRowProvider({
   /** FileSearch hook */
   const fileSearch = useToolToggle({
     conversationId,
+    storageContextKey,
     toolKey: Tools.file_search,
     localStorageKey: LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_,
     isAuthenticated: true,
@@ -181,12 +236,13 @@ export default function BadgeRowProvider({
   /** Artifacts hook - using a custom key since it's not a Tool but a capability */
   const artifacts = useToolToggle({
     conversationId,
+    storageContextKey,
     toolKey: AgentCapabilities.artifacts,
     localStorageKey: LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_,
     isAuthenticated: true,
   });
 
-  const mcpServerManager = useMCPServerManager({ conversationId });
+  const mcpServerManager = useMCPServerManager({ conversationId, storageContextKey });
 
   const value: BadgeRowContextType = {
     webSearch,
@@ -194,6 +250,7 @@ export default function BadgeRowProvider({
     fileSearch,
     agentsConfig,
     conversationId,
+    storageContextKey,
     codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,

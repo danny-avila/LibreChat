@@ -96,17 +96,17 @@ function MCPToolSelectDialog({
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
-      // Then initialize server if needed
+      // Only initialize if no cached tools exist; skip if tools are already available from DB
       const serverInfo = mcpServersMap.get(serverName);
-      if (!serverInfo?.isConnected) {
+      if (!serverInfo?.tools?.length) {
         const result = await initializeServer(serverName);
-        if (result?.success && result.oauthRequired && result.oauthUrl) {
+        if (result?.oauthRequired && result.oauthUrl) {
           setIsInitializing(null);
-          return;
+          return; // OAuth flow must complete first
         }
       }
 
-      // Finally, add tools to form
+      // Add tools to form (refetches from backend's persisted cache)
       await addToolsToForm(serverName);
       setIsInitializing(null);
     } catch (error) {

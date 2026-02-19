@@ -4,6 +4,8 @@ import { MCPConnection } from './connection';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import type * as t from './types';
 
+const CONNECT_CONCURRENCY = 3;
+
 /**
  * Manages MCP connections with lazy loading and reconnection.
  * Maintains a pool of connections and handles connection lifecycle management.
@@ -73,6 +75,7 @@ export class ConnectionsRepository {
       {
         serverName,
         serverConfig,
+        useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
       },
       this.oauthOpts,
     );
@@ -83,9 +86,17 @@ export class ConnectionsRepository {
 
   /** Gets or creates connections for multiple servers concurrently */
   async getMany(serverNames: string[]): Promise<Map<string, MCPConnection>> {
-    const connectionPromises = serverNames.map(async (name) => [name, await this.get(name)]);
-    const connections = await Promise.all(connectionPromises);
-    return new Map((connections as [string, MCPConnection][]).filter((v) => !!v[1]));
+    const results: [string, MCPConnection | null][] = [];
+    for (let i = 0; i < serverNames.length; i += CONNECT_CONCURRENCY) {
+      const batch = serverNames.slice(i, i + CONNECT_CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(
+          async (name): Promise<[string, MCPConnection | null]> => [name, await this.get(name)],
+        ),
+      );
+      results.push(...batchResults);
+    }
+    return new Map(results.filter((v): v is [string, MCPConnection] => v[1] != null));
   }
 
   /** Returns all currently loaded connections without creating new ones */

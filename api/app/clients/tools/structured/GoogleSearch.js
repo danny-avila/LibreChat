@@ -1,10 +1,31 @@
-const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { getEnvironmentVariable } = require('@langchain/core/utils/env');
+
+const googleSearchJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      minLength: 1,
+      description: 'The search query string.',
+    },
+    max_results: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 10,
+      description: 'The maximum number of search results to return. Defaults to 5.',
+    },
+  },
+  required: ['query'],
+};
 
 class GoogleSearchResults extends Tool {
   static lc_name() {
     return 'google';
+  }
+
+  static get jsonSchema() {
+    return googleSearchJsonSchema;
   }
 
   constructor(fields = {}) {
@@ -28,25 +49,11 @@ class GoogleSearchResults extends Tool {
     this.description =
       'A search engine optimized for comprehensive, accurate, and trusted results. Useful for when you need to answer questions about current events.';
 
-    this.schema = z.object({
-      query: z.string().min(1).describe('The search query string.'),
-      max_results: z
-        .number()
-        .min(1)
-        .max(10)
-        .optional()
-        .describe('The maximum number of search results to return. Defaults to 10.'),
-      // Note: Google API has its own parameters for search customization, adjust as needed.
-    });
+    this.schema = googleSearchJsonSchema;
   }
 
   async _call(input) {
-    const validationResult = this.schema.safeParse(input);
-    if (!validationResult.success) {
-      throw new Error(`Validation failed: ${JSON.stringify(validationResult.error.issues)}`);
-    }
-
-    const { query, max_results = 5 } = validationResult.data;
+    const { query, max_results = 5 } = input;
 
     const response = await fetch(
       `https://www.googleapis.com/customsearch/v1?key=${this.apiKey}&cx=${

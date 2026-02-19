@@ -5,9 +5,11 @@ const {
   EModelEndpoint,
   isAgentsEndpoint,
   parseCompactConvo,
+  getDefaultParamsEndpoint,
 } = require('librechat-data-provider');
 const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
 const assistants = require('~/server/services/Endpoints/assistants');
+const { getEndpointsConfig } = require('~/server/services/Config');
 const agents = require('~/server/services/Endpoints/agents');
 const { updateFilesUsage } = require('~/models');
 
@@ -19,9 +21,24 @@ const buildFunction = {
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
+
+  let endpointsConfig;
+  try {
+    endpointsConfig = await getEndpointsConfig(req);
+  } catch (error) {
+    logger.error('Error fetching endpoints config in buildEndpointOption', error);
+  }
+
+  const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
+
   let parsedBody;
   try {
-    parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
+    parsedBody = parseCompactConvo({
+      endpoint,
+      endpointType,
+      conversation: req.body,
+      defaultParamsEndpoint,
+    });
   } catch (error) {
     logger.error(`Error parsing compact conversation for endpoint ${endpoint}`, error);
     logger.debug({
@@ -55,6 +72,7 @@ async function buildEndpointOption(req, res, next) {
         endpoint,
         endpointType,
         conversation: currentModelSpec.preset,
+        defaultParamsEndpoint,
       });
       if (currentModelSpec.iconURL != null && currentModelSpec.iconURL !== '') {
         parsedBody.iconURL = currentModelSpec.iconURL;

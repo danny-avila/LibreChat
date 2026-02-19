@@ -24,12 +24,14 @@ const spendTokens = async (txData, tokenUsage) => {
     },
   );
   let prompt, completion;
+  const normalizedPromptTokens = Math.max(promptTokens ?? 0, 0);
   try {
     if (promptTokens !== undefined) {
       prompt = await createTransaction({
         ...txData,
         tokenType: 'prompt',
-        rawAmount: promptTokens === 0 ? 0 : -Math.max(promptTokens, 0),
+        rawAmount: promptTokens === 0 ? 0 : -normalizedPromptTokens,
+        inputTokenCount: normalizedPromptTokens,
       });
     }
 
@@ -38,6 +40,7 @@ const spendTokens = async (txData, tokenUsage) => {
         ...txData,
         tokenType: 'completion',
         rawAmount: completionTokens === 0 ? 0 : -Math.max(completionTokens, 0),
+        inputTokenCount: normalizedPromptTokens,
       });
     }
 
@@ -87,21 +90,31 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
   let prompt, completion;
   try {
     if (promptTokens) {
-      const { input = 0, write = 0, read = 0 } = promptTokens;
+      const input = Math.max(promptTokens.input ?? 0, 0);
+      const write = Math.max(promptTokens.write ?? 0, 0);
+      const read = Math.max(promptTokens.read ?? 0, 0);
+      const totalInputTokens = input + write + read;
       prompt = await createStructuredTransaction({
         ...txData,
         tokenType: 'prompt',
         inputTokens: -input,
         writeTokens: -write,
         readTokens: -read,
+        inputTokenCount: totalInputTokens,
       });
     }
 
     if (completionTokens) {
+      const totalInputTokens = promptTokens
+        ? Math.max(promptTokens.input ?? 0, 0) +
+          Math.max(promptTokens.write ?? 0, 0) +
+          Math.max(promptTokens.read ?? 0, 0)
+        : undefined;
       completion = await createTransaction({
         ...txData,
         tokenType: 'completion',
-        rawAmount: -completionTokens,
+        rawAmount: -Math.max(completionTokens, 0),
+        inputTokenCount: totalInputTokens,
       });
     }
 

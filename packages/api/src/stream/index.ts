@@ -5,11 +5,12 @@ export {
 } from './GenerationJobManager';
 
 export type {
-  AbortResult,
   SerializableJobData,
+  IEventTransport,
+  UsageMetadata,
+  AbortResult,
   JobStatus,
   IJobStore,
-  IEventTransport,
 } from './interfaces/IJobStore';
 
 export { createStreamServices } from './createStreamServices';

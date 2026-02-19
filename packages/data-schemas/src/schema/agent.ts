@@ -118,6 +118,11 @@ const agentSchema = new Schema<IAgent>(
       default: [],
       index: true,
     },
+    /** Per-tool configuration (defer_loading, allowed_callers) */
+    tool_options: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
   },
   {
     timestamps: true,
@@ -125,5 +130,6 @@ const agentSchema = new Schema<IAgent>(
 );
 
 agentSchema.index({ updatedAt: -1, _id: 1 });
+agentSchema.index({ 'edges.to': 1 });
 
 export default agentSchema;

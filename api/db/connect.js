@@ -40,6 +40,10 @@ if (!cached) {
   cached = global.mongoose = { conn: null, promise: null };
 }
 
+mongoose.connection.on('error', (err) => {
+  logger.error('[connectDb] MongoDB connection error:', err);
+});
+
 async function connectDb() {
   if (cached.conn && cached.conn?._readyState === 1) {
     return cached.conn;

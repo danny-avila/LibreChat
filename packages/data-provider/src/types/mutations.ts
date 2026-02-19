@@ -313,6 +313,15 @@ export type UpdateMCPServersPermOptions = MutationOptions<
   types.TError | null | undefined
 >;
 
+export type UpdateRemoteAgentsPermVars = UpdatePermVars<p.TRemoteAgentsPermissions>;
+
+export type UpdateRemoteAgentsPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateRemoteAgentsPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
 export type UpdateMarketplacePermVars = UpdatePermVars<p.TMarketplacePermissions>;
 
 export type UpdateMarketplacePermOptions = MutationOptions<

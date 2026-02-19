@@ -3,6 +3,7 @@ import type { UIActionResult } from '@mcp-ui/client';
 import { TAskFunction } from '~/common';
 import logger from './logger';
 
+export * from './errors';
 export * from './map';
 export * from './json';
 export * from './files';

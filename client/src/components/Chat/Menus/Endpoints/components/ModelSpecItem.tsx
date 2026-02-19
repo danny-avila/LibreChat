@@ -1,7 +1,10 @@
 import React from 'react';
+import { CheckCircle2 } from 'lucide-react';
+import { VisuallyHidden } from '@ariakit/react';
 import type { TModelSpec } from 'librechat-data-provider';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
+import { useLocalize } from '~/hooks';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
 
@@ -11,12 +14,14 @@ interface ModelSpecItemProps {
 }
 
 export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
+  const localize = useLocalize();
   const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
   const { showIconInMenu = true } = spec;
   return (
     <MenuItem
       key={spec.name}
       onClick={() => handleSelectSpec(spec)}
+      aria-selected={isSelected || undefined}
       className={cn(
         'flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm',
       )}
@@ -40,23 +45,13 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
         </div>
       </div>
       {isSelected && (
-        <div className="flex-shrink-0 self-center">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="block"
-          >
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12ZM16.0755 7.93219C16.5272 8.25003 16.6356 8.87383 16.3178 9.32549L11.5678 16.0755C11.3931 16.3237 11.1152 16.4792 10.8123 16.4981C10.5093 16.517 10.2142 16.3973 10.0101 16.1727L7.51006 13.4227C7.13855 13.014 7.16867 12.3816 7.57733 12.0101C7.98598 11.6386 8.61843 11.6687 8.98994 12.0773L10.6504 13.9039L14.6822 8.17451C15 7.72284 15.6238 7.61436 16.0755 7.93219Z"
-              fill="currentColor"
-            />
-          </svg>
-        </div>
+        <>
+          <CheckCircle2
+            className="size-4 shrink-0 self-center text-text-primary"
+            aria-hidden="true"
+          />
+          <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
+        </>
       )}
     </MenuItem>
   );

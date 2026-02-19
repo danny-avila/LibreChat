@@ -25,14 +25,19 @@ export default function TransportSection() {
   );
 
   return (
-    <div className="space-y-2">
-      <Label className="text-sm font-medium">{localize('com_ui_mcp_transport')}</Label>
+    <fieldset className="space-y-2">
+      <legend>
+        <Label id="transport-label" className="text-sm font-medium">
+          {localize('com_ui_mcp_transport')}
+        </Label>
+      </legend>
       <Radio
         options={transportOptions}
         value={transportType}
         onChange={handleTransportChange}
         fullWidth
+        aria-labelledby="transport-label"
       />
-    </div>
+    </fieldset>
   );
 }

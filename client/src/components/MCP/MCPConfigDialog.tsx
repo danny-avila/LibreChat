@@ -24,6 +24,7 @@ interface MCPConfigDialogProps {
   serverName: string;
   serverStatus?: MCPServerStatus;
   conversationId?: string | null;
+  storageContextKey?: string;
 }
 
 export default function MCPConfigDialog({
@@ -36,6 +37,7 @@ export default function MCPConfigDialog({
   serverName,
   serverStatus,
   conversationId,
+  storageContextKey,
 }: MCPConfigDialogProps) {
   const localize = useLocalize();
 
@@ -167,6 +169,7 @@ export default function MCPConfigDialog({
         <ServerInitializationSection
           serverName={serverName}
           conversationId={conversationId}
+          storageContextKey={storageContextKey}
           requiresOAuth={serverStatus?.requiresOAuth || false}
           hasCustomUserVars={fieldsSchema && Object.keys(fieldsSchema).length > 0}
         />

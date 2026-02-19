@@ -1,10 +1,10 @@
 import { FormProvider } from 'react-hook-form';
+import type { useMCPServerForm } from './hooks/useMCPServerForm';
 import ConnectionSection from './sections/ConnectionSection';
 import BasicInfoSection from './sections/BasicInfoSection';
 import TransportSection from './sections/TransportSection';
-import AuthSection from './sections/AuthSection';
 import TrustSection from './sections/TrustSection';
-import type { useMCPServerForm } from './hooks/useMCPServerForm';
+import AuthSection from './sections/AuthSection';
 
 interface MCPServerFormProps {
   formHook: ReturnType<typeof useMCPServerForm>;
@@ -15,7 +15,7 @@ export default function MCPServerForm({ formHook }: MCPServerFormProps) {
 
   return (
     <FormProvider {...methods}>
-      <div className="max-h-[70vh] space-y-4 overflow-y-auto px-1 py-1">
+      <div className="space-y-4 px-1 py-1">
         <BasicInfoSection />
 
         <ConnectionSection />

@@ -4,11 +4,18 @@ import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
 import {
   AuthType,
   EModelEndpoint,
+  extractEnvVariable,
   bedrockInputParser,
   bedrockOutputParser,
   removeNullishValues,
 } from 'librechat-data-provider';
-import type { BaseInitializeParams, InitializeResultBase, BedrockCredentials } from '~/types';
+import type {
+  BaseInitializeParams,
+  InitializeResultBase,
+  BedrockCredentials,
+  GuardrailConfiguration,
+  InferenceProfileConfig,
+} from '~/types';
 import { checkUserKeyExpiry } from '~/utils';
 
 /**
@@ -42,6 +49,14 @@ export async function initializeBedrock({
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
   void endpoint;
+  const appConfig = req.config;
+  const bedrockConfig = appConfig?.endpoints?.[EModelEndpoint.bedrock] as
+    | ({
+        guardrailConfig?: GuardrailConfiguration;
+        inferenceProfiles?: InferenceProfileConfig;
+      } & Record<string, unknown>)
+    | undefined;
+
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
@@ -89,14 +104,30 @@ export async function initializeBedrock({
 
   const llmConfig = bedrockOutputParser(
     bedrockInputParser.parse(
-      removeNullishValues({ ...requestOptions, ...(model_parameters ?? {}) }),
+      removeNullishValues({
+        ...requestOptions,
+        ...(model_parameters ?? {}),
+      }),
     ),
   ) as InitializeResultBase['llmConfig'] & {
+    model?: string;
     region?: string;
     client?: BedrockRuntimeClient;
     credentials?: BedrockCredentials;
     endpointHost?: string;
+    guardrailConfig?: GuardrailConfiguration;
+    applicationInferenceProfile?: string;
   };
+
+  if (bedrockConfig?.guardrailConfig) {
+    llmConfig.guardrailConfig = bedrockConfig.guardrailConfig;
+  }
+
+  const model = model_parameters?.model as string | undefined;
+  if (model && bedrockConfig?.inferenceProfiles?.[model]) {
+    const applicationInferenceProfile = extractEnvVariable(bedrockConfig.inferenceProfiles[model]);
+    llmConfig.applicationInferenceProfile = applicationInferenceProfile;
+  }
 
   /** Only include credentials if they're complete (accessKeyId and secretAccessKey are both set) */
   const hasCompleteCredentials =

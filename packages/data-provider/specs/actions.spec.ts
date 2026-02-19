@@ -459,6 +459,82 @@ describe('ActionRequest', () => {
     await expect(actionRequest.execute()).rejects.toThrow('Unsupported HTTP method: invalid');
   });
 
+  describe('SSRF-safe agent passthrough', () => {
+    beforeEach(() => {
+      mockedAxios.get.mockResolvedValue({ data: { success: true } });
+      mockedAxios.post.mockResolvedValue({ data: { success: true } });
+    });
+
+    it('should pass httpAgent and httpsAgent to axios.create when provided', async () => {
+      const mockHttpAgent = { keepAlive: true };
+      const mockHttpsAgent = { keepAlive: true };
+
+      const actionRequest = new ActionRequest(
+        'https://example.com',
+        '/test',
+        'GET',
+        'testOp',
+        false,
+        'application/json',
+      );
+      const executor = actionRequest.createExecutor();
+      executor.setParams({ key: 'value' });
+      await executor.execute({ httpAgent: mockHttpAgent, httpsAgent: mockHttpsAgent });
+
+      expect(mockedAxios.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          httpAgent: mockHttpAgent,
+          httpsAgent: mockHttpsAgent,
+          maxRedirects: 0,
+        }),
+      );
+    });
+
+    it('should not include agent keys when no options are provided', async () => {
+      const actionRequest = new ActionRequest(
+        'https://example.com',
+        '/test',
+        'GET',
+        'testOp',
+        false,
+        'application/json',
+      );
+      const executor = actionRequest.createExecutor();
+      executor.setParams({ key: 'value' });
+      await executor.execute();
+
+      const createArg = mockedAxios.create.mock.calls[
+        mockedAxios.create.mock.calls.length - 1
+      ][0] as Record<string, unknown>;
+      expect(createArg).not.toHaveProperty('httpAgent');
+      expect(createArg).not.toHaveProperty('httpsAgent');
+    });
+
+    it('should pass agents through for POST requests', async () => {
+      const mockAgent = { ssrf: true };
+
+      const actionRequest = new ActionRequest(
+        'https://example.com',
+        '/test',
+        'POST',
+        'testOp',
+        false,
+        'application/json',
+      );
+      const executor = actionRequest.createExecutor();
+      executor.setParams({ body: 'data' });
+      await executor.execute({ httpAgent: mockAgent, httpsAgent: mockAgent });
+
+      expect(mockedAxios.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          httpAgent: mockAgent,
+          httpsAgent: mockAgent,
+        }),
+      );
+      expect(mockedAxios.post).toHaveBeenCalled();
+    });
+  });
+
   describe('ActionRequest Concurrent Execution', () => {
     beforeEach(() => {
       jest.clearAllMocks();

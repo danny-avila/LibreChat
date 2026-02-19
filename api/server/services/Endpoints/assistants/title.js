@@ -50,6 +50,11 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
     return;
   }
 
+  // Skip title generation for temporary conversations
+  if (req?.body?.isTemporary) {
+    return;
+  }
+
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
   const key = `${req.user.id}-${conversationId}`;
 
@@ -64,7 +69,7 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
         conversationId,
         title,
       },
-      { context: 'api/server/services/Endpoints/assistants/addTitle.js' },
+      { context: 'api/server/services/Endpoints/assistants/addTitle.js', noUpsert: true },
     );
   } catch (error) {
     logger.error('[addTitle] Error generating title:', error);
@@ -76,7 +81,7 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
         conversationId,
         title: fallbackTitle,
       },
-      { context: 'api/server/services/Endpoints/assistants/addTitle.js' },
+      { context: 'api/server/services/Endpoints/assistants/addTitle.js', noUpsert: true },
     );
   }
 };

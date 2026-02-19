@@ -209,7 +209,7 @@ describe('access middleware', () => {
         permissions: {
           [PermissionTypes.AGENTS]: {
             [Permissions.USE]: true,
-            [Permissions.SHARED_GLOBAL]: false,
+            [Permissions.SHARE]: false,
           },
         },
       } as unknown as IRole;
@@ -223,9 +223,9 @@ describe('access middleware', () => {
 
       const result = await checkAccess({
         ...defaultParams,
-        permissions: [Permissions.USE, Permissions.SHARED_GLOBAL],
+        permissions: [Permissions.USE, Permissions.SHARE],
         bodyProps: {
-          [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
+          [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
         } as Record<Permissions, string[]>,
         checkObject,
       });
@@ -237,7 +237,7 @@ describe('access middleware', () => {
         name: 'user',
         permissions: {
           [PermissionTypes.AGENTS]: {
-            [Permissions.SHARED_GLOBAL]: false,
+            [Permissions.SHARE]: false,
           },
         },
       } as unknown as IRole;
@@ -251,9 +251,9 @@ describe('access middleware', () => {
 
       const result = await checkAccess({
         ...defaultParams,
-        permissions: [Permissions.SHARED_GLOBAL],
+        permissions: [Permissions.SHARE],
         bodyProps: {
-          [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
+          [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
         } as Record<Permissions, string[]>,
         checkObject,
       });
@@ -337,7 +337,7 @@ describe('access middleware', () => {
           [PermissionTypes.AGENTS]: {
             [Permissions.USE]: true,
             [Permissions.CREATE]: true,
-            [Permissions.SHARED_GLOBAL]: false,
+            [Permissions.SHARE]: false,
           },
         },
       } as unknown as IRole;
@@ -350,9 +350,9 @@ describe('access middleware', () => {
 
       const middleware = generateCheckAccess({
         permissionType: PermissionTypes.AGENTS,
-        permissions: [Permissions.USE, Permissions.CREATE, Permissions.SHARED_GLOBAL],
+        permissions: [Permissions.USE, Permissions.CREATE, Permissions.SHARE],
         bodyProps: {
-          [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
+          [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
         } as Record<Permissions, string[]>,
         getRoleByName: mockGetRoleByName,
       });
@@ -490,7 +490,7 @@ describe('access middleware', () => {
           [PermissionTypes.PROMPTS]: {
             [Permissions.USE]: true,
             [Permissions.CREATE]: true,
-            [Permissions.SHARED_GLOBAL]: false,
+            [Permissions.SHARE]: false,
           },
         },
       } as unknown as IRole;

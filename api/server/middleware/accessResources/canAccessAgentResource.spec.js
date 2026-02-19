@@ -29,7 +29,7 @@ describe('canAccessAgentResource middleware', () => {
         AGENTS: {
           USE: true,
           CREATE: true,
-          SHARED_GLOBAL: false,
+          SHARE: true,
         },
       },
     });

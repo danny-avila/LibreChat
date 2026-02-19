@@ -118,23 +118,22 @@ export default function SiblingHeader({
         </div>
         <span className="truncate text-sm font-medium text-text-primary">{displayName}</span>
       </div>
-      {messageId && agentId && !isSubmitting && (
-        <button
-          type="button"
-          onClick={handleBranch}
-          disabled={isSubmitting || branchMessage.isLoading}
-          className={cn(
-            'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md',
-            'text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary',
-            'focus:outline-none focus:ring-2 focus:ring-border-medium focus:ring-offset-1',
-            'disabled:cursor-not-allowed disabled:opacity-50',
-          )}
-          aria-label={localize('com_ui_branch_message')}
-          title={localize('com_ui_branch_message')}
-        >
-          <GitBranchPlus className="h-4 w-4" aria-hidden="true" />
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={handleBranch}
+        disabled={!messageId || !agentId || isSubmitting || branchMessage.isLoading}
+        className={cn(
+          'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md',
+          'text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary',
+          'focus:outline-none focus:ring-2 focus:ring-border-medium focus:ring-offset-1',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          (!messageId || !agentId || isSubmitting) && 'invisible',
+        )}
+        aria-label={localize('com_ui_branch_message')}
+        title={localize('com_ui_branch_message')}
+      >
+        <GitBranchPlus className="h-4 w-4" aria-hidden="true" />
+      </button>
     </div>
   );
 }

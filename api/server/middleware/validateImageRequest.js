@@ -68,17 +68,11 @@ function createValidateImageRequest(secureImageLinks) {
       }
 
       const parsedCookies = cookies.parse(cookieHeader);
-      const refreshToken = parsedCookies.refreshToken;
-
-      if (!refreshToken) {
-        logger.warn('[validateImageRequest] Token not provided');
-        return res.status(401).send('Unauthorized');
-      }
-
       const tokenProvider = parsedCookies.token_provider;
       let userIdForPath;
 
       if (tokenProvider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+        /** For OpenID users with OPENID_REUSE_TOKENS, use openid_user_id cookie */
         const openidUserId = parsedCookies.openid_user_id;
         if (!openidUserId) {
           logger.warn('[validateImageRequest] No OpenID user ID cookie found');
@@ -92,6 +86,17 @@ function createValidateImageRequest(secureImageLinks) {
         }
         userIdForPath = validationResult.userId;
       } else {
+        /**
+         * For non-OpenID users (or OpenID without REUSE_TOKENS), use refreshToken from cookies.
+         * These users authenticate via setAuthTokens() which stores refreshToken in cookies.
+         */
+        const refreshToken = parsedCookies.refreshToken;
+
+        if (!refreshToken) {
+          logger.warn('[validateImageRequest] Token not provided');
+          return res.status(401).send('Unauthorized');
+        }
+
         const validationResult = validateToken(refreshToken);
         if (!validationResult.valid) {
           logger.warn(`[validateImageRequest] ${validationResult.error}`);

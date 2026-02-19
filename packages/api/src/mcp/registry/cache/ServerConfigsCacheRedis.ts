@@ -1,9 +1,10 @@
 import type Keyv from 'keyv';
 import { fromPairs } from 'lodash';
+import { logger } from '@librechat/data-schemas';
+import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
+import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { standardCache, keyvRedisClient } from '~/cache';
-import { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { BaseRegistryCache } from './BaseRegistryCache';
-import { IServerConfigsRepositoryInterface } from '../ServerConfigsRepositoryInterface';
 
 /**
  * Redis-backed implementation of MCP server configurations cache for distributed deployments.
@@ -12,6 +13,8 @@ import { IServerConfigsRepositoryInterface } from '../ServerConfigsRepositoryInt
  * Supports optional leader-only write operations to prevent race conditions during initialization.
  * Data persists across server restarts and is accessible from any instance in the cluster.
  */
+const BATCH_SIZE = 100;
+
 export class ServerConfigsCacheRedis
   extends BaseRegistryCache
   implements IServerConfigsRepositoryInterface
@@ -60,26 +63,49 @@ export class ServerConfigsCacheRedis
   }
 
   public async getAll(): Promise<Record<string, ParsedServerConfig>> {
-    // Use Redis SCAN iterator directly (non-blocking, production-ready)
-    // Note: Keyv uses a single colon ':' between namespace and key, even if GLOBAL_PREFIX_SEPARATOR is '::'
-    const pattern = `*${this.cache.namespace}:*`;
-    const entries: Array<[string, ParsedServerConfig]> = [];
-
-    // Use scanIterator from Redis client
-    if (keyvRedisClient && 'scanIterator' in keyvRedisClient) {
-      for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
-        // Extract the actual key name (last part after final colon)
-        // Full key format: "prefix::namespace:keyName"
-        const lastColonIndex = key.lastIndexOf(':');
-        const keyName = key.substring(lastColonIndex + 1);
-        const config = (await this.cache.get(keyName)) as ParsedServerConfig | undefined;
-        if (config) {
-          entries.push([keyName, config]);
-        }
-      }
-    } else {
+    if (!keyvRedisClient || !('scanIterator' in keyvRedisClient)) {
       throw new Error('Redis client with scanIterator not available.');
     }
+
+    const startTime = Date.now();
+    const pattern = `*${this.cache.namespace}:*`;
+
+    const keys: string[] = [];
+    for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
+      keys.push(key);
+    }
+
+    if (keys.length === 0) {
+      logger.debug(`[ServerConfigsCacheRedis] getAll(${this.namespace}): no keys found`);
+      return {};
+    }
+
+    /** Extract keyName from full Redis key format: "prefix::namespace:keyName" */
+    const keyNames = keys.map((key) => key.substring(key.lastIndexOf(':') + 1));
+
+    const entries: Array<[string, ParsedServerConfig]> = [];
+
+    for (let i = 0; i < keyNames.length; i += BATCH_SIZE) {
+      const batchEnd = Math.min(i + BATCH_SIZE, keyNames.length);
+      const promises: Promise<ParsedServerConfig | undefined>[] = [];
+
+      for (let j = i; j < batchEnd; j++) {
+        promises.push(this.cache.get(keyNames[j]));
+      }
+
+      const configs = await Promise.all(promises);
+
+      for (let j = 0; j < configs.length; j++) {
+        if (configs[j]) {
+          entries.push([keyNames[i + j], configs[j]!]);
+        }
+      }
+    }
+
+    const elapsed = Date.now() - startTime;
+    logger.debug(
+      `[ServerConfigsCacheRedis] getAll(${this.namespace}): fetched ${entries.length} configs in ${elapsed}ms`,
+    );
 
     return fromPairs(entries);
   }

@@ -64,7 +64,7 @@ export const getCustomEndpointConfig = ({
 
   const customEndpoints = appConfig.endpoints?.[EModelEndpoint.custom] ?? [];
   return customEndpoints.find(
-    (endpointConfig) => normalizeEndpointName(endpointConfig.name) === endpoint,
+    (endpointConfig) => normalizeEndpointName(endpointConfig.name) === normalizeEndpointName(endpoint),
   );
 };
 

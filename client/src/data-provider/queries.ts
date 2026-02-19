@@ -31,7 +31,7 @@ import type {
   SharedLinksResponse,
 } from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
-import { findConversationInInfinite } from '~/utils';
+import { findConversationInInfinite, isNotFoundError } from '~/utils';
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -71,6 +71,12 @@ export const useGetConvoIdQuery = (
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      retry: (failureCount, error) => {
+        if (isNotFoundError(error)) {
+          return false;
+        }
+        return failureCount < 3;
+      },
       ...config,
     },
   );

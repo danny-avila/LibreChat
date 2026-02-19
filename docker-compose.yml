@@ -29,7 +29,7 @@ services:
       - ./logs:/app/logs
   mongodb:
     container_name: chat-mongodb
-    image: mongo
+    image: mongo:8.0.17
     restart: always
     user: "${UID}:${GID}"
     volumes:

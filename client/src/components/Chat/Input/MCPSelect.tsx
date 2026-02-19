@@ -11,7 +11,7 @@ import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
 
 function MCPSelectContent() {
-  const { conversationId, mcpServerManager } = useBadgeRowContext();
+  const { conversationId, storageContextKey, mcpServerManager } = useBadgeRowContext();
   const {
     localize,
     isPinned,
@@ -128,7 +128,11 @@ function MCPSelectContent() {
         </Ariakit.Menu>
       </Ariakit.MenuProvider>
       {configDialogProps && (
-        <MCPConfigDialog {...configDialogProps} conversationId={conversationId} />
+        <MCPConfigDialog
+          {...configDialogProps}
+          conversationId={conversationId}
+          storageContextKey={storageContextKey}
+        />
       )}
     </>
   );

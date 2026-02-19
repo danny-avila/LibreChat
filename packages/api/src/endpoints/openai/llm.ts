@@ -139,6 +139,12 @@ export function getOpenAILLMConfig({
 }): Pick<t.LLMConfigResult, 'llmConfig' | 'tools'> & {
   azure?: t.AzureOptions;
 } {
+  /** Clean empty strings from model options (e.g., temperature: "" should be removed) */
+  const cleanedModelOptions = removeNullishValues(
+    _modelOptions,
+    true,
+  ) as Partial<t.OpenAIParameters>;
+
   const {
     reasoning_effort,
     reasoning_summary,
@@ -147,7 +153,7 @@ export function getOpenAILLMConfig({
     frequency_penalty,
     presence_penalty,
     ...modelOptions
-  } = _modelOptions;
+  } = cleanedModelOptions;
 
   const llmConfig = Object.assign(
     {

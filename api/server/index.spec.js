@@ -25,6 +25,13 @@ jest.mock('~/app/clients/tools', () => ({
   toolkits: [],
 }));
 
+jest.mock('~/config', () => ({
+  createMCPServersRegistry: jest.fn(),
+  createMCPManager: jest.fn().mockResolvedValue({
+    getAppToolFunctions: jest.fn().mockResolvedValue({}),
+  }),
+}));
+
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup
   jest.setTimeout(30_000);

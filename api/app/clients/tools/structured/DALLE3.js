@@ -1,4 +1,3 @@
-const { z } = require('zod');
 const path = require('path');
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
@@ -7,6 +6,36 @@ const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { getImageBasename, extractBaseURL } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
+
+const dalle3JsonSchema = {
+  type: 'object',
+  properties: {
+    prompt: {
+      type: 'string',
+      maxLength: 4000,
+      description:
+        'A text description of the desired image, following the rules, up to 4000 characters.',
+    },
+    style: {
+      type: 'string',
+      enum: ['vivid', 'natural'],
+      description:
+        'Must be one of `vivid` or `natural`. `vivid` generates hyper-real and dramatic images, `natural` produces more natural, less hyper-real looking images',
+    },
+    quality: {
+      type: 'string',
+      enum: ['hd', 'standard'],
+      description: 'The quality of the generated image. Only `hd` and `standard` are supported.',
+    },
+    size: {
+      type: 'string',
+      enum: ['1024x1024', '1792x1024', '1024x1792'],
+      description:
+        'The size of the requested image. Use 1024x1024 (square) as the default, 1792x1024 if the user requests a wide image, and 1024x1792 for full-body portraits. Always include this parameter in the request.',
+    },
+  },
+  required: ['prompt', 'style', 'quality', 'size'],
+};
 
 const displayMessage =
   "DALL-E displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
@@ -72,27 +101,11 @@ class DALLE3 extends Tool {
     // The prompt must intricately describe every part of the image in concrete, objective detail. THINK about what the end goal of the description is, and extrapolate that to what would make satisfying images.
     // All descriptions sent to dalle should be a paragraph of text that is extremely descriptive and detailed. Each should be more than 3 sentences long.
     // - The "vivid" style is HIGHLY preferred, but "natural" is also supported.`;
-    this.schema = z.object({
-      prompt: z
-        .string()
-        .max(4000)
-        .describe(
-          'A text description of the desired image, following the rules, up to 4000 characters.',
-        ),
-      style: z
-        .enum(['vivid', 'natural'])
-        .describe(
-          'Must be one of `vivid` or `natural`. `vivid` generates hyper-real and dramatic images, `natural` produces more natural, less hyper-real looking images',
-        ),
-      quality: z
-        .enum(['hd', 'standard'])
-        .describe('The quality of the generated image. Only `hd` and `standard` are supported.'),
-      size: z
-        .enum(['1024x1024', '1792x1024', '1024x1792'])
-        .describe(
-          'The size of the requested image. Use 1024x1024 (square) as the default, 1792x1024 if the user requests a wide image, and 1024x1792 for full-body portraits. Always include this parameter in the request.',
-        ),
-    });
+    this.schema = dalle3JsonSchema;
+  }
+
+  static get jsonSchema() {
+    return dalle3JsonSchema;
   }
 
   getApiKey() {

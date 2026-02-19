@@ -243,6 +243,133 @@ describe('Import Timestamp Ordering', () => {
     });
   });
 
+  describe('ChatGPT Import - Timestamp Issues', () => {
+    test('should correct timestamp inversions (child before parent)', async () => {
+      // Simulate ChatGPT export with timestamp inversion (like tool call results)
+      const jsonData = [
+        {
+          title: 'Timestamp Inversion Test',
+          create_time: 1000,
+          mapping: {
+            'root-node': {
+              id: 'root-node',
+              message: null,
+              parent: null,
+              children: ['parent-msg'],
+            },
+            'parent-msg': {
+              id: 'parent-msg',
+              message: {
+                id: 'parent-msg',
+                author: { role: 'user' },
+                create_time: 1000.1, // Parent: 1000.1
+                content: { content_type: 'text', parts: ['Parent message'] },
+                metadata: {},
+              },
+              parent: 'root-node',
+              children: ['child-msg'],
+            },
+            'child-msg': {
+              id: 'child-msg',
+              message: {
+                id: 'child-msg',
+                author: { role: 'assistant' },
+                create_time: 1000.095, // Child: 1000.095 (5ms BEFORE parent)
+                content: { content_type: 'text', parts: ['Child message'] },
+                metadata: {},
+              },
+              parent: 'parent-msg',
+              children: [],
+            },
+          },
+        },
+      ];
+
+      const requestUserId = 'user-123';
+      const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+      jest.spyOn(importBatchBuilder, 'saveMessage');
+
+      const importer = getImporter(jsonData);
+      await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+      const savedMessages = importBatchBuilder.messages;
+      const parent = savedMessages.find((msg) => msg.text === 'Parent message');
+      const child = savedMessages.find((msg) => msg.text === 'Child message');
+
+      expect(parent).toBeDefined();
+      expect(child).toBeDefined();
+
+      // Child timestamp should be adjusted to be after parent
+      expect(new Date(child.createdAt).getTime()).toBeGreaterThan(
+        new Date(parent.createdAt).getTime(),
+      );
+    });
+
+    test('should use conv.create_time for null message timestamps', async () => {
+      const convCreateTime = 1500000000; // Conversation create time
+      const jsonData = [
+        {
+          title: 'Null Timestamp Test',
+          create_time: convCreateTime,
+          mapping: {
+            'root-node': {
+              id: 'root-node',
+              message: null,
+              parent: null,
+              children: ['msg-with-null-time'],
+            },
+            'msg-with-null-time': {
+              id: 'msg-with-null-time',
+              message: {
+                id: 'msg-with-null-time',
+                author: { role: 'user' },
+                create_time: null, // Null timestamp
+                content: { content_type: 'text', parts: ['Message with null time'] },
+                metadata: {},
+              },
+              parent: 'root-node',
+              children: ['msg-with-valid-time'],
+            },
+            'msg-with-valid-time': {
+              id: 'msg-with-valid-time',
+              message: {
+                id: 'msg-with-valid-time',
+                author: { role: 'assistant' },
+                create_time: convCreateTime + 10, // Valid timestamp
+                content: { content_type: 'text', parts: ['Message with valid time'] },
+                metadata: {},
+              },
+              parent: 'msg-with-null-time',
+              children: [],
+            },
+          },
+        },
+      ];
+
+      const requestUserId = 'user-123';
+      const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+      jest.spyOn(importBatchBuilder, 'saveMessage');
+
+      const importer = getImporter(jsonData);
+      await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+      const savedMessages = importBatchBuilder.messages;
+      const nullTimeMsg = savedMessages.find((msg) => msg.text === 'Message with null time');
+      const validTimeMsg = savedMessages.find((msg) => msg.text === 'Message with valid time');
+
+      expect(nullTimeMsg).toBeDefined();
+      expect(validTimeMsg).toBeDefined();
+
+      // Null timestamp should fall back to conv.create_time
+      expect(nullTimeMsg.createdAt).toEqual(new Date(convCreateTime * 1000));
+
+      // Child should still be after parent (timestamp adjustment)
+      expect(new Date(validTimeMsg.createdAt).getTime()).toBeGreaterThan(
+        new Date(nullTimeMsg.createdAt).getTime(),
+      );
+    });
+  });
+
   describe('Comparison with Fork Functionality', () => {
     test('fork functionality correctly handles timestamp issues (for comparison)', async () => {
       const { cloneMessagesWithTimestamps } = require('./fork');

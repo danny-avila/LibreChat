@@ -7,13 +7,7 @@ import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
-import {
-  useResumableStreamToggle,
-  useAddedResponse,
-  useResumeOnLoad,
-  useAdaptiveSSE,
-  useChatHelpers,
-} from '~/hooks';
+import { useAddedResponse, useResumeOnLoad, useAdaptiveSSE, useChatHelpers } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
@@ -56,11 +50,6 @@ function ChatView({ index = 0 }: { index?: number }) {
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse();
 
-  useResumableStreamToggle(
-    chatHelpers.conversation?.endpoint,
-    chatHelpers.conversation?.endpointType,
-  );
-
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
 
   // Auto-resume if navigating back to conversation with active job
@@ -92,7 +81,7 @@ function ChatView({ index = 0 }: { index?: number }) {
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
-            <div className="flex h-full w-full flex-col">
+            <div className="relative flex h-full w-full flex-col">
               {!isLoading && <Header />}
               <>
                 <div

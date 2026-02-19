@@ -1,4 +1,3 @@
-const { z } = require('zod');
 const axios = require('axios');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
@@ -6,6 +5,18 @@ const { generateShortLivedToken } = require('@librechat/api');
 const { Tools, EToolResources } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getFiles } = require('~/models');
+
+const fileSearchJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        "A natural language query to search for relevant information in the files. Be specific and use keywords related to the information you're looking for. The query will be used for semantic similarity matching against the file contents.",
+    },
+  },
+  required: ['query'],
+};
 
 /**
  *
@@ -182,15 +193,9 @@ Use the EXACT anchor markers shown below (copy them verbatim) immediately after 
 **ALWAYS mention the filename in your text before the citation marker. NEVER use markdown links or footnotes.**`
           : ''
       }`,
-      schema: z.object({
-        query: z
-          .string()
-          .describe(
-            "A natural language query to search for relevant information in the files. Be specific and use keywords related to the information you're looking for. The query will be used for semantic similarity matching against the file contents.",
-          ),
-      }),
+      schema: fileSearchJsonSchema,
     },
   );
 };
 
-module.exports = { createFileSearchTool, primeFiles };
+module.exports = { createFileSearchTool, primeFiles, fileSearchJsonSchema };

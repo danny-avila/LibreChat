@@ -44,7 +44,10 @@ export default function OpenSidebar({
           aria-label={localize('com_nav_open_sidebar')}
           aria-expanded={false}
           aria-controls="chat-history-nav"
-          className={cn('rounded-xl duration-0 hover:bg-surface-active-alt', className)}
+          className={cn(
+            'rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt',
+            className,
+          )}
           onClick={handleClick}
         >
           <Sidebar aria-hidden="true" />

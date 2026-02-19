@@ -80,7 +80,7 @@ const base64Only = new Set([
   EModelEndpoint.bedrock,
 ]);
 
-const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3]);
+const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3, FileSources.firebase]);
 
 /**
  * Encodes and formats the given files.
@@ -127,7 +127,7 @@ async function encodeAndFormat(req, files, params, mode) {
     }
 
     const preparePayload = encodingMethods[source].prepareImagePayload;
-    /* We need to fetch the image and convert it to base64 if we are using S3/Azure Blob storage. */
+    /* We need to fetch the image and convert it to base64 if we are using S3/Azure Blob/Firebase storage. */
     if (blobStorageSources.has(source)) {
       try {
         const downloadStream = encodingMethods[source].getDownloadStream;

@@ -2,7 +2,7 @@ import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react'
 import copy from 'copy-to-clipboard';
 import { InfoIcon } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
-import { Clipboard, CheckMark } from '@librechat/client';
+import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { CodeBarProps } from '~/common';
 import ResultSwitcher from '~/components/Messages/Content/ResultSwitcher';
 import { useToolCallsMapContext, useMessageContext } from '~/Providers';
@@ -112,28 +112,30 @@ const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(
         ) : (
           <>
             {allowExecution === true && (
-              <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} />
+              <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} iconOnly />
             )}
-            <button
-              ref={copyButtonRef}
-              type="button"
-              tabIndex={isVisible ? 0 : -1}
-              className={cn(
-                'flex gap-2 rounded px-2 py-1 hover:bg-gray-700 focus:bg-gray-700 focus:outline focus:outline-white',
-                error === true ? 'h-4 w-4 items-start text-white/50' : '',
-              )}
-              onClick={handleCopy}
-            >
-              {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
-              {error !== true && (
-                <span className="relative">
-                  <span className="invisible">{localize('com_ui_copy_code')}</span>
-                  <span className="absolute inset-0 flex items-center">
-                    {isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
-                  </span>
-                </span>
-              )}
-            </button>
+            <TooltipAnchor
+              description={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+              render={
+                <button
+                  ref={copyButtonRef}
+                  type="button"
+                  tabIndex={isVisible ? 0 : -1}
+                  aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+                  className={cn(
+                    'flex items-center justify-center rounded p-1.5 hover:bg-gray-700 focus:bg-gray-700 focus:outline focus:outline-white',
+                    error === true ? 'h-4 w-4 text-white/50' : '',
+                  )}
+                  onClick={handleCopy}
+                >
+                  {isCopied ? (
+                    <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+                  ) : (
+                    <Clipboard aria-hidden="true" />
+                  )}
+                </button>
+              }
+            />
           </>
         )}
       </div>

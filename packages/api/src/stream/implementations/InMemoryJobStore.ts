@@ -1,7 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
-import type { IJobStore, SerializableJobData, JobStatus } from '~/stream/interfaces/IJobStore';
+import type {
+  SerializableJobData,
+  UsageMetadata,
+  IJobStore,
+  JobStatus,
+} from '~/stream/interfaces/IJobStore';
 
 /**
  * Content state for a job - volatile, in-memory only.
@@ -10,6 +15,7 @@ import type { IJobStore, SerializableJobData, JobStatus } from '~/stream/interfa
 interface ContentState {
   contentParts: Agents.MessageContentComplex[];
   graphRef: WeakRef<StandardGraph> | null;
+  collectedUsage: UsageMetadata[];
 }
 
 /**
@@ -240,6 +246,7 @@ export class InMemoryJobStore implements IJobStore {
       this.contentState.set(streamId, {
         contentParts: [],
         graphRef: new WeakRef(graph),
+        collectedUsage: [],
       });
     }
   }
@@ -252,8 +259,28 @@ export class InMemoryJobStore implements IJobStore {
     if (existing) {
       existing.contentParts = contentParts;
     } else {
-      this.contentState.set(streamId, { contentParts, graphRef: null });
+      this.contentState.set(streamId, { contentParts, graphRef: null, collectedUsage: [] });
     }
+  }
+
+  /**
+   * Set collected usage reference for a job.
+   */
+  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void {
+    const existing = this.contentState.get(streamId);
+    if (existing) {
+      existing.collectedUsage = collectedUsage;
+    } else {
+      this.contentState.set(streamId, { contentParts: [], graphRef: null, collectedUsage });
+    }
+  }
+
+  /**
+   * Get collected usage for a job.
+   */
+  getCollectedUsage(streamId: string): UsageMetadata[] {
+    const state = this.contentState.get(streamId);
+    return state?.collectedUsage ?? [];
   }
 
   /**

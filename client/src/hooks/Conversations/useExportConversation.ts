@@ -106,6 +106,9 @@ export default function useExportConversation({
       // TEXT
       const textPart = content[ContentTypes.TEXT];
       const text = typeof textPart === 'string' ? textPart : (textPart?.value ?? '');
+      if (text.trim().length === 0) {
+        return [];
+      }
       return [sender, text];
     }
 

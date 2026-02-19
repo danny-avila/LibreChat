@@ -1,7 +1,12 @@
 import { useRecoilValue } from 'recoil';
 import { useCallback, useRef, useEffect } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { getEndpointField, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  getEndpointField,
+  LocalStorageKeys,
+  isAssistantsEndpoint,
+  getDefaultParamsEndpoint,
+} from 'librechat-data-provider';
 import type {
   TEndpointsConfig,
   EModelEndpoint,
@@ -117,11 +122,13 @@ const useGenerateConvo = ({
       }
 
       const models = modelsConfig?.[defaultEndpoint ?? ''] ?? [];
+      const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, defaultEndpoint);
       conversation = buildDefaultConvo({
         conversation,
         lastConversationSetup: preset as TConversation,
         endpoint: defaultEndpoint ?? ('' as EModelEndpoint),
         models,
+        defaultParamsEndpoint,
       });
 
       if (preset?.title != null && preset.title !== '') {

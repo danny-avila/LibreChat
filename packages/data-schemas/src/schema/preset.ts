@@ -30,6 +30,7 @@ export interface IPreset extends Document {
   promptCache?: boolean;
   thinking?: boolean;
   thinkingBudget?: number;
+  effort?: string;
   system?: string;
   resendFiles?: boolean;
   imageDetail?: string;

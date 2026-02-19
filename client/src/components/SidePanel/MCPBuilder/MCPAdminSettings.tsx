@@ -9,6 +9,7 @@ const permissions: PermissionConfig[] = [
   { permission: Permissions.USE, labelKey: 'com_ui_mcp_servers_allow_use' },
   { permission: Permissions.CREATE, labelKey: 'com_ui_mcp_servers_allow_create' },
   { permission: Permissions.SHARE, labelKey: 'com_ui_mcp_servers_allow_share' },
+  { permission: Permissions.SHARE_PUBLIC, labelKey: 'com_ui_mcp_servers_allow_share_public' },
 ];
 
 const MCPAdminSettings = () => {
