@@ -13,6 +13,7 @@ function njContentSecurityPolicy() {
         "'self'",
         "'unsafe-inline'", // LibreChat has inline scripts
         'https://*.googletagmanager.com',
+        'https://*.g.doubleclick.net',
         'https://*.nj.gov',
       ],
       imgSrc: [
