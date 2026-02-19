@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { deleteRagFile } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { generateShortLivedToken } = require('@librechat/api');
 const { resizeImageBuffer } = require('~/server/services/Files/images/resize');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
@@ -213,27 +213,7 @@ const deleteLocalFile = async (req, file) => {
   /** Filepath stripped of query parameters (e.g., ?manual=true) */
   const cleanFilepath = file.filepath.split('?')[0];
 
-  if (file.embedded && process.env.RAG_API_URL) {
-    const jwtToken = generateShortLivedToken(req.user.id);
-    try {
-      await axios.delete(`${process.env.RAG_API_URL}/documents`, {
-        headers: {
-          Authorization: `Bearer ${jwtToken}`,
-          'Content-Type': 'application/json',
-          accept: 'application/json',
-        },
-        data: [file.file_id],
-      });
-    } catch (error) {
-      if (error.response?.status === 404) {
-        logger.warn(
-          `[deleteLocalFile] Document ${file.file_id} not found in RAG API, may have been deleted already`,
-        );
-      } else {
-        logger.error('[deleteLocalFile] Error deleting document from RAG API:', error);
-      }
-    }
-  }
+  await deleteRagFile({ userId: req.user.id, file });
 
   if (cleanFilepath.startsWith(`/uploads/${req.user.id}`)) {
     const userUploadDir = path.join(uploads, req.user.id);

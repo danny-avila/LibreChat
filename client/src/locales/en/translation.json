@@ -842,6 +842,7 @@
   "com_ui_controls": "Controls",
   "com_ui_conversation": "conversation",
   "com_ui_conversation_label": "{{title}} conversation",
+  "com_ui_conversation_not_found": "Conversation not found",
   "com_ui_conversations": "conversations",
   "com_ui_convo_archived": "Conversation archived",
   "com_ui_convo_delete_error": "Failed to delete conversation",

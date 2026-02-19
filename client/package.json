@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.8.2",
+  "version": "v0.8.3-rc1",
   "description": "",
   "type": "module",
   "scripts": {
@@ -80,7 +80,7 @@
     "lodash": "^4.17.23",
     "lucide-react": "^0.394.0",
     "match-sorter": "^8.1.0",
-    "mermaid": "^11.12.2",
+    "mermaid": "^11.12.3",
     "micromark-extension-llm-math": "^3.1.0",
     "qrcode.react": "^4.2.0",
     "rc-input-number": "^7.4.2",

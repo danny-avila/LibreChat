@@ -65,7 +65,7 @@ function getClaudeHeaders(
 
 /**
  * Configures reasoning-related options for Claude models.
- * Models supporting adaptive thinking (Opus 4.6+, Sonnet 5+) use effort control instead of manual budget_tokens.
+ * Models supporting adaptive thinking (Opus 4.6+, Sonnet 4.6+) use effort control instead of manual budget_tokens.
  */
 function configureReasoning(
   anthropicInput: AnthropicClientOptions & { max_tokens?: number },

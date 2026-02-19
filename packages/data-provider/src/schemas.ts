@@ -101,7 +101,10 @@ export enum BedrockProviders {
   Meta = 'meta',
   MistralAI = 'mistral',
   Moonshot = 'moonshot',
+  MoonshotAI = 'moonshotai',
+  OpenAI = 'openai',
   StabilityAI = 'stability',
+  ZAI = 'zai',
 }
 
 export const getModelKey = (endpoint: EModelEndpoint | string, model: string) => {

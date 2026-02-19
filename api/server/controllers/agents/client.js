@@ -6,18 +6,22 @@ const {
   Tokenizer,
   checkAccess,
   buildToolSet,
-  logAxiosError,
   sanitizeTitle,
+  logToolError,
+  payloadParser,
   resolveHeaders,
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
   getProviderConfig,
+  omitTitleOptions,
   memoryInstructions,
   applyContextToAgent,
+  createTokenCounter,
   GenerationJobManager,
   getTransactionsConfig,
   createMemoryProcessor,
+  createMultiAgentMapper,
   filterMalformedContentParts,
 } = require('@librechat/api');
 const {
@@ -25,9 +29,7 @@ const {
   Providers,
   TitleMethod,
   formatMessage,
-  labelContentByAgent,
   formatAgentMessages,
-  getTokenCountForMessage,
   createMetadataAggregator,
 } = require('@librechat/agents');
 const {
@@ -39,7 +41,6 @@ const {
   PermissionTypes,
   isAgentsEndpoint,
   isEphemeralAgentId,
-  bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
@@ -51,183 +52,6 @@ const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
-
-const omitTitleOptions = new Set([
-  'stream',
-  'thinking',
-  'streaming',
-  'clientOptions',
-  'thinkingConfig',
-  'thinkingBudget',
-  'includeThoughts',
-  'maxOutputTokens',
-  'additionalModelRequestFields',
-]);
-
-/**
- * @param {ServerRequest} req
- * @param {Agent} agent
- * @param {string} endpoint
- */
-const payloadParser = ({ req, agent, endpoint }) => {
-  if (isAgentsEndpoint(endpoint)) {
-    return { model: undefined };
-  } else if (endpoint === EModelEndpoint.bedrock) {
-    const parsedValues = bedrockInputSchema.parse(agent.model_parameters);
-    if (parsedValues.thinking == null) {
-      parsedValues.thinking = false;
-    }
-    return parsedValues;
-  }
-  return req.body.endpointOption.model_parameters;
-};
-
-function createTokenCounter(encoding) {
-  return function (message) {
-    const countTokens = (text) => Tokenizer.getTokenCount(text, encoding);
-    return getTokenCountForMessage(message, countTokens);
-  };
-}
-
-function logToolError(graph, error, toolId) {
-  logAxiosError({
-    error,
-    message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
-  });
-}
-
-/** Regex pattern to match agent ID suffix (____N) */
-const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
-
-/**
- * Finds the primary agent ID within a set of agent IDs.
- * Primary = no suffix (____N) or lowest suffix number.
- * @param {Set<string>} agentIds
- * @returns {string | null}
- */
-function findPrimaryAgentId(agentIds) {
-  let primaryAgentId = null;
-  let lowestSuffixIndex = Infinity;
-
-  for (const agentId of agentIds) {
-    const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
-    if (!suffixMatch) {
-      return agentId;
-    }
-    const suffixIndex = parseInt(suffixMatch[1], 10);
-    if (suffixIndex < lowestSuffixIndex) {
-      lowestSuffixIndex = suffixIndex;
-      primaryAgentId = agentId;
-    }
-  }
-
-  return primaryAgentId;
-}
-
-/**
- * Creates a mapMethod for getMessagesForConversation that processes agent content.
- * - Strips agentId/groupId metadata from all content
- * - For parallel agents (addedConvo with groupId): filters each group to its primary agent
- * - For handoffs (agentId without groupId): keeps all content from all agents
- * - For multi-agent: applies agent labels to content
- *
- * The key distinction:
- * - Parallel execution (addedConvo): Parts have both agentId AND groupId
- * - Handoffs: Parts only have agentId, no groupId
- *
- * @param {Agent} primaryAgent - Primary agent configuration
- * @param {Map<string, Agent>} [agentConfigs] - Additional agent configurations
- * @returns {(message: TMessage) => TMessage} Map method for processing messages
- */
-function createMultiAgentMapper(primaryAgent, agentConfigs) {
-  const hasMultipleAgents = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
-
-  /** @type {Record<string, string> | null} */
-  let agentNames = null;
-  if (hasMultipleAgents) {
-    agentNames = { [primaryAgent.id]: primaryAgent.name || 'Assistant' };
-    if (agentConfigs) {
-      for (const [agentId, agentConfig] of agentConfigs.entries()) {
-        agentNames[agentId] = agentConfig.name || agentConfig.id;
-      }
-    }
-  }
-
-  return (message) => {
-    if (message.isCreatedByUser || !Array.isArray(message.content)) {
-      return message;
-    }
-
-    // Check for metadata
-    const hasAgentMetadata = message.content.some((part) => part?.agentId || part?.groupId != null);
-    if (!hasAgentMetadata) {
-      return message;
-    }
-
-    try {
-      // Build a map of groupId -> Set of agentIds, to find primary per group
-      /** @type {Map<number, Set<string>>} */
-      const groupAgentMap = new Map();
-
-      for (const part of message.content) {
-        const groupId = part?.groupId;
-        const agentId = part?.agentId;
-        if (groupId != null && agentId) {
-          if (!groupAgentMap.has(groupId)) {
-            groupAgentMap.set(groupId, new Set());
-          }
-          groupAgentMap.get(groupId).add(agentId);
-        }
-      }
-
-      // For each group, find the primary agent
-      /** @type {Map<number, string>} */
-      const groupPrimaryMap = new Map();
-      for (const [groupId, agentIds] of groupAgentMap) {
-        const primary = findPrimaryAgentId(agentIds);
-        if (primary) {
-          groupPrimaryMap.set(groupId, primary);
-        }
-      }
-
-      /** @type {Array<TMessageContentParts>} */
-      const filteredContent = [];
-      /** @type {Record<number, string>} */
-      const agentIdMap = {};
-
-      for (const part of message.content) {
-        const agentId = part?.agentId;
-        const groupId = part?.groupId;
-
-        // Filtering logic:
-        // - No groupId (handoffs): always include
-        // - Has groupId (parallel): only include if it's the primary for that group
-        const isParallelPart = groupId != null;
-        const groupPrimary = isParallelPart ? groupPrimaryMap.get(groupId) : null;
-        const shouldInclude = !isParallelPart || !agentId || agentId === groupPrimary;
-
-        if (shouldInclude) {
-          const newIndex = filteredContent.length;
-          const { agentId: _a, groupId: _g, ...cleanPart } = part;
-          filteredContent.push(cleanPart);
-          if (agentId && hasMultipleAgents) {
-            agentIdMap[newIndex] = agentId;
-          }
-        }
-      }
-
-      const finalContent =
-        Object.keys(agentIdMap).length > 0 && agentNames
-          ? labelContentByAgent(filteredContent, agentIdMap, agentNames)
-          : filteredContent;
-
-      return { ...message, content: finalContent };
-    } catch (error) {
-      logger.error('[AgentClient] Error processing multi-agent message:', error);
-      return message;
-    }
-  };
-}
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -296,14 +120,9 @@ class AgentClient extends BaseClient {
   checkVisionRequest() {}
 
   getSaveOptions() {
-    // TODO:
-    // would need to be override settings; otherwise, model needs to be undefined
-    // model: this.override.model,
-    // instructions: this.override.instructions,
-    // additional_instructions: this.override.additional_instructions,
     let runOptions = {};
     try {
-      runOptions = payloadParser(this.options);
+      runOptions = payloadParser(this.options) ?? {};
     } catch (error) {
       logger.error(
         '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
@@ -314,14 +133,14 @@ class AgentClient extends BaseClient {
     return removeNullishValues(
       Object.assign(
         {
+          spec: this.options.spec,
+          iconURL: this.options.iconURL,
           endpoint: this.options.endpoint,
           agent_id: this.options.agent.id,
           modelLabel: this.options.modelLabel,
-          maxContextTokens: this.options.maxContextTokens,
           resendFiles: this.options.resendFiles,
           imageDetail: this.options.imageDetail,
-          spec: this.options.spec,
-          iconURL: this.options.iconURL,
+          maxContextTokens: this.maxContextTokens,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,

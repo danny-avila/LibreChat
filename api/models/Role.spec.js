@@ -233,6 +233,112 @@ describe('updateAccessPermissions', () => {
     expect(updatedRole.permissions[PermissionTypes.MULTI_CONVO]).toEqual({ USE: true });
   });
 
+  it('should inherit SHARED_GLOBAL value into SHARE when SHARE is absent from both DB and update', async () => {
+    // Simulates the startup backfill path: caller sends SHARE_PUBLIC but not SHARE;
+    // migration should inherit SHARED_GLOBAL to preserve the deployment's sharing intent.
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: {
+        [PermissionTypes.PROMPTS]: { USE: true, CREATE: true, SHARED_GLOBAL: true },
+        [PermissionTypes.AGENTS]: { USE: true, CREATE: true, SHARED_GLOBAL: false },
+      },
+    });
+
+    await updateAccessPermissions(SystemRoles.USER, {
+      // No explicit SHARE — migration should inherit from SHARED_GLOBAL
+      [PermissionTypes.PROMPTS]: { SHARE_PUBLIC: false },
+      [PermissionTypes.AGENTS]: { SHARE_PUBLIC: false },
+    });
+
+    const updatedRole = await getRoleByName(SystemRoles.USER);
+
+    // SHARED_GLOBAL=true → SHARE=true (inherited)
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARE).toBe(true);
+    // SHARED_GLOBAL=false → SHARE=false (inherited)
+    expect(updatedRole.permissions[PermissionTypes.AGENTS].SHARE).toBe(false);
+    // SHARED_GLOBAL cleaned up
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARED_GLOBAL).toBeUndefined();
+    expect(updatedRole.permissions[PermissionTypes.AGENTS].SHARED_GLOBAL).toBeUndefined();
+  });
+
+  it('should respect explicit SHARE in update payload and not override it with SHARED_GLOBAL', async () => {
+    // Caller explicitly passes SHARE: false even though SHARED_GLOBAL=true in DB.
+    // The explicit intent must win; migration must not silently overwrite it.
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: {
+        [PermissionTypes.PROMPTS]: { USE: true, SHARED_GLOBAL: true },
+      },
+    });
+
+    await updateAccessPermissions(SystemRoles.USER, {
+      [PermissionTypes.PROMPTS]: { SHARE: false }, // explicit false — should be preserved
+    });
+
+    const updatedRole = await getRoleByName(SystemRoles.USER);
+
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARE).toBe(false);
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARED_GLOBAL).toBeUndefined();
+  });
+
+  it('should migrate SHARED_GLOBAL to SHARE even when the permType is not in the update payload', async () => {
+    // Bug #2 regression: cleanup block removes SHARED_GLOBAL but migration block only
+    // runs when the permType is in the update payload. Without the fix, SHARE would be
+    // lost when any other permType (e.g. MULTI_CONVO) is the only thing being updated.
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: {
+        [PermissionTypes.PROMPTS]: {
+          USE: true,
+          SHARED_GLOBAL: true, // legacy — NO SHARE present
+        },
+        [PermissionTypes.MULTI_CONVO]: { USE: false },
+      },
+    });
+
+    // Only update MULTI_CONVO — PROMPTS is intentionally absent from the payload
+    await updateAccessPermissions(SystemRoles.USER, {
+      [PermissionTypes.MULTI_CONVO]: { USE: true },
+    });
+
+    const updatedRole = await getRoleByName(SystemRoles.USER);
+
+    // SHARE should have been inherited from SHARED_GLOBAL, not silently dropped
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARE).toBe(true);
+    // SHARED_GLOBAL should be removed
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARED_GLOBAL).toBeUndefined();
+    // Original USE should be untouched
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].USE).toBe(true);
+    // The actual update should have applied
+    expect(updatedRole.permissions[PermissionTypes.MULTI_CONVO].USE).toBe(true);
+  });
+
+  it('should remove orphaned SHARED_GLOBAL when SHARE already exists and permType is not in update', async () => {
+    // Safe cleanup case: SHARE already set, SHARED_GLOBAL is just orphaned noise.
+    // SHARE must not be changed; SHARED_GLOBAL must be removed.
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: {
+        [PermissionTypes.PROMPTS]: {
+          USE: true,
+          SHARE: true, // already migrated
+          SHARED_GLOBAL: true, // orphaned
+        },
+        [PermissionTypes.MULTI_CONVO]: { USE: false },
+      },
+    });
+
+    await updateAccessPermissions(SystemRoles.USER, {
+      [PermissionTypes.MULTI_CONVO]: { USE: true },
+    });
+
+    const updatedRole = await getRoleByName(SystemRoles.USER);
+
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARED_GLOBAL).toBeUndefined();
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS].SHARE).toBe(true);
+    expect(updatedRole.permissions[PermissionTypes.MULTI_CONVO].USE).toBe(true);
+  });
+
   it('should not update MULTI_CONVO permissions when no changes are needed', async () => {
     await new Role({
       name: SystemRoles.USER,

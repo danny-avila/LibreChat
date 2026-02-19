@@ -1,7 +1,8 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.2",
+  "version": "v0.8.3-rc1",
   "description": "",
+  "packageManager": "npm@11.10.0",
   "workspaces": [
     "api",
     "client",
@@ -15,6 +16,7 @@
     "user-stats": "node config/user-stats.js",
     "rebuild:package-lock": "node config/packages",
     "reinstall": "node config/update.js -l -g",
+    "smart-reinstall": "node config/smart-reinstall.js",
     "b:reinstall": "bun config/update.js -b -l -g",
     "reinstall:docker": "node config/update.js -d -g",
     "update:local": "node config/update.js -l",
@@ -128,6 +130,7 @@
     "lint-staged": "^15.4.3",
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
+    "turbo": "^2.8.7",
     "typescript-eslint": "^8.24.0"
   },
   "overrides": {
@@ -135,14 +138,14 @@
     "@librechat/agents": {
       "@langchain/anthropic": {
         "@anthropic-ai/sdk": "0.73.0",
-        "fast-xml-parser": "5.3.4"
+        "fast-xml-parser": "5.3.6"
       },
       "@anthropic-ai/sdk": "0.73.0",
-      "fast-xml-parser": "5.3.4"
+      "fast-xml-parser": "5.3.6"
     },
     "axios": "1.12.1",
     "elliptic": "^6.6.1",
-    "fast-xml-parser": "5.3.4",
+    "fast-xml-parser": "5.3.6",
     "form-data": "^4.0.4",
     "tslib": "^2.8.1",
     "mdast-util-gfm-autolink-literal": "2.0.0",
@@ -160,7 +163,8 @@
       "micromark-extension-math": {
         "katex": "^0.16.21"
       }
-    }
+    },
+    "langsmith": "0.4.12"
   },
   "nodemonConfig": {
     "ignore": [

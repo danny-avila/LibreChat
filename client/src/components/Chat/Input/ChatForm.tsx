@@ -325,6 +325,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 }
                 isSubmitting={isSubmitting}
                 conversationId={conversationId}
+                specName={conversation?.spec}
                 onChange={setBadges}
                 isInChat={
                   Array.isArray(conversation?.messages) && conversation.messages.length >= 1
