@@ -11,8 +11,9 @@ const {
   MCPOAuthHandler,
   isMCPDomainAllowed,
   normalizeServerName,
-  resolveJsonSchemaRefs,
+  normalizeJsonSchema,
   GenerationJobManager,
+  resolveJsonSchemaRefs,
 } = require('@librechat/api');
 const {
   Time,
@@ -443,7 +444,7 @@ function createToolInstance({
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
 
-  let schema = parameters ? resolveJsonSchemaRefs(parameters) : null;
+  let schema = parameters ? normalizeJsonSchema(resolveJsonSchemaRefs(parameters)) : null;
 
   if (!schema || (isGoogle && isEmptyObjectSchema(schema))) {
     schema = {
