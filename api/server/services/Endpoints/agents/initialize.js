@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
+  sendEvent,
   initializeAgent,
   validateAgentModel,
   createEdgeCollector,
@@ -233,7 +234,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       }
       await processAgent(agentId);
     }
-    const chain = await createSequentialChainEdges([primaryConfig.id].concat(agent_ids), '{convo}');
+    const chain = await createSequentialChainEdges(
+      [primaryConfig.id].concat(agent_ids),
+      '{convo}',
+      primaryConfig.maxContextTokens,
+      (info) => {
+        try {
+          sendEvent(res, {
+            event: 'compaction_notice',
+            data: info,
+          });
+        } catch (err) {
+          logger.warn('[initializeClient] Failed to send compaction notice:', err);
+        }
+      },
+    );
     collectEdges(chain);
   }
 
