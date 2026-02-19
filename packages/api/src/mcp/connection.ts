@@ -820,19 +820,20 @@ export class MCPConnection extends EventEmitter {
 
       // Per MCP spec (2025-11-25) §Session Management: when the client receives HTTP 404
       // for a request that carries an MCP-Session-Id, it MUST start a new session.
-      // Only ignore 404 on SSE when no session has been established yet; that case means
-      // the server does not offer an SSE endpoint (backwards-compat probe).
-      if (errorCode === 404 && errorMessage.toLowerCase().includes('failed to open sse stream')) {
+      // Only ignore 404 when no session has been established yet (backwards-compat: server
+      // may not offer SSE at GET, or probe failed). Key off status code and session only,
+      // not the error message, so we stay robust across SDK and server wording changes.
+      if (errorCode === 404) {
         const hasSession =
           'sessionId' in transport && (transport as { sessionId?: string }).sessionId != null;
         if (!hasSession) {
-          logger.warn(`${this.getLogPrefix()} SSE stream not available (404). Ignoring.`);
+          logger.warn(`${this.getLogPrefix()} Request returned 404 (no session yet). Ignoring.`);
           return;
         }
         // Session exists but server returned 404 → session is gone (e.g. server restarted).
         // Fall through: emit error so reconnection triggers a fresh initialize.
         logger.warn(
-          `${this.getLogPrefix()} SSE stream 404 with active session — session lost, reconnecting.`,
+          `${this.getLogPrefix()} 404 with active session — session lost, reconnecting.`,
         );
       }
 
