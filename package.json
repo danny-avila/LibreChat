@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.2",
+  "version": "v0.8.3-rc1",
   "description": "",
   "packageManager": "npm@11.10.0",
   "workspaces": [
