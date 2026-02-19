@@ -580,6 +580,7 @@
   "com_ui_back": "뒤로",
   "com_ui_back_to_chat": "채팅으로 돌아가기",
   "com_ui_back_to_prompts": "프롬프트로 돌아가기",
+  "com_ui_balance_tokens_left": "{{0}}개 토큰 남음",
   "com_ui_backup_codes": "백업 코드",
   "com_ui_backup_codes_regenerate_error": "백업 코드 재생성 중 오류 발생",
   "com_ui_backup_codes_regenerated": "백업 코드가 성공적으로 재생성되었습니다",

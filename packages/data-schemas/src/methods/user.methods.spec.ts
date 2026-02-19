@@ -234,8 +234,10 @@ describe('User Methods - Database Tests', () => {
           provider: 'local',
         },
         {
-          enabled: true,
-          startBalance: 1000,
+          balance: {
+            enabled: true,
+            startBalance: 1000,
+          },
         },
       );
 

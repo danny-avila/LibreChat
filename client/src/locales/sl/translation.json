@@ -16,6 +16,7 @@
   "com_ui_auth_type": "Vrsta avtorizacije",
   "com_ui_auth_url": "URL za avtorizacijo",
   "com_ui_authentication_type": "Vrsta preverjanja pristnosti",
+  "com_ui_balance_tokens_left": "{{0}} žetonov preostalo",
   "com_ui_basic": "Osnovno",
   "com_ui_basic_auth_header": "Osnovna glava avtorizacije",
   "com_ui_bearer": "Nosilec",

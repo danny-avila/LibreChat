@@ -612,18 +612,21 @@ class AgentClient extends BaseClient {
   /**
    * @param {Object} params
    * @param {string} [params.model]
+   * @param {string} [params.spec]
    * @param {string} [params.context='message']
    * @param {AppConfig['balance']} [params.balance]
    * @param {AppConfig['transactions']} [params.transactions]
    * @param {UsageMetadata[]} [params.collectedUsage=this.collectedUsage]
+   * @param {@import('librechat-data-provider').AppConfig} appConfig The app configuration
    */
   async recordCollectedUsage({
     model,
+    spec,
     balance,
     transactions,
     context = 'message',
     collectedUsage = this.collectedUsage,
-  }) {
+  }, appConfig) {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
@@ -667,6 +670,7 @@ class AgentClient extends BaseClient {
         user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
         model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
+        spec: usage.spec ?? spec ?? this.spec ?? this.options.spec,
       };
 
       if (cache_creation > 0 || cache_read > 0) {
@@ -688,7 +692,7 @@ class AgentClient extends BaseClient {
       spendTokens(txMetadata, {
         promptTokens: usage.input_tokens,
         completionTokens: usage.output_tokens,
-      }).catch((err) => {
+      }, appConfig).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending tokens',
           err,
@@ -936,7 +940,7 @@ class AgentClient extends BaseClient {
             context: 'message',
             balance: balanceConfig,
             transactions: transactionsConfig,
-          });
+          }, appConfig);
         } else {
           logger.debug(
             '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
@@ -979,7 +983,7 @@ class AgentClient extends BaseClient {
 
     /** @type {import('@librechat/agents').ClientOptions} */
     let clientOptions = {
-      model: agent.model || agent.model_parameters.model,
+      model: agent.model || agent.model_parameters.model
     };
 
     let titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
@@ -1145,9 +1149,10 @@ class AgentClient extends BaseClient {
         collectedUsage,
         context: 'title',
         model: clientOptions.model,
+        spec: clientOptions.spec,
         balance: balanceConfig,
         transactions: transactionsConfig,
-      }).catch((err) => {
+      }, appConfig).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
           err,
@@ -1173,6 +1178,7 @@ class AgentClient extends BaseClient {
    */
   async recordTokenUsage({
     model,
+    spec,
     usage,
     balance,
     promptTokens,
@@ -1183,6 +1189,7 @@ class AgentClient extends BaseClient {
       await spendTokens(
         {
           model,
+          spec,
           context,
           balance,
           conversationId: this.conversationId,
@@ -1190,6 +1197,7 @@ class AgentClient extends BaseClient {
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
         { promptTokens, completionTokens },
+        this.options.req.config
       );
 
       if (
@@ -1201,6 +1209,7 @@ class AgentClient extends BaseClient {
         await spendTokens(
           {
             model,
+            spec,
             balance,
             context: 'reasoning',
             conversationId: this.conversationId,
@@ -1208,6 +1217,7 @@ class AgentClient extends BaseClient {
             endpointTokenConfig: this.options.endpointTokenConfig,
           },
           { completionTokens: usage.reasoning_tokens },
+          this.options.req.config
         );
       }
     } catch (error) {

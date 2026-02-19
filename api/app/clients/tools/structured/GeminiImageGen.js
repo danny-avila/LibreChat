@@ -326,8 +326,10 @@ function checkForSafetyBlock(response) {
  * @param {string} params.userId - The user ID
  * @param {string} params.conversationId - The conversation ID
  * @param {string} params.model - The model name
+ * @param {string} [params.spec] - The model spec name
+ * @param {@import('librechat-data-provider').AppConfig} appConfig - The app configuration
  */
-async function recordTokenUsage({ usageMetadata, req, userId, conversationId, model }) {
+async function recordTokenUsage({ usageMetadata, req, userId, conversationId, model, spec }) {
   if (!usageMetadata) {
     logger.debug('[GeminiImageGen] No usage metadata available for balance tracking');
     return;
@@ -355,6 +357,7 @@ async function recordTokenUsage({ usageMetadata, req, userId, conversationId, mo
     promptTokens,
     completionTokens,
     model,
+    spec,
     conversationId,
   });
 
@@ -363,6 +366,7 @@ async function recordTokenUsage({ usageMetadata, req, userId, conversationId, mo
       {
         user: userId,
         model,
+        spec: 
         conversationId,
         context: 'image_generation',
         balance,
@@ -372,6 +376,7 @@ async function recordTokenUsage({ usageMetadata, req, userId, conversationId, mo
         promptTokens,
         completionTokens,
       },
+      appConfig
     );
   } catch (error) {
     logger.error('[GeminiImageGen] Error recording token usage:', error);
@@ -575,6 +580,7 @@ function createGeminiImageTool(fields = {}) {
         userId,
         conversationId,
         model: geminiModel,
+        spec: this.options.spec ?? this.modelOptions?.spec,
       }).catch((error) => {
         logger.error('[GeminiImageGen] Failed to record token usage:', error);
       });

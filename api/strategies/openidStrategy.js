@@ -487,7 +487,10 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     };
 
     const balanceConfig = getBalanceConfig(appConfig);
-    user = await createUser(user, balanceConfig, true, true);
+    user = await createUser(user, {
+      ...appConfig,
+      balance: balanceConfig
+    }, true, true);
   } else {
     user.provider = 'openid';
     user.openidId = userinfo.sub;

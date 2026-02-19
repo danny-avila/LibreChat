@@ -7,6 +7,8 @@ import { useModelSelectorContext } from '../ModelSelectorContext';
 import { useLocalize } from '~/hooks';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
+import { useGetUserBalance } from '~/data-provider';
+import { kebabCase } from 'lodash';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
@@ -15,7 +17,9 @@ interface ModelSpecItemProps {
 
 export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
   const localize = useLocalize();
+  const balance = useGetUserBalance()
   const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
+  const modelCredits = balance.data.perSpecTokenCredits?.[kebabCase(spec.name)];
   const { showIconInMenu = true } = spec;
   return (
     <MenuItem
@@ -23,7 +27,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
       onClick={() => handleSelectSpec(spec)}
       aria-selected={isSelected || undefined}
       className={cn(
-        'flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm',
+        `flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm ${modelCredits === 0 ? 'pointer-events-none opacity-50' : ''}`,
       )}
     >
       <div
@@ -38,7 +42,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           </div>
         )}
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="truncate text-left">{spec.label}</span>
+          <span className="truncate text-left">{spec.label} {modelCredits !== undefined && (<span className={`text-xs text-gray-600 dark:text-gray-400 ${modelCredits === 0 ? 'text-red-400 dark:text-red-400' : ''}`}>{localize('com_ui_balance_tokens_left', { 0: modelCredits })}</span>)}</span>
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}

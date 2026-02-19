@@ -208,6 +208,7 @@
   "com_ui_all": "semua",
   "com_ui_archive": "Arsip",
   "com_ui_archive_error": "Gagal mengarsipkan percakapan",
+  "com_ui_balance_tokens_left": "{{0}} token tersisa",
   "com_ui_bookmark_delete_confirm": "Apakah Anda yakin ingin menghapus penanda ini?",
   "com_ui_bookmarks": "Penanda",
   "com_ui_bookmarks_add_to_conversation": "Tambahkan ke percakapan saat ini",

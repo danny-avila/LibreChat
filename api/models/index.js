@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const { createMethods } = require('@librechat/data-schemas');
 const methods = createMethods(mongoose);
 const { comparePassword } = require('./userMethods');
+const { getUserBalance, updateUserBalance } = require('./balanceMethods');
 const {
   getMessage,
   getMessages,
@@ -43,6 +44,9 @@ module.exports = {
   getPresets,
   savePreset,
   deletePresets,
+
+  getUserBalance,
+  updateUserBalance,
 
   Files: File,
 };

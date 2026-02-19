@@ -27,8 +27,9 @@ const { abortRun } = require('./abortRun');
  * @param {string} params.conversationId - Conversation ID
  * @param {Array<Object>} params.collectedUsage - Usage metadata from all models
  * @param {string} [params.fallbackModel] - Fallback model name if not in usage
+ * @param {import('librechat-data-provider').AppConfig} appConfig - The app configuration.
  */
-async function spendCollectedUsage({ userId, conversationId, collectedUsage, fallbackModel }) {
+async function spendCollectedUsage({ userId, conversationId, collectedUsage, fallbackModel }, appConfig) {
   if (!collectedUsage || collectedUsage.length === 0) {
     return;
   }
@@ -53,6 +54,7 @@ async function spendCollectedUsage({ userId, conversationId, collectedUsage, fal
       conversationId,
       user: userId,
       model: usage.model ?? fallbackModel,
+      spec: usage.spec
     };
 
     if (cache_creation > 0 || cache_read > 0) {
@@ -64,7 +66,7 @@ async function spendCollectedUsage({ userId, conversationId, collectedUsage, fal
             read: cache_read,
           },
           completionTokens: usage.output_tokens,
-        }).catch((err) => {
+        }, appConfig).catch((err) => {
           logger.error('[abortMiddleware] Error spending structured tokens for abort', err);
         }),
       );
@@ -75,7 +77,7 @@ async function spendCollectedUsage({ userId, conversationId, collectedUsage, fal
       spendTokens(txMetadata, {
         promptTokens: usage.input_tokens,
         completionTokens: usage.output_tokens,
-      }).catch((err) => {
+      }, appConfig).catch((err) => {
         logger.error('[abortMiddleware] Error spending tokens for abort', err);
       }),
     );
@@ -97,6 +99,7 @@ async function spendCollectedUsage({ userId, conversationId, collectedUsage, fal
  */
 async function abortMessage(req, res) {
   const { abortKey, endpoint } = req.body;
+  const appConfig = req.config
 
   if (isAssistantsEndpoint(endpoint)) {
     return await abortRun(req, res);
@@ -143,8 +146,8 @@ async function abortMessage(req, res) {
       userId,
       conversationId: jobData?.conversationId,
       collectedUsage,
-      fallbackModel: jobData?.model,
-    });
+      fallbackModel: jobData?.model
+    }, appConfig);
   } else {
     // Fallback: no collected usage, use text-based token counting for primary model only
     await spendTokens(

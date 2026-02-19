@@ -762,6 +762,7 @@
   "com_ui_back_to_builder": "Tilbake til bygger",
   "com_ui_back_to_chat": "Tilbake til samtale",
   "com_ui_back_to_prompts": "Tilbake til prompter",
+  "com_ui_balance_tokens_left": "{{0}} tokens igjen",
   "com_ui_backup_code_number": "Kode #{{number}}",
   "com_ui_backup_codes": "Reservekoder",
   "com_ui_backup_codes_regenerate_error": "Det oppstod en feil under regenerering av reservekoder.",
