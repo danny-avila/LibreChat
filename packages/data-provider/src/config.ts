@@ -1331,7 +1331,25 @@ export function validateVisionModel({
 
   if (modelSpecs?.list) {
     const matchingSpec = modelSpecs.list.find(
-      (spec) => spec.preset?.model === model || model.includes(spec.preset?.model ?? ''),
+      (spec) => {
+        // Exact match with preset.model
+        if (spec.preset?.model && spec.preset.model === model) {
+          return true;
+        }
+        // Partial match: model contains preset.model (only if preset.model is not empty)
+        if (spec.preset?.model && spec.preset.model.length > 0 && model.includes(spec.preset.model)) {
+          return true;
+        }
+        // Exact match with spec.name
+        if (spec.name && spec.name === model) {
+          return true;
+        }
+        // Partial match: model contains spec.name (only if spec.name is not empty)
+        if (spec.name && spec.name.length > 0 && model.includes(spec.name)) {
+          return true;
+        }
+        return false;
+      },
     );
 
     if (matchingSpec?.vision !== undefined) {
