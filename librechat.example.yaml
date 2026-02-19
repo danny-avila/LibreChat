@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.2.1
+version: 1.3.4
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -87,12 +87,14 @@ interface:
   presets: true
   prompts:
     use: true
+    create: true
     share: false
     public: false
   bookmarks: true
   multiConvo: true
   agents:
     use: true
+    create: true
     share: false
     public: false
   peoplePicker:
@@ -102,6 +104,13 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # Remote Agents configuration
+  # Controls user permissions for remote agents with external API support
+  # remoteAgents:
+  #   use: false
+  #   create: false
+  #   share: false
+  #   public: false
   # MCP Servers configuration example
   # mcpServers:
     # Controls user permissions for MCP (Model Context Protocol) server management
@@ -264,7 +273,7 @@ endpoints:
   #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
   #   minRelevanceScore: 0.45
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-  #   capabilities: ["execute_code", "file_search", "actions", "tools"]
+  #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
 
   # Anthropic endpoint configuration with Vertex AI support
   # Use this to run Anthropic Claude models through Google Cloud Vertex AI
