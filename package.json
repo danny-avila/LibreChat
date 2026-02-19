@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.2",
+  "version": "v0.8.3-rc1",
   "description": "",
   "packageManager": "npm@11.10.0",
   "workspaces": [
@@ -138,14 +138,14 @@
     "@librechat/agents": {
       "@langchain/anthropic": {
         "@anthropic-ai/sdk": "0.73.0",
-        "fast-xml-parser": "5.3.4"
+        "fast-xml-parser": "5.3.6"
       },
       "@anthropic-ai/sdk": "0.73.0",
-      "fast-xml-parser": "5.3.4"
+      "fast-xml-parser": "5.3.6"
     },
     "axios": "1.12.1",
     "elliptic": "^6.6.1",
-    "fast-xml-parser": "5.3.4",
+    "fast-xml-parser": "5.3.6",
     "form-data": "^4.0.4",
     "tslib": "^2.8.1",
     "mdast-util-gfm-autolink-literal": "2.0.0",
@@ -163,7 +163,8 @@
       "micromark-extension-math": {
         "katex": "^0.16.21"
       }
-    }
+    },
+    "langsmith": "0.4.12"
   },
   "nodemonConfig": {
     "ignore": [

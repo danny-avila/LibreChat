@@ -1142,6 +1142,7 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-sonnet-4-6',
   'claude-opus-4-6',
   'claude-sonnet-4-5',
   'claude-sonnet-4-5-20250929',
@@ -1163,6 +1164,7 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-sonnet-4-6',
   'anthropic.claude-opus-4-6-v1',
   'anthropic.claude-sonnet-4-5-20250929-v1:0',
   'anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -1730,9 +1732,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.2',
+  VERSION = 'v0.8.3-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.3',
+  CONFIG_VERSION = '1.3.4',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
