@@ -311,20 +311,22 @@ Please follow these instructions when using tools from the respective MCP server
         connection.setRequestHeaders(currentOptions.headers || {});
       }
 
-      const result = await connection.client.request(
-        {
-          method: 'tools/call',
-          params: {
-            name: toolName,
-            arguments: toolArguments,
+      const result = await connection.callWithReconnectOnSessionGone(() =>
+        connection.client.request(
+          {
+            method: 'tools/call',
+            params: {
+              name: toolName,
+              arguments: toolArguments,
+            },
           },
-        },
-        CallToolResultSchema,
-        {
-          timeout: connection.timeout,
-          resetTimeoutOnProgress: true,
-          ...options,
-        },
+          CallToolResultSchema,
+          {
+            timeout: connection.timeout,
+            resetTimeoutOnProgress: true,
+            ...options,
+          },
+        ),
       );
       if (userId) {
         this.updateUserLastActivity(userId);

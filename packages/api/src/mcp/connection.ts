@@ -908,10 +908,52 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
+  /**
+   * True if the error indicates the server returned 404 Session not found (e.g. after restart or eviction).
+   * POST requests throw this; GET 404 goes through transport.onerror instead.
+   */
+  private isSessionNotFoundError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false;
+    const msg = (error as { message?: string }).message ?? '';
+    const code = (error as { code?: number }).code;
+    return (
+      code === 404 ||
+      (msg.includes('Session not found') && msg.includes('Streamable HTTP'))
+    );
+  }
+
+  /**
+   * Run a client operation; if it fails with 404 Session not found, reconnect once and retry.
+   * Covers POST 404 which does not go through transport.onerror.
+   */
+  private async withReconnectOnSessionGone<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      if (!this.isSessionNotFoundError(error)) throw error;
+      logger.warn(
+        `${this.getLogPrefix()} Request failed with session not found (404), reconnecting and retrying once`,
+      );
+      await this.disconnect();
+      await this.connect();
+      return await fn();
+    }
+  }
+
+  /**
+   * Public wrapper for use by MCPManager: run a client operation and retry once after reconnect if
+   * the server returns 404 Session not found (e.g. after mcp-linux restart or session eviction).
+   */
+  public async callWithReconnectOnSessionGone<T>(fn: () => Promise<T>): Promise<T> {
+    return this.withReconnectOnSessionGone(fn);
+  }
+
   async fetchResources(): Promise<t.MCPResource[]> {
     try {
-      const { resources } = await this.client.listResources();
-      return resources;
+      return await this.withReconnectOnSessionGone(async () => {
+        const { resources } = await this.client.listResources();
+        return resources;
+      });
     } catch (error) {
       this.emitError(error, 'Failed to fetch resources');
       return [];
@@ -920,8 +962,10 @@ export class MCPConnection extends EventEmitter {
 
   async fetchTools() {
     try {
-      const { tools } = await this.client.listTools();
-      return tools;
+      return await this.withReconnectOnSessionGone(async () => {
+        const { tools } = await this.client.listTools();
+        return tools;
+      });
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');
       return [];
@@ -930,8 +974,10 @@ export class MCPConnection extends EventEmitter {
 
   async fetchPrompts(): Promise<t.MCPPrompt[]> {
     try {
-      const { prompts } = await this.client.listPrompts();
-      return prompts;
+      return await this.withReconnectOnSessionGone(async () => {
+        const { prompts } = await this.client.listPrompts();
+        return prompts;
+      });
     } catch (error) {
       this.emitError(error, 'Failed to fetch prompts');
       return [];
