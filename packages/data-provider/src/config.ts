@@ -723,6 +723,7 @@ export const interfaceSchema = z
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
 export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
+export type TFloatingButtonsConfig = z.infer<typeof floatingButtonsSchema>;
 
 export const turnstileOptionsSchema = z
   .object({
@@ -777,6 +778,7 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  floatingButtons?: TFloatingButtonsConfig;
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
@@ -920,6 +922,14 @@ export const balanceSchema = z.object({
   refillAmount: z.number().optional().default(10000),
 });
 
+export const floatingButtonsSchema = z.array(z.object({
+  type: z.enum(['link']).optional().default('link'),
+  label: z.string(),
+  url: z.string(),
+  icon: z.string(),
+  newTab: z.boolean().optional().default(true),
+}))
+
 export const transactionsSchema = z.object({
   enabled: z.boolean().optional().default(true),
 });
@@ -982,6 +992,7 @@ export const configSchema = z.object({
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),
+  floatingButtons: floatingButtonsSchema.optional(),
   transactions: transactionsSchema.optional(),
   speech: z
     .object({

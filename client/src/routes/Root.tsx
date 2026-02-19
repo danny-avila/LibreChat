@@ -21,6 +21,7 @@ import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
 import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
+import { FloatingButtons } from '~/components/FloatingButtons';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -94,11 +95,12 @@ export default function Root() {
                   </div>
                 </div>
               </div>
+              <FloatingButtons />
             </PromptGroupsProvider>
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (
             <TermsAndConditionsModal
-              open={showTerms}
+              open={showTerms}    
               onOpenChange={setShowTerms}
               onAccept={handleAcceptTerms}
               onDecline={handleDeclineTerms}

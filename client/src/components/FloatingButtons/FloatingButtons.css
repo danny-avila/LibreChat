@@ -1,0 +1,35 @@
+.floating-buttons {
+  @apply fixed top-2 right-14 text-text-primary flex gap-2;
+}
+
+.floating-buttons_button {
+  @apply relative flex flex-col cursor-pointer size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary opacity-50 disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary;
+}
+.floating-buttons_button:is(:hover, :focus) {
+  @apply bg-surface-hover opacity-100;
+}
+
+.floating-buttons_button:before {
+  @apply absolute top-[110%] rounded-full bg-surface-hover px-2 py-1 text-xs opacity-0 pointer-events-none whitespace-nowrap text-text-primary;
+  content: attr(data-label);
+}
+.floating-buttons_button:is(:hover, :focus):before {
+  @apply opacity-100;
+}
+
+.floating-buttons_icon {
+  @apply flex size-14 w-full items-center justify-center gap-2;
+}
+
+.floating-buttons_icon svg {
+  @apply size-6;
+}
+
+.floating-buttons_label {
+  font-size: 0.2em;
+  display: none;
+}
+
+.floating-buttons_icon path {
+  fill: currentColor;
+}
