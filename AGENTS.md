@@ -128,12 +128,12 @@ Multi-line imports count total character length across all lines. Consolidate va
 
 | Command | Purpose |
 |---|---|
-| `npm run smart-reinstall` | Install/reinstall dependencies using Turborepo (preferred for incremental installs) |
+| `npm run smart-reinstall` | Install deps (if lockfile changed) + build via Turborepo |
 | `npm run reinstall` | Clean install — wipe `node_modules` and reinstall from scratch |
 | `npm run backend` | Start the backend server |
 | `npm run backend:dev` | Start backend with file watching (development) |
-| `npm run build` | Build all compiled code (frontend and backend packages) |
-| `npm run frontend` | Alias for `npm run build` (legacy compatibility) |
+| `npm run build` | Build all compiled code via Turborepo (parallel, cached) |
+| `npm run frontend` | Build all compiled code sequentially (legacy fallback) |
 | `npm run frontend:dev` | Start frontend dev server with HMR (port 3090, requires backend running) |
 | `npm run build:data-provider` | Rebuild `packages/data-provider` after changes |
 
