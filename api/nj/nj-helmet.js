@@ -12,6 +12,7 @@ function njContentSecurityPolicy() {
       scriptSrc: [
         "'self'",
         "'unsafe-inline'", // LibreChat has inline scripts
+        "'unsafe-eval'", // For LibreChat image conversion
         'https://*.googletagmanager.com',
         'https://*.g.doubleclick.net',
         'https://*.nj.gov',
@@ -38,6 +39,7 @@ function njContentSecurityPolicy() {
         'https://*.nj.gov',
       ],
       frameSrc: ["'self'", 'https://www.googletagmanager.com'],
+      workerSrc: ["'self'", 'blob:'],
     },
   });
 }
