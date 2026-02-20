@@ -1,7 +1,12 @@
-import { SystemCapabilities, PrincipalType } from 'librechat-data-provider';
-import { generateCapabilityCheck } from './capabilities';
+import {
+  PrincipalType,
+  configCapability,
+  SystemCapabilities,
+  readConfigCapability,
+} from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+import { generateCapabilityCheck } from './capabilities';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -26,7 +31,7 @@ describe('generateCapabilityCheck', () => {
   const mockGetUserPrincipals = jest.fn();
   const mockHasCapabilityForPrincipals = jest.fn();
 
-  const { hasCapability, requireCapability } = generateCapabilityCheck({
+  const { hasCapability, requireCapability, hasConfigCapability } = generateCapabilityCheck({
     getUserPrincipals: mockGetUserPrincipals,
     hasCapabilityForPrincipals: mockHasCapabilityForPrincipals,
   });
@@ -144,6 +149,64 @@ describe('generateCapabilityCheck', () => {
       expect(mockNext).not.toHaveBeenCalled();
       expect(statusMock).toHaveBeenCalledWith(500);
       expect(jsonMock).toHaveBeenCalledWith({ message: 'Internal Server Error' });
+    });
+  });
+
+  describe('hasConfigCapability', () => {
+    const adminUser = { id: 'user-123', role: 'ADMIN' };
+    const delegatedUser = { id: 'user-789', role: 'MANAGER' };
+
+    it('returns true when user has broad manage:configs capability', async () => {
+      mockGetUserPrincipals.mockResolvedValue(adminPrincipals);
+      mockHasCapabilityForPrincipals.mockResolvedValue(true);
+
+      const result = await hasConfigCapability(adminUser, 'endpoints');
+
+      expect(result).toBe(true);
+      expect(mockHasCapabilityForPrincipals).toHaveBeenCalledWith(
+        expect.objectContaining({ capability: SystemCapabilities.MANAGE_CONFIGS }),
+      );
+    });
+
+    it('falls back to section-specific capability when broad check fails', async () => {
+      mockGetUserPrincipals.mockResolvedValue(userPrincipals);
+      // First call (broad) returns false, second call (section) returns true
+      mockHasCapabilityForPrincipals.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+      const result = await hasConfigCapability(delegatedUser, 'endpoints');
+
+      expect(result).toBe(true);
+      expect(mockHasCapabilityForPrincipals).toHaveBeenCalledTimes(2);
+      expect(mockHasCapabilityForPrincipals).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ capability: configCapability('endpoints') }),
+      );
+    });
+
+    it('returns false when user has neither broad nor section capability', async () => {
+      mockGetUserPrincipals.mockResolvedValue(userPrincipals);
+      mockHasCapabilityForPrincipals.mockResolvedValue(false);
+
+      const result = await hasConfigCapability(delegatedUser, 'balance');
+
+      expect(result).toBe(false);
+    });
+
+    it('checks read:configs when verb is "read"', async () => {
+      mockGetUserPrincipals.mockResolvedValue(userPrincipals);
+      mockHasCapabilityForPrincipals.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+      const result = await hasConfigCapability(delegatedUser, 'endpoints', 'read');
+
+      expect(result).toBe(true);
+      expect(mockHasCapabilityForPrincipals).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ capability: SystemCapabilities.READ_CONFIGS }),
+      );
+      expect(mockHasCapabilityForPrincipals).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ capability: readConfigCapability('endpoints') }),
+      );
     });
   });
 });
