@@ -261,7 +261,7 @@ function extractKeyFromS3Url(fileUrlOrKey) {
       const endpointUrl = new URL(endpoint);
       const startPos =
         endpointUrl.pathname.length +
-        (endpointUrl.pathname.endsWith('/') ? 2 : 1) +
+        (endpointUrl.pathname.endsWith('/') ? 0 : 1) +
         bucketName.length +
         1;
 
