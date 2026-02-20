@@ -30,6 +30,8 @@ export * from './types/web';
 export * from './types/graph';
 /* access permissions */
 export * from './accessPermissions';
+/* system capabilities */
+export * from './systemCapabilities';
 /* query/mutation keys */
 export * from './keys';
 /* api call helpers */
