@@ -48,7 +48,6 @@ if (!COOKIE_DOMAIN) {
   logger.info(`[AuthService] cookies are set to domain ${COOKIE_DOMAIN}`);
 }
 
-const isProduction = process.env.NODE_ENV === 'production';
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 
 /**
