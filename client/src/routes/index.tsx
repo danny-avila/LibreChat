@@ -16,6 +16,7 @@ import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
 import dashboardRoutes from './Dashboard';
+import MCPAddRedirect from './MCPAddRedirect';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
@@ -106,6 +107,10 @@ export const router = createBrowserRouter(
             {
               path: 'c/:conversationId?',
               element: <ChatRoute />,
+            },
+            {
+              path: 'mcps/add',
+              element: <MCPAddRedirect />,
             },
             {
               path: 'search',
