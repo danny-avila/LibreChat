@@ -1,4 +1,5 @@
-const { SystemRoles } = require('librechat-data-provider');
+const { SystemCapabilities } = require('librechat-data-provider');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getAssistant } = require('~/models');
 
 /**
@@ -12,7 +13,7 @@ const { getAssistant } = require('~/models');
  * @returns {Promise<void>}
  */
 const validateAuthor = async ({ req, openai, overrideEndpoint, overrideAssistantId }) => {
-  if (req.user.role === SystemRoles.ADMIN) {
+  if (await hasCapability(req.user, SystemCapabilities.MANAGE_ASSISTANTS)) {
     return;
   }
 

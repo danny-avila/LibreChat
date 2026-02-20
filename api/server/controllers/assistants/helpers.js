@@ -1,7 +1,7 @@
 const {
-  SystemRoles,
   EModelEndpoint,
   defaultOrderQuery,
+  SystemCapabilities,
   defaultAssistantsVersion,
 } = require('librechat-data-provider');
 const {
@@ -9,6 +9,7 @@ const {
 } = require('~/server/services/Endpoints/azureAssistants');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getEndpointsConfig } = require('~/server/services/Config');
+const { hasCapability } = require('~/server/middleware');
 
 /**
  * @param {ServerRequest} req
@@ -236,7 +237,7 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
-  if (req.user.role === SystemRoles.ADMIN) {
+  if (await hasCapability(req.user, SystemCapabilities.MANAGE_ASSISTANTS)) {
     return body;
   } else if (!appConfig.endpoints?.[endpoint]) {
     return body;

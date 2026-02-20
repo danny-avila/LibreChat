@@ -1,5 +1,5 @@
 import type { Model, Types } from 'mongoose';
-import { SystemRoles, ResourceType, SystemCategories } from 'librechat-data-provider';
+import { ResourceType, SystemCategories } from 'librechat-data-provider';
 import type { IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
@@ -145,25 +145,12 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
   /**
    * Delete a prompt group and its prompts, cleaning up ACL permissions.
    */
-  async function deletePromptGroup({
-    _id,
-    author,
-    role,
-  }: {
-    _id: string;
-    author?: string;
-    role?: string;
-  }) {
+  async function deletePromptGroup({ _id }: { _id: string }) {
     const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
     const Prompt = mongoose.models.Prompt as Model<IPrompt>;
 
     const query: Record<string, unknown> = { _id };
     const groupQuery: Record<string, unknown> = { groupId: new ObjectId(_id) };
-
-    if (author && role !== SystemRoles.ADMIN) {
-      query.author = author;
-      groupQuery.author = author;
-    }
 
     const response = await PromptGroup.deleteOne(query);
 
@@ -476,21 +463,14 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
   async function deletePrompt({
     promptId,
     groupId,
-    author,
-    role,
   }: {
     promptId: string | Types.ObjectId;
     groupId: string | Types.ObjectId;
-    author: string | Types.ObjectId;
-    role?: string;
   }) {
     const Prompt = mongoose.models.Prompt as Model<IPrompt>;
     const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
 
-    const query: Record<string, unknown> = { _id: promptId, groupId, author };
-    if (role === SystemRoles.ADMIN) {
-      delete query.author;
-    }
+    const query: Record<string, unknown> = { _id: promptId, groupId };
     const { deletedCount } = await Prompt.deleteOne(query);
     if (deletedCount === 0) {
       throw new Error('Failed to delete the prompt');

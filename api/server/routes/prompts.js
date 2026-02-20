@@ -11,12 +11,12 @@ const {
 } = require('@librechat/api');
 const {
   Permissions,
-  SystemRoles,
   ResourceType,
   AccessRoleIds,
   PrincipalType,
   PermissionBits,
   PermissionTypes,
+  SystemCapabilities,
 } = require('librechat-data-provider');
 const {
   getListPromptGroupsByAccess,
@@ -32,6 +32,7 @@ const {
   getPrompt,
 } = require('~/models');
 const {
+  hasCapability,
   canAccessPromptGroupResource,
   canAccessPromptViaGroup,
   requireJwtAuth,
@@ -333,7 +334,7 @@ const patchPromptGroup = async (req, res) => {
     const { groupId } = req.params;
     const author = req.user.id;
     const filter = { _id: groupId, author };
-    if (req.user.role === SystemRoles.ADMIN) {
+    if (await hasCapability(req.user, SystemCapabilities.MANAGE_PROMPTS)) {
       delete filter.author;
     }
 
@@ -421,7 +422,7 @@ router.get('/', async (req, res) => {
 
     // If no groupId, return user's own prompts
     const query = { author };
-    if (req.user.role === SystemRoles.ADMIN) {
+    if (await hasCapability(req.user, SystemCapabilities.READ_PROMPTS)) {
       delete query.author;
     }
     const prompts = await getPrompts(query);
@@ -445,8 +446,7 @@ const deletePromptController = async (req, res) => {
   try {
     const { promptId } = req.params;
     const { groupId } = req.query;
-    const author = req.user.id;
-    const query = { promptId, groupId, author, role: req.user.role };
+    const query = { promptId, groupId };
     const result = await deletePrompt(query);
     res.status(200).send(result);
   } catch (error) {
@@ -464,8 +464,8 @@ const deletePromptController = async (req, res) => {
 const deletePromptGroupController = async (req, res) => {
   try {
     const { groupId: _id } = req.params;
-    // Don't pass author - permissions are now checked by middleware
-    const message = await deletePromptGroup({ _id, role: req.user.role });
+    // Don't pass author or role - permissions are checked by ACL middleware
+    const message = await deletePromptGroup({ _id });
     res.send(message);
   } catch (error) {
     logger.error('Error deleting prompt group', error);

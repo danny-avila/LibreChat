@@ -1,3 +1,5 @@
+import { ResourceType } from './accessPermissions';
+
 export const SystemCapabilities = {
   ACCESS_ADMIN: 'access:admin',
   READ_USERS: 'read:users',
@@ -19,6 +21,19 @@ export const SystemCapabilities = {
 } as const;
 
 export type SystemCapability = (typeof SystemCapabilities)[keyof typeof SystemCapabilities];
+
+/**
+ * Maps each ACL ResourceType to the SystemCapability that grants
+ * unrestricted management access. Typed as `Record<ResourceType, …>`
+ * so adding a new ResourceType variant causes a compile error until a
+ * capability is assigned here.
+ */
+export const ResourceCapabilityMap: Record<ResourceType, SystemCapability> = {
+  [ResourceType.AGENT]: SystemCapabilities.MANAGE_AGENTS,
+  [ResourceType.PROMPTGROUP]: SystemCapabilities.MANAGE_PROMPTS,
+  [ResourceType.MCPSERVER]: SystemCapabilities.MANAGE_AGENTS,
+  [ResourceType.REMOTE_AGENT]: SystemCapabilities.MANAGE_AGENTS,
+};
 
 export interface ISystemGrant {
   principalType: string;
