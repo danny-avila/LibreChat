@@ -407,14 +407,14 @@ const setAuthTokens = async (userId, res, _session = null) => {
       httpOnly: true,
       secure: shouldUseSecureCookie(),
       sameSite: 'strict',
-      domain: COOKIE_DOMAIN,
+      ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     });
     res.cookie('token_provider', 'librechat', {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
       secure: shouldUseSecureCookie(),
       sameSite: 'strict',
-      domain: COOKIE_DOMAIN,
+      ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     });
     return token;
   } catch (error) {
@@ -503,14 +503,14 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         httpOnly: true,
         secure: shouldUseSecureCookie(),
         sameSite: 'strict',
-        domain: COOKIE_DOMAIN,
+        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
       });
       res.cookie('openid_access_token', tokenset.access_token, {
         expires: expirationDate,
         httpOnly: true,
         secure: shouldUseSecureCookie(),
         sameSite: 'strict',
-        domain: COOKIE_DOMAIN,
+        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
       });
       if (tokenset.id_token) {
         res.cookie('openid_id_token', tokenset.id_token, {
@@ -528,7 +528,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       httpOnly: true,
       secure: shouldUseSecureCookie(),
       sameSite: 'strict',
-      domain: COOKIE_DOMAIN,
+      ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     });
     if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
       /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
@@ -540,7 +540,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         httpOnly: true,
         secure: shouldUseSecureCookie(),
         sameSite: 'strict',
-        domain: COOKIE_DOMAIN,
+        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
       });
     }
     return appAuthToken;
