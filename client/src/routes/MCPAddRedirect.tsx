@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 
-const MCP_NAME_PARAM = 'mcp_name';
-const MCP_URL_PARAM = 'mcp_url';
-const MCP_TRANSPORT_PARAM = 'mcp_transport';
+const MCP_NAME_PARAM = 'name';
+const MCP_URL_PARAM = 'url';
+const MCP_TRANSPORT_PARAM = 'transport';
 
 export default function MCPAddRedirect() {
   const [searchParams] = useSearchParams();

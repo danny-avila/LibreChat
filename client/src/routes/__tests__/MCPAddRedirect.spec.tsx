@@ -40,7 +40,7 @@ describe('MCPAddRedirect', () => {
 
   it('should redirect to /c/new forwarding all params via route state', async () => {
     const router = createTestRouter(
-      '/mcps/add?mcp_name=My+Server&mcp_url=https://example.com/mcp&mcp_transport=sse',
+      '/mcps/add?name=My+Server&url=https://example.com/mcp&transport=sse',
     );
     render(<RouterProvider router={router} />);
 
