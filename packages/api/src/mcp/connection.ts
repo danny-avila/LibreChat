@@ -71,6 +71,8 @@ const FIVE_MINUTES = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT = 60000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
+/** Streamable HTTP: GET SSE stream is long-lived; same fetch is used for GET and POST. Use a very long bodyTimeout so the GET stream is not aborted after initTimeout (e.g. 120s). */
+const STREAMABLE_HTTP_SSE_BODY_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24h
 
 /**
  * Headers for SSE connections.
@@ -488,7 +490,7 @@ export class MCPConnection extends EventEmitter {
             },
             fetch: this.createFetchFunction(
               this.getRequestHeaders.bind(this),
-              this.timeout,
+              STREAMABLE_HTTP_SSE_BODY_TIMEOUT_MS,
             ) as unknown as FetchLike,
           });
 
