@@ -53,6 +53,19 @@ const convoSchema = mongoose.Schema(
     files: {
       type: [String],
     },
+    projectId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    excludedProjectFileIds: {
+      type: [String],
+      default: [],
+    },
+    additionalFileIds: {
+      type: [String],
+      default: [],
+    },
   },
   { timestamps: true },
 );

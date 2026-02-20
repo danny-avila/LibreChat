@@ -595,7 +595,8 @@ export const listConversations = (
   const pageNumber = (params?.pageNumber ?? '1') || '1'; // Default to page 1 if not provided
   const isArchived = params?.isArchived ?? false; // Default to false if not provided
   const tags = params?.tags || []; // Default to an empty array if not provided
-  return request.get(endpoints.conversations(pageNumber, isArchived, tags));
+  const projectId = params?.projectId;
+  return request.get(endpoints.conversations(pageNumber, isArchived, tags, projectId));
 };
 
 export const listConversationsByQuery = (
@@ -764,4 +765,82 @@ export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
 
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
+}
+
+/* Projects */
+export function getProjects(): Promise<t.TProjectsResponse> {
+  return request.get(endpoints.projectsList());
+}
+
+export function createProject(payload: t.TCreateProjectRequest): Promise<t.TProjectResponse> {
+  return request.post(endpoints.projectsList(), payload);
+}
+
+export function getProject(projectId: string): Promise<t.TProjectResponse> {
+  return request.get(endpoints.projectById(projectId));
+}
+
+export function updateProject(
+  projectId: string,
+  payload: t.TUpdateProjectRequest,
+): Promise<t.TProjectResponse> {
+  return request.patch(endpoints.projectById(projectId), payload);
+}
+
+export function deleteProject(projectId: string): Promise<void> {
+  return request.delete(endpoints.projectById(projectId));
+}
+
+export function addConversationToProject(
+  projectId: string,
+  conversationId: string,
+): Promise<t.TProjectResponse> {
+  return request.post(endpoints.projectConversation(projectId, conversationId));
+}
+
+export function removeConversationFromProject(
+  projectId: string,
+  conversationId: string,
+): Promise<void> {
+  return request.delete(endpoints.projectConversation(projectId, conversationId));
+}
+
+export function getProjectMemory(projectId: string): Promise<s.TMemoryEntry[]> {
+  return request.get(endpoints.projectMemory(projectId));
+}
+
+export function addProjectMemory(
+  projectId: string,
+  payload: t.TAddMemoryRequest,
+): Promise<s.TMemoryEntry[]> {
+  return request.post(endpoints.projectMemory(projectId), payload);
+}
+
+export function updateProjectMemory(
+  projectId: string,
+  entryId: string,
+  payload: t.TUpdateMemoryRequest,
+): Promise<s.TMemoryEntry[]> {
+  return request.patch(endpoints.projectMemoryEntry(projectId, entryId), payload);
+}
+
+export function deleteProjectMemory(
+  projectId: string,
+  entryId: string,
+): Promise<s.TMemoryEntry[]> {
+  return request.delete(endpoints.projectMemoryEntry(projectId, entryId));
+}
+
+export function addFileToProject(
+  projectId: string,
+  fileId: string,
+): Promise<t.TProjectResponse> {
+  return request.post(endpoints.projectFile(projectId, fileId));
+}
+
+export function removeFileFromProject(
+  projectId: string,
+  fileId: string,
+): Promise<t.TProjectResponse> {
+  return request.delete(endpoints.projectFile(projectId, fileId));
 }

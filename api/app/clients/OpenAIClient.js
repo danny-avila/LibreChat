@@ -486,6 +486,43 @@ class OpenAIClient extends BaseClient {
       promptPrefix = `${promptPrefix ?? ''}\n${this.options.artifactsPrompt}`.trim();
     }
 
+    // Inject project memory into prompt prefix
+    if (this.options.projectMemory && Array.isArray(this.options.projectMemory) && this.options.projectMemory.length > 0) {
+      const memoryLines = this.options.projectMemory.map((entry) => `- ${entry.content}`).join('\n');
+      const memoryBlock = `Project Memory (key facts from previous conversations in this project):\n${memoryLines}`;
+      promptPrefix = promptPrefix ? `${memoryBlock}\n\n${promptPrefix}` : memoryBlock;
+    }
+
+    // Inject project files content into prompt prefix
+    if (this.options.projectFiles && Array.isArray(this.options.projectFiles) && this.options.projectFiles.length > 0) {
+      const textTypes = ['text/plain', 'text/markdown', 'application/json', 'text/csv', 'text/html', 'text/xml', 'application/xml'];
+      const textFiles = this.options.projectFiles.filter((f) => textTypes.some((t) => f.type?.startsWith(t)));
+      if (textFiles.length > 0) {
+        const fs = require('fs');
+        const path = require('path');
+        const fileBlocks = [];
+        const maxCharsPerFile = 5000;
+        for (const file of textFiles) {
+          try {
+            const filePath = path.join(process.cwd(), 'uploads', file.filepath?.replace(/^\/uploads\//, '') || '');
+            if (fs.existsSync(filePath)) {
+              let content = fs.readFileSync(filePath, 'utf-8');
+              if (content.length > maxCharsPerFile) {
+                content = content.substring(0, maxCharsPerFile) + '\n... (truncated)';
+              }
+              fileBlocks.push(`--- ${file.filename} ---\n${content}`);
+            }
+          } catch {
+            // Skip files that can't be read
+          }
+        }
+        if (fileBlocks.length > 0) {
+          const filesBlock = `Project Files:\n${fileBlocks.join('\n\n')}`;
+          promptPrefix = promptPrefix ? `${promptPrefix}\n\n${filesBlock}` : filesBlock;
+        }
+      }
+    }
+
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
 

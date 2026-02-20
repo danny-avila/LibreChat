@@ -58,6 +58,7 @@ export default function useChatFunctions({
   const codeArtifacts = useRecoilValue(store.codeArtifacts);
   const includeShadcnui = useRecoilValue(store.includeShadcnui);
   const customPromptMode = useRecoilValue(store.customPromptMode);
+  const activeProjectId = useRecoilValue(store.activeProjectId);
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const setFilesToDelete = useSetFilesToDelete();
@@ -258,6 +259,7 @@ export default function useChatFunctions({
       conversation: {
         ...conversation,
         conversationId,
+        ...(activeProjectId ? { projectId: activeProjectId } : {}),
       },
       endpointOption,
       userMessage: {

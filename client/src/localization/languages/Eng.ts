@@ -59,6 +59,8 @@ export default {
   com_sidepanel_hide_panel: 'Hide Panel',
   com_sidepanel_attach_files: 'Attach Files',
   com_sidepanel_manage_files: 'Manage Files',
+  com_sidepanel_project_memory: 'Project Memory',
+  com_sidepanel_project_files: 'Project Files',
   com_sidepanel_conversation_tags: 'Bookmarks',
   com_assistants_capabilities: 'Capabilities',
   com_assistants_file_search: 'File Search',

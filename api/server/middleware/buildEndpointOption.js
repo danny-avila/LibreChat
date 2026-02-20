@@ -11,7 +11,10 @@ const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
 const { getConvoFiles } = require('~/models/Conversation');
+const { getProjectMemory, getUserProjectById } = require('~/models/Project');
+const { getFiles } = require('~/models/File');
 const { handleError } = require('~/server/utils');
+const { logger } = require('~/config');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
@@ -99,6 +102,35 @@ async function buildEndpointOption(req, res, next) {
       // hold the promise
       req.body.endpointOption.attachments = processFiles(req.body.files);
     }
+
+    // Load project memory and files if projectId is present
+    const projectId = req.body.projectId;
+    if (projectId && req.user?.id) {
+      try {
+        const [memoryEntries, project] = await Promise.all([
+          getProjectMemory(projectId, req.user.id),
+          getUserProjectById(projectId, req.user.id),
+        ]);
+        if (memoryEntries.length > 0) {
+          req.body.endpointOption.projectMemory = memoryEntries;
+        }
+        req.body.endpointOption.projectId = projectId;
+
+        // Load project file metadata for injection
+        if (project?.fileIds?.length > 0) {
+          const projectFiles = await getFiles({
+            file_id: { $in: project.fileIds },
+            user: req.user.id,
+          });
+          if (projectFiles.length > 0) {
+            req.body.endpointOption.projectFiles = projectFiles;
+          }
+        }
+      } catch (err) {
+        logger.error('[buildEndpointOption] Error loading project data', err);
+      }
+    }
+
     next();
   } catch (error) {
     return handleError(res, { text: 'Error building endpoint option' });

@@ -21,6 +21,7 @@ export type ConversationListParams = {
   conversationId?: string;
   isArchived?: boolean;
   tags?: string[];
+  projectId?: string;
 };
 
 // Type for the response from the conversation list API

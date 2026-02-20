@@ -201,6 +201,29 @@ export type TTagConversationRequest = {
 };
 export type TTagConversationResponse = string[];
 
+// Project types
+export type TProjectsResponse = TProject[];
+export type TCreateProjectRequest = {
+  name: string;
+  description?: string;
+};
+export type TUpdateProjectRequest = {
+  name?: string;
+  description?: string;
+  isArchived?: boolean;
+};
+export type TProjectResponse = TProject;
+export type TAddMemoryRequest = {
+  content: string;
+  source?: 'auto' | 'manual';
+  extractedFrom?: string;
+  category?: string;
+};
+export type TUpdateMemoryRequest = {
+  content?: string;
+  category?: string;
+};
+
 export type TDuplicateConvoRequest = {
   conversationId?: string;
 };

@@ -1,6 +1,8 @@
 const throttle = require('lodash/throttle');
 const { getResponseSender, Constants, CacheKeys, Time } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
+const { extractMemoryFromExchange } = require('~/server/services/ProjectMemoryService');
+const { addConversationToProject } = require('~/models/Project');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { getLogStores } = require('~/cache');
 const { saveMessage } = require('~/models');
@@ -172,6 +174,23 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
         response,
         client,
       });
+    }
+
+    // Fire-and-forget: extract project memory and associate conversation
+    const projectId = req.body.projectId || endpointOption.projectId;
+    if (projectId && conversationId) {
+      addConversationToProject(projectId, user, conversationId).catch((err) =>
+        logger.error('[AskController] Error associating conversation with project', err),
+      );
+      extractMemoryFromExchange({
+        projectId,
+        user,
+        userMessage: text,
+        assistantMessage: response.text,
+        messageId: response.messageId,
+      }).catch((err) =>
+        logger.error('[AskController] Error extracting memory', err),
+      );
     }
   } catch (error) {
     const partialText = getText && getText();

@@ -1,15 +1,22 @@
-import { useState, useId } from 'react';
+import { useState, useId, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
 import * as Menu from '@ariakit/react/menu';
-import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
+import { Ellipsis, Share2, Copy, Archive, Pen, Trash, FolderInput } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { MouseEvent } from 'react';
 import { useLocalize, useArchiveHandler, useNavigateToConvo } from '~/hooks';
 import { useToastContext, useChatContext } from '~/Providers';
-import { useDuplicateConversationMutation } from '~/data-provider';
+import {
+  useDuplicateConversationMutation,
+  useGetProjectsQuery,
+  useAddConversationToProjectMutation,
+  useRemoveConversationFromProjectMutation,
+} from '~/data-provider';
 import { DropdownPopup } from '~/components/ui';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
+import store from '~/store';
 
 export default function ConvoOptions({
   conversationId,
@@ -36,6 +43,38 @@ export default function ConvoOptions({
   const { showToast } = useToastContext();
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const activeProjectId = useRecoilValue(store.activeProjectId);
+  const { data: projects } = useGetProjectsQuery();
+  const addToProject = useAddConversationToProjectMutation();
+  const removeFromProject = useRemoveConversationFromProjectMutation();
+  const [showMoveToProject, setShowMoveToProject] = useState(false);
+
+  const handleMoveToProject = useCallback(
+    (projectId: string | null) => {
+      if (!conversationId) {
+        return;
+      }
+      setIsPopoverActive(false);
+      setShowMoveToProject(false);
+
+      // Remove from current project if any
+      if (activeProjectId) {
+        removeFromProject.mutate({ projectId: activeProjectId, conversationId });
+      }
+
+      // Add to new project if specified
+      if (projectId) {
+        addToProject.mutate({ projectId, conversationId });
+      }
+
+      showToast({
+        message: projectId ? 'Moved to project' : 'Removed from project',
+        status: 'success',
+      });
+    },
+    [conversationId, activeProjectId, addToProject, removeFromProject, showToast, setIsPopoverActive],
+  );
 
   const duplicateConversation = useDuplicateConversationMutation({
     onSuccess: (data) => {
@@ -95,6 +134,28 @@ export default function ConvoOptions({
       onClick: duplicateHandler,
       icon: <Copy className="icon-sm mr-2 text-text-primary" />,
     },
+    {
+      label: 'Move to Project',
+      onClick: () => {
+        setShowMoveToProject(!showMoveToProject);
+      },
+      icon: <FolderInput className="icon-sm mr-2 text-text-primary" />,
+      show: projects && projects.length > 0,
+    },
+    ...(showMoveToProject && projects
+      ? [
+          {
+            label: '  No Project',
+            onClick: () => handleMoveToProject(null),
+            icon: <span className="icon-sm mr-2" />,
+          },
+          ...projects.map((project) => ({
+            label: `  ${project.name}`,
+            onClick: () => handleMoveToProject(project._id),
+            icon: <span className="icon-sm mr-2" />,
+          })),
+        ]
+      : []),
     {
       label: localize('com_ui_archive'),
       onClick: archiveHandler,

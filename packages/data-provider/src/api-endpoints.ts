@@ -33,10 +33,10 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
 export const conversationsRoot = '/api/convos';
 
-export const conversations = (pageNumber: string, isArchived?: boolean, tags?: string[]) =>
+export const conversations = (pageNumber: string, isArchived?: boolean, tags?: string[], projectId?: string) =>
   `${conversationsRoot}?pageNumber=${pageNumber}${
     isArchived === true ? '&isArchived=true' : ''
-  }${tags?.map((tag) => `&tags=${tag}`).join('')}`;
+  }${tags?.map((tag) => `&tags=${tag}`).join('')}${projectId ? `&projectId=${projectId}` : ''}`;
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
@@ -227,3 +227,15 @@ export const addTagToConversation = (conversationId: string) =>
 export const userTerms = () => '/api/user/terms';
 export const acceptUserTerms = () => '/api/user/terms/accept';
 export const banner = () => '/api/banner';
+
+/* Projects */
+const projectsRoot = '/api/projects';
+export const projectsList = () => projectsRoot;
+export const projectById = (projectId: string) => `${projectsRoot}/${projectId}`;
+export const projectConversation = (projectId: string, conversationId: string) =>
+  `${projectsRoot}/${projectId}/conversations/${conversationId}`;
+export const projectMemory = (projectId: string) => `${projectsRoot}/${projectId}/memory`;
+export const projectMemoryEntry = (projectId: string, entryId: string) =>
+  `${projectsRoot}/${projectId}/memory/${entryId}`;
+export const projectFile = (projectId: string, fileId: string) =>
+  `${projectsRoot}/${projectId}/files/${fileId}`;

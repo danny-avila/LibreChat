@@ -18,6 +18,7 @@ const roles = require('./roles');
 const oauth = require('./oauth');
 const files = require('./files');
 const share = require('./share');
+const projects = require('./projects');
 const tags = require('./tags');
 const auth = require('./auth');
 const edit = require('./edit');
@@ -54,4 +55,5 @@ module.exports = {
   categories,
   staticRoute,
   banner,
+  projects,
 };

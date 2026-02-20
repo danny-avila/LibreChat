@@ -40,8 +40,9 @@ router.get('/', async (req, res) => {
   } else {
     tags = undefined;
   }
+  const projectId = req.query.projectId || undefined;
 
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived, tags));
+  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived, tags, projectId));
 });
 
 router.get('/:conversationId', async (req, res) => {

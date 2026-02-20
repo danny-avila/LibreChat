@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { MessageSquareQuote, ArrowRightToLine, Settings2, Bookmark } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
+import { MessageSquareQuote, ArrowRightToLine, Settings2, Bookmark, Brain, FolderOpen } from 'lucide-react';
 import {
   isAssistantsEndpoint,
   isAgentsEndpoint,
@@ -11,6 +12,8 @@ import {
 import type { TConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
+import ProjectMemoryPanel from '~/components/SidePanel/ProjectMemory/Panel';
+import ProjectFilesPanel from '~/components/SidePanel/ProjectFiles/Panel';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
@@ -18,6 +21,7 @@ import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { Blocks, AttachmentIcon } from '~/components/svg';
 import { useHasAccess } from '~/hooks';
+import store from '~/store';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -52,6 +56,7 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.CREATE,
   });
+  const activeProjectId = useRecoilValue(store.activeProjectId);
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
@@ -121,6 +126,23 @@ export default function useSideNavLinks({
       Component: FilesPanel,
     });
 
+    if (activeProjectId) {
+      links.push({
+        title: 'com_sidepanel_project_memory',
+        label: '',
+        icon: Brain,
+        id: 'project-memory',
+        Component: ProjectMemoryPanel,
+      });
+      links.push({
+        title: 'com_sidepanel_project_files',
+        label: '',
+        icon: FolderOpen,
+        id: 'project-files',
+        Component: ProjectFilesPanel,
+      });
+    }
+
     if (hasAccessToBookmarks) {
       links.push({
         title: 'com_sidepanel_conversation_tags',
@@ -151,6 +173,7 @@ export default function useSideNavLinks({
     hasAccessToPrompts,
     hasAccessToBookmarks,
     hasAccessToCreateAgents,
+    activeProjectId,
     hidePanel,
   ]);
 

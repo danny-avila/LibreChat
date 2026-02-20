@@ -18,11 +18,14 @@ export default function createPayload(submission: t.TSubmission) {
     server = server.replace('/ask/', '/edit/');
   }
 
+  const projectId = (conversation as Record<string, unknown>)?.projectId as string | undefined;
+
   const payload: t.TPayload = {
     ...userMessage,
     ...endpointOption,
     isContinued: !!(isEdited && isContinued),
     conversationId,
+    ...(projectId ? { projectId } : {}),
   };
 
   return { server, payload };

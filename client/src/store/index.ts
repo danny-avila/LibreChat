@@ -12,6 +12,7 @@ import preset from './preset';
 import prompts from './prompts';
 import lang from './language';
 import settings from './settings';
+import projects from './projects';
 import banner from './banner';
 export default {
   ...artifacts,
@@ -28,5 +29,6 @@ export default {
   ...preset,
   ...lang,
   ...settings,
+  ...projects,
   ...banner,
 };

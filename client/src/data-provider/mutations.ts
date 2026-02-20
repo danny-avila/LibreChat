@@ -1133,3 +1133,222 @@ export const useAcceptTermsMutation = (
     onMutate: options?.onMutate,
   });
 };
+
+/**
+ * PROJECTS
+ */
+
+export const useCreateProjectMutation = (
+  options?: t.MutationOptions<t.TProjectResponse, t.TCreateProjectRequest>,
+): UseMutationResult<t.TProjectResponse, unknown, t.TCreateProjectRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+  return useMutation(
+    (payload: t.TCreateProjectRequest) => dataService.createProject(payload),
+    {
+      ...rest,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.projects]);
+        onSuccess?.(...args);
+      },
+    },
+  );
+};
+
+export const useUpdateProjectMutation = (
+  options?: t.MutationOptions<t.TProjectResponse, { projectId: string } & t.TUpdateProjectRequest>,
+): UseMutationResult<
+  t.TProjectResponse,
+  unknown,
+  { projectId: string } & t.TUpdateProjectRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+  return useMutation(
+    ({ projectId, ...payload }: { projectId: string } & t.TUpdateProjectRequest) =>
+      dataService.updateProject(projectId, payload),
+    {
+      ...rest,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.projects]);
+        queryClient.invalidateQueries([QueryKeys.project, args[1].projectId]);
+        onSuccess?.(...args);
+      },
+    },
+  );
+};
+
+export const useDeleteProjectMutation = (
+  options?: t.MutationOptions<void, string>,
+): UseMutationResult<void, unknown, string, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+  return useMutation((projectId: string) => dataService.deleteProject(projectId), {
+    ...rest,
+    onSuccess: (...args) => {
+      queryClient.invalidateQueries([QueryKeys.projects]);
+      onSuccess?.(...args);
+    },
+  });
+};
+
+export const useAddProjectMemoryMutation = (
+  options?: t.MutationOptions<t.TMemoryEntry[], { projectId: string } & t.TAddMemoryRequest>,
+): UseMutationResult<
+  t.TMemoryEntry[],
+  unknown,
+  { projectId: string } & t.TAddMemoryRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+  return useMutation(
+    ({ projectId, ...payload }: { projectId: string } & t.TAddMemoryRequest) =>
+      dataService.addProjectMemory(projectId, payload),
+    {
+      ...rest,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.projectMemory, args[1].projectId]);
+        queryClient.invalidateQueries([QueryKeys.project, args[1].projectId]);
+        onSuccess?.(...args);
+      },
+    },
+  );
+};
+
+export const useUpdateProjectMemoryMutation = (
+  options?: t.MutationOptions<
+    t.TMemoryEntry[],
+    { projectId: string; entryId: string } & t.TUpdateMemoryRequest
+  >,
+): UseMutationResult<
+  t.TMemoryEntry[],
+  unknown,
+  { projectId: string; entryId: string } & t.TUpdateMemoryRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+  return useMutation(
+    ({
+      projectId,
+      entryId,
+      ...payload
+    }: { projectId: string; entryId: string } & t.TUpdateMemoryRequest) =>
+      dataService.updateProjectMemory(projectId, entryId, payload),
+    {
+      ...rest,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.projectMemory, args[1].projectId]);
+        onSuccess?.(...args);
+      },
+    },
+  );
+};
+
+export const useDeleteProjectMemoryMutation = (
+  options?: t.MutationOptions<t.TMemoryEntry[], { projectId: string; entryId: string }>,
+): UseMutationResult<
+  t.TMemoryEntry[],
+  unknown,
+  { projectId: string; entryId: string },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+  return useMutation(
+    ({ projectId, entryId }: { projectId: string; entryId: string }) =>
+      dataService.deleteProjectMemory(projectId, entryId),
+    {
+      ...rest,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.projectMemory, args[1].projectId]);
+        onSuccess?.(...args);
+      },
+    },
+  );
+};
+
+export const useAddConversationToProjectMutation = (
+  options?: t.MutationOptions<t.TProjectResponse, { projectId: string; conversationId: string }>,
+): UseMutationResult<
+  t.TProjectResponse,
+  unknown,
+  { projectId: string; conversationId: string },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+  return useMutation(
+    ({ projectId, conversationId }: { projectId: string; conversationId: string }) =>
+      dataService.addConversationToProject(projectId, conversationId),
+    {
+      ...rest,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.projects]);
+        queryClient.invalidateQueries([QueryKeys.project, args[1].projectId]);
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
+        onSuccess?.(...args);
+      },
+    },
+  );
+};
+
+export const useRemoveConversationFromProjectMutation = (
+  options?: t.MutationOptions<void, { projectId: string; conversationId: string }>,
+): UseMutationResult<void, unknown, { projectId: string; conversationId: string }, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+  return useMutation(
+    ({ projectId, conversationId }: { projectId: string; conversationId: string }) =>
+      dataService.removeConversationFromProject(projectId, conversationId),
+    {
+      ...rest,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.projects]);
+        queryClient.invalidateQueries([QueryKeys.project, args[1].projectId]);
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
+        onSuccess?.(...args);
+      },
+    },
+  );
+};
+
+export const useAddFileToProjectMutation = (
+  options?: t.MutationOptions<t.TProjectResponse, { projectId: string; fileId: string }>,
+): UseMutationResult<t.TProjectResponse, unknown, { projectId: string; fileId: string }, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+  return useMutation(
+    ({ projectId, fileId }: { projectId: string; fileId: string }) =>
+      dataService.addFileToProject(projectId, fileId),
+    {
+      ...rest,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.projects]);
+        queryClient.invalidateQueries([QueryKeys.project, args[1].projectId]);
+        onSuccess?.(...args);
+      },
+    },
+  );
+};
+
+export const useRemoveFileFromProjectMutation = (
+  options?: t.MutationOptions<t.TProjectResponse, { projectId: string; fileId: string }>,
+): UseMutationResult<t.TProjectResponse, unknown, { projectId: string; fileId: string }, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options || {};
+  return useMutation(
+    ({ projectId, fileId }: { projectId: string; fileId: string }) =>
+      dataService.removeFileFromProject(projectId, fileId),
+    {
+      ...rest,
+      onSuccess: (...args) => {
+        queryClient.invalidateQueries([QueryKeys.projects]);
+        queryClient.invalidateQueries([QueryKeys.project, args[1].projectId]);
+        onSuccess?.(...args);
+      },
+    },
+  );
+};

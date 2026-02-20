@@ -116,7 +116,11 @@ export const useConversationsInfiniteQuery = (
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
   return useInfiniteQuery<ConversationListResponse, unknown>(
-    params?.isArchived === true ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
+    params?.isArchived === true
+      ? [QueryKeys.archivedConversations]
+      : params?.projectId
+        ? [QueryKeys.allConversations, params.projectId]
+        : [QueryKeys.allConversations],
     ({ pageParam = '' }) =>
       dataService.listConversations({
         ...params,
@@ -527,4 +531,53 @@ export const useUserTermsQuery = (
     refetchOnMount: false,
     ...config,
   });
+};
+
+/**
+ * PROJECTS
+ */
+
+export const useGetProjectsQuery = (
+  config?: UseQueryOptions<t.TProjectsResponse>,
+): QueryObserverResult<t.TProjectsResponse> => {
+  return useQuery<t.TProjectsResponse>(
+    [QueryKeys.projects],
+    () => dataService.getProjects(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetProjectQuery = (
+  projectId: string | null,
+  config?: UseQueryOptions<t.TProjectResponse>,
+): QueryObserverResult<t.TProjectResponse> => {
+  return useQuery<t.TProjectResponse>(
+    [QueryKeys.project, projectId],
+    () => dataService.getProject(projectId!),
+    {
+      enabled: !!projectId,
+      refetchOnWindowFocus: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetProjectMemoryQuery = (
+  projectId: string | null,
+  config?: UseQueryOptions<t.TMemoryEntry[]>,
+): QueryObserverResult<t.TMemoryEntry[]> => {
+  return useQuery<t.TMemoryEntry[]>(
+    [QueryKeys.projectMemory, projectId],
+    () => dataService.getProjectMemory(projectId!),
+    {
+      enabled: !!projectId,
+      refetchOnWindowFocus: false,
+      ...config,
+    },
+  );
 };

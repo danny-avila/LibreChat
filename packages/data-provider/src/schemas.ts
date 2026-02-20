@@ -671,6 +671,32 @@ export const tConversationTagSchema = z.object({
 });
 export type TConversationTag = z.infer<typeof tConversationTagSchema>;
 
+export const tMemoryEntrySchema = z.object({
+  entryId: z.string(),
+  content: z.string(),
+  source: z.enum(['auto', 'manual']),
+  extractedFrom: z.string().nullable(),
+  category: z.string(),
+  createdAt: z.string(),
+});
+export type TMemoryEntry = z.infer<typeof tMemoryEntrySchema>;
+
+export const tProjectSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  user: z.string(),
+  description: z.string().optional(),
+  conversationIds: z.array(z.string()).optional(),
+  fileIds: z.array(z.string()).optional(),
+  memoryEntries: z.array(tMemoryEntrySchema).optional(),
+  promptGroupIds: z.array(z.string()).optional(),
+  agentIds: z.array(z.string()).optional(),
+  isArchived: z.boolean().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type TProject = z.infer<typeof tProjectSchema>;
+
 export const googleSchema = tConversationSchema
   .pick({
     model: true,

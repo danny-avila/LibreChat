@@ -15,6 +15,7 @@ import {
 } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
+import ProjectSelector from './ProjectSelector';
 import BookmarkNav from './Bookmarks/BookmarkNav';
 import AccountSettings from './AccountSettings';
 import { useSearchContext } from '~/Providers';
@@ -74,20 +75,22 @@ const Nav = ({
   const { refreshConversations } = useConversations();
   const { pageNumber, searchQuery, setPageNumber, searchQueryRes } = useSearchContext();
   const [tags, setTags] = useState<string[]>([]);
+  const activeProjectId = useRecoilValue(store.activeProjectId);
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
     useConversationsInfiniteQuery(
       {
         pageNumber: pageNumber.toString(),
         isArchived: false,
         tags: tags.length === 0 ? undefined : tags,
+        projectId: activeProjectId ?? undefined,
       },
       { enabled: isAuthenticated },
     );
   useEffect(() => {
-    // When a tag is selected, refetch the list of conversations related to that tag
+    // When a tag is selected or project changes, refetch the list of conversations
     refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tags]);
+  }, [tags, activeProjectId]);
   const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
     setShowLoading,
     hasNextPage: searchQuery ? searchQueryRes?.hasNextPage : hasNextPage,
@@ -173,6 +176,8 @@ const Nav = ({
                       isSmallScreen={isSmallScreen}
                       subHeaders={
                         <>
+                          <div className="mt-1.5" />
+                          <ProjectSelector isSmallScreen={isSmallScreen} />
                           {isSearchEnabled === true && (
                             <SearchBar clearSearch={clearSearch} isSmallScreen={isSmallScreen} />
                           )}
