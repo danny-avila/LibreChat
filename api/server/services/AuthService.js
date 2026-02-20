@@ -485,7 +485,8 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       expires: expirationDate,
       httpOnly: true,
       secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
+      sameSite: COOKIE_DOMAIN?.startsWith('.') ? 'lax' : 'strict',
+      ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     });
 
     /** Store tokens server-side in session to avoid large cookies */
@@ -517,7 +518,8 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
           expires: expirationDate,
           httpOnly: true,
           secure: shouldUseSecureCookie(),
-          sameSite: 'strict',
+          sameSite: COOKIE_DOMAIN?.startsWith('.') ? 'lax' : 'strict',
+          ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
         });
       }
     }
