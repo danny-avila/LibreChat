@@ -7,10 +7,10 @@ const {
   isUUID,
   CacheKeys,
   FileSources,
-  SystemRoles,
   ResourceType,
   EModelEndpoint,
   PermissionBits,
+  SystemCapabilities,
   checkOpenAIStorage,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
@@ -28,6 +28,7 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { cleanFileName } = require('~/server/utils/files');
+const { hasCapability } = require('~/server/middleware');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
 const db = require('~/models');
@@ -389,8 +390,9 @@ router.post('/', async (req, res) => {
     if (metadata.agent_id && metadata.tool_resource && !isMessageAttachment) {
       const userId = req.user.id;
 
-      /** Admin users bypass permission checks */
-      if (req.user.role !== SystemRoles.ADMIN) {
+      /** Users with MANAGE_AGENTS capability bypass permission checks */
+      const hasManageAgents = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
+      if (!hasManageAgents) {
         const agent = await db.getAgent({ id: metadata.agent_id });
 
         if (!agent) {

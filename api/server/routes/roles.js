@@ -3,6 +3,7 @@ const {
   SystemRoles,
   roleDefaults,
   PermissionTypes,
+  SystemCapabilities,
   agentPermissionsSchema,
   promptPermissionsSchema,
   memoryPermissionsSchema,
@@ -11,11 +12,12 @@ const {
   peoplePickerPermissionsSchema,
   remoteAgentsPermissionsSchema,
 } = require('librechat-data-provider');
-const { checkAdmin, requireJwtAuth } = require('~/server/middleware');
+const { hasCapability, requireCapability, requireJwtAuth } = require('~/server/middleware');
 const { updateRoleByName, getRoleByName } = require('~/models');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+const manageRoles = requireCapability(SystemCapabilities.MANAGE_ROLES);
 
 /**
  * Permission configuration mapping
@@ -111,10 +113,8 @@ router.get('/:roleName', async (req, res) => {
   // TODO: TEMP, use a better parsing for roleName
   const roleName = _r.toUpperCase();
 
-  if (
-    (req.user.role !== SystemRoles.ADMIN && roleName === SystemRoles.ADMIN) ||
-    (req.user.role !== SystemRoles.ADMIN && !roleDefaults[roleName])
-  ) {
+  const hasReadRoles = await hasCapability(req.user, SystemCapabilities.READ_ROLES);
+  if (!hasReadRoles && (roleName === SystemRoles.ADMIN || !roleDefaults[roleName])) {
     return res.status(403).send({ message: 'Unauthorized' });
   }
 
@@ -134,42 +134,42 @@ router.get('/:roleName', async (req, res) => {
  * PUT /api/roles/:roleName/prompts
  * Update prompt permissions for a specific role
  */
-router.put('/:roleName/prompts', checkAdmin, createPermissionUpdateHandler('prompts'));
+router.put('/:roleName/prompts', manageRoles, createPermissionUpdateHandler('prompts'));
 
 /**
  * PUT /api/roles/:roleName/agents
  * Update agent permissions for a specific role
  */
-router.put('/:roleName/agents', checkAdmin, createPermissionUpdateHandler('agents'));
+router.put('/:roleName/agents', manageRoles, createPermissionUpdateHandler('agents'));
 
 /**
  * PUT /api/roles/:roleName/memories
  * Update memory permissions for a specific role
  */
-router.put('/:roleName/memories', checkAdmin, createPermissionUpdateHandler('memories'));
+router.put('/:roleName/memories', manageRoles, createPermissionUpdateHandler('memories'));
 
 /**
  * PUT /api/roles/:roleName/people-picker
  * Update people picker permissions for a specific role
  */
-router.put('/:roleName/people-picker', checkAdmin, createPermissionUpdateHandler('people-picker'));
+router.put('/:roleName/people-picker', manageRoles, createPermissionUpdateHandler('people-picker'));
 
 /**
  * PUT /api/roles/:roleName/mcp-servers
  * Update MCP servers permissions for a specific role
  */
-router.put('/:roleName/mcp-servers', checkAdmin, createPermissionUpdateHandler('mcp-servers'));
+router.put('/:roleName/mcp-servers', manageRoles, createPermissionUpdateHandler('mcp-servers'));
 
 /**
  * PUT /api/roles/:roleName/marketplace
  * Update marketplace permissions for a specific role
  */
-router.put('/:roleName/marketplace', checkAdmin, createPermissionUpdateHandler('marketplace'));
+router.put('/:roleName/marketplace', manageRoles, createPermissionUpdateHandler('marketplace'));
 
 /**
  * PUT /api/roles/:roleName/remote-agents
  * Update remote agents (API) permissions for a specific role
  */
-router.put('/:roleName/remote-agents', checkAdmin, createPermissionUpdateHandler('remote-agents'));
+router.put('/:roleName/remote-agents', manageRoles, createPermissionUpdateHandler('remote-agents'));
 
 module.exports = router;
