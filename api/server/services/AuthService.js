@@ -406,14 +406,14 @@ const setAuthTokens = async (userId, res, _session = null) => {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
       secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
+      sameSite: COOKIE_DOMAIN?.startsWith('.') ? 'lax' : 'strict',
       ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     });
     res.cookie('token_provider', 'librechat', {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
       secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
+      sameSite: COOKIE_DOMAIN?.startsWith('.') ? 'lax' : 'strict',
       ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     });
     return token;
@@ -502,14 +502,14 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         expires: expirationDate,
         httpOnly: true,
         secure: shouldUseSecureCookie(),
-        sameSite: 'strict',
+        sameSite: COOKIE_DOMAIN?.startsWith('.') ? 'lax' : 'strict',
         ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
       });
       res.cookie('openid_access_token', tokenset.access_token, {
         expires: expirationDate,
         httpOnly: true,
         secure: shouldUseSecureCookie(),
-        sameSite: 'strict',
+        sameSite: COOKIE_DOMAIN?.startsWith('.') ? 'lax' : 'strict',
         ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
       });
       if (tokenset.id_token) {
@@ -527,7 +527,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       expires: expirationDate,
       httpOnly: true,
       secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
+      sameSite: COOKIE_DOMAIN?.startsWith('.') ? 'lax' : 'strict',
       ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     });
     if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
@@ -539,7 +539,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         expires: expirationDate,
         httpOnly: true,
         secure: shouldUseSecureCookie(),
-        sameSite: 'strict',
+        sameSite: COOKIE_DOMAIN?.startsWith('.') ? 'lax' : 'strict',
         ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
       });
     }
