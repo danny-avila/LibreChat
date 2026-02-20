@@ -15,6 +15,7 @@ export const SystemCapabilities = {
   READ_USAGE: 'read:usage',
   READ_AGENTS: 'read:agents',
   MANAGE_AGENTS: 'manage:agents',
+  MANAGE_MCP_SERVERS: 'manage:mcpservers',
   READ_PROMPTS: 'read:prompts',
   MANAGE_PROMPTS: 'manage:prompts',
   MANAGE_ASSISTANTS: 'manage:assistants',
@@ -31,7 +32,7 @@ export type SystemCapability = (typeof SystemCapabilities)[keyof typeof SystemCa
 export const ResourceCapabilityMap: Record<ResourceType, SystemCapability> = {
   [ResourceType.AGENT]: SystemCapabilities.MANAGE_AGENTS,
   [ResourceType.PROMPTGROUP]: SystemCapabilities.MANAGE_PROMPTS,
-  [ResourceType.MCPSERVER]: SystemCapabilities.MANAGE_AGENTS,
+  [ResourceType.MCPSERVER]: SystemCapabilities.MANAGE_MCP_SERVERS,
   [ResourceType.REMOTE_AGENT]: SystemCapabilities.MANAGE_AGENTS,
 };
 
