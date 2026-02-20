@@ -15,6 +15,7 @@ if (typeof Request === 'undefined') {
 function CaptureState() {
   const location = useLocation();
   (window as any).__capturedState = location.state;
+  // eslint-disable-next-line i18next/no-literal-string
   return <div data-testid="chat-page">Chat</div>;
 }
 

@@ -148,8 +148,6 @@ export function useMCPServerForm({
 
   // Watch URL for auto-fill
   const watchedUrl = watch('url');
-  const watchedTitle = watch('title');
-
   // Auto-fill title from URL when title is empty
   const handleUrlChange = useCallback(
     (url: string) => {
