@@ -3,18 +3,18 @@ import { useMCPDeepLink, useHasAccess } from '~/hooks';
 import MCPServerDialog from './MCPServerDialog';
 
 export default function MCPDeepLinkDialog() {
-	const { isOpen, initialValues, onOpenChange } = useMCPDeepLink();
+  const { isOpen, initialValues, onOpenChange } = useMCPDeepLink();
 
-	const hasCreateAccess = useHasAccess({
-		permissionType: PermissionTypes.MCP_SERVERS,
-		permission: Permissions.CREATE,
-	});
+  const hasCreateAccess = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.CREATE,
+  });
 
-	if (!hasCreateAccess || !initialValues) {
-		return null;
-	}
+  if (!hasCreateAccess || !initialValues) {
+    return null;
+  }
 
-	return (
-		<MCPServerDialog open={isOpen} onOpenChange={onOpenChange} initialValues={initialValues} />
-	);
+  return (
+    <MCPServerDialog open={isOpen} onOpenChange={onOpenChange} initialValues={initialValues} />
+  );
 }
