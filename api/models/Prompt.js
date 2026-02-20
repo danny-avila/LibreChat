@@ -380,10 +380,7 @@ const getOwnedPromptGroupIds = async (author) => {
       logger.warn('getOwnedPromptGroupIds called with invalid author', { author });
       return [];
     }
-    const groups = await PromptGroup.find(
-      { author: new ObjectId(author) },
-      { _id: 1 },
-    ).lean();
+    const groups = await PromptGroup.find({ author: new ObjectId(author) }, { _id: 1 }).lean();
     return groups.map((g) => g._id);
   } catch (error) {
     logger.error('Error getting owned prompt group IDs', error);
