@@ -23,6 +23,7 @@ function njContentSecurityPolicy() {
         'https://*.g.doubleclick.net',
         'https://*.google.com',
         'https://*.nj.gov',
+        'https://*.s3.us-east-1.amazonaws.com',
         'blob:',
         'data:',
       ],
