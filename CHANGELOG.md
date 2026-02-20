@@ -2,11 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-
-
-
-
-
 ## [Unreleased]
 
 ### ✨ New Features
@@ -18,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - 📊 feat: Improve Helm Chart by **@hofq** in [#3638](https://github.com/danny-avila/LibreChat/pull/3638)
 - 🦾 feat: Claude-4 Support by **@danny-avila** in [#7509](https://github.com/danny-avila/LibreChat/pull/7509)
 - 🪨 feat: Bedrock Support for Claude-4 Reasoning by **@danny-avila** in [#7517](https://github.com/danny-avila/LibreChat/pull/7517)
+- 🔗 feat: Add MCP Server Deeplink URL (`/mcps/add?name=...&url=...&transport=...`) to prefill the Add MCP Server dialog
 
 ### 🌍 Internationalization
 
@@ -47,10 +43,9 @@ All notable changes to this project will be documented in this file.
 - 📊 chore: Remove Old Helm Chart by **@hofq** in [#7512](https://github.com/danny-avila/LibreChat/pull/7512)
 - 🪖 chore: bump helm app version to v0.7.8 by **@austin-barrington** in [#7524](https://github.com/danny-avila/LibreChat/pull/7524)
 
-
-
 ---
-## [v0.7.8] - 
+
+## [v0.7.8] -
 
 Changes from v0.7.8-rc1 to v0.7.8.
 
@@ -83,14 +78,13 @@ Changes from v0.7.8-rc1 to v0.7.8.
 - 💬 refactor: MCP Chat Visibility Option, Google Rates, Remove OpenAPI Plugins by **@danny-avila** in [#7286](https://github.com/danny-avila/LibreChat/pull/7286)
 - 📜 docs: Unreleased Changelog by **@github-actions[bot]** in [#7214](https://github.com/danny-avila/LibreChat/pull/7214)
 
-
-
 [See full release details][release-v0.7.8]
 
 [release-v0.7.8]: https://github.com/danny-avila/LibreChat/releases/tag/v0.7.8
 
 ---
-## [v0.7.8-rc1] - 
+
+## [v0.7.8-rc1] -
 
 Changes from v0.7.7 to v0.7.8-rc1.
 
@@ -126,7 +120,7 @@ Changes from v0.7.7 to v0.7.8-rc1.
 - 🐳 feat: Add Jemalloc and UV to Docker Builds by **@danny-avila** in [#6836](https://github.com/danny-avila/LibreChat/pull/6836)
 - 🤖 feat: GPT-4.1 by **@danny-avila** in [#6880](https://github.com/danny-avila/LibreChat/pull/6880)
 - 👋 feat: remove Edge TTS by **@berry-13** in [#6885](https://github.com/danny-avila/LibreChat/pull/6885)
-- feat: nav optimization  by **@berry-13** in [#5785](https://github.com/danny-avila/LibreChat/pull/5785)
+- feat: nav optimization by **@berry-13** in [#5785](https://github.com/danny-avila/LibreChat/pull/5785)
 - 🗺️ feat: Add Parameter Location Mapping for OpenAPI actions by **@peeeteeer** in [#6858](https://github.com/danny-avila/LibreChat/pull/6858)
 - 🤖 feat: Support `o4-mini` and `o3` Models by **@danny-avila** in [#6928](https://github.com/danny-avila/LibreChat/pull/6928)
 - 🎨 feat: OpenAI Image Tools (GPT-Image-1) by **@danny-avila** in [#7079](https://github.com/danny-avila/LibreChat/pull/7079)
@@ -226,8 +220,6 @@ Changes from v0.7.7 to v0.7.8-rc1.
 - 🪶 refactor: Chat Input Focus for Conversation Navigations & ChatForm Optimizations by **@danny-avila** in [#7100](https://github.com/danny-avila/LibreChat/pull/7100)
 - 🔃 refactor: Streamline Navigation, Message Loading UX by **@danny-avila** in [#7118](https://github.com/danny-avila/LibreChat/pull/7118)
 - 📜 docs: Unreleased changelog by **@github-actions[bot]** in [#6265](https://github.com/danny-avila/LibreChat/pull/6265)
-
-
 
 [See full release details][release-v0.7.8-rc1]
 
