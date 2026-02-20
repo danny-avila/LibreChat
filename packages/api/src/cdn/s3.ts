@@ -34,7 +34,7 @@ export const initializeS3 = (): S3Client | null => {
 
   const config = {
     region,
-    forcePathStyle: forcePathStyle, // Enable path-style addressing
+    forcePathStyle, // Conditionally enable path-style addressing
     // Conditionally add the endpoint if it is provided
     ...(endpoint ? { endpoint } : {}),
   };
