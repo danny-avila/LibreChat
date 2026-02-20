@@ -57,7 +57,7 @@ const commonTags = {
   Environment: tagEnv,
   Agency: "997",
   Org: "0005",
-  CloudPortfolioId: "0293"
+  CloudPortfolioID: "0293"
 };
 
 function applyTags(stack: cdk.Stack) {
