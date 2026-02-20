@@ -107,7 +107,10 @@ export default function Root() {
                     </div>
                   </div>
                 </div>
-                <feedback-widget show-comment-disclaimer="false" skip-email-step="true" />
+                {/* For small screens, the widget blocks too much content, so hide then */}
+                <div className="hidden md:block">
+                  <feedback-widget show-comment-disclaimer="false" skip-email-step="true" />
+                </div>
               </div>
             </PromptGroupsProvider>
           </AgentsMapContext.Provider>
