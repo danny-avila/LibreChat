@@ -1,7 +1,12 @@
 import { logger } from '@librechat/data-schemas';
-import type { Types } from 'mongoose';
+import {
+  configCapability,
+  SystemCapabilities,
+  readConfigCapability,
+} from 'librechat-data-provider';
+import type { SystemCapability, ConfigSection } from 'librechat-data-provider';
 import type { NextFunction, Response } from 'express';
-import type { SystemCapability } from 'librechat-data-provider';
+import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types/http';
 
 interface ResolvedPrincipal {
@@ -33,6 +38,12 @@ export type RequireCapabilityFn = (
   capability: SystemCapability,
 ) => (req: ServerRequest, res: Response, next: NextFunction) => Promise<unknown>;
 
+export type HasConfigCapabilityFn = (
+  user: CapabilityUser,
+  section: ConfigSection,
+  verb?: 'manage' | 'read',
+) => Promise<boolean>;
+
 /**
  * Factory that creates `hasCapability` and `requireCapability` with injected
  * database methods. Follows the same dependency-injection pattern as
@@ -41,6 +52,7 @@ export type RequireCapabilityFn = (
 export function generateCapabilityCheck(deps: CapabilityDeps): {
   hasCapability: HasCapabilityFn;
   requireCapability: RequireCapabilityFn;
+  hasConfigCapability: HasConfigCapabilityFn;
 } {
   const { getUserPrincipals, hasCapabilityForPrincipals } = deps;
 
@@ -50,6 +62,26 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
   ): Promise<boolean> {
     const principals = await getUserPrincipals({ userId: user.id, role: user.role });
     return hasCapabilityForPrincipals({ principals, capability, tenantId: user.tenantId });
+  }
+
+  /**
+   * Checks if a user can manage or read a specific config section.
+   * First checks the broad capability (manage:configs / read:configs),
+   * then falls back to the section-specific capability (manage:configs:<section>).
+   */
+  async function hasConfigCapability(
+    user: CapabilityUser,
+    section: ConfigSection,
+    verb: 'manage' | 'read' = 'manage',
+  ): Promise<boolean> {
+    const broadCap =
+      verb === 'manage' ? SystemCapabilities.MANAGE_CONFIGS : SystemCapabilities.READ_CONFIGS;
+    if (await hasCapability(user, broadCap)) {
+      return true;
+    }
+    const sectionCap =
+      verb === 'manage' ? configCapability(section) : readConfigCapability(section);
+    return hasCapability(user, sectionCap);
   }
 
   function requireCapability(capability: SystemCapability) {
@@ -77,5 +109,5 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     };
   }
 
-  return { hasCapability, requireCapability };
+  return { hasCapability, requireCapability, hasConfigCapability };
 }
