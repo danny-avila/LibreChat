@@ -516,7 +516,7 @@ describe('canAccessMCPServerResource middleware', () => {
       });
     });
 
-    test('should allow users with MANAGE_AGENTS capability to bypass permission checks', async () => {
+    test('should allow users with MANAGE_MCP_SERVERS capability to bypass permission checks', async () => {
       const { SystemRoles } = require('librechat-data-provider');
 
       // Create an MCP server owned by another user
@@ -536,11 +536,11 @@ describe('canAccessMCPServerResource middleware', () => {
         author: otherUser._id,
       });
 
-      // Seed MANAGE_AGENTS capability for the ADMIN role
+      // Seed MANAGE_MCP_SERVERS capability for the ADMIN role
       await SystemGrant.create({
         principalType: PrincipalType.ROLE,
         principalId: SystemRoles.ADMIN,
-        capability: SystemCapabilities.MANAGE_AGENTS,
+        capability: SystemCapabilities.MANAGE_MCP_SERVERS,
         grantedAt: new Date(),
       });
 
