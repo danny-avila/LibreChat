@@ -376,7 +376,14 @@ async function getListPromptGroupsByAccess({
  */
 const getOwnedPromptGroupIds = async (author) => {
   try {
-    const groups = await PromptGroup.find({ author }, { _id: 1 }).lean();
+    if (!author || !ObjectId.isValid(author)) {
+      logger.warn('getOwnedPromptGroupIds called with invalid author', { author });
+      return [];
+    }
+    const groups = await PromptGroup.find(
+      { author: new ObjectId(author) },
+      { _id: 1 },
+    ).lean();
     return groups.map((g) => g._id);
   } catch (error) {
     logger.error('Error getting owned prompt group IDs', error);
@@ -567,7 +574,7 @@ module.exports = {
       return group;
     } catch (error) {
       logger.error('Error getting prompt group', error);
-      return { message: 'Error getting prompt group' };
+      return null;
     }
   },
   /**
