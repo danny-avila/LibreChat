@@ -9,6 +9,7 @@ const {
   AccessRoleIds,
   PrincipalType,
   PermissionBits,
+  SystemCapabilities,
 } = require('librechat-data-provider');
 
 // Mock modules before importing
@@ -35,6 +36,7 @@ jest.mock('~/models', () => {
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
+  hasCapability: jest.requireActual('~/server/middleware').hasCapability,
   canAccessPromptViaGroup: jest.requireActual('~/server/middleware').canAccessPromptViaGroup,
   canAccessPromptGroupResource:
     jest.requireActual('~/server/middleware').canAccessPromptGroupResource,
@@ -43,7 +45,7 @@ jest.mock('~/server/middleware', () => ({
 let app;
 let mongoServer;
 let promptRoutes;
-let Prompt, PromptGroup, AclEntry, AccessRole, User;
+let Prompt, PromptGroup, AclEntry, AccessRole, User, SystemGrant;
 let testUsers, testRoles;
 let grantPermission;
 let currentTestUser; // Track current user for middleware
@@ -65,6 +67,7 @@ beforeAll(async () => {
   AclEntry = dbModels.AclEntry;
   AccessRole = dbModels.AccessRole;
   User = dbModels.User;
+  SystemGrant = dbModels.SystemGrant;
 
   // Import permission service
   const permissionService = require('~/server/services/PermissionService');
@@ -164,6 +167,22 @@ async function setupTestData() {
       role: SystemRoles.ADMIN,
     }),
   };
+
+  // Seed capabilities for the ADMIN role
+  await SystemGrant.create([
+    {
+      principalType: PrincipalType.ROLE,
+      principalId: SystemRoles.ADMIN,
+      capability: SystemCapabilities.MANAGE_PROMPTS,
+      grantedAt: new Date(),
+    },
+    {
+      principalType: PrincipalType.ROLE,
+      principalId: SystemRoles.ADMIN,
+      capability: SystemCapabilities.READ_PROMPTS,
+      grantedAt: new Date(),
+    },
+  ]);
 
   // Mock getRoleByName
   const { getRoleByName } = require('~/models');
