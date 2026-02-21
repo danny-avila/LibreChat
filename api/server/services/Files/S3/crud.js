@@ -3,7 +3,7 @@ const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { initializeS3, deleteRagFile } = require('@librechat/api');
+const { initializeS3, deleteRagFile, isEnabled } = require('@librechat/api');
 const {
   PutObjectCommand,
   GetObjectCommand,
@@ -13,6 +13,8 @@ const {
 
 const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';
+const endpoint = process.env.AWS_ENDPOINT_URL;
+const forcePathStyle = isEnabled(process.env.AWS_FORCE_PATH_STYLE);
 
 let s3UrlExpirySeconds = 2 * 60; // 2 minutes
 let s3RefreshExpiryMs = null;
@@ -254,6 +256,26 @@ function extractKeyFromS3Url(fileUrlOrKey) {
     const url = new URL(fileUrlOrKey);
     const hostname = url.hostname;
     const pathname = url.pathname.substring(1); // Remove leading slash
+
+    // Explicit path-style with custom endpoint: use endpoint pathname for precise key extraction.
+    // Handles endpoints with a base path (e.g. https://example.com/storage/).
+    if (endpoint && forcePathStyle) {
+      const endpointUrl = new URL(endpoint);
+      const startPos =
+        endpointUrl.pathname.length +
+        (endpointUrl.pathname.endsWith('/') ? 0 : 1) +
+        bucketName.length +
+        1;
+      const key = url.pathname.substring(startPos);
+      if (!key) {
+        logger.warn(
+          `[extractKeyFromS3Url] Extracted key is empty for endpoint path-style URL: ${fileUrlOrKey}`,
+        );
+      } else {
+        logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`);
+      }
+      return key;
+    }
 
     if (
       hostname === 's3.amazonaws.com' ||

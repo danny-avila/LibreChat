@@ -19,6 +19,7 @@ jest.mock('@aws-sdk/client-s3');
 jest.mock('@librechat/api', () => ({
   initializeS3: jest.fn(),
   deleteRagFile: jest.fn().mockResolvedValue(undefined),
+  isEnabled: jest.fn((val) => val === 'true'),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -840,6 +841,36 @@ describe('S3 CRUD Operations', () => {
           'https://abc123.r2.cloudflarestorage.com/test-bucket/images/user123/avatar.png',
         ),
       ).toBe('images/user123/avatar.png');
+    });
+
+    it('should use endpoint base path when AWS_ENDPOINT_URL and AWS_FORCE_PATH_STYLE are set', () => {
+      process.env.AWS_BUCKET_NAME = 'test-bucket';
+      process.env.AWS_ENDPOINT_URL = 'https://minio.example.com';
+      process.env.AWS_FORCE_PATH_STYLE = 'true';
+      jest.resetModules();
+      const { extractKeyFromS3Url: fn } = require('~/server/services/Files/S3/crud');
+
+      expect(fn('https://minio.example.com/test-bucket/images/user123/file.jpg')).toBe(
+        'images/user123/file.jpg',
+      );
+
+      delete process.env.AWS_ENDPOINT_URL;
+      delete process.env.AWS_FORCE_PATH_STYLE;
+    });
+
+    it('should handle endpoint with a base path', () => {
+      process.env.AWS_BUCKET_NAME = 'test-bucket';
+      process.env.AWS_ENDPOINT_URL = 'https://example.com/storage/';
+      process.env.AWS_FORCE_PATH_STYLE = 'true';
+      jest.resetModules();
+      const { extractKeyFromS3Url: fn } = require('~/server/services/Files/S3/crud');
+
+      expect(fn('https://example.com/storage/test-bucket/images/user123/file.jpg')).toBe(
+        'images/user123/file.jpg',
+      );
+
+      delete process.env.AWS_ENDPOINT_URL;
+      delete process.env.AWS_FORCE_PATH_STYLE;
     });
   });
 });
