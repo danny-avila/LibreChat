@@ -829,5 +829,20 @@ describe('S3 CRUD Operations', () => {
       extractKeyFromS3Url('images/user123/file.jpg');
       expect(logger.error).not.toHaveBeenCalled();
     });
+
+    it('should strip bucket from custom endpoint URLs when forcePathStyle is enabled', () => {
+      process.env.S3_FORCE_PATH_STYLE = 'true';
+      jest.resetModules();
+      const { extractKeyFromS3Url: fn } = require('~/server/services/Files/S3/crud');
+
+      expect(fn('https://minio.example.com/my-bucket/images/user123/file.jpg')).toBe(
+        'images/user123/file.jpg',
+      );
+      expect(
+        fn('https://abc123.r2.cloudflarestorage.com/my-bucket/images/user123/avatar.png'),
+      ).toBe('images/user123/avatar.png');
+
+      delete process.env.S3_FORCE_PATH_STYLE;
+    });
   });
 });
