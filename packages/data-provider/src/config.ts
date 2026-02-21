@@ -1052,6 +1052,7 @@ export enum KnownEndpoints {
   groq = 'groq',
   helicone = 'helicone',
   huggingface = 'huggingface',
+  llmapi = 'llmapi',
   mistral = 'mistral',
   mlx = 'mlx',
   ollama = 'ollama',
@@ -1097,6 +1098,7 @@ export const alternateName = {
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
   [KnownEndpoints.helicone]: 'Helicone',
+  [KnownEndpoints.llmapi]: 'LLM API',
 };
 
 const sharedOpenAIModels = [

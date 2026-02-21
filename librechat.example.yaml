@@ -411,6 +411,21 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # LLM API Example
+    # llmapi.ai is an OpenAI-compatible gateway providing access to 120+ models
+    # across OpenAI, Anthropic, Google, xAI, Alibaba, Moonshot, and more.
+    - name: 'llmapi'
+      # For `apiKey` and `baseURL`, you can use environment variables that you define.
+      # recommended environment variables:
+      apiKey: '${LLMAPI_KEY}'
+      baseURL: 'https://api.llmapi.ai/v1'
+      models:
+        default: ['gpt-4o', 'claude-sonnet-4-20250514', 'gemini-2.5-flash']
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-4o'
+      modelDisplayLabel: 'LLM API'
+
     # Helicone Example
     - name: 'Helicone'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
