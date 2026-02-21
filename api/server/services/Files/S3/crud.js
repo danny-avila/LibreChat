@@ -13,6 +13,8 @@ const {
 
 const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';
+const forcePathStyle =
+  process.env.S3_FORCE_PATH_STYLE === 'true' || process.env.AWS_FORCE_PATH_STYLE === 'true';
 
 let s3UrlExpirySeconds = 2 * 60; // 2 minutes
 let s3RefreshExpiryMs = null;
@@ -255,8 +257,11 @@ function extractKeyFromS3Url(fileUrlOrKey) {
     const hostname = url.hostname;
     const pathname = url.pathname.substring(1); // Remove leading slash
 
-    // Check if it's path-style URL (s3.amazonaws.com or s3.region.amazonaws.com)
-    if (hostname === 's3.amazonaws.com' || hostname.match(/^s3[-.][a-z0-9-]+\.amazonaws\.com$/)) {
+    if (
+      hostname === 's3.amazonaws.com' ||
+      hostname.match(/^s3[-.][a-z0-9-]+\.amazonaws\.com$/) ||
+      forcePathStyle
+    ) {
       // Path-style: https://s3.amazonaws.com/bucket-name/key
       // Need to strip the bucket name (first path segment)
       const firstSlashIndex = pathname.indexOf('/');
@@ -287,9 +292,13 @@ function extractKeyFromS3Url(fileUrlOrKey) {
     logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${pathname}`);
     return pathname;
   } catch (error) {
-    logger.error(
-      `[extractKeyFromS3Url] Error parsing URL: ${fileUrlOrKey}, Error: ${error.message}`,
-    );
+    if (fileUrlOrKey.startsWith('http://') || fileUrlOrKey.startsWith('https://')) {
+      logger.error(
+        `[extractKeyFromS3Url] Error parsing URL: ${fileUrlOrKey}, Error: ${error.message}`,
+      );
+    } else {
+      logger.debug(`[extractKeyFromS3Url] Non-URL input, using fallback: ${fileUrlOrKey}`);
+    }
 
     const parts = fileUrlOrKey.split('/');
 

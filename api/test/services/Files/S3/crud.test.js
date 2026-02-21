@@ -18,6 +18,7 @@ jest.mock('@aws-sdk/client-s3');
 
 jest.mock('@librechat/api', () => ({
   initializeS3: jest.fn(),
+  deleteRagFile: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -29,8 +30,13 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-const { initializeS3 } = require('@librechat/api');
+const { initializeS3, deleteRagFile } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+
+// Set env vars before requiring crud so module-level constants pick them up
+process.env.AWS_BUCKET_NAME = 'test-bucket';
+process.env.S3_URL_EXPIRY_SECONDS = '120';
+
 const {
   saveBufferToS3,
   saveURLToS3,
@@ -56,15 +62,12 @@ describe('S3 CRUD Operations', () => {
       send: jest.fn(),
     };
     initializeS3.mockReturnValue(mockS3Client);
-
-    // Set environment variables
-    process.env.AWS_BUCKET_NAME = 'test-bucket';
-    process.env.S3_URL_EXPIRY_SECONDS = '120';
   });
 
   afterEach(() => {
     delete process.env.S3_URL_EXPIRY_SECONDS;
     delete process.env.S3_REFRESH_EXPIRY_MS;
+    delete process.env.AWS_BUCKET_NAME;
   });
 
   describe('saveBufferToS3', () => {
@@ -250,6 +253,7 @@ describe('S3 CRUD Operations', () => {
 
       await deleteFileFromS3(mockReq, mockFile);
 
+      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
       expect(mockS3Client.send).toHaveBeenCalledWith(expect.any(HeadObjectCommand));
       expect(mockS3Client.send).toHaveBeenCalledWith(expect.any(DeleteObjectCommand));
     });
@@ -468,6 +472,20 @@ describe('S3 CRUD Operations', () => {
 
       expect(result).toBeUndefined();
       expect(logger.error).toHaveBeenCalledWith('Error getting new S3 URL:', expect.any(Error));
+    });
+
+    it('should construct GetObjectCommand with correct key (no bucket name duplication)', async () => {
+      const currentURL =
+        'https://s3.amazonaws.com/my-bucket/images/user123/file.jpg?X-Amz-Signature=old';
+      getSignedUrl.mockResolvedValue(
+        'https://s3.amazonaws.com/test-bucket/images/user123/file.jpg?signature=new',
+      );
+
+      await getNewS3URL(currentURL);
+
+      expect(GetObjectCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ Key: 'images/user123/file.jpg' }),
+      );
     });
   });
 
@@ -787,7 +805,7 @@ describe('S3 CRUD Operations', () => {
     });
 
     it('should handle malformed URL and log error', () => {
-      const malformedUrl = 'ht!tp://invalid url with spaces.com/key';
+      const malformedUrl = 'https://invalid url with spaces.com/key';
       const result = extractKeyFromS3Url(malformedUrl);
 
       expect(logger.error).toHaveBeenCalledWith(
@@ -796,6 +814,20 @@ describe('S3 CRUD Operations', () => {
       expect(logger.error).toHaveBeenCalledWith(expect.stringContaining(malformedUrl));
 
       expect(result).toBe(malformedUrl);
+    });
+
+    it('should return empty string for regional path-style URL with only bucket (no key)', () => {
+      const url = 'https://s3.us-west-2.amazonaws.com/my-bucket';
+      const result = extractKeyFromS3Url(url);
+      expect(result).toBe('');
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('[extractKeyFromS3Url] Unable to extract key from path-style URL:'),
+      );
+    });
+
+    it('should not log error when given a plain S3 key (non-URL input)', () => {
+      extractKeyFromS3Url('images/user123/file.jpg');
+      expect(logger.error).not.toHaveBeenCalled();
     });
   });
 });
