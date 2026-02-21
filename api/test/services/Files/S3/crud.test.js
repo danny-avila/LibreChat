@@ -19,6 +19,7 @@ jest.mock('@aws-sdk/client-s3');
 jest.mock('@librechat/api', () => ({
   initializeS3: jest.fn(),
   deleteRagFile: jest.fn().mockResolvedValue(undefined),
+  isEnabled: jest.fn((val) => val === 'true'),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({

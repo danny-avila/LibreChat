@@ -3,7 +3,7 @@ const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { initializeS3, deleteRagFile } = require('@librechat/api');
+const { initializeS3, deleteRagFile, isEnabled } = require('@librechat/api');
 const {
   PutObjectCommand,
   GetObjectCommand,
@@ -14,7 +14,7 @@ const {
 const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';
 const forcePathStyle =
-  process.env.S3_FORCE_PATH_STYLE === 'true' || process.env.AWS_FORCE_PATH_STYLE === 'true';
+  isEnabled(process.env.S3_FORCE_PATH_STYLE) || isEnabled(process.env.AWS_FORCE_PATH_STYLE);
 
 let s3UrlExpirySeconds = 2 * 60; // 2 minutes
 let s3RefreshExpiryMs = null;
