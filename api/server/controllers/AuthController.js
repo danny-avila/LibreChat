@@ -196,15 +196,6 @@ const graphTokenController = async (req, res) => {
       });
     }
 
-    // Extract access token from Authorization header
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        message: 'Valid authorization token required',
-      });
-    }
-
-    // Get scopes from query parameters
     const scopes = req.query.scopes;
     if (!scopes) {
       return res.status(400).json({
@@ -212,7 +203,13 @@ const graphTokenController = async (req, res) => {
       });
     }
 
-    const accessToken = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const accessToken = req.user.federatedTokens?.access_token;
+    if (!accessToken) {
+      return res.status(401).json({
+        message: 'No federated access token available for token exchange',
+      });
+    }
+
     const tokenResponse = await getGraphApiToken(req.user, accessToken, scopes);
 
     res.json(tokenResponse);
