@@ -1,11 +1,10 @@
+import convoSchema from '~/schema/convo';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
 import type * as t from '~/types';
 import mongoMeili from '~/models/plugins/mongoMeili';
-import convoSchema from '~/schema/convo';
 
-/**
- * Creates or returns the Conversation model using the provided mongoose instance and schema
- */
 export function createConversationModel(mongoose: typeof import('mongoose')) {
+  applyTenantIsolation(convoSchema);
   if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
     convoSchema.plugin(mongoMeili, {
       mongoose,

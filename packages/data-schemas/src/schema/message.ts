@@ -144,13 +144,17 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: Boolean,
       default: undefined,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   { timestamps: true },
 );
 
 messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 messageSchema.index({ createdAt: 1 });
-messageSchema.index({ messageId: 1, user: 1 }, { unique: true });
+messageSchema.index({ messageId: 1, user: 1, tenantId: 1 }, { unique: true });
 
 // index for MeiliSearch sync operations
 messageSchema.index({ _meiliIndex: 1, expiredAt: 1 });
