@@ -19,7 +19,6 @@ jest.mock('@aws-sdk/client-s3');
 jest.mock('@librechat/api', () => ({
   initializeS3: jest.fn(),
   deleteRagFile: jest.fn().mockResolvedValue(undefined),
-  isEnabled: jest.fn((val) => val === 'true'),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -831,19 +830,16 @@ describe('S3 CRUD Operations', () => {
       expect(logger.error).not.toHaveBeenCalled();
     });
 
-    it('should strip bucket from custom endpoint URLs when forcePathStyle is enabled', () => {
-      process.env.S3_FORCE_PATH_STYLE = 'true';
-      jest.resetModules();
-      const { extractKeyFromS3Url: fn } = require('~/server/services/Files/S3/crud');
-
-      expect(fn('https://minio.example.com/my-bucket/images/user123/file.jpg')).toBe(
-        'images/user123/file.jpg',
-      );
+    it('should strip bucket from custom endpoint URLs (MinIO, R2, etc.) using bucketName', () => {
+      // bucketName is the module-level const 'test-bucket', set before require at top of file
       expect(
-        fn('https://abc123.r2.cloudflarestorage.com/my-bucket/images/user123/avatar.png'),
+        extractKeyFromS3Url('https://minio.example.com/test-bucket/images/user123/file.jpg'),
+      ).toBe('images/user123/file.jpg');
+      expect(
+        extractKeyFromS3Url(
+          'https://abc123.r2.cloudflarestorage.com/test-bucket/images/user123/avatar.png',
+        ),
       ).toBe('images/user123/avatar.png');
-
-      delete process.env.S3_FORCE_PATH_STYLE;
     });
   });
 });

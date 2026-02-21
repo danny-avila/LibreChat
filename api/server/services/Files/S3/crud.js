@@ -3,7 +3,7 @@ const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { initializeS3, deleteRagFile, isEnabled } = require('@librechat/api');
+const { initializeS3, deleteRagFile } = require('@librechat/api');
 const {
   PutObjectCommand,
   GetObjectCommand,
@@ -13,8 +13,6 @@ const {
 
 const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';
-const forcePathStyle =
-  isEnabled(process.env.S3_FORCE_PATH_STYLE) || isEnabled(process.env.AWS_FORCE_PATH_STYLE);
 
 let s3UrlExpirySeconds = 2 * 60; // 2 minutes
 let s3RefreshExpiryMs = null;
@@ -260,10 +258,10 @@ function extractKeyFromS3Url(fileUrlOrKey) {
     if (
       hostname === 's3.amazonaws.com' ||
       hostname.match(/^s3[-.][a-z0-9-]+\.amazonaws\.com$/) ||
-      forcePathStyle
+      (bucketName && pathname.startsWith(`${bucketName}/`))
     ) {
-      // Path-style: https://s3.amazonaws.com/bucket-name/key
-      // Need to strip the bucket name (first path segment)
+      // Path-style: https://s3.amazonaws.com/bucket-name/key or custom endpoint (MinIO, R2, etc.)
+      // Strip the bucket name (first path segment)
       const firstSlashIndex = pathname.indexOf('/');
       if (firstSlashIndex > 0) {
         const key = pathname.substring(firstSlashIndex + 1);
