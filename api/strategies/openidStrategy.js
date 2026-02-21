@@ -451,7 +451,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       throw new Error(`You must have ${rolesList} role to log in.`);
     }
 
-    const roleValues = Array.isArray(roles) ? roles : [roles];
+    const roleValues = Array.isArray(roles) ? roles : roles.split(/[\s,]+/).filter(Boolean);
 
     if (!requiredRoles.some((role) => roleValues.includes(role))) {
       const rolesList =

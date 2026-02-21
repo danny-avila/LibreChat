@@ -384,6 +384,50 @@ describe('setupOpenId', () => {
     expect(details.message).toBe('You must have "read" role to log in.');
   });
 
+  it('should allow login when roles claim is a space-separated string containing the required role', async () => {
+    jwtDecode.mockReturnValue({
+      roles: 'role1 role2 requiredRole',
+    });
+
+    const { user } = await validate(tokenset);
+
+    expect(user).toBeTruthy();
+    expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should allow login when roles claim is a comma-separated string containing the required role', async () => {
+    jwtDecode.mockReturnValue({
+      roles: 'role1,role2,requiredRole',
+    });
+
+    const { user } = await validate(tokenset);
+
+    expect(user).toBeTruthy();
+    expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should allow login when roles claim is a mixed comma-and-space-separated string containing the required role', async () => {
+    jwtDecode.mockReturnValue({
+      roles: 'role1, role2, requiredRole',
+    });
+
+    const { user } = await validate(tokenset);
+
+    expect(user).toBeTruthy();
+    expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should reject login when roles claim is a space-separated string that does not contain the required role', async () => {
+    jwtDecode.mockReturnValue({
+      roles: 'role1 role2 otherRole',
+    });
+
+    const { user, details } = await validate(tokenset);
+
+    expect(user).toBe(false);
+    expect(details.message).toBe('You must have "requiredRole" role to log in.');
+  });
+
   it('should allow login when single required role is present (backward compatibility)', async () => {
     // Arrange – ensure single role configuration (as set in beforeEach)
     // OPENID_REQUIRED_ROLE = 'requiredRole'
