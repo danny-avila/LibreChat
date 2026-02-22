@@ -91,8 +91,13 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
           return res.status(401).json({ message: 'Authentication required' });
         }
 
+        const id = req.user.id ?? req.user._id?.toString();
+        if (!id) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
+
         const user: CapabilityUser = {
-          id: req.user.id ?? req.user._id?.toString(),
+          id,
           role: req.user.role ?? '',
           tenantId: (req.user as CapabilityUser).tenantId,
         };

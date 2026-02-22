@@ -1,9 +1,10 @@
 import type { Document, Types } from 'mongoose';
+import type { PrincipalType } from 'librechat-data-provider';
 import type { SystemCapability } from '~/systemCapabilities';
 
 export type SystemGrant = {
-  /** The type of principal ('user' | 'group' | 'role') */
-  principalType: string;
+  /** The type of principal — matches PrincipalType enum values */
+  principalType: PrincipalType;
   /** ObjectId string for user/group, role name string for role */
   principalId: string | Types.ObjectId;
   /** The capability being granted */

@@ -20,7 +20,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     capability,
     tenantId,
   }: {
-    principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>;
+    principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>;
     capability: SystemCapability;
     tenantId?: string;
   }): Promise<boolean> {
@@ -59,7 +59,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       tenantId,
       grantedBy,
     }: {
-      principalType: string;
+      principalType: PrincipalType;
       principalId: string | Types.ObjectId;
       capability: SystemCapability;
       tenantId?: string;
@@ -69,9 +69,14 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   ): Promise<ISystemGrant | null> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
 
+    const normalizedPrincipalId =
+      typeof principalId === 'string' && principalType !== PrincipalType.ROLE
+        ? new Types.ObjectId(principalId)
+        : principalId;
+
     const filter: Record<string, unknown> = {
       principalType,
-      principalId,
+      principalId: normalizedPrincipalId,
       capability,
     };
 
@@ -88,7 +93,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       },
       $setOnInsert: {
         principalType,
-        principalId,
+        principalId: normalizedPrincipalId,
         capability,
         ...(tenantId != null && { tenantId }),
       },
@@ -113,7 +118,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       capability,
       tenantId,
     }: {
-      principalType: string;
+      principalType: PrincipalType;
       principalId: string | Types.ObjectId;
       capability: SystemCapability;
       tenantId?: string;
@@ -147,7 +152,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     principalId,
     tenantId,
   }: {
-    principalType: string;
+    principalType: PrincipalType;
     principalId: string | Types.ObjectId;
     tenantId?: string;
   }): Promise<ISystemGrant[]> {

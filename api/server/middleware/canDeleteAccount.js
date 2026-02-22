@@ -18,13 +18,15 @@ const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const canDeleteAccount = async (req, res, next = () => {}) => {
   const { user } = req;
   const { ALLOW_ACCOUNT_DELETION = true } = process.env;
-  const hasManageUsers = user ? await hasCapability(user, SystemCapabilities.MANAGE_USERS) : false;
-  if (hasManageUsers || isEnabled(ALLOW_ACCOUNT_DELETION)) {
+  if (isEnabled(ALLOW_ACCOUNT_DELETION)) {
     return next();
-  } else {
-    logger.error(`[User] [Delete Account] [User cannot delete account] [User: ${user?.id}]`);
-    return res.status(403).send({ message: 'You do not have permission to delete this account' });
   }
+  const hasManageUsers = user ? await hasCapability(user, SystemCapabilities.MANAGE_USERS) : false;
+  if (hasManageUsers) {
+    return next();
+  }
+  logger.error(`[User] [Delete Account] [User cannot delete account] [User: ${user?.id}]`);
+  return res.status(403).send({ message: 'You do not have permission to delete this account' });
 };
 
 module.exports = canDeleteAccount;
