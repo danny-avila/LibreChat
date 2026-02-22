@@ -39,6 +39,18 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+/**
+ * COOKIE_DOMAIN: Optional domain attribute to use when setting auth cookies.
+ *
+ * - Leave unset/empty to omit the `domain` attribute and rely on browser defaults.
+ * - Set to a specific domain (e.g. "app.example.com") to scope cookies to that host.
+ * - Set to a leading dot domain (e.g. ".example.com") to allow cookies to be shared
+ *   across subdomains of the given domain (e.g. "app.example.com", "api.example.com").
+ *
+ * Note: In the cookie-setting logic, configuring a domain that starts with "."
+ * changes the cookie `sameSite` attribute from "strict" to "lax" to support
+ * cross-subdomain flows while maintaining reasonable CSRF protection.
+ */
 const rawCookieDomain = process.env.COOKIE_DOMAIN ?? '';
 const DOMAIN_REGEX = /^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
 
