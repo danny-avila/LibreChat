@@ -1,9 +1,9 @@
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
-import { SystemCapabilities } from '~/systemCapabilities';
-import { normalizePrincipalId } from '~/utils/principal';
 import type { Types, Model, ClientSession } from 'mongoose';
 import type { SystemCapability } from '~/systemCapabilities';
 import type { ISystemGrant } from '~/types';
+import { SystemCapabilities, CapabilityImplications } from '~/systemCapabilities';
+import { normalizePrincipalId } from '~/utils/principal';
 
 export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -33,9 +33,19 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       return false;
     }
 
+    /* Expand to include capabilities that imply the requested one, so a
+    MANAGE_USERS grant satisfies a READ_USERS check without a separate grant.
+    */
+    const impliedBy = (
+      Object.entries(CapabilityImplications) as [SystemCapability, SystemCapability[]][]
+    )
+      .filter(([, implied]) => implied.includes(capability))
+      .map(([cap]) => cap);
+    const capabilityQuery = impliedBy.length ? { $in: [capability, ...impliedBy] } : capability;
+
     const query: Record<string, unknown> = {
       $or: principalsQuery,
-      capability,
+      capability: capabilityQuery,
     };
 
     if (tenantId != null) {

@@ -15,6 +15,8 @@ export type SystemGrant = {
   grantedBy?: Types.ObjectId;
   /** When this capability was granted */
   grantedAt?: Date;
+  /** Reserved for future TTL enforcement — time-bounded / temporary grants. */
+  expiresAt?: Date;
 };
 
 export type ISystemGrant = SystemGrant &
