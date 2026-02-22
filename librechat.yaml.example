@@ -1,0 +1,21 @@
+version: 1.2.1
+cache: true
+endpoints:
+  custom:
+    - name: "OpenRouter"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default:
+          - "anthropic/claude-sonnet-4"
+          - "anthropic/claude-haiku-4"
+          - "openai/gpt-4o"
+          - "openai/gpt-4o-mini"
+          - "google/gemini-2.5-pro-preview"
+          - "google/gemini-2.0-flash"
+        fetch: true
+      titleConvo: true
+      titleModel: "openai/gpt-4o-mini"
+      summarize: false
+      forcePrompt: false
+      modelDisplayLabel: "OpenRouter"

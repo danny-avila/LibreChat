@@ -106,6 +106,9 @@ junit.xml
 docker-compose.override.yaml
 docker-compose.override.yml
 
+# local scripts
+*.local.sh
+
 # meilisearch
 meilisearch
 meilisearch.exe
