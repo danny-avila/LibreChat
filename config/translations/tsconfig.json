@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "noImplicitAny": false,
+    "baseUrl": ".",
+    "outDir": "./dist",
+    "strict": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "target": "es6",
+    "module": "esnext",
+    "lib": ["dom", "es6"],
+    "paths": {
+      "~/*": ["../../api/*"]
+    }
+  },
+  "include": ["*.ts"]
+}

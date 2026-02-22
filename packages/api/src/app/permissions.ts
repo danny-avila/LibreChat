@@ -1,0 +1,519 @@
+import { logger } from '@librechat/data-schemas';
+import {
+  SystemRoles,
+  Permissions,
+  roleDefaults,
+  PermissionTypes,
+  getConfigDefaults,
+} from 'librechat-data-provider';
+import type { IRole, AppConfig } from '@librechat/data-schemas';
+import { isMemoryEnabled } from '~/memory/config';
+
+/**
+ * Checks if a permission type has explicit configuration
+ */
+function hasExplicitConfig(
+  interfaceConfig: AppConfig['interfaceConfig'],
+  permissionType: PermissionTypes,
+) {
+  switch (permissionType) {
+    case PermissionTypes.PROMPTS:
+      return interfaceConfig?.prompts !== undefined;
+    case PermissionTypes.BOOKMARKS:
+      return interfaceConfig?.bookmarks !== undefined;
+    case PermissionTypes.MEMORIES:
+      return interfaceConfig?.memories !== undefined;
+    case PermissionTypes.MULTI_CONVO:
+      return interfaceConfig?.multiConvo !== undefined;
+    case PermissionTypes.AGENTS:
+      return interfaceConfig?.agents !== undefined;
+    case PermissionTypes.TEMPORARY_CHAT:
+      return interfaceConfig?.temporaryChat !== undefined;
+    case PermissionTypes.RUN_CODE:
+      return interfaceConfig?.runCode !== undefined;
+    case PermissionTypes.WEB_SEARCH:
+      return interfaceConfig?.webSearch !== undefined;
+    case PermissionTypes.PEOPLE_PICKER:
+      return interfaceConfig?.peoplePicker !== undefined;
+    case PermissionTypes.MARKETPLACE:
+      return interfaceConfig?.marketplace !== undefined;
+    case PermissionTypes.FILE_SEARCH:
+      return interfaceConfig?.fileSearch !== undefined;
+    case PermissionTypes.FILE_CITATIONS:
+      return interfaceConfig?.fileCitations !== undefined;
+    case PermissionTypes.MCP_SERVERS:
+      return interfaceConfig?.mcpServers !== undefined;
+    case PermissionTypes.REMOTE_AGENTS:
+      return interfaceConfig?.remoteAgents !== undefined;
+    default:
+      return false;
+  }
+}
+
+export async function updateInterfacePermissions({
+  appConfig,
+  getRoleByName,
+  updateAccessPermissions,
+}: {
+  appConfig: AppConfig;
+  getRoleByName: (roleName: string, fieldsToSelect?: string | string[]) => Promise<IRole | null>;
+  updateAccessPermissions: (
+    roleName: string,
+    permissionsUpdate: Partial<Record<PermissionTypes, Record<string, boolean | undefined>>>,
+
+    roleData?: IRole | null,
+  ) => Promise<void>;
+}) {
+  const loadedInterface = appConfig?.interfaceConfig;
+  if (!loadedInterface) {
+    return;
+  }
+  /** Configured values for interface object structure */
+  const interfaceConfig = appConfig?.config?.interface;
+  const memoryConfig = appConfig?.config?.memory;
+  const memoryEnabled = isMemoryEnabled(memoryConfig);
+  /** Check if memory is explicitly disabled (memory.disabled === true) */
+  const isMemoryExplicitlyDisabled = memoryConfig?.disabled === true;
+  /** Check if memory should be enabled (explicitly enabled or valid config) */
+  const shouldEnableMemory =
+    memoryConfig?.disabled === false ||
+    (memoryConfig && memoryEnabled && memoryConfig.disabled === undefined);
+  /** Check if personalization is enabled (defaults to true if memory is configured and enabled) */
+  const isPersonalizationEnabled =
+    memoryConfig && memoryEnabled && memoryConfig.personalize !== false;
+
+  /** Helper to get permission value with proper precedence */
+  const getPermissionValue = (
+    configValue?: boolean,
+    roleDefault?: boolean,
+    schemaDefault?: boolean,
+  ) => {
+    if (configValue !== undefined) return configValue;
+    if (roleDefault !== undefined) return roleDefault;
+    return schemaDefault;
+  };
+
+  const defaults = getConfigDefaults().interface;
+
+  // Permission precedence order:
+  // 1. Explicit user configuration (from librechat.yaml)
+  // 2. Role-specific defaults (from roleDefaults)
+  // 3. Interface schema defaults (from interfaceSchema.default())
+  for (const roleName of [SystemRoles.USER, SystemRoles.ADMIN]) {
+    const defaultPerms = roleDefaults[roleName]?.permissions;
+
+    const existingRole = await getRoleByName(roleName);
+    const existingPermissions = existingRole?.permissions as
+      | Partial<Record<PermissionTypes, Record<string, boolean | undefined>>>
+      | undefined;
+    const permissionsToUpdate: Partial<
+      Record<PermissionTypes, Record<string, boolean | undefined>>
+    > = {};
+
+    /**
+     * Helper to add permission if it should be updated
+     */
+    const addPermissionIfNeeded = (
+      permType: PermissionTypes,
+      permissions: Record<string, boolean | undefined>,
+    ) => {
+      const permTypeExists = existingPermissions?.[permType];
+      const isExplicitlyConfigured =
+        interfaceConfig && hasExplicitConfig(interfaceConfig, permType);
+      const isMemoryDisabled = permType === PermissionTypes.MEMORIES && isMemoryExplicitlyDisabled;
+      const isMemoryReenabling =
+        permType === PermissionTypes.MEMORIES &&
+        shouldEnableMemory &&
+        existingPermissions?.[PermissionTypes.MEMORIES]?.[Permissions.USE] === false;
+
+      // Only update if: doesn't exist OR explicitly configured OR memory state change
+      if (!permTypeExists || isExplicitlyConfigured || isMemoryDisabled || isMemoryReenabling) {
+        permissionsToUpdate[permType] = permissions;
+        if (!permTypeExists) {
+          logger.debug(`Role '${roleName}': Setting up default permissions for '${permType}'`);
+        } else if (isExplicitlyConfigured) {
+          logger.debug(`Role '${roleName}': Applying explicit config for '${permType}'`);
+        } else if (isMemoryDisabled) {
+          logger.debug(`Role '${roleName}': Disabling memories as memory.disabled is true`);
+        } else if (isMemoryReenabling) {
+          logger.debug(
+            `Role '${roleName}': Re-enabling memories due to valid memory configuration`,
+          );
+        }
+      } else {
+        logger.debug(`Role '${roleName}': Preserving existing permissions for '${permType}'`);
+      }
+    };
+
+    // Helper to extract value from boolean or object config
+    type PermissionConfig =
+      | boolean
+      | { use?: boolean; create?: boolean; share?: boolean; public?: boolean }
+      | undefined;
+    const getConfigUse = (config: PermissionConfig) =>
+      typeof config === 'boolean' ? config : config?.use;
+    const getConfigCreate = (config: PermissionConfig) =>
+      typeof config === 'boolean' ? undefined : config?.create;
+    const getConfigShare = (config: PermissionConfig) =>
+      typeof config === 'boolean' ? undefined : config?.share;
+    const getConfigPublic = (config: PermissionConfig) =>
+      typeof config === 'boolean' ? undefined : config?.public;
+
+    // Get default values (for backward compat when config is boolean)
+    const promptsDefaultUse =
+      typeof defaults.prompts === 'boolean' ? defaults.prompts : defaults.prompts?.use;
+    const agentsDefaultUse =
+      typeof defaults.agents === 'boolean' ? defaults.agents : defaults.agents?.use;
+    const promptsDefaultCreate =
+      typeof defaults.prompts === 'object' ? defaults.prompts?.create : undefined;
+    const agentsDefaultCreate =
+      typeof defaults.agents === 'object' ? defaults.agents?.create : undefined;
+    const promptsDefaultShare =
+      typeof defaults.prompts === 'object' ? defaults.prompts?.share : undefined;
+    const agentsDefaultShare =
+      typeof defaults.agents === 'object' ? defaults.agents?.share : undefined;
+    const promptsDefaultPublic =
+      typeof defaults.prompts === 'object' ? defaults.prompts?.public : undefined;
+    const agentsDefaultPublic =
+      typeof defaults.agents === 'object' ? defaults.agents?.public : undefined;
+
+    const allPermissions: Partial<Record<PermissionTypes, Record<string, boolean | undefined>>> = {
+      [PermissionTypes.PROMPTS]: {
+        [Permissions.USE]: getPermissionValue(
+          getConfigUse(loadedInterface.prompts),
+          defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.USE],
+          promptsDefaultUse,
+        ),
+        ...((typeof interfaceConfig?.prompts === 'object' && 'create' in interfaceConfig.prompts) ||
+        !existingPermissions?.[PermissionTypes.PROMPTS]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                getConfigCreate(loadedInterface.prompts),
+                defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.CREATE],
+                promptsDefaultCreate ?? true,
+              ),
+            }
+          : {}),
+        ...((typeof interfaceConfig?.prompts === 'object' &&
+          ('share' in interfaceConfig.prompts || 'public' in interfaceConfig.prompts)) ||
+        !existingPermissions?.[PermissionTypes.PROMPTS]
+          ? {
+              [Permissions.SHARE]: getPermissionValue(
+                getConfigShare(loadedInterface.prompts),
+                defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE],
+                promptsDefaultShare,
+              ),
+              [Permissions.SHARE_PUBLIC]: getPermissionValue(
+                getConfigPublic(loadedInterface.prompts),
+                defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE_PUBLIC],
+                promptsDefaultPublic,
+              ),
+            }
+          : {}),
+      },
+      [PermissionTypes.BOOKMARKS]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.bookmarks,
+          defaultPerms[PermissionTypes.BOOKMARKS]?.[Permissions.USE],
+          defaults.bookmarks,
+        ),
+      },
+      [PermissionTypes.MEMORIES]: {
+        [Permissions.USE]: (() => {
+          if (isMemoryExplicitlyDisabled) return false;
+          if (shouldEnableMemory) return true;
+          return getPermissionValue(
+            loadedInterface.memories,
+            defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.USE],
+            defaults.memories,
+          );
+        })(),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.CREATE] !== undefined && {
+          [Permissions.CREATE]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.CREATE],
+        }),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.READ] !== undefined && {
+          [Permissions.READ]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.READ],
+        }),
+        ...(defaultPerms[PermissionTypes.MEMORIES]?.[Permissions.UPDATE] !== undefined && {
+          [Permissions.UPDATE]: isMemoryExplicitlyDisabled
+            ? false
+            : defaultPerms[PermissionTypes.MEMORIES][Permissions.UPDATE],
+        }),
+        [Permissions.OPT_OUT]: isMemoryExplicitlyDisabled
+          ? false
+          : isPersonalizationEnabled || undefined,
+      },
+      [PermissionTypes.MULTI_CONVO]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.multiConvo,
+          defaultPerms[PermissionTypes.MULTI_CONVO]?.[Permissions.USE],
+          defaults.multiConvo,
+        ),
+      },
+      [PermissionTypes.AGENTS]: {
+        [Permissions.USE]: getPermissionValue(
+          getConfigUse(loadedInterface.agents),
+          defaultPerms[PermissionTypes.AGENTS]?.[Permissions.USE],
+          agentsDefaultUse,
+        ),
+        ...((typeof interfaceConfig?.agents === 'object' && 'create' in interfaceConfig.agents) ||
+        !existingPermissions?.[PermissionTypes.AGENTS]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                getConfigCreate(loadedInterface.agents),
+                defaultPerms[PermissionTypes.AGENTS]?.[Permissions.CREATE],
+                agentsDefaultCreate ?? true,
+              ),
+            }
+          : {}),
+        ...((typeof interfaceConfig?.agents === 'object' &&
+          ('share' in interfaceConfig.agents || 'public' in interfaceConfig.agents)) ||
+        !existingPermissions?.[PermissionTypes.AGENTS]
+          ? {
+              [Permissions.SHARE]: getPermissionValue(
+                getConfigShare(loadedInterface.agents),
+                defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE],
+                agentsDefaultShare,
+              ),
+              [Permissions.SHARE_PUBLIC]: getPermissionValue(
+                getConfigPublic(loadedInterface.agents),
+                defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE_PUBLIC],
+                agentsDefaultPublic,
+              ),
+            }
+          : {}),
+      },
+      [PermissionTypes.TEMPORARY_CHAT]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.temporaryChat,
+          defaultPerms[PermissionTypes.TEMPORARY_CHAT]?.[Permissions.USE],
+          defaults.temporaryChat,
+        ),
+      },
+      [PermissionTypes.RUN_CODE]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.runCode,
+          defaultPerms[PermissionTypes.RUN_CODE]?.[Permissions.USE],
+          defaults.runCode,
+        ),
+      },
+      [PermissionTypes.WEB_SEARCH]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.webSearch,
+          defaultPerms[PermissionTypes.WEB_SEARCH]?.[Permissions.USE],
+          defaults.webSearch,
+        ),
+      },
+      [PermissionTypes.PEOPLE_PICKER]: {
+        [Permissions.VIEW_USERS]: getPermissionValue(
+          loadedInterface.peoplePicker?.users,
+          defaultPerms[PermissionTypes.PEOPLE_PICKER]?.[Permissions.VIEW_USERS],
+          defaults.peoplePicker?.users,
+        ),
+        [Permissions.VIEW_GROUPS]: getPermissionValue(
+          loadedInterface.peoplePicker?.groups,
+          defaultPerms[PermissionTypes.PEOPLE_PICKER]?.[Permissions.VIEW_GROUPS],
+          defaults.peoplePicker?.groups,
+        ),
+        [Permissions.VIEW_ROLES]: getPermissionValue(
+          loadedInterface.peoplePicker?.roles,
+          defaultPerms[PermissionTypes.PEOPLE_PICKER]?.[Permissions.VIEW_ROLES],
+          defaults.peoplePicker?.roles,
+        ),
+      },
+      [PermissionTypes.MARKETPLACE]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.marketplace?.use,
+          defaultPerms[PermissionTypes.MARKETPLACE]?.[Permissions.USE],
+          defaults.marketplace?.use,
+        ),
+      },
+      [PermissionTypes.FILE_SEARCH]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.fileSearch,
+          defaultPerms[PermissionTypes.FILE_SEARCH]?.[Permissions.USE],
+          defaults.fileSearch,
+        ),
+      },
+      [PermissionTypes.FILE_CITATIONS]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.fileCitations,
+          defaultPerms[PermissionTypes.FILE_CITATIONS]?.[Permissions.USE],
+          defaults.fileCitations,
+        ),
+      },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.mcpServers?.use,
+          defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.USE],
+          defaults.mcpServers?.use,
+        ),
+        [Permissions.CREATE]: getPermissionValue(
+          loadedInterface.mcpServers?.create,
+          defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.CREATE],
+          defaults.mcpServers?.create,
+        ),
+        ...((typeof interfaceConfig?.mcpServers === 'object' &&
+          ('share' in interfaceConfig.mcpServers || 'public' in interfaceConfig.mcpServers)) ||
+        !existingPermissions?.[PermissionTypes.MCP_SERVERS]
+          ? {
+              [Permissions.SHARE]: getPermissionValue(
+                loadedInterface.mcpServers?.share,
+                defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE],
+                defaults.mcpServers?.share,
+              ),
+              [Permissions.SHARE_PUBLIC]: getPermissionValue(
+                loadedInterface.mcpServers?.public,
+                defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE_PUBLIC],
+                defaults.mcpServers?.public,
+              ),
+            }
+          : {}),
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.remoteAgents?.use,
+          defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.USE],
+          defaults.remoteAgents?.use,
+        ),
+        [Permissions.CREATE]: getPermissionValue(
+          loadedInterface.remoteAgents?.create,
+          defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.CREATE],
+          defaults.remoteAgents?.create,
+        ),
+        ...((typeof interfaceConfig?.remoteAgents === 'object' &&
+          ('share' in interfaceConfig.remoteAgents || 'public' in interfaceConfig.remoteAgents)) ||
+        !existingPermissions?.[PermissionTypes.REMOTE_AGENTS]
+          ? {
+              [Permissions.SHARE]: getPermissionValue(
+                loadedInterface.remoteAgents?.share,
+                defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE],
+                defaults.remoteAgents?.share,
+              ),
+              [Permissions.SHARE_PUBLIC]: getPermissionValue(
+                loadedInterface.remoteAgents?.public,
+                defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE_PUBLIC],
+                defaults.remoteAgents?.public,
+              ),
+            }
+          : {}),
+      },
+    };
+
+    // Check and add each permission type if needed
+    for (const [permType, permissions] of Object.entries(allPermissions)) {
+      addPermissionIfNeeded(permType as PermissionTypes, permissions);
+    }
+
+    /**
+     * Backfill SHARE / SHARE_PUBLIC for permission types that already exist in the DB but are
+     * missing these fields — caused by the PR #11283 schema change that added SHARE/SHARE_PUBLIC
+     * to PROMPTS and AGENTS (replacing the removed SHARED_GLOBAL field) without a DB migration.
+     *
+     * This is intentionally kept separate from `addPermissionIfNeeded` to avoid overwriting
+     * user-customised share settings when the config uses a boolean (e.g. `agents: true`).
+     * Only fields that are literally absent from the existing DB document are backfilled here;
+     * any field that is already set keeps its current value.
+     */
+    type ShareBackfillEntry = [PermissionTypes, Record<string, boolean | undefined>];
+    const shareBackfill: ShareBackfillEntry[] = [
+      [
+        PermissionTypes.PROMPTS,
+        {
+          [Permissions.SHARE]: getPermissionValue(
+            getConfigShare(loadedInterface.prompts),
+            defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE],
+            promptsDefaultShare,
+          ),
+          [Permissions.SHARE_PUBLIC]: getPermissionValue(
+            getConfigPublic(loadedInterface.prompts),
+            defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE_PUBLIC],
+            promptsDefaultPublic,
+          ),
+        },
+      ],
+      [
+        PermissionTypes.AGENTS,
+        {
+          [Permissions.SHARE]: getPermissionValue(
+            getConfigShare(loadedInterface.agents),
+            defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE],
+            agentsDefaultShare,
+          ),
+          [Permissions.SHARE_PUBLIC]: getPermissionValue(
+            getConfigPublic(loadedInterface.agents),
+            defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE_PUBLIC],
+            agentsDefaultPublic,
+          ),
+        },
+      ],
+      [
+        PermissionTypes.MCP_SERVERS,
+        {
+          [Permissions.SHARE]: getPermissionValue(
+            loadedInterface.mcpServers?.share,
+            defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE],
+            defaults.mcpServers?.share,
+          ),
+          [Permissions.SHARE_PUBLIC]: getPermissionValue(
+            loadedInterface.mcpServers?.public,
+            defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE_PUBLIC],
+            defaults.mcpServers?.public,
+          ),
+        },
+      ],
+      [
+        PermissionTypes.REMOTE_AGENTS,
+        {
+          [Permissions.SHARE]: getPermissionValue(
+            loadedInterface.remoteAgents?.share,
+            defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE],
+            defaults.remoteAgents?.share,
+          ),
+          [Permissions.SHARE_PUBLIC]: getPermissionValue(
+            loadedInterface.remoteAgents?.public,
+            defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE_PUBLIC],
+            defaults.remoteAgents?.public,
+          ),
+        },
+      ],
+    ];
+
+    for (const [permType, shareDefaults] of shareBackfill) {
+      const existingPerms = existingPermissions?.[permType];
+      // Skip permission types that don't exist yet — addPermissionIfNeeded already handles those
+      if (!existingPerms) {
+        continue;
+      }
+
+      const missingFields: Record<string, boolean | undefined> = {};
+      for (const [field, value] of Object.entries(shareDefaults)) {
+        if (
+          value !== undefined &&
+          existingPerms[field] === undefined &&
+          // Don't clobber a value already queued by addPermissionIfNeeded (e.g. explicit config)
+          permissionsToUpdate[permType as PermissionTypes]?.[field] === undefined
+        ) {
+          missingFields[field] = value;
+        }
+      }
+
+      if (Object.keys(missingFields).length > 0) {
+        logger.debug(
+          `Role '${roleName}': Backfilling missing share fields for '${permType}': ${Object.keys(missingFields).join(', ')}`,
+        );
+        // Merge into any update already queued by addPermissionIfNeeded, or create a new entry
+        permissionsToUpdate[permType] = { ...permissionsToUpdate[permType], ...missingFields };
+      }
+    }
+
+    // Update permissions if any need updating
+    if (Object.keys(permissionsToUpdate).length > 0) {
+      await updateAccessPermissions(roleName, permissionsToUpdate, existingRole);
+    }
+  }
+}

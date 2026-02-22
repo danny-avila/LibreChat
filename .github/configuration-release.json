@@ -1,0 +1,60 @@
+{
+  "categories": [
+    {
+      "title": "### ✨ New Features",
+      "labels": ["feat"]
+    },
+    {
+      "title": "### 🌍 Internationalization",
+      "labels": ["i18n"]
+    },
+    {
+      "title": "### 👐 Accessibility",
+      "labels": ["a11y"]
+    },
+    {
+      "title": "### 🔧 Fixes",
+      "labels": ["Fix", "fix"]
+    },
+    {
+      "title": "### ⚙️ Other Changes",
+      "labels": ["ci", "style", "docs", "refactor", "chore"]
+    }
+  ],
+  "ignore_labels": [
+    "🔁 duplicate",
+    "📊 analytics",
+    "🌱 good first issue",
+    "🔍 investigation",
+    "🙏 help wanted",
+    "❌ invalid",
+    "❓ question",
+    "🚫 wontfix",
+    "🚀 release",
+    "version"
+  ],
+  "base_branches": ["main"],
+  "sort": {
+    "order": "ASC",
+    "on_property": "mergedAt"
+  },
+  "label_extractor": [
+    {
+      "pattern": "^(?:[^A-Za-z0-9]*)(feat|fix|chore|docs|refactor|ci|style|a11y|i18n)\\s*:",
+      "target": "$1",
+      "flags": "i",
+      "on_property": "title",
+      "method": "match"
+    },
+    {
+      "pattern": "^(?:[^A-Za-z0-9]*)(v\\d+\\.\\d+\\.\\d+(?:-rc\\d+)?).*",
+      "target": "version",
+      "flags": "i",
+      "on_property": "title",
+      "method": "match"
+    }
+  ],
+  "template": "## [#{{TO_TAG}}] - #{{TO_TAG_DATE}}\n\nChanges from #{{FROM_TAG}} to #{{TO_TAG}}.\n\n#{{CHANGELOG}}\n\n[See full release details][release-#{{TO_TAG}}]\n\n[release-#{{TO_TAG}}]: https://github.com/#{{OWNER}}/#{{REPO}}/releases/tag/#{{TO_TAG}}\n\n---",
+  "pr_template": "- #{{TITLE}} by **@#{{AUTHOR}}** in [##{{NUMBER}}](#{{URL}})",
+  "empty_template": "- no changes"
+}
