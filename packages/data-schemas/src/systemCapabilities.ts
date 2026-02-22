@@ -49,6 +49,25 @@ export type SystemCapability =
   | ConfigAssignCapability;
 
 /**
+ * Capabilities that are implied by holding a broader capability.
+ * When `hasCapability` checks for an implied capability, it first expands
+ * the principal's grant set — so granting `MANAGE_USERS` automatically
+ * satisfies a `READ_USERS` check without a separate grant.
+ *
+ * Implication is one-directional: `MANAGE_USERS` implies `READ_USERS`,
+ * but `READ_USERS` does NOT imply `MANAGE_USERS`.
+ */
+export const CapabilityImplications: Partial<Record<BaseSystemCapability, BaseSystemCapability[]>> =
+  {
+    [SystemCapabilities.MANAGE_USERS]: [SystemCapabilities.READ_USERS],
+    [SystemCapabilities.MANAGE_GROUPS]: [SystemCapabilities.READ_GROUPS],
+    [SystemCapabilities.MANAGE_ROLES]: [SystemCapabilities.READ_ROLES],
+    [SystemCapabilities.MANAGE_CONFIGS]: [SystemCapabilities.READ_CONFIGS],
+    [SystemCapabilities.MANAGE_AGENTS]: [SystemCapabilities.READ_AGENTS],
+    [SystemCapabilities.MANAGE_PROMPTS]: [SystemCapabilities.READ_PROMPTS],
+  };
+
+/**
  * Maps each ACL ResourceType to the SystemCapability that grants
  * unrestricted management access. Typed as `Record<ResourceType, …>`
  * so adding a new ResourceType variant causes a compile error until a
@@ -64,6 +83,12 @@ export const ResourceCapabilityMap: Record<ResourceType, SystemCapability> = {
 /**
  * Derives a section-level config management capability from a configSchema key.
  * @example configCapability('endpoints') → 'manage:configs:endpoints'
+ *
+ * TODO: Section-level config capabilities are scaffolded but not yet active.
+ * To activate delegated config management:
+ *  1. Expose POST/DELETE /api/admin/grants endpoints (wiring grantCapability/revokeCapability)
+ *  2. Seed section-specific grants for delegated admin roles via those endpoints
+ *  3. Guard config write handlers with hasConfigCapability(user, section)
  */
 export function configCapability(section: ConfigSection): `manage:configs:${ConfigSection}` {
   return `manage:configs:${section}`;

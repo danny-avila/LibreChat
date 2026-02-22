@@ -144,6 +144,10 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
 
   /**
    * Delete a prompt group and its prompts, cleaning up ACL permissions.
+   *
+   * **Authorization is enforced upstream.** This method performs no ownership
+   * check — it deletes any group by ID. Callers must gate access via
+   * `canAccessPromptGroupResource` middleware before invoking this.
    */
   async function deletePromptGroup({ _id }: { _id: string }) {
     const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
@@ -459,6 +463,10 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
 
   /**
    * Delete a prompt, potentially removing the group if it's the last prompt.
+   *
+   * **Authorization is enforced upstream.** This method performs no ownership
+   * check — it deletes any prompt by ID. Callers must gate access via
+   * `canAccessPromptViaGroup` middleware before invoking this.
    */
   async function deletePrompt({
     promptId,
