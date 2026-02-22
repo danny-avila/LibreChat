@@ -4,13 +4,14 @@ import {
   SystemCapabilities,
   readConfigCapability,
 } from '@librechat/data-schemas';
+import type { PrincipalType } from 'librechat-data-provider';
 import type { SystemCapability, ConfigSection } from '@librechat/data-schemas';
 import type { NextFunction, Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types/http';
 
 interface ResolvedPrincipal {
-  principalType: string;
+  principalType: PrincipalType;
   principalId?: string | Types.ObjectId;
 }
 

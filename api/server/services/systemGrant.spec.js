@@ -287,6 +287,66 @@ describe('SystemGrant methods', () => {
     });
   });
 
+  describe('principalId normalization', () => {
+    it('grant with string userId is found by hasCapabilityForPrincipals with ObjectId', async () => {
+      const userId = new mongoose.Types.ObjectId();
+
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId.toString(), // string input
+        capability: SystemCapabilities.READ_USAGE,
+      });
+
+      const result = await methods.hasCapabilityForPrincipals({
+        principals: [{ principalType: PrincipalType.USER, principalId: userId }], // ObjectId input
+        capability: SystemCapabilities.READ_USAGE,
+      });
+
+      expect(result).toBe(true);
+    });
+
+    it('revoke with string userId removes the grant stored as ObjectId', async () => {
+      const userId = new mongoose.Types.ObjectId();
+
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId.toString(),
+        capability: SystemCapabilities.READ_USAGE,
+      });
+
+      await methods.revokeCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId.toString(), // string revoke
+        capability: SystemCapabilities.READ_USAGE,
+      });
+
+      const result = await methods.hasCapabilityForPrincipals({
+        principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+        capability: SystemCapabilities.READ_USAGE,
+      });
+
+      expect(result).toBe(false);
+    });
+
+    it('getCapabilitiesForPrincipal with string userId returns grants stored as ObjectId', async () => {
+      const userId = new mongoose.Types.ObjectId();
+
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId.toString(),
+        capability: SystemCapabilities.READ_USAGE,
+      });
+
+      const grants = await methods.getCapabilitiesForPrincipal({
+        principalType: PrincipalType.USER,
+        principalId: userId.toString(), // string lookup
+      });
+
+      expect(grants).toHaveLength(1);
+      expect(grants[0].capability).toBe(SystemCapabilities.READ_USAGE);
+    });
+  });
+
   describe('tenant scoping', () => {
     it('tenant-scoped grant does not match platform-level query', async () => {
       const userId = new mongoose.Types.ObjectId();
