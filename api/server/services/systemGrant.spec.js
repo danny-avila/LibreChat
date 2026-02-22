@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const { createModels, createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { SystemRoles, PrincipalType, SystemCapabilities } = require('librechat-data-provider');
+const { SystemRoles, PrincipalType } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),

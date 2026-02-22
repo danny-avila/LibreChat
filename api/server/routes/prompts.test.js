@@ -9,8 +9,8 @@ const {
   AccessRoleIds,
   PrincipalType,
   PermissionBits,
-  SystemCapabilities,
 } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 
 // Mock modules before importing
 jest.mock('~/server/services/Config', () => ({

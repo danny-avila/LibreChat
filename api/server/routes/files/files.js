@@ -10,10 +10,10 @@ const {
   ResourceType,
   EModelEndpoint,
   PermissionBits,
-  SystemCapabilities,
   checkOpenAIStorage,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   filterFile,
   processFileUpload,

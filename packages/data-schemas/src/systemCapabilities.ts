@@ -1,6 +1,6 @@
 import type { z } from 'zod';
-import type { configSchema } from './config';
-import { ResourceType } from './accessPermissions';
+import type { configSchema } from 'librechat-data-provider';
+import { ResourceType } from 'librechat-data-provider';
 
 export const SystemCapabilities = {
   ACCESS_ADMIN: 'access:admin',

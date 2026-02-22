@@ -3,7 +3,6 @@ const {
   SystemRoles,
   roleDefaults,
   PermissionTypes,
-  SystemCapabilities,
   agentPermissionsSchema,
   promptPermissionsSchema,
   memoryPermissionsSchema,
@@ -12,6 +11,7 @@ const {
   peoplePickerPermissionsSchema,
   remoteAgentsPermissionsSchema,
 } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, requireCapability, requireJwtAuth } = require('~/server/middleware');
 const { updateRoleByName, getRoleByName } = require('~/models');
 

@@ -1,7 +1,8 @@
 import { Types } from 'mongoose';
-import { PrincipalType, SystemCapabilities, SystemRoles } from 'librechat-data-provider';
+import { PrincipalType, SystemRoles } from 'librechat-data-provider';
+import { SystemCapabilities } from '~/systemCapabilities';
 import type { Model, ClientSession } from 'mongoose';
-import type { SystemCapability } from 'librechat-data-provider';
+import type { SystemCapability } from '~/systemCapabilities';
 import type { ISystemGrant } from '~/types';
 
 export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {

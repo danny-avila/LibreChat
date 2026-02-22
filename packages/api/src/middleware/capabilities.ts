@@ -3,8 +3,8 @@ import {
   configCapability,
   SystemCapabilities,
   readConfigCapability,
-} from 'librechat-data-provider';
-import type { SystemCapability, ConfigSection } from 'librechat-data-provider';
+} from '@librechat/data-schemas';
+import type { SystemCapability, ConfigSection } from '@librechat/data-schemas';
 import type { NextFunction, Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types/http';

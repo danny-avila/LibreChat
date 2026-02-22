@@ -1,4 +1,5 @@
-const { SystemCapabilities, PrincipalType } = require('librechat-data-provider');
+const { PrincipalType } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, requireCapability } = require('./capabilities');
 
 jest.mock('@librechat/data-schemas', () => ({
