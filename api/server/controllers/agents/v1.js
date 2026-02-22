@@ -531,7 +531,9 @@ const getListAgentsHandler = async (req, res) => {
     const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
     const refreshKey = `${userId}:agents_avatar_refresh`;
     let cachedRefresh = await cache.get(refreshKey);
-    if (!cachedRefresh) {
+    const isValidCachedRefresh =
+      cachedRefresh != null && typeof cachedRefresh === 'object' && cachedRefresh.urlCache != null;
+    if (!isValidCachedRefresh) {
       try {
         const fullList = await getListAgentsByAccess({
           accessibleIds,
@@ -668,6 +670,14 @@ const uploadAgentAvatarHandler = async (req, res) => {
     const updatedAgent = await updateAgent({ id: agent_id }, data, {
       updatingUserId: req.user.id,
     });
+
+    try {
+      const avatarCache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+      await avatarCache.delete(`${req.user.id}:agents_avatar_refresh`);
+    } catch (cacheErr) {
+      logger.error('[/:agent_id/avatar] Error invalidating avatar refresh cache', cacheErr);
+    }
+
     res.status(201).json(updatedAgent);
   } catch (error) {
     const message = 'An error occurred while updating the Agent Avatar';

@@ -120,6 +120,10 @@ export const refreshListAvatars = async ({
     );
   }
 
-  logger.info('[refreshListAvatars] Avatar refresh summary: %o', stats);
+  const { urlCache: _urlCache, ...loggableStats } = stats;
+  logger.info('[refreshListAvatars] Avatar refresh summary: %o', {
+    ...loggableStats,
+    urlCacheSize: Object.keys(_urlCache).length,
+  });
   return stats;
 };

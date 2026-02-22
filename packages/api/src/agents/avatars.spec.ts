@@ -7,6 +7,16 @@ import {
   refreshListAvatars,
 } from './avatars';
 
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    debug: jest.fn(),
+    info: jest.fn(),
+    error: jest.fn(),
+  },
+}));
+
+import { logger } from '@librechat/data-schemas';
+
 describe('refreshListAvatars', () => {
   let mockRefreshS3Url: jest.MockedFunction<RefreshS3UrlFn>;
   let mockUpdateAgent: jest.MockedFunction<UpdateAgentFn>;
@@ -15,6 +25,7 @@ describe('refreshListAvatars', () => {
   beforeEach(() => {
     mockRefreshS3Url = jest.fn();
     mockUpdateAgent = jest.fn();
+    jest.clearAllMocks();
   });
 
   const createAgent = (overrides: Partial<Agent> = {}): Agent => ({
@@ -195,6 +206,44 @@ describe('refreshListAvatars', () => {
     expect(Object.keys(stats.urlCache)).toHaveLength(25);
     expect(mockRefreshS3Url).toHaveBeenCalledTimes(25);
     expect(mockUpdateAgent).toHaveBeenCalledTimes(25);
+  });
+
+  it('should not populate urlCache when refreshS3Url resolves with falsy', async () => {
+    const agent = createAgent();
+    mockRefreshS3Url.mockResolvedValue(undefined);
+
+    const stats = await refreshListAvatars({
+      agents: [agent],
+      userId,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+
+    expect(stats.no_change).toBe(1);
+    expect(stats.urlCache).toEqual({});
+    expect(mockUpdateAgent).not.toHaveBeenCalled();
+  });
+
+  it('should redact urlCache from log output', async () => {
+    const agent = createAgent();
+    mockRefreshS3Url.mockResolvedValue('new-path.jpg');
+    mockUpdateAgent.mockResolvedValue({});
+
+    await refreshListAvatars({
+      agents: [agent],
+      userId,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+
+    const loggerInfo = logger.info as jest.Mock;
+    const summaryCall = loggerInfo.mock.calls.find(([msg]) =>
+      msg.includes('Avatar refresh summary'),
+    );
+    expect(summaryCall).toBeDefined();
+    const loggedPayload = summaryCall[1];
+    expect(loggedPayload).toHaveProperty('urlCacheSize', 1);
+    expect(loggedPayload).not.toHaveProperty('urlCache');
   });
 
   it('should track mixed statistics correctly', async () => {
