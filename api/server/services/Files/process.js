@@ -553,17 +553,30 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
-    const shouldUseOCR =
+    const documentParserMimeTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+
+    const shouldUseConfiguredOCR =
       appConfig?.ocr != null &&
       fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
 
-    if (shouldUseOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
+    const shouldUseDocumentParser =
+      !shouldUseConfiguredOCR && documentParserMimeTypes.includes(file.mimetype);
+
+    const shouldUseOCR = shouldUseConfiguredOCR || shouldUseDocumentParser;
+
+    if (shouldUseConfiguredOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
       throw new Error('OCR capability is not enabled for Agents');
     } else if (shouldUseOCR) {
       try {
-        const { handleFileUpload: uploadOCR } = getStrategyFunctions(
-          appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
-        );
+        const ocrStrategy = shouldUseConfiguredOCR
+          ? (appConfig?.ocr?.strategy ?? FileSources.document_parser)
+          : FileSources.document_parser;
+        const { handleFileUpload: uploadOCR } = getStrategyFunctions(ocrStrategy);
         const {
           text,
           bytes,

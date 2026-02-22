@@ -1,6 +1,4 @@
 import * as fs from 'fs';
-import mammoth from 'mammoth';
-import * as XLSX from 'xlsx';
 import { FileSources } from 'librechat-data-provider';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
@@ -25,7 +23,7 @@ export async function parseDocument({
       break;
     case 'application/vnd.ms-excel':
     case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-      text = excelSheetToText(file);
+      text = await excelSheetToText(file);
       break;
     default:
       throw new Error(`Unsupported file type in document parser: ${file.mimetype}`);
@@ -68,18 +66,20 @@ async function pdfToText(file: Express.Multer.File): Promise<string> {
 
 /** Parses Word document, returns text inside. */
 async function wordDocToText(file: Express.Multer.File): Promise<string> {
-  const rawText = await mammoth.extractRawText({ path: file.path });
+  const { extractRawText } = await import('mammoth');
+  const rawText = await extractRawText({ path: file.path });
   return rawText.value;
 }
 
 /** Parses Excel sheet, returns text inside. */
-function excelSheetToText(file: Express.Multer.File): string {
-  const workbook = XLSX.readFile(file.path);
+async function excelSheetToText(file: Express.Multer.File): Promise<string> {
+  const { readFile, utils } = await import('xlsx');
+  const workbook = readFile(file.path);
 
   let text = '';
   for (const sheetName of workbook.SheetNames) {
     const worksheet = workbook.Sheets[sheetName];
-    const worksheetAsCsvString = XLSX.utils.sheet_to_csv(worksheet);
+    const worksheetAsCsvString = utils.sheet_to_csv(worksheet);
     text += `${sheetName}:\n${worksheetAsCsvString}\n`;
   }
 
