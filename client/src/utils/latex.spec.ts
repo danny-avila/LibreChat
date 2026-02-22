@@ -202,6 +202,18 @@ y$ which spans lines`;
     expect(preprocessLaTeX(content)).toBe(expected);
   });
 
+  test('does not treat numeric-leading LaTeX as currency', () => {
+    const content = 'Multiply: $65 \\times 44$';
+    const expected = 'Multiply: $$65 \\times 44$$';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('does not treat numeric-leading arithmetic LaTeX as currency', () => {
+    const content = 'Compute $65 + 44 = 109$';
+    const expected = 'Compute $$65 + 44 = 109$$';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
   test('handles LaTeX with special characters and currency', () => {
     const content = 'Set $\\{x | x > \\$0\\}$ for positive prices';
     const expected = 'Set $$\\{x | x > \\$0\\}$$ for positive prices';
