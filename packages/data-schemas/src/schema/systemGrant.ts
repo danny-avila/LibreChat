@@ -33,7 +33,7 @@ const systemGrantSchema = new Schema<ISystemGrant>(
 
 systemGrantSchema.index(
   { principalType: 1, principalId: 1, capability: 1, tenantId: 1 },
-  { unique: true, sparse: true },
+  { unique: true },
 );
 
 systemGrantSchema.index({ capability: 1, tenantId: 1 });
