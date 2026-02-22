@@ -169,6 +169,68 @@ export const fluxApiSchema: ExtendedJsonSchema = {
   required: [],
 };
 
+/** ModelsLab image generation tool JSON schema */
+export const modelsLabSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    prompt: {
+      type: 'string',
+      description:
+        'A detailed text description of the image to generate. Be specific about subjects, style, lighting, and composition for best results.',
+    },
+    negative_prompt: {
+      type: 'string',
+      description:
+        'Elements to exclude from the generated image (e.g., "blurry, low quality, watermark, text").',
+    },
+    model_id: {
+      type: 'string',
+      enum: [
+        'flux',
+        'juggernaut-xl-v10',
+        'realvisxlV50_v50Bakedvae',
+        'dreamshaperXL10_alpha2Xl10',
+        'sdxl',
+      ],
+      description:
+        'Model to use for generation. "flux" is the highest quality (default). SDXL variants are faster.',
+    },
+    width: {
+      type: 'number',
+      description: 'Image width in pixels (64–1024, multiples of 8). Default: 512.',
+    },
+    height: {
+      type: 'number',
+      description: 'Image height in pixels (64–1024, multiples of 8). Default: 512.',
+    },
+    guidance_scale: {
+      type: 'number',
+      description:
+        'How closely to follow the prompt (1–20). Higher = more faithful, less creative. Default: 7.5.',
+    },
+    num_inference_steps: {
+      type: 'number',
+      description:
+        'Number of diffusion steps (10–50). More steps = higher quality but slower. Default: 20.',
+    },
+    seed: {
+      type: 'number',
+      description: 'Optional seed for reproducible results. Omit for random.',
+    },
+    enhance_prompt: {
+      type: 'string',
+      enum: ['yes', 'no'],
+      description: 'Enhance the prompt using AI for better results. Default: "yes".',
+    },
+    safety_checker: {
+      type: 'string',
+      enum: ['yes', 'no'],
+      description: 'Enable content safety filtering. Default: "yes".',
+    },
+  },
+  required: ['prompt'],
+};
+
 /** OpenWeather tool JSON schema */
 export const openWeatherSchema: ExtendedJsonSchema = {
   type: 'object',
@@ -497,6 +559,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Use Flux to generate images from text descriptions. This tool can generate images and list available finetunes. Each generate call creates one image. For multiple images, make multiple consecutive calls.',
     schema: fluxApiSchema,
+    toolType: 'builtin',
+  },
+  modelslab: {
+    name: 'modelslab',
+    description:
+      "Generate high-quality AI images from text using ModelsLab. Supports Flux (highest quality), Juggernaut XL (photorealism), RealVisXL, DreamShaper XL, and SDXL models. Requires a MODELSLAB_API_KEY.",
+    schema: modelsLabSchema,
     toolType: 'builtin',
   },
   open_weather: {

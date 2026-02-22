@@ -154,6 +154,20 @@
     ]
   },
   {
+    "name": "ModelsLab",
+    "pluginKey": "modelslab",
+    "description": "Generate images using text with ModelsLab AI. Supports Flux, Juggernaut XL, RealVisXL, DreamShaper XL, and SDXL models.",
+    "icon": "https://modelslab.com/favicon.ico",
+    "isAuthRequired": "true",
+    "authConfig": [
+      {
+        "authField": "MODELSLAB_API_KEY",
+        "label": "Your ModelsLab API Key",
+        "description": "Get your API key from <a href=\"https://modelslab.com/dashboard/api\" target=\"_blank\">ModelsLab Dashboard</a>."
+      }
+    ]
+  },
+  {
     "name": "Gemini Image Tools",
     "pluginKey": "gemini_image_gen",
     "toolkit": true,
