@@ -39,12 +39,22 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
-const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN ?? '';
-if (!COOKIE_DOMAIN) {
+const rawCookieDomain = process.env.COOKIE_DOMAIN ?? '';
+const DOMAIN_REGEX = /^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
+
+let COOKIE_DOMAIN = '';
+
+if (!rawCookieDomain) {
   logger.info(
     '[AuthService] cookies will be set without a domain attribute (browser default behavior)',
   );
+} else if (!DOMAIN_REGEX.test(rawCookieDomain)) {
+  logger.error(
+    '[AuthService] Invalid COOKIE_DOMAIN configured, cookies will be set without a domain attribute',
+    { COOKIE_DOMAIN: rawCookieDomain },
+  );
 } else {
+  COOKIE_DOMAIN = rawCookieDomain;
   logger.info(`[AuthService] cookies are set to domain ${COOKIE_DOMAIN}`);
 }
 
