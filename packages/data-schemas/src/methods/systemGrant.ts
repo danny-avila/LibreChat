@@ -76,6 +76,8 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
 
     if (tenantId != null) {
       filter.tenantId = tenantId;
+    } else {
+      filter.tenantId = { $exists: false };
     }
 
     const update = {
