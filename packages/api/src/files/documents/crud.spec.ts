@@ -1,5 +1,5 @@
-const path = require('path');
-const { parseDocument } = require('~/server/services/Files/Documents/crud');
+import path from 'path';
+import { parseDocument } from './crud';
 
 describe('Document Parser', () => {
   test('parseDocument() parses text from docx', async () => {
@@ -7,7 +7,7 @@ describe('Document Parser', () => {
       filename: 'sample.docx',
       path: path.join(__dirname, 'sample.docx'),
       mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    };
+    } as Express.Multer.File;
 
     const document = await parseDocument({ file });
 
@@ -25,7 +25,7 @@ describe('Document Parser', () => {
       filename: 'sample.xlsx',
       path: path.join(__dirname, 'sample.xlsx'),
       mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    };
+    } as Express.Multer.File;
 
     const document = await parseDocument({ file });
 
@@ -43,7 +43,7 @@ describe('Document Parser', () => {
       filename: 'nonexistent.file',
       path: path.join(__dirname, 'nonexistent.file'),
       mimetype: 'application/invalid',
-    };
+    } as Express.Multer.File;
 
     await expect(parseDocument({ file })).rejects.toThrow(
       'Unsupported file type in document parser: application/invalid',
@@ -55,7 +55,7 @@ describe('Document Parser', () => {
       filename: 'empty.docx',
       path: path.join(__dirname, 'empty.docx'),
       mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    };
+    } as Express.Multer.File;
 
     await expect(parseDocument({ file })).rejects.toThrow('No text found in document');
   });

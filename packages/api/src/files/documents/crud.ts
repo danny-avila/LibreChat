@@ -1,18 +1,21 @@
-const fs = require('fs');
-const { FileSources } = require('librechat-data-provider');
-const mammoth = require('mammoth');
-const XLSX = require('xlsx');
+import * as fs from 'fs';
+import mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
+import { FileSources } from 'librechat-data-provider';
+import type { TextItem } from 'pdfjs-dist/types/src/display/api';
+import type { MistralOCRUploadResult } from '~/types';
 
 /**
  * Parses an uploaded document and extracts its text content and metadata.
  *
  * Throws an Error if it fails to parse or no text is found.
- *
- * @param {Express.Multer.File} file - The uploaded file to parse.
- * @returns {Promise<MistralOCRUploadResult>} A readable stream of the file.
  */
-async function parseDocument({ file }) {
-  let text;
+export async function parseDocument({
+  file,
+}: {
+  file: Express.Multer.File;
+}): Promise<MistralOCRUploadResult> {
+  let text: string;
   switch (file.mimetype) {
     case 'application/pdf':
       text = await pdfToText(file);
@@ -29,7 +32,7 @@ async function parseDocument({ file }) {
   }
 
   if (!text?.trim()) {
-    throw Error('No text found in document');
+    throw new Error('No text found in document');
   }
 
   return {
@@ -41,59 +44,44 @@ async function parseDocument({ file }) {
   };
 }
 
-/**
- * Parses PDF, returns text inside.
- *
- * @param {Express.Multer.File} file - The file.
- * @returns {Promise<string>} the text contents of the PDF.
- */
-async function pdfToText(file) {
+/** Parses PDF, returns text inside. */
+async function pdfToText(file: Express.Multer.File): Promise<string> {
   // Imported inline so that Jest can test other routes without failing due to loading ESM
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
   const data = new Uint8Array(await fs.promises.readFile(file.path));
   const pdf = await getDocument({ data }).promise;
 
-  // Extract text from all pages
   let fullText = '';
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const textContent = await page.getTextContent();
-    const pageText = textContent.items.map((item) => item.str).join(' ');
+    const pageText = textContent.items
+      .filter((item): item is TextItem => !('type' in item))
+      .map((item) => item.str)
+      .join(' ');
     fullText += pageText + '\n';
   }
 
   return fullText;
 }
 
-/**
- * Parses Word document, returns text inside.
- *
- * @param {Express.Multer.File} file - The file.
- * @returns {Promise<string>} the text contents of the Word document.
- */
-async function wordDocToText(file) {
+/** Parses Word document, returns text inside. */
+async function wordDocToText(file: Express.Multer.File): Promise<string> {
   const rawText = await mammoth.extractRawText({ path: file.path });
   return rawText.value;
 }
 
-/**
- * Parses Excel sheet, returns text inside.
- *
- * @param {Express.Multer.File} file - The file.
- * @returns {string} the text contents of the XLS/XLSX.
- */
-function excelSheetToText(file) {
+/** Parses Excel sheet, returns text inside. */
+function excelSheetToText(file: Express.Multer.File): string {
   const workbook = XLSX.readFile(file.path);
 
   let text = '';
-  workbook.SheetNames.forEach((sheetName) => {
+  for (const sheetName of workbook.SheetNames) {
     const worksheet = workbook.Sheets[sheetName];
     const worksheetAsCsvString = XLSX.utils.sheet_to_csv(worksheet);
     text += `${sheetName}:\n${worksheetAsCsvString}\n`;
-  });
+  }
 
   return text;
 }
-
-module.exports = { parseDocument };

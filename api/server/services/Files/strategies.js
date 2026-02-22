@@ -1,5 +1,6 @@
 const { FileSources } = require('librechat-data-provider');
 const {
+  parseDocument,
   uploadMistralOCR,
   uploadAzureMistralOCR,
   uploadGoogleVertexMistralOCR,
@@ -51,7 +52,6 @@ const {
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
-const { parseDocument } = require('~/server/services/Files/Documents/crud');
 
 /**
  * Firebase Storage Strategy Functions
