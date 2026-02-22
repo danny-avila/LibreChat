@@ -1,17 +1,9 @@
-import { Types } from 'mongoose';
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { SystemCapabilities } from '~/systemCapabilities';
-import type { Model, ClientSession } from 'mongoose';
+import { normalizePrincipalId } from '~/utils/principal';
+import type { Types, Model, ClientSession } from 'mongoose';
 import type { SystemCapability } from '~/systemCapabilities';
 import type { ISystemGrant } from '~/types';
-
-const normalizePrincipalId = (
-  principalId: string | Types.ObjectId,
-  principalType: PrincipalType,
-): string | Types.ObjectId =>
-  typeof principalId === 'string' && principalType !== PrincipalType.ROLE
-    ? new Types.ObjectId(principalId)
-    : principalId;
 
 export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -167,7 +159,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
 
     const filter: Record<string, unknown> = {
       principalType,
-      principalId,
+      principalId: normalizePrincipalId(principalId, principalType),
     };
 
     if (tenantId != null) {
