@@ -166,5 +166,18 @@
         "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank if using Vertex AI with service account."
       }
     ]
+  },
+  {
+    "name": "OpenRouter Image Generation",
+    "pluginKey": "openrouter_image_gen",
+    "description": "Generate images using text with OpenRouter's image generation models.",
+    "icon": "https://openrouter.ai/favicon.ico",
+    "authConfig": [
+      {
+        "authField": "OPENROUTER_API_KEY",
+        "label": "OpenRouter API Key",
+        "description": "Your OpenRouter API key. Get one at <a href=\"https://openrouter.ai/keys\" target=\"_blank\">https://openrouter.ai/keys</a>"
+      }
+    ]
   }
 ]
