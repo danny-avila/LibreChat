@@ -5,6 +5,14 @@ import type { Model, ClientSession } from 'mongoose';
 import type { SystemCapability } from '~/systemCapabilities';
 import type { ISystemGrant } from '~/types';
 
+const normalizePrincipalId = (
+  principalId: string | Types.ObjectId,
+  principalType: PrincipalType,
+): string | Types.ObjectId =>
+  typeof principalId === 'string' && principalType !== PrincipalType.ROLE
+    ? new Types.ObjectId(principalId)
+    : principalId;
+
 export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   /**
    * Check if any of the given principals holds a specific capability.
@@ -69,10 +77,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   ): Promise<ISystemGrant | null> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
 
-    const normalizedPrincipalId =
-      typeof principalId === 'string' && principalType !== PrincipalType.ROLE
-        ? new Types.ObjectId(principalId)
-        : principalId;
+    const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
 
     const filter: Record<string, unknown> = {
       principalType,
@@ -127,9 +132,11 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   ): Promise<void> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
 
+    const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
+
     const filter: Record<string, unknown> = {
       principalType,
-      principalId,
+      principalId: normalizedPrincipalId,
       capability,
     };
 
