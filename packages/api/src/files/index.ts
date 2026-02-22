@@ -1,5 +1,6 @@
 export * from './audio';
 export * from './context';
+export * from './documents/crud';
 export * from './encode';
 export * from './filter';
 export * from './mistral/crud';
