@@ -123,6 +123,7 @@ describe('processAgentFileUpload', () => {
     jest.clearAllMocks();
     mockRes.status.mockReturnThis();
     mockRes.json.mockReturnValue({});
+    checkCapability.mockResolvedValue(true);
     getStrategyFunctions.mockReturnValue({
       handleFileUpload: jest
         .fn()
@@ -226,6 +227,97 @@ describe('processAgentFileUpload', () => {
       ).rejects.toThrow('File type text/plain is not supported for text parsing.');
 
       expect(getStrategyFunctions).not.toHaveBeenCalled();
+    });
+
+    test('throws instead of falling back to parseText when document_parser fails for a document MIME type', async () => {
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockRejectedValue(new Error('No text found in document')),
+      });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+      const { parseText } = require('@librechat/api');
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow(/image-based and requires an OCR service/);
+
+      expect(parseText).not.toHaveBeenCalled();
+    });
+
+    test('falls back to document_parser when configured OCR fails for a document MIME type', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+      const failingUpload = jest.fn().mockRejectedValue(new Error('OCR API returned 500'));
+      const fallbackUpload = jest
+        .fn()
+        .mockResolvedValue({ text: 'parsed text', bytes: 11, filepath: 'doc://result' });
+      getStrategyFunctions
+        .mockReturnValueOnce({ handleFileUpload: failingUpload })
+        .mockReturnValueOnce({ handleFileUpload: fallbackUpload });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).resolves.not.toThrow();
+
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.mistral_ocr);
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+    });
+
+    test('throws when both configured OCR and document_parser fallback fail', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockRejectedValue(new Error('failure')),
+      });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+      const { parseText } = require('@librechat/api');
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow(/image-based and requires an OCR service/);
+
+      expect(parseText).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('text size guard', () => {
+    test('throws before writing to MongoDB when extracted text exceeds 15MB', async () => {
+      const oversizedText = 'x'.repeat(15 * 1024 * 1024 + 1);
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: oversizedText,
+          bytes: Buffer.byteLength(oversizedText, 'utf8'),
+          filepath: 'doc://result',
+        }),
+      });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+      const { createFile } = require('~/models');
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow(/exceeds the 15MB storage limit/);
+
+      expect(createFile).not.toHaveBeenCalled();
+    });
+
+    test('succeeds when extracted text is within the 15MB limit', async () => {
+      const okText = 'x'.repeat(1024);
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: okText,
+          bytes: Buffer.byteLength(okText, 'utf8'),
+          filepath: 'doc://result',
+        }),
+      });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).resolves.not.toThrow();
     });
   });
 });
