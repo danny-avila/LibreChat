@@ -18,7 +18,7 @@ const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const canDeleteAccount = async (req, res, next = () => {}) => {
   const { user } = req;
   const { ALLOW_ACCOUNT_DELETION = true } = process.env;
-  const hasManageUsers = await hasCapability(user, SystemCapabilities.MANAGE_USERS);
+  const hasManageUsers = user ? await hasCapability(user, SystemCapabilities.MANAGE_USERS) : false;
   if (hasManageUsers || isEnabled(ALLOW_ACCOUNT_DELETION)) {
     return next();
   } else {
