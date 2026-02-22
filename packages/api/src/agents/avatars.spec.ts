@@ -44,6 +44,7 @@ describe('refreshListAvatars', () => {
     });
 
     expect(stats.updated).toBe(0);
+    expect(stats.urlCache).toEqual({});
     expect(mockRefreshS3Url).not.toHaveBeenCalled();
     expect(mockUpdateAgent).not.toHaveBeenCalled();
   });
@@ -62,6 +63,7 @@ describe('refreshListAvatars', () => {
 
     expect(stats.not_s3).toBe(1);
     expect(stats.updated).toBe(0);
+    expect(stats.urlCache).toEqual({});
     expect(mockRefreshS3Url).not.toHaveBeenCalled();
   });
 
@@ -109,6 +111,7 @@ describe('refreshListAvatars', () => {
     });
 
     expect(stats.updated).toBe(1);
+    expect(stats.urlCache).toEqual({ agent1: 'new-path.jpg' });
     expect(mockRefreshS3Url).toHaveBeenCalledWith(agent.avatar);
     expect(mockUpdateAgent).toHaveBeenCalledWith(
       { id: 'agent1' },
@@ -130,6 +133,7 @@ describe('refreshListAvatars', () => {
 
     expect(stats.no_change).toBe(1);
     expect(stats.updated).toBe(0);
+    expect(stats.urlCache).toEqual({ agent1: 'old-path.jpg' });
     expect(mockUpdateAgent).not.toHaveBeenCalled();
   });
 
@@ -146,6 +150,7 @@ describe('refreshListAvatars', () => {
 
     expect(stats.s3_error).toBe(1);
     expect(stats.updated).toBe(0);
+    expect(stats.urlCache).toEqual({});
   });
 
   it('should handle database persist errors gracefully', async () => {
@@ -162,6 +167,7 @@ describe('refreshListAvatars', () => {
 
     expect(stats.persist_error).toBe(1);
     expect(stats.updated).toBe(0);
+    expect(stats.urlCache).toEqual({ agent1: 'new-path.jpg' });
   });
 
   it('should process agents in batches', async () => {
@@ -186,6 +192,7 @@ describe('refreshListAvatars', () => {
     });
 
     expect(stats.updated).toBe(25);
+    expect(Object.keys(stats.urlCache)).toHaveLength(25);
     expect(mockRefreshS3Url).toHaveBeenCalledTimes(25);
     expect(mockUpdateAgent).toHaveBeenCalledTimes(25);
   });
@@ -214,6 +221,7 @@ describe('refreshListAvatars', () => {
     expect(stats.updated).toBe(2); // agent1 and agent2 (other user's agent now refreshed)
     expect(stats.not_s3).toBe(1); // agent3
     expect(stats.no_id).toBe(1); // agent with empty id
+    expect(stats.urlCache).toEqual({ agent1: 'new-path.jpg', agent2: 'new-path.jpg' });
   });
 });
 
