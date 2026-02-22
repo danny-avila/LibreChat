@@ -4,7 +4,7 @@ const { logger } = require('@librechat/data-schemas');
 const { logoutUser } = require('~/server/services/AuthService');
 const { getOpenIdConfig } = require('~/strategies');
 
-const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN ?? null;
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN ?? '';
 
 const logoutController = async (req, res) => {
   const parsedCookies = req.headers.cookie ? cookies.parse(req.headers.cookie) : {};
