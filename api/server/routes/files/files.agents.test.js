@@ -9,8 +9,8 @@ const {
   AccessRoleIds,
   ResourceType,
   PrincipalType,
-  SystemCapabilities,
 } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 const { createAgent, createFile } = require('~/models');
 
 // Only mock the external dependencies that we don't want to test

@@ -16,8 +16,8 @@ const {
   PrincipalType,
   PermissionBits,
   PermissionTypes,
-  SystemCapabilities,
 } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   getListPromptGroupsByAccess,
   makePromptProduction,

@@ -1,10 +1,6 @@
 const mongoose = require('mongoose');
-const {
-  ResourceType,
-  PrincipalType,
-  PrincipalModel,
-  SystemCapabilities,
-} = require('librechat-data-provider');
+const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { canAccessMCPServerResource } = require('./canAccessMCPServerResource');
 const { User, Role, AclEntry, SystemGrant } = require('~/db/models');

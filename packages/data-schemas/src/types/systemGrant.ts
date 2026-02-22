@@ -1,5 +1,5 @@
 import type { Document, Types } from 'mongoose';
-import type { SystemCapability } from 'librechat-data-provider';
+import type { SystemCapability } from '~/systemCapabilities';
 
 export type SystemGrant = {
   /** The type of principal ('user' | 'group' | 'role') */

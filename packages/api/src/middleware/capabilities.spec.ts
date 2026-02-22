@@ -1,9 +1,9 @@
+import { PrincipalType } from 'librechat-data-provider';
 import {
-  PrincipalType,
   configCapability,
   SystemCapabilities,
   readConfigCapability,
-} from 'librechat-data-provider';
+} from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import { generateCapabilityCheck } from './capabilities';
