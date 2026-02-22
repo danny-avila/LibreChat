@@ -103,7 +103,7 @@
     "passport-jwt": "^4.0.1",
     "passport-ldapauth": "^3.0.1",
     "passport-local": "^1.0.0",
-    "pdfjs-dist": "^5.4.530",
+    "pdfjs-dist": "^5.4.624",
     "rate-limit-redis": "^4.2.0",
     "sharp": "^0.33.5",
     "tiktoken": "^1.0.15",

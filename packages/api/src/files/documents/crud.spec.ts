@@ -4,7 +4,7 @@ import { parseDocument } from './crud';
 describe('Document Parser', () => {
   test('parseDocument() parses text from docx', async () => {
     const file = {
-      filename: 'sample.docx',
+      originalname: 'sample.docx',
       path: path.join(__dirname, 'sample.docx'),
       mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     } as Express.Multer.File;
@@ -22,7 +22,7 @@ describe('Document Parser', () => {
 
   test('parseDocument() parses text from xlsx', async () => {
     const file = {
-      filename: 'sample.xlsx',
+      originalname: 'sample.xlsx',
       path: path.join(__dirname, 'sample.xlsx'),
       mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     } as Express.Multer.File;
@@ -38,9 +38,27 @@ describe('Document Parser', () => {
     });
   });
 
+  test('parseDocument() parses text from xls', async () => {
+    const file = {
+      originalname: 'sample.xls',
+      path: path.join(__dirname, 'sample.xls'),
+      mimetype: 'application/vnd.ms-excel',
+    } as Express.Multer.File;
+
+    const document = await parseDocument({ file });
+
+    expect(document).toEqual({
+      bytes: 31,
+      filename: 'sample.xls',
+      filepath: 'document_parser',
+      images: [],
+      text: 'Sheet One:\nData,on,first,sheet\n',
+    });
+  });
+
   test('parseDocument() throws error for unhandled document type', async () => {
     const file = {
-      filename: 'nonexistent.file',
+      originalname: 'nonexistent.file',
       path: path.join(__dirname, 'nonexistent.file'),
       mimetype: 'application/invalid',
     } as Express.Multer.File;
@@ -52,7 +70,7 @@ describe('Document Parser', () => {
 
   test('parseDocument() throws error for empty document', async () => {
     const file = {
-      filename: 'empty.docx',
+      originalname: 'empty.docx',
       path: path.join(__dirname, 'empty.docx'),
       mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     } as Express.Multer.File;

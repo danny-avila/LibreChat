@@ -34,7 +34,7 @@ export async function parseDocument({
   }
 
   return {
-    filename: file.filename,
+    filename: file.originalname,
     bytes: Buffer.byteLength(text, 'utf8'),
     filepath: FileSources.document_parser,
     text,
