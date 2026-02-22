@@ -22,7 +22,9 @@ const logoutController = async (req, res) => {
     const logout = await logoutUser(req, refreshToken);
     const { status, message } = logout;
 
-    const cookieOptions = COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : undefined;
+    const cookieOptions = COOKIE_DOMAIN
+      ? { domain: COOKIE_DOMAIN, sameSite: COOKIE_DOMAIN?.startsWith('.') ? 'lax' : 'strict' }
+      : undefined;
     res.clearCookie('refreshToken', cookieOptions);
     res.clearCookie('openid_access_token', cookieOptions);
     res.clearCookie('openid_id_token', cookieOptions);
