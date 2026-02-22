@@ -89,17 +89,12 @@ export const refreshListAvatars = async ({
           logger.debug('[refreshListAvatars] Refreshing S3 avatar for agent: %s', agent._id);
           const newPath = await refreshS3Url(agent.avatar);
 
-          if (!newPath) {
+          if (!newPath || newPath === agent.avatar.filepath) {
             stats.no_change++;
             return;
           }
 
           stats.urlCache[agent.id] = newPath;
-
-          if (newPath === agent.avatar.filepath) {
-            stats.no_change++;
-            return;
-          }
 
           try {
             await updateAgent(

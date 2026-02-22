@@ -144,7 +144,7 @@ describe('refreshListAvatars', () => {
 
     expect(stats.no_change).toBe(1);
     expect(stats.updated).toBe(0);
-    expect(stats.urlCache).toEqual({ agent1: 'old-path.jpg' });
+    expect(stats.urlCache).toEqual({});
     expect(mockUpdateAgent).not.toHaveBeenCalled();
   });
 
