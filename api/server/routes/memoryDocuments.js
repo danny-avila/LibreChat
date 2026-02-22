@@ -1,5 +1,7 @@
 const express = require('express');
-const { Tokenizer, generateCheckAccess } = require('@librechat/api');
+const mongoose = require('mongoose');
+const { Tokenizer, generateCheckAccess, triggerManualSynthesis } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getMemoryDocumentsByUser,
@@ -28,6 +30,38 @@ router.get('/', checkMemoryRead, async (req, res) => {
   try {
     const documents = await getMemoryDocumentsByUser(req.user.id);
     res.json({ documents });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/synthesis', checkMemoryRead, async (req, res) => {
+  try {
+    const SynthesisRun = mongoose.models.SynthesisRun;
+    const runs = await SynthesisRun.find({ userId: req.user.id })
+      .sort({ startedAt: -1 })
+      .limit(20)
+      .lean();
+    res.json({ runs });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/synthesis/trigger', checkMemoryUpdate, async (req, res) => {
+  try {
+    const config = {
+      summaryModel: process.env.SYNTHESIS_SUMMARY_MODEL || 'gpt-4o-mini',
+      summaryApiKey: process.env.SYNTHESIS_API_KEY || process.env.OPENAI_API_KEY || '',
+      summaryBaseUrl: process.env.SYNTHESIS_BASE_URL || process.env.OPENAI_BASE_URL,
+      synthesisModel: process.env.SYNTHESIS_MODEL || 'gpt-4o-mini',
+      synthesisApiKey: process.env.SYNTHESIS_API_KEY || process.env.OPENAI_API_KEY || '',
+      synthesisBaseUrl: process.env.SYNTHESIS_BASE_URL || process.env.OPENAI_BASE_URL,
+    };
+    triggerManualSynthesis(req.user.id, config).catch((error) => {
+      logger.error('[memoryDocuments] Manual synthesis failed:', error);
+    });
+    res.json({ triggered: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

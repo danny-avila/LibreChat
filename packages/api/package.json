@@ -61,6 +61,7 @@
     "@types/jsonwebtoken": "^9.0.0",
     "@types/multer": "^1.4.13",
     "@types/node": "^20.3.0",
+    "@types/node-cron": "^3.0.11",
     "@types/node-fetch": "^2.6.13",
     "@types/react": "^18.2.18",
     "@types/winston": "^2.4.4",
@@ -87,6 +88,7 @@
     "@google/genai": "^1.19.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.80",
+    "@langchain/openai": "^0.5.0",
     "@librechat/agents": "^3.1.51",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.26.0",
@@ -114,5 +116,8 @@
     "tiktoken": "^1.0.15",
     "undici": "^7.18.2",
     "zod": "^3.22.4"
+  },
+  "dependencies": {
+    "node-cron": "^4.2.1"
   }
 }
