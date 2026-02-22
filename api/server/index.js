@@ -157,6 +157,8 @@ const startServer = async () => {
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
+  app.use('/api/memory-documents', routes.memoryDocuments);
+  app.use('/api/user-projects', routes.userProjects);
   app.use('/api/permissions', routes.accessPermissions);
 
   app.use('/api/tags', routes.tags);

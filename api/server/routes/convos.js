@@ -296,4 +296,22 @@ router.post('/duplicate', async (req, res) => {
   }
 });
 
+router.patch('/:conversationId/project', async (req, res) => {
+  const { conversationId } = req.params;
+  const { projectId } = req.body;
+
+  try {
+    const convo = await getConvo(req.user.id, conversationId);
+    if (!convo) {
+      return res.status(404).json({ error: 'Conversation not found.' });
+    }
+
+    await saveConvo(req, { conversationId, projectId: projectId || null });
+    res.json({ updated: true });
+  } catch (error) {
+    logger.error('Error updating conversation project', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

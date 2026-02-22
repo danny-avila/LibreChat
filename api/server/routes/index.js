@@ -1,4 +1,6 @@
 const accessPermissions = require('./accessPermissions');
+const memoryDocuments = require('./memoryDocuments');
+const userProjects = require('./userProjects');
 const assistants = require('./assistants');
 const categories = require('./categories');
 const adminAuth = require('./admin/auth');
@@ -51,6 +53,8 @@ module.exports = {
   balance,
   messages,
   memories,
+  memoryDocuments,
+  userProjects,
   endpoints,
   assistants,
   categories,

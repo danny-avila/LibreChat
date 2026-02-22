@@ -763,6 +763,8 @@ export const tConversationSchema = z.object({
   iconURL: z.string().nullable().optional(),
   /* temporary chat */
   expiredAt: z.string().nullable().optional(),
+  /* project assignment */
+  projectId: z.string().nullable().optional(),
   /* file token limits */
   fileTokenLimit: coerceNumber.optional(),
   /** @deprecated */
