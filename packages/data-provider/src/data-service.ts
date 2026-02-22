@@ -1026,6 +1026,65 @@ export const createMemory = (data: {
   return request.post(endpoints.memories(), data);
 };
 
+/* User Projects */
+export const getUserProjects = (): Promise<q.UserProjectsResponse> => {
+  return request.get(endpoints.userProjects());
+};
+
+export const createUserProject = (
+  data: q.CreateUserProjectBody,
+): Promise<q.TUserProject> => {
+  return request.post(endpoints.userProjects(), data);
+};
+
+export const updateUserProject = (
+  id: string,
+  data: q.UpdateUserProjectBody,
+): Promise<q.TUserProject> => {
+  return request.patch(endpoints.userProject(id), data);
+};
+
+export const deleteUserProject = (id: string): Promise<void> => {
+  return request.delete(endpoints.userProject(id));
+};
+
+/* Memory Documents */
+export const getMemoryDocuments = (): Promise<q.MemoryDocumentsResponse> => {
+  return request.get(endpoints.memoryDocuments());
+};
+
+export const getMemoryDocument = (
+  scope: string,
+  projectId?: string,
+): Promise<q.TMemoryDocument> => {
+  return request.get(endpoints.memoryDocument(scope, projectId));
+};
+
+export const updateMemoryDocument = (
+  scope: string,
+  projectId: string | undefined,
+  data: q.UpdateMemoryDocumentBody,
+): Promise<q.TMemoryDocument> => {
+  return request.put(endpoints.memoryDocument(scope, projectId), data);
+};
+
+/* Synthesis */
+export const getSynthesisRuns = (): Promise<q.SynthesisRunsResponse> => {
+  return request.get(endpoints.synthesisRuns());
+};
+
+export const triggerSynthesis = (): Promise<{ triggered: boolean }> => {
+  return request.post(endpoints.triggerSynthesis(), {});
+};
+
+/* Conversation Project Assignment */
+export const assignConversationProject = (
+  conversationId: string,
+  projectId: string | null,
+): Promise<{ updated: boolean }> => {
+  return request.patch(endpoints.conversationProject(conversationId), { projectId });
+};
+
 export function searchPrincipals(
   params: q.PrincipalSearchParams,
 ): Promise<q.PrincipalSearchResponse> {

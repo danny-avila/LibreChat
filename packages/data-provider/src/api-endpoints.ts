@@ -379,6 +379,23 @@ export const memories = () => `${BASE_URL}/api/memories`;
 export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
 
+/* User Projects */
+export const userProjects = () => `${BASE_URL}/api/user-projects`;
+export const userProject = (id: string) => `${userProjects()}/${encodeURIComponent(id)}`;
+
+/* Memory Documents */
+export const memoryDocuments = () => `${BASE_URL}/api/memory-documents`;
+export const memoryDocument = (scope: string, projectId?: string) => {
+  const base = `${memoryDocuments()}/${encodeURIComponent(scope)}`;
+  return projectId ? `${base}/${encodeURIComponent(projectId)}` : base;
+};
+export const synthesisRuns = () => `${memoryDocuments()}/synthesis`;
+export const triggerSynthesis = () => `${synthesisRuns()}/trigger`;
+
+/* Conversation Project Assignment */
+export const conversationProject = (conversationId: string) =>
+  `${conversationsRoot}/${encodeURIComponent(conversationId)}/project`;
+
 export const searchPrincipals = (params: q.PrincipalSearchParams) => {
   const { q: query, limit, types } = params;
   let url = `${BASE_URL}/api/permissions/search-principals?q=${encodeURIComponent(query)}`;

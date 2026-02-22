@@ -51,6 +51,7 @@ export interface IConversation extends Document {
   web_search?: boolean;
   disableStreaming?: boolean;
   fileTokenLimit?: number;
+  projectId?: Types.ObjectId | null;
   // Additional fields
   files?: string[];
   expiredAt?: Date;

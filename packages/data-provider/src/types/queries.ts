@@ -145,6 +145,67 @@ export type MemoriesResponse = {
   usagePercentage: number | null;
 };
 
+/* User Projects */
+export type TUserProject = {
+  _id: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserProjectsResponse = {
+  projects: TUserProject[];
+};
+
+export type CreateUserProjectBody = {
+  name: string;
+  description?: string;
+};
+
+export type UpdateUserProjectBody = {
+  name?: string;
+  description?: string;
+};
+
+/* Memory Documents */
+export type TMemoryDocument = {
+  _id: string;
+  scope: 'global' | 'project';
+  projectId?: string;
+  content: string;
+  tokenCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MemoryDocumentsResponse = {
+  documents: TMemoryDocument[];
+};
+
+export type UpdateMemoryDocumentBody = {
+  content: string;
+};
+
+/* Synthesis Runs */
+export type TSynthesisRun = {
+  _id: string;
+  scope: 'global' | 'project';
+  projectId?: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  conversationsProcessed: number;
+  memoriesCreated: number;
+  memoriesUpdated: number;
+  memoriesDeleted: number;
+  error?: string;
+  startedAt: string;
+  completedAt?: string;
+};
+
+export type SynthesisRunsResponse = {
+  runs: TSynthesisRun[];
+};
+
 export type PrincipalSearchParams = {
   q: string;
   limit?: number;

@@ -8,6 +8,10 @@ import { createKeyMethods, type KeyMethods } from './key';
 import { createFileMethods, type FileMethods } from './file';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
+/* Memory Documents */
+import { createMemoryDocumentMethods, type MemoryDocumentMethods } from './memoryDocument';
+/* User Projects */
+import { createUserProjectMethods, type UserProjectMethods } from './userProject';
 /* Agent Categories */
 import { createAgentCategoryMethods, type AgentCategoryMethods } from './agentCategory';
 /* Agent API Keys */
@@ -29,6 +33,8 @@ export type AllMethods = UserMethods &
   KeyMethods &
   FileMethods &
   MemoryMethods &
+  MemoryDocumentMethods &
+  UserProjectMethods &
   AgentCategoryMethods &
   AgentApiKeyMethods &
   MCPServerMethods &
@@ -51,6 +57,8 @@ export function createMethods(mongoose: typeof import('mongoose')): AllMethods {
     ...createKeyMethods(mongoose),
     ...createFileMethods(mongoose),
     ...createMemoryMethods(mongoose),
+    ...createMemoryDocumentMethods(mongoose),
+    ...createUserProjectMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
     ...createAgentApiKeyMethods(mongoose),
     ...createMCPServerMethods(mongoose),
@@ -70,6 +78,8 @@ export type {
   KeyMethods,
   FileMethods,
   MemoryMethods,
+  MemoryDocumentMethods,
+  UserProjectMethods,
   AgentCategoryMethods,
   AgentApiKeyMethods,
   MCPServerMethods,
