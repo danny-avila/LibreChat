@@ -61,15 +61,6 @@ export const ResourceCapabilityMap: Record<ResourceType, SystemCapability> = {
   [ResourceType.REMOTE_AGENT]: SystemCapabilities.MANAGE_AGENTS,
 };
 
-export interface ISystemGrant {
-  principalType: string;
-  principalId: string;
-  capability: SystemCapability;
-  tenantId?: string;
-  grantedBy?: string;
-  grantedAt: Date;
-}
-
 /**
  * Derives a section-level config management capability from a configSchema key.
  * @example configCapability('endpoints') → 'manage:configs:endpoints'
