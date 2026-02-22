@@ -1,9 +1,10 @@
 import cron from 'node-cron';
 import mongoose from 'mongoose';
+import type { ScheduledTask } from 'node-cron';
 import { logger } from '@librechat/data-schemas';
 import { runSynthesisForUser } from './synthesize';
 
-let scheduledTask: cron.ScheduledTask | null = null;
+let scheduledTask: ScheduledTask | null = null;
 
 interface SynthesisSchedulerConfig {
   cronExpression?: string;

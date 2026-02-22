@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { logger } from '@librechat/data-schemas';
-import type { ISynthesisRunLean, IUserProjectLean, IMemoryDocumentLean } from '@librechat/data-schemas';
 import { getSummaryPrompt, getSynthesisPrompt } from './prompts';
 import { readFullConversation } from './tools';
 import Tokenizer from '~/utils/tokenizer';
@@ -25,6 +24,23 @@ interface ConversationSummary {
 interface ConversationRecord {
   conversationId: string;
   title?: string;
+}
+
+interface SynthesisRunLean {
+  _id: mongoose.Types.ObjectId;
+  completedAt?: Date;
+}
+
+interface UserProjectLean {
+  _id: mongoose.Types.ObjectId;
+  name: string;
+  description?: string;
+}
+
+interface MemoryDocumentLean {
+  _id: mongoose.Types.ObjectId;
+  content: string;
+  tokenCount: number;
 }
 
 function extractContent(content: string | Array<{ type: string; text?: string }>): string {
@@ -145,7 +161,7 @@ export async function runSynthesisForScope(
       status: 'completed',
     })
       .sort({ completedAt: -1 })
-      .lean<ISynthesisRunLean>();
+      .lean<SynthesisRunLean>();
 
     const sinceDate = lastRun?.completedAt ?? new Date(0);
 
@@ -202,13 +218,13 @@ export async function runSynthesisForScope(
       memDocFilter.projectId = null;
     }
 
-    const existingDoc = await MemoryDocument.findOne(memDocFilter).lean<IMemoryDocumentLean>();
+    const existingDoc = await MemoryDocument.findOne(memDocFilter).lean<MemoryDocumentLean>();
     const existingContent = existingDoc?.content ?? '';
 
     let projectName: string | undefined;
     let projectDescription: string | undefined;
     if (scope === 'project' && projectId) {
-      const project = await UserProject.findById(projectId).lean<IUserProjectLean>();
+      const project = await UserProject.findById(projectId).lean<UserProjectLean>();
       projectName = project?.name;
       projectDescription = project?.description;
     }
@@ -271,7 +287,7 @@ export async function runSynthesisForUser(
 
   await runSynthesisForScope(userId, 'global', config);
 
-  const projects = await UserProject.find({ userId }).lean<IUserProjectLean[]>();
+  const projects = await UserProject.find({ userId }).lean<UserProjectLean[]>();
   for (const project of projects) {
     const projectId = project._id.toString();
     try {
