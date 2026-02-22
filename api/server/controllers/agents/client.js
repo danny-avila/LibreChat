@@ -311,9 +311,9 @@ class AgentClient extends BaseClient {
     }
 
     /** Memory context (user preferences/memories) */
-    const withoutKeys = await this.useMemory();
-    if (withoutKeys) {
-      const memoryContext = `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
+    const memoryXml = await this.useMemory();
+    if (memoryXml) {
+      const memoryContext = `${memoryInstructions}\n\n${memoryXml}`;
       sharedRunContextParts.push(memoryContext);
     }
 
@@ -398,6 +398,47 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Formats scoped memory documents as XML for injection into conversation context.
+   * @param {{ globalContent: string, projectContent: string, projectName: string }} scopedMemories
+   * @returns {string}
+   */
+  formatMemoryDocumentsXml(scopedMemories) {
+    const { globalContent, projectContent, projectName } = scopedMemories;
+    const parts = ['<userMemories>'];
+
+    if (globalContent) {
+      parts.push('<globalMemories>');
+      parts.push(globalContent);
+      parts.push('</globalMemories>');
+    }
+
+    if (projectContent && projectName) {
+      parts.push(`<projectMemories project="${projectName}">`);
+      parts.push(projectContent);
+      parts.push('</projectMemories>');
+    }
+
+    parts.push('</userMemories>');
+    return parts.join('\n');
+  }
+
+  /**
+   * Resolves the projectId for the current conversation.
+   * @returns {Promise<string | null>}
+   */
+  async getConversationProjectId() {
+    try {
+      const conversationId = this.conversationId + '';
+      const userId = this.options.req.user.id + '';
+      const convo = await db.getConvo(userId, conversationId);
+      return convo?.projectId?.toString() || null;
+    } catch (error) {
+      logger.debug('[AgentClient] Could not resolve conversation projectId:', error);
+      return null;
+    }
+  }
+
+  /**
    * @returns {Promise<string | undefined>}
    */
   async useMemory() {
@@ -418,12 +459,36 @@ class AgentClient extends BaseClient {
       );
       return;
     }
-    const appConfig = this.options.req.config;
-    const memoryConfig = appConfig.memory;
-    if (!memoryConfig || memoryConfig.disabled === true) {
-      return;
+
+    const userId = this.options.req.user.id + '';
+    let memoryXml;
+
+    try {
+      const projectId = await this.getConversationProjectId();
+      const scopedMemories = await db.getMemoryDocuments({ userId, projectId });
+      if (scopedMemories.globalContent || scopedMemories.projectContent) {
+        memoryXml = this.formatMemoryDocumentsXml(scopedMemories);
+      }
+    } catch (error) {
+      logger.error('[AgentClient] Error loading memory documents:', error);
     }
 
+    const appConfig = this.options.req.config;
+    const memoryConfig = appConfig.memory;
+    if (memoryConfig && memoryConfig.disabled !== true) {
+      await this.setupMemoryAgent(memoryConfig, appConfig);
+    }
+
+    return memoryXml;
+  }
+
+  /**
+   * Sets up the memory agent for explicit "remember this" processing.
+   * @param {object} memoryConfig
+   * @param {object} appConfig
+   * @returns {Promise<void>}
+   */
+  async setupMemoryAgent(memoryConfig, appConfig) {
     /** @type {Agent} */
     let prelimAgent;
     const allowedProviders = new Set(
@@ -447,7 +512,7 @@ class AgentClient extends BaseClient {
       }
     } catch (error) {
       logger.error(
-        '[api/server/controllers/agents/client.js #useMemory] Error loading agent for memory',
+        '[api/server/controllers/agents/client.js #setupMemoryAgent] Error loading agent for memory',
         error,
       );
     }
@@ -481,7 +546,7 @@ class AgentClient extends BaseClient {
 
     if (!agent) {
       logger.warn(
-        '[api/server/controllers/agents/client.js #useMemory] No agent found for memory',
+        '[api/server/controllers/agents/client.js #setupMemoryAgent] No agent found for memory',
         memoryConfig,
       );
       return;
@@ -507,7 +572,7 @@ class AgentClient extends BaseClient {
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
     const streamId = this.options.req?._resumableStreamId || null;
-    const [withoutKeys, processMemory] = await createMemoryProcessor({
+    const [, processMemory] = await createMemoryProcessor({
       userId,
       config,
       messageId,
@@ -523,7 +588,6 @@ class AgentClient extends BaseClient {
     });
 
     this.processMemory = processMemory;
-    return withoutKeys;
   }
 
   /**
