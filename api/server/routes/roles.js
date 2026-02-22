@@ -113,12 +113,12 @@ router.get('/:roleName', async (req, res) => {
   // TODO: TEMP, use a better parsing for roleName
   const roleName = _r.toUpperCase();
 
-  const hasReadRoles = await hasCapability(req.user, SystemCapabilities.READ_ROLES);
-  if (!hasReadRoles && (roleName === SystemRoles.ADMIN || !roleDefaults[roleName])) {
-    return res.status(403).send({ message: 'Unauthorized' });
-  }
-
   try {
+    const hasReadRoles = await hasCapability(req.user, SystemCapabilities.READ_ROLES);
+    if (!hasReadRoles && (roleName === SystemRoles.ADMIN || !roleDefaults[roleName])) {
+      return res.status(403).send({ message: 'Unauthorized' });
+    }
+
     const role = await getRoleByName(roleName, '-_id -__v');
     if (!role) {
       return res.status(404).send({ message: 'Role not found' });
