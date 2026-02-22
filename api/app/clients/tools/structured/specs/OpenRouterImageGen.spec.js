@@ -44,7 +44,7 @@ describe('OpenRouterImageGen', () => {
     jest.clearAllMocks();
     process.env = {
       ...originalEnv,
-      OPENROUTER_API_KEY: mockApiKey,
+      OPENROUTER_KEY: mockApiKey,
     };
     extractBaseURL.mockImplementation((url) => url || mockBaseUrl);
   });
@@ -68,10 +68,10 @@ describe('OpenRouterImageGen', () => {
       expect(() => new OpenRouterImageGen({ isAgent: true })).not.toThrow();
     });
 
-    it('should throw an error if OPENROUTER_API_KEY is missing and override is false', () => {
-      delete process.env.OPENROUTER_API_KEY;
-      expect(() => new OpenRouterImageGen({ isAgent: true })).toThrow(
-        'Missing OPENROUTER_API_KEY environment variable.',
+    it('should throw an error if OPENROUTER_KEY is missing and override is false', () => {
+      delete process.env.OPENROUTER_KEY;
+      expect(() => new OpenRouterImageGen()).toThrow(
+        'Missing OPENROUTER_KEY environment variable.',
       );
     });
 
@@ -79,7 +79,7 @@ describe('OpenRouterImageGen', () => {
       const customApiKey = 'custom_api_key';
       const tool = new OpenRouterImageGen({
         isAgent: true,
-        OPENROUTER_API_KEY: customApiKey,
+        OPENROUTER_KEY: customApiKey,
       });
       expect(tool.apiKey).toBe(customApiKey);
     });
@@ -94,7 +94,7 @@ describe('OpenRouterImageGen', () => {
     });
 
     it('should return false for known non-Gemini models', () => {
-      expect(OpenRouterImageGen.supportsAspectRatio('black-forest-labs/flux.2-pro')).toBe(false);
+      expect(OpenRouterImageGen.supportsAspectRatio('openai/gpt-5-image')).toBe(false);
       expect(OpenRouterImageGen.supportsAspectRatio('black-forest-labs/flux.2-flex')).toBe(false);
     });
 
@@ -143,13 +143,13 @@ describe('OpenRouterImageGen', () => {
 
       const result = await tool._call({
         prompt: 'A beautiful sunset over mountains',
-        model: 'black-forest-labs/flux.2-pro',
+        model: 'openai/gpt-5-image',
       });
 
       expect(axios.post).toHaveBeenCalledWith(
         'https://openrouter.ai/api/v1/chat/completions',
         {
-          model: 'black-forest-labs/flux.2-pro',
+          model: 'openai/gpt-5-image',
           messages: [
             {
               role: 'user',
@@ -235,7 +235,7 @@ describe('OpenRouterImageGen', () => {
 
       await tool._call({
         prompt: 'A test image',
-        model: 'black-forest-labs/flux.2-pro',
+        model: 'openai/gpt-5-image',
         aspect_ratio: '16:9',
       });
 
@@ -280,7 +280,7 @@ describe('OpenRouterImageGen', () => {
       expect(axios.post).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
-          model: 'black-forest-labs/flux.2-pro',
+          model: 'openai/gpt-5-image',
         }),
         expect.any(Object),
       );

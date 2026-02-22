@@ -17,27 +17,52 @@ class OpenRouterImageGen extends Tool {
   // Known models with their characteristics (for reference only, not a restriction)
   // OpenRouter supports many more models - this list is just for documentation
   static MODELS = {
-    'black-forest-labs/flux.2-pro': {
-      name: 'FLUX.2 Pro',
-      description: 'High-quality image generation with excellent detail',
-      supportsAspectRatio: false,
-    },
-    'black-forest-labs/flux.2-flex': {
-      name: 'FLUX.2 Flex',
-      description: 'Flexible image generation model',
-      supportsAspectRatio: false,
-    },
-    'google/gemini-2.5-flash-image-preview': {
+    'google/gemini-2.5-flash-image': {
       name: 'Gemini 2.5 Flash Image',
       description: 'Fast image generation with aspect ratio support',
       supportsAspectRatio: true,
+      imageOnly: false,
     },
-    'sourceful/riverflow-v2-standard-preview': {
-      name: 'Riverflow v2',
-      description: 'Standard preview model for image generation',
+    'google/gemini-3-pro-image-preview': {
+      name: 'Gemini 3 Pro Image',
+      description: 'Advanced image generation with aspect ratio support',
+      supportsAspectRatio: true,
+      imageOnly: false,
+    },
+    'openai/gpt-5-image-mini': {
+      name: 'GPT-5 Image Mini',
+      description: 'Fast, efficient image generation',
       supportsAspectRatio: false,
+      imageOnly: false,
+    },
+    'openai/gpt-5-image': {
+      name: 'GPT-5 Image',
+      description: 'High-quality, detailed image generation',
+      supportsAspectRatio: false,
+      imageOnly: false,
+    },
+    'bytedance-seed/seedream-4.5': {
+      name: 'SeDream 4.5',
+      description: 'High-quality image generation by ByteDance',
+      supportsAspectRatio: false,
+      imageOnly: true,
     },
   };
+
+  /**
+   * Check if a model is image-only (no text output).
+   * Image-only models need modalities: ['image'] instead of ['image', 'text'].
+   * @param {string} model - The model identifier
+   * @returns {boolean}
+   */
+  static isImageOnlyModel(model) {
+    const modelInfo = OpenRouterImageGen.MODELS[model];
+    if (modelInfo) {
+      return modelInfo.imageOnly === true;
+    }
+    // For unknown models, default to multimodal (image + text)
+    return false;
+  }
 
   /**
    * Check if a model supports aspect ratio configuration.
@@ -95,25 +120,26 @@ class OpenRouterImageGen extends Tool {
     this.req = fields.req;
 
     // Get API key from fields or environment
-    this.apiKey = fields.OPENROUTER_API_KEY || this.getApiKey();
+    this.apiKey = fields.OPENROUTER_KEY || this.getApiKey();
 
     // Get base URL from environment or use default OpenRouter URL
     this.baseUrl = extractBaseURL(
       fields.OPENROUTER_BASE_URL ||
-        process.env.OPENROUTER_BASE_URL ||
-        'https://openrouter.ai/api/v1',
+      process.env.OPENROUTER_BASE_URL ||
+      'https://openrouter.ai/api/v1',
     );
 
     this.name = 'openrouter_image_gen';
     this.description =
-      'Generate high-quality images from text descriptions using OpenRouter-supported models like FLUX.2-Pro, FLUX.2-Flex, or Gemini Image Generation. Supports various models optimized for different use cases.';
+      'Generate high-quality images from text descriptions using OpenRouter-supported models like GPT-5 Image, Gemini Image Generation, or SeDream 4.5. Supports various models optimized for different use cases.';
 
     this.description_for_model = `// Generate images from detailed text descriptions using OpenRouter's image generation models.
     // OpenRouter supports many image generation models. Popular options include:
-    // - black-forest-labs/flux.2-pro: Best for high-quality, detailed images
-    // - black-forest-labs/flux.2-flex: Flexible model for various styles
-    // - google/gemini-2.5-flash-image-preview: Fast generation with aspect ratio control
-    // - Any other OpenRouter-compatible image generation model
+    // - openai/gpt-5-image: Best for high-quality, detailed images
+     // - openai/gpt-5-image-mini: Fast and efficient model
+     // - bytedance-seed/seedream-4.5: High-quality generation by ByteDance
+     // - google/gemini-3-pro-image-preview: Advanced image generation with aspect ratio control
+    // - google/gemini-2.5-flash-image: Fast generation with aspect ratio control
     // 
     // Always enhance basic prompts into detailed descriptions (3-6 sentences minimum).
     // Focus on visual elements: lighting, composition, mood, style, colors, and details.
@@ -130,9 +156,9 @@ class OpenRouterImageGen extends Tool {
       model: z
         .string()
         .optional()
-        .default('black-forest-labs/flux.2-pro')
+        .default('openai/gpt-5-image')
         .describe(
-          'The image generation model to use. Any OpenRouter-compatible image generation model can be used. Defaults to FLUX.2-Pro for best quality. Examples: black-forest-labs/flux.2-pro, google/gemini-2.5-flash-image-preview, etc.',
+          'The image generation model to use. Any OpenRouter-compatible image generation model can be used. Defaults to GPT-5 Image for best quality. Examples: openai/gpt-5-image, google/gemini-3-pro-image-preview, etc.',
         ),
       aspect_ratio: z
         .enum(OpenRouterImageGen.ASPECT_RATIOS)
@@ -141,6 +167,8 @@ class OpenRouterImageGen extends Tool {
           'Aspect ratio for the generated image. Only supported for Gemini models. Defaults to 1:1 (square).',
         ),
     });
+
+    this.responseFormat = 'content_and_artifact';
   }
 
   getAxiosConfig() {
@@ -154,9 +182,9 @@ class OpenRouterImageGen extends Tool {
   }
 
   getApiKey() {
-    const apiKey = process.env.OPENROUTER_API_KEY || '';
+    const apiKey = process.env.OPENROUTER_KEY || '';
     if (!apiKey && !this.override) {
-      throw new Error('Missing OPENROUTER_API_KEY environment variable.');
+      throw new Error('Missing OPENROUTER_KEY environment variable.');
     }
     return apiKey;
   }
@@ -174,7 +202,7 @@ class OpenRouterImageGen extends Tool {
   }
 
   async _call(data) {
-    const { prompt, model = 'black-forest-labs/flux.2-pro', aspect_ratio } = data;
+    const { prompt, model = 'openai/gpt-5-image', aspect_ratio } = data;
 
     if (!prompt) {
       throw new Error('Missing required field: prompt');
@@ -204,7 +232,7 @@ class OpenRouterImageGen extends Tool {
           content: prompt,
         },
       ],
-      modalities: ['image', 'text'],
+      modalities: OpenRouterImageGen.isImageOnlyModel(model) ? ['image'] : ['image', 'text'],
     };
 
     // Add image_config for models that support aspect ratio (e.g., Gemini models)

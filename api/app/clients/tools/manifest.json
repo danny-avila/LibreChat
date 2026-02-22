@@ -174,7 +174,7 @@
     "icon": "https://openrouter.ai/favicon.ico",
     "authConfig": [
       {
-        "authField": "OPENROUTER_API_KEY",
+        "authField": "OPENROUTER_KEY",
         "label": "OpenRouter API Key",
         "description": "Your OpenRouter API key. Get one at <a href=\"https://openrouter.ai/keys\" target=\"_blank\">https://openrouter.ai/keys</a>"
       }
