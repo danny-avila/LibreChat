@@ -530,10 +530,10 @@ const getListAgentsHandler = async (req, res) => {
      */
     const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
     const refreshKey = `${userId}:agents_avatar_refresh`;
-    const alreadyChecked = await cache.get(refreshKey);
-    if (alreadyChecked) {
-      logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
-    } else {
+    let cachedRefresh = await cache.get(refreshKey);
+    const isValidCachedRefresh =
+      cachedRefresh != null && typeof cachedRefresh === 'object' && cachedRefresh.urlCache != null;
+    if (!isValidCachedRefresh) {
       try {
         const fullList = await getListAgentsByAccess({
           accessibleIds,
@@ -541,16 +541,19 @@ const getListAgentsHandler = async (req, res) => {
           limit: MAX_AVATAR_REFRESH_AGENTS,
           after: null,
         });
-        await refreshListAvatars({
+        const { urlCache } = await refreshListAvatars({
           agents: fullList?.data ?? [],
           userId,
           refreshS3Url,
           updateAgent,
         });
-        await cache.set(refreshKey, true, Time.THIRTY_MINUTES);
+        cachedRefresh = { urlCache };
+        await cache.set(refreshKey, cachedRefresh, Time.THIRTY_MINUTES);
       } catch (err) {
         logger.error('[/Agents] Error refreshing avatars for full list: %o', err);
       }
+    } else {
+      logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
     }
 
     // Use the new ACL-aware function
@@ -568,10 +571,19 @@ const getListAgentsHandler = async (req, res) => {
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
 
+    const urlCache = cachedRefresh?.urlCache;
     data.data = agents.map((agent) => {
       try {
         if (agent?._id && publicSet.has(agent._id.toString())) {
           agent.isPublic = true;
+        }
+        if (
+          urlCache &&
+          agent?.id &&
+          agent?.avatar?.source === FileSources.s3 &&
+          urlCache[agent.id]
+        ) {
+          agent.avatar = { ...agent.avatar, filepath: urlCache[agent.id] };
         }
       } catch (e) {
         // Silently ignore mapping errors
@@ -658,6 +670,14 @@ const uploadAgentAvatarHandler = async (req, res) => {
     const updatedAgent = await updateAgent({ id: agent_id }, data, {
       updatingUserId: req.user.id,
     });
+
+    try {
+      const avatarCache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+      await avatarCache.delete(`${req.user.id}:agents_avatar_refresh`);
+    } catch (cacheErr) {
+      logger.error('[/:agent_id/avatar] Error invalidating avatar refresh cache', cacheErr);
+    }
+
     res.status(201).json(updatedAgent);
   } catch (error) {
     const message = 'An error occurred while updating the Agent Avatar';
