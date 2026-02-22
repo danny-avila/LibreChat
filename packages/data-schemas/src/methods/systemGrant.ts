@@ -171,13 +171,15 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
    * Idempotent: safe to call on every startup.
    */
   async function seedSystemGrants(): Promise<void> {
-    for (const capability of Object.values(SystemCapabilities)) {
-      await grantCapability({
-        principalType: PrincipalType.ROLE,
-        principalId: SystemRoles.ADMIN,
-        capability,
-      });
-    }
+    await Promise.all(
+      Object.values(SystemCapabilities).map((capability) =>
+        grantCapability({
+          principalType: PrincipalType.ROLE,
+          principalId: SystemRoles.ADMIN,
+          capability,
+        }),
+      ),
+    );
   }
 
   return {
