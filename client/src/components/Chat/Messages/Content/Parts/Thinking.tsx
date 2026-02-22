@@ -1,12 +1,15 @@
 import { useState, useMemo, memo, useCallback, useRef, type MouseEvent } from 'react';
 import { useAtomValue } from 'jotai';
+import { useRecoilValue } from 'recoil';
 import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
 import type { FocusEvent, FC } from 'react';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
+import store from '~/store';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, preprocessLaTeX } from '~/utils';
+import MarkdownLite from '../MarkdownLite';
 
 /**
  * ThinkingContent - Displays the actual thinking/reasoning content
@@ -16,10 +19,24 @@ export const ThinkingContent: FC<{
   children: React.ReactNode;
 }> = memo(({ children }) => {
   const fontSize = useAtomValue(fontSizeAtom);
+  const latexParsing = useRecoilValue<boolean>(store.LaTeXParsing);
+  const textContent = typeof children === 'string' ? children : null;
+  const processedContent = useMemo(() => {
+    if (textContent == null) {
+      return null;
+    }
+    return latexParsing ? preprocessLaTeX(textContent) : textContent;
+  }, [textContent, latexParsing]);
 
   return (
     <div className="relative rounded-3xl border border-border-medium bg-surface-tertiary p-4 pb-10 text-text-secondary">
-      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{children}</p>
+      {processedContent != null ? (
+        <div className={cn('leading-[26px]', fontSize)}>
+          <MarkdownLite content={processedContent} />
+        </div>
+      ) : (
+        <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{children}</p>
+      )}
     </div>
   );
 });
