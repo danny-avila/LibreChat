@@ -8,79 +8,150 @@ const DEFAULT_PROMPT_TEMPLATE = `Based on the following conversation and analysi
 
 /** Fallback context window when model context is unknown */
 const FALLBACK_MAX_CONTEXT = 100000;
+/** Fallback ratio used when per-agent overhead is not available */
+const HANDOFF_BUDGET_RATIO = 0.5;
+/** Average tokens per tool definition (name + description + JSON Schema params) */
+const AVG_TOKENS_PER_TOOL = 500;
+/** Safety margin on top of computed overhead to account for runtime framing */
+const OVERHEAD_SAFETY_MARGIN = 20000;
+
+export type AgentOverhead = {
+  instructionTokens: number;
+  toolCount: number;
+  maxContextTokens: number;
+};
 
 export type CompactionInfo = {
   droppedCount: number;
   remaining: number;
   originalTokens: number;
-  contextLimit: number;
+  handoffBudget: number;
 };
 
 export type OnCompactionCallback = (info: CompactionInfo) => void;
 
 /**
- * Passes all messages through, only compacting if they would exceed the context window.
- * When compacting, removes oldest messages first to keep the most recent context.
+ * Passes all messages through, only compacting if they would exceed the handoff budget.
+ * Budget is computed per-edge from the receiving agent's live overhead (instruction tokens +
+ * tool count), or falls back to 50% of maxContextTokens when overhead data is unavailable.
+ * When compacting, uses binary search to quickly find the right slice of recent messages.
  * @param messages - Array of messages to pass through
- * @param maxContextTokens - Model's usable context window (after output/safety reserves)
+ * @param handoffBudget - Maximum tokens allowed for the handoff content
  * @param onCompaction - Optional callback fired when compaction occurs
- * @returns Buffer string, compacted only if it would exceed the context window
+ * @returns Buffer string, compacted only if it would exceed the handoff budget
  */
 function compactIfNeeded(
   messages: BaseMessage[],
-  maxContextTokens: number,
+  handoffBudget: number,
   onCompaction?: OnCompactionCallback,
+  overheadLabel?: string,
+  overheadTokens?: number,
 ): string {
-  const contextLimit = maxContextTokens > 0 ? maxContextTokens : FALLBACK_MAX_CONTEXT;
+  const budget = handoffBudget > 0 ? handoffBudget : FALLBACK_MAX_CONTEXT;
   let bufferString = getBufferString(messages);
   const originalTokens = Tokenizer.getTokenCount(bufferString);
   let tokenCount = originalTokens;
 
-  if (tokenCount <= contextLimit) {
+  if (tokenCount <= budget) {
     logger.info(
-      `[AgentChain] Passing all ${messages.length} messages (${tokenCount} tokens, limit=${contextLimit})`,
+      `[AgentChain] Passing all ${messages.length} messages (${tokenCount} tokens, budget=${budget})`,
     );
+    if (overheadLabel) {
+      logger.info(
+        `[AgentChain] Next agent: ${overheadLabel} → projected total=${tokenCount + (overheadTokens ?? 0)}`,
+      );
+    }
     return bufferString;
   }
 
-  // Over the context window — remove oldest messages until within limit
+  // Over budget — use binary search to find how many recent messages fit
   logger.info(
-    `[AgentChain] Context exceeded: ${tokenCount} tokens > ${contextLimit} limit. Compacting...`,
+    `[AgentChain] Context exceeded: ${tokenCount} tokens > ${budget} budget. Compacting...`,
   );
-  let compactedMessages = [...messages];
-  while (tokenCount > contextLimit && compactedMessages.length > 1) {
-    compactedMessages = compactedMessages.slice(1);
-    bufferString = getBufferString(compactedMessages);
-    tokenCount = Tokenizer.getTokenCount(bufferString);
+  if (overheadLabel) {
+    logger.info(
+      `[AgentChain] Next agent: ${overheadLabel} → would be ${tokenCount + (overheadTokens ?? 0)} total`,
+    );
   }
 
+  // Binary search: find the smallest startIndex where messages.slice(startIndex) fits
+  let lo = 0;
+  let hi = messages.length - 1;
+  let bestStart = hi; // worst case: keep only the last message
+
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const slice = messages.slice(mid);
+    const sliceStr = getBufferString(slice);
+    const sliceTokens = Tokenizer.getTokenCount(sliceStr);
+
+    if (sliceTokens <= budget) {
+      bestStart = mid; // this slice fits; try to include more (lower startIndex)
+      hi = mid - 1;
+    } else {
+      lo = mid + 1; // too big; need fewer messages (higher startIndex)
+    }
+  }
+
+  const compactedMessages = messages.slice(bestStart);
+  bufferString = getBufferString(compactedMessages);
+  tokenCount = Tokenizer.getTokenCount(bufferString);
+
   // If still over with a single message, truncate the string keeping the end
-  if (tokenCount > contextLimit && compactedMessages.length === 1) {
-    const ratio = contextLimit / tokenCount;
+  if (tokenCount > budget && compactedMessages.length === 1) {
+    const ratio = budget / tokenCount;
     const truncateLength = Math.floor(bufferString.length * ratio * 0.9);
     bufferString = '...[truncated]...\n' + bufferString.slice(-truncateLength);
+    tokenCount = Tokenizer.getTokenCount(bufferString);
   }
 
   const droppedCount = messages.length - compactedMessages.length;
   logger.info(
-    `[AgentChain] Compacted: ${messages.length} → ${compactedMessages.length} messages, ${tokenCount} tokens`,
+    `[AgentChain] Compacted: ${messages.length} → ${compactedMessages.length} messages, ${tokenCount} tokens (budget=${budget})`,
   );
+  if (overheadLabel) {
+    logger.info(
+      `[AgentChain] Next agent: ${overheadLabel} → projected total=${tokenCount + (overheadTokens ?? 0)}`,
+    );
+  }
 
   if (onCompaction) {
     onCompaction({
       droppedCount,
       remaining: compactedMessages.length,
       originalTokens,
-      contextLimit,
+      handoffBudget: budget,
     });
   }
 
   const notice =
-    `\n[SYSTEM NOTICE: Context window exceeded (${contextLimit} token limit). ` +
-    `Compaction enabled — ${droppedCount} oldest message(s) removed to fit within the window. ` +
+    `\n[SYSTEM NOTICE: Context window exceeded (${budget} token handoff budget). ` +
+    `Compaction enabled — ${droppedCount} oldest message(s) removed to fit within the budget. ` +
     `Continuing with the ${compactedMessages.length} most recent message(s).]\n\n`;
 
   return notice + bufferString;
+}
+
+/**
+ * Computes the handoff token budget for a receiving agent.
+ * Uses live overhead data when available, falls back to a ratio of maxContextTokens.
+ */
+function computeHandoffBudget(
+  fallbackMaxContext: number,
+  receivingAgentOverhead?: AgentOverhead,
+): number {
+  if (receivingAgentOverhead) {
+    const { instructionTokens, toolCount, maxContextTokens } = receivingAgentOverhead;
+    const ctx = maxContextTokens > 0 ? maxContextTokens : fallbackMaxContext;
+    const estimatedOverhead =
+      instructionTokens + toolCount * AVG_TOKENS_PER_TOOL + OVERHEAD_SAFETY_MARGIN;
+    const budget = ctx - estimatedOverhead;
+    logger.info(
+      `[AgentChain] Live overhead: instructions=${instructionTokens}, tools=${toolCount}×${AVG_TOKENS_PER_TOOL}, safety=${OVERHEAD_SAFETY_MARGIN}, total overhead=${estimatedOverhead}, budget=${budget}/${ctx}`,
+    );
+    return Math.max(budget, Math.floor(ctx * 0.2)); // never go below 20% of context
+  }
+  return Math.floor(fallbackMaxContext * HANDOFF_BUDGET_RATIO);
 }
 
 /**
@@ -91,6 +162,7 @@ function compactIfNeeded(
  * @param promptTemplate - Optional prompt template string; defaults to a predefined template if not provided
  * @param maxContextTokens - Model's usable context window (after output/safety reserves)
  * @param onCompaction - Optional callback fired when context compaction occurs (for UI notifications)
+ * @param agentOverheads - Optional map of agentId → overhead data for live per-edge budget computation
  * @returns Array of edges configured for sequential chain with buffer prompts
  */
 export async function createSequentialChainEdges(
@@ -98,17 +170,28 @@ export async function createSequentialChainEdges(
   promptTemplate = DEFAULT_PROMPT_TEMPLATE,
   maxContextTokens?: number,
   onCompaction?: OnCompactionCallback,
+  agentOverheads?: Map<string, AgentOverhead>,
 ): Promise<GraphEdge[]> {
-  const contextLimit =
+  const fallbackMaxContext =
     maxContextTokens && maxContextTokens > 0 ? maxContextTokens : FALLBACK_MAX_CONTEXT;
   logger.info(
-    `[AgentChain] Creating chain edges: maxContext=${contextLimit}, agents=${agentIds.length}`,
+    `[AgentChain] Creating chain edges: maxContext=${fallbackMaxContext}, liveOverhead=${agentOverheads ? 'yes' : 'no'}, agents=${agentIds.length}`,
   );
   const edges: GraphEdge[] = [];
 
   for (let i = 0; i < agentIds.length - 1; i++) {
     const fromAgent = agentIds[i];
     const toAgent = agentIds[i + 1];
+    const toOverhead = agentOverheads?.get(toAgent);
+    const edgeBudget = computeHandoffBudget(fallbackMaxContext, toOverhead);
+    const totalOverhead = toOverhead
+      ? toOverhead.instructionTokens +
+        toOverhead.toolCount * AVG_TOKENS_PER_TOOL +
+        OVERHEAD_SAFETY_MARGIN
+      : undefined;
+    const overheadLabel = toOverhead
+      ? `instructions=${toOverhead.instructionTokens}, tools=${toOverhead.toolCount}, overhead=${totalOverhead}`
+      : undefined;
 
     edges.push({
       from: fromAgent,
@@ -118,8 +201,14 @@ export async function createSequentialChainEdges(
       prompt: async (messages: BaseMessage[], startIndex: number) => {
         /** Only the messages from this run (after startIndex) are passed in */
         const runMessages = messages.slice(startIndex);
-        /** Pass all messages; compact only if exceeding context window */
-        const bufferString = compactIfNeeded(runMessages, contextLimit, onCompaction);
+        /** Pass all messages; compact only if exceeding per-edge handoff budget */
+        const bufferString = compactIfNeeded(
+          runMessages,
+          edgeBudget,
+          onCompaction,
+          overheadLabel,
+          totalOverhead,
+        );
         const template = PromptTemplate.fromTemplate(promptTemplate);
         const result = await template.invoke({
           convo: bufferString,
@@ -128,7 +217,7 @@ export async function createSequentialChainEdges(
       },
       /** Critical: exclude previous results so only the prompt is passed */
       excludeResults: true,
-      description: `Sequential chain from ${fromAgent} to ${toAgent}`,
+      description: `Sequential chain from ${fromAgent} to ${toAgent} (budget=${edgeBudget})`,
     });
   }
 

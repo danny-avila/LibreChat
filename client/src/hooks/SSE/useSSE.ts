@@ -13,8 +13,6 @@ import {
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
-import { useToastContext } from '@librechat/client';
-import { NotificationSeverity } from '~/common';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
@@ -49,7 +47,6 @@ export default function useSSE(
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
-  const { showToast } = useToastContext();
   const [completed, setCompleted] = useState(new Set());
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
@@ -144,14 +141,6 @@ export default function useSSE(
         };
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
-      } else if (data.event === 'compaction_notice') {
-        const info = data.data;
-        showToast({
-          message: `Context window exceeded — ${info.droppedCount} older message(s) removed. Continuing with ${info.remaining} most recent.`,
-          severity: NotificationSeverity.WARNING,
-          showIcon: true,
-          duration: 8000,
-        });
       } else if (data.event != null) {
         stepHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.sync != null) {

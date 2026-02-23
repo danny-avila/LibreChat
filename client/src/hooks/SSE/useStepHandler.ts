@@ -520,6 +520,30 @@ export default function useStepHandler({
 
           setMessages(updatedMessages);
         }
+      } else if (event === 'compaction_notice') {
+        const info = data as unknown as {
+          droppedCount: number;
+          remaining: number;
+        };
+        // Find the last cached response message to inject the notice
+        let lastResponse: TMessage | undefined;
+        let lastResponseId = '';
+        for (const [id, msg] of messageMap.current.entries()) {
+          lastResponse = msg;
+          lastResponseId = id;
+        }
+        if (lastResponse && lastResponseId) {
+          const contentIndex = lastResponse.content?.length ?? 0;
+          const noticeText = `> ⚠️ **Context compacted** — ${info.droppedCount} older message(s) removed, continuing with ${info.remaining} most recent.`;
+          const contentPart: Agents.MessageContentComplex = {
+            type: ContentTypes.TEXT,
+            text: noticeText,
+          };
+          const updatedResponse = updateContent(lastResponse, contentIndex, contentPart, true);
+          messageMap.current.set(lastResponseId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+        }
       } else if (event === 'on_run_step_completed') {
         const { result } = data as unknown as { result: Agents.ToolEndEvent };
 

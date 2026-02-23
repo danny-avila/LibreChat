@@ -16,8 +16,6 @@ import {
 } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
-import { useToastContext } from '@librechat/client';
-import { NotificationSeverity } from '~/common';
 import { useGetStartupConfig, useGetUserBalance, queueTitleGeneration } from '~/data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -66,7 +64,6 @@ export default function useResumableSSE(
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
-  const { showToast } = useToastContext();
 
   /**
    * Optimistically add a job ID to the active jobs cache.
@@ -217,17 +214,6 @@ export default function useResumableSSE(
             attachmentHandler({
               data: data.data,
               submission: currentSubmission as EventSubmission,
-            });
-            return;
-          }
-
-          if (data.event === 'compaction_notice') {
-            const info = data.data;
-            showToast({
-              message: `Context window exceeded — ${info.droppedCount} older message(s) removed. Continuing with ${info.remaining} most recent.`,
-              severity: NotificationSeverity.WARNING,
-              showIcon: true,
-              duration: 8000,
             });
             return;
           }
@@ -557,7 +543,6 @@ export default function useResumableSSE(
       startupConfig?.balance?.enabled,
       balanceQuery,
       removeActiveJob,
-      showToast,
     ],
   );
 
