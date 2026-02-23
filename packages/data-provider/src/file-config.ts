@@ -139,6 +139,39 @@ export const retrievalMimeTypesList = [
 
 export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i;
 
+/** @see https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_DocumentBlock.html */
+export type BedrockDocumentFormat =
+  | 'pdf'
+  | 'csv'
+  | 'doc'
+  | 'docx'
+  | 'xls'
+  | 'xlsx'
+  | 'html'
+  | 'txt'
+  | 'md';
+
+/** Maps MIME types to Bedrock Converse API document format values */
+export const bedrockDocumentFormats: Record<string, BedrockDocumentFormat> = {
+  'application/pdf': 'pdf',
+  'text/csv': 'csv',
+  'application/csv': 'csv',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'text/html': 'html',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+};
+
+export const isBedrockDocumentType = (mimeType?: string): boolean =>
+  mimeType != null && mimeType in bedrockDocumentFormats;
+
+/** File extensions accepted by Bedrock document uploads (for input accept attributes) */
+export const bedrockDocumentExtensions =
+  '.pdf,.csv,.doc,.docx,.xls,.xlsx,.html,.htm,.txt,.md,application/pdf,text/csv,application/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/html,text/plain,text/markdown';
+
 export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 

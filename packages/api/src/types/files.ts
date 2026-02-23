@@ -1,6 +1,7 @@
+import type { BedrockDocumentFormat } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { ServerRequest } from './http';
 import type { Readable } from 'stream';
+import type { ServerRequest } from './http';
 export interface STTService {
   getInstance(): Promise<STTService>;
   getProviderSchema(req: ServerRequest): Promise<[string, object]>;
@@ -100,7 +101,7 @@ export interface BedrockDocumentBlock {
   type: 'document';
   document: {
     name: string;
-    format: string;
+    format: BedrockDocumentFormat;
     source: {
       bytes: Buffer;
     };
