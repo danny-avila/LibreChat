@@ -3,6 +3,7 @@ import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody } from '~/types';
 import { extractOpenIDTokenInfo, processOpenIDPlaceholders, isOpenIDTokenValid } from './oidc';
+import { transliterate } from 'transliteration';
 
 /**
  * List of allowed user fields that can be used in MCP environment variables.
@@ -32,47 +33,33 @@ type AllowedUserField = (typeof ALLOWED_USER_FIELDS)[number];
 type SafeUser = Pick<IUser, AllowedUserField>;
 
 /**
- * Encodes a string value to be safe for HTTP headers.
+ * Sanitizes a string value to be safe for HTTP headers by transliterating non-ASCII characters.
  * HTTP headers are restricted to ASCII characters (0-255) per the Fetch API standard.
- * Non-ASCII characters with Unicode values > 255 are Base64 encoded with 'b64:' prefix.
+ * 
+ * Uses transliteration to convert special/accented characters to ASCII equivalents:
+ * - Preserves readability (unlike Base64 encoding)
+ * - Works with all MCP servers immediately (no decoding needed)
+ * - Supports Latin, Cyrillic, Arabic, CJK, and more
  *
- * NOTE: This is a LibreChat-specific encoding scheme to work around Fetch API limitations.
- * MCP servers receiving headers with the 'b64:' prefix should:
- * 1. Detect the 'b64:' prefix in header values
- * 2. Remove the prefix and Base64-decode the remaining string
- * 3. Use the decoded UTF-8 string as the actual value
- *
- * Example decoding (Node.js):
- *   if (headerValue.startsWith('b64:')) {
- *     const decoded = Buffer.from(headerValue.slice(4), 'base64').toString('utf8');
- *   }
- *
- * @param value - The string value to encode
- * @returns ASCII-safe string (encoded if necessary)
- *
+ * @param value - The string value to sanitize
+ * @returns ASCII-safe string with transliterated characters
+ * 
  * @example
- * encodeHeaderValue("José")   // Returns "José" (é = 233, safe)
- * encodeHeaderValue("Marić")  // Returns "b64:TWFyacSH" (ć = 263, needs encoding)
+ * sanitizeHeaderValue("Marić")    // Returns "Maric"
+ * sanitizeHeaderValue("Đorđe")    // Returns "Djordje"
+ * sanitizeHeaderValue("José")     // Returns "Jose"
+ * sanitizeHeaderValue("Müller")   // Returns "Muller"
+ * sanitizeHeaderValue("李明")     // Returns "Li Ming"
+ * sanitizeHeaderValue("Иван")     // Returns "Ivan"
  */
-export function encodeHeaderValue(value: string): string {
+export function sanitizeHeaderValue(value: string): string {
   // Handle non-string or empty values
   if (!value || typeof value !== 'string') {
     return '';
   }
-
-  // Check if string contains extended Unicode characters (> 255)
-  // Characters 0-255 (ASCII + Latin-1) are safe and don't need encoding
-  // Characters > 255 (e.g., ć=263, đ=272, ł=322) need Base64 encoding
-  // eslint-disable-next-line no-control-regex
-  const hasExtendedUnicode = /[^\u0000-\u00FF]/.test(value);
-
-  if (!hasExtendedUnicode) {
-    return value; // Safe to pass through
-  }
-
-  // Encode to Base64 for extended Unicode characters
-  const base64 = Buffer.from(value, 'utf8').toString('base64');
-  return `b64:${base64}`;
+  
+  // Transliterate to ASCII-safe characters
+  return transliterate(value);
 }
 
 /**
@@ -152,9 +139,9 @@ function processUserPlaceholders(
     // Fields like name, username, email can contain non-ASCII characters
     // that would cause ByteString conversion errors in the Fetch API
     if (isHeader) {
-      const fieldsToEncode = ['name', 'username', 'email'];
-      if (fieldsToEncode.includes(field)) {
-        replacementValue = encodeHeaderValue(replacementValue);
+      const fieldsToSanitize = ['name', 'username', 'email'];
+      if (fieldsToSanitize.includes(field)) {
+        replacementValue = sanitizeHeaderValue(replacementValue);
       }
     }
 
