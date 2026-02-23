@@ -37,7 +37,7 @@ const VersionBadge = ({
             </>
           ) : (
             <>
-              <Zap className="size-3" />
+              <Zap className="size-3" aria-hidden="true" />
               <span>{label}</span>
             </>
           )}
@@ -78,7 +78,7 @@ const VersionCard = ({
   const versionNumber = totalVersions - index;
 
   return (
-    <div className="relative flex items-stretch">
+    <li className="relative flex items-stretch" aria-current={isSelected ? 'true' : undefined}>
       {/* Timeline connector */}
       <div className="relative flex w-6 shrink-0 justify-center">
         {/* Vertical line - extends through mb-2 gap + mt-3 to reach next circle */}
@@ -93,9 +93,9 @@ const VersionCard = ({
           )}
         >
           {isSelected ? (
-            <CheckCircle2 className="size-3" />
+            <CheckCircle2 className="size-3" aria-hidden="true" />
           ) : (
-            <Circle className="size-2" fill="currentColor" />
+            <Circle className="size-2" fill="currentColor" aria-hidden="true" />
           )}
         </div>
       </div>
@@ -110,8 +110,6 @@ const VersionCard = ({
             : 'border-border-light bg-surface-primary hover:border-border-medium hover:bg-surface-hover',
         )}
         onClick={onClick}
-        aria-selected={isSelected}
-        role="tab"
         aria-label={localize('com_ui_version_var', { 0: `${versionNumber}` })}
       >
         <div className="flex items-center justify-between gap-2">
@@ -149,7 +147,7 @@ const VersionCard = ({
           {formatDistanceToNow(new Date(prompt.createdAt), { addSuffix: true })}
         </time>
       </button>
-    </div>
+    </li>
   );
 };
 

@@ -18,6 +18,8 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
   const { getSoleOwnedResourceIds } = deps;
   const { ObjectId } = mongoose.Types;
 
+  const isValidObjectIdString = (id: string) => /^[a-f\d]{24}$/i.test(id);
+
   /**
    * Batch-fetches production prompts for an array of prompt groups
    * and attaches them as `productionPrompt` field.
@@ -207,42 +209,51 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       _id: { $in: accessibleIds },
     };
 
+    let matchQuery: Record<string, unknown> = baseQuery;
+
     if (after && typeof after === 'string' && after !== 'undefined' && after !== 'null') {
       try {
         const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
         const { numberOfGenerations = 0, updatedAt, _id } = cursor;
 
-        const cursorCondition = {
-          $or: [
-            { numberOfGenerations: { $lt: numberOfGenerations } },
-            {
-              numberOfGenerations,
-              updatedAt: { $lt: new Date(updatedAt) },
-            },
-            {
-              numberOfGenerations,
-              updatedAt: new Date(updatedAt),
-              _id: { $gt: new ObjectId(_id) },
-            },
-          ],
-        };
-
-        if (Object.keys(baseQuery).length > 0) {
-          baseQuery.$and = [{ ...baseQuery }, cursorCondition];
-          Object.keys(baseQuery).forEach((key) => {
-            if (key !== '$and') {
-              delete baseQuery[key];
-            }
-          });
+        if (
+          typeof numberOfGenerations !== 'number' ||
+          !Number.isFinite(numberOfGenerations) ||
+          typeof updatedAt !== 'string' ||
+          Number.isNaN(new Date(updatedAt).getTime()) ||
+          typeof _id !== 'string' ||
+          !isValidObjectIdString(_id)
+        ) {
+          logger.warn(
+            '[getListPromptGroupsByAccess] Invalid cursor fields, skipping cursor condition',
+          );
         } else {
-          Object.assign(baseQuery, cursorCondition);
+          const cursorCondition = {
+            $or: [
+              { numberOfGenerations: { $lt: numberOfGenerations } },
+              {
+                numberOfGenerations,
+                updatedAt: { $lt: new Date(updatedAt) },
+              },
+              {
+                numberOfGenerations,
+                updatedAt: new Date(updatedAt),
+                _id: { $gt: new ObjectId(_id) },
+              },
+            ],
+          };
+
+          matchQuery =
+            Object.keys(baseQuery).length > 0
+              ? { $and: [baseQuery, cursorCondition] }
+              : cursorCondition;
         }
       } catch (error) {
         logger.warn('Invalid cursor:', (error as Error).message);
       }
     }
 
-    const findQuery = PromptGroup.find(baseQuery)
+    const findQuery = PromptGroup.find(matchQuery)
       .sort({ numberOfGenerations: -1, updatedAt: -1, _id: 1 })
       .select(
         'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt',
