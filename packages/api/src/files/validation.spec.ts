@@ -1,6 +1,6 @@
 import { Providers } from '@librechat/agents';
 import { mbToBytes } from 'librechat-data-provider';
-import { validatePdf, validateVideo, validateAudio } from './validation';
+import { validatePdf, validateBedrockDocument, validateVideo, validateAudio } from './validation';
 
 describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
   /** Helper to create a PDF buffer with valid header */
@@ -197,6 +197,67 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
 
       expect(result.isValid).toBe(false);
       expect(result.error).toContain('too small');
+    });
+  });
+
+  describe('validateBedrockDocument - non-PDF types', () => {
+    it('should accept CSV within 4.5MB limit', async () => {
+      const fileSize = 2 * 1024 * 1024;
+      const result = await validateBedrockDocument(fileSize, 'text/csv');
+
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should accept DOCX within 4.5MB limit', async () => {
+      const fileSize = 3 * 1024 * 1024;
+      const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const result = await validateBedrockDocument(fileSize, mimeType);
+
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should reject non-PDF document exceeding 4.5MB hard limit', async () => {
+      const fileSize = 5 * 1024 * 1024;
+      const result = await validateBedrockDocument(fileSize, 'text/plain');
+
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('4.5MB');
+    });
+
+    it('should clamp to 4.5MB even when config is higher for non-PDF', async () => {
+      const fileSize = 5 * 1024 * 1024;
+      const configuredLimit = mbToBytes(512);
+      const result = await validateBedrockDocument(fileSize, 'text/html', undefined, configuredLimit);
+
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('4.5MB');
+    });
+
+    it('should use configured limit when lower than provider limit for non-PDF', async () => {
+      const fileSize = 3 * 1024 * 1024;
+      const configuredLimit = mbToBytes(2);
+      const result = await validateBedrockDocument(fileSize, 'text/markdown', undefined, configuredLimit);
+
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('2.0MB');
+    });
+
+    it('should not run PDF header check on non-PDF types', async () => {
+      const buffer = Buffer.from('NOT-A-PDF-HEADER-but-valid-csv-content');
+      const result = await validateBedrockDocument(buffer.length, 'text/csv', buffer);
+
+      expect(result.isValid).toBe(true);
+    });
+
+    it('should still run PDF header check when mimeType is application/pdf', async () => {
+      const buffer = Buffer.alloc(1024);
+      buffer.write('INVALID', 0);
+      const result = await validateBedrockDocument(buffer.length, 'application/pdf', buffer);
+
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('PDF header');
     });
   });
 
