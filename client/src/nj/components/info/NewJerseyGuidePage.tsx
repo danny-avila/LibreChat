@@ -33,14 +33,14 @@ export default function NewJerseyGuidePage() {
       <p className="mb-6">
         You can reduce hallucinations by providing clear context, uploading source materials, asking
         the AI Assistant to explain its reasoning, and including prompt instructions for the AI to
-        not fabricate or guess any information. Here is an example of guidance for{' '}
+        not fabricate or guess any information. Here is an example of{' '}
         <a
           href="https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
           className="underline hover:decoration-2"
           target="_blank"
           rel="noreferrer"
         >
-          reducing hallucinations
+          guidance for reducing hallucinations
         </a>
         , and keep an eye out for prompting tips we will be added to the tool very soon.
       </p>
@@ -237,16 +237,16 @@ export default function NewJerseyGuidePage() {
         >
           official FAQ
         </a>{' '}
-        for guidance before doing so. The State’s{' '}
+        for guidance before doing so. The{' '}
         <a
           href="https://nj.gov/it/docs/ps/25-OIT-001-State-of-New-Jersey-Guidance-on-Responsible-Use-of-Generative-AI.pdf"
           className="underline hover:decoration-2"
           target="_blank"
           rel="noreferrer"
         >
-          current policy
+          State’s current policy on responsible use of AI technology
         </a>{' '}
-        on responsible use of AI technology also covers this topic in detail.{' '}
+        also covers this topic in detail.{' '}
       </p>
 
       <p className="mb-2 font-bold">Who can see the prompts I share?</p>
@@ -282,9 +282,9 @@ export default function NewJerseyGuidePage() {
           target="_blank"
           rel="noreferrer"
         >
-          Contact Us
+          Contact Us form
         </a>{' '}
-        form or send us an email at{' '}
+        or send us an email at{' '}
         <a
           href="mailto:AI.Assistant@innovation.nj.gov"
           className="underline hover:decoration-2"
@@ -322,9 +322,9 @@ export default function NewJerseyGuidePage() {
             target="_blank"
             rel="noreferrer"
           >
-            how-to guides
-          </a>{' '}
-          about LLM prompting best practices and AI use cases.
+            how-to guides about LLM prompting best practices and AI use cases
+          </a>
+          .
         </li>
       </ul>
 
@@ -393,14 +393,13 @@ export default function NewJerseyGuidePage() {
           </a>
         </li>
         <li className="mb-2">
-          Anthropic&#39;s guidance to{' '}
           <a
             href="https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations"
             className="font-normal text-primary underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
-            reduce hallucinations
+            Anthropic&#39;s guidance to reduce hallucinations
           </a>{' '}
           (Note: Claude is not an approved tool, do not put any state data into the tool)
         </li>

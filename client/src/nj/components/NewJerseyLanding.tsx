@@ -93,14 +93,14 @@ export function NewJerseyLanding() {
 
                   <div className="mb-5 flex gap-3">
                     <p>
-                      Read the State{' '}
+                      Read the{' '}
                       <a
                         href="https://innovation.nj.gov/ai-faq-state-employees/"
                         className="inline-flex items-center gap-1 underline hover:decoration-2"
                         target="_blank"
                         rel="noreferrer"
                       >
-                        Guidelines on Generative AI use for Public Professionals
+                        State Guidelines on Generative AI use for Public Professionals
                         <svg
                           className="usa-icon usa-icon--size-2"
                           aria-hidden="true"

@@ -126,14 +126,14 @@ export default function NewJerseyAboutPage() {
         >
           official FAQ
         </a>{' '}
-        for a list of state-approved tools and the State’s{' '}
+        for a list of state-approved tools and the{' '}
         <a
           href="https://nj.gov/it/docs/ps/25-OIT-001-State-of-New-Jersey-Guidance-on-Responsible-Use-of-Generative-AI.pdf"
           className="underline hover:decoration-2"
           target="_blank"
           rel="noreferrer"
         >
-          current policy
+          State’s current policy
         </a>{' '}
         to guide response use of AI technology to ensure you are following requirements when doing
         so.
