@@ -174,3 +174,4 @@ claude-flow
 .playwright-mcp/*
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
+CLAUDE.md
