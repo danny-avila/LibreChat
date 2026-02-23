@@ -66,36 +66,9 @@ endpoints:
 mcpServers:
   scholar:
     type: stdio
-    command: /bin/sh
+    command: node
     args:
-      - "-c"
-      - |
-        mkdir -p /tmp/ss-mcp && cd /tmp/ss-mcp && \
-        if [ ! -f "server.py" ]; then \
-          wget -qO repo.zip https://github.com/alperenkocyigit/semantic-scholar-graph-api/archive/refs/heads/main.zip && \
-          unzip -qo repo.zip && \
-          mv semantic-scholar-graph-api-main/* . && \
-          rm -rf semantic-scholar-graph-api-main repo.zip && \
-          sed -i 's/transport="streamable-http"//' server.py && \
-          sed -i 's/async def search_semantic_scholar_papers/async def find_papers/g' server.py && \
-          sed -i 's/async def get_semantic_scholar_paper_details/async def lookup_paper/g' server.py && \
-          sed -i 's/async def get_semantic_scholar_author_details/async def lookup_author/g' server.py && \
-          sed -i 's/async def get_semantic_scholar_citations_and_references/async def get_refs/g' server.py && \
-          sed -i 's/async def search_semantic_scholar_authors/async def find_authors/g' server.py && \
-          sed -i 's/async def get_semantic_scholar_paper_match/async def match_paper/g' server.py && \
-          sed -i 's/async def get_semantic_scholar_paper_autocomplete/async def complete_title/g' server.py && \
-          sed -i 's/async def get_semantic_scholar_papers_batch/async def batch_papers/g' server.py && \
-          sed -i 's/async def get_semantic_scholar_authors_batch/async def batch_authors/g' server.py && \
-          sed -i 's/async def search_semantic_scholar_snippets/async def find_snippets/g' server.py && \
-          sed -i 's/async def get_semantic_scholar_paper_recommendations_from_lists/async def rec_listing/g' server.py && \
-          sed -i 's/async def get_semantic_scholar_paper_recommendations/async def rec_paper/g' server.py; \
-        fi && \
-        uv venv .venv && \
-        . .venv/bin/activate && \
-        uv pip install -r requirements.txt && \
-        python server.py
-    env:
-      SEMANTIC_SCHOLAR_API_KEY: "${SEMANTIC_SCHOLAR_API_KEY}"
+      - /mcp-scholar/build/stdio-entry.js
 speech:
   stt:
     openai:
