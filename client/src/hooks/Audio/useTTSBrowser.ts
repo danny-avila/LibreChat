@@ -1,12 +1,11 @@
 // client/src/hooks/Audio/useTTSBrowser.ts
 import { useRef, useEffect, useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { parseTextParts } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import useTextToSpeechBrowser from '~/hooks/Input/useTextToSpeechBrowser';
 import usePauseGlobalAudio from '~/hooks/Audio/usePauseGlobalAudio';
 import useAudioRef from '~/hooks/Audio/useAudioRef';
-import { logger } from '~/utils';
+import { logger, parseMessageForTTS } from '~/utils';
 import store from '~/store';
 
 type TUseTextToSpeech = {
@@ -27,6 +26,7 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const [voice, setVoice] = useRecoilState(store.voice);
   const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
+  const includeThinkingInTTS = useRecoilValue(store.includeThinkingInTTS);
 
   const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
 
@@ -60,9 +60,7 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
     timerRef.current = window.setTimeout(() => {
       if (isMouseDownRef.current) {
         const messageContent = content ?? '';
-        const parsedMessage =
-          typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
-        generateSpeech(parsedMessage);
+        generateSpeech(parseMessageForTTS(messageContent, !includeThinkingInTTS));
       }
     }, 1000);
   };
@@ -80,9 +78,7 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
       pauseGlobalAudio();
     } else {
       const messageContent = content ?? '';
-      const parsedMessage =
-        typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
-      generateSpeech(parsedMessage);
+      generateSpeech(parseMessageForTTS(messageContent, !includeThinkingInTTS));
     }
   };
 
