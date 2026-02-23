@@ -59,6 +59,8 @@ const checkPromptCreate = generateCheckAccess({
   getRoleByName,
 });
 
+const isValidObjectId = (id) => /^[a-f\d]{24}$/i.test(id);
+
 router.use(requireJwtAuth);
 router.use(checkPromptAccess);
 
@@ -343,7 +345,7 @@ router.post(
   async (req, res) => {
     try {
       const { groupId } = req.params;
-      if (!/^[a-f\d]{24}$/i.test(groupId)) {
+      if (!isValidObjectId(groupId)) {
         return res.status(400).send({ error: 'Invalid groupId' });
       }
       const result = await incrementPromptGroupUsage(groupId);
@@ -446,7 +448,7 @@ router.get('/', async (req, res) => {
 
     // If requesting prompts for a specific group, check permissions
     if (groupId) {
-      if (!/^[a-f\d]{24}$/i.test(groupId)) {
+      if (!isValidObjectId(groupId)) {
         return res.status(400).send({ error: 'Invalid groupId' });
       }
 
