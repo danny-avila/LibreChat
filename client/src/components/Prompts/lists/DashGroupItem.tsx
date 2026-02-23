@@ -1,4 +1,4 @@
-import { memo, useState, useRef, useMemo, useCallback } from 'react';
+import { memo, useState, useMemo, useCallback } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { EarthIcon, Pencil, Trash2, User } from 'lucide-react';
@@ -31,7 +31,6 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
 
   const isSharedPrompt = group.author !== user?.id && Boolean(group.authorName);
 
-  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [nameInputValue, setNameInputValue] = useState(group.name);
 
   const { hasPermission } = useResourcePermissions(ResourceType.PROMPTGROUP, group._id || '');
@@ -43,13 +42,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
     [group.projectIds, instanceProjectId],
   );
 
-  const updateGroup = useUpdatePromptGroup({
-    onMutate: () => {
-      if (blurTimeoutRef.current) {
-        clearTimeout(blurTimeoutRef.current);
-      }
-    },
-  });
+  const updateGroup = useUpdatePromptGroup();
 
   const deleteGroup = useDeletePromptGroup({
     onSuccess: (_response, variables) => {
