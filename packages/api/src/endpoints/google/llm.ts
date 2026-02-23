@@ -187,7 +187,7 @@ export function getGoogleConfig(
       credentials: { ...serviceKey },
       projectId: project_id,
     };
-    (llmConfig as VertexAIClientOptions).location = process.env.GOOGLE_LOC || 'us-central1';
+    (llmConfig as VertexAIClientOptions).location = modelOptions.region || process.env.GOOGLE_LOC || 'us-central1';
   } else if (apiKey && provider === Providers.GOOGLE) {
     llmConfig.apiKey = apiKey;
   } else {
