@@ -145,6 +145,61 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
     });
   });
 
+  describe('validatePdf - Bedrock provider', () => {
+    const provider = Providers.BEDROCK;
+
+    it('should accept PDF within provider limit when no config provided', async () => {
+      const pdfBuffer = createMockPdfBuffer(3);
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider);
+
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should reject PDF exceeding 4.5MB hard limit when no config provided', async () => {
+      const pdfBuffer = createMockPdfBuffer(5);
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider);
+
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('4.5MB');
+    });
+
+    it('should use configured limit when it is lower than provider limit', async () => {
+      const configuredLimit = mbToBytes(2);
+      const pdfBuffer = createMockPdfBuffer(3);
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, configuredLimit);
+
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('2.0MB');
+    });
+
+    it('should clamp to 4.5MB hard limit even when config is higher', async () => {
+      const configuredLimit = mbToBytes(512);
+      const pdfBuffer = createMockPdfBuffer(5);
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, configuredLimit);
+
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('4.5MB');
+    });
+
+    it('should reject PDFs with invalid header', async () => {
+      const pdfBuffer = Buffer.alloc(1024);
+      pdfBuffer.write('INVALID', 0);
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider);
+
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('PDF header');
+    });
+
+    it('should reject PDFs that are too small', async () => {
+      const pdfBuffer = Buffer.alloc(3);
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider);
+
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('too small');
+    });
+  });
+
   describe('validatePdf - Google provider', () => {
     const provider = Providers.GOOGLE;
 
