@@ -445,6 +445,29 @@ endpoints:
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 
+    # Brainiall Example
+    - name: 'Brainiall'
+      apiKey: '${BRAINIALL_API_KEY}'
+      baseURL: 'https://apim-ai-apis.azure-api.net/v1'
+      models:
+        default:
+          - 'claude-opus-4-6'
+          - 'claude-sonnet-4-6'
+          - 'claude-haiku-4-5'
+          - 'deepseek-r1'
+          - 'deepseek-v3'
+          - 'llama-3.3-70b'
+          - 'llama-4-scout'
+          - 'qwen3-80b'
+          - 'mistral-large-3'
+          - 'minimax-m2'
+          - 'nova-pro'
+          - 'nova-micro'
+        fetch: true
+      titleConvo: true
+      titleModel: 'claude-haiku-4-5'
+      modelDisplayLabel: 'Brainiall'
+
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
