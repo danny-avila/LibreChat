@@ -341,4 +341,277 @@ describe('loadCustomConfig', () => {
       ]);
     });
   });
+
+  describe('CONFIG_OVERRIDE_PATH', () => {
+    const fs = require('fs');
+
+    beforeEach(() => {
+      jest.resetAllMocks();
+      delete process.env.CONFIG_PATH;
+      delete process.env.CONFIG_OVERRIDE_PATH;
+      jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should merge override config when CONFIG_OVERRIDE_PATH is set and file exists', async () => {
+      const baseConfig = {
+        version: '1.0',
+        cache: true,
+        endpoints: {
+          custom: [
+            {
+              name: 'mistral',
+              apiKey: 'user_provided',
+              baseURL: 'https://api.mistral.ai/v1',
+            },
+          ],
+        },
+      };
+
+      const overrideConfig = {
+        endpoints: {
+          custom: [
+            {
+              name: 'mistral',
+              apiKey: 'my_custom_key',
+            },
+          ],
+        },
+      };
+
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+      process.env.CONFIG_OVERRIDE_PATH = 'overrides.yaml';
+
+      loadYaml.mockReturnValueOnce(baseConfig).mockReturnValueOnce(overrideConfig);
+      fs.existsSync.mockReturnValue(true);
+
+      const result = await loadCustomConfig();
+
+      expect(fs.existsSync).toHaveBeenCalled();
+      expect(loadYaml).toHaveBeenCalledTimes(2);
+      expect(logger.info).toHaveBeenCalledWith('Custom config merged from overrides.yaml');
+      expect(result.endpoints.custom).toEqual([
+        {
+          name: 'mistral',
+          apiKey: 'my_custom_key',
+        },
+      ]);
+    });
+
+    it('should handle absolute path for CONFIG_OVERRIDE_PATH', async () => {
+      const baseConfig = {
+        version: '1.0',
+        cache: false,
+      };
+
+      const overrideConfig = {
+        cache: true,
+      };
+
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+      process.env.CONFIG_OVERRIDE_PATH = '/absolute/path/to/overrides.yaml';
+
+      loadYaml.mockReturnValueOnce(baseConfig).mockReturnValueOnce(overrideConfig);
+      fs.existsSync.mockReturnValue(true);
+
+      const result = await loadCustomConfig();
+
+      expect(result.cache).toBe(true);
+    });
+
+    it('should handle relative path for CONFIG_OVERRIDE_PATH', async () => {
+      const baseConfig = {
+        version: '1.0',
+        cache: false,
+      };
+
+      const overrideConfig = {
+        cache: true,
+      };
+
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+      process.env.CONFIG_OVERRIDE_PATH = 'custom/overrides.yaml';
+
+      loadYaml.mockReturnValueOnce(baseConfig).mockReturnValueOnce(overrideConfig);
+      fs.existsSync.mockReturnValue(true);
+
+      const result = await loadCustomConfig();
+
+      expect(result.cache).toBe(true);
+    });
+
+    it('should not merge when CONFIG_OVERRIDE_PATH file does not exist', async () => {
+      const baseConfig = {
+        version: '1.0',
+        cache: true,
+      };
+
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+      process.env.CONFIG_OVERRIDE_PATH = 'nonexistent.yaml';
+
+      loadYaml.mockReturnValueOnce(baseConfig);
+      fs.existsSync.mockReturnValue(false);
+
+      const result = await loadCustomConfig();
+
+      expect(loadYaml).toHaveBeenCalledTimes(1);
+      expect(logger.info).not.toHaveBeenCalledWith(
+        expect.stringContaining('Custom config merged from'),
+      );
+      expect(result).toEqual(baseConfig);
+    });
+
+    it('should not merge when override config is invalid (has reason field)', async () => {
+      const baseConfig = {
+        version: '1.0',
+        cache: true,
+      };
+
+      const invalidOverrideConfig = {
+        reason: 'Parse error',
+      };
+
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+      process.env.CONFIG_OVERRIDE_PATH = 'invalid-overrides.yaml';
+
+      loadYaml.mockReturnValueOnce(baseConfig).mockReturnValueOnce(invalidOverrideConfig);
+      fs.existsSync.mockReturnValue(true);
+
+      const result = await loadCustomConfig();
+
+      expect(logger.info).not.toHaveBeenCalledWith(
+        expect.stringContaining('Custom config merged from'),
+      );
+      expect(result).toEqual(baseConfig);
+    });
+
+    it('should not merge when override config is invalid (has stack field)', async () => {
+      const baseConfig = {
+        version: '1.0',
+        cache: true,
+      };
+
+      const invalidOverrideConfig = {
+        stack: 'Error stack trace',
+      };
+
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+      process.env.CONFIG_OVERRIDE_PATH = 'invalid-overrides.yaml';
+
+      loadYaml.mockReturnValueOnce(baseConfig).mockReturnValueOnce(invalidOverrideConfig);
+      fs.existsSync.mockReturnValue(true);
+
+      const result = await loadCustomConfig();
+
+      expect(logger.info).not.toHaveBeenCalledWith(
+        expect.stringContaining('Custom config merged from'),
+      );
+      expect(result).toEqual(baseConfig);
+    });
+
+    it('should work without CONFIG_OVERRIDE_PATH set', async () => {
+      const baseConfig = {
+        version: '1.0',
+        cache: true,
+      };
+
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+      // CONFIG_OVERRIDE_PATH not set
+
+      loadYaml.mockReturnValueOnce(baseConfig);
+
+      const result = await loadCustomConfig();
+
+      expect(fs.existsSync).not.toHaveBeenCalled();
+      expect(loadYaml).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(baseConfig);
+    });
+
+    it('should merge deep nested configurations', async () => {
+      const baseConfig = {
+        version: '1.0',
+        endpoints: {
+          openAI: {
+            apiKey: 'user_provided',
+            models: {
+              default: ['gpt-3.5-turbo', 'gpt-4'],
+            },
+            titleConvo: true,
+            summarize: false,
+          },
+        },
+      };
+
+      const overrideConfig = {
+        endpoints: {
+          openAI: {
+            models: {
+              default: ['gpt-4-turbo'],
+            },
+            summarize: true,
+          },
+        },
+      };
+
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+      process.env.CONFIG_OVERRIDE_PATH = 'overrides.yaml';
+
+      loadYaml.mockReturnValueOnce(baseConfig).mockReturnValueOnce(overrideConfig);
+      fs.existsSync.mockReturnValue(true);
+
+      const result = await loadCustomConfig();
+
+      expect(result.endpoints.openAI).toEqual({
+        apiKey: 'user_provided',
+        models: {
+          default: ['gpt-4-turbo'],
+        },
+        titleConvo: true,
+        summarize: true,
+      });
+    });
+
+    it('should support $replace directive in override config', async () => {
+      const baseConfig = {
+        version: '1.0',
+        endpoints: {
+          openAI: {
+            apiKey: 'user_provided',
+            models: {
+              default: ['gpt-3.5-turbo', 'gpt-4'],
+            },
+            titleConvo: true,
+            summarize: false,
+          },
+        },
+      };
+
+      const overrideConfig = {
+        endpoints: {
+          openAI: {
+            $replace: true,
+            apiKey: 'my_key',
+            baseURL: 'https://custom.openai.com/v1',
+          },
+        },
+      };
+
+      process.env.CONFIG_PATH = 'validConfig.yaml';
+      process.env.CONFIG_OVERRIDE_PATH = 'overrides.yaml';
+
+      loadYaml.mockReturnValueOnce(baseConfig).mockReturnValueOnce(overrideConfig);
+      fs.existsSync.mockReturnValue(true);
+
+      const result = await loadCustomConfig();
+
+      expect(result.endpoints.openAI).toEqual({
+        apiKey: 'my_key',
+        baseURL: 'https://custom.openai.com/v1',
+      });
+      expect(result.endpoints.openAI).not.toHaveProperty('$replace');
+    });
+  });
 });

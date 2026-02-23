@@ -2,6 +2,7 @@ const path = require('path');
 const axios = require('axios');
 const yaml = require('js-yaml');
 const keyBy = require('lodash/keyBy');
+const fs = require('fs');
 const { loadYaml } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -11,6 +12,7 @@ const {
   agentParamSettings,
   validateSettingDefinitions,
 } = require('librechat-data-provider');
+const { mergeLibrechatConfig } = require('../../utils/mergeLibrechatConfig');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
@@ -63,6 +65,22 @@ async function loadCustomConfig(printConfig = true) {
       i === 0 && logger.info(`Failed to parse the YAML config from ${configPath}`, parseError);
       i === 0 && i++;
       return null;
+    }
+  }
+
+  // Merge custom config overrides if CONFIG_OVERRIDE_PATH is set
+  const configOverridePath = process.env.CONFIG_OVERRIDE_PATH;
+  if (configOverridePath) {
+    const overridePath = path.isAbsolute(configOverridePath)
+      ? configOverridePath
+      : path.resolve(projectRoot, configOverridePath);
+
+    if (fs.existsSync(overridePath)) {
+      const overrideConfig = loadYaml(overridePath);
+      if (overrideConfig && !overrideConfig.reason && !overrideConfig.stack) {
+        customConfig = mergeLibrechatConfig(customConfig, overrideConfig);
+        logger.info(`Custom config merged from ${configOverridePath}`);
+      }
     }
   }
 
