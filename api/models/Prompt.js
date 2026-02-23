@@ -38,7 +38,7 @@ const createAllGroupsPipeline = (
 ) => {
   return [
     { $match: query },
-    { $sort: { numberOfGenerations: -1, updatedAt: -1 } },
+    { $sort: { numberOfGenerations: -1, updatedAt: -1, _id: 1 } },
     {
       $lookup: {
         from: 'prompts',
@@ -150,7 +150,7 @@ const getPromptGroups = async (req, filter) => {
       {
         $facet: {
           data: [
-            { $sort: { numberOfGenerations: -1, updatedAt: -1 } },
+            { $sort: { numberOfGenerations: -1, updatedAt: -1, _id: 1 } },
             { $skip: skip },
             { $limit: limit },
             {

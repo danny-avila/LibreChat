@@ -82,8 +82,9 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
         )}
         onClick={() => !isEditing && setIsEditing(true)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            !isEditing && setIsEditing(true);
+          if (!isEditing && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            setIsEditing(true);
           }
         }}
         tabIndex={isEditing ? -1 : 0}
