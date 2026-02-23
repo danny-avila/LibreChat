@@ -7,10 +7,14 @@ const CURRENCY_REGEX =
   /(?<![\\$])\$(?!\$)(?=\d+(?:,\d{3})*(?:\.\d+)?(?:[KMBkmb])?(?:\s|$|[^a-zA-Z\d]))/g;
 const SINGLE_DOLLAR_REGEX = /(?<!\\)\$(?!\$)((?:[^$\n]|\\[$])+?)(?<!\\)(?<!`)\$(?!\$)/g;
 const LATEX_COMMAND_REGEX = /\\[a-zA-Z]+/;
-const LATEX_OPERATOR_REGEX = /[=^_{}]/;
+const LATEX_OPERATOR_REGEX = /[\^_]/;
 const NUMERIC_ARITHMETIC_REGEX = /\d\s*[+\-*/×xX]\s*\d/;
 const VARIABLE_ARITHMETIC_REGEX = /[a-zA-Z]\s*[+\-*/=]|[+\-*/=]\s*[a-zA-Z]/;
 const NUMERIC_SYMBOL_TERM_REGEX = /^\d+\s*[a-zA-Z][a-zA-Z0-9_]*$/;
+const LEADING_NUMBER_REGEX = /^(\d+(?:,\d{3})*(?:\.\d+)?)(.*)$/;
+const CURRENCY_ABBREVIATION_REGEX = /^[kmb]$/i;
+const NUMERIC_OPERATOR_TAIL_REGEX = /^[+\-*/×xX^_]\s*(?:\d|[a-zA-Z]|\\|{)/;
+const NUMERIC_COMMAND_TAIL_REGEX = /^\\[a-zA-Z]+/;
 
 /**
  * Escapes mhchem package notation in LaTeX by converting single dollar delimiters to double dollars
@@ -109,9 +113,20 @@ function looksLikeMathExpression(inner: string): boolean {
     return false;
   }
 
-  // Numeric-leading symbolic terms like 2n or 3x are common math snippets.
-  if (NUMERIC_SYMBOL_TERM_REGEX.test(text)) {
-    return true;
+  const leadingNumberMatch = text.match(LEADING_NUMBER_REGEX);
+  if (leadingNumberMatch) {
+    // Numeric-leading symbolic terms like 2n or 3x are common math snippets.
+    if (NUMERIC_SYMBOL_TERM_REGEX.test(text)) {
+      const symbolPart = text.replace(/^\d+\s*/, '');
+      if (!CURRENCY_ABBREVIATION_REGEX.test(symbolPart)) {
+        return true;
+      }
+    }
+
+    // For numeric-leading content, only treat as math when the number is followed
+    // by an explicit math operator/command, not by prose or closing braces.
+    const tail = leadingNumberMatch[2].trimStart();
+    return NUMERIC_OPERATOR_TAIL_REGEX.test(tail) || NUMERIC_COMMAND_TAIL_REGEX.test(tail);
   }
 
   return (

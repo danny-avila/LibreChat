@@ -31,7 +31,7 @@ export const ThinkingContent: FC<{
   return (
     <div className="relative rounded-3xl border border-border-medium bg-surface-tertiary p-4 pb-10 text-text-secondary">
       {processedContent != null ? (
-        <div className={cn('leading-[26px]', fontSize)}>
+        <div className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>
           <MarkdownLite content={processedContent} />
         </div>
       ) : (
