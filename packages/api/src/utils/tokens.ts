@@ -106,6 +106,7 @@ const googleModels = {
   'gemini-exp': 2000000,
   'gemini-3': 1000000, // 1M input tokens, 64k output tokens
   'gemini-3-pro-image': 1000000,
+  'gemini-3.1': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5-pro': 1000000,
   'gemini-2.5-flash': 1000000,
@@ -148,6 +149,7 @@ const anthropicModels = {
   'claude-3.5-sonnet-latest': 200000,
   'claude-haiku-4-5': 200000,
   'claude-sonnet-4': 1000000,
+  'claude-sonnet-4-6': 1000000,
   'claude-4': 200000,
   'claude-opus-4': 200000,
   'claude-opus-4-5': 200000,
@@ -197,6 +199,8 @@ const moonshotModels = {
   'moonshot.kimi-k2.5': 262144,
   'moonshot.kimi-k2-thinking': 262144,
   'moonshot.kimi-k2-0711': 131072,
+  'moonshotai.kimi': 262144,
+  'moonshotai.kimi-k2.5': 262144,
 };
 
 const metaModels = {
@@ -308,6 +312,11 @@ const amazonModels = {
   'nova-premier': 995000, // -5000 from max
 };
 
+const openAIBedrockModels = {
+  'openai.gpt-oss-20b': 128000,
+  'openai.gpt-oss-120b': 128000,
+};
+
 const bedrockModels = {
   ...anthropicModels,
   ...mistralModels,
@@ -317,6 +326,7 @@ const bedrockModels = {
   ...metaModels,
   ...ai21Models,
   ...amazonModels,
+  ...openAIBedrockModels,
 };
 
 const xAIModels = {
@@ -393,6 +403,7 @@ const anthropicMaxOutputs = {
   'claude-3-opus': 4096,
   'claude-haiku-4-5': 64000,
   'claude-sonnet-4': 64000,
+  'claude-sonnet-4-6': 64000,
   'claude-opus-4': 32000,
   'claude-opus-4-5': 64000,
   'claude-opus-4-6': 128000,

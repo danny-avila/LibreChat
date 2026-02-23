@@ -1,22 +1,13 @@
 const { nanoid } = require('nanoid');
-const { Constants } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
+const { Constants, EnvVar, GraphEvents, ToolEndHandler } = require('@librechat/agents');
+const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
   sendEvent,
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
 } = require('@librechat/api');
-const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
-const {
-  EnvVar,
-  Providers,
-  GraphEvents,
-  getMessageId,
-  ToolEndHandler,
-  handleToolCalls,
-  ChatModelStreamHandler,
-} = require('@librechat/agents');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -57,8 +48,6 @@ class ModelEndHandler {
     let errorMessage;
     try {
       const agentContext = graph.getAgentContext(metadata);
-      const isGoogle = agentContext.provider === Providers.GOOGLE;
-      const streamingDisabled = !!agentContext.clientOptions?.disableStreaming;
       if (data?.output?.additional_kwargs?.stop_reason === 'refusal') {
         const info = { ...data.output.additional_kwargs };
         errorMessage = JSON.stringify({
@@ -73,21 +62,6 @@ class ModelEndHandler {
         });
       }
 
-      const toolCalls = data?.output?.tool_calls;
-      let hasUnprocessedToolCalls = false;
-      if (Array.isArray(toolCalls) && toolCalls.length > 0 && graph?.toolCallStepIds?.has) {
-        try {
-          hasUnprocessedToolCalls = toolCalls.some(
-            (tc) => tc?.id && !graph.toolCallStepIds.has(tc.id),
-          );
-        } catch {
-          hasUnprocessedToolCalls = false;
-        }
-      }
-      if (isGoogle || streamingDisabled || hasUnprocessedToolCalls) {
-        await handleToolCalls(toolCalls, metadata, graph);
-      }
-
       const usage = data?.output?.usage_metadata;
       if (!usage) {
         return this.finalize(errorMessage);
@@ -98,38 +72,6 @@ class ModelEndHandler {
       }
 
       this.collectedUsage.push(usage);
-      if (!streamingDisabled) {
-        return this.finalize(errorMessage);
-      }
-      if (!data.output.content) {
-        return this.finalize(errorMessage);
-      }
-      const stepKey = graph.getStepKey(metadata);
-      const message_id = getMessageId(stepKey, graph) ?? '';
-      if (message_id) {
-        await graph.dispatchRunStep(stepKey, {
-          type: StepTypes.MESSAGE_CREATION,
-          message_creation: {
-            message_id,
-          },
-        });
-      }
-      const stepId = graph.getStepIdByKey(stepKey);
-      const content = data.output.content;
-      if (typeof content === 'string') {
-        await graph.dispatchMessageDelta(stepId, {
-          content: [
-            {
-              type: 'text',
-              text: content,
-            },
-          ],
-        });
-      } else if (content.every((c) => c.type?.startsWith('text'))) {
-        await graph.dispatchMessageDelta(stepId, {
-          content,
-        });
-      }
     } catch (error) {
       logger.error('Error handling model end event:', error);
       return this.finalize(errorMessage);
@@ -200,7 +142,6 @@ function getDefaultHandlers({
   const handlers = {
     [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
-    [GraphEvents.CHAT_MODEL_STREAM]: new ChatModelStreamHandler(),
     [GraphEvents.ON_RUN_STEP]: {
       /**
        * Handle ON_RUN_STEP event.
@@ -209,6 +150,7 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        aggregateContent({ event, data });
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
           await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
@@ -227,7 +169,6 @@ function getDefaultHandlers({
             },
           });
         }
-        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_RUN_STEP_DELTA]: {
@@ -238,6 +179,7 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        aggregateContent({ event, data });
         if (data?.delta.type === StepTypes.TOOL_CALLS) {
           await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
@@ -245,7 +187,6 @@ function getDefaultHandlers({
         } else if (!metadata?.hide_sequential_outputs) {
           await emitEvent(res, streamId, { event, data });
         }
-        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_RUN_STEP_COMPLETED]: {
@@ -256,6 +197,7 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        aggregateContent({ event, data });
         if (data?.result != null) {
           await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
@@ -263,7 +205,6 @@ function getDefaultHandlers({
         } else if (!metadata?.hide_sequential_outputs) {
           await emitEvent(res, streamId, { event, data });
         }
-        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_MESSAGE_DELTA]: {
@@ -274,12 +215,12 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
           await emitEvent(res, streamId, { event, data });
         }
-        aggregateContent({ event, data });
       },
     },
     [GraphEvents.ON_REASONING_DELTA]: {
@@ -290,12 +231,12 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
           await emitEvent(res, streamId, { event, data });
         }
-        aggregateContent({ event, data });
       },
     },
   };

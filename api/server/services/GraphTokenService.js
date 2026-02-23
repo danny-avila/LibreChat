@@ -7,7 +7,7 @@ const getLogStores = require('~/cache/getLogStores');
 /**
  * Get Microsoft Graph API token using existing token exchange mechanism
  * @param {Object} user - User object with OpenID information
- * @param {string} accessToken - Current access token from Authorization header
+ * @param {string} accessToken - Federated access token used as OBO assertion
  * @param {string} scopes - Graph API scopes for the token
  * @param {boolean} fromCache - Whether to try getting token from cache first
  * @returns {Promise<Object>} Graph API token response with access_token and expires_in

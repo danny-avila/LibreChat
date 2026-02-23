@@ -823,6 +823,139 @@ describe('Premium Token Pricing Integration Tests', () => {
     expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
   });
 
+  test('spendTokens should apply standard pricing for gemini-3.1-pro-preview below threshold', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gemini-3.1-pro-preview';
+    const promptTokens = 100000;
+    const completionTokens = 500;
+
+    const txData = {
+      user: userId,
+      conversationId: 'test-gemini31-below',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+      balance: { enabled: true },
+    };
+
+    await spendTokens(txData, { promptTokens, completionTokens });
+
+    const standardPromptRate = tokenValues['gemini-3.1'].prompt;
+    const standardCompletionRate = tokenValues['gemini-3.1'].completion;
+    const expectedCost =
+      promptTokens * standardPromptRate + completionTokens * standardCompletionRate;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+
+  test('spendTokens should apply premium pricing for gemini-3.1-pro-preview above threshold', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gemini-3.1-pro-preview';
+    const promptTokens = 250000;
+    const completionTokens = 500;
+
+    const txData = {
+      user: userId,
+      conversationId: 'test-gemini31-above',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+      balance: { enabled: true },
+    };
+
+    await spendTokens(txData, { promptTokens, completionTokens });
+
+    const premiumPromptRate = premiumTokenValues['gemini-3.1'].prompt;
+    const premiumCompletionRate = premiumTokenValues['gemini-3.1'].completion;
+    const expectedCost =
+      promptTokens * premiumPromptRate + completionTokens * premiumCompletionRate;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+
+  test('spendTokens should apply standard pricing for gemini-3.1-pro-preview at exactly the threshold', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gemini-3.1-pro-preview';
+    const promptTokens = premiumTokenValues['gemini-3.1'].threshold;
+    const completionTokens = 500;
+
+    const txData = {
+      user: userId,
+      conversationId: 'test-gemini31-exact',
+      model,
+      context: 'test',
+      endpointTokenConfig: null,
+      balance: { enabled: true },
+    };
+
+    await spendTokens(txData, { promptTokens, completionTokens });
+
+    const standardPromptRate = tokenValues['gemini-3.1'].prompt;
+    const standardCompletionRate = tokenValues['gemini-3.1'].completion;
+    const expectedCost =
+      promptTokens * standardPromptRate + completionTokens * standardCompletionRate;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+
+  test('spendStructuredTokens should apply premium pricing for gemini-3.1 when total input exceeds threshold', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gemini-3.1-pro-preview';
+    const txData = {
+      user: userId,
+      conversationId: 'test-gemini31-structured-premium',
+      model,
+      context: 'message',
+      endpointTokenConfig: null,
+      balance: { enabled: true },
+    };
+
+    const tokenUsage = {
+      promptTokens: {
+        input: 200000,
+        write: 10000,
+        read: 5000,
+      },
+      completionTokens: 1000,
+    };
+
+    const totalInput =
+      tokenUsage.promptTokens.input + tokenUsage.promptTokens.write + tokenUsage.promptTokens.read;
+
+    await spendStructuredTokens(txData, tokenUsage);
+
+    const premiumPromptRate = premiumTokenValues['gemini-3.1'].prompt;
+    const premiumCompletionRate = premiumTokenValues['gemini-3.1'].completion;
+    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
+    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+
+    const expectedPromptCost =
+      tokenUsage.promptTokens.input * premiumPromptRate +
+      tokenUsage.promptTokens.write * writeMultiplier +
+      tokenUsage.promptTokens.read * readMultiplier;
+    const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
+    const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(totalInput).toBeGreaterThan(premiumTokenValues['gemini-3.1'].threshold);
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
+  });
+
   test('non-premium models should not be affected by inputTokenCount regardless of prompt size', async () => {
     const userId = new mongoose.Types.ObjectId();
     const initialBalance = 100000000;

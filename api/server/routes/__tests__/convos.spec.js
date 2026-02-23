@@ -385,6 +385,40 @@ describe('Convos Routes', () => {
       expect(deleteConvoSharedLink).not.toHaveBeenCalled();
     });
 
+    it('should return 400 when request body is empty (DoS prevention)', async () => {
+      const response = await request(app).delete('/api/convos').send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'no parameters provided' });
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when arg is null (DoS prevention)', async () => {
+      const response = await request(app).delete('/api/convos').send({ arg: null });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'no parameters provided' });
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when arg is undefined (DoS prevention)', async () => {
+      const response = await request(app).delete('/api/convos').send({ arg: undefined });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'no parameters provided' });
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when request body is null (DoS prevention)', async () => {
+      const response = await request(app)
+        .delete('/api/convos')
+        .set('Content-Type', 'application/json')
+        .send('null');
+
+      expect(response.status).toBe(400);
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
     it('should return 500 if deleteConvoSharedLink fails', async () => {
       const mockConversationId = 'conv-error';
 
