@@ -26,18 +26,14 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 ## 1. Development Setup
 
-1. Use Node.JS 20.x.
-2. Install typescript globally: `npm i -g typescript`.
-3. Run `npm ci` to install dependencies.
-4. Build the data provider: `npm run build:data-provider`.
-5. Build data schemas: `npm run build:data-schemas`.
-6. Build API methods: `npm run build:api`.
-7. Setup and run unit tests:
+1. Use Node.js v20.19.0+ or ^22.12.0 or >= 23.0.0.
+2. Run `npm run smart-reinstall` to install dependencies (uses Turborepo). Use `npm run reinstall` for a clean install, or `npm ci` for a fresh lockfile-based install.
+3. Build all compiled code: `npm run build`.
+4. Setup and run unit tests:
     - Copy `.env.test`: `cp api/test/.env.test.example api/test/.env.test`.
     - Run backend unit tests: `npm run test:api`.
     - Run frontend unit tests: `npm run test:client`.
-8. Setup and run integration tests:
-    - Build client: `cd client && npm run build`.
+5. Setup and run integration tests:
     - Create `.env`: `cp .env.example .env`.
     - Install [MongoDB Community Edition](https://www.mongodb.com/docs/manual/administration/install-community/), ensure that `mongosh` connects to your local instance.
     - Run: `npx install playwright`, then `npx playwright install`.
@@ -48,11 +44,11 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 ## 2. Development Notes
 
 1. Before starting work, make sure your main branch has the latest commits with `npm run update`.
-3. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
+2. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
 3. After your changes, reinstall packages in your current branch using `npm run reinstall` and ensure everything still works. 
     - Restart the ESLint server ("ESLint: Restart ESLint Server" in VS Code command bar) and your IDE after reinstalling or updating.
 4. Clear web app localStorage and cookies before and after changes.
-5. For frontend changes, compile typescript before and after changes to check for introduced errors: `cd client && npm run build`.
+5. To check for introduced errors, build all compiled code: `npm run build`.
 6. Run backend unit tests: `npm run test:api`.
 7. Run frontend unit tests: `npm run test:client`.
 8. Run integration tests: `npm run e2e`.
@@ -118,50 +114,45 @@ Apply the following naming conventions to branches, labels, and other Git-relate
 - **JS/TS:** Directories and file names: Descriptive and camelCase. First letter uppercased for React files (e.g., `helperFunction.ts, ReactComponent.tsx`).
 - **Docs:** Directories and file names: Descriptive and snake_case (e.g., `config_files.md`).
 
-## 7. TypeScript Conversion
+## 7. Coding Standards
+
+For detailed coding conventions, workspace boundaries, and architecture guidance, refer to the [`AGENTS.md`](../AGENTS.md) file at the project root. It covers code style, type safety, import ordering, iteration/performance expectations, frontend rules, testing, and development commands.
+
+## 8. TypeScript Conversion
 
 1. **Original State**: The project was initially developed entirely in JavaScript (JS).
 
-2. **Frontend Transition**:
-   - We are in the process of transitioning the frontend from JS to TypeScript (TS).
-   - The transition is nearing completion.
-   - This conversion is feasible due to React's capability to intermix JS and TS prior to code compilation. It's standard practice to compile/bundle the code in such scenarios.
+2. **Frontend**: Fully transitioned to TypeScript.
 
-3. **Backend Considerations**:
-   - Transitioning the backend to TypeScript would be a more intricate process, especially for an established Express.js server.
-   
-   - **Options for Transition**:
-      - **Single Phase Overhaul**: This involves converting the entire backend to TypeScript in one go. It's the most straightforward approach but can be disruptive, especially for larger codebases.
-      
-      - **Incremental Transition**: Convert parts of the backend progressively. This can be done by:
-         - Maintaining a separate directory for TypeScript files.
-         - Gradually migrating and testing individual modules or routes.
-         - Using a build tool like `tsc` to compile TypeScript files independently until the entire transition is complete.
-         
-   - **Compilation Considerations**: 
-      - Introducing a compilation step for the server is an option. This would involve using tools like `ts-node` for development and `tsc` for production builds.
-      - However, this is not a conventional approach for Express.js servers and could introduce added complexity, especially in terms of build and deployment processes.
-      
-   - **Current Stance**: At present, this backend transition is of lower priority and might not be pursued.
+3. **Backend**:
+   - The legacy Express.js server remains in `/api` as JavaScript.
+   - All new backend code is written in TypeScript under `/packages/api`, which is compiled and consumed by `/api`.
+   - Shared database logic lives in `/packages/data-schemas` (TypeScript).
+   - Shared frontend/backend API types and services live in `/packages/data-provider` (TypeScript).
+   - Minimize direct changes to `/api`; prefer adding TypeScript code to `/packages/api` and importing it.
 
-## 8. Module Import Conventions
+## 9. Module Import Conventions
 
-- `npm` packages first, 
-     - from longest line (top) to shortest (bottom)
+Imports are organized into three sections (in order):
 
-- Followed by typescript types (pertains to data-provider and client workspaces)
-     - longest line (top) to shortest (bottom)
-     - types from package come first
+1. **Package imports** — sorted from shortest to longest line length.
+   - `react` is always the first import.
+   - Multi-line (stacked) imports count their total character length across all lines for sorting.
 
-- Lastly, local imports
-     - longest line (top) to shortest (bottom)
-     - imports with alias `~` treated the same as relative import with respect to line length
+2. **`import type` imports** — sorted from longest to shortest line length.
+   - Package type imports come first, then local type imports.
+   - Line length sorting resets between the package and local sub-groups.
+
+3. **Local/project imports** — sorted from longest to shortest line length.
+   - Multi-line (stacked) imports count their total character length across all lines for sorting.
+   - Imports with alias `~` are treated the same as relative imports with respect to line length.
+
+- Consolidate value imports from the same module as much as possible.
+- Always use standalone `import type { ... }` for type imports; never use inline `type` keyword inside value imports (e.g., `import { Foo, type Bar }` is wrong).
 
 **Note:** ESLint will automatically enforce these import conventions when you run `npm run lint --fix` or through pre-commit hooks.
 
----
-
-Please ensure that you adapt this summary to fit the specific context and nuances of your project.
+For the full set of coding standards, see [`AGENTS.md`](../AGENTS.md).
 
 ---
 
