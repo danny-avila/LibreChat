@@ -102,6 +102,8 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
       className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
       style={{ fontSize: '0.7rem' }}
     >
+      {/* eslint-disable-next-line i18next/no-literal-string */}
+      <span className="sr-only">Conversations from </span> {/* NJ: Make this more header clearer */}
       {localize(groupName as TranslationKeys) || groupName}
     </h2>
   );
