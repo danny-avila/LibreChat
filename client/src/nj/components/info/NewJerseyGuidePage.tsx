@@ -7,14 +7,12 @@ import InfoSectionHeader from '~/nj/components/info/InfoSectionHeader';
 import React from 'react';
 import icons from '@uswds/uswds/img/sprite.svg';
 import InfoLink from '~/nj/components/info/InfoLink';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 /**
  * Content for "guide to using the assistant" page
  */
 export default function NewJerseyGuidePage() {
-  const navigate = useNavigate();
-
   document.title = 'NJ AI Assistant - Guides and FAQs';
 
   return (
@@ -83,7 +81,7 @@ export default function NewJerseyGuidePage() {
         >
           External Learner
         </a>
-        ..
+        .
       </p>
 
       <InfoDivider />
@@ -408,9 +406,8 @@ export default function NewJerseyGuidePage() {
       <InfoSectionHeader text="Related links" />
       <div className="mb-6 space-y-3">
         <div>
-          <span
-            role="button"
-            onClick={() => navigate('/nj/about')}
+          <Link
+            to={{ pathname: '/nj/about' }}
             className="inline-flex gap-1 underline hover:decoration-2"
           >
             About the AI Assistant
@@ -424,7 +421,7 @@ export default function NewJerseyGuidePage() {
                 <use href={`${icons}#local_library`} />
               </svg>
             </div>
-          </span>
+          </Link>
         </div>
 
         <InfoLink

@@ -5,7 +5,7 @@ import InfoDivider from '~/nj/components/info/InfoDivider';
 import InfoTitle from '~/nj/components/info/InfoTitle';
 import InfoSectionHeader from '~/nj/components/info/InfoSectionHeader';
 import InfoLink from '~/nj/components/info/InfoLink';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import icons from '@uswds/uswds/img/sprite.svg';
 import React from 'react';
 
@@ -13,8 +13,6 @@ import React from 'react';
  * Content for "about the AI assistant" page
  */
 export default function NewJerseyAboutPage() {
-  const navigate = useNavigate();
-
   document.title = 'NJ AI Assistant - About';
 
   return (
@@ -254,9 +252,8 @@ export default function NewJerseyAboutPage() {
       <InfoSectionHeader text="Related links" />
       <div className="mb-6 space-y-3">
         <div>
-          <span
-            role="button"
-            onClick={() => navigate('/nj/guide')}
+          <Link
+            to={{ pathname: '/nj/guide' }}
             className="inline-flex gap-1 underline hover:decoration-2"
           >
             Guides and FAQs
@@ -270,7 +267,7 @@ export default function NewJerseyAboutPage() {
                 <use href={`${icons}#local_library`} />
               </svg>
             </div>
-          </span>
+          </Link>
         </div>
 
         <InfoLink

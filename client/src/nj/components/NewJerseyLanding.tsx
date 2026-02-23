@@ -6,7 +6,7 @@ import * as Collapsible from '@radix-ui/react-collapsible';
 import { useRecoilState } from 'recoil';
 import { landingHelpOpen } from '~/nj/store/landing';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import icons from '@uswds/uswds/img/sprite.svg';
 
 /**
@@ -14,7 +14,6 @@ import icons from '@uswds/uswds/img/sprite.svg';
  */
 export function NewJerseyLanding() {
   const [open, setOpen] = useRecoilState(landingHelpOpen);
-  const navigate = useNavigate();
 
   return (
     <div className="px-2.5 pt-2 transition-[max-width] duration-300 md:max-w-3xl xl:max-w-4xl">
@@ -54,9 +53,8 @@ export function NewJerseyLanding() {
                   <div className="mb-5 flex gap-3">
                     <p>
                       Check out these resources on how to use AI tools —{' '}
-                      <span
-                        role="button"
-                        onClick={() => navigate('/nj/guide')}
+                      <Link
+                        to={{ pathname: '/nj/guide' }}
                         className="inline-flex items-center gap-1 underline hover:decoration-2"
                       >
                         AI Assistant FAQ{' '}
@@ -68,7 +66,7 @@ export function NewJerseyLanding() {
                         >
                           <use href={`${icons}#school`} />
                         </svg>
-                      </span>{' '}
+                      </Link>{' '}
                       and{' '}
                       <a
                         href="https://innovation.nj.gov/skills/ai-how-tos/"
