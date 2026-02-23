@@ -1,5 +1,4 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import React from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { Menu, Rocket } from 'lucide-react';
@@ -41,7 +40,7 @@ import store from '~/store';
 interface VersionsPanelProps {
   group: TPromptGroup;
   prompts: TPrompt[];
-  selectedPrompt: any;
+  selectedPrompt: TPrompt | undefined;
   selectionIndex: number;
   isLoadingPrompts: boolean;
   canEdit: boolean;

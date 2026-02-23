@@ -16,6 +16,8 @@ const {
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 
+const isValidObjectIdString = (id) => /^[a-f\d]{24}$/i.test(id);
+
 /**
  * Create a pipeline for the aggregation to get all prompt groups
  * @param {Object} query
@@ -102,11 +104,10 @@ const getAllPromptGroups = async (req, filter) => {
 
 /**
  * Get prompt groups with filters
- * @param {ServerRequest} req
  * @param {TPromptGroupsWithFilterRequest} filter
  * @returns {Promise<PromptGroupListResponse>}
  */
-const getPromptGroups = async (req, filter) => {
+const getPromptGroups = async (filter) => {
   try {
     const { pageNumber = 1, pageSize = 10, name, ...query } = filter;
 
@@ -259,35 +260,41 @@ async function getListPromptGroupsByAccess({
   const baseQuery = { ...otherParams, _id: { $in: accessibleIds } };
 
   // Add cursor condition
+  let matchQuery = baseQuery;
   if (after && typeof after === 'string' && after !== 'undefined' && after !== 'null') {
     try {
       const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
       const { numberOfGenerations = 0, updatedAt, _id } = cursor;
 
-      const cursorCondition = {
-        $or: [
-          { numberOfGenerations: { $lt: numberOfGenerations } },
-          {
-            numberOfGenerations: numberOfGenerations,
-            updatedAt: { $lt: new Date(updatedAt) },
-          },
-          {
-            numberOfGenerations: numberOfGenerations,
-            updatedAt: new Date(updatedAt),
-            _id: { $gt: new ObjectId(_id) },
-          },
-        ],
-      };
-
-      // Merge cursor condition with base query
-      if (Object.keys(baseQuery).length > 0) {
-        baseQuery.$and = [{ ...baseQuery }, cursorCondition];
-        // Remove the original conditions from baseQuery to avoid duplication
-        Object.keys(baseQuery).forEach((key) => {
-          if (key !== '$and') delete baseQuery[key];
-        });
+      if (
+        typeof numberOfGenerations !== 'number' ||
+        !Number.isFinite(numberOfGenerations) ||
+        typeof updatedAt !== 'string' ||
+        isNaN(new Date(updatedAt).getTime()) ||
+        typeof _id !== 'string' ||
+        !isValidObjectIdString(_id)
+      ) {
+        logger.warn('[createAllGroupsPipeline] Invalid cursor fields, skipping cursor condition');
       } else {
-        Object.assign(baseQuery, cursorCondition);
+        const cursorCondition = {
+          $or: [
+            { numberOfGenerations: { $lt: numberOfGenerations } },
+            {
+              numberOfGenerations: numberOfGenerations,
+              updatedAt: { $lt: new Date(updatedAt) },
+            },
+            {
+              numberOfGenerations: numberOfGenerations,
+              updatedAt: new Date(updatedAt),
+              _id: { $gt: new ObjectId(_id) },
+            },
+          ],
+        };
+
+        matchQuery =
+          Object.keys(baseQuery).length > 0
+            ? { $and: [baseQuery, cursorCondition] }
+            : cursorCondition;
       }
     } catch (error) {
       logger.warn('Invalid cursor:', error.message);
@@ -296,7 +303,7 @@ async function getListPromptGroupsByAccess({
 
   // Build aggregation pipeline
   const pipeline = [
-    { $match: baseQuery },
+    { $match: matchQuery },
     { $sort: { numberOfGenerations: -1, updatedAt: -1, _id: 1 } },
   ];
 

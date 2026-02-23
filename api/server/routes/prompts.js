@@ -497,6 +497,9 @@ const deletePromptController = async (req, res) => {
   try {
     const { promptId } = req.params;
     const { groupId } = req.query;
+    if (!groupId || !isValidObjectId(groupId)) {
+      return res.status(400).send({ error: 'Invalid or missing groupId' });
+    }
     const author = req.user.id;
     const query = { promptId, groupId, author, role: req.user.role };
     const result = await deletePrompt(query);
