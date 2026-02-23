@@ -179,7 +179,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
