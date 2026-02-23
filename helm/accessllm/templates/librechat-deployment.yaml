@@ -27,6 +27,12 @@ spec:
         volumeMounts:
         - name: data-volume
           mountPath: /data
+      - name: copy-mcp-scholar
+        image: fekihatelm/mcp-semanticscholar:latest
+        command: ["sh", "-c", "cp -r /app/* /mcp-scholar/"]
+        volumeMounts:
+        - name: mcp-scholar
+          mountPath: /mcp-scholar
       - name: wait-for-litellm
         image: curlimages/curl:8.9.1
         command:
@@ -75,6 +81,8 @@ spec:
         - name: librechat-config-file
           mountPath: /app/librechat.yaml
           subPath: librechat.yaml
+        - name: mcp-scholar
+          mountPath: /mcp-scholar
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
         livenessProbe:
@@ -96,3 +104,5 @@ spec:
       - name: librechat-config-file
         configMap:
           name: librechat-yaml-config
+      - name: mcp-scholar
+        emptyDir: {}
