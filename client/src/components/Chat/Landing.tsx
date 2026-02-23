@@ -9,7 +9,7 @@ import { useLocalize, useAuthContext, useSelectAgent } from '~/hooks';
 import { getIconEndpoint, getEntity, cn } from '~/utils';
 import { useSubmitMessage } from '~/hooks';
 import { useChatFormContext } from '~/Providers';
-import { shouldShowAgentButtons } from '~/config/agentDefaults';
+import { shouldShowAgentButtons, shouldAutoSelectFirstAgent } from '~/config/agentDefaults';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
@@ -51,6 +51,27 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const [lineCount, setLineCount] = useState(1);
   const [contentHeight, setContentHeight] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
+  const [hasAutoSelectedAgent, setHasAutoSelectedAgent] = useState(false);
+
+  // Auto-select first agent on first page visit/login
+  useEffect(() => {
+    if (
+      !shouldAutoSelectFirstAgent() ||
+      hasAutoSelectedAgent ||
+      !shouldShowAgentButtons() ||
+      !agentsMap ||
+      Object.keys(agentsMap).length === 0 ||
+      conversation?.agent_id // Don't auto-select if an agent is already selected
+    ) {
+      return;
+    }
+
+    const firstAgent = Object.values(agentsMap)[0] as any;
+    if (firstAgent?.id) {
+      onSelectAgent(firstAgent.id);
+      setHasAutoSelectedAgent(true);
+    }
+  }, [agentsMap, conversation?.agent_id, hasAutoSelectedAgent, onSelectAgent]);
 
   const handleSendQuestion = (text: string) => {
     methods.setValue('text', text);

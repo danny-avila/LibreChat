@@ -18,6 +18,8 @@ export interface AgentDefaultsConfig {
   showAgentButtons: boolean;
   /** Show predefined model selector */
   showModelSelector: boolean;
+  /** Auto-select the first available agent on first page visit/login */
+  autoSelectFirstAgent: boolean;
 }
 
 /**
@@ -35,6 +37,7 @@ export const AGENT_DEFAULTS: AgentDefaultsConfig = {
   modelDisplayName: 'GPT-4o',
   showAgentButtons: true, // Show available agents on landing page
   showModelSelector: true, // Show model selector in header
+  autoSelectFirstAgent: true, // Auto-select first available agent on first visit
 };
 
 /**
@@ -64,4 +67,11 @@ export const shouldShowAgentButtons = (): boolean => {
  */
 export const shouldShowModelSelector = (): boolean => {
   return getAgentDefaults().showModelSelector;
+};
+
+/**
+ * Helper function to check if first agent should be auto-selected on page visit
+ */
+export const shouldAutoSelectFirstAgent = (): boolean => {
+  return getAgentDefaults().autoSelectFirstAgent;
 };
