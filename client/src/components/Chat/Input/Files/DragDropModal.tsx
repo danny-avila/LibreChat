@@ -8,6 +8,8 @@ import {
   EModelEndpoint,
   defaultAgentCapabilities,
   isDocumentSupportedProvider,
+  mergeFileConfig,
+  getEndpointFileConfig,
 } from 'librechat-data-provider';
 import {
   ImageUpIcon,
@@ -22,6 +24,7 @@ import {
   useGetAgentsConfig,
   useLocalize,
 } from '~/hooks';
+import { useGetFileConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { useDragDropContext } from '~/Providers';
 
@@ -49,10 +52,24 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
   const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
   const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
+  const { data: fileConfig = null } = useGetFileConfig({
+    select: (data) => mergeFileConfig(data),
+  });
+  const endpointFileConfig = useMemo(
+    () =>
+      getEndpointFileConfig({
+        endpoint,
+        fileConfig,
+        endpointType,
+      }),
+    [endpoint, endpointType, fileConfig],
+  );
   const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
     agentId,
     ephemeralAgent,
   );
+  const canUploadToProvider = endpointFileConfig.disableProviderUpload !== true;
+  const canUploadText = endpointFileConfig.disableTextUpload !== true;
 
   const options = useMemo(() => {
     const _options: FileOption[] = [];
@@ -71,9 +88,10 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
 
     // Check if provider supports document upload
     if (
-      isDocumentSupportedProvider(endpointType) ||
-      isDocumentSupportedProvider(currentProvider) ||
-      isAzureWithResponsesApi
+      canUploadToProvider &&
+      (isDocumentSupportedProvider(endpointType) ||
+        isDocumentSupportedProvider(currentProvider) ||
+        isAzureWithResponsesApi)
     ) {
       const supportsImageDocVideoAudio =
         currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER;
@@ -98,7 +116,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
         icon: <FileImageIcon className="icon-md" />,
         condition: validFileTypes,
       });
-    } else {
+    } else if (canUploadToProvider) {
       // Only show image upload option if all files are images and provider doesn't support documents
       _options.push({
         label: localize('com_ui_upload_image_input'),
@@ -121,7 +139,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
         icon: <TerminalSquareIcon className="icon-md" />,
       });
     }
-    if (capabilities.contextEnabled) {
+    if (capabilities.contextEnabled && canUploadText) {
       _options.push({
         label: localize('com_ui_upload_ocr_text'),
         value: EToolResources.context,
@@ -140,6 +158,8 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     useResponsesApi,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
+    canUploadToProvider,
+    canUploadText,
   ]);
 
   if (!isVisible) {

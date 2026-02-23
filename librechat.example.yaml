@@ -553,12 +553,23 @@ endpoints:
 #         - "image/.*"
 #         - "application/pdf"
 #     openAI:
-#       disabled: true  # Disables file uploading to the OpenAI endpoint
+#       disabled: true  # Disables all file uploading to the OpenAI endpoint
+#       disableProviderUpload: true # Optional: block provider uploads only (still allow Upload as Text, file search, code if enabled)
+#       disableTextUpload: true # Optional: block "Upload as Text" (OCR/context) while allowing provider uploads
 #     default:
 #       totalSizeLimit: 20
+#       # Granular defaults applied to any endpoint that doesn’t override them
+#       disableProviderUpload: false
+#       disableTextUpload: false
+#     custom:
+#       # Applies to custom endpoints that don’t have their own entry
+#       disableProviderUpload: true
+#       disableTextUpload: false
 #     YourCustomEndpointName:
 #       fileLimit: 2
 #       fileSizeLimit: 5
+#       disableProviderUpload: true
+#       disableTextUpload: false
 #   serverFileSizeLimit: 100  # Global server file size limit in MB
 #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
 #   imageGeneration: # Image Gen settings, either percentage or px

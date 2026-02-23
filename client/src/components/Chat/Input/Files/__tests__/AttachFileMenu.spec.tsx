@@ -105,6 +105,8 @@ describe('AttachFileMenu', () => {
         com_ui_upload_code_files: 'Upload Code Files',
         com_sidepanel_attach_files: 'Attach Files',
         com_files_upload_sharepoint: 'Upload from SharePoint',
+        com_ui_attach_error_provider_disabled: 'Provider Disabled',
+        com_ui_attach_error_text_disabled: 'Text Disabled',
       };
       return translations[key] || key;
     });
@@ -175,6 +177,46 @@ describe('AttachFileMenu', () => {
       renderAttachFileMenu({ disabled: false });
       const button = screen.getByRole('button', { name: /attach file options/i });
       expect(button).not.toBeDisabled();
+    });
+  });
+
+  describe('Granular disable flags', () => {
+    it('should hide provider uploads when disableProviderUpload is true', () => {
+      mockUseAgentCapabilities.mockReturnValue({
+        contextEnabled: true,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+      });
+
+      renderAttachFileMenu({
+        endpoint: EModelEndpoint.openAI,
+        endpointFileConfig: {
+          disableProviderUpload: true,
+        },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /attach file options/i }));
+      expect(screen.queryByText('Upload to Provider')).not.toBeInTheDocument();
+      expect(screen.getByText('Upload OCR Text')).toBeInTheDocument();
+    });
+
+    it('should hide text uploads when disableTextUpload is true', () => {
+      mockUseAgentCapabilities.mockReturnValue({
+        contextEnabled: true,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+      });
+
+      renderAttachFileMenu({
+        endpoint: EModelEndpoint.openAI,
+        endpointFileConfig: {
+          disableTextUpload: true,
+        },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /attach file options/i }));
+      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+      expect(screen.queryByText('Upload OCR Text')).not.toBeInTheDocument();
     });
   });
 
