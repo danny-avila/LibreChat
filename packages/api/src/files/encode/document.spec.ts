@@ -500,6 +500,39 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       });
     });
 
+    it('should format Bedrock document with valid PDF', async () => {
+      const req = createMockRequest(4) as ServerRequest;
+      const file = createMockFile(3);
+
+      const mockContent = Buffer.from('test-pdf-content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      mockedValidatePdf.mockResolvedValue({ isValid: true });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.BEDROCK },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        document: {
+          name: 'test_pdf',
+          format: 'pdf',
+          source: {
+            bytes: expect.any(Buffer),
+          },
+        },
+      });
+    });
+
     it('should format OpenAI document with responses API', async () => {
       const req = createMockRequest(15) as ServerRequest;
       const file = createMockFile(10);

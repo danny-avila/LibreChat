@@ -31,6 +31,10 @@ export async function validatePdf(
     return validateAnthropicPdf(pdfBuffer, fileSize, configuredFileSizeLimit);
   }
 
+  if (provider === Providers.BEDROCK) {
+    return validateBedrockPdf(pdfBuffer, fileSize, configuredFileSizeLimit);
+  }
+
   if (isOpenAILikeProvider(provider)) {
     return validateOpenAIPdf(fileSize, configuredFileSizeLimit);
   }
@@ -113,12 +117,44 @@ async function validateAnthropicPdf(
   }
 }
 
-/**
- * Validates if a PDF meets OpenAI's requirements
- * @param fileSize - The file size in bytes
- * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
- * @returns Promise that resolves to validation result
- */
+async function validateBedrockPdf(
+  pdfBuffer: Buffer,
+  fileSize: number,
+  configuredFileSizeLimit?: number,
+): Promise<PDFValidationResult> {
+  /** Bedrock enforces a hard 4.5MB per-document limit at the API level; config can only lower it */
+  const providerLimit = mbToBytes(4.5);
+  const effectiveLimit =
+    configuredFileSizeLimit != null
+      ? Math.min(configuredFileSizeLimit, providerLimit)
+      : providerLimit;
+
+  if (fileSize > effectiveLimit) {
+    const limitMB = (effectiveLimit / (1024 * 1024)).toFixed(1);
+    return {
+      isValid: false,
+      error: `PDF file size (${(fileSize / (1024 * 1024)).toFixed(1)}MB) exceeds the ${limitMB}MB limit`,
+    };
+  }
+
+  if (!pdfBuffer || pdfBuffer.length < 5) {
+    return {
+      isValid: false,
+      error: 'Invalid PDF file: too small or corrupted',
+    };
+  }
+
+  const pdfHeader = pdfBuffer.subarray(0, 5).toString();
+  if (!pdfHeader.startsWith('%PDF-')) {
+    return {
+      isValid: false,
+      error: 'Invalid PDF file: missing PDF header',
+    };
+  }
+
+  return { isValid: true };
+}
+
 async function validateOpenAIPdf(
   fileSize: number,
   configuredFileSizeLimit?: number,

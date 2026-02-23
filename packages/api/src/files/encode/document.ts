@@ -88,7 +88,21 @@ export async function encodeAndFormatDocuments(
         throw new Error(`PDF validation failed: ${validation.error}`);
       }
 
-      if (provider === Providers.ANTHROPIC) {
+      if (provider === Providers.BEDROCK) {
+        const sanitizedName = (file.filename || 'document')
+          .replace(/[^a-zA-Z0-9\s\-()[\]]/g, '_')
+          .slice(0, 200);
+        result.documents.push({
+          type: 'document',
+          document: {
+            name: sanitizedName,
+            format: 'pdf',
+            source: {
+              bytes: pdfBuffer,
+            },
+          },
+        });
+      } else if (provider === Providers.ANTHROPIC) {
         const document: AnthropicDocumentBlock = {
           type: 'document',
           source: {

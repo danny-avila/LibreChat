@@ -95,11 +95,24 @@ export interface OpenAIInputFileBlock {
   file_data: string;
 }
 
+/** Bedrock Converse API document block (passthrough via @langchain/aws) */
+export interface BedrockDocumentBlock {
+  type: 'document';
+  document: {
+    name: string;
+    format: string;
+    source: {
+      bytes: Buffer;
+    };
+  };
+}
+
 export type DocumentBlock =
   | AnthropicDocumentBlock
   | GoogleDocumentBlock
   | OpenAIFileBlock
-  | OpenAIInputFileBlock;
+  | OpenAIInputFileBlock
+  | BedrockDocumentBlock;
 
 export interface DocumentResult {
   documents: DocumentBlock[];
