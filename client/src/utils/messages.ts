@@ -191,6 +191,11 @@ export const getMessageAriaLabel = (message: TMessage, localize: LocalizeFunctio
     : localize('com_endpoint_message');
 };
 
+export const getHeaderPrefixForScreenReader = (message: TMessage): string => {
+  const number = !_.isNil(message.depth) ? ` ${message.depth + 1}` : ``;
+  return message.isCreatedByUser ? `Prompt${number}: ` : `Response${number}: `;
+};
+
 /**
  * Creates initial content parts for dual message display with agent-based grouping.
  * Sets up primary and added agent content parts with agentId for column rendering.

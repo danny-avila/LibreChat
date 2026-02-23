@@ -10,7 +10,7 @@ import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
-import { cn, getMessageAriaLabel } from '~/utils';
+import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import { fontSizeAtom } from '~/store/fontSize';
 import { MessageContext } from '~/Providers';
 import store from '~/store';
@@ -137,7 +137,10 @@ const MessageRender = memo(
           )}
         >
           {!hasParallelContent && (
-            <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+            <h2 className={cn('select-none font-semibold', fontSize)}>
+              <span className="sr-only">{getHeaderPrefixForScreenReader(msg)}</span>
+              {messageLabel}
+            </h2>
           )}
 
           <div className="flex flex-col gap-1">
