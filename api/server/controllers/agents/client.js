@@ -42,6 +42,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
+  validateVisionModel,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -164,11 +165,37 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Array<Partial<MongoFile>>>}
    */
   async addImageURLs(message, attachments) {
+    const agent = this.options.agent;
+    if (!agent) {
+      return attachments;
+    }
+
+    // Determine vision capability: explicit agent.vision takes precedence,
+    // otherwise check if the model supports vision
+    let isVisionCapable = false;
+    if (agent.vision !== undefined) {
+      isVisionCapable = agent.vision === true;
+    } else {
+      const agentModel =
+        agent.model_parameters?.model ?? agent.model;
+      if (agentModel) {
+        const appConfig = this.options.req?.config;
+        isVisionCapable = validateVisionModel({
+          model: agentModel,
+          modelSpecs: appConfig?.modelSpecs,
+        });
+      }
+    }
+
+    if (!isVisionCapable) {
+      return attachments;
+    }
+
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       {
-        provider: this.options.agent.provider,
+        provider: agent.provider,
         endpoint: this.options.endpoint,
       },
       VisionModes.agents,
@@ -240,6 +267,9 @@ class AgentClient extends BaseClient {
         orderedMessages[orderedMessages.length - 1].text,
       );
     }
+
+    // Image content in messages is filtered by the LLM layer (_convertMessagesToOpenAIParams)
+    // when agent.vision is false; no need to strip image_urls here.
 
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
@@ -863,6 +893,8 @@ class AgentClient extends BaseClient {
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
           tokenCounter: createTokenCounter(this.getEncoding()),
+          modelSpecs: appConfig.modelSpecs,
+          availableModels: appConfig.availableModels,
         });
 
         if (!run) {

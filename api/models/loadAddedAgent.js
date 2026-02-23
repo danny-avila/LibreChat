@@ -101,7 +101,7 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
 
     const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender, index: 1 });
 
-    return {
+    const added = {
       id: ephemeralId,
       instructions: promptPrefix || '',
       provider: endpoint,
@@ -109,6 +109,13 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
       model,
       tools: [...primaryAgent.tools],
     };
+    if (modelSpec?.vision !== undefined) {
+      added.vision = modelSpec.vision;
+    }
+    if (spec != null && spec !== '') {
+      added.spec = spec;
+    }
+    return added;
   }
 
   // Extract ephemeral agent options from conversation if present
@@ -206,6 +213,13 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
 
   if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
+  }
+
+  if (modelSpec?.vision !== undefined) {
+    result.vision = modelSpec.vision;
+  }
+  if (spec != null && spec !== '') {
+    result.spec = spec;
   }
 
   return result;

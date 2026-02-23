@@ -75,6 +75,7 @@ export const agentBaseSchema = z.object({
   hide_sequential_outputs: z.boolean().optional(),
   artifacts: z.string().optional(),
   recursion_limit: z.number().optional(),
+  vision: z.boolean().optional(),
   conversation_starters: z.array(z.string()).optional(),
   tool_resources: agentToolResourcesSchema,
   tool_options: agentToolOptionsSchema,

@@ -24,6 +24,7 @@ import {
 } from '~/hooks';
 import { ephemeralAgentByConvoId } from '~/store';
 import { useDragDropContext } from '~/Providers';
+import { useVisionModel } from '~/hooks';
 
 interface DragDropModalProps {
   onOptionSelect: (option: EToolResources | undefined) => void;
@@ -49,10 +50,10 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
   const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
   const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
-  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
-    agentId,
-    ephemeralAgent,
-  );
+  const { fileSearchAllowedByAgent, codeAllowedByAgent, visionEnabledByAgent, provider } =
+    useAgentToolPermissions(agentId, ephemeralAgent);
+  const isVisionModel = useVisionModel();
+  const isVisionAvailable = isVisionModel || visionEnabledByAgent;
 
   const options = useMemo(() => {
     const _options: FileOption[] = [];
@@ -96,15 +97,15 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
         label: localize('com_ui_upload_provider'),
         value: undefined,
         icon: <FileImageIcon className="icon-md" />,
-        condition: validFileTypes,
+        condition: validFileTypes && isVisionAvailable,
       });
     } else {
-      // Only show image upload option if all files are images and provider doesn't support documents
       _options.push({
         label: localize('com_ui_upload_image_input'),
         value: undefined,
         icon: <ImageUpIcon className="icon-md" />,
-        condition: files.every((file) => getFileType(file)?.startsWith('image/')),
+        condition:
+          files.every((file) => getFileType(file)?.startsWith('image/')) && isVisionAvailable,
       });
     }
     if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
@@ -140,6 +141,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     useResponsesApi,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
+    isVisionAvailable,
   ]);
 
   if (!isVisible) {

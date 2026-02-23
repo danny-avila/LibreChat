@@ -7,6 +7,10 @@ function generateResourceId(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);
 }
 
+// Known providers that are NOT OpenAI-compatible
+// This is a small, stable list that rarely changes
+const NON_OPENAI_PROVIDERS = new Set(['google', 'anthropic', 'bedrock', 'ollama']);
+
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
   'anthropic',
@@ -17,8 +21,71 @@ const RECOGNIZED_PROVIDERS = new Set([
   'deepseek',
   'ollama',
   'bedrock',
+  // Note: Custom OpenAI-compatible endpoints (like scaleway, together, perplexity, etc.)
+  // are automatically recognized if they're not in NON_OPENAI_PROVIDERS
 ]);
+
+// Known providers that use content array format (structured content blocks)
+// These are the standard OpenAI-compatible providers plus Google and Anthropic
 const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'azureopenai', 'openai']);
+
+/**
+ * Check if a provider should receive structured content formatting for MCP tool responses.
+ * 
+ * Recognizes:
+ * 1. Explicitly listed providers in RECOGNIZED_PROVIDERS
+ * 2. Custom OpenAI-compatible endpoints (any provider not in NON_OPENAI_PROVIDERS)
+ * 
+ * Custom endpoints are passed with their endpoint name (not "openai"), so we automatically
+ * detect them rather than requiring explicit additions for each new provider.
+ */
+function isRecognizedProvider(provider: t.Provider): boolean {
+  // Check explicit list first (for known providers)
+  if (RECOGNIZED_PROVIDERS.has(provider)) {
+    return true;
+  }
+  
+  // If not explicitly recognized and not a known non-OpenAI provider,
+  // assume it's an OpenAI-compatible custom endpoint
+  // This automatically supports all new OpenAI-compatible providers without code changes
+  if (!NON_OPENAI_PROVIDERS.has(provider)) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Check if a provider uses content array format (structured content blocks).
+ * 
+ * Uses array format:
+ * - Standard OpenAI-compatible providers (openai, azureopenai)
+ * - Google and Anthropic (native array format)
+ * - New unknown custom endpoints (assumed OpenAI-compatible, so use array format)
+ * 
+ * Uses string format:
+ * - Known custom providers with special handling (openrouter, xai, deepseek)
+ * - Other non-OpenAI providers (ollama, bedrock)
+ */
+function usesContentArrayFormat(provider: t.Provider): boolean {
+  // Explicit array format providers
+  if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
+    return true;
+  }
+  
+  // Known custom providers that use string format (despite being OpenAI-compatible)
+  if (['openrouter', 'xai', 'deepseek'].includes(provider)) {
+    return false;
+  }
+  
+  // Unknown providers: if not a known non-OpenAI provider, assume OpenAI-compatible
+  // and use array format (like standard OpenAI endpoints)
+  if (!NON_OPENAI_PROVIDERS.has(provider)) {
+    return true;
+  }
+  
+  return false;
+}
 
 const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
   // google: (item) => ({
@@ -89,11 +156,24 @@ function parseAsString(result: t.MCPToolCallResponse): string {
  * @param provider - The provider name (google, anthropic, openai)
  * @returns Tuple of content and image_urls
  */
+/**
+ * Formats MCP tool call response content for different provider types.
+ *
+ * Handles provider-specific formatting:
+ * - OpenAI-compatible providers: Uses content array format with artifacts
+ * - Non-OpenAI providers: Uses string format
+ *
+ * Automatically detects custom OpenAI-compatible endpoints (not in NON_OPENAI_PROVIDERS).
+ *
+ * @param result - MCP tool call response with content array
+ * @param provider - Provider identifier (e.g., 'openai', 'scaleway', 'anthropic')
+ * @returns Tuple of [formattedContent, artifacts] where artifacts contain image URLs
+ */
 export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
 ): t.FormattedContentResult {
-  if (!RECOGNIZED_PROVIDERS.has(provider)) {
+  if (!isRecognizedProvider(provider)) {
     return [parseAsString(result), undefined];
   }
 
@@ -122,7 +202,7 @@ export function formatToolContent(
       if (!isImageContent(item)) {
         return;
       }
-      if (CONTENT_ARRAY_PROVIDERS.has(provider) && currentTextBlock) {
+      if (usesContentArrayFormat(provider) && currentTextBlock) {
         formattedContent.push({ type: 'text', text: currentTextBlock });
         currentTextBlock = '';
       }
@@ -195,7 +275,7 @@ UI Resource Markers Available:
     currentTextBlock += uiInstructions;
   }
 
-  if (CONTENT_ARRAY_PROVIDERS.has(provider) && currentTextBlock) {
+  if (usesContentArrayFormat(provider) && currentTextBlock) {
     formattedContent.push({ type: 'text', text: currentTextBlock });
   }
 
@@ -211,9 +291,7 @@ UI Resource Markers Available:
     };
   }
 
-  if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
-    return [formattedContent, artifacts];
-  }
-
-  return [currentTextBlock, artifacts];
+  return usesContentArrayFormat(provider)
+    ? [formattedContent, artifacts]
+    : [currentTextBlock, artifacts];
 }

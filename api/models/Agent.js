@@ -178,6 +178,16 @@ const loadEphemeralAgent = async ({ req, spec, endpoint, model_parameters: _m })
   if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
   }
+
+  // Manual spec wins: when the user chose a model spec with vision set, use it so
+  // vision is determined by the spec rather than the hardcoded list.
+  if (modelSpec?.vision !== undefined) {
+    result.vision = modelSpec.vision;
+  }
+  if (spec != null && spec !== '') {
+    result.spec = spec;
+  }
+
   return result;
 };
 
@@ -476,9 +486,24 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
         versions: versionEntry,
       };
     }
+
+    // Merge directUpdates back into the agent document so the latest values are at the top level
+    // This ensures that when getAgent() is called, it returns the latest version's values
+    // Note: $push/$pull/$addToSet must come after direct updates in MongoDB
+    if (Object.keys(directUpdates).length > 0) {
+      // Preserve MongoDB operators while merging direct updates
+      const { $push: _preservedPush, $pull: _preservedPull, $addToSet: _preservedAddToSet, ...restUpdateData } = updateData;
+      updateData = {
+        ...directUpdates,
+        ...restUpdateData,
+      };
+      if (_preservedPush) updateData.$push = _preservedPush;
+      if (_preservedPull) updateData.$pull = _preservedPull;
+      if (_preservedAddToSet) updateData.$addToSet = _preservedAddToSet;
+    }
   }
 
-  return Agent.findOneAndUpdate(searchParameter, updateData, mongoOptions).lean();
+  return await Agent.findOneAndUpdate(searchParameter, updateData, mongoOptions).lean();
 };
 
 /**

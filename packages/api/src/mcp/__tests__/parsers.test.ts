@@ -29,6 +29,72 @@ describe('formatToolContent', () => {
       expect(content).toBe('(No response)');
       expect(artifacts).toBeUndefined();
     });
+
+    it('should return string for known non-OpenAI providers', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: 'Test content' }],
+      };
+      const [content, artifacts] = formatToolContent(result, 'google' as t.Provider);
+      // Google is recognized but uses array format, so this should be an array
+      expect(Array.isArray(content)).toBe(true);
+    });
+  });
+
+  describe('automatic detection of OpenAI-compatible custom endpoints', () => {
+    it('should automatically recognize new OpenAI-compatible custom endpoints', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          { type: 'text', text: 'First text' },
+          { type: 'text', text: 'Second text' },
+        ],
+      };
+
+      // Test with a custom endpoint that's not explicitly listed
+      const [content, artifacts] = formatToolContent(result, 'scaleway' as t.Provider);
+      // Should be recognized and use array format (OpenAI-compatible)
+      expect(Array.isArray(content)).toBe(true);
+      expect(content).toEqual([{ type: 'text', text: 'First text\n\nSecond text' }]);
+      expect(artifacts).toBeUndefined();
+    });
+
+    it('should use array format for unknown OpenAI-compatible endpoints', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          { type: 'text', text: 'Before image' },
+          { type: 'image', data: 'base64data', mimeType: 'image/png' },
+          { type: 'text', text: 'After image' },
+        ],
+      };
+
+      // Test with another custom endpoint (e.g., together, perplexity, anyscale)
+      const [content, artifacts] = formatToolContent(result, 'together' as t.Provider);
+      // Should use array format like OpenAI
+      expect(Array.isArray(content)).toBe(true);
+      expect(content).toEqual([
+        { type: 'text', text: 'Before image' },
+        { type: 'text', text: 'After image' },
+      ]);
+      expect(artifacts).toEqual({
+        content: [
+          {
+            type: 'image_url',
+            image_url: { url: 'data:image/png;base64,base64data' },
+          },
+        ],
+      });
+    });
+
+    it('should NOT recognize known non-OpenAI providers', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: 'Test content' }],
+      };
+
+      // Non-OpenAI providers should return string format
+      const [content, artifacts] = formatToolContent(result, 'bedrock' as t.Provider);
+      expect(typeof content).toBe('string');
+      expect(content).toBe('Test content');
+      expect(artifacts).toBeUndefined();
+    });
   });
 
   describe('recognized providers - content array providers', () => {
