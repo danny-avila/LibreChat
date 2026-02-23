@@ -35,7 +35,7 @@ const PromptDetails = ({ group, showActions = true, onUsePrompt }: PromptDetails
       <PromptDetailHeader group={group} />
 
       <div className="min-h-0 flex-1">
-        <PromptTextCard group={group} />
+        <PromptTextCard mainText={mainText} />
       </div>
 
       <PromptVariables promptText={mainText} />
@@ -47,7 +47,7 @@ const PromptDetails = ({ group, showActions = true, onUsePrompt }: PromptDetails
         </div>
       )}
 
-      {showActions && <PromptActions group={group} onUsePrompt={onUsePrompt} />}
+      {showActions && <PromptActions group={group} mainText={mainText} onUsePrompt={onUsePrompt} />}
     </article>
   );
 };

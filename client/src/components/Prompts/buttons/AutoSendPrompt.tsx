@@ -31,7 +31,7 @@ export default function AutoSendPrompt({
         checked={autoSendPrompts}
         tabIndex={-1}
         aria-hidden="true"
-        aria-label={localize('com_nav_auto_send_prompts')}
+        aria-labelledby="auto-send-checkbox"
         className="pointer-events-none mr-2"
       />
       {localize('com_nav_auto_send_prompts')}

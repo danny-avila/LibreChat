@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -6,20 +6,17 @@ import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import { Copy, Check, FileText } from 'lucide-react';
-import { replaceSpecialVars } from 'librechat-data-provider';
 import { Button, TooltipAnchor, useToastContext } from '@librechat/client';
-import type { TPromptGroup } from 'librechat-data-provider';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { PromptVariableGfm } from '../editor/Markdown';
-import { useLocalize, useAuthContext } from '~/hooks';
+import { useLocalize } from '~/hooks';
 
 interface PromptTextCardProps {
-  group: TPromptGroup;
+  mainText: string;
 }
 
-const PromptTextCard = ({ group }: PromptTextCardProps) => {
+const PromptTextCard = ({ mainText }: PromptTextCardProps) => {
   const localize = useLocalize();
-  const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -31,11 +28,6 @@ const PromptTextCard = ({ group }: PromptTextCardProps) => {
       }
     };
   }, []);
-
-  const mainText = useMemo(() => {
-    const initialText = group.productionPrompt?.prompt ?? '';
-    return replaceSpecialVars({ text: initialText, user });
-  }, [group.productionPrompt?.prompt, user]);
 
   const handleCopy = useCallback(async () => {
     if (isCopied) {
@@ -106,7 +98,7 @@ const PromptTextCard = ({ group }: PromptTextCardProps) => {
           ]}
           /** @ts-ignore */
           components={{ p: PromptVariableGfm, code: codeNoExecution }}
-          className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 max-w-none break-words"
+          className="markdown prose dark:prose-invert light my-1 max-w-none break-words text-text-primary"
         >
           {mainText}
         </ReactMarkdown>

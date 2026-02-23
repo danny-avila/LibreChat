@@ -1,9 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Send } from 'lucide-react';
 import { Button } from '@librechat/client';
-import { replaceSpecialVars } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
-import { useLocalize, useAuthContext, useSubmitMessage } from '~/hooks';
+import { useLocalize, useSubmitMessage } from '~/hooks';
 import { useRecordPromptUsage } from '~/data-provider';
 import VariableDialog from '../dialogs/VariableDialog';
 import SharePrompt from '../dialogs/SharePrompt';
@@ -11,20 +10,15 @@ import { detectVariables } from '~/utils';
 
 interface PromptActionsProps {
   group: TPromptGroup;
+  mainText: string;
   onUsePrompt?: () => void;
 }
 
-const PromptActions = ({ group, onUsePrompt }: PromptActionsProps) => {
+const PromptActions = ({ group, mainText, onUsePrompt }: PromptActionsProps) => {
   const localize = useLocalize();
-  const { user } = useAuthContext();
   const { submitPrompt } = useSubmitMessage();
-  const recordUsage = useRecordPromptUsage();
+  const { mutate: recordUsage } = useRecordPromptUsage();
   const [showVariableDialog, setShowVariableDialog] = useState(false);
-
-  const mainText = useMemo(() => {
-    const initialText = group.productionPrompt?.prompt ?? '';
-    return replaceSpecialVars({ text: initialText, user });
-  }, [group.productionPrompt?.prompt, user]);
 
   const hasVariables = useMemo(
     () => detectVariables(group.productionPrompt?.prompt ?? ''),
@@ -37,7 +31,7 @@ const PromptActions = ({ group, onUsePrompt }: PromptActionsProps) => {
     } else {
       submitPrompt(mainText);
       if (group._id) {
-        recordUsage.mutate(group._id);
+        recordUsage(group._id);
       }
       onUsePrompt?.();
     }

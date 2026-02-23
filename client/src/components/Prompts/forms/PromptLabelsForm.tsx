@@ -38,10 +38,10 @@ const PromptForm = ({ selectedPrompt }: { selectedPrompt?: TPrompt }) => {
         onChange={handleInputChange}
         onKeyPress={handleKeyPress}
       />
-      <h3 className="rounded-t-lg border border-gray-300 px-4 text-base font-semibold">
+      <h3 className="rounded-t-lg border border-border-light px-4 text-base font-semibold text-text-primary">
         {localize('com_ui_labels')}
       </h3>
-      <div className="mb-4 flex w-full flex-row flex-wrap rounded-b-lg border border-gray-300 p-4">
+      <div className="mb-4 flex w-full flex-row flex-wrap rounded-b-lg border border-border-light p-4">
         {labels.length ? (
           labels.map((label, index) => (
             <label
