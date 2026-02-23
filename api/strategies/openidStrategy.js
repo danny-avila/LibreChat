@@ -451,7 +451,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       throw new Error(`You must have ${rolesList} role to log in.`);
     }
 
-    const roleValues = Array.isArray(roles) ? roles : [roles];
+    const roleValues = Array.isArray(roles) ? roles : roles.split(/[\s,]+/).filter(Boolean);
 
     if (!requiredRoles.some((role) => roleValues.includes(role))) {
       const rolesList =
@@ -524,13 +524,14 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     }
 
     const adminRoles = get(adminRoleObject, adminRoleParameterPath);
+    let adminRoleValues = [];
+    if (Array.isArray(adminRoles)) {
+      adminRoleValues = adminRoles;
+    } else if (typeof adminRoles === 'string') {
+      adminRoleValues = adminRoles.split(/[\s,]+/).filter(Boolean);
+    }
 
-    if (
-      adminRoles &&
-      (adminRoles === true ||
-        adminRoles === adminRole ||
-        (Array.isArray(adminRoles) && adminRoles.includes(adminRole)))
-    ) {
+    if (adminRoles && (adminRoles === true || adminRoleValues.includes(adminRole))) {
       user.role = SystemRoles.ADMIN;
       logger.info(`[openidStrategy] User ${username} is an admin based on role: ${adminRole}`);
     } else if (user.role === SystemRoles.ADMIN) {
