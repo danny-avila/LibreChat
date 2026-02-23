@@ -340,6 +340,7 @@
   "com_nav_chat_commands": "채팅 명령어",
   "com_nav_chat_commands_info": "이 명령어들은 메시지 시작 부분에 특정 문자를 입력하면 활성화됩니다. 각 명령어는 지정된 접두사로 실행됩니다. 메시지 작성 시 이러한 문자들을 자주 사용하신다면 명령어 기능을 비활성화할 수 있습니다.",
   "com_nav_chat_direction": "채팅 표시 방향",
+  "com_nav_user_chat_direction": "사용자 대화가 표시되는 방향",
   "com_nav_clear_all_chats": "모든 채팅 지우기",
   "com_nav_clear_cache_confirm_message": "캐시를 지우시겠습니까?",
   "com_nav_clear_conversation": "대화 지우기",

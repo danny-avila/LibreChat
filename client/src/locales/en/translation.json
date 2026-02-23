@@ -436,6 +436,7 @@
   "com_nav_chat_commands": "Chat Commands",
   "com_nav_chat_commands_info": "These commands are activated by typing specific characters at the beginning of your message. Each command is triggered by its designated prefix. You can disable them if you frequently use these characters to start messages.",
   "com_nav_chat_direction": "Chat direction",
+  "com_nav_user_chat_direction": "User message direction",
   "com_nav_chat_direction_selected": "Chat direction: {{direction}}",
   "com_nav_clear_all_chats": "Clear all chats",
   "com_nav_clear_cache_confirm_message": "Are you sure you want to clear the cache?",

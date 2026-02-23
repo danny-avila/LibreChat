@@ -3,6 +3,7 @@ import { showThinkingAtom } from '~/store/showThinking';
 import FontSizeSelector from './FontSizeSelector';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
+import UserChatDirection from './UserChatDirection';
 import ToggleSwitch from '../ToggleSwitch';
 import store from '~/store';
 
@@ -94,6 +95,9 @@ function Chat() {
       </div>
       <div className="pb-3">
         <ChatDirection />
+      </div>
+      <div className="pb-3">
+        <UserChatDirection />
       </div>
       {toggleSwitchConfigs.map((config) => (
         <div key={config.key} className="pb-3">

@@ -40,7 +40,10 @@ export default function Message(props: TMessageProps) {
 
   const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const userChatDirection = useRecoilValue(store.userChatDirection);
   const { children, messageId = null, isCreatedByUser } = message ?? {};
+  const isUserMessageRightAligned =
+    isCreatedByUser === true && userChatDirection?.toLowerCase() === 'ltr';
 
   const name = useMemo(() => {
     let result = '';
@@ -107,7 +110,12 @@ export default function Message(props: TMessageProps) {
           <div
             id={messageId ?? ''}
             aria-label={getMessageAriaLabel(message, localize)}
-            className={cn(baseClasses.common, baseClasses.chat, 'message-render')}
+            className={cn(
+              baseClasses.common,
+              baseClasses.chat,
+              isUserMessageRightAligned && 'flex-row-reverse',
+              'message-render',
+            )}
           >
             {!hasParallelContent && (
               <div className="relative flex flex-shrink-0 flex-col items-center">
@@ -121,6 +129,7 @@ export default function Message(props: TMessageProps) {
                 'relative flex flex-col',
                 hasParallelContent ? 'w-full' : 'w-11/12',
                 isCreatedByUser ? 'user-turn' : 'agent-turn',
+                isUserMessageRightAligned && 'items-end',
               )}
             >
               {!hasParallelContent && (
@@ -149,7 +158,7 @@ export default function Message(props: TMessageProps) {
                 {isLast && isSubmitting ? (
                   <div className="mt-1 h-[27px] bg-transparent" />
                 ) : (
-                  <SubRow classes="text-xs">
+                  <SubRow classes={cn('text-xs', isUserMessageRightAligned && 'justify-end')}>
                     <SiblingSwitch
                       siblingIdx={siblingIdx}
                       siblingCount={siblingCount}
