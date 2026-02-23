@@ -1,5 +1,5 @@
 .floating-buttons {
-  @apply fixed top-2 right-14 text-text-primary flex gap-2;
+  @apply text-text-primary flex gap-2;
 }
 
 .floating-buttons_button {

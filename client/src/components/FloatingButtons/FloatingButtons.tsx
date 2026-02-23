@@ -1,8 +1,8 @@
 
-import { useGetBannerQuery, useGetStartupConfig } from '~/data-provider';
+import { useGetStartupConfig } from '~/data-provider';
 import './FloatingButtons.css';
 
-export const FloatingButtons = ({}: {}) => {
+export const FloatingButtons = () => {
   const { data: startupConfig } = useGetStartupConfig();
 
     if (!startupConfig?.floatingButtons?.length) {
@@ -22,9 +22,6 @@ export const FloatingButtons = ({}: {}) => {
         {button.icon && (
             <i className="floating-buttons_icon" dangerouslySetInnerHTML={{ __html: button.icon }} />
         )}
-        {/* {button.label && (
-            <span className="floating-buttons_label">{button.label}</span>
-        )} */}
       </a>
     ))}
   </nav>;
