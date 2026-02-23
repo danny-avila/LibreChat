@@ -311,12 +311,21 @@ Please follow these instructions when using tools from the respective MCP server
         connection.setRequestHeaders(currentOptions.headers || {});
       }
 
+      // Strip null/undefined values from tool arguments before sending to MCP server.
+      // Some models (e.g. certain OpenAI, Gemini variants) emit null for optional params
+      // like { country: null }, which fails Zod validation on servers like Brave Search.
+      const sanitizedArguments = toolArguments
+        ? Object.fromEntries(
+          Object.entries(toolArguments).filter(([, v]) => v != null),
+        )
+        : toolArguments;
+
       const result = await connection.client.request(
         {
           method: 'tools/call',
           params: {
             name: toolName,
-            arguments: toolArguments,
+            arguments: sanitizedArguments,
           },
         },
         CallToolResultSchema,
