@@ -10,6 +10,7 @@ const LATEX_COMMAND_REGEX = /\\[a-zA-Z]+/;
 const LATEX_OPERATOR_REGEX = /[=^_{}]/;
 const NUMERIC_ARITHMETIC_REGEX = /\d\s*[+\-*/×xX]\s*\d/;
 const VARIABLE_ARITHMETIC_REGEX = /[a-zA-Z]\s*[+\-*/=]|[+\-*/=]\s*[a-zA-Z]/;
+const NUMERIC_SYMBOL_TERM_REGEX = /^\d+\s*[a-zA-Z][a-zA-Z0-9_]*$/;
 
 /**
  * Escapes mhchem package notation in LaTeX by converting single dollar delimiters to double dollars
@@ -100,45 +101,17 @@ function isInCodeBlock(position: number, codeRegions: Array<[number, number]>): 
 }
 
 /**
- * Finds the next unescaped single-dollar delimiter on the same line.
- * Returns -1 when none is found.
- */
-function findNextUnescapedSingleDollar(content: string, startIndex: number): number {
-  for (let i = startIndex; i < content.length; i++) {
-    const ch = content[i];
-
-    if (ch === '\n') {
-      return -1;
-    }
-
-    if (ch === '\\') {
-      i += 1;
-      continue;
-    }
-
-    if (ch !== '$') {
-      continue;
-    }
-
-    // Skip double-dollar delimiters.
-    if (i + 1 < content.length && content[i + 1] === '$') {
-      i += 1;
-      continue;
-    }
-
-    return i;
-  }
-
-  return -1;
-}
-
-/**
  * Heuristically identifies if the inner text between dollar delimiters looks like math.
  */
 function looksLikeMathExpression(inner: string): boolean {
   const text = inner.trim();
   if (!text) {
     return false;
+  }
+
+  // Numeric-leading symbolic terms like 2n or 3x are common math snippets.
+  if (NUMERIC_SYMBOL_TERM_REGEX.test(text)) {
+    return true;
   }
 
   return (
@@ -150,16 +123,19 @@ function looksLikeMathExpression(inner: string): boolean {
 }
 
 /**
- * Determines if a currency-like dollar sign is actually the start of a math expression.
- * This specifically avoids misclassifying expressions like `$65 \\times 44$` as currency.
+ * Builds a cache of single-dollar opening delimiters and whether each pair looks like math.
+ * This avoids repeated linear scans for each currency-like match.
  */
-function isMathDollarOpening(content: string, openingDollarIndex: number): boolean {
-  const closeIdx = findNextUnescapedSingleDollar(content, openingDollarIndex + 1);
-  if (closeIdx === -1) {
-    return false;
+function buildMathOpeningCache(content: string): Map<number, boolean> {
+  const mathOpeningCache = new Map<number, boolean>();
+  SINGLE_DOLLAR_REGEX.lastIndex = 0;
+
+  let match: RegExpExecArray | null;
+  while ((match = SINGLE_DOLLAR_REGEX.exec(content)) !== null) {
+    mathOpeningCache.set(match.index, looksLikeMathExpression(match[1]));
   }
-  const inner = content.substring(openingDollarIndex + 1, closeIdx);
-  return looksLikeMathExpression(inner);
+
+  return mathOpeningCache;
 }
 
 /**
@@ -180,6 +156,7 @@ export function preprocessLaTeX(content: string): string {
 
   // Find all code block regions once
   const codeRegions = findCodeBlockRegions(processed);
+  const mathOpeningCache = buildMathOpeningCache(processed);
 
   // First pass: escape currency dollar signs
   const parts: string[] = [];
@@ -190,7 +167,7 @@ export function preprocessLaTeX(content: string): string {
 
   let match: RegExpExecArray | null;
   while ((match = CURRENCY_REGEX.exec(processed)) !== null) {
-    if (!isInCodeBlock(match.index, codeRegions) && !isMathDollarOpening(processed, match.index)) {
+    if (!isInCodeBlock(match.index, codeRegions) && !mathOpeningCache.get(match.index)) {
       parts.push(processed.substring(lastIndex, match.index));
       parts.push('\\$');
       lastIndex = match.index + 1;
