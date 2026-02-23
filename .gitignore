@@ -8,6 +8,7 @@ logs
 *.log
 
 # Runtime data
+# Runtime data
 pids
 *.pid
 *.seed

@@ -3,7 +3,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AgentCard from '../AgentCard';
 import type t from 'librechat-data-provider';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Mock useLocalize hook
 jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
@@ -12,32 +11,25 @@ jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
     com_agents_agent_card_label: '{{name}} agent. {{description}}',
     com_agents_category_general: 'General',
     com_agents_category_hr: 'Human Resources',
-    com_ui_by_author: 'by {{0}}',
-    com_agents_description_card: '{{description}}',
   };
   return mockTranslations[key] || key;
 });
 
 // Mock useAgentCategories hook
 jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string, values?: Record<string, string | number>) => {
+  useLocalize: () => (key: string, values?: Record<string, string>) => {
     const mockTranslations: Record<string, string> = {
       com_agents_created_by: 'Created by',
       com_agents_agent_card_label: '{{name}} agent. {{description}}',
       com_agents_category_general: 'General',
       com_agents_category_hr: 'Human Resources',
-      com_ui_by_author: 'by {{0}}',
-      com_agents_description_card: '{{description}}',
     };
     let translation = mockTranslations[key] || key;
 
     // Replace placeholders with actual values
     if (values) {
       Object.entries(values).forEach(([placeholder, value]) => {
-        translation = translation.replace(
-          new RegExp(`\\{\\{${placeholder}\\}\\}`, 'g'),
-          String(value),
-        );
+        translation = translation.replace(new RegExp(`{{${placeholder}}}`, 'g'), value);
       });
     }
 
@@ -50,80 +42,7 @@ jest.mock('~/hooks', () => ({
       { value: 'custom', label: 'Custom Category' }, // Non-localized custom category
     ],
   }),
-  useDefaultConvo: jest.fn(() => jest.fn(() => ({}))),
-  useFavorites: jest.fn(() => ({
-    isFavoriteAgent: jest.fn(() => false),
-    toggleFavoriteAgent: jest.fn(),
-  })),
 }));
-
-// Mock AgentDetailContent to avoid testing dialog internals
-jest.mock('../AgentDetailContent', () => ({
-  __esModule: true,
-  // eslint-disable-next-line i18next/no-literal-string
-  default: () => <div data-testid="agent-detail-content">Agent Detail Content</div>,
-}));
-
-// Mock Providers
-jest.mock('~/Providers', () => ({
-  useChatContext: jest.fn(() => ({
-    conversation: null,
-    newConversation: jest.fn(),
-  })),
-}));
-
-// Mock @librechat/client with proper Dialog behavior
-jest.mock('@librechat/client', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require('react');
-  return {
-    ...jest.requireActual('@librechat/client'),
-    useToastContext: jest.fn(() => ({
-      showToast: jest.fn(),
-    })),
-    OGDialog: ({ children, open, onOpenChange }: any) => {
-      // Store onOpenChange in context for trigger to call
-      return (
-        <div data-testid="dialog-wrapper" data-open={open}>
-          {React.Children.map(children, (child: any) => {
-            if (child?.type?.displayName === 'OGDialogTrigger' || child?.props?.['data-trigger']) {
-              return React.cloneElement(child, { onOpenChange });
-            }
-            // Only render content when open
-            if (child?.type?.displayName === 'OGDialogContent' && !open) {
-              return null;
-            }
-            return child;
-          })}
-        </div>
-      );
-    },
-    OGDialogTrigger: ({ children, asChild, onOpenChange }: any) => {
-      if (asChild && React.isValidElement(children)) {
-        return React.cloneElement(children as React.ReactElement<any>, {
-          onClick: (e: any) => {
-            (children as any).props?.onClick?.(e);
-            onOpenChange?.(true);
-          },
-        });
-      }
-      return <div onClick={() => onOpenChange?.(true)}>{children}</div>;
-    },
-    OGDialogContent: ({ children }: any) => <div data-testid="dialog-content">{children}</div>,
-    Label: ({ children, className }: any) => <span className={className}>{children}</span>,
-  };
-});
-
-// Create wrapper with QueryClient
-const createWrapper = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
-};
 
 describe('AgentCard', () => {
   const mockAgent: t.Agent = {
@@ -150,30 +69,22 @@ describe('AgentCard', () => {
     },
   };
 
-  const mockOnSelect = jest.fn();
-  const Wrapper = createWrapper();
+  const mockOnClick = jest.fn();
 
   beforeEach(() => {
-    mockOnSelect.mockClear();
+    mockOnClick.mockClear();
   });
 
   it('renders agent information correctly', () => {
-    render(
-      <Wrapper>
-        <AgentCard agent={mockAgent} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
 
     expect(screen.getByText('Test Agent')).toBeInTheDocument();
     expect(screen.getByText('A test agent for testing purposes')).toBeInTheDocument();
+    expect(screen.getByText('Test Support')).toBeInTheDocument();
   });
 
   it('displays avatar when provided as object', () => {
-    render(
-      <Wrapper>
-        <AgentCard agent={mockAgent} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
 
     const avatarImg = screen.getByAltText('Test Agent avatar');
     expect(avatarImg).toBeInTheDocument();
@@ -186,90 +97,64 @@ describe('AgentCard', () => {
       avatar: '/string-avatar.png' as any, // Legacy support for string avatars
     };
 
-    render(
-      <Wrapper>
-        <AgentCard agent={agentWithStringAvatar} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={agentWithStringAvatar} onClick={mockOnClick} />);
 
     const avatarImg = screen.getByAltText('Test Agent avatar');
     expect(avatarImg).toBeInTheDocument();
     expect(avatarImg).toHaveAttribute('src', '/string-avatar.png');
   });
 
-  it('displays Feather icon fallback when no avatar is provided', () => {
+  it('displays Bot icon fallback when no avatar is provided', () => {
     const agentWithoutAvatar = {
       ...mockAgent,
       avatar: undefined,
     };
 
-    render(
-      <Wrapper>
-        <AgentCard agent={agentWithoutAvatar as any as t.Agent} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={agentWithoutAvatar as any as t.Agent} onClick={mockOnClick} />);
 
-    // Check for Feather icon presence by looking for the svg with lucide-feather class
-    const featherIcon = document.querySelector('.lucide-feather');
-    expect(featherIcon).toBeInTheDocument();
+    // Check for Bot icon presence by looking for the svg with lucide-bot class
+    const botIcon = document.querySelector('.lucide-bot');
+    expect(botIcon).toBeInTheDocument();
   });
 
-  it('card is clickable and has dialog trigger', () => {
-    render(
-      <Wrapper>
-        <AgentCard agent={mockAgent} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+  it('calls onClick when card is clicked', () => {
+    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
 
     const card = screen.getByRole('button');
-    // Card should be clickable - the actual dialog behavior is handled by Radix
-    expect(card).toBeInTheDocument();
-    expect(() => fireEvent.click(card)).not.toThrow();
+    fireEvent.click(card);
+
+    expect(mockOnClick).toHaveBeenCalledTimes(1);
   });
 
-  it('handles Enter key press', () => {
-    render(
-      <Wrapper>
-        <AgentCard agent={mockAgent} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+  it('calls onClick when Enter key is pressed', () => {
+    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
 
     const card = screen.getByRole('button');
-    // Card should respond to keyboard - the actual dialog behavior is handled by Radix
-    expect(() => fireEvent.keyDown(card, { key: 'Enter' })).not.toThrow();
+    fireEvent.keyDown(card, { key: 'Enter' });
+
+    expect(mockOnClick).toHaveBeenCalledTimes(1);
   });
 
-  it('handles Space key press', () => {
-    render(
-      <Wrapper>
-        <AgentCard agent={mockAgent} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+  it('calls onClick when Space key is pressed', () => {
+    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
 
     const card = screen.getByRole('button');
-    // Card should respond to keyboard - the actual dialog behavior is handled by Radix
-    expect(() => fireEvent.keyDown(card, { key: ' ' })).not.toThrow();
+    fireEvent.keyDown(card, { key: ' ' });
+
+    expect(mockOnClick).toHaveBeenCalledTimes(1);
   });
 
-  it('does not call onSelect for other keys', () => {
-    render(
-      <Wrapper>
-        <AgentCard agent={mockAgent} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+  it('does not call onClick for other keys', () => {
+    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
 
     const card = screen.getByRole('button');
     fireEvent.keyDown(card, { key: 'Escape' });
 
-    expect(mockOnSelect).not.toHaveBeenCalled();
+    expect(mockOnClick).not.toHaveBeenCalled();
   });
 
   it('applies additional className when provided', () => {
-    render(
-      <Wrapper>
-        <AgentCard agent={mockAgent} onSelect={mockOnSelect} className="custom-class" />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={mockAgent} onClick={mockOnClick} className="custom-class" />);
 
     const card = screen.getByRole('button');
     expect(card).toHaveClass('custom-class');
@@ -282,14 +167,11 @@ describe('AgentCard', () => {
       authorName: undefined,
     };
 
-    render(
-      <Wrapper>
-        <AgentCard agent={agentWithoutContact} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={agentWithoutContact} onClick={mockOnClick} />);
 
     expect(screen.getByText('Test Agent')).toBeInTheDocument();
     expect(screen.getByText('A test agent for testing purposes')).toBeInTheDocument();
+    expect(screen.queryByText(/Created by/)).not.toBeInTheDocument();
   });
 
   it('displays authorName when support_contact is missing', () => {
@@ -299,21 +181,54 @@ describe('AgentCard', () => {
       authorName: 'John Doe',
     };
 
-    render(
-      <Wrapper>
-        <AgentCard agent={agentWithAuthorName} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={agentWithAuthorName} onClick={mockOnClick} />);
 
-    expect(screen.getByText('by John Doe')).toBeInTheDocument();
+    expect(screen.getByText('John Doe')).toBeInTheDocument();
+  });
+
+  it('displays support_contact email when name is missing', () => {
+    const agentWithEmailOnly = {
+      ...mockAgent,
+      support_contact: { email: 'contact@example.com' },
+      authorName: undefined,
+    };
+
+    render(<AgentCard agent={agentWithEmailOnly} onClick={mockOnClick} />);
+
+    expect(screen.getByText('contact@example.com')).toBeInTheDocument();
+  });
+
+  it('prioritizes support_contact name over authorName', () => {
+    const agentWithBoth = {
+      ...mockAgent,
+      support_contact: { name: 'Support Team' },
+      authorName: 'John Doe',
+    };
+
+    render(<AgentCard agent={agentWithBoth} onClick={mockOnClick} />);
+
+    expect(screen.getByText('Support Team')).toBeInTheDocument();
+    expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
+  });
+
+  it('prioritizes name over email in support_contact', () => {
+    const agentWithNameAndEmail = {
+      ...mockAgent,
+      support_contact: {
+        name: 'Support Team',
+        email: 'support@example.com',
+      },
+      authorName: undefined,
+    };
+
+    render(<AgentCard agent={agentWithNameAndEmail} onClick={mockOnClick} />);
+
+    expect(screen.getByText('Support Team')).toBeInTheDocument();
+    expect(screen.queryByText('support@example.com')).not.toBeInTheDocument();
   });
 
   it('has proper accessibility attributes', () => {
-    render(
-      <Wrapper>
-        <AgentCard agent={mockAgent} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
 
     const card = screen.getByRole('button');
     expect(card).toHaveAttribute('tabIndex', '0');
@@ -329,11 +244,7 @@ describe('AgentCard', () => {
       category: 'general',
     };
 
-    render(
-      <Wrapper>
-        <AgentCard agent={agentWithCategory} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={agentWithCategory} onClick={mockOnClick} />);
 
     expect(screen.getByText('General')).toBeInTheDocument();
   });
@@ -344,11 +255,7 @@ describe('AgentCard', () => {
       category: 'custom',
     };
 
-    render(
-      <Wrapper>
-        <AgentCard agent={agentWithCustomCategory} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={agentWithCustomCategory} onClick={mockOnClick} />);
 
     expect(screen.getByText('Custom Category')).toBeInTheDocument();
   });
@@ -359,35 +266,15 @@ describe('AgentCard', () => {
       category: 'unknown',
     };
 
-    render(
-      <Wrapper>
-        <AgentCard agent={agentWithUnknownCategory} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={agentWithUnknownCategory} onClick={mockOnClick} />);
 
     expect(screen.getByText('Unknown')).toBeInTheDocument();
   });
 
   it('does not display category tag when category is not provided', () => {
-    render(
-      <Wrapper>
-        <AgentCard agent={mockAgent} onSelect={mockOnSelect} />
-      </Wrapper>,
-    );
+    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
 
     expect(screen.queryByText('General')).not.toBeInTheDocument();
     expect(screen.queryByText('Unknown')).not.toBeInTheDocument();
-  });
-
-  it('works without onSelect callback', () => {
-    render(
-      <Wrapper>
-        <AgentCard agent={mockAgent} />
-      </Wrapper>,
-    );
-
-    const card = screen.getByRole('button');
-    // Should not throw when clicking without onSelect
-    expect(() => fireEvent.click(card)).not.toThrow();
   });
 });

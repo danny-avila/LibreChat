@@ -10,10 +10,10 @@ import ErrorDisplay from './ErrorDisplay';
 import AgentCard from './AgentCard';
 
 interface AgentGridProps {
-  category: string;
-  searchQuery: string;
-  onSelectAgent: (agent: t.Agent) => void;
-  scrollElementRef?: React.RefObject<HTMLElement>;
+  category: string; // Currently selected category
+  searchQuery: string; // Current search query
+  onSelectAgent: (agent: t.Agent) => void; // Callback when agent is selected
+  scrollElementRef?: React.RefObject<HTMLElement>; // Parent scroll container ref for infinite scroll
 }
 
 /**
@@ -184,7 +184,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
           {/* Agent grid - 2 per row with proper semantic structure */}
           {currentAgents && currentAgents.length > 0 && (
             <div
-              className="mx-4 grid grid-cols-1 gap-6 md:grid-cols-2"
+              className="grid grid-cols-1 gap-6 md:grid-cols-2"
               role="grid"
               aria-label={localize('com_agents_grid_announcement', {
                 count: currentAgents.length,
@@ -193,7 +193,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
             >
               {currentAgents.map((agent: t.Agent, index: number) => (
                 <div key={`${agent.id}-${index}`} role="gridcell">
-                  <AgentCard agent={agent} onSelect={onSelectAgent} />
+                  <AgentCard agent={agent} onClick={() => onSelectAgent(agent)} />
                 </div>
               ))}
             </div>
