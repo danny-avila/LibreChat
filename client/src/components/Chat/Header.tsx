@@ -6,6 +6,7 @@ import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-
 import type { ContextType } from '~/common';
 import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
+import AgentSelector from './Menus/AgentSelector';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import BookmarkMenu from './Menus/BookmarkMenu';
@@ -64,7 +65,8 @@ export default function Header() {
                 !navVisible && !isSmallScreen ? 'pl-2' : '',
               )}
             >
-              <ModelSelector startupConfig={startupConfig} />
+              {/* <ModelSelector startupConfig={startupConfig} /> */}
+              <AgentSelector />
               {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
               {hasAccessToBookmarks === true && <BookmarkMenu />}
               {hasAccessToMultiConvo === true && <AddMultiConvo />}
@@ -89,8 +91,6 @@ export default function Header() {
           </div>
         )}
       </div>
-      {/* Empty div for spacing */}
-      <div />
     </div>
   );
 }

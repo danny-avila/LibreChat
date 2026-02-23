@@ -77,6 +77,10 @@ export default function NewChat({
             </Button>
           }
         />
+
+        <div className="h-10 w-40 bg-cover">
+          <img src="/assets/kto_logo.svg" className="h-full w-full object-contain" alt="company-logo-image"/>
+        </div>
         <div className="flex gap-0.5">
           {headerButtons}
 

@@ -1,0 +1,12 @@
+<svg viewBox="0 0 200 80" xmlns="http://www.w3.org/2000/svg">
+  <!-- Red background -->
+  <rect width="200" height="80" fill="#E31A24" rx="6"/>
+  
+  <!-- White text: NARXOZ -->
+  <text x="100" y="50" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">
+    NARXOZ
+  </text>
+  
+  <!-- Decorative line -->
+  <line x1="30" y1="65" x2="170" y2="65" stroke="white" stroke-width="2" opacity="0.7"/>
+</svg>
