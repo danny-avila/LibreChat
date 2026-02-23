@@ -14,6 +14,12 @@ import type { ContentTypes } from './types/runs';
 import type { Agent } from './types/assistants';
 
 export * from './schemas';
+export type {
+  TTokenStoreConfig,
+  TokenStoreBackend,
+  TAwsTokenStoreConfig,
+  TAuthConfig,
+} from './tokenStore';
 
 export type TMessages = TMessage[];
 
