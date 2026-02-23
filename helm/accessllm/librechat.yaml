@@ -62,7 +62,7 @@ endpoints:
         defaultParamsEndpoint: 'google'
         paramDefinitions:
            - key: web_search
-             default: true
+             default: false
 mcpServers:
   scholar:
     type: stdio

@@ -1,4 +1,4 @@
-.PHONY: db grafana logs logs-litellm build upgrade restart status deploy
+.PHONY: db grafana logs logs-litellm build upgrade restart status deploy pods
 
 # Forward MongoDB port (27017)
 # Usage: make db
@@ -47,6 +47,12 @@ restart:
 status:
 	@echo "⏳ Waiting for Rollout..."
 	kubectl --kubeconfig helm/kubeconfig.yml rollout status deployment/librechat-api -n librechat
+
+# Get Running Pods
+# Usage: make pods
+pods:
+	@echo "📦 Listing Pods..."
+	kubectl --kubeconfig helm/kubeconfig.yml get pods -n librechat
 
 # Full Deployment Cycle
 # Usage: make deploy
