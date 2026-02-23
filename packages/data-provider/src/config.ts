@@ -975,6 +975,11 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .optional(),
+  agents: z
+    .object({
+      preventFileVersionHistory: z.boolean().optional(),
+    })
+    .optional(),
   registration: z
     .object({
       socialLogins: z.array(z.string()).optional(),

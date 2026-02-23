@@ -518,6 +518,7 @@ const addAgentResourceFile = async ({ req, agent_id, tool_resource, file_id }) =
 
   const updatedAgent = await updateAgent(searchParameter, updateData, {
     updatingUserId: req?.user?.id,
+    skipVersioning: req?.config?.agents?.preventFileVersionHistory,
   });
   if (updatedAgent) {
     return updatedAgent;
