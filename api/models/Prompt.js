@@ -185,9 +185,9 @@ const getPromptGroups = async (req, filter) => {
 
     const [facetResult] = await PromptGroup.aggregate(facetPipeline).exec();
 
-    const promptGroups = facetResult.data;
+    const promptGroups = facetResult?.data ?? [];
     const totalPromptGroups =
-      facetResult.totalCount.length > 0 ? facetResult.totalCount[0].total : 0;
+      facetResult?.totalCount?.length > 0 ? facetResult.totalCount[0].total : 0;
 
     return {
       promptGroups,
