@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
 import type { ContextType } from '~/common';
@@ -22,6 +22,7 @@ import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 import '@newjersey/feedback-widget/feedback-widget.min.js';
+import SkipToContentLink from '~/nj/components/SkipToContentLink';
 
 // NJ: Tells TypeScript that <feedback-widget> is a valid custom element.
 declare global {
@@ -43,6 +44,8 @@ export default function Root() {
 
   const { isAuthenticated, logout } = useAuthContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Global health check - runs once per authenticated session
   useHealthCheck(isAuthenticated);
@@ -85,12 +88,15 @@ export default function Root() {
             <PromptGroupsProvider>
               {/* NJ: We added dynamic height measurement via CSS instead of setBannerHeight, required extra div */}
               <div className="flex h-dvh flex-col">
+                <SkipToContentLink targetRef={contentRef} />
                 <Banner onHeightChange={setBannerHeight} />
                 <div className="flex min-h-0 flex-1">
                   <div className="relative z-0 flex h-full w-full overflow-hidden">
                     <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
                     <div
                       className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
+                      ref={contentRef}
+                      tabIndex={-1}
                       style={
                         isSmallScreen
                           ? {
