@@ -611,6 +611,8 @@ export type TFinalResData = Omit<TBaseResData, 'conversation'> & {
   conversation: Partial<t.TConversation> & Pick<t.TConversation, 'conversationId'>;
   requestMessage?: t.TMessage;
   responseMessage?: t.TMessage;
+  aborted?: boolean;
+  earlyAbort?: boolean;
 };
 
 export type TVectorStore = {

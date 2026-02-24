@@ -148,6 +148,7 @@ export function useActiveJobs(enabled = true) {
     refetchOnMount: true,
     refetchOnWindowFocus: true,
     refetchInterval: (data) => ((data?.activeJobIds?.length ?? 0) > 0 ? 5_000 : false),
+    refetchIntervalInBackground: true,
     retry: false,
   });
 }

@@ -1,11 +1,12 @@
 import { useCallback, useState } from 'react';
-import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import { QueryKeys, Constants, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
 import { useGetMessagesByConvoId, useAbortStreamMutation } from '~/data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
+import { suppressStreamCompletionNotification } from '~/hooks/SSE/streamCompletionNotification';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useNewConvo from '~/hooks/useNewConvo';
 import store from '~/store';
@@ -136,14 +137,17 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
       try {
         console.log('[useChatHelpers] Calling abort mutation for:', conversationId);
-        await abortMutation.mutateAsync({ conversationId });
+        if (conversationId !== Constants.NEW_CONVO) {
+          suppressStreamCompletionNotification(conversationId, 5_000);
+        }
+        const abortResult = await abortMutation.mutateAsync({ conversationId });
+        if (abortResult.aborted) {
+          suppressStreamCompletionNotification(abortResult.aborted);
+        }
         console.log('[useChatHelpers] Abort mutation succeeded');
-        // The SSE will receive a `done` event with `aborted: true` and clean up
-        // We still clear submissions as a fallback
         clearAllSubmissions();
       } catch (error) {
         console.error('[useChatHelpers] Abort failed:', error);
-        // Fall back to clearing submissions
         clearAllSubmissions();
       }
     } else {

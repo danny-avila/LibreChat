@@ -23,6 +23,7 @@ import {
   useLocalStorage,
   useNavScrolling,
 } from '~/hooks';
+import { useBackgroundStreamCompletionNotifications } from '~/hooks/SSE';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
 import SearchBar from './SearchBar';
@@ -76,7 +77,14 @@ const Nav = memo(
   }) => {
     const localize = useLocalize();
     const { isAuthenticated } = useAuthContext();
+    const notifyOnStreamComplete = useRecoilValue(store.notifyOnStreamComplete);
+    const activeConversationId = useRecoilValue(store.conversationByIndex(0))?.conversationId;
     useTitleGeneration(isAuthenticated);
+    useBackgroundStreamCompletionNotifications({
+      enabled: isAuthenticated,
+      notifyOnStreamComplete,
+      currentConversationId: activeConversationId,
+    });
 
     const isSmallScreen = useMediaQuery('(max-width: 768px)');
     const [newUser, setNewUser] = useLocalStorage('newUser', true);
