@@ -259,10 +259,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       primaryConfig.maxContextTokens,
       (info) => {
         try {
-          sendEvent(res, {
-            event: 'compaction_notice',
-            data: info,
-          });
+          const eventData = { event: 'compaction_notice', data: info };
+          if (streamId) {
+            GenerationJobManager.emitChunk(streamId, eventData);
+          } else {
+            sendEvent(res, eventData);
+          }
         } catch (err) {
           logger.warn('[initializeClient] Failed to send compaction notice:', err);
         }
