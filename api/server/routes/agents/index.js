@@ -8,6 +8,7 @@ const {
   messageIpLimiter,
   configMiddleware,
   messageUserLimiter,
+  refreshCustomJWT,
 } = require('~/server/middleware');
 const { saveMessage } = require('~/models');
 const { v1 } = require('./v1');
@@ -255,6 +256,7 @@ router.post('/chat/abort', async (req, res) => {
 
 const chatRouter = express.Router();
 chatRouter.use(configMiddleware);
+chatRouter.use(refreshCustomJWT);
 
 if (isEnabled(LIMIT_MESSAGE_IP)) {
   chatRouter.use(messageIpLimiter);

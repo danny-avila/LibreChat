@@ -505,6 +505,55 @@ function createToolInstance({
             logger.debug(
               `[MCP][${serverName}] Extracted JWT token from cookie: ${serverConfig.customJWTAuth}`,
             );
+
+            // Proactively refresh if the JWT is expired or about to expire
+            try {
+              const parts = extractedJWTToken.split('.');
+              if (parts.length === 3) {
+                const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+                const now = Math.floor(Date.now() / 1000);
+                const BUFFER_SECONDS = 120;
+                if (payload.exp && payload.exp - now < BUFFER_SECONDS) {
+                  logger.info(
+                    `[MCP][${serverName}] JWT token expired or expiring in <${BUFFER_SECONDS}s, refreshing...`,
+                  );
+                  const { getUserById, generateToken } = require('~/models');
+                  const { getCustomAuthToken } = require('~/server/services/AuthService');
+                  const user = await getUserById(userId);
+                  if (user && process.env.UTILITYBAR_GRAPHQL_URL) {
+                    const sessionToken = await generateToken(user);
+                    const authData = await getCustomAuthToken(
+                      sessionToken,
+                      process.env.UTILITYBAR_GRAPHQL_URL,
+                    );
+                    if (authData?.token) {
+                      extractedJWTToken = authData.token;
+                      logger.info(`[MCP][${serverName}] Successfully refreshed expired JWT token`);
+                      // Update cookie on response if headers haven't been sent yet
+                      try {
+                        if (res && !res.headersSent) {
+                          res.cookie(serverConfig.customJWTAuth, authData.token, {
+                            expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
+                            httpOnly: true,
+                            secure: process.env.NODE_ENV === 'production',
+                            sameSite: 'strict',
+                          });
+                        }
+                      } catch (_cookieErr) {
+                        logger.debug(
+                          `[MCP][${serverName}] Could not update cookie (headers already sent)`,
+                        );
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (refreshErr) {
+              logger.warn(
+                `[MCP][${serverName}] Error refreshing expired JWT token:`,
+                refreshErr.message,
+              );
+            }
           } else {
             logger.warn(
               `[MCP][${serverName}] Cookie ${serverConfig.customJWTAuth} not found in request`,

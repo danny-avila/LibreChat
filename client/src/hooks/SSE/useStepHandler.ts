@@ -61,6 +61,7 @@ export default function useStepHandler({
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
   const stepMap = useRef(new Map<string, Agents.RunStep>());
+  const compactionOffset = useRef(0);
 
   /**
    * Calculate content index for a run step.
@@ -270,8 +271,8 @@ export default function useStepHandler({
 
         stepMap.current.set(runStep.id, runStep);
 
-        // Calculate content index - use server index, offset by initialContent for edit scenarios
-        const contentIndex = runStep.index + initialContent.length;
+        // Calculate content index - use server index, offset by initialContent and injected compaction notices
+        const contentIndex = runStep.index + initialContent.length + compactionOffset.current;
 
         let response = messageMap.current.get(responseMessageId);
 
@@ -406,7 +407,7 @@ export default function useStepHandler({
           }
 
           const currentIndex = calculateContentIndex(
-            runStep.index,
+            runStep.index + compactionOffset.current,
             initialContent,
             contentPart.type || '',
             response.content,
@@ -447,7 +448,7 @@ export default function useStepHandler({
           }
 
           const currentIndex = calculateContentIndex(
-            runStep.index,
+            runStep.index + compactionOffset.current,
             initialContent,
             contentPart.type || '',
             response.content,
@@ -502,8 +503,8 @@ export default function useStepHandler({
               contentPart.tool_call.expires_at = runStepDelta.delta.expires_at;
             }
 
-            // Use server's index, offset by initialContent for edit scenarios
-            const currentIndex = runStep.index + initialContent.length;
+            // Use server's index, offset by initialContent and compaction notices
+            const currentIndex = runStep.index + initialContent.length + compactionOffset.current;
             updatedResponse = updateContent(
               updatedResponse,
               currentIndex,
@@ -519,6 +520,38 @@ export default function useStepHandler({
           );
 
           setMessages(updatedMessages);
+        }
+      } else if (event === 'compaction_notice') {
+        const info = data as unknown as {
+          droppedCount: number;
+          remaining: number;
+        };
+        console.log('[StepHandler] compaction_notice received', info);
+        // Find the last cached response message to inject the notice
+        let lastResponse: TMessage | undefined;
+        let lastResponseId = '';
+        for (const [id, msg] of messageMap.current.entries()) {
+          lastResponse = msg;
+          lastResponseId = id;
+        }
+        console.log(
+          '[StepHandler] messageMap size:',
+          messageMap.current.size,
+          'lastResponseId:',
+          lastResponseId,
+        );
+        if (lastResponse && lastResponseId) {
+          const contentIndex = lastResponse.content?.length ?? 0;
+          const noticeText = `[compaction_notice]${JSON.stringify({ droppedCount: info.droppedCount, remaining: info.remaining })}`;
+          const contentPart: Agents.MessageContentComplex = {
+            type: ContentTypes.TEXT,
+            text: noticeText,
+          };
+          const updatedResponse = updateContent(lastResponse, contentIndex, contentPart, true);
+          compactionOffset.current += 1;
+          messageMap.current.set(lastResponseId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
       } else if (event === 'on_run_step_completed') {
         const { result } = data as unknown as { result: Agents.ToolEndEvent };
@@ -546,8 +579,8 @@ export default function useStepHandler({
             tool_call: result.tool_call,
           };
 
-          // Use server's index, offset by initialContent for edit scenarios
-          const currentIndex = runStep.index + initialContent.length;
+          // Use server's index, offset by initialContent and compaction notices
+          const currentIndex = runStep.index + initialContent.length + compactionOffset.current;
           updatedResponse = updateContent(
             updatedResponse,
             currentIndex,
@@ -569,6 +602,7 @@ export default function useStepHandler({
         toolCallIdMap.current.clear();
         messageMap.current.clear();
         stepMap.current.clear();
+        compactionOffset.current = 0;
       };
     },
     [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages, calculateContentIndex],

@@ -19,6 +19,7 @@ import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import ImageGen from './ImageGen';
 import Image from './Image';
+import CompactionNotice from './CompactionNotice';
 import MCPToolDetector from './MCPToolDetector';
 
 type PartProps = {
@@ -68,6 +69,19 @@ const Part = memo(
       if (typeof text !== 'string') {
         return null;
       }
+
+      // Render compaction notice as a styled card
+      if (text.startsWith('[compaction_notice]')) {
+        try {
+          const payload = JSON.parse(text.slice('[compaction_notice]'.length));
+          return (
+            <CompactionNotice droppedCount={payload.droppedCount} remaining={payload.remaining} />
+          );
+        } catch {
+          // fall through to regular text rendering
+        }
+      }
+
       if (part.tool_call_ids != null && !text) {
         return null;
       }

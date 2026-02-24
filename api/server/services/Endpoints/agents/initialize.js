@@ -1,6 +1,8 @@
 const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
+  sendEvent,
+  Tokenizer,
   initializeAgent,
   validateAgentModel,
   createEdgeCollector,
@@ -233,7 +235,42 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       }
       await processAgent(agentId);
     }
-    const chain = await createSequentialChainEdges([primaryConfig.id].concat(agent_ids), '{convo}');
+
+    // Build per-agent overhead map for live handoff budget computation
+    const allChainIds = [primaryConfig.id].concat(agent_ids);
+    const agentOverheads = new Map();
+    for (const agentId of allChainIds) {
+      const config = agentId === primaryConfig.id ? primaryConfig : agentConfigs.get(agentId);
+      if (config) {
+        const instructionTokens = config.instructions
+          ? Tokenizer.getTokenCount(config.instructions)
+          : 0;
+        agentOverheads.set(agentId, {
+          instructionTokens,
+          toolCount: (config.tools ?? []).length,
+          maxContextTokens: config.maxContextTokens ?? 0,
+        });
+      }
+    }
+
+    const chain = await createSequentialChainEdges(
+      allChainIds,
+      '{convo}',
+      primaryConfig.maxContextTokens,
+      (info) => {
+        try {
+          const eventData = { event: 'compaction_notice', data: info };
+          if (streamId) {
+            GenerationJobManager.emitChunk(streamId, eventData);
+          } else {
+            sendEvent(res, eventData);
+          }
+        } catch (err) {
+          logger.warn('[initializeClient] Failed to send compaction notice:', err);
+        }
+      },
+      agentOverheads,
+    );
     collectEdges(chain);
   }
 
