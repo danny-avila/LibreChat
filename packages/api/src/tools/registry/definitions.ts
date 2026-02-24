@@ -474,6 +474,31 @@ Guidelines:
   required: ['prompt'],
 };
 
+/** OpenRouter Image Generation tool JSON schema */
+export const openrouterImageGenSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    prompt: {
+      type: 'string',
+      minLength: 1,
+      description:
+        'Detailed text description of the image to generate. Should be 3-6 sentences, focusing on visual elements, lighting, composition, mood, and style.',
+    },
+    model: {
+      type: 'string',
+      description:
+        'The image generation model to use. Any OpenRouter-compatible image generation model can be used. Defaults to GPT-5 Image for best quality. Examples: openai/gpt-5-image, openai/gpt-5-image-mini, bytedance-seed/seedream-4.5, google/gemini-3-pro-image-preview, google/gemini-2.5-flash-image.',
+    },
+    aspect_ratio: {
+      type: 'string',
+      enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
+      description:
+        'Aspect ratio for the generated image. Only supported for Gemini models. Use 16:9 for landscape, 9:16 for portrait, 1:1 for square.',
+    },
+  },
+  required: ['prompt'],
+};
+
 /** Tool definitions registry - maps tool names to their definitions */
 export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   google: {
@@ -597,6 +622,23 @@ When NOT to use \`gemini_image_gen\`:
 
 Generated image IDs will be returned in the response, so you can refer to them in future requests.`,
     schema: geminiImageGenSchema,
+    toolType: 'builtin',
+    responseFormat: 'content_and_artifact',
+  },
+  openrouter_image_gen: {
+    name: 'openrouter_image_gen',
+    description: `Generate high-quality images from text descriptions using OpenRouter-supported models.
+
+Supported models include:
+- openai/gpt-5-image: Best for high-quality, detailed images (default)
+- openai/gpt-5-image-mini: Fast and efficient image generation
+- bytedance-seed/seedream-4.5: High-quality generation by ByteDance
+- google/gemini-3-pro-image-preview: Advanced image generation with aspect ratio control
+- google/gemini-2.5-flash-image: Fast generation with aspect ratio control
+
+Always enhance basic prompts into detailed descriptions (3-6 sentences minimum).
+For Gemini models, you can specify aspect ratios like "16:9" for wide images or "9:16" for portraits.`,
+    schema: openrouterImageGenSchema,
     toolType: 'builtin',
     responseFormat: 'content_and_artifact',
   },

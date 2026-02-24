@@ -1021,17 +1021,17 @@ export const configSchema = z.object({
 export type DeepPartial<T> = T extends (infer U)[]
   ? DeepPartial<U>[]
   : T extends ReadonlyArray<infer U>
-    ? ReadonlyArray<DeepPartial<U>>
-    : // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      T extends Function
-      ? T
-      : T extends Date
-        ? T
-        : T extends object
-          ? {
-              [P in keyof T]?: DeepPartial<T[P]>;
-            }
-          : T;
+  ? ReadonlyArray<DeepPartial<U>>
+  : // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  T extends Function
+  ? T
+  : T extends Date
+  ? T
+  : T extends object
+  ? {
+    [P in keyof T]?: DeepPartial<T[P]>;
+  }
+  : T;
 
 export const getConfigDefaults = () => getSchemaDefaults(configSchema);
 export type TCustomConfig = DeepPartial<z.infer<typeof configSchema>>;
@@ -1330,6 +1330,7 @@ export const imageGenTools = new Set([
   'stable-diffusion',
   'flux',
   'gemini_image_gen',
+  'openrouter_image_gen',
 ]);
 
 /**
