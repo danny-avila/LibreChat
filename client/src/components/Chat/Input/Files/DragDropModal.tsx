@@ -2,20 +2,21 @@ import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
-  Providers,
-  inferMimeType,
-  EToolResources,
-  EModelEndpoint,
-  defaultAgentCapabilities,
-  isDocumentSupportedProvider,
-} from 'librechat-data-provider';
-import {
   ImageUpIcon,
   FileSearch,
   FileType2Icon,
   FileImageIcon,
   TerminalSquareIcon,
 } from 'lucide-react';
+import {
+  Providers,
+  inferMimeType,
+  EToolResources,
+  EModelEndpoint,
+  isBedrockDocumentType,
+  defaultAgentCapabilities,
+  isDocumentSupportedProvider,
+} from 'librechat-data-provider';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
@@ -77,20 +78,26 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     ) {
       const supportsImageDocVideoAudio =
         currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER;
-      const validFileTypes = supportsImageDocVideoAudio
-        ? files.every((file) => {
-            const type = getFileType(file);
-            return (
-              type?.startsWith('image/') ||
-              type?.startsWith('video/') ||
-              type?.startsWith('audio/') ||
-              type === 'application/pdf'
-            );
-          })
-        : files.every((file) => {
-            const type = getFileType(file);
-            return type?.startsWith('image/') || type === 'application/pdf';
-          });
+      const isBedrock =
+        currentProvider === Providers.BEDROCK || endpointType === EModelEndpoint.bedrock;
+
+      const isValidProviderFile = (file: File): boolean => {
+        const type = getFileType(file);
+        if (supportsImageDocVideoAudio) {
+          return (
+            type?.startsWith('image/') ||
+            type?.startsWith('video/') ||
+            type?.startsWith('audio/') ||
+            type === 'application/pdf'
+          );
+        }
+        if (isBedrock) {
+          return type?.startsWith('image/') || isBedrockDocumentType(type);
+        }
+        return type?.startsWith('image/') || type === 'application/pdf';
+      };
+
+      const validFileTypes = files.every(isValidProviderFile);
 
       _options.push({
         label: localize('com_ui_upload_provider'),
