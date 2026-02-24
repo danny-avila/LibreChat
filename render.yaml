@@ -1,0 +1,31 @@
+# Render Blueprint for LibreChat
+# Deploy (upstream): https://dashboard.render.com/blueprint/new?repo=https://github.com/danny-avila/LibreChat
+# Deploy (fork):     https://dashboard.render.com/blueprint/new?repo=https://github.com/ojusave/LibreChat
+# Set MONGO_URI (required). After deploy, set DOMAIN_CLIENT and DOMAIN_SERVER to your service URL.
+
+services:
+  - type: web
+    name: librechat
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+
+    healthCheckPath: /health
+
+    # PORT is set automatically by Render. NODE_MAX_OLD_SPACE_SIZE keeps build within free-tier memory.
+    envVars:
+      - key: NODE_MAX_OLD_SPACE_SIZE
+        value: "2048"
+      - key: HOST
+        value: "0.0.0.0"
+      - key: MONGO_URI
+        sync: false  # Required: MongoDB Atlas connection string or Render MongoDB private service URL
+      - key: DOMAIN_CLIENT
+        sync: false  # Set to your Render URL after deploy (e.g. https://librechat-xxx.onrender.com)
+      - key: DOMAIN_SERVER
+        sync: false  # Set to your Render URL after deploy
+      - key: TRUST_PROXY
+        value: "1"
+      - key: NO_INDEX
+        value: "true"

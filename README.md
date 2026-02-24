@@ -36,6 +36,9 @@
 <a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
   <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
 </a>
+<a href="https://dashboard.render.com/blueprint/new?repo=https://github.com/danny-avila/LibreChat">
+  <img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy on Render" height="30">
+</a>
 </p>
 
 <p align="center">
@@ -147,6 +150,22 @@ LibreChat is a self-hosted AI chat platform that unifies all major AI providers 
 Beyond chat, LibreChat provides AI Agents, Model Context Protocol (MCP) support, Artifacts, Code Interpreter, custom actions, conversation search, and enterprise-ready multi-user authentication.
 
 Open source, actively developed, and built for anyone who values control over their AI infrastructure.
+
+---
+
+## Deploy on Render
+
+You can deploy LibreChat to [Render](https://render.com/) using the included Blueprint.
+
+1. **Deploy:** Use one of the links below and connect the repo. Choose the **branch that contains `render.yaml`** (e.g. `main`).
+   - [Deploy from upstream](https://dashboard.render.com/blueprint/new?repo=https://github.com/danny-avila/LibreChat)
+   - [Deploy from fork](https://dashboard.render.com/blueprint/new?repo=https://github.com/ojusave/LibreChat)
+2. **Before or right after first deploy**, set in the service **Environment** tab:
+   - **`MONGO_URI`** (required) – MongoDB connection string ([MongoDB Atlas](https://www.mongodb.com/atlas) free tier or [MongoDB on Render](https://render.com/docs/deploy-mongodb)).
+   - **`DOMAIN_CLIENT`** and **`DOMAIN_SERVER`** – Set both to your Render service URL (e.g. `https://librechat-xxx.onrender.com`). Do this after the first deploy so you know the URL; otherwise auth redirects may break.
+3. Click **Apply**, wait for the build to finish, then open your service URL.
+
+**Notes:** The Blueprint uses a lower Node memory limit during build (`NODE_MAX_OLD_SPACE_SIZE=2048`) so the free tier can complete the build. If the build fails with an out-of-memory error, try the Starter plan. Meilisearch, RAG API, and Vector DB are not included; for those, see the [configuration docs](https://www.librechat.ai/docs/configuration/dotenv).
 
 ---
 
