@@ -351,6 +351,7 @@ export class MCPConnectionFactory {
             config?.oauth_headers ?? {},
             config?.oauth,
             this.allowedDomains,
+            this.tokenMethods?.findToken,
           );
 
           if (existingFlow) {
@@ -615,6 +616,7 @@ export class MCPConnectionFactory {
         this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
         this.allowedDomains,
+        this.tokenMethods?.findToken,
       );
 
       // Store flow state BEFORE redirecting so the callback can find it

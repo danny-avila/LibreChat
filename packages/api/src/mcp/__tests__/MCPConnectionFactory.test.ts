@@ -270,6 +270,7 @@ describe('MCPConnectionFactory', () => {
         {},
         undefined,
         undefined,
+        oauthOptions.tokenMethods.findToken,
       );
 
       // initFlow must be awaited BEFORE the redirect to guarantee state is stored
