@@ -15,7 +15,7 @@ const PromptForm = ({ selectedPrompt }: { selectedPrompt?: TPrompt }) => {
     setLabelInput(e.target.value);
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && labelInput.trim()) {
       const newLabels = [...labels, labelInput.trim()];
       setLabels(newLabels);
@@ -32,11 +32,11 @@ const PromptForm = ({ selectedPrompt }: { selectedPrompt?: TPrompt }) => {
       <Input
         type="text"
         className="mb-4"
-        placeholder="+ Add Labels"
-        // defaultValue={selectedPrompt?.labels.join(', ')}
+        placeholder={`+ ${localize('com_ui_add_labels')}`}
         value={labelInput}
         onChange={handleInputChange}
-        onKeyPress={handleKeyPress}
+        onKeyDown={handleKeyDown}
+        aria-label={localize('com_ui_add_labels')}
       />
       <h3 className="rounded-t-lg border border-border-light px-4 text-base font-semibold text-text-primary">
         {localize('com_ui_labels')}
@@ -44,12 +44,13 @@ const PromptForm = ({ selectedPrompt }: { selectedPrompt?: TPrompt }) => {
       <div className="mb-4 flex w-full flex-row flex-wrap rounded-b-lg border border-border-light p-4">
         {labels.length ? (
           labels.map((label, index) => (
-            <label
+            <span
               className="mb-1 mr-1 flex items-center gap-x-2 rounded-full border px-2"
               key={index}
             >
               {label}
-              <Cross1Icon
+              <button
+                type="button"
                 onClick={() => {
                   const newLabels = labels.filter((l) => l !== label);
                   setLabels(newLabels);
@@ -59,11 +60,14 @@ const PromptForm = ({ selectedPrompt }: { selectedPrompt?: TPrompt }) => {
                   });
                 }}
                 className="cursor-pointer"
-              />
-            </label>
+                aria-label={`${localize('com_ui_delete')} ${label}`}
+              >
+                <Cross1Icon aria-hidden="true" />
+              </button>
+            </span>
           ))
         ) : (
-          <label className="rounded-full border px-2">{localize('com_ui_no_labels')}</label>
+          <span className="rounded-full border px-2">{localize('com_ui_no_labels')}</span>
         )}
       </div>
     </>

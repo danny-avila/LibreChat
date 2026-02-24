@@ -89,8 +89,10 @@ export default function FilterPrompts({
     if (!debouncedSearchTerm.trim()) {
       return '';
     }
-    return resultCount === 1 ? `${resultCount} result found` : `${resultCount} results found`;
-  }, [debouncedSearchTerm, resultCount]);
+    return resultCount === 1
+      ? localize('com_ui_search_result_count', { count: resultCount })
+      : localize('com_ui_search_results_count', { count: resultCount });
+  }, [debouncedSearchTerm, resultCount, localize]);
 
   return (
     <div role="search" className={cn('flex w-full gap-2 text-text-primary', className)}>

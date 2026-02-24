@@ -75,7 +75,9 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
 
       const groups = await PromptGroup.find(query)
         .sort({ numberOfGenerations: -1, updatedAt: -1, _id: 1 })
-        .select('name oneliner category author authorName createdAt updatedAt command productionId')
+        .select(
+          'name numberOfGenerations oneliner category author authorName createdAt updatedAt command productionId',
+        )
         .lean();
       return await attachProductionPrompts(groups as unknown as Array<Record<string, unknown>>);
     } catch (error) {

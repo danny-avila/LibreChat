@@ -59,7 +59,16 @@ const checkPromptCreate = generateCheckAccess({
   getRoleByName,
 });
 
-const isValidObjectId = (id) => /^[a-f\d]{24}$/i.test(id);
+const isValidObjectIdString = (id) => /^[a-f\d]{24}$/i.test(id);
+
+const checkGlobalPromptShare = generateCheckAccess({
+  permissionType: PermissionTypes.PROMPTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  bodyProps: {
+    [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
+  },
+  getRoleByName,
+});
 
 router.use(requireJwtAuth);
 router.use(checkPromptAccess);
@@ -345,7 +354,7 @@ router.post(
   async (req, res) => {
     try {
       const { groupId } = req.params;
-      if (!isValidObjectId(groupId)) {
+      if (!isValidObjectIdString(groupId)) {
         return res.status(400).send({ error: 'Invalid groupId' });
       }
       const result = await incrementPromptGroupUsage(groupId);
@@ -371,18 +380,8 @@ router.post(
 const patchPromptGroup = async (req, res) => {
   try {
     const { groupId } = req.params;
-    const author = req.user.id;
-    const filter = { _id: groupId, author };
-    let canManagePrompts = false;
-    try {
-      canManagePrompts = await hasCapability(req.user, SystemCapabilities.MANAGE_PROMPTS);
-    } catch (err) {
-      logger.warn(`[patchPromptGroup] capability check failed, denying bypass: ${err.message}`);
-    }
-    if (canManagePrompts) {
-      logger.debug(`[patchPromptGroup] MANAGE_PROMPTS bypass for user ${req.user.id}`);
-      delete filter.author;
-    }
+    // Don't pass author - permissions are now checked by middleware
+    const filter = { _id: groupId };
 
     const validationResult = safeValidatePromptGroupUpdate(req.body);
     if (!validationResult.success) {
@@ -402,7 +401,7 @@ const patchPromptGroup = async (req, res) => {
 
 router.patch(
   '/groups/:groupId',
-  checkPromptCreate,
+  checkGlobalPromptShare,
   canAccessPromptGroupResource({
     requiredPermission: PermissionBits.EDIT,
   }),
@@ -448,7 +447,7 @@ router.get('/', async (req, res) => {
 
     // If requesting prompts for a specific group, check permissions
     if (groupId) {
-      if (!isValidObjectId(groupId)) {
+      if (!isValidObjectIdString(groupId)) {
         return res.status(400).send({ error: 'Invalid groupId' });
       }
 
@@ -503,7 +502,7 @@ const deletePromptController = async (req, res) => {
   try {
     const { promptId } = req.params;
     const { groupId } = req.query;
-    if (!groupId || !isValidObjectId(groupId)) {
+    if (!groupId || !isValidObjectIdString(groupId)) {
       return res.status(400).send({ error: 'Invalid or missing groupId' });
     }
     const query = { promptId, groupId };

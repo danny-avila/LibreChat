@@ -1,12 +1,10 @@
-import { FileText, Plus } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { Button, Skeleton } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { FileText } from 'lucide-react';
+import { Skeleton } from '@librechat/client';
 import type { TPromptGroup, TStartupConfig } from 'librechat-data-provider';
+import { useGetStartupConfig } from '~/data-provider';
 import DashGroupItem from './DashGroupItem';
 import ChatGroupItem from './ChatGroupItem';
-import { useGetStartupConfig } from '~/data-provider';
-import { useLocalize, useHasAccess } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function List({
@@ -21,29 +19,10 @@ export default function List({
   const localize = useLocalize();
   const { data: startupConfig = {} as Partial<TStartupConfig> } = useGetStartupConfig();
   const { instanceProjectId } = startupConfig;
-  const hasCreateAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.CREATE,
-  });
 
   return (
     <div className="flex h-full flex-col">
-      {hasCreateAccess && (
-        <div className="flex w-full justify-end">
-          <Button
-            asChild
-            variant="outline"
-            className={cn('w-full bg-transparent', !isChatRoute && 'mx-2')}
-            aria-label={localize('com_ui_create_prompt')}
-          >
-            <Link to="/d/prompts/new">
-              <Plus className="size-4" aria-hidden="true" />
-              {localize('com_ui_create_prompt')}
-            </Link>
-          </Button>
-        </div>
-      )}
-      <div className="flex-grow overflow-y-auto" aria-label={localize('com_ui_prompt_groups')}>
+      <section className="flex-grow overflow-y-auto" aria-label={localize('com_ui_prompt_groups')}>
         <div className="overflow-y-auto overflow-x-hidden">
           {isLoading && isChatRoute && (
             <Skeleton className="my-2 flex h-[84px] w-full rounded-2xl border-0 px-3 pb-4 pt-3" />
@@ -89,7 +68,7 @@ export default function List({
             </div>
           )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

@@ -27,7 +27,7 @@ function PanelNavigation({
         {!isChatRoute && <ThemeSelector returnThemeOnly={true} />}
         {children}
       </div>
-      <div className="flex items-center gap-2" role="navigation" aria-label="Pagination">
+      <nav className="flex items-center gap-2" aria-label={localize('com_ui_pagination')}>
         <Button
           variant="outline"
           size="sm"
@@ -46,7 +46,7 @@ function PanelNavigation({
         >
           {localize('com_ui_next')}
         </Button>
-      </div>
+      </nav>
     </div>
   );
 }

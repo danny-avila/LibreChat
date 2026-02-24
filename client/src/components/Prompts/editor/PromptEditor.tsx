@@ -71,22 +71,16 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
           />
         </div>
       </header>
-      <div
-        role="button"
+      <button
+        type="button"
         aria-label={isEditing ? localize('com_ui_prompt_input') : localize('com_ui_edit')}
         className={cn(
-          'relative w-full flex-1 overflow-auto rounded-b-xl border border-t-0 border-border-light p-3 transition-all duration-200 sm:p-4',
+          'relative w-full flex-1 overflow-auto rounded-b-xl border border-t-0 border-border-light p-3 text-left transition-all duration-200 sm:p-4',
           isEditing
             ? 'bg-surface-primary'
             : 'cursor-pointer bg-surface-primary hover:bg-surface-secondary',
         )}
         onClick={() => !isEditing && setIsEditing(true)}
-        onKeyDown={(e) => {
-          if (!isEditing && (e.key === 'Enter' || e.key === ' ')) {
-            e.preventDefault();
-            setIsEditing(true);
-          }
-        }}
         tabIndex={isEditing ? -1 : 0}
       >
         <Controller
@@ -147,7 +141,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             )
           }
         />
-      </div>
+      </button>
     </div>
   );
 };

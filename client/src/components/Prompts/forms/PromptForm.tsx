@@ -19,21 +19,21 @@ import {
   useUpdatePromptGroup,
   useMakePromptProduction,
 } from '~/data-provider';
-import { useResourcePermissions, useHasAccess, useLocalize } from '~/hooks';
+import { useResourcePermissions, useHasAccess, useLocalize, useFocusTrap } from '~/hooks';
 import CategorySelector from '../fields/CategorySelector';
-import { usePromptGroupsContext } from '~/Providers';
-import NoPromptGroup from '../lists/NoPromptGroup';
 import PromptVariables from '../display/PromptVariables';
-import { cn, findPromptGroup } from '~/utils';
 import PromptVersions from '../display/PromptVersions';
-import { PromptsEditorMode } from '~/common';
+import { usePromptGroupsContext } from '~/Providers';
 import DeleteVersion from '../dialogs/DeleteVersion';
 import PromptDetails from '../display/PromptDetails';
+import NoPromptGroup from '../lists/NoPromptGroup';
 import PromptEditor from '../editor/PromptEditor';
 import SkeletonForm from '../utils/SkeletonForm';
 import Description from '../fields/Description';
 import SharePrompt from '../dialogs/SharePrompt';
 import PromptName from '../fields/PromptName';
+import { cn, findPromptGroup } from '~/utils';
+import { PromptsEditorMode } from '~/common';
 import Command from '../fields/Command';
 import store from '~/store';
 
@@ -189,6 +189,8 @@ const PromptForm = () => {
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
 
   const prevIsEditingRef = useRef(false);
+  const sidePanelRef = useRef<HTMLDivElement>(null);
+  const sidePanelTriggerRef = useRef<HTMLButtonElement>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [showSidePanel, setShowSidePanel] = useState(false);
@@ -336,21 +338,47 @@ const PromptForm = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useFocusTrap(sidePanelRef, showSidePanel, () => {
+    setShowSidePanel(false);
+    sidePanelTriggerRef.current?.focus();
+  });
+
   const debouncedUpdateOneliner = useMemo(
     () =>
-      debounce((groupId: string, oneliner: string, mutate: any) => {
-        mutate({ id: groupId, payload: { oneliner } });
-      }, 950),
+      debounce(
+        (
+          groupId: string,
+          oneliner: string,
+          mutate: (vars: { id: string; payload: { oneliner: string } }) => void,
+        ) => {
+          mutate({ id: groupId, payload: { oneliner } });
+        },
+        950,
+      ),
     [],
   );
 
   const debouncedUpdateCommand = useMemo(
     () =>
-      debounce((groupId: string, command: string, mutate: any) => {
-        mutate({ id: groupId, payload: { command } });
-      }, 950),
+      debounce(
+        (
+          groupId: string,
+          command: string,
+          mutate: (vars: { id: string; payload: { command: string } }) => void,
+        ) => {
+          mutate({ id: groupId, payload: { command } });
+        },
+        950,
+      ),
     [],
   );
+
+  useEffect(() => {
+    return () => {
+      debouncedUpdateOneliner.cancel();
+      debouncedUpdateCommand.cancel();
+    };
+  }, [debouncedUpdateOneliner, debouncedUpdateCommand]);
 
   const handleUpdateOneliner = useCallback(
     (oneliner: string) => {
@@ -446,6 +474,7 @@ const PromptForm = () => {
                         />
                         {editorMode === PromptsEditorMode.ADVANCED && (
                           <Button
+                            ref={sidePanelTriggerRef}
                             type="button"
                             variant="outline"
                             size="sm"
@@ -471,7 +500,7 @@ const PromptForm = () => {
                 </div>
 
                 {/* Mobile Actions Row */}
-                {!isLoadingGroup && (
+                {!isLoadingGroup && group && (
                   <div className="mb-4 sm:hidden">
                     <HeaderActions
                       group={group}
@@ -540,6 +569,7 @@ const PromptForm = () => {
 
           {/* Mobile Versions Panel */}
           <div
+            ref={sidePanelRef}
             className="absolute inset-y-0 right-0 z-50 lg:hidden"
             style={{
               width: sidePanelWidth,
