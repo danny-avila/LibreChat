@@ -8,6 +8,28 @@ export const OAUTH_SESSION_COOKIE = 'oauth_session';
 export const OAUTH_SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
 export const OAUTH_SESSION_COOKIE_PATH = '/api';
 
+const OAUTH_SESSION_TOKEN_BYTES = 32;
+
+function getOAuthSessionSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET is required for OAuth session token generation');
+  }
+  return secret;
+}
+
+function toBase64Url(value: string): string {
+  return Buffer.from(value, 'utf8').toString('base64url');
+}
+
+function fromBase64Url(value: string): string | null {
+  try {
+    return Buffer.from(value, 'base64url').toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Determines if secure cookies should be used.
  * Returns `true` in production unless the server is running on localhost (HTTP).
@@ -94,9 +116,26 @@ export function setOAuthSession(req: Request, res: Response, next: NextFunction)
   next();
 }
 
+/** Creates a signed OAuth session token bound to a user ID with expiration */
+export function generateOAuthSessionToken(
+  userId: string,
+  maxAge: number = OAUTH_SESSION_MAX_AGE,
+): string {
+  const issuedAt = Date.now();
+  const expiresAt = issuedAt + maxAge;
+  const nonce = crypto.randomBytes(OAUTH_SESSION_TOKEN_BYTES).toString('hex');
+  const payload = JSON.stringify({ uid: userId, iat: issuedAt, exp: expiresAt, nonce });
+  const encodedPayload = toBase64Url(payload);
+  const signature = crypto
+    .createHmac('sha256', getOAuthSessionSecret())
+    .update(encodedPayload)
+    .digest('base64url');
+  return `${encodedPayload}.${signature}`;
+}
+
 /** Sets a SameSite=Lax session cookie that binds the browser to the authenticated userId */
 export function setOAuthSessionCookie(res: Response, userId: string): void {
-  res.cookie(OAUTH_SESSION_COOKIE, generateOAuthCsrfToken(userId), {
+  res.cookie(OAUTH_SESSION_COOKIE, generateOAuthSessionToken(userId), {
     httpOnly: true,
     secure: shouldUseSecureCookie(),
     sameSite: 'lax',
@@ -105,15 +144,48 @@ export function setOAuthSessionCookie(res: Response, userId: string): void {
   });
 }
 
-/** Validates the session cookie against the expected userId using timing-safe comparison */
+/** Validates the signed session cookie against the expected userId */
 export function validateOAuthSession(req: Request, userId: string): boolean {
   const cookie = (req.cookies as Record<string, string> | undefined)?.[OAUTH_SESSION_COOKIE];
   if (!cookie) {
     return false;
   }
-  const expected = generateOAuthCsrfToken(userId);
-  if (cookie.length !== expected.length) {
+
+  const parts = cookie.split('.');
+  if (parts.length !== 2) {
     return false;
   }
-  return crypto.timingSafeEqual(Buffer.from(cookie), Buffer.from(expected));
+
+  const [encodedPayload, signature] = parts;
+  if (!encodedPayload || !signature) {
+    return false;
+  }
+
+  const expectedSignature = crypto
+    .createHmac('sha256', getOAuthSessionSecret())
+    .update(encodedPayload)
+    .digest('base64url');
+
+  if (signature.length !== expectedSignature.length) {
+    return false;
+  }
+
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+    return false;
+  }
+
+  const payload = fromBase64Url(encodedPayload);
+  if (!payload) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(payload) as { uid?: string; exp?: number };
+    if (parsed.uid !== userId || typeof parsed.exp !== 'number') {
+      return false;
+    }
+    return Date.now() <= parsed.exp;
+  } catch {
+    return false;
+  }
 }

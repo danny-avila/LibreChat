@@ -52,7 +52,7 @@ router.get('/oauth/openid/check', (req, res) => {
   res.status(200).json({ message: 'OpenID check successful' });
 });
 
-router.get('/oauth/openid', (req, res, next) => {
+router.get('/oauth/openid', middleware.loginLimiter, (req, res, next) => {
   return passport.authenticate('openidAdmin', {
     session: false,
     state: randomState(),
@@ -67,6 +67,7 @@ router.get(
     session: false,
   }),
   requireAdmin,
+  middleware.loginLimiter,
   setBalanceConfig,
   middleware.checkDomainAllowed,
   createOAuthHandler(`${getAdminPanelUrl()}/auth/openid/callback`),
