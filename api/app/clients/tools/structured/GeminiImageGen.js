@@ -371,8 +371,14 @@ function createGeminiImageTool(fields = {}) {
         }
       }
 
+      let derivedSignal = null;
+      let abortHandler = null;
+
       if (runnableConfig?.signal) {
-        config.abortSignal = runnableConfig.signal;
+        derivedSignal = AbortSignal.any([runnableConfig.signal]);
+        abortHandler = () => logger.debug('[GeminiImageGen] Image generation aborted');
+        derivedSignal.addEventListener('abort', abortHandler, { once: true });
+        config.abortSignal = derivedSignal;
       }
 
       try {
@@ -387,6 +393,10 @@ function createGeminiImageTool(fields = {}) {
           [{ type: ContentTypes.TEXT, text: `Image generation failed: ${error.message}` }],
           { content: [], file_ids: [] },
         ];
+      } finally {
+        if (abortHandler && derivedSignal) {
+          derivedSignal.removeEventListener('abort', abortHandler);
+        }
       }
 
       const safetyBlock = checkForSafetyBlock(apiResponse);
