@@ -1,4 +1,3 @@
-const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { v4 } = require('uuid');
@@ -118,17 +117,11 @@ async function initializeGeminiClient(options = {}) {
     );
   }
 
-  try {
-    await fs.promises.access(credentialsPath);
-    process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-  } catch {
-    // File doesn't exist, skip setting env var
-  }
-
   return new GoogleGenAI({
     vertexai: true,
     project: serviceKey.project_id,
     location: process.env.GOOGLE_LOC || process.env.GOOGLE_CLOUD_LOCATION || 'global',
+    googleAuthOptions: { credentials: serviceKey },
   });
 }
 
