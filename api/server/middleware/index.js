@@ -19,6 +19,7 @@ const validate = require('./validate');
 const limiters = require('./limiters');
 const uaParser = require('./uaParser');
 const checkBan = require('./checkBan');
+const refreshCustomJWT = require('./refreshCustomJWT');
 const noIndex = require('./noIndex');
 const roles = require('./roles');
 
@@ -44,6 +45,7 @@ module.exports = {
   checkDomainAllowed,
   validateMessageReq,
   buildEndpointOption,
+  refreshCustomJWT,
   validateRegistration,
   validatePasswordReset,
 };
