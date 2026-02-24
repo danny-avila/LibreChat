@@ -1345,6 +1345,8 @@ describe('getCacheMultiplier', () => {
 describe('Google Model Tests', () => {
   const googleModels = [
     'gemini-3',
+    'gemini-3.1-pro-preview',
+    'gemini-3.1-pro-preview-customtools',
     'gemini-2.5-pro',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
@@ -1389,6 +1391,8 @@ describe('Google Model Tests', () => {
   it('should map to the correct model keys', () => {
     const expected = {
       'gemini-3': 'gemini-3',
+      'gemini-3.1-pro-preview': 'gemini-3.1',
+      'gemini-3.1-pro-preview-customtools': 'gemini-3.1',
       'gemini-2.5-pro': 'gemini-2.5-pro',
       'gemini-2.5-flash': 'gemini-2.5-flash',
       'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
@@ -1431,6 +1435,174 @@ describe('Google Model Tests', () => {
         getMultiplier({ model: input, tokenType: 'completion', endpoint: EModelEndpoint.google }),
       ).toBe(tokenValues[expected].completion);
     });
+  });
+
+  it('should return correct prompt and completion rates for Gemini 3.1', () => {
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview',
+        tokenType: 'prompt',
+        endpoint: EModelEndpoint.google,
+      }),
+    ).toBe(tokenValues['gemini-3.1'].prompt);
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview',
+        tokenType: 'completion',
+        endpoint: EModelEndpoint.google,
+      }),
+    ).toBe(tokenValues['gemini-3.1'].completion);
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview-customtools',
+        tokenType: 'prompt',
+        endpoint: EModelEndpoint.google,
+      }),
+    ).toBe(tokenValues['gemini-3.1'].prompt);
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview-customtools',
+        tokenType: 'completion',
+        endpoint: EModelEndpoint.google,
+      }),
+    ).toBe(tokenValues['gemini-3.1'].completion);
+  });
+
+  it('should return correct cache rates for Gemini 3.1', () => {
+    ['gemini-3.1-pro-preview', 'gemini-3.1-pro-preview-customtools'].forEach((model) => {
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+        cacheTokenValues['gemini-3.1'].write,
+      );
+      expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+        cacheTokenValues['gemini-3.1'].read,
+      );
+    });
+  });
+});
+
+describe('Gemini 3.1 Premium Token Pricing', () => {
+  const premiumKey = 'gemini-3.1';
+  const premiumEntry = premiumTokenValues[premiumKey];
+  const { threshold } = premiumEntry;
+  const belowThreshold = threshold - 1;
+  const aboveThreshold = threshold + 1;
+  const wellAboveThreshold = threshold * 2;
+
+  it('should have premium pricing defined for gemini-3.1', () => {
+    expect(premiumEntry).toBeDefined();
+    expect(premiumEntry.threshold).toBeDefined();
+    expect(premiumEntry.prompt).toBeDefined();
+    expect(premiumEntry.completion).toBeDefined();
+    expect(premiumEntry.prompt).toBeGreaterThan(tokenValues[premiumKey].prompt);
+    expect(premiumEntry.completion).toBeGreaterThan(tokenValues[premiumKey].completion);
+  });
+
+  it('should return null from getPremiumRate when inputTokenCount is below or at threshold', () => {
+    expect(getPremiumRate(premiumKey, 'prompt', belowThreshold)).toBeNull();
+    expect(getPremiumRate(premiumKey, 'completion', belowThreshold)).toBeNull();
+    expect(getPremiumRate(premiumKey, 'prompt', threshold)).toBeNull();
+  });
+
+  it('should return premium rate from getPremiumRate when inputTokenCount exceeds threshold', () => {
+    expect(getPremiumRate(premiumKey, 'prompt', aboveThreshold)).toBe(premiumEntry.prompt);
+    expect(getPremiumRate(premiumKey, 'completion', aboveThreshold)).toBe(premiumEntry.completion);
+    expect(getPremiumRate(premiumKey, 'prompt', wellAboveThreshold)).toBe(premiumEntry.prompt);
+  });
+
+  it('should return null from getPremiumRate when inputTokenCount is undefined or null', () => {
+    expect(getPremiumRate(premiumKey, 'prompt', undefined)).toBeNull();
+    expect(getPremiumRate(premiumKey, 'prompt', null)).toBeNull();
+  });
+
+  it('should return standard rate from getMultiplier when inputTokenCount is below threshold', () => {
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview',
+        tokenType: 'prompt',
+        inputTokenCount: belowThreshold,
+      }),
+    ).toBe(tokenValues[premiumKey].prompt);
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview',
+        tokenType: 'completion',
+        inputTokenCount: belowThreshold,
+      }),
+    ).toBe(tokenValues[premiumKey].completion);
+  });
+
+  it('should return premium rate from getMultiplier when inputTokenCount exceeds threshold', () => {
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview',
+        tokenType: 'prompt',
+        inputTokenCount: aboveThreshold,
+      }),
+    ).toBe(premiumEntry.prompt);
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview',
+        tokenType: 'completion',
+        inputTokenCount: aboveThreshold,
+      }),
+    ).toBe(premiumEntry.completion);
+  });
+
+  it('should return standard rate from getMultiplier when inputTokenCount is exactly at threshold', () => {
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview',
+        tokenType: 'prompt',
+        inputTokenCount: threshold,
+      }),
+    ).toBe(tokenValues[premiumKey].prompt);
+  });
+
+  it('should apply premium pricing to customtools variant above threshold', () => {
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview-customtools',
+        tokenType: 'prompt',
+        inputTokenCount: aboveThreshold,
+      }),
+    ).toBe(premiumEntry.prompt);
+    expect(
+      getMultiplier({
+        model: 'gemini-3.1-pro-preview-customtools',
+        tokenType: 'completion',
+        inputTokenCount: aboveThreshold,
+      }),
+    ).toBe(premiumEntry.completion);
+  });
+
+  it('should use standard rate when inputTokenCount is not provided', () => {
+    expect(getMultiplier({ model: 'gemini-3.1-pro-preview', tokenType: 'prompt' })).toBe(
+      tokenValues[premiumKey].prompt,
+    );
+    expect(getMultiplier({ model: 'gemini-3.1-pro-preview', tokenType: 'completion' })).toBe(
+      tokenValues[premiumKey].completion,
+    );
+  });
+
+  it('should apply premium pricing through getMultiplier with valueKey path', () => {
+    const valueKey = getValueKey('gemini-3.1-pro-preview');
+    expect(valueKey).toBe(premiumKey);
+    expect(getMultiplier({ valueKey, tokenType: 'prompt', inputTokenCount: aboveThreshold })).toBe(
+      premiumEntry.prompt,
+    );
+    expect(
+      getMultiplier({ valueKey, tokenType: 'completion', inputTokenCount: aboveThreshold }),
+    ).toBe(premiumEntry.completion);
+  });
+
+  it('should apply standard pricing through getMultiplier with valueKey path when below threshold', () => {
+    const valueKey = getValueKey('gemini-3.1-pro-preview');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt', inputTokenCount: belowThreshold })).toBe(
+      tokenValues[premiumKey].prompt,
+    );
+    expect(
+      getMultiplier({ valueKey, tokenType: 'completion', inputTokenCount: belowThreshold }),
+    ).toBe(tokenValues[premiumKey].completion);
   });
 });
 
