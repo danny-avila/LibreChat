@@ -8,8 +8,8 @@ const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const {
   FileContext,
-  ContentTypes,
   FileSources,
+  ContentTypes,
   EImageOutputType,
 } = require('librechat-data-provider');
 const {
@@ -19,8 +19,8 @@ const {
   getTransactionsConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { createFile, getFiles } = require('~/models/File');
 const { spendTokens } = require('~/models/spendTokens');
-const { getFiles } = require('~/models/File');
 
 /**
  * Configure proxy support for Google APIs
@@ -173,25 +173,37 @@ async function saveImageLocally(base64Data, format, userId) {
  * @param {Object} params - Parameters
  * @returns {Promise<string|null>} - The storage URL or null
  */
-async function saveToCloudStorage({ base64Data, format, processFileURL, fileStrategy, userId }) {
-  if (!processFileURL || !fileStrategy || !userId) {
+async function saveToCloudStorage({ base64Data, format, fileStrategy, userId }) {
+  if (!fileStrategy || !userId) {
     return null;
   }
 
   try {
     const safeFormat = getSafeFormat(format);
     const safeUserId = path.basename(userId);
-    const dataURL = `data:image/${safeFormat};base64,${base64Data}`;
     const imageName = `gemini-img-${v4()}.${safeFormat}`;
+    const buffer = Buffer.from(base64Data, 'base64');
 
-    const result = await processFileURL({
-      URL: dataURL,
+    const { saveBuffer, getFileURL } = getStrategyFunctions(fileStrategy);
+    await saveBuffer({ userId: safeUserId, buffer, fileName: imageName });
+    const filepath = await getFileURL({
+      fileName: `${safeUserId}/${imageName}`,
       basePath: 'images',
-      userId: safeUserId,
-      fileName: imageName,
-      fileStrategy,
-      context: FileContext.image_generation,
     });
+
+    const result = await createFile(
+      {
+        user: safeUserId,
+        file_id: v4(),
+        bytes: buffer.length,
+        filepath,
+        filename: imageName,
+        source: fileStrategy,
+        type: `image/${safeFormat}`,
+        context: FileContext.image_generation,
+      },
+      true,
+    );
 
     return result.filepath;
   } catch (error) {
@@ -397,7 +409,6 @@ function createGeminiImageTool(fields = {}) {
   const {
     req,
     imageFiles = [],
-    processFileURL,
     userId,
     fileStrategy,
     GEMINI_API_KEY,
@@ -511,41 +522,20 @@ function createGeminiImageTool(fields = {}) {
 
       logger.debug('[GeminiImageGen] Image format:', { outputFormat, mimeType });
 
-      let imageUrl;
       const useLocalStorage = !fileStrategy || fileStrategy === FileSources.local;
-
       if (useLocalStorage) {
-        try {
-          imageUrl = await saveImageLocally(imageData, outputFormat, userId);
-        } catch (error) {
+        await saveImageLocally(imageData, outputFormat, userId).catch((error) => {
           logger.error('[GeminiImageGen] Local save failed:', error);
-          imageUrl = `data:${mimeType};base64,${imageData}`;
-        }
+        });
       } else {
-        const cloudUrl = await saveToCloudStorage({
+        await saveToCloudStorage({
           base64Data: imageData,
           format: outputFormat,
-          processFileURL,
           fileStrategy,
           userId,
         });
-
-        if (cloudUrl) {
-          imageUrl = cloudUrl;
-        } else {
-          // Fallback to local
-          try {
-            imageUrl = await saveImageLocally(imageData, outputFormat, userId);
-          } catch (_error) {
-            imageUrl = `data:${mimeType};base64,${imageData}`;
-          }
-        }
       }
 
-      logger.debug('[GeminiImageGen] Image URL:', imageUrl);
-
-      // For the artifact, we need a data URL (same as OpenAI)
-      // The local file save is for persistence, but the response needs a data URL
       const dataUrl = `data:${mimeType};base64,${imageData}`;
 
       // Return in content_and_artifact format (same as OpenAI)
