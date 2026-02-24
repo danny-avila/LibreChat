@@ -3,7 +3,11 @@ const SESSION_KEY = 'post_login_redirect_to';
 
 /** Validates that a redirect target is a safe relative path (not an absolute or protocol-relative URL) */
 function isSafeRedirect(url: string): boolean {
-  return url.startsWith('/') && !url.startsWith('//');
+  if (!url.startsWith('/') || url.startsWith('//')) {
+    return false;
+  }
+  const path = url.split('?')[0].split('#')[0];
+  return !path.startsWith('/login');
 }
 
 /** Builds a `/login?redirect_to=...` URL, reading from window.location when no args are provided */
