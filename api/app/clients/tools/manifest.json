@@ -162,8 +162,8 @@
     "authConfig": [
       {
         "authField": "GEMINI_API_KEY||GOOGLE_KEY",
-        "label": "Gemini API Key",
-        "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank if using Vertex AI with service account."
+        "label": "Gemini API Key (optional)",
+        "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank to use Vertex AI with a service account (GOOGLE_SERVICE_KEY_FILE or api/data/auth.json)."
       }
     ]
   }
