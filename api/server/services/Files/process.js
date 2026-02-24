@@ -523,6 +523,12 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
      * @return {Promise<void>}
      */
     const createTextFile = async ({ text, bytes, filepath, type = 'text/plain' }) => {
+      const textBytes = Buffer.byteLength(text, 'utf8');
+      if (textBytes > 15 * megabyte) {
+        throw new Error(
+          `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
+        );
+      }
       const fileInfo = removeNullishValues({
         text,
         bytes,
@@ -553,29 +559,59 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
-    const shouldUseOCR =
+    const documentParserMimeTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+
+    const shouldUseConfiguredOCR =
       appConfig?.ocr != null &&
       fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
 
-    if (shouldUseOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
-      throw new Error('OCR capability is not enabled for Agents');
-    } else if (shouldUseOCR) {
+    const shouldUseDocumentParser =
+      !shouldUseConfiguredOCR && documentParserMimeTypes.includes(file.mimetype);
+
+    const shouldUseOCR = shouldUseConfiguredOCR || shouldUseDocumentParser;
+
+    const resolveDocumentText = async () => {
+      if (shouldUseConfiguredOCR) {
+        try {
+          const ocrStrategy = appConfig?.ocr?.strategy ?? FileSources.document_parser;
+          const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
+          return await handleFileUpload({ req, file, loadAuthValues });
+        } catch (err) {
+          logger.error(
+            `[processAgentFileUpload] Configured OCR failed for "${file.originalname}", falling back to document_parser:`,
+            err,
+          );
+        }
+      }
       try {
-        const { handleFileUpload: uploadOCR } = getStrategyFunctions(
-          appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
-        );
-        const {
-          text,
-          bytes,
-          filepath: ocrFileURL,
-        } = await uploadOCR({ req, file, loadAuthValues });
-        return await createTextFile({ text, bytes, filepath: ocrFileURL });
-      } catch (ocrError) {
+        const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
+        return await handleFileUpload({ req, file, loadAuthValues });
+      } catch (err) {
         logger.error(
-          `[processAgentFileUpload] OCR processing failed for file "${file.originalname}", falling back to text extraction:`,
-          ocrError,
+          `[processAgentFileUpload] Document parser failed for "${file.originalname}":`,
+          err,
         );
       }
+    };
+
+    if (shouldUseConfiguredOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
+      throw new Error('OCR capability is not enabled for Agents');
+    }
+
+    if (shouldUseOCR) {
+      const ocrResult = await resolveDocumentText();
+      if (ocrResult) {
+        const { text, bytes, filepath: ocrFileURL } = ocrResult;
+        return await createTextFile({ text, bytes, filepath: ocrFileURL });
+      }
+      throw new Error(
+        `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
+      );
     }
 
     const shouldUseSTT = fileConfig.checkType(
