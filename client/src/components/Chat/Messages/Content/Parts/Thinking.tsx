@@ -1,4 +1,4 @@
-import { useState, useMemo, memo, useCallback, useRef, type MouseEvent } from 'react';
+import { useState, useMemo, memo, useCallback, useRef, useId, type MouseEvent } from 'react';
 import { useAtomValue } from 'jotai';
 import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
@@ -35,12 +35,14 @@ export const ThinkingButton = memo(
     onClick,
     label,
     content,
+    contentId,
     showCopyButton = true,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
     label: string;
     content?: string;
+    contentId?: string;
     showCopyButton?: boolean;
   }) => {
     const localize = useLocalize();
@@ -66,6 +68,7 @@ export const ThinkingButton = memo(
           type="button"
           onClick={onClick}
           aria-expanded={isExpanded}
+          aria-controls={contentId}
           className={cn(
             'group/button flex flex-1 items-center justify-start rounded-lg leading-[18px]',
             fontSize,
@@ -240,6 +243,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   const [isExpanded, setIsExpanded] = useState(showThinking);
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentId = useId();
 
   const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -295,9 +299,13 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
           onClick={handleClick}
           label={label}
           content={textContent}
+          contentId={contentId}
         />
       </div>
       <div
+        id={contentId}
+        role="region"
+        aria-hidden={!isExpanded}
         className={cn('grid transition-all duration-300 ease-out', isExpanded && 'mb-8')}
         style={{
           gridTemplateRows: isExpanded ? '1fr' : '0fr',
