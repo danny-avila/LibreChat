@@ -155,7 +155,10 @@ export async function fetchModels({
       options.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
     }
 
-    const url = new URL(`${(baseURL ?? '').replace(/\/+$/, '')}${azure ? '' : '/models'}`);
+    const normalizedBaseURL = (baseURL ?? '').endsWith('/')
+      ? (baseURL ?? '').slice(0, -1)
+      : (baseURL ?? '');
+    const url = new URL(`${normalizedBaseURL}${azure ? '' : '/models'}`);
     if (user && userIdQuery) {
       url.searchParams.append('user', user);
     }

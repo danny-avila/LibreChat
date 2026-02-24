@@ -290,7 +290,11 @@ export function getOpenAILLMConfig({
         delete llmConfig[param as keyof t.OAIClientOptions];
       }
     });
-  } else if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model as string)) {
+  } else if (
+    typeof modelOptions.model === 'string' &&
+    modelOptions.model.startsWith('gpt-4o') &&
+    modelOptions.model.includes('search')
+  ) {
     /**
      * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
      */

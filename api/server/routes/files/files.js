@@ -1,4 +1,5 @@
 const fs = require('fs').promises;
+const path = require('path');
 const express = require('express');
 const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
@@ -33,6 +34,35 @@ const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
+
+const getUploadRootPath = (req) => {
+  const uploadRoot = req.config?.paths?.uploads;
+  return typeof uploadRoot === 'string' && uploadRoot.length > 0
+    ? path.resolve(uploadRoot)
+    : path.resolve(process.cwd(), 'uploads');
+};
+
+const isPathWithinRoot = (filePath, rootPath) => {
+  const resolvedPath = path.resolve(filePath);
+  if (resolvedPath === rootPath) {
+    return true;
+  }
+  return resolvedPath.startsWith(`${rootPath}${path.sep}`);
+};
+
+const safeUnlink = async (req, filePath) => {
+  if (!filePath) {
+    return;
+  }
+
+  const rootPath = getUploadRootPath(req);
+  if (!isPathWithinRoot(filePath, rootPath)) {
+    logger.warn(`[/files] Refusing to delete file outside upload root: ${filePath}`);
+    return;
+  }
+
+  await fs.unlink(path.resolve(filePath));
+};
 
 const router = express.Router();
 
@@ -443,7 +473,7 @@ router.post('/', async (req, res) => {
     }
 
     try {
-      await fs.unlink(req.file.path);
+      await safeUnlink(req, req.file?.path);
       cleanup = false;
     } catch (error) {
       logger.error('[/files] Error deleting file:', error);
@@ -452,7 +482,7 @@ router.post('/', async (req, res) => {
   } finally {
     if (cleanup) {
       try {
-        await fs.unlink(req.file.path);
+        await safeUnlink(req, req.file?.path);
       } catch (error) {
         logger.error('[/files] Error deleting file after file processing:', error);
       }
