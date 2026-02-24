@@ -1,19 +1,166 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
+name: LibreChat - CD
 
 trigger:
-- main
+  branches:
+    include:
+    - develop
+    - master
+    exclude:
+    - update/*
+    - feature/*
 
 pool:
-  vmImage: ubuntu-latest
+  vmImage: "ubuntu-latest"
 
-steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
+resources:
+  repositories:
+  - repository: areeb_pipelines
+    type: git
+    name: Areeb-Core/areeb_pipelines
+    ref: revamping-sas
 
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+variables:
+- name: PLATFORM
+  value: LibreChat
+- group: AreebGPT-Common-Variables
+- ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/develop') }}:
+  - group: AreebGPT-Dev-GCP-Variables
+  - group: AreebGPT-Dev-LibreChat-Variables
+- ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/master') }}:
+  - group: AreebGPT-Prod-GCP-Variables
+  - group: AreebGPT-Prod-LiberChat-Variables
+
+stages:
+- stage: GET_NEW_VERSION
+  displayName: Getting New Version
+  jobs:
+  - template: semVer/getNewTag.yaml@areeb_pipelines
+    parameters:
+      tagBranch: $(Build.SourceBranchName)
+
+- stage: BUILD_AND_PUSH_DOCKER_IMAGES
+  dependsOn: GET_NEW_VERSION
+  displayName: Building and Pushing Docker Images
+  variables:
+    NEW_VERSION: $[ stageDependencies.GET_NEW_VERSION.calculate_new_version.outputs['CalculateNewVersion.NEW_VERSION'] ]
+  jobs:
+  - template: templates/docker/buildAndPush.yaml@areeb_pipelines
+    parameters:
+      tag: $(NEW_VERSION)
+      images:
+      - name: "librechat"
+        dockerfilePath: "$(APP_DOCKERFILE_PATH)"
+
+- stage: DEPLOY_SERVICES_TO_GCP
+  displayName: Deploy to VM
+  dependsOn:
+  - BUILD_AND_PUSH_DOCKER_IMAGES
+  - GET_NEW_VERSION
+  variables:
+    NEW_VERSION: $[ stageDependencies.GET_NEW_VERSION.calculate_new_version.outputs['CalculateNewVersion.NEW_VERSION'] ]
+  jobs:
+  - job: deploy_to_vm
+    displayName: Deploy to VM
+    steps:
+    - task: DownloadSecureFile@1
+      name: sshKey
+      displayName: "Download SSH Private Key"
+      inputs:
+        secureFile: $(SSH_KEY_PATH)
+
+    - bash: |
+        mkdir -p ~/.ssh
+        cp $(sshKey.secureFilePath) ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        echo "Private key installed to ~/.ssh/id_rsa"
+      displayName: "Install SSH Private Key"
+
+    - script: |
+        ssh -o StrictHostKeyChecking=no $(VM_USER)@$(VM_IP) << EOF
+        set -e
+
+        cd ~/LibreChat
+
+        echo "=== Updating repo ==="
+        git reset --hard
+        git fetch origin
+        git checkout $(Build.SourceBranchName)
+        git pull origin $(Build.SourceBranchName)
+
+        echo "=== Updating image + tag ==="
+        sed -i -E "0,/image:\s*[^ ]+/s|image:\s*[^ ]+|image: ${IMAGE_LINK}:${NEW_VERSION}|" docker-compose.yml
+
+        echo "=== Pulling new image ==="
+        docker compose pull
+
+        echo "=== Deploying ==="
+        docker compose up -d
+
+        echo "=== Verifying ==="
+        docker compose config | grep image:
+
+        echo "=== Cleaning old images (safe) ==="
+        CURRENT_TAG="${NEW_VERSION}"
+        docker images ${IMAGE_LINK} --format "{{.Tag}}" | while read tag; do
+          if [ -n "\$tag" ] && [ "\$tag" != "\$CURRENT_TAG" ]; then
+            echo "Removing old image: ${IMAGE_LINK}:\$tag"
+            docker rmi ${IMAGE_LINK}:\$tag || true
+          fi
+        done
+        docker image prune -f
+        EOF
+
+      displayName: 'Update and Deploy on VM'
+
+- stage: GENERATE_THE_RELEASE
+  displayName: Generating The Release
+  dependsOn:
+  - GET_NEW_VERSION
+  - DEPLOY_SERVICES_TO_GCP
+  variables:
+    NEW_VERSION: $[ stageDependencies.GET_NEW_VERSION.calculate_new_version.outputs['CalculateNewVersion.NEW_VERSION'] ]
+  condition: succeeded()
+  jobs:
+  - template: semVer/generateReleasePage.yaml@areeb_pipelines
+    parameters:
+      version: $(NEW_VERSION)
+      branch: $(Build.SourceBranchName)
+      platform: $(PLATFORM)
+      projectName: "AreebGPT"
+      wikiIdentifier: "Areeb-Workspace"
+
+- stage: SEND_SUCCESS_NOTIFICATION
+  displayName: Sending Success Notification
+  dependsOn:
+  - GET_NEW_VERSION
+  - GENERATE_THE_RELEASE
+  condition: succeeded()
+  variables:
+    NEW_VERSION: $[ stageDependencies.GET_NEW_VERSION.calculate_new_version.outputs['CalculateNewVersion.NEW_VERSION'] ]
+    WIKI_PAGE_URL: $[ stageDependencies.GENERATE_THE_RELEASE.generate_release_page.outputs['GenerateAndPushReleasePage.WIKI_PAGE_URL'] ]
+  jobs:
+  - template: templates/misc/sendNotification.yaml@areeb_pipelines
+    parameters:
+      appName: "AreebGPT"
+      platform: $(PLATFORM)
+      buildVersion: $(NEW_VERSION)
+      buildStatus: "Succeeded"
+      releasePageUrl: $(WIKI_PAGE_URL)
+
+- stage: SEND_FAILURE_NOTIFICATION
+  displayName: Sending Failure Notification
+  dependsOn:
+  - GET_NEW_VERSION
+  - BUILD_AND_PUSH_DOCKER_IMAGES
+  - DEPLOY_SERVICES_TO_GCP
+  - GENERATE_THE_RELEASE
+  condition: failed()
+  variables:
+    NEW_VERSION: $[ stageDependencies.GET_NEW_VERSION.calculate_new_version.outputs['CalculateNewVersion.NEW_VERSION'] ]
+  jobs:
+  - template: templates/misc/sendNotification.yaml@areeb_pipelines
+    parameters:
+      appName: "AreebGPT"
+      platform: $(PLATFORM)
+      buildVersion: $(NEW_VERSION)
+      buildStatus: "Failed"
