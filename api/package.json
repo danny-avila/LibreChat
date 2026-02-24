@@ -112,7 +112,7 @@
     "undici": "^7.18.2",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "xlsx": "0.18.5",
     "zod": "^3.22.4"
   },
   "devDependencies": {
