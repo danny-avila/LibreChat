@@ -14,7 +14,9 @@ import { getAllContentText } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 const UNKNOWN_STATUS_RECHECK_DELAY_MS = 1200;
+const RUNNING_STATUS_RECHECK_DELAY_MS = 3000;
 const MAX_FETCH_FAILURES = 3;
+const MAX_RECHECK_ITERATIONS = 5;
 
 type UseBackgroundStreamCompletionNotificationsParams = {
   enabled: boolean;
@@ -210,7 +212,19 @@ export default function useBackgroundStreamCompletionNotifications({
       return false;
     };
 
-    const maybeNotifyForCompletedJobs = async () => {
+    const notifyComplete = (streamId: string, streamStatus: StreamStatusResponse | null) => {
+      const responseText = getStreamResponseText(queryClient, streamId, streamStatus);
+      notifyStreamCompletion({
+        enabled: notifyOnStreamComplete,
+        title: getNotificationTitle(queryClient),
+        fallbackMessage: localize('com_nav_stream_complete_notification'),
+        responseText,
+      });
+      suppressStreamCompletionNotification(streamId, 10_000);
+      evictStream(streamId);
+    };
+
+    const processPendingChecks = async () => {
       const pendingIds = Array.from(pendingChecks);
 
       for (let i = 0; i < pendingIds.length; i++) {
@@ -282,30 +296,24 @@ export default function useBackgroundStreamCompletionNotifications({
             continue;
           }
           if (secondCompletionStatus === 'complete') {
-            const responseText = getStreamResponseText(queryClient, streamId, secondStatus);
-            notifyStreamCompletion({
-              enabled: notifyOnStreamComplete,
-              title: getNotificationTitle(queryClient),
-              fallbackMessage: localize('com_nav_stream_complete_notification'),
-              responseText,
-            });
-            suppressStreamCompletionNotification(streamId, 10_000);
-            evictStream(streamId);
+            notifyComplete(streamId, secondStatus);
           }
           continue;
         }
 
         if (firstCompletionStatus === 'complete') {
-          const responseText = getStreamResponseText(queryClient, streamId, firstStatus);
-          notifyStreamCompletion({
-            enabled: notifyOnStreamComplete,
-            title: getNotificationTitle(queryClient),
-            fallbackMessage: localize('com_nav_stream_complete_notification'),
-            responseText,
-          });
-          suppressStreamCompletionNotification(streamId, 10_000);
-          evictStream(streamId);
+          notifyComplete(streamId, firstStatus);
         }
+      }
+    };
+
+    const maybeNotifyForCompletedJobs = async () => {
+      for (let iteration = 0; iteration < MAX_RECHECK_ITERATIONS; iteration++) {
+        await processPendingChecks();
+        if (cancelled || pendingChecks.size === 0) {
+          return;
+        }
+        await wait(RUNNING_STATUS_RECHECK_DELAY_MS);
       }
     };
 

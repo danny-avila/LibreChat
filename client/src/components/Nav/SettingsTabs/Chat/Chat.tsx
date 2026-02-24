@@ -135,12 +135,14 @@ function Chat() {
 
       void Notification.requestPermission()
         .then((permission) => {
-          if (permission !== 'granted') {
+          if (permission === 'denied') {
             handleBlockedNotificationPermission();
+          } else if (permission !== 'granted') {
+            setNotifyOnStreamComplete(false);
           }
         })
         .catch(() => {
-          handleBlockedNotificationPermission();
+          setNotifyOnStreamComplete(false);
         });
     },
     [handleBlockedNotificationPermission, setNotifyOnStreamComplete],
