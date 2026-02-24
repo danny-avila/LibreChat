@@ -13,10 +13,11 @@ services:
 
     healthCheckPath: /health
 
-    # PORT is set automatically by Render. NODE_MAX_OLD_SPACE_SIZE keeps build within free-tier memory.
+    # NODE_MAX_OLD_SPACE_SIZE as build arg keeps Vite build within free-tier memory
+    dockerBuildArgs:
+      NODE_MAX_OLD_SPACE_SIZE: "2048"
+
     envVars:
-      - key: NODE_MAX_OLD_SPACE_SIZE
-        value: "2048"
       - key: HOST
         value: "0.0.0.0"
       - key: MONGO_URI
