@@ -15,6 +15,7 @@ import { useGetEndpointsQuery, useListAgentsQuery } from '~/data-provider';
 import { useModelSelectorChatContext } from './ModelSelectorChatContext';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { filterItems } from './utils';
+import { useMockPermissions } from '~/hooks/Endpoint/mockApi';
 
 type ModelSelectorContextType = {
   // State
@@ -89,12 +90,36 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     },
   );
 
-  const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
+// ORIGINAL CODE - WITHOUT PERMISSION CHECK
+  // const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
+  //   agents,
+  //   assistantsMap,
+  //   startupConfig,
+  //   endpointsConfig,
+  // });
+
+  // CUSTOM - Added permissions check
+  const { mappedEndpoints: originalMappedEndpoints, endpointRequiresUserKey } = useEndpoints({
     agents,
     assistantsMap,
     startupConfig,
     endpointsConfig,
   });
+
+  // ===================================================
+  // CUSTOM - Check permissions API status
+  // If API returns error or null, set mappedEndpoints to empty array
+  // ===================================================
+  const { error: permissionsError, data: permissionsData } = useMockPermissions();
+  const mappedEndpoints = useMemo(() => {
+    // If API returned error or null data, return empty array
+    if (permissionsError || !permissionsData) {
+      return [];
+    }
+    // Otherwise return original mappedEndpoints
+    return originalMappedEndpoints;
+  }, [originalMappedEndpoints, permissionsError, permissionsData]);
+  // ===================================================
 
   const getModelDisplayName = useCallback(
     (endpoint: Endpoint, model: string): string => {

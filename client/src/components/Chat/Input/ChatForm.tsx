@@ -17,6 +17,7 @@ import {
   useHandleKeyUp,
   useQueryParams,
   useSubmitMessage,
+  useRequiresPermission,
   useFocusChatEffect,
 } from '~/hooks';
 import { mainTextareaId, BadgeItem } from '~/common';
@@ -74,6 +75,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     newConversation,
     handleStopGenerating,
   } = useChatContext();
+  const { requiresPermission } = useRequiresPermission();
   const {
     generateConversation,
     conversation: addedConvo,
@@ -102,8 +104,8 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     [conversation?.assistant_id, endpoint, assistantMap],
   );
   const disableInputs = useMemo(
-    () => requiresKey || invalidAssistant,
-    [requiresKey, invalidAssistant],
+    () => requiresKey || invalidAssistant || requiresPermission,
+    [requiresKey, invalidAssistant, requiresPermission],
   );
 
   const handleContainerClick = useCallback(() => {

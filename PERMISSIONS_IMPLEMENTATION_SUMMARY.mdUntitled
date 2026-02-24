@@ -1,0 +1,205 @@
+# Permissions Implementation - Summary
+
+## Quick Overview
+Adds permission-based filtering for endpoints/models. Blocks chat input when user lacks permission.
+
+## Files Changed: 6 Total
+
+### New Files (3)
+1. `client/src/components/Chat/Menus/Endpoints/components/FilteredEndpoints.tsx`
+2. `client/src/hooks/Input/useRequiresPermission.ts`
+3. `client/src/hooks/Endpoint/mockApi.ts`
+
+### Modified Files (4)
+4. `client/src/components/Chat/Menus/Endpoints/components/EndpointItem.tsx`
+5. `client/src/components/Chat/Menus/Endpoints/ModelSelectorContext.tsx`
+6. `client/src/components/Chat/Input/ChatForm.tsx`
+7. `client/src/hooks/Input/index.ts`
+
+---
+
+## Changes Summary
+
+### 1. EndpointItem.tsx
+**Change:** 2 lines changed
+
+**Line 15 (NEW):** Added import
+```typescript
+// BEFORE: (no import)
+// ... existing imports ...
+
+// AFTER:
+import { FilteredEndpoints } from './FilteredEndpoints';
+```
+
+**Lines 247-250:** Changed `renderEndpoints` function
+```typescript
+// BEFORE (lines 247-253):
+export function renderEndpoints(mappedEndpoints: Endpoint[]) {
+  return mappedEndpoints.map((endpoint, index) => (
+    <EndpointItem
+      endpoint={endpoint}
+      endpointIndex={index}
+      key={`endpoint-${endpoint.value}-${index}`}
+    />
+  ));
+}
+
+// AFTER (lines 247-250):
+export function renderEndpoints(mappedEndpoints: Endpoint[]) {
+  // CUSTOM - Use FilteredEndpoints for permission-based filtering
+  return <FilteredEndpoints endpoints={mappedEndpoints} />;
+}
+```
+
+### 2. FilteredEndpoints.tsx (NEW)
+**Purpose:** Filters endpoints/models visually based on permissions
+- Returns empty array while loading (prevents flash)
+- Filters endpoints by `apiProviders`
+- Filters models by `modelsByProvider`
+- Always shows selected endpoint/model (non-blocking)
+
+### 3. ModelSelectorContext.tsx
+**Change:** Set `mappedEndpoints = []` when API fails
+
+**Line 17 (NEW):** Added import
+```typescript
+// BEFORE: (no import)
+import { filterItems } from './utils';
+
+// AFTER:
+import { filterItems } from './utils';
+import { useMockPermissions } from '~/hooks/Endpoint/mockApi';
+```
+
+**Lines 90-95:** Renamed `mappedEndpoints` to `originalMappedEndpoints`
+```typescript
+// BEFORE (line 90):
+const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
+  agents,
+  assistantsMap,
+  startupConfig,
+  endpointsConfig,
+});
+
+// AFTER (lines 90-95):
+const { mappedEndpoints: originalMappedEndpoints, endpointRequiresUserKey } = useEndpoints({
+  agents,
+  assistantsMap,
+  startupConfig,
+  endpointsConfig,
+});
+```
+
+**Lines 97-110 (NEW):** Added permission check and mappedEndpoints logic
+```typescript
+// BEFORE: (no code - mappedEndpoints was used directly)
+
+// AFTER (lines 97-110):
+// ===================================================
+// CUSTOM - Check permissions API status
+// If API returns error or null, set mappedEndpoints to empty array
+// ===================================================
+const { error: permissionsError, data: permissionsData } = useMockPermissions();
+const mappedEndpoints = useMemo(() => {
+  // If API returned error or null data, return empty array
+  if (permissionsError || !permissionsData) {
+    return [];
+  }
+  // Otherwise return original mappedEndpoints
+  return originalMappedEndpoints;
+}, [originalMappedEndpoints, permissionsError, permissionsData]);
+// ===================================================
+```
+
+### 4. ChatForm.tsx
+**Change:** Block input when no permission
+
+**Line 17 (NEW):** Added import
+```typescript
+// BEFORE (line 16):
+  useRequiresKey,
+
+// AFTER (lines 16-17):
+  useRequiresKey,
+  useRequiresPermission,
+```
+
+**Line 68 (NEW):** Added permission check hook
+```typescript
+// BEFORE (line 67):
+  const { requiresKey } = useRequiresKey();
+  const methods = useChatFormContext();
+
+// AFTER (lines 67-69):
+  const { requiresKey } = useRequiresKey();
+  const { requiresPermission } = useRequiresPermission();
+  const methods = useChatFormContext();
+```
+
+**Lines 106-109:** Updated `disableInputs` logic
+```typescript
+// BEFORE (lines 104-107):
+  const disableInputs = useMemo(
+    () => requiresKey || invalidAssistant,
+    [requiresKey, invalidAssistant],
+  );
+
+// AFTER (lines 106-109):
+  const disableInputs = useMemo(
+    () => requiresKey || invalidAssistant || requiresPermission,
+    [requiresKey, invalidAssistant, requiresPermission],
+  );
+```
+
+### 5. useRequiresPermission.ts (NEW)
+**Purpose:** Hook to check if endpoint/model has permission
+- Returns `true` if: API fails, endpoint not allowed, model not allowed
+- Returns `false` if: Has permission or still loading
+
+### 6. hooks/Input/index.ts
+**Change:** Export new hook
+```typescript
+export { default as useRequiresPermission } from './useRequiresPermission';
+```
+
+### 7. mockApi.ts (NEW)
+**Purpose:** Fetches user permissions from external API
+- `getMockPermissions()` - API function to fetch permissions
+- `useMockPermissions()` - React hook that uses user email and token
+- Returns: `providers`, `modelsByProvider`, `isLoading`, `error`, `data`
+- Handles API errors and loading states
+
+---
+
+## API Integration
+
+**Endpoint:** `/external-permissions-api/permissions/{email}`  
+**Proxy:** `vite.config.ts` → `https://dev.areebgpt.arm.areeb.me/api/v1/user/permissions/{email}`
+
+**Response Format:**
+```json
+{
+  "email": "user@example.com",
+  "permissions": [
+    { "provider": "openAI", "models": ["gpt-4o", "gpt-3.5-turbo"] },
+    { "provider": "google", "models": ["gemini-2.0-flash-001"] }
+  ]
+}
+```
+
+---
+
+## How It Works
+
+1. **Visual Filtering** (`FilteredEndpoints.tsx`)
+   - Shows only allowed endpoints/models in dropdown
+   - Non-blocking (selected items always visible)
+
+2. **Functional Blocking** (`useRequiresPermission.ts` + `ChatForm.tsx`)
+   - Blocks chat input when no permission
+   - Blocks when API fails
+
+3. **Error Handling** (`ModelSelectorContext.tsx`)
+   - Returns empty array when API fails
+   - Prevents showing incorrect data
