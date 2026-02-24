@@ -322,7 +322,7 @@ export class MCPConnection extends EventEmitter {
     timeout?: number,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
     const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
-    const effectiveTimeout = timeout ?? DEFAULT_TIMEOUT;
+    const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
     const agent = new Agent({
       bodyTimeout: effectiveTimeout,
       headersTimeout: effectiveTimeout,
@@ -434,7 +434,7 @@ export class MCPConnection extends EventEmitter {
            * SSE connections need longer timeouts for reliability.
            * The connect timeout is extended because proxies may delay initial response.
            */
-          const sseTimeout = this.timeout ?? SSE_CONNECT_TIMEOUT;
+          const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
           const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
           const sseAgent = new Agent({
             bodyTimeout: sseTimeout,
