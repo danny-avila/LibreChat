@@ -62,14 +62,23 @@ export function normalizeEndpointName(name = ''): string {
 }
 
 /**
- * Validates that a URL uses only safe protocols (http or https)
+ * Validates that a URL uses only safe protocols (http, https, or data:image/*)
  * @param url - The URL string to validate
  * @returns true if the URL is safe, false otherwise
  */
 export const isSafeImageUrl = (url: string): boolean => {
   try {
     const parsedUrl = new URL(url);
-    return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+    if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
+      return true;
+    }
+
+    if (parsedUrl.protocol !== 'data:') {
+      return false;
+    }
+
+    // Restrict data URLs to image payloads only.
+    return /^data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*(?:;base64)?,/i.test(url);
   } catch {
     return false;
   }

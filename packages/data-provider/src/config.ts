@@ -619,7 +619,7 @@ export const interfaceSchema = z
       .string()
       .url()
       .refine(isSafeImageUrl, {
-        message: 'loginImageUrl must be a valid HTTP or HTTPS URL',
+        message: 'loginImageUrl must be a valid HTTP, HTTPS, or data:image URL',
       })
       .optional(),
     loginText: z.string().optional(),
