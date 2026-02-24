@@ -6,7 +6,6 @@ export interface IConversation extends Document {
   title?: string;
   user?: string;
   messages?: Types.ObjectId[];
-  agentOptions?: unknown;
   // Fields provided by conversationPreset (adjust types as needed)
   endpoint?: string;
   endpointType?: string;
@@ -29,6 +28,7 @@ export interface IConversation extends Document {
   promptCache?: boolean;
   thinking?: boolean;
   thinkingBudget?: number;
+  effort?: string;
   system?: string;
   resendFiles?: boolean;
   imageDetail?: string;

@@ -166,6 +166,7 @@ export type AgentModelParameters = {
   top_p: AgentParameterValue;
   frequency_penalty: AgentParameterValue;
   presence_penalty: AgentParameterValue;
+  useResponsesApi?: boolean;
 };
 
 export interface AgentBaseResource {
@@ -205,6 +206,38 @@ export type SupportContact = {
   email?: string;
 };
 
+/**
+ * Specifies who can invoke a tool.
+ * - 'direct': LLM can call directly
+ * - 'code_execution': Only callable via programmatic tool calling (PTC)
+ */
+export type AllowedCaller = 'direct' | 'code_execution';
+
+/**
+ * Per-tool configuration options stored at the agent level.
+ * Keyed by tool_id (e.g., "search_mcp_github").
+ */
+export type ToolOptions = {
+  /**
+   * If true, the tool uses deferred loading (discoverable via tool search).
+   * @default false
+   */
+  defer_loading?: boolean;
+  /**
+   * Specifies who can invoke this tool.
+   * - 'direct': LLM can call directly (default behavior)
+   * - 'code_execution': Only callable via PTC sandbox
+   * @default ['direct']
+   */
+  allowed_callers?: AllowedCaller[];
+};
+
+/**
+ * Map of tool_id to its configuration options.
+ * Used to customize tool behavior per agent.
+ */
+export type AgentToolOptions = Record<string, ToolOptions>;
+
 export type Agent = {
   _id?: string;
   id: string;
@@ -216,7 +249,7 @@ export type Agent = {
   description: string | null;
   created_at: number;
   avatar: AgentAvatar | null;
-  instructions: string | null;
+  instructions?: string | null;
   additional_instructions?: string | null;
   tools?: string[];
   projectIds?: string[];
@@ -240,6 +273,8 @@ export type Agent = {
   version?: number;
   category?: string;
   support_contact?: SupportContact;
+  /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
+  tool_options?: AgentToolOptions;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -264,6 +299,7 @@ export type AgentCreateParams = {
   | 'recursion_limit'
   | 'category'
   | 'support_contact'
+  | 'tool_options'
 >;
 
 export type AgentUpdateParams = {
@@ -290,6 +326,7 @@ export type AgentUpdateParams = {
   | 'recursion_limit'
   | 'category'
   | 'support_contact'
+  | 'tool_options'
 >;
 
 export type AgentListParams = {
@@ -466,7 +503,16 @@ export type PartMetadata = {
   action?: boolean;
   auth?: string;
   expires_at?: number;
+  /** Index indicating parallel sibling content (same stepIndex in multi-agent runs) */
+  siblingIndex?: number;
+  /** Agent ID for parallel agent rendering - identifies which agent produced this content */
+  agentId?: string;
+  /** Group ID for parallel content - parts with same groupId are displayed in columns */
+  groupId?: number;
 };
+
+/** Metadata for parallel content rendering - subset of PartMetadata */
+export type ContentMetadata = Pick<PartMetadata, 'agentId' | 'groupId'>;
 
 export type ContentPart = (
   | CodeToolCall
@@ -482,18 +528,18 @@ export type ContentPart = (
 export type TextData = (Text & PartMetadata) | undefined;
 
 export type TMessageContentParts =
-  | {
+  | ({
       type: ContentTypes.ERROR;
       text?: string | TextData;
       error?: string;
-    }
-  | { type: ContentTypes.THINK; think?: string | TextData }
-  | {
+    } & ContentMetadata)
+  | ({ type: ContentTypes.THINK; think?: string | TextData } & ContentMetadata)
+  | ({
       type: ContentTypes.TEXT;
       text?: string | TextData;
       tool_call_ids?: string[];
-    }
-  | {
+    } & ContentMetadata)
+  | ({
       type: ContentTypes.TOOL_CALL;
       tool_call: (
         | CodeToolCall
@@ -503,10 +549,12 @@ export type TMessageContentParts =
         | Agents.AgentToolCall
       ) &
         PartMetadata;
-    }
-  | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata }
-  | Agents.AgentUpdate
-  | Agents.MessageContentImageUrl;
+    } & ContentMetadata)
+  | ({ type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata } & ContentMetadata)
+  | (Agents.AgentUpdate & ContentMetadata)
+  | (Agents.MessageContentImageUrl & ContentMetadata)
+  | (Agents.MessageContentVideoUrl & ContentMetadata)
+  | (Agents.MessageContentInputAudio & ContentMetadata);
 
 export type StreamContentData = TMessageContentParts & {
   /** The index of the current content part */

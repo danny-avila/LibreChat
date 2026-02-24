@@ -5,6 +5,7 @@ const {
   markPublicPromptGroups,
   buildPromptGroupFilter,
   formatPromptGroupsResponse,
+  safeValidatePromptGroupUpdate,
   createEmptyPromptGroupsResponse,
   filterAccessibleIdsBySharedLogic,
 } = require('@librechat/api');
@@ -59,7 +60,7 @@ const checkGlobalPromptShare = generateCheckAccess({
   permissionType: PermissionTypes.PROMPTS,
   permissions: [Permissions.USE, Permissions.CREATE],
   bodyProps: {
-    [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
+    [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
   },
   getRoleByName,
 });
@@ -344,7 +345,16 @@ const patchPromptGroup = async (req, res) => {
     if (req.user.role === SystemRoles.ADMIN) {
       delete filter.author;
     }
-    const promptGroup = await updatePromptGroup(filter, req.body);
+
+    const validationResult = safeValidatePromptGroupUpdate(req.body);
+    if (!validationResult.success) {
+      return res.status(400).send({
+        error: 'Invalid request body',
+        details: validationResult.error.errors,
+      });
+    }
+
+    const promptGroup = await updatePromptGroup(filter, validationResult.data);
     res.status(200).send(promptGroup);
   } catch (error) {
     logger.error(error);

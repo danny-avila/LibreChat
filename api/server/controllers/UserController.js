@@ -3,16 +3,17 @@ const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-pro
 const {
   MCPOAuthHandler,
   MCPTokenStorage,
-  mcpServersRegistry,
   normalizeHttpError,
   extractWebSearchEnvVars,
 } = require('@librechat/api');
 const {
   deleteAllUserSessions,
   deleteAllSharedLinks,
+  updateUserPlugins,
   deleteUserById,
   deleteMessages,
   deletePresets,
+  deleteUserKey,
   deleteConvos,
   deleteFiles,
   updateUser,
@@ -21,6 +22,7 @@ const {
 } = require('~/models');
 const {
   ConversationTag,
+  AgentApiKey,
   Transaction,
   MemoryEntry,
   Assistant,
@@ -32,11 +34,11 @@ const {
   User,
 } = require('~/db/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
-const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
+const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
+const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
-const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { deleteUserPrompts } = require('~/models/Prompt');
@@ -115,13 +117,7 @@ const updateUserPluginsController = async (req, res) => {
   const { pluginKey, action, auth, isEntityTool } = req.body;
   try {
     if (!isEntityTool) {
-      const userPluginsService = await updateUserPluginsService(user, pluginKey, action);
-
-      if (userPluginsService instanceof Error) {
-        logger.error('[userPluginsService]', userPluginsService);
-        const { status, message } = normalizeHttpError(userPluginsService);
-        return res.status(status).send({ message });
-      }
+      await updateUserPlugins(user._id, user.plugins, pluginKey, action);
     }
 
     if (auth == null) {
@@ -220,6 +216,7 @@ const updateUserPluginsController = async (req, res) => {
               `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
             );
             await mcpManager.disconnectUserConnection(user.id, serverName);
+            await invalidateCachedTools({ userId: user.id, serverName });
           }
         } catch (disconnectError) {
           logger.error(
@@ -262,6 +259,7 @@ const deleteUserController = async (req, res) => {
     await deleteFiles(null, user.id); // delete database files in case of orphaned files from previous steps
     await deleteToolCalls(user.id); // delete user tool calls
     await deleteUserAgents(user.id); // delete user agents
+    await AgentApiKey.deleteMany({ user: user._id }); // delete user agent API keys
     await Assistant.deleteMany({ user: user.id }); // delete user assistants
     await ConversationTag.deleteMany({ user: user.id }); // delete user conversation tags
     await MemoryEntry.deleteMany({ userId: user.id }); // delete user memory entries
@@ -321,9 +319,9 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
   const serverConfig =
-    (await mcpServersRegistry.getServerConfig(serverName, userId)) ??
+    (await getMCPServersRegistry().getServerConfig(serverName, userId)) ??
     appConfig?.mcpServers?.[serverName];
-  const oauthServers = await mcpServersRegistry.getOAuthServers();
+  const oauthServers = await getMCPServersRegistry().getOAuthServers(userId);
   if (!oauthServers.has(serverName)) {
     // this server does not use OAuth, so nothing to do here as well
     return;

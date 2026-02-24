@@ -23,7 +23,7 @@ function PanelNavigation({
 
   return (
     <div className="flex items-center justify-between">
-      <div className="flex gap-2">
+      <div className="flex gap-2 pl-1">
         {!isChatRoute && <ThemeSelector returnThemeOnly={true} />}
         {children}
       </div>

@@ -2,14 +2,26 @@ import { useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, Constants, dataService, getEndpointField } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  Constants,
+  dataService,
+  getEndpointField,
+  getDefaultParamsEndpoint,
+} from 'librechat-data-provider';
 import type {
   TEndpointsConfig,
   TStartupConfig,
   TModelsConfig,
   TConversation,
 } from 'librechat-data-provider';
-import { getDefaultEndpoint, clearMessagesCache, buildDefaultConvo, logger } from '~/utils';
+import {
+  clearModelForNonEphemeralAgent,
+  getDefaultEndpoint,
+  clearMessagesCache,
+  buildDefaultConvo,
+  logger,
+} from '~/utils';
 import { useApplyModelSpecEffects } from '~/hooks/Agents';
 import store from '~/store';
 
@@ -49,7 +61,10 @@ const useNavigateToConvo = (index = 0) => {
         dataService.getConversationById(conversationId),
       );
       logger.log('conversation', 'Fetched fresh conversation data', data);
-      setConversation(data);
+
+      const convoData = { ...data };
+      clearModelForNonEphemeralAgent(convoData);
+      setConversation(convoData);
       navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
     } catch (error) {
       console.error('Error fetching conversation data on navigation', error);
@@ -97,11 +112,13 @@ const useNavigateToConvo = (index = 0) => {
 
       const models = modelsConfig?.[defaultEndpoint ?? ''] ?? [];
 
+      const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, defaultEndpoint);
       convo = buildDefaultConvo({
         models,
         conversation,
         endpoint: defaultEndpoint,
         lastConversationSetup: conversation,
+        defaultParamsEndpoint,
       });
     }
     clearAllConversations(true);

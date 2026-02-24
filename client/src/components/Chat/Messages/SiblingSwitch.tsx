@@ -24,7 +24,7 @@ export default function SiblingSwitch({
   };
 
   const buttonStyle = cn(
-    'hover-button rounded-lg p-1.5 text-text-secondary-alt transition-colors duration-200',
+    'hover-button rounded-lg p-1.5 text-text-secondary-alt',
     'hover:text-text-primary hover:bg-surface-hover',
     'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
     'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',

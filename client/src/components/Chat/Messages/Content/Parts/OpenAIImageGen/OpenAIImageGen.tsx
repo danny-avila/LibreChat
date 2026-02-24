@@ -145,8 +145,7 @@ export default function OpenAIImageGen({
         clearInterval(intervalRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialProgress, quality]);
+  }, [isSubmitting, initialProgress, quality]);
 
   useEffect(() => {
     if (initialProgress >= 1 || cancelled) {

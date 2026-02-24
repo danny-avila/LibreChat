@@ -1,8 +1,45 @@
 import { Dispatcher, ProxyAgent } from 'undici';
+import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
-import { anthropicSettings, removeNullishValues } from 'librechat-data-provider';
-import type { AnthropicLLMConfigResult, AnthropicConfigOptions } from '~/types/anthropic';
-import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from './helpers';
+import { anthropicSettings, removeNullishValues, AuthKeys } from 'librechat-data-provider';
+import type {
+  AnthropicLLMConfigResult,
+  AnthropicConfigOptions,
+  AnthropicCredentials,
+} from '~/types/anthropic';
+import {
+  supportsAdaptiveThinking,
+  checkPromptCacheSupport,
+  configureReasoning,
+  getClaudeHeaders,
+} from './helpers';
+import {
+  createAnthropicVertexClient,
+  isAnthropicVertexCredentials,
+  getVertexDeploymentName,
+} from './vertex';
+
+/**
+ * Parses credentials from string or object format
+ * - If a valid JSON string is passed, it parses and returns the object
+ * - If a plain API key string is passed, it wraps it in an AnthropicCredentials object
+ * - If an object is passed, it returns it directly
+ * - If undefined, returns an empty object
+ */
+function parseCredentials(
+  credentials: string | AnthropicCredentials | undefined,
+): AnthropicCredentials {
+  if (typeof credentials === 'string') {
+    try {
+      return JSON.parse(credentials);
+    } catch {
+      // If not valid JSON, treat as a plain API key
+      logger.debug('[Anthropic] Credentials not JSON, treating as API key');
+      return { [AuthKeys.ANTHROPIC_API_KEY]: credentials };
+    }
+  }
+  return credentials && typeof credentials === 'object' ? credentials : {};
+}
 
 /** Known Anthropic parameters that map directly to the client config */
 export const knownAnthropicParams = new Set([
@@ -38,28 +75,27 @@ function applyDefaultParams(target: Record<string, unknown>, defaults: Record<st
 
 /**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
- * @param apiKey - The API key for authentication with Anthropic.
+ * @param credentials - The API key for authentication with Anthropic, or credentials object for Vertex AI.
  * @param options={} - Additional options for configuring the LLM.
  * @returns Configuration options for creating an Anthropic LLM instance, with null and undefined values removed.
  */
 function getLLMConfig(
-  apiKey?: string,
-  options: AnthropicConfigOptions = {} as AnthropicConfigOptions,
+  credentials: string | AnthropicCredentials | undefined,
+  options: AnthropicConfigOptions = {},
 ): AnthropicLLMConfigResult {
   const systemOptions = {
     thinking: options.modelOptions?.thinking ?? anthropicSettings.thinking.default,
     promptCache: options.modelOptions?.promptCache ?? anthropicSettings.promptCache.default,
     thinkingBudget:
       options.modelOptions?.thinkingBudget ?? anthropicSettings.thinkingBudget.default,
+    effort: options.modelOptions?.effort ?? anthropicSettings.effort.default,
   };
 
-  /** Couldn't figure out a way to still loop through the object while deleting the overlapping keys when porting this
-   * over from javascript, so for now they are being deleted manually until a better way presents itself.
-   */
   if (options.modelOptions) {
     delete options.modelOptions.thinking;
     delete options.modelOptions.promptCache;
     delete options.modelOptions.thinkingBudget;
+    delete options.modelOptions.effort;
   } else {
     throw new Error('No modelOptions provided');
   }
@@ -74,7 +110,6 @@ function getLLMConfig(
   let enableWebSearch = mergedOptions.web_search;
 
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
-    apiKey,
     model: mergedOptions.model,
     stream: mergedOptions.stream,
     temperature: mergedOptions.temperature,
@@ -89,18 +124,70 @@ function getLLMConfig(
     },
   };
 
+  const creds = parseCredentials(credentials);
+  const apiKey = creds[AuthKeys.ANTHROPIC_API_KEY] ?? null;
+
+  if (isAnthropicVertexCredentials(creds)) {
+    // Vertex AI configuration - use custom client with optional YAML config
+    // Map the visible model name to the actual deployment name for Vertex AI
+    const deploymentName = getVertexDeploymentName(
+      requestOptions.model ?? '',
+      options.vertexConfig,
+    );
+    requestOptions.model = deploymentName;
+
+    requestOptions.createClient = () =>
+      createAnthropicVertexClient(creds, requestOptions.clientOptions, options.vertexOptions);
+  } else if (apiKey) {
+    // Direct API configuration
+    requestOptions.apiKey = apiKey;
+  } else {
+    throw new Error(
+      'Invalid credentials provided. Please provide either a valid Anthropic API key or service account credentials for Vertex AI.',
+    );
+  }
+
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
-  if (!/claude-3[-.]7/.test(mergedOptions.model)) {
-    requestOptions.topP = mergedOptions.topP;
-    requestOptions.topK = mergedOptions.topK;
-  } else if (requestOptions.thinking == null) {
+  if (supportsAdaptiveThinking(mergedOptions.model)) {
+    if (
+      systemOptions.effort &&
+      (systemOptions.effort as string) !== '' &&
+      !requestOptions.invocationKwargs?.output_config
+    ) {
+      requestOptions.invocationKwargs = {
+        ...requestOptions.invocationKwargs,
+        output_config: { effort: systemOptions.effort },
+      };
+    }
+  } else {
+    if (
+      requestOptions.thinking != null &&
+      (requestOptions.thinking as unknown as { type: string }).type === 'adaptive'
+    ) {
+      delete requestOptions.thinking;
+    }
+    if (requestOptions.invocationKwargs?.output_config) {
+      delete requestOptions.invocationKwargs.output_config;
+    }
+  }
+
+  const hasActiveThinking = requestOptions.thinking != null;
+  const isThinkingModel =
+    /claude-3[-.]7/.test(mergedOptions.model) || supportsAdaptiveThinking(mergedOptions.model);
+  if (!isThinkingModel || !hasActiveThinking) {
     requestOptions.topP = mergedOptions.topP;
     requestOptions.topK = mergedOptions.topK;
   }
 
   const supportsCacheControl =
     systemOptions.promptCache === true && checkPromptCacheSupport(requestOptions.model ?? '');
+
+  /** Pass promptCache boolean for downstream cache_control application */
+  if (supportsCacheControl) {
+    (requestOptions as Record<string, unknown>).promptCache = true;
+  }
+
   const headers = getClaudeHeaders(requestOptions.model ?? '', supportsCacheControl);
   if (headers && requestOptions.clientOptions) {
     requestOptions.clientOptions.defaultHeaders = headers;
@@ -180,6 +267,17 @@ function getLLMConfig(
       type: 'web_search_20250305',
       name: 'web_search',
     });
+
+    if (isAnthropicVertexCredentials(creds)) {
+      if (!requestOptions.clientOptions) {
+        requestOptions.clientOptions = {};
+      }
+
+      requestOptions.clientOptions.defaultHeaders = {
+        ...requestOptions.clientOptions.defaultHeaders,
+        'anthropic-beta': 'web-search-2025-03-05',
+      };
+    }
   }
 
   return {

@@ -1,25 +1,24 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
-import {
-  OGDialog,
-  OGDialogContent,
-  OGDialogHeader,
-  OGDialogTitle,
-  OGDialogFooter,
-  Dropdown,
-  useToastContext,
-  Button,
-  Label,
-  OGDialogTrigger,
-  Spinner,
-} from '@librechat/client';
 import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
 import {
-  useRevokeAllUserKeysMutation,
   useRevokeUserKeyMutation,
+  useRevokeAllUserKeysMutation,
 } from 'librechat-data-provider/react-query';
+import {
+  Label,
+  Button,
+  Spinner,
+  OGDialog,
+  Dropdown,
+  OGDialogTitle,
+  OGDialogHeader,
+  OGDialogFooter,
+  OGDialogContent,
+  useToastContext,
+  OGDialogTrigger,
+} from '@librechat/client';
 import type { TDialogProps } from '~/common';
-import { useGetEndpointsQuery } from '~/data-provider';
 import { useUserKey, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import CustomConfig from './CustomEndpoint';
@@ -34,7 +33,6 @@ const endpointComponents = {
   [EModelEndpoint.openAI]: OpenAIConfig,
   [EModelEndpoint.custom]: CustomConfig,
   [EModelEndpoint.azureOpenAI]: OpenAIConfig,
-  [EModelEndpoint.gptPlugins]: OpenAIConfig,
   [EModelEndpoint.assistants]: OpenAIConfig,
   [EModelEndpoint.azureAssistants]: OpenAIConfig,
   default: OtherConfig,
@@ -44,7 +42,6 @@ const formSet: Set<string> = new Set([
   EModelEndpoint.openAI,
   EModelEndpoint.custom,
   EModelEndpoint.azureOpenAI,
-  EModelEndpoint.gptPlugins,
   EModelEndpoint.assistants,
   EModelEndpoint.azureAssistants,
 ]);
@@ -174,7 +171,6 @@ const SetKeyDialog = ({
   });
 
   const [userKey, setUserKey] = useState('');
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const [expiresAtLabel, setExpiresAtLabel] = useState(EXPIRY.TWELVE_HOURS.label);
   const { getExpiry, saveUserKey } = useUserKey(endpoint);
   const { showToast } = useToastContext();
@@ -218,10 +214,7 @@ const SetKeyDialog = ({
       methods.handleSubmit((data) => {
         const isAzure = endpoint === EModelEndpoint.azureOpenAI;
         const isOpenAIBase =
-          isAzure ||
-          endpoint === EModelEndpoint.openAI ||
-          endpoint === EModelEndpoint.gptPlugins ||
-          isAssistantsEndpoint(endpoint);
+          isAzure || endpoint === EModelEndpoint.openAI || isAssistantsEndpoint(endpoint);
         if (isAzure) {
           data.apiKey = 'n/a';
         }
@@ -280,7 +273,6 @@ const SetKeyDialog = ({
   const EndpointComponent =
     endpointComponents[endpointType ?? endpoint] ?? endpointComponents['default'];
   const expiryTime = getExpiry();
-  const config = endpointsConfig?.[endpoint];
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
@@ -310,12 +302,8 @@ const SetKeyDialog = ({
           <FormProvider {...methods}>
             <EndpointComponent
               userKey={userKey}
+              endpoint={endpoint}
               setUserKey={setUserKey}
-              endpoint={
-                endpoint === EModelEndpoint.gptPlugins && (config?.azure ?? false)
-                  ? EModelEndpoint.azureOpenAI
-                  : endpoint
-              }
               userProvideURL={userProvideURL}
             />
           </FormProvider>

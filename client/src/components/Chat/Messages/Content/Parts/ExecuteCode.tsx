@@ -67,7 +67,7 @@ export default function ExecuteCode({
   const [contentHeight, setContentHeight] = useState<number | undefined>(0);
 
   const prevShowCodeRef = useRef<boolean>(showCode);
-  const { lang, code } = useParseArgs(args) ?? ({} as ParsedArgs);
+  const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
   const progress = useProgress(initialProgress);
 
   useEffect(() => {

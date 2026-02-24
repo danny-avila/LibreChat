@@ -1,9 +1,19 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
-const { logger } = require('@librechat/data-schemas');
-const { isEnabled, checkEmailConfig, isEmailDomainAllowed } = require('@librechat/api');
+const {
+  logger,
+  DEFAULT_SESSION_EXPIRY,
+  DEFAULT_REFRESH_TOKEN_EXPIRY,
+} = require('@librechat/data-schemas');
 const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
+const {
+  math,
+  isEnabled,
+  checkEmailConfig,
+  isEmailDomainAllowed,
+  shouldUseSecureCookie,
+} = require('@librechat/api');
 const {
   findUser,
   findToken,
@@ -29,7 +39,6 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
-const isProduction = process.env.NODE_ENV === 'production';
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 
 /**
@@ -369,30 +378,32 @@ const setAuthTokens = async (userId, res, _session = null) => {
     let session = _session;
     let refreshToken;
     let refreshTokenExpires;
+    const expiresIn = math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY);
 
     if (session && session._id && session.expiration != null) {
       refreshTokenExpires = session.expiration.getTime();
       refreshToken = await generateRefreshToken(session);
     } else {
-      const result = await createSession(userId);
+      const result = await createSession(userId, { expiresIn });
       session = result.session;
       refreshToken = result.refreshToken;
       refreshTokenExpires = session.expiration.getTime();
     }
 
     const user = await getUserById(userId);
-    const token = await generateToken(user);
+    const sessionExpiry = math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
+    const token = await generateToken(user, sessionExpiry);
 
     res.cookie('refreshToken', refreshToken, {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
-      secure: isProduction,
+      secure: shouldUseSecureCookie(),
       sameSite: 'strict',
     });
     res.cookie('token_provider', 'librechat', {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
-      secure: isProduction,
+      secure: shouldUseSecureCookie(),
       sameSite: 'strict',
     });
     return token;
@@ -405,23 +416,26 @@ const setAuthTokens = async (userId, res, _session = null) => {
 /**
  * @function setOpenIDAuthTokens
  * Set OpenID Authentication Tokens
- * //type tokenset from openid-client
+ * Stores tokens server-side in express-session to avoid large cookie sizes
+ * that can exceed HTTP/2 header limits (especially for users with many group memberships).
+ *
  * @param {import('openid-client').TokenEndpointResponse & import('openid-client').TokenEndpointResponseHelpers} tokenset
  * - The tokenset object containing access and refresh tokens
+ * @param {Object} req - request object (for session access)
  * @param {Object} res - response object
  * @param {string} [userId] - Optional MongoDB user ID for image path validation
- * @returns {String} - access token
+ * @returns {String} - id_token (preferred) or access_token as the app auth token
  */
-const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
+const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) => {
   try {
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;
     }
-    const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-    const expiryInMilliseconds = REFRESH_TOKEN_EXPIRY
-      ? eval(REFRESH_TOKEN_EXPIRY)
-      : 1000 * 60 * 60 * 24 * 7; // 7 days default
+    const expiryInMilliseconds = math(
+      process.env.REFRESH_TOKEN_EXPIRY,
+      DEFAULT_REFRESH_TOKEN_EXPIRY,
+    );
     const expirationDate = new Date(Date.now() + expiryInMilliseconds);
     if (tokenset == null) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
@@ -439,22 +453,62 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
       return;
     }
 
+    /**
+     * Use id_token as the app authentication token (Bearer token for JWKS validation).
+     * The id_token is always a standard JWT signed by the IdP's JWKS keys with the app's
+     * client_id as audience. The access_token may be opaque or intended for a different
+     * audience (e.g., Microsoft Graph API), which fails JWKS validation.
+     * Falls back to access_token for providers where id_token is not available.
+     */
+    const appAuthToken = tokenset.id_token || tokenset.access_token;
+
+    /**
+     * Always set refresh token cookie so it survives express session expiry.
+     * The session cookie maxAge (SESSION_EXPIRY, default 15 min) is typically shorter
+     * than the OIDC token lifetime (~1 hour). Without this cookie fallback, the refresh
+     * token stored only in the session is lost when the session expires, causing the user
+     * to be signed out on the next token refresh attempt.
+     * The refresh token is small (opaque string) so it doesn't hit the HTTP/2 header
+     * size limits that motivated session storage for the larger access_token/id_token.
+     */
     res.cookie('refreshToken', refreshToken, {
       expires: expirationDate,
       httpOnly: true,
-      secure: isProduction,
+      secure: shouldUseSecureCookie(),
       sameSite: 'strict',
     });
-    res.cookie('openid_access_token', tokenset.access_token, {
-      expires: expirationDate,
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-    });
+
+    /** Store tokens server-side in session to avoid large cookies */
+    if (req.session) {
+      req.session.openidTokens = {
+        accessToken: tokenset.access_token,
+        idToken: tokenset.id_token,
+        refreshToken: refreshToken,
+        expiresAt: expirationDate.getTime(),
+      };
+    } else {
+      logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');
+      res.cookie('openid_access_token', tokenset.access_token, {
+        expires: expirationDate,
+        httpOnly: true,
+        secure: shouldUseSecureCookie(),
+        sameSite: 'strict',
+      });
+      if (tokenset.id_token) {
+        res.cookie('openid_id_token', tokenset.id_token, {
+          expires: expirationDate,
+          httpOnly: true,
+          secure: shouldUseSecureCookie(),
+          sameSite: 'strict',
+        });
+      }
+    }
+
+    /** Small cookie to indicate token provider (required for auth middleware) */
     res.cookie('token_provider', 'openid', {
       expires: expirationDate,
       httpOnly: true,
-      secure: isProduction,
+      secure: shouldUseSecureCookie(),
       sameSite: 'strict',
     });
     if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
@@ -465,11 +519,11 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
       res.cookie('openid_user_id', signedUserId, {
         expires: expirationDate,
         httpOnly: true,
-        secure: isProduction,
+        secure: shouldUseSecureCookie(),
         sameSite: 'strict',
       });
     }
-    return tokenset.access_token;
+    return appAuthToken;
   } catch (error) {
     logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);
     throw error;

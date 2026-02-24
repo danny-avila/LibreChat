@@ -22,19 +22,23 @@ import translationJa from './ja/translation.json';
 import translationKa from './ka/translation.json';
 import translationSv from './sv/translation.json';
 import translationKo from './ko/translation.json';
+import translationLt from './lt/translation.json';
 import translationLv from './lv/translation.json';
 import translationTh from './th/translation.json';
 import translationTr from './tr/translation.json';
 import translationUg from './ug/translation.json';
 import translationVi from './vi/translation.json';
 import translationNl from './nl/translation.json';
+import translationNn from './nn/translation.json';
 import translationId from './id/translation.json';
+import translationIs from './is/translation.json';
 import translationHe from './he/translation.json';
 import translationHu from './hu/translation.json';
 import translationHy from './hy/translation.json';
 import translationFi from './fi/translation.json';
 import translationZh_Hans from './zh-Hans/translation.json';
 import translationZh_Hant from './zh-Hant/translation.json';
+import translationSk from './sk/translation.json';
 import translationBo from './bo/translation.json';
 import translationUk from './uk/translation.json';
 import translationBs from './bs/translation.json';
@@ -67,17 +71,21 @@ export const resources = {
   ka: { translation: translationKa },
   sv: { translation: translationSv },
   ko: { translation: translationKo },
+  lt: { translation: translationLt },
   lv: { translation: translationLv },
   th: { translation: translationTh },
   tr: { translation: translationTr },
   ug: { translation: translationUg },
   vi: { translation: translationVi },
   nl: { translation: translationNl },
+  nn: { translation: translationNn },
   id: { translation: translationId },
+  is: { translation: translationIs },
   he: { translation: translationHe },
   hu: { translation: translationHu },
   hy: { translation: translationHy },
   fi: { translation: translationFi },
+  sk: { translation: translationSk },
   bo: { translation: translationBo },
   sl: { translation: translationSl },
   uk: { translation: translationUk },

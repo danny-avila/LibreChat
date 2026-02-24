@@ -21,6 +21,7 @@ import { ShareArtifactsContainer } from './ShareArtifacts';
 import { useLocalize, useDocumentTitle } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import { ShareContext } from '~/Providers';
+import { ShareMessagesProvider } from './ShareMessagesProvider';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
 import { cn } from '~/utils';
@@ -108,7 +109,9 @@ function SharedView() {
           onLangChange={handleLangChange}
           settingsLabel={localize('com_nav_settings')}
         />
-        <MessagesView messagesTree={messagesTree} conversationId={data.conversationId} />
+        <ShareMessagesProvider messages={data.messages}>
+          <MessagesView messagesTree={messagesTree} conversationId="shared-conversation" />
+        </ShareMessagesProvider>
       </>
     );
   } else {
@@ -127,7 +130,7 @@ function SharedView() {
 
   const mainContent = (
     <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden pt-0 dark:bg-surface-secondary">
-      <div className="flex h-full flex-col text-text-primary" role="presentation">
+      <div className="flex h-full min-h-0 flex-col text-text-primary" role="presentation">
         {content}
         {footer}
       </div>
@@ -147,7 +150,7 @@ function SharedView() {
 
   return (
     <ShareContext.Provider value={{ isSharedConvo: true }}>
-      <div className="relative flex min-h-screen w-full dark:bg-surface-secondary">
+      <div className="relative flex h-screen w-full overflow-hidden dark:bg-surface-secondary">
         <main className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary">
           {artifactsContainer}
         </main>
@@ -227,9 +230,13 @@ function ShareHeader({
                 <OGDialogTitle>{settingsLabel}</OGDialogTitle>
               </OGDialogHeader>
               <div className="flex flex-col gap-4 pt-2 text-sm">
-                <ThemeSelector theme={theme} onChange={onThemeChange} />
+                <div className="relative focus-within:z-[100]">
+                  <ThemeSelector theme={theme} onChange={onThemeChange} portal={false} />
+                </div>
                 <div className="bg-border-medium/60 h-px w-full" />
-                <LangSelector langcode={langcode} onChange={onLangChange} portal={false} />
+                <div className="relative focus-within:z-[100]">
+                  <LangSelector langcode={langcode} onChange={onLangChange} portal={false} />
+                </div>
               </div>
             </OGDialogContent>
           </OGDialog>

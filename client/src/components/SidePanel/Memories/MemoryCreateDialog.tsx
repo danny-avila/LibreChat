@@ -112,7 +112,7 @@ export default function MemoryCreateDialog({
         main={
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="memory-key" className="text-sm font-medium">
+              <Label htmlFor="memory-key" className="text-sm font-medium text-text-primary">
                 {localize('com_ui_key')}
               </Label>
               <Input
@@ -123,9 +123,10 @@ export default function MemoryCreateDialog({
                 placeholder={localize('com_ui_enter_key')}
                 className="w-full"
               />
+              <p className="text-xs text-text-secondary">{localize('com_ui_memory_key_hint')}</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="memory-value" className="text-sm font-medium">
+              <Label htmlFor="memory-value" className="text-sm font-medium text-text-primary">
                 {localize('com_ui_value')}
               </Label>
               <textarea
@@ -134,8 +135,8 @@ export default function MemoryCreateDialog({
                 onChange={(e) => setValue(e.target.value)}
                 onKeyDown={handleKeyPress}
                 placeholder={localize('com_ui_enter_value')}
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                rows={3}
+                className="min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy"
+                rows={4}
               />
             </div>
           </div>

@@ -1,10 +1,9 @@
-const { isUserProvided } = require('@librechat/api');
+const { isUserProvided, fetchModels } = require('@librechat/api');
 const {
   EModelEndpoint,
   extractEnvVariable,
   normalizeEndpointName,
 } = require('librechat-data-provider');
-const { fetchModels } = require('~/server/services/ModelService');
 const { getAppConfig } = require('./app');
 
 /**
@@ -25,12 +24,13 @@ async function loadConfigModels(req) {
     modelsConfig[EModelEndpoint.azureOpenAI] = modelNames;
   }
 
-  if (modelNames && azureConfig && azureConfig.plugins) {
-    modelsConfig[EModelEndpoint.gptPlugins] = modelNames;
-  }
-
   if (azureConfig?.assistants && azureConfig.assistantModels) {
     modelsConfig[EModelEndpoint.azureAssistants] = azureConfig.assistantModels;
+  }
+
+  const bedrockConfig = appConfig.endpoints?.[EModelEndpoint.bedrock];
+  if (bedrockConfig?.models && Array.isArray(bedrockConfig.models)) {
+    modelsConfig[EModelEndpoint.bedrock] = bedrockConfig.models;
   }
 
   if (!Array.isArray(appConfig.endpoints?.[EModelEndpoint.custom])) {

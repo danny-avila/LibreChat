@@ -66,32 +66,81 @@ async function checkProtectedResourceMetadata(
   }
 }
 
-// Checks for OAuth using 401 challenge with resource metadata URL
+/**
+ * Checks for OAuth using 401 challenge with resource metadata URL or Bearer token.
+ * Tries HEAD first, then falls back to POST if HEAD doesn't return 401.
+ * Some servers (like StackOverflow) only return 401 for POST requests.
+ */
 async function check401ChallengeMetadata(serverUrl: string): Promise<OAuthDetectionResult | null> {
+  // Try HEAD first (lighter weight)
+  const headResult = await check401WithMethod(serverUrl, 'HEAD');
+  if (headResult) return headResult;
+
+  // Fall back to POST if HEAD didn't return 401 (some servers don't support HEAD)
+  const postResult = await check401WithMethod(serverUrl, 'POST');
+  if (postResult) return postResult;
+
+  return null;
+}
+
+async function check401WithMethod(
+  serverUrl: string,
+  method: 'HEAD' | 'POST',
+): Promise<OAuthDetectionResult | null> {
   try {
-    const response = await fetch(serverUrl, {
-      method: 'HEAD',
+    const fetchOptions: RequestInit = {
+      method,
       signal: AbortSignal.timeout(mcpConfig.OAUTH_DETECTION_TIMEOUT),
-    });
+    };
+
+    // POST requests need headers and body for MCP servers
+    if (method === 'POST') {
+      fetchOptions.headers = { 'Content-Type': 'application/json' };
+      fetchOptions.body = JSON.stringify({});
+    }
+
+    const response = await fetch(serverUrl, fetchOptions);
 
     if (response.status !== 401) return null;
 
     const wwwAuth = response.headers.get('www-authenticate');
     const metadataUrl = wwwAuth?.match(/resource_metadata="([^"]+)"/)?.[1];
-    if (!metadataUrl) return null;
 
-    const metadataResponse = await fetch(metadataUrl, {
-      signal: AbortSignal.timeout(mcpConfig.OAUTH_DETECTION_TIMEOUT),
-    });
-    const metadata = await metadataResponse.json();
+    if (metadataUrl) {
+      try {
+        // Try to fetch resource metadata from the provided URL
+        const metadataResponse = await fetch(metadataUrl, {
+          signal: AbortSignal.timeout(mcpConfig.OAUTH_DETECTION_TIMEOUT),
+        });
+        const metadata = await metadataResponse.json();
 
-    if (!metadata?.authorization_servers?.length) return null;
+        if (metadata?.authorization_servers?.length) {
+          return {
+            requiresOAuth: true,
+            method: '401-challenge-metadata',
+            metadata,
+          };
+        }
+      } catch {
+        // Metadata fetch failed, continue to Bearer check below
+      }
+    }
 
-    return {
-      requiresOAuth: true,
-      method: '401-challenge-metadata',
-      metadata,
-    };
+    /**
+     * If we got a 401 with WWW-Authenticate containing "Bearer" (case-insensitive),
+     * the server requires OAuth authentication even without discovery metadata.
+     * This handles "legacy" OAuth servers (like StackOverflow's MCP) that use standard
+     * OAuth endpoints (/authorize, /token, /register) without .well-known metadata.
+     */
+    if (wwwAuth && /bearer/i.test(wwwAuth)) {
+      return {
+        requiresOAuth: true,
+        method: '401-challenge-metadata',
+        metadata: null,
+      };
+    }
+
+    return null;
   } catch {
     return null;
   }

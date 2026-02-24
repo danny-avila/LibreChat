@@ -36,12 +36,18 @@ describe('RegistryStatusCache Integration Tests', () => {
 
   afterEach(async () => {
     // Clean up: clear all test keys from Redis
-    if (keyvRedisClient) {
+    if (keyvRedisClient && 'scanIterator' in keyvRedisClient) {
       const pattern = '*RegistryStatusCache-IntegrationTest*';
-      if ('scanIterator' in keyvRedisClient) {
-        for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
-          await keyvRedisClient.del(key);
-        }
+      const keysToDelete: string[] = [];
+
+      // Collect all keys first
+      for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
+        keysToDelete.push(key);
+      }
+
+      // Delete in parallel for cluster mode efficiency
+      if (keysToDelete.length > 0) {
+        await Promise.all(keysToDelete.map((key) => keyvRedisClient!.del(key)));
       }
     }
   });

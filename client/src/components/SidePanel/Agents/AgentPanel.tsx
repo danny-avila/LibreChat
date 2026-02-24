@@ -1,7 +1,7 @@
-import { Plus } from 'lucide-react';
 import React, { useMemo, useCallback, useRef, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { Button, useToastContext } from '@librechat/client';
-import { useWatch, useForm, FormProvider, type FieldNamesMarkedBoolean } from 'react-hook-form';
+import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
@@ -11,8 +11,10 @@ import {
   PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { AgentForm, StringOption } from '~/common';
+import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { Agent } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks/useLocalize';
+import type { AgentForm, StringOption } from '~/common';
 import {
   useCreateAgentMutation,
   useUpdateAgentMutation,
@@ -36,8 +38,8 @@ import ModelPanel from './ModelPanel';
 function getUpdateToastMessage(
   noVersionChange: boolean,
   avatarActionState: AgentForm['avatar_action'],
-  name: string | undefined,
-  localize: (key: string, vars?: Record<string, unknown> | Array<string | number>) => string,
+  name: string | null | undefined,
+  localize: (key: TranslationKeys, vars?: Record<string, unknown>) => string,
 ): string | null {
   // If only avatar upload is pending (separate endpoint), suppress the no-changes toast.
   if (noVersionChange && avatarActionState === 'upload') {
@@ -46,7 +48,7 @@ function getUpdateToastMessage(
   if (noVersionChange) {
     return localize('com_ui_no_changes');
   }
-  return `${localize('com_assistants_update_success')} ${name ?? localize('com_ui_agent')}`;
+  return localize('com_assistants_update_success_name', { name: name ?? localize('com_ui_agent') });
 }
 
 /**
@@ -72,6 +74,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     recursion_limit,
     category,
     support_contact,
+    tool_options,
     avatar_action: avatarActionState,
   } = data;
 
@@ -97,6 +100,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       recursion_limit,
       category,
       support_contact,
+      tool_options,
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,
@@ -217,7 +221,7 @@ export default function AgentPanel() {
 
   const { onSelect: onSelectAgent } = useSelectAgent();
 
-  const modelsQuery = useGetModelsQuery();
+  const modelsQuery = useGetModelsQuery({ refetchOnMount: 'always' });
   const basicAgentQuery = useGetAgentByIdQuery(current_agent_id);
 
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
@@ -306,9 +310,7 @@ export default function AgentPanel() {
           (key) =>
             !isAssistantsEndpoint(key) &&
             (allowedProviders.size > 0 ? allowedProviders.has(key) : true) &&
-            key !== EModelEndpoint.agents &&
-            key !== EModelEndpoint.chatGPTBrowser &&
-            key !== EModelEndpoint.gptPlugins,
+            key !== EModelEndpoint.agents,
         )
         .map((provider) => createProviderOption(provider)),
     [endpointsConfig, allowedProviders],
@@ -478,7 +480,7 @@ export default function AgentPanel() {
     <FormProvider {...methods}>
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 overflow-x-hidden"
+        className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 overflow-y-hidden overflow-x-visible"
         aria-label="Agent configuration form"
       >
         <div className="mx-1 mt-2 flex w-full flex-wrap gap-2">
@@ -504,20 +506,10 @@ export default function AgentPanel() {
                   setCurrentAgentId(undefined);
                 }}
                 disabled={agentQuery.isInitialLoading}
-                aria-label={
-                  localize('com_ui_create') +
-                  ' ' +
-                  localize('com_ui_new') +
-                  ' ' +
-                  localize('com_ui_agent')
-                }
+                aria-label={localize('com_ui_create_new_agent')}
               >
-                <Plus className="mr-1 h-4 w-4" />
-                {localize('com_ui_create') +
-                  ' ' +
-                  localize('com_ui_new') +
-                  ' ' +
-                  localize('com_ui_agent')}
+                <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+                {localize('com_ui_create_new_agent')}
               </Button>
               <Button
                 variant="submit"
@@ -526,7 +518,7 @@ export default function AgentPanel() {
                   e.preventDefault();
                   handleSelectAgent();
                 }}
-                aria-label={localize('com_ui_select') + ' ' + localize('com_ui_agent')}
+                aria-label={localize('com_ui_select_agent')}
               >
                 {localize('com_ui_select')}
               </Button>
@@ -557,7 +549,7 @@ export default function AgentPanel() {
           <AgentFooter
             createMutation={create}
             updateMutation={update}
-            isAvatarUploading={isAvatarUploadInFlight || uploadAvatarMutation.isPending}
+            isAvatarUploading={isAvatarUploadInFlight || uploadAvatarMutation.isLoading}
             activePanel={activePanel}
             setActivePanel={setActivePanel}
             setCurrentAgentId={setCurrentAgentId}

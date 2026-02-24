@@ -2,9 +2,11 @@ import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
+import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isEnabled } from '~/utils';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 
 /**
  * Inspects MCP servers to discover their metadata, capabilities, and tools.
@@ -16,6 +18,7 @@ export class MCPServerInspector {
     private readonly serverName: string,
     private readonly config: t.ParsedServerConfig,
     private connection: MCPConnection | undefined,
+    private readonly useSSRFProtection: boolean = false,
   ) {}
 
   /**
@@ -24,15 +27,25 @@ export class MCPServerInspector {
    * @param serverName - The name of the server (used for tool function naming)
    * @param rawConfig - The raw server configuration
    * @param connection - The MCP connection
+   * @param allowedDomains - Optional list of allowed domains for remote transports
    * @returns A fully processed and enriched configuration with server metadata
    */
   public static async inspect(
     serverName: string,
     rawConfig: t.MCPOptions,
     connection?: MCPConnection,
+    allowedDomains?: string[] | null,
   ): Promise<t.ParsedServerConfig> {
+    // Validate domain against allowlist BEFORE attempting connection
+    const isDomainAllowed = await isMCPDomainAllowed(rawConfig, allowedDomains);
+    if (!isDomainAllowed) {
+      const domain = extractMCPServerDomain(rawConfig);
+      throw new MCPDomainNotAllowedError(domain ?? 'unknown');
+    }
+
+    const useSSRFProtection = !Array.isArray(allowedDomains) || allowedDomains.length === 0;
     const start = Date.now();
-    const inspector = new MCPServerInspector(serverName, rawConfig, connection);
+    const inspector = new MCPServerInspector(serverName, rawConfig, connection, useSSRFProtection);
     await inspector.inspectServer();
     inspector.config.initDuration = Date.now() - start;
     return inspector.config;
@@ -48,6 +61,7 @@ export class MCPServerInspector {
         this.connection = await MCPConnectionFactory.create({
           serverName: this.serverName,
           serverConfig: this.config,
+          useSSRFProtection: this.useSSRFProtection,
         });
       }
 
@@ -64,6 +78,12 @@ export class MCPServerInspector {
   private async detectOAuth(): Promise<void> {
     if (this.config.requiresOAuth != null) return;
     if (this.config.url == null || this.config.startup === false) {
+      this.config.requiresOAuth = false;
+      return;
+    }
+
+    // Admin-provided API key means no OAuth flow is needed
+    if (this.config.apiKey?.source === 'admin') {
       this.config.requiresOAuth = false;
       return;
     }

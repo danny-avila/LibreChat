@@ -6,8 +6,10 @@ const {
   agentPermissionsSchema,
   promptPermissionsSchema,
   memoryPermissionsSchema,
+  mcpServersPermissionsSchema,
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
+  remoteAgentsPermissionsSchema,
 } = require('librechat-data-provider');
 const { checkAdmin, requireJwtAuth } = require('~/server/middleware');
 const { updateRoleByName, getRoleByName } = require('~/models/Role');
@@ -40,10 +42,20 @@ const permissionConfigs = {
     permissionType: PermissionTypes.PEOPLE_PICKER,
     errorMessage: 'Invalid people picker permissions.',
   },
+  'mcp-servers': {
+    schema: mcpServersPermissionsSchema,
+    permissionType: PermissionTypes.MCP_SERVERS,
+    errorMessage: 'Invalid MCP servers permissions.',
+  },
   marketplace: {
     schema: marketplacePermissionsSchema,
     permissionType: PermissionTypes.MARKETPLACE,
     errorMessage: 'Invalid marketplace permissions.',
+  },
+  'remote-agents': {
+    schema: remoteAgentsPermissionsSchema,
+    permissionType: PermissionTypes.REMOTE_AGENTS,
+    errorMessage: 'Invalid remote agents permissions.',
   },
 };
 
@@ -143,9 +155,21 @@ router.put('/:roleName/memories', checkAdmin, createPermissionUpdateHandler('mem
 router.put('/:roleName/people-picker', checkAdmin, createPermissionUpdateHandler('people-picker'));
 
 /**
+ * PUT /api/roles/:roleName/mcp-servers
+ * Update MCP servers permissions for a specific role
+ */
+router.put('/:roleName/mcp-servers', checkAdmin, createPermissionUpdateHandler('mcp-servers'));
+
+/**
  * PUT /api/roles/:roleName/marketplace
  * Update marketplace permissions for a specific role
  */
 router.put('/:roleName/marketplace', checkAdmin, createPermissionUpdateHandler('marketplace'));
+
+/**
+ * PUT /api/roles/:roleName/remote-agents
+ * Update remote agents (API) permissions for a specific role
+ */
+router.put('/:roleName/remote-agents', checkAdmin, createPermissionUpdateHandler('remote-agents'));
 
 module.exports = router;

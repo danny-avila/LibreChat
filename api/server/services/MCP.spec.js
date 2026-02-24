@@ -1,14 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
-const { MCPOAuthHandler } = require('@librechat/api');
-const { CacheKeys } = require('librechat-data-provider');
-const {
-  createMCPTool,
-  createMCPTools,
-  getMCPSetupData,
-  checkOAuthFlowStatus,
-  getServerConnectionStatus,
-} = require('./MCP');
-
+// Mock all dependencies - define mocks before imports
 // Mock all dependencies
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -19,69 +9,56 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-jest.mock('@langchain/core/tools', () => ({
-  tool: jest.fn((fn, config) => {
-    const toolInstance = { _call: fn, ...config };
-    return toolInstance;
-  }),
-}));
+// Create mock registry instance
+const mockRegistryInstance = {
+  getOAuthServers: jest.fn(() => Promise.resolve(new Set())),
+  getAllServerConfigs: jest.fn(() => Promise.resolve({})),
+  getServerConfig: jest.fn(() => Promise.resolve(null)),
+};
 
-jest.mock('@librechat/agents', () => ({
-  Providers: {
-    VERTEXAI: 'vertexai',
-    GOOGLE: 'google',
-  },
-  StepTypes: {
-    TOOL_CALLS: 'tool_calls',
-  },
-  GraphEvents: {
-    ON_RUN_STEP_DELTA: 'on_run_step_delta',
-    ON_RUN_STEP: 'on_run_step',
-  },
-  Constants: {
-    CONTENT_AND_ARTIFACT: 'content_and_artifact',
-  },
-}));
+// Create isMCPDomainAllowed mock that can be configured per-test
+const mockIsMCPDomainAllowed = jest.fn(() => Promise.resolve(true));
 
-jest.mock('@librechat/api', () => ({
-  MCPOAuthHandler: {
-    generateFlowId: jest.fn(),
-  },
-  sendEvent: jest.fn(),
-  normalizeServerName: jest.fn((name) => name),
-  convertWithResolvedRefs: jest.fn((params) => params),
-  mcpServersRegistry: {
-    getOAuthServers: jest.fn(() => Promise.resolve(new Set())),
-  },
-}));
+const mockGetAppConfig = jest.fn(() => Promise.resolve({}));
 
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: {
-    FLOWS: 'flows',
-  },
-  Constants: {
-    USE_PRELIM_RESPONSE_MESSAGE_ID: 'prelim_response_id',
-    mcp_delimiter: '::',
-    mcp_prefix: 'mcp_',
-  },
-  ContentTypes: {
-    TEXT: 'text',
-  },
-  isAssistantsEndpoint: jest.fn(() => false),
-  Time: {
-    TWO_MINUTES: 120000,
-  },
-}));
+jest.mock('@librechat/api', () => {
+  const actual = jest.requireActual('@librechat/api');
+  return {
+    ...actual,
+    sendEvent: jest.fn(),
+    get isMCPDomainAllowed() {
+      return mockIsMCPDomainAllowed;
+    },
+    GenerationJobManager: {
+      emitChunk: jest.fn(),
+    },
+  };
+});
+
+const { logger } = require('@librechat/data-schemas');
+const { MCPOAuthHandler } = require('@librechat/api');
+const { CacheKeys, Constants } = require('librechat-data-provider');
+const D = Constants.mcp_delimiter;
+const {
+  createMCPTool,
+  createMCPTools,
+  getMCPSetupData,
+  checkOAuthFlowStatus,
+  getServerConnectionStatus,
+} = require('./MCP');
 
 jest.mock('./Config', () => ({
   loadCustomConfig: jest.fn(),
-  getAppConfig: jest.fn(),
+  get getAppConfig() {
+    return mockGetAppConfig;
+  },
 }));
 
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(),
   getFlowStateManager: jest.fn(),
   getOAuthReconnectionManager: jest.fn(),
+  getMCPServersRegistry: jest.fn(() => mockRegistryInstance),
 }));
 
 jest.mock('~/cache', () => ({
@@ -98,66 +75,66 @@ jest.mock('./Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
 }));
 
+jest.mock('./GraphTokenService', () => ({
+  getGraphApiToken: jest.fn(),
+}));
+
 describe('tests for the new helper functions used by the MCP connection status endpoints', () => {
   let mockGetMCPManager;
   let mockGetFlowStateManager;
   let mockGetLogStores;
   let mockGetOAuthReconnectionManager;
-  let mockMcpServersRegistry;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(MCPOAuthHandler, 'generateFlowId');
 
     mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
     mockGetOAuthReconnectionManager = require('~/config').getOAuthReconnectionManager;
-    mockMcpServersRegistry = require('@librechat/api').mcpServersRegistry;
   });
 
   describe('getMCPSetupData', () => {
     const mockUserId = 'user-123';
     const mockConfig = {
-      mcpServers: {
-        server1: { type: 'stdio' },
-        server2: { type: 'http' },
-      },
+      server1: { type: 'stdio' },
+      server2: { type: 'http' },
     };
-    let mockGetAppConfig;
 
     beforeEach(() => {
-      mockGetAppConfig = require('./Config').getAppConfig;
       mockGetMCPManager.mockReturnValue({
-        appConnections: { getAll: jest.fn(() => new Map()) },
+        appConnections: { getLoaded: jest.fn(() => new Map()) },
         getUserConnections: jest.fn(() => new Map()),
       });
-      mockMcpServersRegistry.getOAuthServers.mockResolvedValue(new Set());
+      mockRegistryInstance.getOAuthServers.mockResolvedValue(new Set());
+      mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockConfig);
     });
 
     it('should successfully return MCP setup data', async () => {
-      mockGetAppConfig.mockResolvedValue({ mcpConfig: mockConfig.mcpServers });
+      mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockConfig);
 
       const mockAppConnections = new Map([['server1', { status: 'connected' }]]);
       const mockUserConnections = new Map([['server2', { status: 'disconnected' }]]);
       const mockOAuthServers = new Set(['server2']);
 
       const mockMCPManager = {
-        appConnections: { getAll: jest.fn(() => mockAppConnections) },
+        appConnections: { getLoaded: jest.fn(() => Promise.resolve(mockAppConnections)) },
         getUserConnections: jest.fn(() => mockUserConnections),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
-      mockMcpServersRegistry.getOAuthServers.mockResolvedValue(mockOAuthServers);
+      mockRegistryInstance.getOAuthServers.mockResolvedValue(mockOAuthServers);
 
       const result = await getMCPSetupData(mockUserId);
 
-      expect(mockGetAppConfig).toHaveBeenCalled();
+      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(mockUserId);
       expect(mockGetMCPManager).toHaveBeenCalledWith(mockUserId);
-      expect(mockMCPManager.appConnections.getAll).toHaveBeenCalled();
+      expect(mockMCPManager.appConnections.getLoaded).toHaveBeenCalled();
       expect(mockMCPManager.getUserConnections).toHaveBeenCalledWith(mockUserId);
-      expect(mockMcpServersRegistry.getOAuthServers).toHaveBeenCalled();
+      expect(mockRegistryInstance.getOAuthServers).toHaveBeenCalledWith(mockUserId);
 
       expect(result).toEqual({
-        mcpConfig: mockConfig.mcpServers,
+        mcpConfig: mockConfig,
         appConnections: mockAppConnections,
         userConnections: mockUserConnections,
         oauthServers: mockOAuthServers,
@@ -165,24 +142,24 @@ describe('tests for the new helper functions used by the MCP connection status e
     });
 
     it('should throw error when MCP config not found', async () => {
-      mockGetAppConfig.mockResolvedValue({});
+      mockRegistryInstance.getAllServerConfigs.mockResolvedValue(null);
       await expect(getMCPSetupData(mockUserId)).rejects.toThrow('MCP config not found');
     });
 
     it('should handle null values from MCP manager gracefully', async () => {
-      mockGetAppConfig.mockResolvedValue({ mcpConfig: mockConfig.mcpServers });
+      mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockConfig);
 
       const mockMCPManager = {
-        appConnections: { getAll: jest.fn(() => null) },
+        appConnections: { getLoaded: jest.fn(() => Promise.resolve(null)) },
         getUserConnections: jest.fn(() => null),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
-      mockMcpServersRegistry.getOAuthServers.mockResolvedValue(new Set());
+      mockRegistryInstance.getOAuthServers.mockResolvedValue(new Set());
 
       const result = await getMCPSetupData(mockUserId);
 
       expect(result).toEqual({
-        mcpConfig: mockConfig.mcpServers,
+        mcpConfig: mockConfig,
         appConnections: new Map(),
         userConnections: new Map(),
         oauthServers: new Set(),
@@ -329,15 +306,25 @@ describe('tests for the new helper functions used by the MCP connection status e
   describe('getServerConnectionStatus', () => {
     const mockUserId = 'user-123';
     const mockServerName = 'test-server';
+    const mockConfig = { updatedAt: Date.now() };
 
     it('should return app connection state when available', async () => {
-      const appConnections = new Map([[mockServerName, { connectionState: 'connected' }]]);
+      const appConnections = new Map([
+        [
+          mockServerName,
+          {
+            connectionState: 'connected',
+            isStale: jest.fn(() => false),
+          },
+        ],
+      ]);
       const userConnections = new Map();
       const oauthServers = new Set();
 
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -351,12 +338,21 @@ describe('tests for the new helper functions used by the MCP connection status e
 
     it('should fallback to user connection state when app connection not available', async () => {
       const appConnections = new Map();
-      const userConnections = new Map([[mockServerName, { connectionState: 'connecting' }]]);
+      const userConnections = new Map([
+        [
+          mockServerName,
+          {
+            connectionState: 'connecting',
+            isStale: jest.fn(() => false),
+          },
+        ],
+      ]);
       const oauthServers = new Set();
 
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -376,6 +372,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -388,13 +385,30 @@ describe('tests for the new helper functions used by the MCP connection status e
     });
 
     it('should prioritize app connection over user connection', async () => {
-      const appConnections = new Map([[mockServerName, { connectionState: 'connected' }]]);
-      const userConnections = new Map([[mockServerName, { connectionState: 'disconnected' }]]);
+      const appConnections = new Map([
+        [
+          mockServerName,
+          {
+            connectionState: 'connected',
+            isStale: jest.fn(() => false),
+          },
+        ],
+      ]);
+      const userConnections = new Map([
+        [
+          mockServerName,
+          {
+            connectionState: 'disconnected',
+            isStale: jest.fn(() => false),
+          },
+        ],
+      ]);
       const oauthServers = new Set();
 
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -420,6 +434,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -454,6 +469,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -491,6 +507,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -524,6 +541,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -549,6 +567,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -571,13 +590,22 @@ describe('tests for the new helper functions used by the MCP connection status e
       mockGetFlowStateManager.mockReturnValue(mockFlowManager);
       mockGetLogStores.mockReturnValue({});
 
-      const appConnections = new Map([[mockServerName, { connectionState: 'connected' }]]);
+      const appConnections = new Map([
+        [
+          mockServerName,
+          {
+            connectionState: 'connected',
+            isStale: jest.fn(() => false),
+          },
+        ],
+      ]);
       const userConnections = new Map();
       const oauthServers = new Set([mockServerName]);
 
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -606,6 +634,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
+        mockConfig,
         appConnections,
         userConnections,
         oauthServers,
@@ -639,6 +668,18 @@ describe('User parameter passing tests', () => {
       createFlowWithHandler: jest.fn(),
       failFlow: jest.fn(),
     });
+
+    // Reset domain validation mock to default (allow all)
+    mockIsMCPDomainAllowed.mockReset();
+    mockIsMCPDomainAllowed.mockResolvedValue(true);
+
+    // Reset registry mocks
+    mockRegistryInstance.getServerConfig.mockReset();
+    mockRegistryInstance.getServerConfig.mockResolvedValue(null);
+
+    // Reset getAppConfig mock to default (no restrictions)
+    mockGetAppConfig.mockReset();
+    mockGetAppConfig.mockResolvedValue({});
   });
 
   describe('createMCPTools', () => {
@@ -650,7 +691,7 @@ describe('User parameter passing tests', () => {
       mockReinitMCPServer.mockResolvedValue({
         tools: [{ name: 'test-tool' }],
         availableTools: {
-          'test-tool::test-server': {
+          [`test-tool${D}test-server`]: {
             function: {
               description: 'Test tool',
               parameters: { type: 'object', properties: {} },
@@ -710,7 +751,7 @@ describe('User parameter passing tests', () => {
 
       mockReinitMCPServer.mockResolvedValue({
         availableTools: {
-          'test-tool::test-server': {
+          [`test-tool${D}test-server`]: {
             function: {
               description: 'Test tool',
               parameters: { type: 'object', properties: {} },
@@ -723,7 +764,7 @@ describe('User parameter passing tests', () => {
       await createMCPTool({
         res: mockRes,
         user: mockUser,
-        toolKey: 'test-tool::test-server',
+        toolKey: `test-tool${D}test-server`,
         provider: 'openai',
         signal: mockSignal,
         userMCPAuthMap: {},
@@ -745,7 +786,7 @@ describe('User parameter passing tests', () => {
       const mockRes = { write: jest.fn(), flush: jest.fn() };
 
       const availableTools = {
-        'test-tool::test-server': {
+        [`test-tool${D}test-server`]: {
           function: {
             description: 'Cached tool',
             parameters: { type: 'object', properties: {} },
@@ -756,7 +797,7 @@ describe('User parameter passing tests', () => {
       await createMCPTool({
         res: mockRes,
         user: mockUser,
-        toolKey: 'test-tool::test-server',
+        toolKey: `test-tool${D}test-server`,
         provider: 'openai',
         userMCPAuthMap: {},
         availableTools: availableTools,
@@ -779,8 +820,8 @@ describe('User parameter passing tests', () => {
         return Promise.resolve({
           tools: [{ name: 'tool1' }, { name: 'tool2' }],
           availableTools: {
-            'tool1::server1': { function: { description: 'Tool 1', parameters: {} } },
-            'tool2::server1': { function: { description: 'Tool 2', parameters: {} } },
+            [`tool1${D}server1`]: { function: { description: 'Tool 1', parameters: {} } },
+            [`tool2${D}server1`]: { function: { description: 'Tool 2', parameters: {} } },
           },
         });
       });
@@ -811,7 +852,7 @@ describe('User parameter passing tests', () => {
         reinitCalls.push(params);
         return Promise.resolve({
           availableTools: {
-            'my-tool::my-server': {
+            [`my-tool${D}my-server`]: {
               function: { description: 'My Tool', parameters: {} },
             },
           },
@@ -821,7 +862,7 @@ describe('User parameter passing tests', () => {
       await createMCPTool({
         res: mockRes,
         user: mockUser,
-        toolKey: 'my-tool::my-server',
+        toolKey: `my-tool${D}my-server`,
         provider: 'google',
         userMCPAuthMap: {},
         availableTools: undefined, // Force reinit
@@ -831,6 +872,229 @@ describe('User parameter passing tests', () => {
       expect(reinitCalls.length).toBe(1);
       expect(reinitCalls[0].user).toBe(mockUser);
       expect(reinitCalls[0].user.id).toBe('user-002');
+    });
+  });
+
+  describe('Runtime domain validation', () => {
+    it('should skip tool creation when domain is not allowed', async () => {
+      const mockUser = { id: 'domain-test-user', role: 'user' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      // Mock server config with URL (remote server)
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        url: 'https://disallowed-domain.com/sse',
+      });
+
+      // Mock getAppConfig to return domain restrictions
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['allowed-domain.com'] },
+      });
+
+      // Mock domain validation to return false (domain not allowed)
+      mockIsMCPDomainAllowed.mockResolvedValueOnce(false);
+
+      const result = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Test tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      // Should return undefined for disallowed domain
+      expect(result).toBeUndefined();
+
+      // Should not call reinitMCPServer since domain check failed
+      expect(mockReinitMCPServer).not.toHaveBeenCalled();
+
+      // Verify getAppConfig was called with user role
+      expect(mockGetAppConfig).toHaveBeenCalledWith({ role: 'user' });
+
+      // Verify domain validation was called with correct parameters
+      expect(mockIsMCPDomainAllowed).toHaveBeenCalledWith(
+        { url: 'https://disallowed-domain.com/sse' },
+        ['allowed-domain.com'],
+      );
+    });
+
+    it('should allow tool creation when domain is allowed', async () => {
+      const mockUser = { id: 'domain-test-user', role: 'admin' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      // Mock server config with URL (remote server)
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        url: 'https://allowed-domain.com/sse',
+      });
+
+      // Mock getAppConfig to return domain restrictions
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['allowed-domain.com'] },
+      });
+
+      // Mock domain validation to return true (domain allowed)
+      mockIsMCPDomainAllowed.mockResolvedValueOnce(true);
+
+      const availableTools = {
+        [`test-tool${D}test-server`]: {
+          function: {
+            description: 'Test tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      const result = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+
+      // Should create tool successfully
+      expect(result).toBeDefined();
+
+      // Verify getAppConfig was called with user role
+      expect(mockGetAppConfig).toHaveBeenCalledWith({ role: 'admin' });
+    });
+
+    it('should skip domain validation for stdio transports (no URL)', async () => {
+      const mockUser = { id: 'stdio-test-user' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      // Mock server config without URL (stdio transport)
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        command: 'npx',
+        args: ['@modelcontextprotocol/server'],
+      });
+
+      // Mock getAppConfig (should not be called for stdio)
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['restricted-domain.com'] },
+      });
+
+      const availableTools = {
+        [`test-tool${D}test-server`]: {
+          function: {
+            description: 'Test tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      const result = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+
+      // Should create tool successfully without domain check
+      expect(result).toBeDefined();
+
+      // Should not call getAppConfig or isMCPDomainAllowed for stdio transport (no URL)
+      expect(mockGetAppConfig).not.toHaveBeenCalled();
+      expect(mockIsMCPDomainAllowed).not.toHaveBeenCalled();
+    });
+
+    it('should return empty array from createMCPTools when domain is not allowed', async () => {
+      const mockUser = { id: 'domain-test-user', role: 'user' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      // Mock server config with URL (remote server)
+      const serverConfig = { url: 'https://disallowed-domain.com/sse' };
+      mockRegistryInstance.getServerConfig.mockResolvedValue(serverConfig);
+
+      // Mock getAppConfig to return domain restrictions
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['allowed-domain.com'] },
+      });
+
+      // Mock domain validation to return false (domain not allowed)
+      mockIsMCPDomainAllowed.mockResolvedValueOnce(false);
+
+      const result = await createMCPTools({
+        res: mockRes,
+        user: mockUser,
+        serverName: 'test-server',
+        provider: 'openai',
+        userMCPAuthMap: {},
+        config: serverConfig,
+      });
+
+      // Should return empty array for disallowed domain
+      expect(result).toEqual([]);
+
+      // Should not call reinitMCPServer since domain check failed early
+      expect(mockReinitMCPServer).not.toHaveBeenCalled();
+
+      // Verify getAppConfig was called with user role
+      expect(mockGetAppConfig).toHaveBeenCalledWith({ role: 'user' });
+    });
+
+    it('should use user role when fetching domain restrictions', async () => {
+      const adminUser = { id: 'admin-user', role: 'admin' };
+      const regularUser = { id: 'regular-user', role: 'user' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        url: 'https://some-domain.com/sse',
+      });
+
+      // Mock different responses based on role
+      mockGetAppConfig
+        .mockResolvedValueOnce({ mcpSettings: { allowedDomains: ['admin-allowed.com'] } })
+        .mockResolvedValueOnce({ mcpSettings: { allowedDomains: ['user-allowed.com'] } });
+
+      mockIsMCPDomainAllowed.mockResolvedValue(true);
+
+      const availableTools = {
+        [`test-tool${D}test-server`]: {
+          function: {
+            description: 'Test tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      // Call with admin user
+      await createMCPTool({
+        res: mockRes,
+        user: adminUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+
+      // Reset and call with regular user
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        url: 'https://some-domain.com/sse',
+      });
+
+      await createMCPTool({
+        res: mockRes,
+        user: regularUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+
+      // Verify getAppConfig was called with correct roles
+      expect(mockGetAppConfig).toHaveBeenNthCalledWith(1, { role: 'admin' });
+      expect(mockGetAppConfig).toHaveBeenNthCalledWith(2, { role: 'user' });
     });
   });
 
@@ -850,7 +1114,7 @@ describe('User parameter passing tests', () => {
         return Promise.resolve({
           tools: [{ name: 'test' }],
           availableTools: {
-            'test::server': { function: { description: 'Test', parameters: {} } },
+            [`test${D}server`]: { function: { description: 'Test', parameters: {} } },
           },
         });
       });

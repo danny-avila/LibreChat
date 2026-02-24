@@ -170,7 +170,7 @@ function Avatar() {
         <span>{localize('com_nav_profile_picture')}</span>
         <OGDialogTrigger asChild>
           <Button variant="outline">
-            <FileImage className="mr-2 flex w-[22px] items-center" />
+            <FileImage className="mr-2 flex w-[22px] items-center" aria-hidden="true" />
             <span>{localize('com_nav_change_picture')}</span>
           </Button>
         </OGDialogTrigger>
@@ -211,7 +211,7 @@ function Avatar() {
                 {!isDragging && (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity hover:opacity-100">
                     <div className="rounded-full bg-black/50 p-2">
-                      <Move className="h-6 w-6 text-white" />
+                      <Move className="h-6 w-6 text-white" aria-hidden="true" />
                     </div>
                   </div>
                 )}
@@ -236,7 +236,7 @@ function Avatar() {
                       aria-label={localize('com_ui_zoom_out')}
                       className="shrink-0"
                     >
-                      <ZoomOut className="h-4 w-4" />
+                      <ZoomOut className="h-4 w-4" aria-hidden="true" />
                     </Button>
                     <Slider
                       id="zoom-slider"
@@ -257,7 +257,7 @@ function Avatar() {
                       aria-label={localize('com_ui_zoom_in')}
                       className="shrink-0"
                     >
-                      <ZoomIn className="h-4 w-4" />
+                      <ZoomIn className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </div>
                 </div>
@@ -270,7 +270,7 @@ function Avatar() {
                     className="flex items-center space-x-2"
                     aria-label={localize('com_ui_rotate_90')}
                   >
-                    <RotateCw className="h-4 w-4" />
+                    <RotateCw className="h-4 w-4" aria-hidden="true" />
                     <span className="text-sm">{localize('com_ui_rotate')}</span>
                   </Button>
                   <Button
@@ -280,7 +280,7 @@ function Avatar() {
                     className="flex items-center space-x-2"
                     aria-label={localize('com_ui_reset_adjustments')}
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-4 w-4" aria-hidden="true" />
                     <span className="text-sm">{localize('com_ui_reset')}</span>
                   </Button>
                 </div>
@@ -312,7 +312,7 @@ function Avatar() {
                   {isUploading ? (
                     <Spinner className="icon-sm mr-2" />
                   ) : (
-                    <Upload className="mr-2 h-4 w-4" />
+                    <Upload className="mr-2 h-4 w-4" aria-hidden="true" />
                   )}
                   {localize('com_ui_upload')}
                 </Button>

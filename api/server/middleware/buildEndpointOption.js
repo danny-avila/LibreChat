@@ -5,38 +5,45 @@ const {
   EModelEndpoint,
   isAgentsEndpoint,
   parseCompactConvo,
+  getDefaultParamsEndpoint,
 } = require('librechat-data-provider');
 const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
 const assistants = require('~/server/services/Endpoints/assistants');
-const { processFiles } = require('~/server/services/Files/process');
-const anthropic = require('~/server/services/Endpoints/anthropic');
-const bedrock = require('~/server/services/Endpoints/bedrock');
-const openAI = require('~/server/services/Endpoints/openAI');
+const { getEndpointsConfig } = require('~/server/services/Config');
 const agents = require('~/server/services/Endpoints/agents');
-const custom = require('~/server/services/Endpoints/custom');
-const google = require('~/server/services/Endpoints/google');
+const { updateFilesUsage } = require('~/models');
 
 const buildFunction = {
-  [EModelEndpoint.openAI]: openAI.buildOptions,
-  [EModelEndpoint.google]: google.buildOptions,
-  [EModelEndpoint.custom]: custom.buildOptions,
   [EModelEndpoint.agents]: agents.buildOptions,
-  [EModelEndpoint.bedrock]: bedrock.buildOptions,
-  [EModelEndpoint.azureOpenAI]: openAI.buildOptions,
-  [EModelEndpoint.anthropic]: anthropic.buildOptions,
   [EModelEndpoint.assistants]: assistants.buildOptions,
   [EModelEndpoint.azureAssistants]: azureAssistants.buildOptions,
 };
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
+
+  let endpointsConfig;
+  try {
+    endpointsConfig = await getEndpointsConfig(req);
+  } catch (error) {
+    logger.error('Error fetching endpoints config in buildEndpointOption', error);
+  }
+
+  const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
+
   let parsedBody;
   try {
-    parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
+    parsedBody = parseCompactConvo({
+      endpoint,
+      endpointType,
+      conversation: req.body,
+      defaultParamsEndpoint,
+    });
   } catch (error) {
-    logger.warn(
-      `Error parsing conversation for endpoint ${endpoint}${error?.message ? `: ${error.message}` : ''}`,
-    );
+    logger.error(`Error parsing compact conversation for endpoint ${endpoint}`, error);
+    logger.debug({
+      'Error parsing compact conversation': { endpoint, endpointType, conversation: req.body },
+    });
     return handleError(res, { text: 'Error parsing conversation' });
   }
 
@@ -61,17 +68,24 @@ async function buildEndpointOption(req, res, next) {
 
     try {
       currentModelSpec.preset.spec = spec;
-      if (currentModelSpec.iconURL != null && currentModelSpec.iconURL !== '') {
-        currentModelSpec.preset.iconURL = currentModelSpec.iconURL;
-      }
       parsedBody = parseCompactConvo({
         endpoint,
         endpointType,
         conversation: currentModelSpec.preset,
+        defaultParamsEndpoint,
       });
+      if (currentModelSpec.iconURL != null && currentModelSpec.iconURL !== '') {
+        parsedBody.iconURL = currentModelSpec.iconURL;
+      }
     } catch (error) {
       logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
       return handleError(res, { text: 'Error parsing model spec' });
+    }
+  } else if (parsedBody.spec && appConfig.modelSpecs?.list) {
+    // Non-enforced mode: if spec is selected, derive iconURL from model spec
+    const modelSpec = appConfig.modelSpecs.list.find((s) => s.name === parsedBody.spec);
+    if (modelSpec?.iconURL) {
+      parsedBody.iconURL = modelSpec.iconURL;
     }
   }
 
@@ -83,10 +97,11 @@ async function buildEndpointOption(req, res, next) {
       : buildFunction[endpointType ?? endpoint];
 
     // TODO: use object params
+    req.body = req.body || {}; // Express 5: ensure req.body exists
     req.body.endpointOption = await builder(endpoint, parsedBody, endpointType);
 
     if (req.body.files && !isAgents) {
-      req.body.endpointOption.attachments = processFiles(req.body.files);
+      req.body.endpointOption.attachments = updateFilesUsage(req.body.files);
     }
 
     next();
