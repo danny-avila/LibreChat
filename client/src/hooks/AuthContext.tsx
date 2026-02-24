@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { debounce } from 'lodash';
 import { useRecoilState } from 'recoil';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type * as t from 'librechat-data-provider';
@@ -48,7 +48,6 @@ const AuthContextProvider = ({
   });
 
   const navigate = useNavigate();
-  const location = useLocation();
 
   const setUserContext = useMemo(
     () =>
@@ -60,7 +59,7 @@ const AuthContextProvider = ({
         setTokenHeader(token);
         setIsAuthenticated(isAuthenticated);
 
-        const searchParams = new URLSearchParams(location.search);
+        const searchParams = new URLSearchParams(window.location.search);
         const postLoginRedirect = getPostLoginRedirect(searchParams);
 
         const logoutRedirect = logoutRedirectRef.current;
@@ -77,7 +76,7 @@ const AuthContextProvider = ({
 
         navigate(finalRedirect, { replace: true });
       }, 50),
-    [navigate, setUser, location.search],
+    [navigate, setUser],
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
@@ -94,7 +93,7 @@ const AuthContextProvider = ({
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
       doSetError(resError.message);
-      const redirectTo = new URLSearchParams(location.search).get('redirect_to');
+      const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
       const loginPath = redirectTo ? `/login?redirect_to=${redirectTo}` : '/login';
       navigate(loginPath, { replace: true });
     },
