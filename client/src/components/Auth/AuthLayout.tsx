@@ -82,7 +82,7 @@ function AuthLayout({
         )}
       </BlinkAnimation>
 
-      {/* Welcome back header and login buttons below logo */}}
+      {/* Welcome back header and login buttons below logo */}
       {!hasStartupConfigError && !isFetching && header && (
         <div className="mt-6 text-center">
           <h1
