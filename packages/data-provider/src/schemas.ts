@@ -80,6 +80,7 @@ export const isOpenAILikeProvider = (provider?: string | null): boolean => {
 };
 
 export const isDocumentSupportedProvider = (provider?: string | null): boolean => {
+  return false; // NJ: For now, we're not sure about policy questions w.r.t. upload to provider
   return documentSupportedProviders.has(provider ?? '');
 };
 
