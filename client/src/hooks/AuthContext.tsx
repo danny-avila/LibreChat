@@ -3,15 +3,15 @@ import {
   useMemo,
   useState,
   useEffect,
-  ReactNode,
   useContext,
   useCallback,
   createContext,
 } from 'react';
 import { debounce } from 'lodash';
 import { useRecoilState } from 'recoil';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import type * as t from 'librechat-data-provider';
 import {
   useGetRole,
@@ -20,6 +20,7 @@ import {
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
+import { isSafeRedirect, buildLoginRedirectUrl, getPostLoginRedirect } from '~/utils';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
@@ -47,6 +48,7 @@ const AuthContextProvider = ({
   });
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   const setUserContext = useMemo(
     () =>
@@ -58,36 +60,24 @@ const AuthContextProvider = ({
         setTokenHeader(token);
         setIsAuthenticated(isAuthenticated);
 
-        // Determine final redirect: explicit > logoutOverride > URL param > sessionStorage
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlRedirectEncoded = urlParams.get('redirect_to') || undefined;
-        const urlRedirect = urlRedirectEncoded ? decodeURIComponent(urlRedirectEncoded) : undefined;
-        const storedRedirect = sessionStorage.getItem('post_login_redirect_to') || undefined;
+        const searchParams = new URLSearchParams(location.search);
+        const postLoginRedirect = getPostLoginRedirect(searchParams);
+
+        const logoutRedirect = logoutRedirectRef.current;
+        logoutRedirectRef.current = undefined;
 
         const finalRedirect =
-          logoutRedirectRef.current || urlRedirect || storedRedirect || redirect || undefined;
-        // Clear the stored redirect
-        logoutRedirectRef.current = undefined;
-        if (storedRedirect) {
-          sessionStorage.removeItem('post_login_redirect_to');
-        }
-        if (urlRedirectEncoded) {
-          urlParams.delete('redirect_to');
-          const newUrl = `${window.location.pathname}${urlParams.toString() ? `?${urlParams.toString()}` : ''}${window.location.hash}`;
-          window.history.replaceState({}, '', newUrl);
-        }
+          logoutRedirect ??
+          postLoginRedirect ??
+          (redirect && isSafeRedirect(redirect) ? redirect : null);
 
         if (finalRedirect == null) {
           return;
         }
 
-        if (finalRedirect.startsWith('http://') || finalRedirect.startsWith('https://')) {
-          window.location.href = finalRedirect;
-        } else {
-          navigate(finalRedirect, { replace: true });
-        }
+        navigate(finalRedirect, { replace: true });
       }, 50),
-    [navigate, setUser],
+    [navigate, setUser, location.search],
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
@@ -95,7 +85,6 @@ const AuthContextProvider = ({
     onSuccess: (data: t.TLoginResponse) => {
       const { user, token, twoFAPending, tempToken } = data;
       if (twoFAPending) {
-        // Redirect to the two-factor authentication route.
         navigate(`/login/2fa?tempToken=${tempToken}`, { replace: true });
         return;
       }
@@ -105,8 +94,9 @@ const AuthContextProvider = ({
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
       doSetError(resError.message);
-      // Stay on login page; no redirect_to here because user actively failed login
-      navigate('/login', { replace: true });
+      const redirectTo = new URLSearchParams(location.search).get('redirect_to');
+      const loginPath = redirectTo ? `/login?redirect_to=${redirectTo}` : '/login';
+      navigate(loginPath, { replace: true });
     },
   });
   const logoutUser = useLogoutUserMutation({
@@ -156,36 +146,30 @@ const AuthContextProvider = ({
         const { user, token = '' } = data ?? {};
         if (token) {
           setUserContext({ token, isAuthenticated: true, user });
-        } else {
-          console.log('Token is not present. User is not authenticated.');
-          if (authConfig?.test === true) {
-            return;
-          }
-          const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-          const redirectTo = encodeURIComponent(currentPath || '/');
-          navigate(`/login?redirect_to=${redirectTo}`);
+          return;
         }
+        console.log('Token is not present. User is not authenticated.');
+        if (authConfig?.test === true) {
+          return;
+        }
+        navigate(buildLoginRedirectUrl());
       },
       onError: (error) => {
         console.log('refreshToken mutation error:', error);
         if (authConfig?.test === true) {
           return;
         }
-        const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-        const redirectTo = encodeURIComponent(currentPath || '/');
-        navigate(`/login?redirect_to=${redirectTo}`);
+        navigate(buildLoginRedirectUrl());
       },
     });
-  }, []);
+  }, [authConfig?.test, refreshToken, setUserContext, navigate]);
 
   useEffect(() => {
     if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
       doSetError((userQuery.error as Error).message);
-      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      const redirectTo = encodeURIComponent(currentPath || '/');
-      navigate(`/login?redirect_to=${redirectTo}`, { replace: true });
+      navigate(buildLoginRedirectUrl(), { replace: true });
     }
     if (error != null && error && isAuthenticated) {
       doSetError(undefined);
@@ -207,25 +191,22 @@ const AuthContextProvider = ({
   ]);
 
   useEffect(() => {
-    const handleTokenUpdate = (event) => {
+    const handleTokenUpdate = (event: CustomEvent<string>) => {
       console.log('tokenUpdated event received event');
-      const newToken = event.detail;
       setUserContext({
-        token: newToken,
+        token: event.detail,
         isAuthenticated: true,
         user: user,
-        // allow setUserContext to pick up any redirect_to or stored redirect
       });
     };
 
-    window.addEventListener('tokenUpdated', handleTokenUpdate);
+    window.addEventListener('tokenUpdated', handleTokenUpdate as EventListener);
 
     return () => {
-      window.removeEventListener('tokenUpdated', handleTokenUpdate);
+      window.removeEventListener('tokenUpdated', handleTokenUpdate as EventListener);
     };
   }, [setUserContext, user]);
 
-  // Make the provider update only when it should
   const memoedValue = useMemo(
     () => ({
       user,
