@@ -49,6 +49,7 @@ export enum Providers {
 export const documentSupportedProviders = new Set<string>([
   EModelEndpoint.anthropic,
   EModelEndpoint.openAI,
+  EModelEndpoint.bedrock,
   EModelEndpoint.custom,
   // handled in AttachFileMenu and DragDropModal since azureOpenAI only supports documents with Use Responses API set to true
   // EModelEndpoint.azureOpenAI,

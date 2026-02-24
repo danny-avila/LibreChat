@@ -20,6 +20,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   supportsBalanceCheck,
+  isBedrockDocumentType,
 } = require('librechat-data-provider');
 const {
   updateMessage,
@@ -1300,6 +1301,9 @@ class BaseClient {
 
     const allFiles = [];
 
+    const provider = this.options.agent?.provider ?? this.options.endpoint;
+    const isBedrock = provider === EModelEndpoint.bedrock;
+
     for (const file of attachments) {
       /** @type {FileSources} */
       const source = file.source ?? FileSources.local;
@@ -1315,6 +1319,9 @@ class BaseClient {
       if (file.type.startsWith('image/')) {
         categorizedAttachments.images.push(file);
       } else if (file.type === 'application/pdf') {
+        categorizedAttachments.documents.push(file);
+        allFiles.push(file);
+      } else if (isBedrock && isBedrockDocumentType(file.type)) {
         categorizedAttachments.documents.push(file);
         allFiles.push(file);
       } else if (file.type.startsWith('video/')) {
