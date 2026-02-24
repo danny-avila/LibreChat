@@ -162,8 +162,9 @@ const PromptVersions = ({
   selectionIndex: number;
   setSelectionIndex: React.Dispatch<React.SetStateAction<number>>;
 }) => {
+  const localize = useLocalize();
   return (
-    <div className="flex flex-col" role="tablist" aria-label="Version history">
+    <ul className="flex flex-col" aria-label={localize('com_ui_versions')}>
       {prompts.map((prompt: TPrompt, index: number) => {
         const isLatest = index === 0;
         const isProduction = prompt._id === group?.productionId;
@@ -181,7 +182,7 @@ const PromptVersions = ({
           />
         );
       })}
-    </div>
+    </ul>
   );
 };
 

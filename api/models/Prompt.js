@@ -28,6 +28,7 @@ const createAllGroupsPipeline = (
   query,
   $project = {
     name: 1,
+    numberOfGenerations: 1,
     oneliner: 1,
     category: 1,
     author: 1,
@@ -99,106 +100,6 @@ const getAllPromptGroups = async (req, filter) => {
   } catch (error) {
     logger.error('Error getting all prompt groups', error);
     return { message: 'Error getting all prompt groups' };
-  }
-};
-
-/**
- * Get prompt groups with filters
- * @param {TPromptGroupsWithFilterRequest} filter
- * @returns {Promise<PromptGroupListResponse>}
- */
-const getPromptGroups = async (filter) => {
-  try {
-    const { pageNumber = 1, pageSize = 10, name, ...query } = filter;
-
-    const validatedPageNumber = Math.max(parseInt(pageNumber, 10), 1);
-    const validatedPageSize = Math.max(parseInt(pageSize, 10), 1);
-
-    let searchShared = true;
-    let searchSharedOnly = false;
-    if (name) {
-      query.name = new RegExp(escapeRegExp(name), 'i');
-    }
-    if (!query.category) {
-      delete query.category;
-    } else if (query.category === SystemCategories.MY_PROMPTS) {
-      searchShared = false;
-      delete query.category;
-    } else if (query.category === SystemCategories.NO_CATEGORY) {
-      query.category = '';
-    } else if (query.category === SystemCategories.SHARED_PROMPTS) {
-      searchSharedOnly = true;
-      delete query.category;
-    }
-
-    let combinedQuery = query;
-
-    if (searchShared) {
-      // const projects = req.user.projects || []; // TODO: handle multiple projects
-      const project = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, 'promptGroupIds');
-      if (project && project.promptGroupIds && project.promptGroupIds.length > 0) {
-        const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
-        delete projectQuery.author;
-        combinedQuery = searchSharedOnly ? projectQuery : { $or: [projectQuery, query] };
-      }
-    }
-
-    const skip = (validatedPageNumber - 1) * validatedPageSize;
-    const limit = validatedPageSize;
-
-    const facetPipeline = [
-      { $match: combinedQuery },
-      {
-        $facet: {
-          data: [
-            { $sort: { numberOfGenerations: -1, updatedAt: -1, _id: 1 } },
-            { $skip: skip },
-            { $limit: limit },
-            {
-              $lookup: {
-                from: 'prompts',
-                localField: 'productionId',
-                foreignField: '_id',
-                as: 'productionPrompt',
-              },
-            },
-            { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
-            {
-              $project: {
-                name: 1,
-                numberOfGenerations: 1,
-                oneliner: 1,
-                category: 1,
-                projectIds: 1,
-                productionId: 1,
-                author: 1,
-                authorName: 1,
-                createdAt: 1,
-                updatedAt: 1,
-                'productionPrompt.prompt': 1,
-              },
-            },
-          ],
-          totalCount: [{ $count: 'total' }],
-        },
-      },
-    ];
-
-    const [facetResult] = await PromptGroup.aggregate(facetPipeline).exec();
-
-    const promptGroups = facetResult?.data ?? [];
-    const totalPromptGroups =
-      facetResult?.totalCount?.length > 0 ? facetResult.totalCount[0].total : 0;
-
-    return {
-      promptGroups,
-      pageNumber: validatedPageNumber.toString(),
-      pageSize: validatedPageSize.toString(),
-      pages: Math.ceil(totalPromptGroups / validatedPageSize).toString(),
-    };
-  } catch (error) {
-    logger.error('Error getting prompt groups', error);
-    return { message: 'Error getting prompt groups' };
   }
 };
 
@@ -395,7 +296,7 @@ const incrementPromptGroupUsage = async (groupId) => {
 };
 
 module.exports = {
-  getPromptGroups,
+  isValidObjectIdString,
   deletePromptGroup,
   getAllPromptGroups,
   getListPromptGroupsByAccess,

@@ -76,7 +76,7 @@ export const useUpdatePromptGroup = (
     },
     onError: (err, variables, context) => {
       if (context?.group) {
-        queryClient.setQueryData([QueryKeys.promptGroups, variables.id], context.group);
+        queryClient.setQueryData([QueryKeys.promptGroup, variables.id], context.group);
       }
       if (context?.previousListData) {
         queryClient.setQueryData<t.PromptGroupListData>(
@@ -308,17 +308,14 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
       ]);
       const previousListData = listData ? structuredClone(listData) : undefined;
 
-      if (groupData) {
+      if (listData) {
         const newData = updateGroupFields(
-          /* Paginated Data */
-          groupData,
-          /* Update */
+          listData,
           {
             _id: variables.groupId,
             productionId: variables.id,
             productionPrompt: variables.productionPrompt,
           },
-          /* Callback */
           (group) => queryClient.setQueryData([QueryKeys.promptGroup, variables.groupId], group),
         );
         queryClient.setQueryData<t.PromptGroupListData>(
@@ -335,7 +332,7 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
     },
     onError: (err, variables, context) => {
       if (context?.group) {
-        queryClient.setQueryData([QueryKeys.promptGroups, variables.groupId], context.group);
+        queryClient.setQueryData([QueryKeys.promptGroup, variables.groupId], context.group);
       }
       if (context?.previousListData) {
         queryClient.setQueryData<t.PromptGroupListData>(

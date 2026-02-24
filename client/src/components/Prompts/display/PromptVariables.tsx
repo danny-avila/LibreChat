@@ -76,7 +76,7 @@ const SpecialVariableChip = ({ parsed }: { parsed: ParsedVariable }) => {
   const localize = useLocalize();
   const Icon = getSpecialVariableIcon(parsed.name);
   const labelKey = `com_ui_special_var_${parsed.name}` as TSpecialVarLabel;
-  const descKey = `com_ui_special_var_desc_${parsed.name}`;
+  const descKey = `com_ui_special_var_desc_${parsed.name}` as TSpecialVarLabel;
   const displayLabel = localize(labelKey);
   const description = localize(descKey);
 

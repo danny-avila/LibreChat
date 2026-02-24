@@ -22,6 +22,7 @@ const {
 const {
   getListPromptGroupsByAccess,
   incrementPromptGroupUsage,
+  isValidObjectIdString,
   makePromptProduction,
   updatePromptGroup,
   deletePromptGroup,
@@ -57,8 +58,6 @@ const checkPromptCreate = generateCheckAccess({
   permissions: [Permissions.USE, Permissions.CREATE],
   getRoleByName,
 });
-
-const isValidObjectId = (id) => /^[a-f\d]{24}$/i.test(id);
 
 const checkGlobalPromptShare = generateCheckAccess({
   permissionType: PermissionTypes.PROMPTS,
@@ -353,7 +352,7 @@ router.post(
   async (req, res) => {
     try {
       const { groupId } = req.params;
-      if (!isValidObjectId(groupId)) {
+      if (!isValidObjectIdString(groupId)) {
         return res.status(400).send({ error: 'Invalid groupId' });
       }
       const result = await incrementPromptGroupUsage(groupId);
@@ -379,11 +378,8 @@ router.post(
 const patchPromptGroup = async (req, res) => {
   try {
     const { groupId } = req.params;
-    const author = req.user.id;
-    const filter = { _id: groupId, author };
-    if (req.user.role === SystemRoles.ADMIN) {
-      delete filter.author;
-    }
+    // Don't pass author - permissions are now checked by middleware
+    const filter = { _id: groupId };
 
     const validationResult = safeValidatePromptGroupUpdate(req.body);
     if (!validationResult.success) {
@@ -449,7 +445,7 @@ router.get('/', async (req, res) => {
 
     // If requesting prompts for a specific group, check permissions
     if (groupId) {
-      if (!isValidObjectId(groupId)) {
+      if (!isValidObjectIdString(groupId)) {
         return res.status(400).send({ error: 'Invalid groupId' });
       }
 
@@ -497,7 +493,7 @@ const deletePromptController = async (req, res) => {
   try {
     const { promptId } = req.params;
     const { groupId } = req.query;
-    if (!groupId || !isValidObjectId(groupId)) {
+    if (!groupId || !isValidObjectIdString(groupId)) {
       return res.status(400).send({ error: 'Invalid or missing groupId' });
     }
     const author = req.user.id;

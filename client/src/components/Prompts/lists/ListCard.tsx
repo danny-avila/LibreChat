@@ -14,29 +14,30 @@ export default function ListCard({
   category: string;
   name: string;
   snippet: string;
-  onClick?: React.MouseEventHandler<HTMLDivElement | HTMLButtonElement>;
+  onClick?: React.MouseEventHandler<HTMLDivElement>;
   children?: React.ReactNode;
   icon?: React.ReactNode;
 }) {
   const localize = useLocalize();
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement | HTMLButtonElement>) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      onClick?.(event as unknown as React.MouseEvent<HTMLDivElement | HTMLButtonElement>);
-    }
-  };
+
+  const ariaLabel = category
+    ? localize('com_ui_prompt_group_button', { name, category })
+    : localize('com_ui_prompt_group_button_no_category', { name });
 
   return (
     <div
-      onClick={onClick}
-      onKeyDown={handleKeyDown}
       className="relative flex w-full cursor-pointer flex-col gap-2 rounded-xl px-3 pb-4 pt-3 text-start align-top text-[15px]"
-      role="button"
-      tabIndex={0}
-      aria-labelledby={`card-title-${name}`}
-      aria-describedby={`card-snippet-${name}`}
-      aria-label={`${name} Prompt, ${category ? `${localize('com_ui_category')}: ${category}` : ''}`}
+      onClick={onClick}
     >
+      <button
+        type="button"
+        className="absolute inset-0 z-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+        aria-label={ariaLabel}
+        aria-describedby={`card-snippet-${name}`}
+        tabIndex={0}
+      >
+        <span className="sr-only">{name}</span>
+      </button>
       <div className="flex w-full justify-between gap-2">
         <div className="flex min-w-0 flex-1 flex-row items-center gap-2 overflow-hidden">
           <CategoryIcon category={category} className="icon-md shrink-0" aria-hidden="true" />
@@ -49,7 +50,7 @@ export default function ListCard({
           </Label>
           {icon}
         </div>
-        <div>{children}</div>
+        <div className="relative z-10">{children}</div>
       </div>
       <div
         id={`card-snippet-${name}`}

@@ -50,7 +50,7 @@ export default function VariablesDropdown({
     const isUsed = usedVariables.has(key);
     const Icon = getSpecialVariableIcon(key);
     const labelKey = `com_ui_special_var_${key}` as TSpecialVarLabel;
-    const descKey = `com_ui_special_var_desc_${key}`;
+    const descKey = `com_ui_special_var_desc_${key}` as TSpecialVarLabel;
 
     const iconClass = isUsed
       ? 'bg-surface-tertiary text-text-tertiary'

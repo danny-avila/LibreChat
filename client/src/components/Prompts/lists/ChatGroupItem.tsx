@@ -40,7 +40,7 @@ function ChatGroupItem({
 
   const previewButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  const onCardClick: React.MouseEventHandler<HTMLButtonElement> = () => {
+  const onCardClick: React.MouseEventHandler<HTMLDivElement> = () => {
     const text = group.productionPrompt?.prompt;
     if (!text?.trim()) {
       return;

@@ -79,7 +79,6 @@ const DeletePrompt = React.memo(
 
     const handleDelete = useCallback(() => {
       if (!promptId) {
-        console.warn('No prompt ID provided for deletion');
         return;
       }
       deletePromptMutation.mutate({

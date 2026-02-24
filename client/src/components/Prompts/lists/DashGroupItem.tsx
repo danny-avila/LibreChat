@@ -1,5 +1,4 @@
 import { memo, useState, useMemo, useCallback } from 'react';
-import type { KeyboardEvent, MouseEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { EarthIcon, Pencil, Trash2, User } from 'lucide-react';
 import { PermissionBits, ResourceType, type TPromptGroup } from 'librechat-data-provider';
@@ -59,16 +58,6 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
     updateGroup.mutate({ id: group._id ?? '', payload: { name: nameInputValue } });
   }, [group._id, nameInputValue, updateGroup]);
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLDivElement>) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        navigate(`/d/prompts/${group._id}`, { replace: true });
-      }
-    },
-    [group._id, navigate],
-  );
-
   const handleDelete = useCallback(() => {
     deleteGroup.mutate({ id: group._id ?? '' });
   }, [group._id, deleteGroup]);
@@ -76,10 +65,6 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const handleContainerClick = useCallback(() => {
     navigate(`/d/prompts/${group._id}`, { replace: true });
   }, [group._id, navigate]);
-
-  const stopPropagation = useCallback((e: MouseEvent | KeyboardEvent) => {
-    e.stopPropagation();
-  }, []);
 
   const ariaLabel = group.category
     ? localize('com_ui_prompt_group_button', {
@@ -91,14 +76,9 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
       });
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handleContainerClick}
-      onKeyDown={handleKeyDown}
-      aria-label={ariaLabel}
+    <article
       className={cn(
-        'flex cursor-pointer items-center overflow-hidden rounded-lg border border-border-light bg-transparent hover:bg-surface-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+        'group/card relative flex w-full items-center overflow-hidden rounded-lg border border-border-light bg-transparent text-left hover:bg-surface-secondary',
         params.promptId === group._id && 'bg-surface-hover',
       )}
     >
@@ -108,12 +88,18 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
           className="icon-lg shrink-0"
           aria-hidden="true"
         />
-        <span
-          className="min-w-0 flex-1 cursor-pointer truncate text-base font-semibold text-text-primary"
+        <a
+          href={`/d/prompts/${group._id}`}
+          onClick={(e) => {
+            e.preventDefault();
+            handleContainerClick();
+          }}
+          className="min-w-0 flex-1 truncate text-base font-semibold text-text-primary after:absolute after:inset-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary focus-visible:ring-offset-2"
           title={group.name}
+          aria-label={ariaLabel}
         >
           {group.name}
-        </span>
+        </a>
         {isSharedPrompt && (
           <TooltipAnchor
             description={localize('com_ui_by_author', { 0: group.authorName })}
@@ -138,11 +124,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
         )}
       </div>
 
-      <div
-        className="flex shrink-0 items-center gap-1 pr-2"
-        onClick={stopPropagation}
-        onKeyDown={stopPropagation}
-      >
+      <div className="relative z-10 flex shrink-0 items-center gap-1 pr-2">
         {canEdit && (
           <OGDialog>
             <OGDialogTrigger asChild>
@@ -213,7 +195,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
           </OGDialog>
         )}
       </div>
-    </div>
+    </article>
   );
 }
 
