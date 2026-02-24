@@ -161,8 +161,8 @@
     "icon": "assets/gemini_image_gen.svg",
     "authConfig": [
       {
-        "authField": "GEMINI_API_KEY||GOOGLE_KEY||GEMINI_VERTEX_ENABLED",
-        "label": "Gemini API Key (Optional if Vertex AI is configured)",
+        "authField": "GEMINI_API_KEY||GOOGLE_KEY",
+        "label": "Gemini API Key",
         "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank if using Vertex AI with service account."
       }
     ]

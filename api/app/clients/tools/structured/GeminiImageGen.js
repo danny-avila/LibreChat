@@ -322,20 +322,7 @@ function createGeminiImageTool(fields = {}) {
     throw new Error('This tool is only available for agents.');
   }
 
-  // Skip validation during tool creation - validation happens at runtime in initializeGeminiClient
-  // This allows the tool to be added to agents when using Vertex AI without requiring API keys
-  // The actual credentials check happens when the tool is invoked
-
-  const {
-    req,
-    imageFiles = [],
-    userId,
-    fileStrategy,
-    GEMINI_API_KEY,
-    GOOGLE_KEY,
-    // GEMINI_VERTEX_ENABLED is used for auth validation only (not used in code)
-    // When set as env var, it signals Vertex AI is configured and bypasses API key requirement
-  } = fields;
+  const { req, imageFiles = [], userId, fileStrategy, GEMINI_API_KEY, GOOGLE_KEY } = fields;
 
   const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
 
