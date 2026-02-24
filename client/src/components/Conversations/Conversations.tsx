@@ -360,6 +360,11 @@ const Conversations: FC<ConversationsProps> = ({
     [flattenedItems.length, throttledLoadMore],
   );
 
+  // NJ: For accessibility, it's better to hide chat history if there is no actual history
+  if (!isLoading && groupedConversations.length == 0) {
+    return <></>;
+  }
+
   return (
     <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
       {isSearchLoading ? (
