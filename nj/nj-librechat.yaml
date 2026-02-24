@@ -55,7 +55,6 @@ endpoints:
       guardrailVersion: '${GUARDRAIL_VERSION}'
       trace: "enabled"
 
-  # Workaround: we have to explicitly disable all agent capabilities (otherwise the agents UI won't go away)
   agents:
     capabilities:
       - "context"
