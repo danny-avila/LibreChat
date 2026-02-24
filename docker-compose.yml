@@ -4,7 +4,7 @@ services:
     #   context: .
     #   dockerfile: Dockerfile.multi
     #   target: api-build
-    image: europe-west1-docker.pkg.dev/dev-arm-01/dev/librechat:1.0.0
+    image: europe-west1-docker.pkg.dev/dev-arm-01/dev/librechat:1.4.0.1
     container_name: LibreChat-API
     ports:
       - 3080:3080
