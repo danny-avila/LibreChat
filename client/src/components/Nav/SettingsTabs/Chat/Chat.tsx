@@ -1,4 +1,5 @@
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
+import { useSetRecoilState } from 'recoil';
 import { showThinkingAtom } from '~/store/showThinking';
 import FontSizeSelector from './FontSizeSelector';
 import { ForkSettings } from './ForkSettings';
@@ -84,9 +85,55 @@ const toggleSwitchConfigs = [
     hoverCardText: 'com_nav_info_default_temporary_chat' as const,
     key: 'defaultTemporaryChat',
   },
+  {
+    stateAtom: store.notifyOnStreamComplete,
+    localizationKey: 'com_nav_notify_on_stream_complete' as const,
+    switchId: 'notifyOnStreamComplete',
+    hoverCardText: 'com_nav_info_notify_on_stream_complete' as const,
+    key: 'notifyOnStreamComplete',
+  },
 ];
 
+const supportsBrowserNotifications = () =>
+  typeof window !== 'undefined' && typeof Notification !== 'undefined' && 'Notification' in window;
+
 function Chat() {
+  const setNotifyOnStreamComplete = useSetRecoilState(store.notifyOnStreamComplete);
+  const notificationSupported = supportsBrowserNotifications();
+
+  const handleNotifyOnStreamCompleteChange = useCallback(
+    (value: boolean) => {
+      if (value === false) {
+        return;
+      }
+
+      if (!supportsBrowserNotifications()) {
+        setNotifyOnStreamComplete(false);
+        return;
+      }
+
+      if (Notification.permission === 'granted') {
+        return;
+      }
+
+      if (Notification.permission === 'denied') {
+        setNotifyOnStreamComplete(false);
+        return;
+      }
+
+      void Notification.requestPermission()
+        .then((permission) => {
+          if (permission !== 'granted') {
+            setNotifyOnStreamComplete(false);
+          }
+        })
+        .catch(() => {
+          setNotifyOnStreamComplete(false);
+        });
+    },
+    [setNotifyOnStreamComplete],
+  );
+
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
       <div className="pb-3">
@@ -95,16 +142,23 @@ function Chat() {
       <div className="pb-3">
         <ChatDirection />
       </div>
-      {toggleSwitchConfigs.map((config) => (
-        <div key={config.key} className="pb-3">
-          <ToggleSwitch
-            stateAtom={config.stateAtom}
-            localizationKey={config.localizationKey}
-            hoverCardText={config.hoverCardText}
-            switchId={config.switchId}
-          />
-        </div>
-      ))}
+      {toggleSwitchConfigs.map((config) => {
+        const isNotificationToggle = config.key === 'notifyOnStreamComplete';
+        return (
+          <div key={config.key} className="pb-3">
+            <ToggleSwitch
+              stateAtom={config.stateAtom}
+              localizationKey={config.localizationKey}
+              hoverCardText={config.hoverCardText}
+              switchId={config.switchId}
+              onCheckedChange={
+                isNotificationToggle ? handleNotifyOnStreamCompleteChange : undefined
+              }
+              disabled={isNotificationToggle && !notificationSupported}
+            />
+          </div>
+        );
+      })}
       <ForkSettings />
     </div>
   );
