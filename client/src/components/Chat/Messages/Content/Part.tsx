@@ -145,7 +145,9 @@ const Part = memo(
 
         return (
           <>
-            {isMCPTool && !isSharedConvo && <MCPToolDetector toolCall={toolCall} output={toolCall.output ?? ''} />}
+            {isMCPTool && !isSharedConvo && (
+              <MCPToolDetector toolCall={toolCall} output={toolCall.output ?? ''} />
+            )}
             <ToolCall
               args={toolCall.args ?? ''}
               name={toolCall.name || ''}
