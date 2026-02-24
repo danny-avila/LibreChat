@@ -1196,9 +1196,29 @@ async function loadToolsForExecution({
   const actionToolNames = allToolNamesToLoad.filter((name) => name.includes(actionDelimiter));
   const regularToolNames = allToolNamesToLoad.filter((name) => !name.includes(actionDelimiter));
 
+  // Resolve raw MCP tool names to their _mcp_serverName suffixed equivalents.
+  // This handles the case where an LLM uses a raw MCP tool name (e.g. from a recipe/prompt)
+  // instead of the LibreChat-internal suffixed name (e.g. toolName_mcp_serverName).
+  const resolvedToolNames = toolRegistry
+    ? regularToolNames.map((name) => {
+      if (name.includes(Constants.mcp_delimiter)) {
+        return name;
+      }
+      for (const [regName] of toolRegistry) {
+        if (regName.startsWith(name + Constants.mcp_delimiter)) {
+          logger.debug(
+            `[loadToolsForExecution] Resolved raw MCP tool name "${name}" to "${regName}"`,
+          );
+          return regName;
+        }
+      }
+      return name;
+    })
+    : regularToolNames;
+
   /** @type {Record<string, unknown>} */
-  if (regularToolNames.length > 0) {
-    const includesWebSearch = regularToolNames.includes(Tools.web_search);
+  if (resolvedToolNames.length > 0) {
+    const includesWebSearch = resolvedToolNames.includes(Tools.web_search);
     const webSearchCallbacks = includesWebSearch ? createOnSearchResults(res, streamId) : undefined;
 
     const { loadedTools } = await loadTools({
@@ -1206,7 +1226,7 @@ async function loadToolsForExecution({
       signal,
       userMCPAuthMap,
       functions: true,
-      tools: regularToolNames,
+      tools: resolvedToolNames,
       user: req.user.id,
       options: {
         req,
