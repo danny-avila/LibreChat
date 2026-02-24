@@ -1,0 +1,3 @@
+[submodule "areeb_semVer"]
+	path = areeb_semVer
+	url = git@ssh.dev.azure.com:v3/areebgroup/Areeb-Core/areeb_semVer
