@@ -290,6 +290,16 @@ describe('extractSSEErrorMessage', () => {
       };
     }
 
+    if (rawMessage === 'fetch failed') {
+      return {
+        message:
+          'fetch failed (request aborted, likely after a timeout — connection may still be usable)',
+        code,
+        isProxyHint: false,
+        isTransient: true,
+      };
+    }
+
     return {
       message: rawMessage,
       code,
@@ -525,6 +535,26 @@ describe('extractSSEErrorMessage', () => {
       expect(result.message).toBe('Some specific error message');
       expect(result.code).toBe(42);
       expect(result.isProxyHint).toBe(false);
+      expect(result.isTransient).toBe(false);
+    });
+  });
+
+  describe('fetch failed errors', () => {
+    it('should detect "fetch failed" as transient', () => {
+      const error = { message: 'fetch failed' };
+      const result = extractSSEErrorMessage(error);
+
+      expect(result.message).toContain('fetch failed');
+      expect(result.message).toContain('request aborted');
+      expect(result.isProxyHint).toBe(false);
+      expect(result.isTransient).toBe(true);
+    });
+
+    it('should not match "fetch failed" as a substring in a longer message', () => {
+      const error = { message: 'Something fetch failed to do' };
+      const result = extractSSEErrorMessage(error);
+
+      expect(result.message).toBe('Something fetch failed to do');
       expect(result.isTransient).toBe(false);
     });
   });

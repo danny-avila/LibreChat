@@ -434,7 +434,7 @@ export class MCPConnection extends EventEmitter {
            * SSE connections need longer timeouts for reliability.
            * The connect timeout is extended because proxies may delay initial response.
            */
-          const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
+          const sseTimeout = this.timeout ?? SSE_CONNECT_TIMEOUT;
           const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
           const sseAgent = new Agent({
             bodyTimeout: sseTimeout,
@@ -662,11 +662,11 @@ export class MCPConnection extends EventEmitter {
         if (this.transport) {
           try {
             await this.client.close();
-            this.transport = null;
-            await this.closeAgents();
           } catch (error) {
             logger.warn(`${this.getLogPrefix()} Error closing connection:`, error);
           }
+          this.transport = null;
+          await this.closeAgents();
         }
 
         this.transport = await this.constructTransport(this.options);
@@ -913,7 +913,12 @@ export class MCPConnection extends EventEmitter {
   }
 
   private async closeAgents(): Promise<void> {
-    const closing = this.agents.map((agent) => agent.close().catch(() => undefined));
+    const logPrefix = this.getLogPrefix();
+    const closing = this.agents.map((agent) =>
+      agent.close().catch((err: unknown) => {
+        logger.debug(`${logPrefix} Agent close error (non-fatal):`, err);
+      }),
+    );
     this.agents = [];
     await Promise.all(closing);
   }
