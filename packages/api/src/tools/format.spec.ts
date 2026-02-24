@@ -189,6 +189,77 @@ describe('format.ts helper functions', () => {
       const result = checkPluginAuth(plugin);
       expect(result).toBe(true);
     });
+
+    it('should return true when auth field is marked as optional with no env vars', () => {
+      const plugin: TPlugin = {
+        name: 'Test',
+        pluginKey: 'test',
+        description: 'Test plugin',
+        authConfig: [
+          { authField: 'MISSING_KEY', label: 'API Key', description: 'API Key', optional: true },
+        ],
+      };
+
+      const result = checkPluginAuth(plugin);
+      expect(result).toBe(true);
+    });
+
+    it('should return true when all auth fields are optional', () => {
+      const plugin: TPlugin = {
+        name: 'Test',
+        pluginKey: 'test',
+        description: 'Test plugin',
+        authConfig: [
+          { authField: 'MISSING_KEY_A', label: 'Key A', description: 'Key A', optional: true },
+          { authField: 'MISSING_KEY_B', label: 'Key B', description: 'Key B', optional: true },
+        ],
+      };
+
+      const result = checkPluginAuth(plugin);
+      expect(result).toBe(true);
+    });
+
+    it('should return false when required field is missing even if optional field exists', () => {
+      const plugin: TPlugin = {
+        name: 'Test',
+        pluginKey: 'test',
+        description: 'Test plugin',
+        authConfig: [
+          { authField: 'MISSING_KEY', label: 'Required Key', description: 'Required' },
+          {
+            authField: 'OPTIONAL_KEY',
+            label: 'Optional Key',
+            description: 'Optional',
+            optional: true,
+          },
+        ],
+      };
+
+      const result = checkPluginAuth(plugin);
+      expect(result).toBe(false);
+    });
+
+    it('should return true when optional field has no env var but required field is satisfied', () => {
+      process.env.REQUIRED_KEY = 'valid-key';
+
+      const plugin: TPlugin = {
+        name: 'Test',
+        pluginKey: 'test',
+        description: 'Test plugin',
+        authConfig: [
+          { authField: 'REQUIRED_KEY', label: 'Required Key', description: 'Required' },
+          {
+            authField: 'OPTIONAL_KEY',
+            label: 'Optional Key',
+            description: 'Optional',
+            optional: true,
+          },
+        ],
+      };
+
+      const result = checkPluginAuth(plugin);
+      expect(result).toBe(true);
+    });
   });
 
   describe('getToolkitKey', () => {

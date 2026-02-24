@@ -1,4 +1,3 @@
-const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { v4 } = require('uuid');
@@ -6,12 +5,7 @@ const { ProxyAgent } = require('undici');
 const { GoogleGenAI } = require('@google/genai');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const {
-  FileContext,
-  ContentTypes,
-  FileSources,
-  EImageOutputType,
-} = require('librechat-data-provider');
+const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const {
   geminiToolkit,
   loadServiceKey,
@@ -59,17 +53,12 @@ const displayMessage =
  * @returns {string} - The processed string
  */
 function replaceUnwantedChars(inputString) {
-  return inputString?.replace(/[^\w\s\-_.,!?()]/g, '') || '';
-}
-
-/**
- * Validate and sanitize image format
- * @param {string} format - The format to validate
- * @returns {string} - Safe format
- */
-function getSafeFormat(format) {
-  const allowedFormats = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
-  return allowedFormats.includes(format?.toLowerCase()) ? format.toLowerCase() : 'png';
+  return (
+    inputString
+      ?.replace(/\r\n|\r|\n/g, ' ')
+      .replace(/"/g, '')
+      .trim() || ''
+  );
 }
 
 /**
@@ -117,11 +106,8 @@ async function initializeGeminiClient(options = {}) {
     return new GoogleGenAI({ apiKey: googleKey });
   }
 
-  // Fall back to Vertex AI with service account
   logger.debug('[GeminiImageGen] Using Vertex AI with service account');
   const credentialsPath = getDefaultServiceKeyPath();
-
-  // Use loadServiceKey for consistent loading (supports file paths, JSON strings, base64)
   const serviceKey = await loadServiceKey(credentialsPath);
 
   if (!serviceKey || !serviceKey.project_id) {
@@ -131,73 +117,12 @@ async function initializeGeminiClient(options = {}) {
     );
   }
 
-  // Set GOOGLE_APPLICATION_CREDENTIALS for any Google Cloud SDK dependencies
-  try {
-    await fs.promises.access(credentialsPath);
-    process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-  } catch {
-    // File doesn't exist, skip setting env var
-  }
-
   return new GoogleGenAI({
     vertexai: true,
     project: serviceKey.project_id,
     location: process.env.GOOGLE_LOC || process.env.GOOGLE_CLOUD_LOCATION || 'global',
+    googleAuthOptions: { credentials: serviceKey },
   });
-}
-
-/**
- * Save image to local filesystem
- * @param {string} base64Data - Base64 encoded image data
- * @param {string} format - Image format
- * @param {string} userId - User ID
- * @returns {Promise<string>} - The relative URL
- */
-async function saveImageLocally(base64Data, format, userId) {
-  const safeFormat = getSafeFormat(format);
-  const safeUserId = userId ? path.basename(userId) : 'default';
-  const imageName = `gemini-img-${v4()}.${safeFormat}`;
-  const userDir = path.join(process.cwd(), 'client/public/images', safeUserId);
-
-  await fs.promises.mkdir(userDir, { recursive: true });
-
-  const filePath = path.join(userDir, imageName);
-  await fs.promises.writeFile(filePath, Buffer.from(base64Data, 'base64'));
-
-  logger.debug('[GeminiImageGen] Image saved locally to:', filePath);
-  return `/images/${safeUserId}/${imageName}`;
-}
-
-/**
- * Save image to cloud storage
- * @param {Object} params - Parameters
- * @returns {Promise<string|null>} - The storage URL or null
- */
-async function saveToCloudStorage({ base64Data, format, processFileURL, fileStrategy, userId }) {
-  if (!processFileURL || !fileStrategy || !userId) {
-    return null;
-  }
-
-  try {
-    const safeFormat = getSafeFormat(format);
-    const safeUserId = path.basename(userId);
-    const dataURL = `data:image/${safeFormat};base64,${base64Data}`;
-    const imageName = `gemini-img-${v4()}.${safeFormat}`;
-
-    const result = await processFileURL({
-      URL: dataURL,
-      basePath: 'images',
-      userId: safeUserId,
-      fileName: imageName,
-      fileStrategy,
-      context: FileContext.image_generation,
-    });
-
-    return result.filepath;
-  } catch (error) {
-    logger.error('[GeminiImageGen] Error saving to cloud storage:', error);
-    return null;
-  }
 }
 
 /**
@@ -390,34 +315,18 @@ function createGeminiImageTool(fields = {}) {
     throw new Error('This tool is only available for agents.');
   }
 
-  // Skip validation during tool creation - validation happens at runtime in initializeGeminiClient
-  // This allows the tool to be added to agents when using Vertex AI without requiring API keys
-  // The actual credentials check happens when the tool is invoked
-
-  const {
-    req,
-    imageFiles = [],
-    processFileURL,
-    userId,
-    fileStrategy,
-    GEMINI_API_KEY,
-    GOOGLE_KEY,
-    // GEMINI_VERTEX_ENABLED is used for auth validation only (not used in code)
-    // When set as env var, it signals Vertex AI is configured and bypasses API key requirement
-  } = fields;
+  const { req, imageFiles = [], userId, fileStrategy, GEMINI_API_KEY, GOOGLE_KEY } = fields;
 
   const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
 
   const geminiImageGenTool = tool(
-    async ({ prompt, image_ids, aspectRatio, imageSize }, _runnableConfig) => {
+    async ({ prompt, image_ids, aspectRatio, imageSize }, runnableConfig) => {
       if (!prompt) {
         throw new Error('Missing required field: prompt');
       }
 
-      logger.debug('[GeminiImageGen] Generating image with prompt:', prompt?.substring(0, 100));
-      logger.debug('[GeminiImageGen] Options:', { aspectRatio, imageSize });
+      logger.debug('[GeminiImageGen] Generating image', { aspectRatio, imageSize });
 
-      // Initialize Gemini client with user-provided credentials
       let ai;
       try {
         ai = await initializeGeminiClient({
@@ -432,10 +341,8 @@ function createGeminiImageTool(fields = {}) {
         ];
       }
 
-      // Build request contents
       const contents = [{ text: replaceUnwantedChars(prompt) }];
 
-      // Add context images if provided
       if (image_ids?.length > 0) {
         const contextImages = await convertImagesToInlineData({
           imageFiles,
@@ -447,28 +354,34 @@ function createGeminiImageTool(fields = {}) {
         logger.debug('[GeminiImageGen] Added', contextImages.length, 'context images');
       }
 
-      // Generate image
       let apiResponse;
       const geminiModel = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
-      try {
-        // Build config with optional imageConfig
-        const config = {
-          responseModalities: ['TEXT', 'IMAGE'],
-        };
+      const config = {
+        responseModalities: ['TEXT', 'IMAGE'],
+      };
 
-        // Add imageConfig if aspectRatio or imageSize is specified
-        // Note: gemini-2.5-flash-image doesn't support imageSize
-        const supportsImageSize = !geminiModel.includes('gemini-2.5-flash-image');
-        if (aspectRatio || (imageSize && supportsImageSize)) {
-          config.imageConfig = {};
-          if (aspectRatio) {
-            config.imageConfig.aspectRatio = aspectRatio;
-          }
-          if (imageSize && supportsImageSize) {
-            config.imageConfig.imageSize = imageSize;
-          }
+      const supportsImageSize = !geminiModel.includes('gemini-2.5-flash-image');
+      if (aspectRatio || (imageSize && supportsImageSize)) {
+        config.imageConfig = {};
+        if (aspectRatio) {
+          config.imageConfig.aspectRatio = aspectRatio;
         }
+        if (imageSize && supportsImageSize) {
+          config.imageConfig.imageSize = imageSize;
+        }
+      }
 
+      let derivedSignal = null;
+      let abortHandler = null;
+
+      if (runnableConfig?.signal) {
+        derivedSignal = AbortSignal.any([runnableConfig.signal]);
+        abortHandler = () => logger.debug('[GeminiImageGen] Image generation aborted');
+        derivedSignal.addEventListener('abort', abortHandler, { once: true });
+        config.abortSignal = derivedSignal;
+      }
+
+      try {
         apiResponse = await ai.models.generateContent({
           model: geminiModel,
           contents,
@@ -480,9 +393,12 @@ function createGeminiImageTool(fields = {}) {
           [{ type: ContentTypes.TEXT, text: `Image generation failed: ${error.message}` }],
           { content: [], file_ids: [] },
         ];
+      } finally {
+        if (abortHandler && derivedSignal) {
+          derivedSignal.removeEventListener('abort', abortHandler);
+        }
       }
 
-      // Check for safety blocks
       const safetyBlock = checkForSafetyBlock(apiResponse);
       if (safetyBlock) {
         logger.warn('[GeminiImageGen] Safety block:', safetyBlock);
@@ -509,46 +425,7 @@ function createGeminiImageTool(fields = {}) {
       const imageData = convertedBuffer.toString('base64');
       const mimeType = outputFormat === 'jpeg' ? 'image/jpeg' : `image/${outputFormat}`;
 
-      logger.debug('[GeminiImageGen] Image format:', { outputFormat, mimeType });
-
-      let imageUrl;
-      const useLocalStorage = !fileStrategy || fileStrategy === FileSources.local;
-
-      if (useLocalStorage) {
-        try {
-          imageUrl = await saveImageLocally(imageData, outputFormat, userId);
-        } catch (error) {
-          logger.error('[GeminiImageGen] Local save failed:', error);
-          imageUrl = `data:${mimeType};base64,${imageData}`;
-        }
-      } else {
-        const cloudUrl = await saveToCloudStorage({
-          base64Data: imageData,
-          format: outputFormat,
-          processFileURL,
-          fileStrategy,
-          userId,
-        });
-
-        if (cloudUrl) {
-          imageUrl = cloudUrl;
-        } else {
-          // Fallback to local
-          try {
-            imageUrl = await saveImageLocally(imageData, outputFormat, userId);
-          } catch (_error) {
-            imageUrl = `data:${mimeType};base64,${imageData}`;
-          }
-        }
-      }
-
-      logger.debug('[GeminiImageGen] Image URL:', imageUrl);
-
-      // For the artifact, we need a data URL (same as OpenAI)
-      // The local file save is for persistence, but the response needs a data URL
       const dataUrl = `data:${mimeType};base64,${imageData}`;
-
-      // Return in content_and_artifact format (same as OpenAI)
       const file_ids = [v4()];
       const content = [
         {
@@ -567,8 +444,7 @@ function createGeminiImageTool(fields = {}) {
         },
       ];
 
-      // Record token usage for balance tracking (don't await to avoid blocking response)
-      const conversationId = _runnableConfig?.configurable?.thread_id;
+      const conversationId = runnableConfig?.configurable?.thread_id;
       recordTokenUsage({
         usageMetadata: apiResponse.usageMetadata,
         req,
