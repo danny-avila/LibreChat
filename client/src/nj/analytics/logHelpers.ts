@@ -49,7 +49,7 @@ export function logFileTypeError(file: File) {
 
 /** Error when a single file is too large. */
 export function logFileSizeError(file: File) {
-  logEvent('submit_prompt_client_error_file_type', {
+  logEvent('submit_prompt_client_error_file_size', {
     object_type: file.type,
     object_size: file.size,
   });
