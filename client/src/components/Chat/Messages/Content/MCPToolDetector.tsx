@@ -475,6 +475,45 @@ const MCP_TOOL_CONFIGS = {
       }
     },
   },
+  convert_digest_json_to_html: {
+    triggerForm: false,
+    formType: undefined,
+    extractOptions: undefined,
+    renderHtmlPreview: true,
+    extractHtml: (output: string): string | null => {
+      try {
+        let data: Record<string, unknown>;
+        try {
+          const parsed = JSON.parse(output);
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.text) {
+            data = JSON.parse(parsed[0].text as string);
+          } else {
+            data = typeof parsed === 'object' && parsed !== null ? parsed : {};
+          }
+        } catch {
+          data = JSON.parse(output);
+        }
+        const TOOL_FIELD = 'convert_digest_json_to_html';
+        const HTML_FIELD = 'html';
+        // Top-level or data.*
+        const topLevel = (data?.[TOOL_FIELD] ?? (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as Record<string, unknown> | undefined;
+        let html = (data?.[HTML_FIELD] as string) ?? topLevel?.[HTML_FIELD] as string | undefined;
+        if (typeof html === 'string' && html.length > 0) return html;
+        if (!html && typeof data === 'object' && data !== null) {
+          for (const value of Object.values(data)) {
+            if (value && typeof value === 'object' && TOOL_FIELD in value) {
+              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as Record<string, unknown> | undefined;
+              const h = inner?.[HTML_FIELD];
+              if (typeof h === 'string' && h.length > 0) return h;
+            }
+          }
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    },
+  },
   render_load_keyword_cluster_form: {
     triggerForm: true,
     formType: 'keyword_cluster',
@@ -1089,6 +1128,33 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
   // If no tool config, don't render anything
   if (!toolConfig) {
     return null;
+  }
+
+  // HTML preview for convert_digest_json_to_html (weekly digest email)
+  const htmlPreview =
+    'renderHtmlPreview' in toolConfig &&
+    toolConfig.renderHtmlPreview &&
+    'extractHtml' in toolConfig &&
+    typeof toolConfig.extractHtml === 'function'
+      ? toolConfig.extractHtml(output ?? '')
+      : null;
+  if (htmlPreview) {
+    return (
+      <div className="my-3 w-full overflow-hidden rounded-xl border border-border-light bg-surface-secondary">
+        <div className="border-b border-border-light bg-surface-primary px-3 py-2 text-sm font-medium text-text-primary">
+          Weekly digest preview
+        </div>
+        <div className="relative max-h-[70vh] min-h-[200px] w-full overflow-auto bg-white">
+          <iframe
+            title="Weekly digest HTML preview"
+            srcDoc={htmlPreview}
+            sandbox="allow-same-origin"
+            className="h-full min-h-[400px] w-full border-0"
+            style={{ height: 'min(70vh, 800px)' }}
+          />
+        </div>
+      </div>
+    );
   }
 
   // Render the appropriate form based on form type
