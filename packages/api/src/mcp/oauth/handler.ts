@@ -18,6 +18,8 @@ import type {
   MCPOAuthTokens,
   OAuthMetadata,
 } from './types';
+import type { TokenMethods } from '@librechat/data-schemas';
+import { MCPTokenStorage } from './tokens';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 
 /** Type for the OAuth metadata from the SDK */
@@ -362,6 +364,7 @@ export class MCPOAuthHandler {
     userId: string,
     oauthHeaders: Record<string, string>,
     config?: MCPOptions['oauth'],
+    findToken?: TokenMethods['findToken'],
   ): Promise<{ authorizationUrl: string; flowId: string; flowMetadata: MCPOAuthFlowMetadata }> {
     logger.debug(
       `[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${sanitizeUrlForLogging(serverUrl)}`,
@@ -485,16 +488,41 @@ export class MCPOAuthHandler {
       const redirectUri = config?.redirect_uri || this.getDefaultRedirectUri(serverName);
       logger.debug(`[MCPOAuth] Registering OAuth client with redirect URI: ${redirectUri}`);
 
-      const clientInfo = await this.registerOAuthClient(
-        authServerUrl.toString(),
-        metadata,
-        oauthHeaders,
-        resourceMetadata,
-        redirectUri,
-        config?.token_exchange_method,
-      );
+      // Before registering, check if we already have a valid client registration
+      let clientInfo: OAuthClientInformation | undefined;
 
-      logger.debug(`[MCPOAuth] Client registered with ID: ${clientInfo.client_id}`);
+      if (findToken) {
+        try {
+          const existing = await MCPTokenStorage.getClientInfoAndMetadata({
+            userId,
+            serverName,
+            findToken,
+          });
+          if (existing?.clientInfo?.client_id) {
+            logger.debug(
+              `[MCPOAuth] Reusing existing client registration: ${existing.clientInfo.client_id}`,
+            );
+            clientInfo = existing.clientInfo;
+          }
+        } catch (error) {
+          logger.debug(
+            `[MCPOAuth] Failed to look up existing client registration, will register new`,
+            { error },
+          );
+        }
+      }
+
+      if (!clientInfo) {
+        clientInfo = await this.registerOAuthClient(
+          authServerUrl.toString(),
+          metadata,
+          oauthHeaders,
+          resourceMetadata,
+          redirectUri,
+          config?.token_exchange_method,
+        );
+        logger.debug(`[MCPOAuth] Client registered with ID: ${clientInfo.client_id}`);
+      }
 
       /** Authorization Scope */
       const scope =
