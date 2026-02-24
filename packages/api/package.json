@@ -75,7 +75,7 @@
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.0.4",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "xlsx": "0.18.5"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
