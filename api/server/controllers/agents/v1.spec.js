@@ -59,6 +59,7 @@ jest.mock('~/models', () => ({
 const mockCache = {
   get: jest.fn(),
   set: jest.fn(),
+  delete: jest.fn(),
 };
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => mockCache),
@@ -1309,7 +1310,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     });
 
     test('should skip avatar refresh if cache hit', async () => {
-      mockCache.get.mockResolvedValue(true);
+      mockCache.get.mockResolvedValue({ urlCache: {} });
       findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
       findPubliclyAccessibleResources.mockResolvedValue([]);
 
@@ -1348,8 +1349,12 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       // Verify S3 URL was refreshed
       expect(refreshS3Url).toHaveBeenCalled();
 
-      // Verify cache was set
-      expect(mockCache.set).toHaveBeenCalled();
+      // Verify cache was set with urlCache map, not a plain boolean
+      expect(mockCache.set).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ urlCache: expect.any(Object) }),
+        expect.any(Number),
+      );
 
       // Verify response was returned
       expect(mockRes.json).toHaveBeenCalled();
@@ -1562,6 +1567,84 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       // Verify that the handler completed successfully
       expect(mockRes.json).toHaveBeenCalled();
+    });
+
+    test('should treat legacy boolean cache entry as a miss and run refresh', async () => {
+      // Simulate a cache entry written by the pre-fix code
+      mockCache.get.mockResolvedValue(true);
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+      refreshS3Url.mockResolvedValue('new-s3-path.jpg');
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      // Boolean true fails the shape guard, so refresh must run
+      expect(refreshS3Url).toHaveBeenCalled();
+      // Cache is overwritten with the proper format
+      expect(mockCache.set).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ urlCache: expect.any(Object) }),
+        expect.any(Number),
+      );
+    });
+
+    test('should apply cached urlCache filepath to paginated response on cache hit', async () => {
+      const agentId = agentWithS3Avatar.id;
+      const cachedUrl = 'cached-presigned-url.jpg';
+
+      mockCache.get.mockResolvedValue({ urlCache: { [agentId]: cachedUrl } });
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(refreshS3Url).not.toHaveBeenCalled();
+
+      const responseData = mockRes.json.mock.calls[0][0];
+      const agent = responseData.data.find((a) => a.id === agentId);
+      // Cached URL is served, not the stale DB value 'old-s3-path.jpg'
+      expect(agent.avatar.filepath).toBe(cachedUrl);
+    });
+
+    test('should preserve DB filepath for agents absent from urlCache on cache hit', async () => {
+      mockCache.get.mockResolvedValue({ urlCache: {} });
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(refreshS3Url).not.toHaveBeenCalled();
+
+      const responseData = mockRes.json.mock.calls[0][0];
+      const agent = responseData.data.find((a) => a.id === agentWithS3Avatar.id);
+      expect(agent.avatar.filepath).toBe('old-s3-path.jpg');
     });
   });
 });
