@@ -7,6 +7,7 @@ import { encodeAndFormatDocuments } from './document';
 /** Mock the validation module */
 jest.mock('~/files/validation', () => ({
   validatePdf: jest.fn(),
+  validateBedrockDocument: jest.fn(),
 }));
 
 /** Mock the utils module */
@@ -15,11 +16,14 @@ jest.mock('./utils', () => ({
   getConfiguredFileSizeLimit: jest.fn(),
 }));
 
-import { validatePdf } from '~/files/validation';
+import { validatePdf, validateBedrockDocument } from '~/files/validation';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 import { Types } from 'mongoose';
 
 const mockedValidatePdf = validatePdf as jest.MockedFunction<typeof validatePdf>;
+const mockedValidateBedrockDocument = validateBedrockDocument as jest.MockedFunction<
+  typeof validateBedrockDocument
+>;
 const mockedGetFileStream = getFileStream as jest.MockedFunction<typeof getFileStream>;
 const mockedGetConfiguredFileSizeLimit = getConfiguredFileSizeLimit as jest.MockedFunction<
   typeof getConfiguredFileSizeLimit
@@ -80,6 +84,26 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       usage: 0,
       source: 'test',
       filepath: '/test/path.pdf',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }) as unknown as IMongoFile;
+
+  const createMockDocFile = (
+    sizeInMB: number,
+    mimeType: string,
+    filename: string,
+  ): IMongoFile =>
+    ({
+      _id: new Types.ObjectId(),
+      user: new Types.ObjectId(),
+      file_id: new Types.ObjectId().toString(),
+      filename,
+      type: mimeType,
+      bytes: Math.floor(sizeInMB * 1024 * 1024),
+      object: 'file',
+      usage: 0,
+      source: 'test',
+      filepath: `/test/path/${filename}`,
       createdAt: new Date(),
       updatedAt: new Date(),
     }) as unknown as IMongoFile;
@@ -498,6 +522,165 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         },
         citations: { enabled: true },
       });
+    });
+
+    it('should format Bedrock document with valid PDF', async () => {
+      const req = createMockRequest() as ServerRequest;
+      const file = createMockFile(3);
+
+      const mockContent = Buffer.from('test-pdf-content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      mockedValidateBedrockDocument.mockResolvedValue({ isValid: true });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.BEDROCK },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        document: {
+          name: 'test_pdf',
+          format: 'pdf',
+          source: {
+            bytes: expect.any(Buffer),
+          },
+        },
+      });
+    });
+
+    it('should format Bedrock CSV document', async () => {
+      const req = createMockRequest() as ServerRequest;
+      const file = createMockDocFile(1, 'text/csv', 'data.csv');
+
+      const mockContent = Buffer.from('col1,col2\nval1,val2').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      mockedValidateBedrockDocument.mockResolvedValue({ isValid: true });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.BEDROCK },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        document: {
+          name: 'data_csv',
+          format: 'csv',
+          source: {
+            bytes: expect.any(Buffer),
+          },
+        },
+      });
+    });
+
+    it('should format Bedrock DOCX document', async () => {
+      const req = createMockRequest() as ServerRequest;
+      const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const file = createMockDocFile(2, mimeType, 'report.docx');
+
+      const mockContent = Buffer.from('docx-binary-content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      mockedValidateBedrockDocument.mockResolvedValue({ isValid: true });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.BEDROCK },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        document: {
+          name: 'report_docx',
+          format: 'docx',
+          source: {
+            bytes: expect.any(Buffer),
+          },
+        },
+      });
+    });
+
+    it('should format Bedrock plain text document', async () => {
+      const req = createMockRequest() as ServerRequest;
+      const file = createMockDocFile(0.5, 'text/plain', 'notes.txt');
+
+      const mockContent = Buffer.from('plain text content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      mockedValidateBedrockDocument.mockResolvedValue({ isValid: true });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.BEDROCK },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        document: {
+          name: 'notes_txt',
+          format: 'txt',
+          source: {
+            bytes: expect.any(Buffer),
+          },
+        },
+      });
+    });
+
+    it('should reject Bedrock document when validation fails', async () => {
+      const req = createMockRequest() as ServerRequest;
+      const file = createMockDocFile(5, 'text/csv', 'big.csv');
+
+      const mockContent = Buffer.from('large-csv-content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      mockedValidateBedrockDocument.mockResolvedValue({
+        isValid: false,
+        error: 'File size (5.0MB) exceeds the 4.5MB limit for Bedrock',
+      });
+
+      await expect(
+        encodeAndFormatDocuments(
+          req,
+          [file],
+          { provider: Providers.BEDROCK },
+          mockStrategyFunctions,
+        ),
+      ).rejects.toThrow('Document validation failed');
     });
 
     it('should format OpenAI document with responses API', async () => {
