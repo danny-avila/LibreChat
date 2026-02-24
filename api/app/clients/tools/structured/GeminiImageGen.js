@@ -6,7 +6,7 @@ const { ProxyAgent } = require('undici');
 const { GoogleGenAI } = require('@google/genai');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const { FileContext, ContentTypes, EImageOutputType } = require('librechat-data-provider');
+const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const {
   geminiToolkit,
   loadServiceKey,
@@ -14,8 +14,8 @@ const {
   getTransactionsConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { createFile, getFiles } = require('~/models/File');
 const { spendTokens } = require('~/models/spendTokens');
+const { getFiles } = require('~/models/File');
 
 /**
  * Configure proxy support for Google APIs
@@ -63,16 +63,6 @@ function replaceUnwantedChars(inputString) {
 }
 
 /**
- * Validate and sanitize image format
- * @param {string} format - The format to validate
- * @returns {string} - Safe format
- */
-function getSafeFormat(format) {
-  const allowedFormats = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
-  return allowedFormats.includes(format?.toLowerCase()) ? format.toLowerCase() : 'png';
-}
-
-/**
  * Convert image buffer to target format if needed
  * @param {Buffer} inputBuffer - The input image buffer
  * @param {string} targetFormat - The target format (png, jpeg, webp)
@@ -117,11 +107,8 @@ async function initializeGeminiClient(options = {}) {
     return new GoogleGenAI({ apiKey: googleKey });
   }
 
-  // Fall back to Vertex AI with service account
   logger.debug('[GeminiImageGen] Using Vertex AI with service account');
   const credentialsPath = getDefaultServiceKeyPath();
-
-  // Use loadServiceKey for consistent loading (supports file paths, JSON strings, base64)
   const serviceKey = await loadServiceKey(credentialsPath);
 
   if (!serviceKey || !serviceKey.project_id) {
@@ -131,7 +118,6 @@ async function initializeGeminiClient(options = {}) {
     );
   }
 
-  // Set GOOGLE_APPLICATION_CREDENTIALS for any Google Cloud SDK dependencies
   try {
     await fs.promises.access(credentialsPath);
     process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
@@ -144,47 +130,6 @@ async function initializeGeminiClient(options = {}) {
     project: serviceKey.project_id,
     location: process.env.GOOGLE_LOC || process.env.GOOGLE_CLOUD_LOCATION || 'global',
   });
-}
-
-/**
- * Persist a generated image using the configured file strategy
- * @param {Object} params - Parameters
- * @returns {Promise<void>}
- */
-async function persistGeneratedImage({ base64Data, format, fileStrategy, userId }) {
-  if (!fileStrategy || !userId) {
-    return;
-  }
-
-  try {
-    const safeFormat = getSafeFormat(format);
-    const safeUserId = path.basename(userId);
-    const imageName = `gemini-img-${v4()}.${safeFormat}`;
-    const buffer = Buffer.from(base64Data, 'base64');
-
-    const { saveBuffer, getFileURL } = getStrategyFunctions(fileStrategy);
-    await saveBuffer({ userId: safeUserId, buffer, fileName: imageName });
-    const filepath = await getFileURL({
-      fileName: `${safeUserId}/${imageName}`,
-      basePath: 'images',
-    });
-
-    await createFile(
-      {
-        user: safeUserId,
-        file_id: v4(),
-        bytes: buffer.length,
-        filepath,
-        filename: imageName,
-        source: fileStrategy,
-        type: `image/${safeFormat}`,
-        context: FileContext.image_generation,
-      },
-      true,
-    );
-  } catch (error) {
-    logger.error('[GeminiImageGen] Error persisting generated image:', error);
-  }
 }
 
 /**
@@ -400,8 +345,7 @@ function createGeminiImageTool(fields = {}) {
         throw new Error('Missing required field: prompt');
       }
 
-      logger.debug('[GeminiImageGen] Generating image with prompt:', prompt?.substring(0, 100));
-      logger.debug('[GeminiImageGen] Options:', { aspectRatio, imageSize });
+      logger.debug('[GeminiImageGen] Generating image', { aspectRatio, imageSize });
 
       let ai;
       try {
@@ -490,15 +434,6 @@ function createGeminiImageTool(fields = {}) {
       );
       const imageData = convertedBuffer.toString('base64');
       const mimeType = outputFormat === 'jpeg' ? 'image/jpeg' : `image/${outputFormat}`;
-
-      persistGeneratedImage({
-        base64Data: imageData,
-        format: outputFormat,
-        fileStrategy,
-        userId,
-      }).catch((error) => {
-        logger.error('[GeminiImageGen] Failed to persist generated image:', error);
-      });
 
       const dataUrl = `data:${mimeType};base64,${imageData}`;
       const file_ids = [v4()];
