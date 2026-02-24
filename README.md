@@ -27,6 +27,9 @@
 </p>
 
 <p align="center">
+<a href="https://dashboard.render.com/blueprint/new?repo=https://github.com/danny-avila/LibreChat">
+  <img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy on Render" height="30">
+</a>
 <a href="https://railway.app/template/b5k2mn?referralCode=HI9hWz">
   <img src="https://railway.app/button.svg" alt="Deploy on Railway" height="30">
 </a>
@@ -35,9 +38,6 @@
 </a>
 <a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
   <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
-</a>
-<a href="https://dashboard.render.com/blueprint/new?repo=https://github.com/danny-avila/LibreChat">
-  <img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy on Render" height="30">
 </a>
 </p>
 
