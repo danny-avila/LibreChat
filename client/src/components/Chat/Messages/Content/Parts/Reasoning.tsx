@@ -111,6 +111,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
         <div
           id={contentId}
           role="region"
+          aria-label={label}
           aria-hidden={!isExpanded}
           className={cn(
             'grid transition-all duration-300 ease-out',

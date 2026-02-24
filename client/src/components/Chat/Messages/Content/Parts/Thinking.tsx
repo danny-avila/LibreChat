@@ -305,6 +305,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
       <div
         id={contentId}
         role="region"
+        aria-label={label}
         aria-hidden={!isExpanded}
         className={cn('grid transition-all duration-300 ease-out', isExpanded && 'mb-8')}
         style={{
@@ -330,4 +331,4 @@ ThinkingContent.displayName = 'ThinkingContent';
 FloatingThinkingBar.displayName = 'FloatingThinkingBar';
 Thinking.displayName = 'Thinking';
 
-export default memo(Thinking);
+export default Thinking;
