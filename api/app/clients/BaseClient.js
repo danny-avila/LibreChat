@@ -8,6 +8,7 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
+  sanitizeFileForTransmit,
 } = require('@librechat/api');
 const {
   Constants,
@@ -667,6 +668,24 @@ class BaseClient {
       }
 
       this.handleTokenCountMap(tokenCountMap);
+    }
+
+    if (
+      !isEdited &&
+      this.options.req?.body?.files &&
+      Array.isArray(this.options.attachments)
+    ) {
+      const requestFileIds = new Set(this.options.req.body.files.map((f) => f.file_id));
+      userMessage.files = [];
+      for (const attachment of this.options.attachments) {
+        if (requestFileIds.has(attachment.file_id)) {
+          userMessage.files.push(sanitizeFileForTransmit(attachment));
+        }
+      }
+      if (userMessage.files.length === 0) {
+        delete userMessage.files;
+      }
+      delete userMessage.image_urls;
     }
 
     if (!isEdited && !this.skipSaveUserMessage) {
