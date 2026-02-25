@@ -39,6 +39,41 @@ export function NewJerseyLanding() {
 
       <Collapsible.Root open={open} onOpenChange={setOpen}>
         <div className="rounded border-2 border-border-light bg-surface-primary-alt">
+          <Collapsible.Trigger className="flex w-full items-center justify-between px-6 py-5">
+            <span>
+              {open
+                ? "If you're all set, start a new conversation below."
+                : 'Need help getting started?'}
+            </span>
+            <span className="flex items-center gap-1 font-semibold text-jersey-blue">
+              {open ? (
+                <>
+                  <span>See less</span>
+                  <svg
+                    className="usa-icon usa-icon--size-3"
+                    aria-hidden="true"
+                    focusable="false"
+                    role="img"
+                  >
+                    <use href={`${icons}#expand_less`} />
+                  </svg>
+                </>
+              ) : (
+                <>
+                  <span>See more</span>
+                  <svg
+                    className="usa-icon usa-icon--size-3"
+                    aria-hidden="true"
+                    focusable="false"
+                    role="img"
+                  >
+                    <use href={`${icons}#expand_more`} />
+                  </svg>
+                </>
+              )}
+            </span>
+          </Collapsible.Trigger>
+
           <AnimatePresence initial={false}>
             {open && (
               <motion.div
@@ -49,7 +84,9 @@ export function NewJerseyLanding() {
                 transition={{ duration: 0.3 }}
                 style={{ overflow: 'hidden' }}
               >
-                <Collapsible.Content className="px-6 pt-6" forceMount>
+                <Collapsible.Content className="px-6" forceMount>
+                  <div className="mb-5 border-t-2 border-dotted border-border-medium" />
+
                   <div className="mb-5 flex gap-3">
                     <p>
                       Check out these resources on how to use AI tools —{' '}
@@ -113,7 +150,7 @@ export function NewJerseyLanding() {
 
                   <div className="my-5 border-t-2 border-dotted border-border-medium" />
 
-                  <div className="mb-2">
+                  <div className="mb-5">
                     <p>
                       Access the state&apos;s Generative AI training as a{' '}
                       <a
@@ -140,41 +177,6 @@ export function NewJerseyLanding() {
               </motion.div>
             )}
           </AnimatePresence>
-
-          <Collapsible.Trigger className="flex w-full items-center justify-between px-6 py-5">
-            <span>
-              {open
-                ? "If you're all set, start a new conversation below."
-                : 'Need help getting started?'}
-            </span>
-            <span className="flex items-center gap-1 font-semibold text-jersey-blue">
-              {open ? (
-                <>
-                  <span>See less</span>
-                  <svg
-                    className="usa-icon usa-icon--size-3"
-                    aria-hidden="true"
-                    focusable="false"
-                    role="img"
-                  >
-                    <use href={`${icons}#expand_less`} />
-                  </svg>
-                </>
-              ) : (
-                <>
-                  <span>See more</span>
-                  <svg
-                    className="usa-icon usa-icon--size-3"
-                    aria-hidden="true"
-                    focusable="false"
-                    role="img"
-                  >
-                    <use href={`${icons}#expand_more`} />
-                  </svg>
-                </>
-              )}
-            </span>
-          </Collapsible.Trigger>
         </div>
       </Collapsible.Root>
     </div>
