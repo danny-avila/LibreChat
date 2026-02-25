@@ -72,7 +72,16 @@ const DEFAULT_TIMEOUT = 60000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
 /** Default body timeout for Streamable HTTP GET SSE streams that idle between server pushes */
-const DEFAULT_SSE_READ_TIMEOUT = 5 * 60 * 1000;
+const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
+
+/**
+ * Error message prefixes emitted by the MCP SDK's StreamableHTTPClientTransport
+ * (client/streamableHttp.ts → _handleSseStream / _scheduleReconnection).
+ * These are SDK-internal strings, not part of a public API. If the SDK changes
+ * them, suppression in setupTransportErrorHandlers will silently stop working.
+ */
+const SDK_SSE_STREAM_DISCONNECTED = 'SSE stream disconnected';
+const SDK_SSE_RECONNECT_FAILED = 'Failed to reconnect SSE stream';
 
 /**
  * Headers for SSE connections.
@@ -350,7 +359,7 @@ export class MCPConnection extends EventEmitter {
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
     ): Promise<UndiciResponse> {
-      const isGet = init?.method === 'GET';
+      const isGet = (init?.method ?? 'GET').toUpperCase() === 'GET';
       const dispatcher = isGet && getAgent ? getAgent : postAgent;
 
       const requestHeaders = getHeaders();
@@ -862,8 +871,8 @@ export class MCPConnection extends EventEmitter {
        * must fall through so our higher-level reconnection takes over.
        */
       if (
-        rawMessage.startsWith('SSE stream disconnected') ||
-        rawMessage.startsWith('Failed to reconnect SSE stream')
+        rawMessage.startsWith(SDK_SSE_STREAM_DISCONNECTED) ||
+        rawMessage.startsWith(SDK_SSE_RECONNECT_FAILED)
       ) {
         logger.debug(`${this.getLogPrefix()} SDK SSE stream recovery in progress: ${rawMessage}`);
         return;

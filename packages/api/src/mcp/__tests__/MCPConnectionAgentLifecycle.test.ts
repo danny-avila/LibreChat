@@ -316,10 +316,11 @@ describe('MCPConnection Agent lifecycle – streamable-http', () => {
 
     const optionsSym = Object.getOwnPropertySymbols(agents[0]).find(
       (s) => s.toString() === 'Symbol(options)',
-    ) as symbol;
+    );
+    expect(optionsSym).toBeDefined();
 
     const bodyTimeouts = agents.map(
-      (a) => (a as unknown as Record<symbol, { bodyTimeout: number }>)[optionsSym].bodyTimeout,
+      (a) => (a as unknown as Record<symbol, { bodyTimeout: number }>)[optionsSym!].bodyTimeout,
     );
 
     const hasShortTimeout = bodyTimeouts.some((t) => t <= 120_000);
@@ -342,10 +343,11 @@ describe('MCPConnection Agent lifecycle – streamable-http', () => {
     const agents = (conn as unknown as { agents: Agent[] }).agents;
     const optionsSym = Object.getOwnPropertySymbols(agents[0]).find(
       (s) => s.toString() === 'Symbol(options)',
-    ) as symbol;
+    );
+    expect(optionsSym).toBeDefined();
 
     const bodyTimeouts = agents.map(
-      (a) => (a as unknown as Record<symbol, { bodyTimeout: number }>)[optionsSym].bodyTimeout,
+      (a) => (a as unknown as Record<symbol, { bodyTimeout: number }>)[optionsSym!].bodyTimeout,
     );
 
     expect(bodyTimeouts).toContain(customTimeout);
