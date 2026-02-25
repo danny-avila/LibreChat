@@ -1,9 +1,9 @@
 import { FileText } from 'lucide-react';
 import { Skeleton } from '@librechat/client';
 import type { TPromptGroup, TStartupConfig } from 'librechat-data-provider';
+import { useGetStartupConfig } from '~/data-provider';
 import DashGroupItem from './DashGroupItem';
 import ChatGroupItem from './ChatGroupItem';
-import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
