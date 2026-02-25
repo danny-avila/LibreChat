@@ -166,6 +166,29 @@ export const updateFields = <TCollection, TData>(
   return newData;
 };
 
+export const updateFieldsInPlace = <TCollection, TData>(
+  data: InfiniteData<TCollection>,
+  updatedItem: Partial<TData>,
+  collectionName: string,
+  identifierField: keyof TData,
+): InfiniteData<TCollection> => {
+  const newData = JSON.parse(JSON.stringify(data)) as InfiniteData<TCollection>;
+  const { pageIndex, index } = findPage<TCollection>(newData, (page) =>
+    page[collectionName].findIndex(
+      (item: TData) => item[identifierField] === updatedItem[identifierField],
+    ),
+  );
+
+  if (pageIndex !== -1 && index !== -1) {
+    newData.pages[pageIndex][collectionName][index] = {
+      ...newData.pages[pageIndex][collectionName][index],
+      ...updatedItem,
+    };
+  }
+
+  return newData;
+};
+
 type UpdateCacheListOptions<TData> = {
   queryClient: QueryClient;
   queryKey: unknown[];

@@ -9,6 +9,7 @@ import {
   addPromptGroup,
   updateGroupInAll,
   updateGroupFields,
+  updateGroupFieldsInPlace,
   deletePromptGroup,
   removeGroupFromAll,
 } from '~/utils';
@@ -309,19 +310,23 @@ export const useMakePromptProduction = (options?: t.MakePromptProductionOptions)
       const previousListData = listData ? structuredClone(listData) : undefined;
 
       if (listData) {
-        const newData = updateGroupFields(
-          listData,
-          {
-            _id: variables.groupId,
-            productionId: variables.id,
-            productionPrompt: variables.productionPrompt,
-          },
-          (group) => queryClient.setQueryData([QueryKeys.promptGroup, variables.groupId], group),
-        );
+        const newData = updateGroupFieldsInPlace(listData, {
+          _id: variables.groupId,
+          productionId: variables.id,
+          productionPrompt: variables.productionPrompt,
+        });
         queryClient.setQueryData<t.PromptGroupListData>(
           [QueryKeys.promptGroups, name, category, pageSize],
           newData,
         );
+      }
+
+      if (groupData) {
+        queryClient.setQueryData<t.TPromptGroup>([QueryKeys.promptGroup, variables.groupId], {
+          ...groupData,
+          productionId: variables.id,
+          productionPrompt: variables.productionPrompt,
+        });
       }
 
       if (onMutate) {
@@ -364,35 +369,12 @@ export const useRecordPromptUsage = (): UseMutationResult<
   unknown
 > => {
   const queryClient = useQueryClient();
-  const name = useRecoilValue(store.promptsName);
-  const pageSize = useRecoilValue(store.promptsPageSize);
-  const category = useRecoilValue(store.promptsCategory);
 
   return useMutation({
     mutationFn: (groupId: string) => dataService.recordPromptGroupUsage(groupId),
-    onSuccess: (response, groupId) => {
-      const groupListData = queryClient.getQueryData<t.PromptGroupListData>([
-        QueryKeys.promptGroups,
-        name,
-        category,
-        pageSize,
-      ]);
-
-      if (groupListData) {
-        const newData = updateGroupFields(groupListData, {
-          _id: groupId,
-          numberOfGenerations: response.numberOfGenerations,
-        });
-        queryClient.setQueryData<t.PromptGroupListData>(
-          [QueryKeys.promptGroups, name, category, pageSize],
-          newData,
-        );
-      }
-
-      updateGroupInAll(queryClient, {
-        _id: groupId,
-        numberOfGenerations: response.numberOfGenerations,
-      });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.promptGroups] });
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.allPromptGroups] });
     },
   });
 };
