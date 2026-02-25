@@ -1,5 +1,4 @@
 import { logger } from '@librechat/data-schemas';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { GraphEvents, Constants } from '@librechat/agents';
 import type {
   LCTool,
@@ -10,20 +9,7 @@ import type {
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@langchain/core/tools';
-
-const TRACING_ALS_KEY = Symbol.for('ls:tracing_async_local_storage');
-
-/**
- * Runs `fn` outside the LangGraph/LangSmith tracing AsyncLocalStorage context
- * so I/O handles (child processes, sockets, timers) created during tool execution
- * do not permanently retain the RunTree → graph config → message data chain.
- */
-function runOutsideTracing<T>(fn: () => T): T {
-  const storage = (globalThis as typeof globalThis & Record<symbol, AsyncLocalStorage<unknown>>)[
-    TRACING_ALS_KEY
-  ];
-  return storage ? storage.run(undefined as unknown, fn) : fn();
-}
+import { runOutsideTracing } from '~/utils';
 
 export interface ToolEndCallbackData {
   output: {
@@ -71,119 +57,124 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
       const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
 
-      await runOutsideTracing(async () => {
-        try {
-          const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
-          const { loadedTools, configurable: toolConfigurable } = await loadTools(
-            toolNames,
-            agentId,
-          );
-          const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
-          const mergedConfigurable = { ...configurable, ...toolConfigurable };
+      try {
+        await runOutsideTracing(async () => {
+          try {
+            const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
+            const { loadedTools, configurable: toolConfigurable } = await loadTools(
+              toolNames,
+              agentId,
+            );
+            const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
+            const mergedConfigurable = { ...configurable, ...toolConfigurable };
 
-          const results: ToolExecuteResult[] = await Promise.all(
-            toolCalls.map(async (tc: ToolCallRequest) => {
-              const tool = toolMap.get(tc.name);
+            const results: ToolExecuteResult[] = await Promise.all(
+              toolCalls.map(async (tc: ToolCallRequest) => {
+                const tool = toolMap.get(tc.name);
 
-              if (!tool) {
-                logger.warn(
-                  `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].join(', ')}`,
-                );
-                return {
-                  toolCallId: tc.id,
-                  status: 'error' as const,
-                  content: '',
-                  errorMessage: `Tool ${tc.name} not found`,
-                };
-              }
-
-              try {
-                const toolCallConfig: Record<string, unknown> = {
-                  id: tc.id,
-                  stepId: tc.stepId,
-                  turn: tc.turn,
-                };
-
-                if (
-                  tc.codeSessionContext &&
-                  (tc.name === Constants.EXECUTE_CODE ||
-                    tc.name === Constants.PROGRAMMATIC_TOOL_CALLING)
-                ) {
-                  toolCallConfig.session_id = tc.codeSessionContext.session_id;
-                  if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
-                    toolCallConfig._injected_files = tc.codeSessionContext.files;
-                  }
-                }
-
-                if (tc.name === Constants.PROGRAMMATIC_TOOL_CALLING) {
-                  const toolRegistry = mergedConfigurable?.toolRegistry as
-                    | LCToolRegistry
-                    | undefined;
-                  const ptcToolMap = mergedConfigurable?.ptcToolMap as
-                    | Map<string, StructuredToolInterface>
-                    | undefined;
-                  if (toolRegistry) {
-                    const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
-                      (t) =>
-                        t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
-                        t.name !== Constants.TOOL_SEARCH,
-                    );
-                    toolCallConfig.toolDefs = toolDefs;
-                    toolCallConfig.toolMap = ptcToolMap ?? toolMap;
-                  }
-                }
-
-                const result = await tool.invoke(tc.args, {
-                  toolCall: toolCallConfig,
-                  configurable: mergedConfigurable,
-                  metadata,
-                } as Record<string, unknown>);
-
-                if (toolEndCallback) {
-                  await toolEndCallback(
-                    {
-                      output: {
-                        name: tc.name,
-                        tool_call_id: tc.id,
-                        content: result.content,
-                        artifact: result.artifact,
-                      },
-                    },
-                    {
-                      run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
-                      thread_id: (metadata as Record<string, unknown>)?.thread_id as
-                        | string
-                        | undefined,
-                      ...metadata,
-                    },
+                if (!tool) {
+                  logger.warn(
+                    `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].join(', ')}`,
                   );
+                  return {
+                    toolCallId: tc.id,
+                    status: 'error' as const,
+                    content: '',
+                    errorMessage: `Tool ${tc.name} not found`,
+                  };
                 }
 
-                return {
-                  toolCallId: tc.id,
-                  content: result.content,
-                  artifact: result.artifact,
-                  status: 'success' as const,
-                };
-              } catch (toolError) {
-                const error = toolError as Error;
-                logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error:`, error);
-                return {
-                  toolCallId: tc.id,
-                  status: 'error' as const,
-                  content: '',
-                  errorMessage: error.message,
-                };
-              }
-            }),
-          );
+                try {
+                  const toolCallConfig: Record<string, unknown> = {
+                    id: tc.id,
+                    stepId: tc.stepId,
+                    turn: tc.turn,
+                  };
 
-          resolve(results);
-        } catch (error) {
-          logger.error('[ON_TOOL_EXECUTE] Fatal error:', error);
-          reject(error as Error);
-        }
-      });
+                  if (
+                    tc.codeSessionContext &&
+                    (tc.name === Constants.EXECUTE_CODE ||
+                      tc.name === Constants.PROGRAMMATIC_TOOL_CALLING)
+                  ) {
+                    toolCallConfig.session_id = tc.codeSessionContext.session_id;
+                    if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
+                      toolCallConfig._injected_files = tc.codeSessionContext.files;
+                    }
+                  }
+
+                  if (tc.name === Constants.PROGRAMMATIC_TOOL_CALLING) {
+                    const toolRegistry = mergedConfigurable?.toolRegistry as
+                      | LCToolRegistry
+                      | undefined;
+                    const ptcToolMap = mergedConfigurable?.ptcToolMap as
+                      | Map<string, StructuredToolInterface>
+                      | undefined;
+                    if (toolRegistry) {
+                      const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
+                        (t) =>
+                          t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                          t.name !== Constants.TOOL_SEARCH,
+                      );
+                      toolCallConfig.toolDefs = toolDefs;
+                      toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                    }
+                  }
+
+                  const result = await tool.invoke(tc.args, {
+                    toolCall: toolCallConfig,
+                    configurable: mergedConfigurable,
+                    metadata,
+                  } as Record<string, unknown>);
+
+                  if (toolEndCallback) {
+                    await toolEndCallback(
+                      {
+                        output: {
+                          name: tc.name,
+                          tool_call_id: tc.id,
+                          content: result.content,
+                          artifact: result.artifact,
+                        },
+                      },
+                      {
+                        run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
+                        thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                          | string
+                          | undefined,
+                        ...metadata,
+                      },
+                    );
+                  }
+
+                  return {
+                    toolCallId: tc.id,
+                    content: result.content,
+                    artifact: result.artifact,
+                    status: 'success' as const,
+                  };
+                } catch (toolError) {
+                  const error = toolError as Error;
+                  logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error:`, error);
+                  return {
+                    toolCallId: tc.id,
+                    status: 'error' as const,
+                    content: '',
+                    errorMessage: error.message,
+                  };
+                }
+              }),
+            );
+
+            resolve(results);
+          } catch (error) {
+            logger.error('[ON_TOOL_EXECUTE] Fatal error:', error);
+            reject(error as Error);
+          }
+        });
+      } catch (outerError) {
+        logger.error('[ON_TOOL_EXECUTE] Unexpected error:', outerError);
+        reject(outerError as Error);
+      }
     },
   };
 }
