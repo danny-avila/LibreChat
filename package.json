@@ -165,7 +165,10 @@
         "katex": "^0.16.21"
       }
     },
-    "langsmith": "0.4.12"
+    "langsmith": "0.4.12",
+    "eslint": {
+      "ajv": "6.14.0"
+    }
   },
   "nodemonConfig": {
     "ignore": [
