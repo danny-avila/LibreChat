@@ -1,27 +1,20 @@
 import { useMemo, useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
+import { Sidebar } from '@librechat/client';
 import { useLocation } from 'react-router-dom';
 import { SystemRoles } from 'librechat-data-provider';
 import { ArrowLeft, MessageSquareQuote } from 'lucide-react';
-import { Sidebar } from '@librechat/client';
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbSeparator,
-  // BreadcrumbEllipsis,
-  // DropdownMenu,
-  // DropdownMenuItem,
-  // DropdownMenuContent,
-  // DropdownMenuTrigger,
 } from '@librechat/client';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
 import AdvancedSwitch from '~/components/Prompts/AdvancedSwitch';
-// import { RightPanel } from '../../components/Prompts/RightPanel';
 import AdminSettings from '~/components/Prompts/AdminSettings';
 import { useDashboardContext } from '~/Providers';
-// import { PromptsEditorMode } from '~/common';
 import store from '~/store';
 
 const promptsPathPattern = /prompts\/(?!new(?:\/|$)).*$/;

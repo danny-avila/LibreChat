@@ -15,7 +15,7 @@ interface MCPSubMenuProps {
 const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
   ({ placeholder, ...props }, ref) => {
     const localize = useLocalize();
-    const { mcpServerManager } = useBadgeRowContext();
+    const { storageContextKey, mcpServerManager } = useBadgeRowContext();
     const {
       isPinned,
       mcpValues,
@@ -87,7 +87,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
             unmountOnHide={true}
             aria-label={localize('com_ui_mcp_servers')}
             className={cn(
-              'animate-popover-left z-50 ml-3 flex min-w-[260px] max-w-[320px] flex-col rounded-xl',
+              'animate-popover-left z-40 ml-3 flex min-w-[260px] max-w-[320px] flex-col rounded-xl',
               'border border-border-light bg-presentation p-1.5 shadow-lg',
             )}
           >
@@ -106,7 +106,9 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
             </div>
           </Ariakit.Menu>
         </Ariakit.MenuProvider>
-        {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
+        {configDialogProps && (
+          <MCPConfigDialog {...configDialogProps} storageContextKey={storageContextKey} />
+        )}
       </div>
     );
   },

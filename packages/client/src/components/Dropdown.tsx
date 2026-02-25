@@ -102,7 +102,7 @@ const Dropdown: React.FC<DropdownProps> = ({
         portal={portal}
         store={selectProps}
         className={cn(
-          'popover-ui',
+          'popover-ui z-40',
           sizeClasses,
           className,
           'max-h-[80vh] overflow-y-auto',

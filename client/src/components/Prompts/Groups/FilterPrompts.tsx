@@ -9,7 +9,13 @@ import { usePromptGroupsContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function FilterPrompts({ className = '' }: { className?: string }) {
+export default function FilterPrompts({
+  className = '',
+  dropdownClassName = '',
+}: {
+  className?: string;
+  dropdownClassName?: string;
+}) {
   const localize = useLocalize();
   const { name, setName, hasAccess, promptGroups } = usePromptGroupsContext();
   const { categories } = useCategories({ className: 'h-4 w-4', hasAccess });
@@ -94,7 +100,7 @@ export default function FilterPrompts({ className = '' }: { className?: string }
         value={categoryFilter || SystemCategories.ALL}
         onChange={onSelect}
         options={filterOptions}
-        className="rounded-lg bg-transparent"
+        className={cn('rounded-lg bg-transparent', dropdownClassName)}
         icon={<ListFilter className="h-4 w-4" />}
         label="Filter: "
         ariaLabel={localize('com_ui_filter_prompts')}

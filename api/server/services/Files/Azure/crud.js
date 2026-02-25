@@ -5,7 +5,7 @@ const axios = require('axios');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
-const { getAzureContainerClient } = require('@librechat/api');
+const { getAzureContainerClient, deleteRagFile } = require('@librechat/api');
 
 const defaultBasePath = 'images';
 const { AZURE_STORAGE_PUBLIC_ACCESS = 'true', AZURE_CONTAINER_NAME = 'files' } = process.env;
@@ -243,6 +243,8 @@ async function getAzureURL({ fileName, basePath = defaultBasePath, userId, conta
  * @param {MongoFile} params.file - The file object.
  */
 async function deleteFileFromAzure(req, file) {
+  await deleteRagFile({ userId: req.user.id, file });
+
   try {
     const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
     const blobPath = file.filepath.split(`${AZURE_CONTAINER_NAME}/`)[1];

@@ -58,7 +58,7 @@ const PresetsMenu: FC = () => {
               id="presets-button"
               data-testid="presets-button"
               aria-label={localize('com_endpoint_examples')}
-              className="rounded-xl p-2 duration-0 hover:bg-surface-active-alt max-md:hidden"
+              className="rounded-xl bg-presentation p-2 duration-0 hover:bg-surface-active-alt"
               // className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
             >
               <BookCopy className="icon-lg" aria-hidden="true" />
@@ -80,7 +80,7 @@ const PresetsMenu: FC = () => {
           <Content
             side="bottom"
             align="center"
-            className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-border-light bg-surface-secondary text-text-primary shadow-lg md:min-w-[400px]"
+            className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-border-light bg-presentation text-text-primary shadow-lg md:min-w-[400px]"
           >
             <PresetItems
               presets={presetsQuery.data}

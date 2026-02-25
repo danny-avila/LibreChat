@@ -19,6 +19,8 @@ const BaseOptionsSchema = z.object({
   startup: z.boolean().optional(),
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
+  /** Timeout (ms) for the long-lived SSE GET stream body before undici aborts it. Default: 300_000 (5 min). */
+  sseReadTimeout: z.number().positive().optional(),
   initTimeout: z.number().optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
@@ -212,6 +214,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
   schema.omit({
     startup: true,
     timeout: true,
+    sseReadTimeout: true,
     initTimeout: true,
     chatMenu: true,
     serverInstructions: true,
@@ -221,12 +224,16 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
   });
 
 /**
- * MCP Server configuration that comes from UI input only
+ * MCP Server configuration that comes from UI/API input only.
  * Omits server-managed fields like startup, timeout, customUserVars, etc.
  * Allows: title, description, url, iconPath, oauth (user credentials)
+ *
+ * SECURITY: Stdio transport is intentionally excluded from user input.
+ * Stdio allows arbitrary command execution and should only be configured
+ * by administrators via the YAML config file (librechat.yaml).
+ * Only remote transports (SSE, HTTP, WebSocket) are allowed via the API.
  */
 export const MCPServerUserInputSchema = z.union([
-  omitServerManagedFields(StdioOptionsSchema),
   omitServerManagedFields(WebSocketOptionsSchema),
   omitServerManagedFields(SSEOptionsSchema),
   omitServerManagedFields(StreamableHTTPOptionsSchema),

@@ -40,9 +40,9 @@ function AddMultiConvo() {
       aria-label={localize('com_ui_add_multi_conversation')}
       onClick={clickHandler}
       data-testid="add-multi-convo-button"
-      className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+      className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
     >
-      <PlusCircle size={16} aria-hidden="true" />
+      <PlusCircle className="icon-lg" aria-hidden="true" />
     </TooltipAnchor>
   );
 }

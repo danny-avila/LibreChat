@@ -1,15 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback, memo } from 'react';
 import copy from 'copy-to-clipboard';
-import {
-  X,
-  ZoomIn,
-  Expand,
-  ZoomOut,
-  ChevronUp,
-  RefreshCw,
-  RotateCcw,
-  ChevronDown,
-} from 'lucide-react';
+import { X, ZoomIn, ZoomOut, ChevronUp, RefreshCw, RotateCcw, ChevronDown } from 'lucide-react';
 import {
   Button,
   Spinner,
@@ -21,6 +12,7 @@ import {
   OGDialogContent,
 } from '@librechat/client';
 import { useLocalize, useDebouncedMermaid } from '~/hooks';
+import MermaidHeader from './MermaidHeader';
 import cn from '~/utils/cn';
 
 interface MermaidProps {
@@ -33,13 +25,14 @@ interface MermaidProps {
 }
 
 const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 3;
+const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.25;
+const MIN_CONTAINER_HEIGHT = 200;
+const MAX_CONTAINER_HEIGHT = 500;
 
 const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   const localize = useLocalize();
   const [blobUrl, setBlobUrl] = useState<string>('');
-  const [isCopied, setIsCopied] = useState(false);
   const [showCode, setShowCode] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -47,14 +40,24 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   const [dialogShowCode, setDialogShowCode] = useState(false);
   const lastValidSvgRef = useRef<string | null>(null);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
-  const showCodeButtonRef = useRef<HTMLButtonElement>(null);
-  const copyButtonRef = useRef<HTMLButtonElement>(null);
   const dialogShowCodeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogCopyButtonRef = useRef<HTMLButtonElement>(null);
   const zoomCopyButtonRef = useRef<HTMLButtonElement>(null);
   const dialogZoomCopyButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Zoom and pan state
+  const [svgDimensions, setSvgDimensions] = useState<{ width: number; height: number } | null>(
+    null,
+  );
+  const [containerWidth, setContainerWidth] = useState(700);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocusWithin, setIsFocusWithin] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [showMobileControls, setShowMobileControls] = useState(false);
+
+  useEffect(() => {
+    setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
+  }, []);
+
   const [zoom, setZoom] = useState(1);
   // Dialog zoom and pan state (separate from inline view)
   const [dialogZoom, setDialogZoom] = useState(1);
@@ -89,35 +92,112 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     }
   }, [svg]);
 
-  // Process SVG and create blob URL
-  const processedSvg = useMemo(() => {
-    if (!svg) {
-      return null;
-    }
+  useEffect(() => {
+    if (!containerRef.current) return;
 
-    let finalSvg = svg;
-
-    // Firefox fix: Ensure viewBox is set correctly
-    if (!svg.includes('viewBox') && svg.includes('height=') && svg.includes('width=')) {
-      const widthMatch = svg.match(/width="(\d+)"/);
-      const heightMatch = svg.match(/height="(\d+)"/);
-
-      if (widthMatch && heightMatch) {
-        const width = widthMatch[1];
-        const height = heightMatch[1];
-        finalSvg = svg.replace('<svg', `<svg viewBox="0 0 ${width} ${height}"`);
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
       }
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // Process SVG and extract dimensions
+  const { processedSvg, parsedDimensions } = useMemo(() => {
+    if (!svg) {
+      return { processedSvg: null, parsedDimensions: null };
     }
 
-    // Ensure SVG has proper XML namespace
-    if (!finalSvg.includes('xmlns')) {
-      finalSvg = finalSvg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+    // Regex-based fallback for malformed or unparseable SVG
+    const applyFallbackFixes = (svgString: string): string => {
+      let finalSvg = svgString;
+
+      // Firefox fix: Ensure viewBox is set correctly
+      if (
+        !svgString.includes('viewBox') &&
+        svgString.includes('height=') &&
+        svgString.includes('width=')
+      ) {
+        const widthMatch = svgString.match(/width="(\d+)"/);
+        const heightMatch = svgString.match(/height="(\d+)"/);
+
+        if (widthMatch && heightMatch) {
+          const width = widthMatch[1];
+          const height = heightMatch[1];
+          finalSvg = finalSvg.replace('<svg', `<svg viewBox="0 0 ${width} ${height}"`);
+        }
+      }
+
+      // Ensure SVG has proper XML namespace
+      if (!finalSvg.includes('xmlns')) {
+        finalSvg = finalSvg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+
+      return finalSvg;
+    };
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svg, 'image/svg+xml');
+
+    const parseError = doc.querySelector('parsererror');
+    if (parseError) {
+      return { processedSvg: applyFallbackFixes(svg), parsedDimensions: null };
     }
 
-    return finalSvg;
+    const svgElement = doc.querySelector('svg');
+
+    if (svgElement) {
+      let width = parseFloat(svgElement.getAttribute('width') || '0');
+      let height = parseFloat(svgElement.getAttribute('height') || '0');
+
+      if (!width || !height) {
+        const viewBox = svgElement.getAttribute('viewBox');
+        if (viewBox) {
+          const parts = viewBox.split(/[\s,]+/).map(Number);
+          if (parts.length === 4) {
+            width = parts[2];
+            height = parts[3];
+          }
+        }
+      }
+
+      let dimensions: { width: number; height: number } | null = null;
+      if (width > 0 && height > 0) {
+        dimensions = { width, height };
+
+        if (!svgElement.getAttribute('viewBox')) {
+          svgElement.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        }
+
+        svgElement.removeAttribute('width');
+        svgElement.removeAttribute('height');
+        svgElement.removeAttribute('style');
+      }
+
+      if (!svgElement.getAttribute('xmlns')) {
+        svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      }
+
+      return {
+        processedSvg: new XMLSerializer().serializeToString(doc),
+        parsedDimensions: dimensions,
+      };
+    }
+
+    // Fallback: if svgElement is null
+    return { processedSvg: applyFallbackFixes(svg), parsedDimensions: null };
   }, [svg]);
 
-  // Create blob URL for the SVG
+  // The svg dimension update needs to be in useEffect instead of useMemo to avoid re-render problems
+  useEffect(() => {
+    if (parsedDimensions) {
+      setSvgDimensions(parsedDimensions);
+    }
+  }, [parsedDimensions]);
+
   useEffect(() => {
     if (!processedSvg) {
       return;
@@ -134,22 +214,23 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     };
   }, [processedSvg]);
 
-  const handleCopy = useCallback(() => {
-    copy(children.trim(), { format: 'text/plain' });
-    setIsCopied(true);
-    requestAnimationFrame(() => {
-      copyButtonRef.current?.focus();
-    });
-    setTimeout(() => {
-      // Save currently focused element before state update causes re-render
-      const focusedElement = document.activeElement as HTMLElement | null;
-      setIsCopied(false);
-      // Restore focus to whatever was focused (React re-render may have disrupted it)
-      requestAnimationFrame(() => {
-        focusedElement?.focus();
-      });
-    }, 3000);
-  }, [children]);
+  const { initialScale, calculatedHeight } = useMemo(() => {
+    if (!svgDimensions) {
+      return { initialScale: 1, calculatedHeight: MAX_CONTAINER_HEIGHT };
+    }
+
+    const padding = 32;
+    const availableWidth = containerWidth - padding;
+    const scaleX = availableWidth / svgDimensions.width;
+    const scaleY = MAX_CONTAINER_HEIGHT / svgDimensions.height;
+    const scale = Math.min(scaleX, scaleY, 1); // Cap at 1 to prevent small diagrams from being scaled up
+    const height = Math.max(
+      MIN_CONTAINER_HEIGHT,
+      Math.min(MAX_CONTAINER_HEIGHT, svgDimensions.height * scale + padding),
+    );
+
+    return { initialScale: scale, calculatedHeight: height };
+  }, [svgDimensions, containerWidth]);
 
   const [isDialogCopied, setIsDialogCopied] = useState(false);
   const handleDialogCopy = useCallback(() => {
@@ -194,12 +275,8 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     setRetryCount((prev) => prev + 1);
   };
 
-  // Toggle code with focus restoration
   const handleToggleCode = useCallback(() => {
     setShowCode((prev) => !prev);
-    requestAnimationFrame(() => {
-      showCodeButtonRef.current?.focus();
-    });
   }, []);
 
   // Toggle dialog code with focus restoration
@@ -239,11 +316,10 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   }, []);
 
   const handleDialogWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-      setDialogZoom((prev) => Math.min(Math.max(prev + delta, MIN_ZOOM), MAX_ZOOM));
-    }
+    // In the expanded dialog, allow zooming without holding modifier key
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+    setDialogZoom((prev) => Math.min(Math.max(prev + delta, MIN_ZOOM), MAX_ZOOM));
   }, []);
 
   const handleDialogMouseDown = useCallback(
@@ -279,15 +355,23 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   }, []);
 
   // Mouse wheel zoom
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-      setZoom((prev) => Math.min(Math.max(prev + delta, MIN_ZOOM), MAX_ZOOM));
-    }
-  }, []);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-  // Pan handlers
+    const handleWheelNative = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+        setZoom((prev) => Math.min(Math.max(prev + delta, MIN_ZOOM), MAX_ZOOM));
+      }
+    };
+
+    // use native event listener with passive: false to prevent scroll
+    container.addEventListener('wheel', handleWheelNative, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheelNative);
+  }, [blobUrl]); // blobUrl dep (unused in callback) ensures listener re-attaches when container mounts
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       // Only start panning on left click and not on buttons/icons inside buttons
@@ -301,84 +385,60 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     [pan],
   );
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (isPanning) {
-        setPan({
-          x: e.clientX - panStartRef.current.x,
-          y: e.clientY - panStartRef.current.y,
-        });
+  // Attach document-level listeners when panning starts
+  useEffect(() => {
+    if (!isPanning) return;
+
+    const handleDocumentMouseMove = (e: MouseEvent) => {
+      setPan({
+        x: e.clientX - panStartRef.current.x,
+        y: e.clientY - panStartRef.current.y,
+      });
+    };
+
+    const handleDocumentMouseUp = () => {
+      setIsPanning(false);
+    };
+
+    document.addEventListener('mousemove', handleDocumentMouseMove);
+    document.addEventListener('mouseup', handleDocumentMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleDocumentMouseMove);
+      document.removeEventListener('mouseup', handleDocumentMouseUp);
+    };
+  }, [isPanning]);
+
+  const showControls = isTouchDevice
+    ? showMobileControls || showCode
+    : isHovered || isFocusWithin || showCode;
+
+  const handleContainerClick = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      if (!isTouchDevice) return;
+      const target = e.target as HTMLElement;
+      const isInteractive = target.closest('button, a, [role="button"]');
+      if (!isInteractive) {
+        setShowMobileControls((prev) => !prev);
       }
     },
-    [isPanning],
+    [isTouchDevice],
   );
 
-  const handleMouseUp = useCallback(() => {
-    setIsPanning(false);
+  const handleExpand = useCallback(() => {
+    setDialogShowCode(false);
+    setDialogZoom(1);
+    setDialogPan({ x: 0, y: 0 });
+    setIsDialogOpen(true);
   }, []);
 
-  const handleMouseLeave = useCallback(() => {
-    setIsPanning(false);
-  }, []);
-
-  // Header component (shared across states)
-  const Header = ({
-    showActions = false,
-    showExpandButton = false,
-  }: {
-    showActions?: boolean;
-    showExpandButton?: boolean;
-  }) => (
-    <div className="relative flex items-center justify-between rounded-tl-md rounded-tr-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200">
-      <span>{localize('com_ui_mermaid')}</span>
-      {showActions && (
-        <div className="ml-auto flex gap-2">
-          {showExpandButton && (
-            <Button
-              ref={expandButtonRef}
-              variant="ghost"
-              size="sm"
-              className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
-              onClick={() => {
-                setDialogShowCode(false);
-                setDialogZoom(1);
-                setDialogPan({ x: 0, y: 0 });
-                setIsDialogOpen(true);
-              }}
-              title={localize('com_ui_expand')}
-            >
-              <Expand className="h-4 w-4" />
-              {localize('com_ui_expand')}
-            </Button>
-          )}
-          <Button
-            ref={showCodeButtonRef}
-            variant="ghost"
-            size="sm"
-            className="h-auto min-w-[6rem] gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
-            onClick={handleToggleCode}
-          >
-            {showCode ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            {showCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
-          </Button>
-          <Button
-            ref={copyButtonRef}
-            variant="ghost"
-            size="sm"
-            className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
-            onClick={handleCopy}
-          >
-            {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
-            {localize('com_ui_copy_code')}
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-
-  // Zoom controls - inline JSX to avoid stale closure issues
   const zoomControls = (
-    <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-md border border-border-light bg-surface-secondary p-1 shadow-lg">
+    <div
+      className={cn(
+        'absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-md border border-border-light bg-surface-secondary p-1 shadow-lg transition-opacity duration-200',
+        showControls ? 'opacity-100' : 'pointer-events-none opacity-0',
+      )}
+    >
       <button
         type="button"
         onClick={(e) => {
@@ -583,40 +643,58 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     // If we have a previous valid render, show it with a subtle loading indicator
     if (lastValidSvgRef.current && blobUrl) {
       return (
-        <div className="w-full overflow-hidden rounded-md border border-border-light">
-          <Header showActions />
+        <div
+          className={cn(
+            'relative w-full overflow-hidden rounded-md border transition-all duration-200',
+            showControls ? 'border-border-light' : 'border-transparent',
+          )}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          onFocus={() => setIsFocusWithin(true)}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+              setIsFocusWithin(false);
+            }
+          }}
+          onClick={handleContainerClick}
+        >
+          <MermaidHeader
+            className={cn(
+              'absolute left-0 right-0 top-0 z-20',
+              showControls ? 'opacity-100' : 'pointer-events-none opacity-0',
+            )}
+            codeContent={children}
+            showCode={showCode}
+            onToggleCode={handleToggleCode}
+          />
           <div
             ref={containerRef}
             className={cn(
-              'relative overflow-hidden p-4',
-              'rounded-b-md bg-surface-primary-alt',
+              'relative overflow-hidden p-4 transition-colors duration-200',
+              'rounded-md',
+              showControls ? 'bg-surface-primary-alt' : 'bg-transparent',
               isPanning ? 'cursor-grabbing' : 'cursor-grab',
             )}
-            style={{ minHeight: '250px', maxHeight: '600px' }}
-            onWheel={handleWheel}
+            style={{ height: `${calculatedHeight}px` }}
             onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseLeave}
           >
             <div className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded border border-border-light bg-surface-secondary px-2 py-1 text-xs text-text-secondary">
               <Spinner className="h-3 w-3" />
             </div>
             <div
-              className="flex items-center justify-center"
+              className="absolute inset-0 flex items-center justify-center"
               style={{
-                transform: `translate(${pan.x}px, ${pan.y}px)`,
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                 transition: isPanning ? 'none' : 'transform 0.1s ease-out',
               }}
             >
               <img
                 src={blobUrl}
                 alt="Mermaid diagram"
-                className="max-w-full select-none opacity-70"
+                className="select-none opacity-70"
                 style={{
-                  maxHeight: '500px',
-                  transform: `scale(${zoom})`,
-                  transformOrigin: 'center center',
+                  width: svgDimensions ? `${svgDimensions.width * initialScale}px` : 'auto',
+                  height: svgDimensions ? `${svgDimensions.height * initialScale}px` : 'auto',
                 }}
                 draggable={false}
               />
@@ -648,7 +726,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   if (error) {
     return (
       <div className="w-full overflow-hidden rounded-md border border-border-light">
-        <Header showActions />
+        <MermaidHeader codeContent={children} showCode={showCode} onToggleCode={handleToggleCode} />
         <div className="rounded-b-md border-t border-red-500/30 bg-red-500/10 p-4">
           <div className="mb-2 flex items-center justify-between">
             <span className="font-semibold text-red-500 dark:text-red-400">
@@ -689,10 +767,40 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   return (
     <>
       {expandedDialog}
-      <div className="w-full overflow-hidden rounded-md border border-border-light">
-        <Header showActions showExpandButton />
+      <div
+        className={cn(
+          'relative w-full overflow-hidden rounded-md border transition-all duration-200',
+          showControls ? 'border-border-light' : 'border-transparent',
+        )}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onFocus={() => setIsFocusWithin(true)}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsFocusWithin(false);
+          }
+        }}
+        onClick={handleContainerClick}
+      >
+        <MermaidHeader
+          className={cn(
+            'absolute left-0 right-0 top-0 z-20',
+            showControls ? 'opacity-100' : 'pointer-events-none opacity-0',
+          )}
+          codeContent={children}
+          showCode={showCode}
+          showExpandButton
+          expandButtonRef={expandButtonRef}
+          onExpand={handleExpand}
+          onToggleCode={handleToggleCode}
+        />
         {showCode && (
-          <div className="border-b border-border-medium bg-surface-secondary p-4">
+          <div
+            className={cn(
+              'border-b border-border-medium bg-surface-secondary p-4 pt-12 transition-opacity duration-200',
+              showControls ? 'opacity-100' : 'pointer-events-none opacity-0',
+            )}
+          >
             <pre className="overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
               {children}
             </pre>
@@ -701,33 +809,28 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
         <div
           ref={containerRef}
           className={cn(
-            'relative overflow-hidden p-4',
-            'bg-surface-primary-alt',
-            !showCode && 'rounded-b-md',
+            'relative overflow-hidden p-4 transition-colors duration-200',
+            'rounded-md',
+            showControls ? 'bg-surface-primary-alt' : 'bg-transparent',
             isPanning ? 'cursor-grabbing' : 'cursor-grab',
           )}
-          style={{ minHeight: '250px', maxHeight: '600px' }}
-          onWheel={handleWheel}
+          style={{ height: `${calculatedHeight}px` }}
           onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseLeave}
         >
           <div
-            className="flex min-h-[200px] items-center justify-center"
+            className="absolute inset-0 flex items-center justify-center"
             style={{
-              transform: `translate(${pan.x}px, ${pan.y}px)`,
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
               transition: isPanning ? 'none' : 'transform 0.1s ease-out',
             }}
           >
             <img
               src={blobUrl}
               alt="Mermaid diagram"
-              className="max-w-full select-none"
+              className="select-none"
               style={{
-                maxHeight: '500px',
-                transform: `scale(${zoom})`,
-                transformOrigin: 'center center',
+                width: svgDimensions ? `${svgDimensions.width * initialScale}px` : 'auto',
+                height: svgDimensions ? `${svgDimensions.height * initialScale}px` : 'auto',
               }}
               draggable={false}
             />

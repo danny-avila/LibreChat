@@ -12,10 +12,10 @@ export const useMCPServersQuery = <TData = t.MCPServersListResponse>(
     [QueryKeys.mcpServers],
     () => dataService.getMCPServers(),
     {
-      staleTime: 1000 * 60 * 5, // 5 minutes - data stays fresh longer
-      refetchOnWindowFocus: false,
+      staleTime: 30 * 1000, // 30 seconds — short enough to pick up servers that finish initializing after first load
+      refetchOnWindowFocus: true,
       refetchOnReconnect: false,
-      refetchOnMount: false,
+      refetchOnMount: true,
       retry: false,
       ...config,
     },

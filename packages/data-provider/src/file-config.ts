@@ -60,6 +60,7 @@ export const fullMimeTypesList = [
   'application/vnd.coffeescript',
   'application/xml',
   'application/zip',
+  'application/x-parquet',
   'image/svg',
   'image/svg+xml',
   // Video formats
@@ -114,6 +115,7 @@ export const codeInterpreterMimeTypesList = [
   'application/typescript',
   'application/xml',
   'application/zip',
+  'application/x-parquet',
   ...excelFileTypes,
 ];
 
@@ -137,6 +139,39 @@ export const retrievalMimeTypesList = [
 
 export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i;
 
+/** @see https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_DocumentBlock.html */
+export type BedrockDocumentFormat =
+  | 'pdf'
+  | 'csv'
+  | 'doc'
+  | 'docx'
+  | 'xls'
+  | 'xlsx'
+  | 'html'
+  | 'txt'
+  | 'md';
+
+/** Maps MIME types to Bedrock Converse API document format values */
+export const bedrockDocumentFormats: Record<string, BedrockDocumentFormat> = {
+  'application/pdf': 'pdf',
+  'text/csv': 'csv',
+  'application/csv': 'csv',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'text/html': 'html',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+};
+
+export const isBedrockDocumentType = (mimeType?: string): boolean =>
+  mimeType != null && mimeType in bedrockDocumentFormats;
+
+/** File extensions accepted by Bedrock document uploads (for input accept attributes) */
+export const bedrockDocumentExtensions =
+  '.pdf,.csv,.doc,.docx,.xls,.xlsx,.html,.htm,.txt,.md,application/pdf,text/csv,application/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/html,text/plain,text/markdown';
+
 export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 
@@ -144,7 +179,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|pdf|x-tar|x-sh|typescript|sql|yaml|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
@@ -198,8 +233,16 @@ export const codeTypeMapping: { [key: string]: string } = {
   ts: 'application/typescript', // .ts - TypeScript source
   tar: 'application/x-tar', // .tar - Tar archive
   zip: 'application/zip', // .zip - ZIP archive
+  txt: 'text/plain', // .txt - Plain text file
   log: 'text/plain', // .log - Log file
+  csv: 'text/csv', // .csv - Comma-separated values
   tsv: 'text/tab-separated-values', // .tsv - Tab-separated values
+  parquet: 'application/x-parquet', // .parquet - Apache Parquet columnar storage
+  json: 'application/json', // .json - JSON file
+  xml: 'application/xml', // .xml - XML file
+  html: 'text/html', // .html - HTML file
+  htm: 'text/html', // .htm - HTML file
+  css: 'text/css', // .css - CSS file
   yml: 'application/yaml', // .yml - YAML
   yaml: 'application/yaml', // .yaml - YAML
   sql: 'application/sql', // .sql - SQL (IANA registered)

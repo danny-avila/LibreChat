@@ -13,7 +13,7 @@ import {
   useGetStartupConfig,
   useArchiveConvoMutation,
 } from '~/data-provider';
-import { useLocalize, useNavigateToConvo, useNewConvo, useShiftKey } from '~/hooks';
+import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
 import DeleteButton from './DeleteButton';
@@ -28,18 +28,19 @@ function ConvoOptions({
   isPopoverActive,
   setIsPopoverActive,
   isActiveConvo,
+  isShiftHeld = false,
 }: {
   conversationId: string | null;
   title: string | null;
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
   isPopoverActive: boolean;
-  setIsPopoverActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsPopoverActive: (open: boolean) => void;
   isActiveConvo: boolean;
+  isShiftHeld?: boolean;
 }) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
-  const isShiftHeld = useShiftKey();
   const { index } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { navigateToConvo } = useNavigateToConvo(index);
@@ -253,7 +254,7 @@ function ConvoOptions({
       : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
   );
 
-  if (isShiftHeld) {
+  if (isShiftHeld && isActiveConvo && !isPopoverActive && !showShareDialog && !showDeleteDialog) {
     return (
       <div className="flex items-center gap-0.5">
         <button
@@ -293,6 +294,7 @@ function ConvoOptions({
         portal={true}
         menuId={menuId}
         focusLoop={true}
+        className="z-[125]"
         unmountOnHide={true}
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
@@ -300,7 +302,7 @@ function ConvoOptions({
           <Ariakit.MenuButton
             id={`conversation-menu-${conversationId}`}
             aria-label={localize('com_nav_convo_menu_options')}
-            aria-readonly={undefined}
+            aria-expanded={isPopoverActive}
             className={cn(
               'inline-flex h-7 w-7 items-center justify-center gap-2 rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50',
               isActiveConvo === true || isPopoverActive
@@ -320,7 +322,6 @@ function ConvoOptions({
           </Ariakit.MenuButton>
         }
         items={dropdownItems}
-        className="z-30"
       />
       {showShareDialog && (
         <ShareButton
@@ -350,6 +351,7 @@ export default memo(ConvoOptions, (prevProps, nextProps) => {
     prevProps.conversationId === nextProps.conversationId &&
     prevProps.title === nextProps.title &&
     prevProps.isPopoverActive === nextProps.isPopoverActive &&
-    prevProps.isActiveConvo === nextProps.isActiveConvo
+    prevProps.isActiveConvo === nextProps.isActiveConvo &&
+    prevProps.isShiftHeld === nextProps.isShiftHeld
   );
 });

@@ -9,7 +9,7 @@ export default function MemoryEmptyState({ isFiltered = false }: MemoryEmptyStat
   const localize = useLocalize();
 
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-border-light bg-surface-primary p-6 text-center">
+    <div className="flex flex-col items-center justify-center rounded-lg border border-border-light bg-transparent p-6 text-center">
       <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-surface-tertiary">
         <Brain className="size-5 text-text-secondary" aria-hidden="true" />
       </div>

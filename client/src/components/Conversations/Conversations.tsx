@@ -82,7 +82,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
   return (
     <button
       onClick={onToggle}
-      className="group flex w-full items-center justify-between px-1 py-2 text-xs font-bold text-text-secondary"
+      className="group flex w-full items-center justify-between rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
       type="button"
     >
       <span className="select-none">{localize('com_ui_chats')}</span>
@@ -160,14 +160,13 @@ const Conversations: FC<ConversationsProps> = ({
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
-  const resumableEnabled = useRecoilValue(store.resumableStreams);
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
 
   // Fetch active job IDs for showing generation indicators
-  const { data: activeJobsData } = useActiveJobs(resumableEnabled);
+  const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = useMemo(
     () => new Set(activeJobsData?.activeJobIds ?? []),
     [activeJobsData?.activeJobIds],

@@ -17,6 +17,11 @@ const addTitle = async (req, { text, response, client }) => {
     return;
   }
 
+  // Skip title generation for temporary conversations
+  if (req?.body?.isTemporary) {
+    return;
+  }
+
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
   const key = `${req.user.id}-${response.conversationId}`;
   /** @type {NodeJS.Timeout} */
@@ -66,7 +71,7 @@ const addTitle = async (req, { text, response, client }) => {
         conversationId: response.conversationId,
         title,
       },
-      { context: 'api/server/services/Endpoints/agents/title.js' },
+      { context: 'api/server/services/Endpoints/agents/title.js', noUpsert: true },
     );
   } catch (error) {
     logger.error('Error generating title:', error);

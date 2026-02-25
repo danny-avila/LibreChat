@@ -43,6 +43,14 @@ async function getEndpointsConfig(req) {
     };
   }
 
+  // Enable Anthropic endpoint when Vertex AI is configured in YAML
+  if (appConfig.endpoints?.[EModelEndpoint.anthropic]?.vertexConfig?.enabled) {
+    /** @type {Omit<TConfig, 'order'>} */
+    mergedConfig[EModelEndpoint.anthropic] = {
+      userProvide: false,
+    };
+  }
+
   if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
     /** @type {Omit<TConfig, 'order'>} */
     mergedConfig[EModelEndpoint.azureAssistants] = {

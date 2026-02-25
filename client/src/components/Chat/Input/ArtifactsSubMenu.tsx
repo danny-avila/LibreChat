@@ -90,7 +90,7 @@ const ArtifactsSubMenu = React.forwardRef<HTMLDivElement, ArtifactsSubMenuProps>
               portal={true}
               unmountOnHide={true}
               className={cn(
-                'animate-popover-left z-50 ml-3 mt-6 flex min-w-[250px] flex-col rounded-xl',
+                'animate-popover-left z-40 ml-3 mt-6 flex min-w-[250px] flex-col rounded-xl',
                 'border border-border-light bg-surface-secondary shadow-lg',
               )}
             >

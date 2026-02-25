@@ -56,6 +56,77 @@ describe('getOpenAILLMConfig', () => {
     });
   });
 
+  describe('Empty String Handling (Issue Fix)', () => {
+    it('should remove empty string values for numeric parameters', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        modelOptions: {
+          model: 'gpt-4',
+          temperature: '' as unknown as number,
+          topP: '' as unknown as number,
+          max_tokens: '' as unknown as number,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('temperature');
+      expect(result.llmConfig).not.toHaveProperty('topP');
+      expect(result.llmConfig).not.toHaveProperty('maxTokens');
+      expect(result.llmConfig).not.toHaveProperty('max_tokens');
+    });
+
+    it('should remove empty string values for frequency and presence penalties', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        modelOptions: {
+          model: 'gpt-4',
+          frequency_penalty: '' as unknown as number,
+          presence_penalty: '' as unknown as number,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('frequencyPenalty');
+      expect(result.llmConfig).not.toHaveProperty('presencePenalty');
+      expect(result.llmConfig).not.toHaveProperty('frequency_penalty');
+      expect(result.llmConfig).not.toHaveProperty('presence_penalty');
+    });
+
+    it('should preserve valid numeric values while removing empty strings', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        modelOptions: {
+          model: 'gpt-4',
+          temperature: 0.7,
+          topP: '' as unknown as number,
+          max_tokens: 4096,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('temperature', 0.7);
+      expect(result.llmConfig).not.toHaveProperty('topP');
+      expect(result.llmConfig).toHaveProperty('maxTokens', 4096);
+    });
+
+    it('should preserve zero values (not treat them as empty)', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        modelOptions: {
+          model: 'gpt-4',
+          temperature: 0,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('temperature', 0);
+      expect(result.llmConfig).toHaveProperty('frequencyPenalty', 0);
+      expect(result.llmConfig).toHaveProperty('presencePenalty', 0);
+    });
+  });
+
   describe('OpenAI Reasoning Models (o1/o3/gpt-5)', () => {
     const reasoningModels = [
       'o1',

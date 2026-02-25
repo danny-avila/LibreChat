@@ -1,9 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import type { StandardGraph } from '@librechat/agents';
-import type { Agents } from 'librechat-data-provider';
+import { parseTextParts } from 'librechat-data-provider';
+import type { Agents, TMessageContentParts } from 'librechat-data-provider';
 import type {
   SerializableJobData,
   IEventTransport,
+  UsageMetadata,
   AbortResult,
   IJobStore,
 } from './interfaces/IJobStore';
@@ -33,6 +35,7 @@ export interface GenerationJobManagerOptions {
  * @property readyPromise - Resolves immediately (legacy, kept for API compatibility)
  * @property resolveReady - Function to resolve readyPromise
  * @property finalEvent - Cached final event for late subscribers
+ * @property errorEvent - Cached error event for late subscribers (errors before client connects)
  * @property syncSent - Whether sync event was sent (reset when all subscribers leave)
  * @property earlyEventBuffer - Buffer for events emitted before first subscriber connects
  * @property hasSubscriber - Whether at least one subscriber has connected
@@ -47,6 +50,7 @@ interface RuntimeJobState {
   readyPromise: Promise<void>;
   resolveReady: () => void;
   finalEvent?: t.ServerSentEvent;
+  errorEvent?: string;
   syncSent: boolean;
   earlyEventBuffer: t.ServerSentEvent[];
   hasSubscriber: boolean;
@@ -227,13 +231,18 @@ class GenerationJobManagerClass {
     /**
      * Set up all-subscribers-left callback.
      * When all SSE clients disconnect, this:
-     * 1. Resets syncSent so reconnecting clients get sync event
+     * 1. Resets syncSent so reconnecting clients get sync event (persisted to Redis)
      * 2. Calls any registered allSubscribersLeft handlers (e.g., to save partial responses)
      */
     this.eventTransport.onAllSubscribersLeft(streamId, () => {
       const currentRuntime = this.runtimeState.get(streamId);
       if (currentRuntime) {
         currentRuntime.syncSent = false;
+        currentRuntime.hasSubscriber = false;
+        // Persist syncSent=false to Redis for cross-replica consistency
+        this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
+          logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
+        });
         // Call registered handlers (from job.emitter.on('allSubscribersLeft', ...))
         if (currentRuntime.allSubscribersLeftHandlers) {
           this.jobStore
@@ -257,6 +266,21 @@ class GenerationJobManagerClass {
         }
       }
     });
+
+    /**
+     * Set up cross-replica abort listener (Redis mode only).
+     * When abort is triggered on ANY replica, this replica receives the signal
+     * and aborts its local AbortController (if it's the one running generation).
+     */
+    if (this.eventTransport.onAbort) {
+      this.eventTransport.onAbort(streamId, () => {
+        const currentRuntime = this.runtimeState.get(streamId);
+        if (currentRuntime && !currentRuntime.abortController.signal.aborted) {
+          logger.debug(`[GenerationJobManager] Received cross-replica abort for ${streamId}`);
+          currentRuntime.abortController.abort();
+        }
+      });
+    }
 
     logger.debug(`[GenerationJobManager] Created job: ${streamId}`);
 
@@ -344,14 +368,134 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Get or create runtime state for a job.
+   *
+   * This enables cross-replica support in Redis mode:
+   * - If runtime exists locally (same replica), return it
+   * - If job exists in Redis but not locally (cross-replica), create minimal runtime
+   *
+   * The lazily-created runtime state is sufficient for:
+   * - Subscribing to events (via Redis pub/sub)
+   * - Getting resume state
+   * - Handling reconnections
+   * - Receiving cross-replica abort signals (via Redis pub/sub)
+   *
+   * @param streamId - The stream identifier
+   * @returns Runtime state or null if job doesn't exist anywhere
+   */
+  private async getOrCreateRuntimeState(streamId: string): Promise<RuntimeJobState | null> {
+    const existingRuntime = this.runtimeState.get(streamId);
+    if (existingRuntime) {
+      return existingRuntime;
+    }
+
+    // Job doesn't exist locally - check Redis
+    const jobData = await this.jobStore.getJob(streamId);
+    if (!jobData) {
+      return null;
+    }
+
+    // Cross-replica scenario: job exists in Redis but not locally
+    // Create minimal runtime state for handling reconnection/subscription
+    logger.debug(`[GenerationJobManager] Creating cross-replica runtime for ${streamId}`);
+
+    let resolveReady: () => void;
+    const readyPromise = new Promise<void>((resolve) => {
+      resolveReady = resolve;
+    });
+
+    // For jobs created on other replicas, readyPromise should be pre-resolved
+    // since generation has already started
+    resolveReady!();
+
+    // Parse finalEvent from Redis if available
+    let finalEvent: t.ServerSentEvent | undefined;
+    if (jobData.finalEvent) {
+      try {
+        finalEvent = JSON.parse(jobData.finalEvent) as t.ServerSentEvent;
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
+    const runtime: RuntimeJobState = {
+      abortController: new AbortController(),
+      readyPromise,
+      resolveReady: resolveReady!,
+      syncSent: jobData.syncSent ?? false,
+      earlyEventBuffer: [],
+      hasSubscriber: false,
+      finalEvent,
+      errorEvent: jobData.error,
+    };
+
+    this.runtimeState.set(streamId, runtime);
+
+    // Set up all-subscribers-left callback for this replica
+    this.eventTransport.onAllSubscribersLeft(streamId, () => {
+      const currentRuntime = this.runtimeState.get(streamId);
+      if (currentRuntime) {
+        currentRuntime.syncSent = false;
+        currentRuntime.hasSubscriber = false;
+        // Persist syncSent=false to Redis
+        this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
+          logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
+        });
+        // Call registered handlers
+        if (currentRuntime.allSubscribersLeftHandlers) {
+          this.jobStore
+            .getContentParts(streamId)
+            .then((result) => {
+              const parts = result?.content ?? [];
+              for (const handler of currentRuntime.allSubscribersLeftHandlers ?? []) {
+                try {
+                  handler(parts);
+                } catch (err) {
+                  logger.error(`[GenerationJobManager] Error in allSubscribersLeft handler:`, err);
+                }
+              }
+            })
+            .catch((err) => {
+              logger.error(
+                `[GenerationJobManager] Failed to get content parts for allSubscribersLeft handlers:`,
+                err,
+              );
+            });
+        }
+      }
+    });
+
+    // Set up cross-replica abort listener (Redis mode only)
+    // This ensures lazily-initialized jobs can receive abort signals
+    if (this.eventTransport.onAbort) {
+      this.eventTransport.onAbort(streamId, () => {
+        const currentRuntime = this.runtimeState.get(streamId);
+        if (currentRuntime && !currentRuntime.abortController.signal.aborted) {
+          logger.debug(
+            `[GenerationJobManager] Received cross-replica abort for lazily-init job ${streamId}`,
+          );
+          currentRuntime.abortController.abort();
+        }
+      });
+    }
+
+    return runtime;
+  }
+
+  /**
    * Get a job by streamId.
    */
   async getJob(streamId: string): Promise<t.GenerationJob | undefined> {
     const jobData = await this.jobStore.getJob(streamId);
-    const runtime = this.runtimeState.get(streamId);
-    if (!jobData || !runtime) {
+    if (!jobData) {
       return undefined;
     }
+
+    const runtime = await this.getOrCreateRuntimeState(streamId);
+    if (!runtime) {
+      return undefined;
+    }
+
     return this.buildJobFacade(streamId, jobData, runtime);
   }
 
@@ -373,6 +517,8 @@ class GenerationJobManagerClass {
   /**
    * Mark job as complete.
    * If cleanupOnComplete is true (default), immediately cleans up job resources.
+   * Exception: Jobs with errors are NOT immediately deleted to allow late-connecting
+   * clients to receive the error (race condition where error occurs before client connects).
    * Note: eventTransport is NOT cleaned up here to allow the final event to be
    * fully transmitted. It will be cleaned up when subscribers disconnect or
    * by the periodic cleanup job.
@@ -390,7 +536,29 @@ class GenerationJobManagerClass {
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
 
-    // Immediate cleanup if configured (default: true)
+    // For error jobs, DON'T delete immediately - keep around so late-connecting
+    // clients can receive the error. This handles the race condition where error
+    // occurs before client connects to SSE stream.
+    //
+    // Cleanup strategy: Error jobs are cleaned up by periodic cleanup (every 60s)
+    // via jobStore.cleanup() which checks for jobs with status 'error' and
+    // completedAt set. The TTL is configurable via jobStore options (default: 0,
+    // meaning cleanup on next interval). This gives clients ~60s to connect and
+    // receive the error before the job is removed.
+    if (error) {
+      await this.jobStore.updateJob(streamId, {
+        status: 'error',
+        completedAt: Date.now(),
+        error,
+      });
+      // Keep runtime state so subscribe() can access errorEvent
+      logger.debug(
+        `[GenerationJobManager] Job completed with error (keeping for late subscribers): ${streamId}`,
+      );
+      return;
+    }
+
+    // Immediate cleanup if configured (default: true) - only for successful completions
     if (this._cleanupOnComplete) {
       this.runtimeState.delete(streamId);
       // Don't cleanup eventTransport here - let the done event fully transmit first.
@@ -399,9 +567,8 @@ class GenerationJobManagerClass {
     } else {
       // Only update status if keeping the job around
       await this.jobStore.updateJob(streamId, {
-        status: error ? 'error' : 'complete',
+        status: 'complete',
         completedAt: Date.now(),
-        error,
       });
     }
 
@@ -411,6 +578,10 @@ class GenerationJobManagerClass {
   /**
    * Abort a job (user-initiated).
    * Returns all data needed for token spending and message saving.
+   *
+   * Cross-replica support (Redis mode):
+   * - Emits abort signal via Redis pub/sub
+   * - The replica running generation receives signal and aborts its AbortController
    */
   async abortJob(streamId: string): Promise<AbortResult> {
     const jobData = await this.jobStore.getJob(streamId);
@@ -418,22 +589,42 @@ class GenerationJobManagerClass {
 
     if (!jobData) {
       logger.warn(`[GenerationJobManager] Cannot abort - job not found: ${streamId}`);
-      return { success: false, jobData: null, content: [], finalEvent: null };
+      return {
+        text: '',
+        content: [],
+        jobData: null,
+        success: false,
+        finalEvent: null,
+        collectedUsage: [],
+      };
     }
 
+    // Emit abort signal for cross-replica support (Redis mode)
+    // This ensures the generating replica receives the abort signal
+    if (this.eventTransport.emitAbort) {
+      this.eventTransport.emitAbort(streamId);
+    }
+
+    // Also abort local controller if we have it (same-replica abort)
     if (runtime) {
       runtime.abortController.abort();
     }
 
-    // Get content before clearing state
+    /** Content before clearing state */
     const result = await this.jobStore.getContentParts(streamId);
     const content = result?.content ?? [];
 
-    // Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
-    // In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation
+    /** Collected usage for all models */
+    const collectedUsage = this.jobStore.getCollectedUsage(streamId);
+
+    /** Text from content parts for fallback token counting */
+    const text = parseTextParts(content as TMessageContentParts[]);
+
+    /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
+    In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
     const isEarlyAbort = content.length === 0 && !jobData.responseMessageId;
 
-    // Create final event for abort
+    /** Final event for abort */
     const userMessageId = jobData.userMessage?.messageId;
 
     const abortFinalEvent: t.ServerSentEvent = {
@@ -471,7 +662,7 @@ class GenerationJobManagerClass {
       runtime.finalEvent = abortFinalEvent;
     }
 
-    this.eventTransport.emitDone(streamId, abortFinalEvent);
+    await this.eventTransport.emitDone(streamId, abortFinalEvent);
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
 
@@ -495,6 +686,8 @@ class GenerationJobManagerClass {
       jobData,
       content,
       finalEvent: abortFinalEvent,
+      text,
+      collectedUsage,
     };
   }
 
@@ -505,6 +698,10 @@ class GenerationJobManagerClass {
    * On first subscription:
    * - Resolves readyPromise (legacy, for API compatibility)
    * - Replays any buffered early events (e.g., 'created' event)
+   *
+   * Supports cross-replica reconnection in Redis mode:
+   * - If job exists in Redis but not locally, creates minimal runtime state
+   * - Events are delivered via Redis pub/sub, not in-memory EventEmitter
    *
    * @param streamId - The stream to subscribe to
    * @param onChunk - Handler for chunk events (streamed tokens, run steps, etc.)
@@ -518,28 +715,36 @@ class GenerationJobManagerClass {
     onDone?: t.DoneHandler,
     onError?: t.ErrorHandler,
   ): Promise<{ unsubscribe: t.UnsubscribeFn } | null> {
-    const runtime = this.runtimeState.get(streamId);
+    // Use lazy initialization to support cross-replica subscriptions
+    const runtime = await this.getOrCreateRuntimeState(streamId);
     if (!runtime) {
       return null;
     }
 
     const jobData = await this.jobStore.getJob(streamId);
 
-    // If job already complete, send final event
+    // If job already complete/error, send final event or error
+    // Error status takes precedence to ensure errors aren't misreported as successes
     setImmediate(() => {
-      if (
-        runtime.finalEvent &&
-        jobData &&
-        ['complete', 'error', 'aborted'].includes(jobData.status)
-      ) {
-        onDone?.(runtime.finalEvent);
+      if (jobData && ['complete', 'error', 'aborted'].includes(jobData.status)) {
+        // Check for error status FIRST and prioritize error handling
+        if (jobData.status === 'error' && (runtime.errorEvent || jobData.error)) {
+          const errorToSend = runtime.errorEvent ?? jobData.error;
+          if (errorToSend) {
+            logger.debug(
+              `[GenerationJobManager] Sending stored error to late subscriber: ${streamId}`,
+            );
+            onError?.(errorToSend);
+          }
+        } else if (runtime.finalEvent) {
+          onDone?.(runtime.finalEvent);
+        }
       }
     });
 
     const subscription = this.eventTransport.subscribe(streamId, {
       onChunk: (event) => {
         const e = event as t.ServerSentEvent;
-        // Filter out internal events
         if (!(e as Record<string, unknown>)._internal) {
           onChunk(e);
         }
@@ -548,14 +753,15 @@ class GenerationJobManagerClass {
       onError,
     });
 
-    // Check if this is the first subscriber
+    if (subscription.ready) {
+      await subscription.ready;
+    }
+
     const isFirst = this.eventTransport.isFirstSubscriber(streamId);
 
-    // First subscriber: replay buffered events and mark as connected
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
 
-      // Replay any events that were emitted before subscriber connected
       if (runtime.earlyEventBuffer.length > 0) {
         logger.debug(
           `[GenerationJobManager] Replaying ${runtime.earlyEventBuffer.length} buffered events for ${streamId}`,
@@ -563,9 +769,10 @@ class GenerationJobManagerClass {
         for (const bufferedEvent of runtime.earlyEventBuffer) {
           onChunk(bufferedEvent);
         }
-        // Clear buffer after replay
         runtime.earlyEventBuffer = [];
       }
+
+      this.eventTransport.syncReorderBuffer?.(streamId);
     }
 
     if (isFirst) {
@@ -584,8 +791,11 @@ class GenerationJobManagerClass {
    *
    * If no subscriber has connected yet, buffers the event for replay when they do.
    * This ensures early events (like 'created') aren't lost due to race conditions.
+   *
+   * In Redis mode, awaits the publish to guarantee event ordering.
+   * This is critical for streaming deltas (tool args, message content) to arrive in order.
    */
-  emitChunk(streamId: string, event: t.ServerSentEvent): void {
+  async emitChunk(streamId: string, event: t.ServerSentEvent): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (!runtime || runtime.abortController.signal.aborted) {
       return;
@@ -594,7 +804,7 @@ class GenerationJobManagerClass {
     // Track user message from created event
     this.trackUserMessage(streamId, event);
 
-    // For Redis mode, persist chunk for later reconstruction
+    // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
       // The SSE event structure is { event: string, data: unknown, ... }
       // The aggregator expects { event: string, data: unknown } where data is the payload
@@ -615,13 +825,14 @@ class GenerationJobManagerClass {
       }
     }
 
-    // Buffer early events if no subscriber yet (replay when first subscriber connects)
     if (!runtime.hasSubscriber) {
       runtime.earlyEventBuffer.push(event);
-      // Also emit to transport in case subscriber connects mid-flight
+      if (!this._isRedis) {
+        return;
+      }
     }
 
-    this.eventTransport.emitChunk(streamId, event);
+    await this.eventTransport.emitChunk(streamId, event);
   }
 
   /**
@@ -747,6 +958,18 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Set reference to the collectedUsage array.
+   * This array accumulates token usage from all models during generation.
+   */
+  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void {
+    // Use runtime state check for performance (sync check)
+    if (!this.runtimeState.has(streamId)) {
+      return;
+    }
+    this.jobStore.setCollectedUsage(streamId, collectedUsage);
+  }
+
+  /**
    * Set reference to the graph instance.
    */
   setGraph(streamId: string, graph: StandardGraph): void {
@@ -788,37 +1011,64 @@ class GenerationJobManagerClass {
 
   /**
    * Mark that sync has been sent.
+   * Persists to Redis for cross-replica consistency.
    */
   markSyncSent(streamId: string): void {
     const runtime = this.runtimeState.get(streamId);
     if (runtime) {
       runtime.syncSent = true;
     }
+    // Persist to Redis for cross-replica consistency
+    this.jobStore.updateJob(streamId, { syncSent: true }).catch((err) => {
+      logger.error(`[GenerationJobManager] Failed to persist syncSent flag:`, err);
+    });
   }
 
   /**
    * Check if sync has been sent.
+   * Checks local runtime first, then falls back to Redis for cross-replica scenarios.
    */
-  wasSyncSent(streamId: string): boolean {
-    return this.runtimeState.get(streamId)?.syncSent ?? false;
+  async wasSyncSent(streamId: string): Promise<boolean> {
+    const localSyncSent = this.runtimeState.get(streamId)?.syncSent;
+    if (localSyncSent !== undefined) {
+      return localSyncSent;
+    }
+    // Cross-replica: check Redis
+    const jobData = await this.jobStore.getJob(streamId);
+    return jobData?.syncSent ?? false;
   }
 
   /**
    * Emit a done event.
+   * Persists finalEvent to Redis for cross-replica access.
    */
-  emitDone(streamId: string, event: t.ServerSentEvent): void {
+  async emitDone(streamId: string, event: t.ServerSentEvent): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (runtime) {
       runtime.finalEvent = event;
     }
-    this.eventTransport.emitDone(streamId, event);
+    // Persist finalEvent to Redis for cross-replica consistency
+    this.jobStore.updateJob(streamId, { finalEvent: JSON.stringify(event) }).catch((err) => {
+      logger.error(`[GenerationJobManager] Failed to persist finalEvent:`, err);
+    });
+    await this.eventTransport.emitDone(streamId, event);
   }
 
   /**
    * Emit an error event.
+   * Stores the error for late-connecting subscribers (race condition where error
+   * occurs before client connects to SSE stream).
    */
-  emitError(streamId: string, error: string): void {
-    this.eventTransport.emitError(streamId, error);
+  async emitError(streamId: string, error: string): Promise<void> {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime) {
+      runtime.errorEvent = error;
+    }
+    // Persist error to job store for cross-replica consistency
+    this.jobStore.updateJob(streamId, { error }).catch((err) => {
+      logger.error(`[GenerationJobManager] Failed to persist error:`, err);
+    });
+    await this.eventTransport.emitError(streamId, error);
   }
 
   /**

@@ -111,6 +111,11 @@ export default function AgentSelect({
           return;
         }
 
+        if (name === 'tool_options' && typeof value === 'object' && value !== null) {
+          formValues[name] = value;
+          return;
+        }
+
         if (!keys.has(name)) {
           return;
         }

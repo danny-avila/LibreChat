@@ -10,6 +10,8 @@ const {
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
+  buildImageToolContext,
+  buildWebSearchContext,
 } = require('@librechat/api');
 const { getMCPServersRegistry } = require('~/config');
 const {
@@ -18,7 +20,6 @@ const {
   Permissions,
   EToolResources,
   PermissionTypes,
-  replaceSpecialVars,
 } = require('librechat-data-provider');
 const {
   availableTools,
@@ -33,8 +34,8 @@ const {
   StructuredACS,
   TraversaalSearch,
   StructuredWolfram,
-  createYouTubeTools,
   TavilySearchResults,
+  createGeminiImageTool,
   createOpenAIImageTools,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
@@ -183,30 +184,15 @@ const loadTools = async ({
   };
 
   const customConstructors = {
-    youtube: async (_toolContextMap) => {
-      const authFields = getAuthFields('youtube');
-      const authValues = await loadAuthValues({ userId: user, authFields });
-      return createYouTubeTools(authValues);
-    },
     image_gen_oai: async (toolContextMap) => {
       const authFields = getAuthFields('image_gen_oai');
       const authValues = await loadAuthValues({ userId: user, authFields });
       const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
-      let toolContext = '';
-      for (let i = 0; i < imageFiles.length; i++) {
-        const file = imageFiles[i];
-        if (!file) {
-          continue;
-        }
-        if (i === 0) {
-          toolContext =
-            'Image files provided in this request (their image IDs listed in order of appearance) available for image editing:';
-        }
-        toolContext += `\n\t- ${file.file_id}`;
-        if (i === imageFiles.length - 1) {
-          toolContext += `\n\nInclude any you need in the \`image_ids\` array when calling \`${EToolResources.image_edit}_oai\`. You may also include previously referenced or generated image IDs.`;
-        }
-      }
+      const toolContext = buildImageToolContext({
+        imageFiles,
+        toolName: `${EToolResources.image_edit}_oai`,
+        contextDescription: 'image editing',
+      });
       if (toolContext) {
         toolContextMap.image_edit_oai = toolContext;
       }
@@ -217,6 +203,27 @@ const loadTools = async ({
         imageOutputType,
         fileStrategy,
         imageFiles,
+      });
+    },
+    gemini_image_gen: async (toolContextMap) => {
+      const authFields = getAuthFields('gemini_image_gen');
+      const authValues = await loadAuthValues({ userId: user, authFields, throwError: false });
+      const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
+      const toolContext = buildImageToolContext({
+        imageFiles,
+        toolName: 'gemini_image_gen',
+        contextDescription: 'image context',
+      });
+      if (toolContext) {
+        toolContextMap.gemini_image_gen = toolContext;
+      }
+      return createGeminiImageTool({
+        ...authValues,
+        isAgent: !!agent,
+        req: options.req,
+        imageFiles,
+        userId: user,
+        fileStrategy,
       });
     },
   };
@@ -241,6 +248,7 @@ const loadTools = async ({
     flux: imageGenOptions,
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
+    gemini_image_gen: imageGenOptions,
   };
 
   /** @type {Record<string, string>} */
@@ -316,24 +324,7 @@ const loadTools = async ({
       });
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
       requestedTools[tool] = async () => {
-        toolContextMap[tool] = `# \`${tool}\`:
-Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
-
-**Execute immediately without preface.** After search, provide a brief summary addressing the query directly, then structure your response with clear Markdown formatting (## headers, lists, tables). Cite sources properly, tailor tone to query type, and provide comprehensive details.
-
-**CITATION FORMAT - UNICODE ESCAPE SEQUENCES ONLY:**
-Use these EXACT escape sequences (copy verbatim): \\ue202 (before each anchor), \\ue200 (group start), \\ue201 (group end), \\ue203 (highlight start), \\ue204 (highlight end)
-
-Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|news|image|ref, index=0,1,2...
-
-**Examples (copy these exactly):**
-- Single: "Statement.\\ue202turn0search0"
-- Multiple: "Statement.\\ue202turn0search0\\ue202turn0news1"
-- Group: "Statement. \\ue200\\ue202turn0search0\\ue202turn0news1\\ue201"
-- Highlight: "\\ue203Cited text.\\ue204\\ue202turn0search0"
-- Image: "See photo\\ue202turn0image0."
-
-**CRITICAL:** Output escape sequences EXACTLY as shown. Do NOT substitute with † or other symbols. Place anchors AFTER punctuation. Cite every non-obvious fact/quote. NEVER use markdown links, [1], footnotes, or HTML tags.`.trim();
+        toolContextMap[tool] = buildWebSearchContext();
         return createSearchTool({
           ...result.authResult,
           onSearchResults,

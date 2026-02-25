@@ -18,7 +18,6 @@ const {
   findUser,
 } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
-const { getOAuthReconnectionManager } = require('~/config');
 const { getOpenIdConfig } = require('~/strategies');
 
 const registrationController = async (req, res) => {
@@ -66,17 +65,25 @@ const resetPasswordController = async (req, res) => {
 };
 
 const refreshController = async (req, res) => {
-  const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
-  const token_provider = req.headers.cookie
-    ? cookies.parse(req.headers.cookie).token_provider
-    : null;
-  if (!refreshToken) {
-    return res.status(200).send('Refresh token not provided');
-  }
-  if (token_provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS) === true) {
+  const parsedCookies = req.headers.cookie ? cookies.parse(req.headers.cookie) : {};
+  const token_provider = parsedCookies.token_provider;
+
+  if (token_provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+    /** For OpenID users, read refresh token from session to avoid large cookie issues */
+    const refreshToken = req.session?.openidTokens?.refreshToken || parsedCookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(200).send('Refresh token not provided');
+    }
+
     try {
       const openIdConfig = getOpenIdConfig();
-      const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
+      const refreshParams = process.env.OPENID_SCOPE ? { scope: process.env.OPENID_SCOPE } : {};
+      const tokenset = await openIdClient.refreshTokenGrant(
+        openIdConfig,
+        refreshToken,
+        refreshParams,
+      );
       const claims = tokenset.claims();
       const { user, error, migration } = await findOpenIDUser({
         findUser,
@@ -110,7 +117,7 @@ const refreshController = async (req, res) => {
         );
       }
 
-      const token = setOpenIDAuthTokens(tokenset, res, user._id.toString(), refreshToken);
+      const token = setOpenIDAuthTokens(tokenset, req, res, user._id.toString(), refreshToken);
 
       user.federatedTokens = {
         access_token: tokenset.access_token,
@@ -125,6 +132,13 @@ const refreshController = async (req, res) => {
       return res.status(403).send('Invalid OpenID refresh token');
     }
   }
+
+  /** For non-OpenID users, read refresh token from cookies */
+  const refreshToken = parsedCookies.refreshToken;
+  if (!refreshToken) {
+    return res.status(200).send('Refresh token not provided');
+  }
+
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     const user = await getUserById(payload.id, '-password -__v -totpSecret -backupCodes');
@@ -150,17 +164,6 @@ const refreshController = async (req, res) => {
 
     if (session && session.expiration > new Date()) {
       const token = await setAuthTokens(userId, res, session);
-
-      // trigger OAuth MCP server reconnection asynchronously (best effort)
-      try {
-        void getOAuthReconnectionManager()
-          .reconnectServers(userId)
-          .catch((err) => {
-            logger.error('[refreshController] Error reconnecting OAuth MCP servers:', err);
-          });
-      } catch (err) {
-        logger.warn(`[refreshController] Cannot attempt OAuth MCP servers reconnection:`, err);
-      }
 
       res.status(200).send({ token, user });
     } else if (req?.query?.retry) {
@@ -193,15 +196,6 @@ const graphTokenController = async (req, res) => {
       });
     }
 
-    // Extract access token from Authorization header
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        message: 'Valid authorization token required',
-      });
-    }
-
-    // Get scopes from query parameters
     const scopes = req.query.scopes;
     if (!scopes) {
       return res.status(400).json({
@@ -209,7 +203,13 @@ const graphTokenController = async (req, res) => {
       });
     }
 
-    const accessToken = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const accessToken = req.user.federatedTokens?.access_token;
+    if (!accessToken) {
+      return res.status(401).json({
+        message: 'No federated access token available for token exchange',
+      });
+    }
+
     const tokenResponse = await getGraphApiToken(req.user, accessToken, scopes);
 
     res.json(tokenResponse);
