@@ -71,6 +71,17 @@ const FIVE_MINUTES = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT = 60000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
+/** Default body timeout for Streamable HTTP GET SSE streams that idle between server pushes */
+const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
+
+/**
+ * Error message prefixes emitted by the MCP SDK's StreamableHTTPClientTransport
+ * (client/streamableHttp.ts → _handleSseStream / _scheduleReconnection).
+ * These are SDK-internal strings, not part of a public API. If the SDK changes
+ * them, suppression in setupTransportErrorHandlers will silently stop working.
+ */
+const SDK_SSE_STREAM_DISCONNECTED = 'SSE stream disconnected';
+const SDK_SSE_RECONNECT_FAILED = 'Failed to reconnect SSE stream';
 
 /**
  * Headers for SSE connections.
@@ -254,6 +265,7 @@ export class MCPConnection extends EventEmitter {
   private readonly useSSRFProtection: boolean;
   iconPath?: string;
   timeout?: number;
+  sseReadTimeout?: number;
   url?: string;
 
   /**
@@ -285,6 +297,7 @@ export class MCPConnection extends EventEmitter {
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
+    this.sseReadTimeout = params.serverConfig.sseReadTimeout;
     this.lastPingTime = Date.now();
     this.createdAt = Date.now(); // Record creation timestamp for staleness detection
     if (params.oauthTokens) {
@@ -313,30 +326,45 @@ export class MCPConnection extends EventEmitter {
    * Factory function to create fetch functions without capturing the entire `this` context.
    * This helps prevent memory leaks by only passing necessary dependencies.
    *
-   * @param getHeaders Function to retrieve request headers
-   * @param timeout Timeout value for the agent (in milliseconds)
-   * @returns A fetch function that merges headers appropriately
+   * When `sseBodyTimeout` is provided, a second Agent is created with a much longer
+   * body timeout for GET requests (the Streamable HTTP SSE stream). POST requests
+   * continue using the normal timeout so they fail fast on real errors.
    */
   private createFetchFunction(
     getHeaders: () => Record<string, string> | null | undefined,
     timeout?: number,
+    sseBodyTimeout?: number,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
     const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
+    const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
-    const agent = new Agent({
+    const postAgent = new Agent({
       bodyTimeout: effectiveTimeout,
       headersTimeout: effectiveTimeout,
-      ...(ssrfConnect != null ? { connect: ssrfConnect } : {}),
+      ...connectOpts,
     });
-    this.agents.push(agent);
+    this.agents.push(postAgent);
+
+    let getAgent: Agent | undefined;
+    if (sseBodyTimeout != null) {
+      getAgent = new Agent({
+        bodyTimeout: sseBodyTimeout,
+        headersTimeout: effectiveTimeout,
+        ...connectOpts,
+      });
+      this.agents.push(getAgent);
+    }
 
     return function customFetch(
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
     ): Promise<UndiciResponse> {
+      const isGet = (init?.method ?? 'GET').toUpperCase() === 'GET';
+      const dispatcher = isGet && getAgent ? getAgent : postAgent;
+
       const requestHeaders = getHeaders();
       if (!requestHeaders) {
-        return undiciFetch(input, { ...init, dispatcher: agent });
+        return undiciFetch(input, { ...init, dispatcher });
       }
 
       let initHeaders: Record<string, string> = {};
@@ -356,7 +384,7 @@ export class MCPConnection extends EventEmitter {
           ...initHeaders,
           ...requestHeaders,
         },
-        dispatcher: agent,
+        dispatcher,
       });
     };
   }
@@ -507,6 +535,7 @@ export class MCPConnection extends EventEmitter {
             fetch: this.createFetchFunction(
               this.getRequestHeaders.bind(this),
               this.timeout,
+              this.sseReadTimeout || DEFAULT_SSE_READ_TIMEOUT,
             ) as unknown as FetchLike,
           });
 
@@ -829,7 +858,26 @@ export class MCPConnection extends EventEmitter {
 
   private setupTransportErrorHandlers(transport: Transport): void {
     transport.onerror = (error) => {
-      // Extract meaningful error information (handles "SSE error: undefined" cases)
+      const rawMessage =
+        error && typeof error === 'object' ? ((error as { message?: string }).message ?? '') : '';
+
+      /**
+       * The MCP SDK's StreamableHTTPClientTransport fires onerror for SSE GET stream
+       * disconnects but also handles reconnection internally via _scheduleReconnection.
+       * Escalating these to a full transport rebuild creates a redundant reconnection
+       * loop. Log at debug level and let the SDK recover the GET stream on its own.
+       *
+       * "Maximum reconnection attempts … exceeded" means the SDK gave up — that one
+       * must fall through so our higher-level reconnection takes over.
+       */
+      if (
+        rawMessage.startsWith(SDK_SSE_STREAM_DISCONNECTED) ||
+        rawMessage.startsWith(SDK_SSE_RECONNECT_FAILED)
+      ) {
+        logger.debug(`${this.getLogPrefix()} SDK SSE stream recovery in progress: ${rawMessage}`);
+        return;
+      }
+
       const {
         message: errorMessage,
         code: errorCode,
