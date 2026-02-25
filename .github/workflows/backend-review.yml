@@ -42,8 +42,14 @@ jobs:
       - name: Install Data Schemas Package
         run: npm run build:data-schemas
 
-      - name: Install API Package
-        run: npm run build:api
+      - name: Build API Package & Detect Circular Dependencies
+        run: |
+          output=$(npm run build:api 2>&1)
+          echo "$output"
+          if echo "$output" | grep -q "Circular depend"; then
+            echo "Error: Circular dependency detected in @librechat/api!"
+            exit 1
+          fi
 
       - name: Create empty auth.json file
         run: |

@@ -13,11 +13,12 @@ const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
   ErrorController,
+  memoryDiagnostics,
   performStartupChecks,
   handleJsonParseError,
-  initializeFileStorage,
   GenerationJobManager,
   createStreamServices,
+  initializeFileStorage,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -201,6 +202,11 @@ const startServer = async () => {
     const streamServices = createStreamServices();
     GenerationJobManager.configure(streamServices);
     GenerationJobManager.initialize();
+
+    const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
+    if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
+      memoryDiagnostics.start();
+    }
   });
 };
 

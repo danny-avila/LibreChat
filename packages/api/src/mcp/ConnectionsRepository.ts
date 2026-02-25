@@ -25,6 +25,11 @@ export class ConnectionsRepository {
     this.oauthOpts = oauthOpts;
   }
 
+  /** Returns the number of active connections in this repository */
+  public getConnectionCount(): number {
+    return this.connections.size;
+  }
+
   /** Checks whether this repository can connect to a specific server */
   async has(serverName: string): Promise<boolean> {
     const config = await MCPServersRegistry.getInstance().getServerConfig(serverName, this.ownerId);
