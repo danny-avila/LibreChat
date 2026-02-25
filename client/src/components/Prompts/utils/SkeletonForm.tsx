@@ -3,7 +3,7 @@ import { Skeleton } from '@librechat/client';
 export default function SkeletonForm() {
   return (
     <div>
-      <div className="flex flex-col items-center justify-between px-4 dark:text-gray-200 sm:flex-row">
+      <div className="flex flex-col items-center justify-between px-4 text-text-primary sm:flex-row">
         <Skeleton className="mb-1 flex h-10 w-32 flex-row items-center font-bold sm:text-xl md:mb-0 md:h-12 md:text-2xl" />
       </div>
       <div className="flex h-full w-full flex-col md:flex-row">

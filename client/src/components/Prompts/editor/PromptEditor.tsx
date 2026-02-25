@@ -71,18 +71,22 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
           />
         </div>
       </header>
-      <button
-        type="button"
-        aria-label={isEditing ? localize('com_ui_prompt_input') : localize('com_ui_edit')}
+      <div
         className={cn(
           'relative w-full flex-1 overflow-auto rounded-b-xl border border-t-0 border-border-light p-3 text-left transition-all duration-200 sm:p-4',
           isEditing
             ? 'bg-surface-primary'
             : 'cursor-pointer bg-surface-primary hover:bg-surface-secondary',
         )}
-        onClick={() => !isEditing && setIsEditing(true)}
-        tabIndex={isEditing ? -1 : 0}
       >
+        {!isEditing && (
+          <button
+            type="button"
+            aria-label={localize('com_ui_edit')}
+            className="absolute inset-0 z-0 rounded-b-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            onClick={() => setIsEditing(true)}
+          />
+        )}
         <Controller
           name={name}
           control={control}
@@ -92,7 +96,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                 {...field}
                 // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
-                className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none sm:text-base"
+                className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary sm:text-base"
                 minRows={4}
                 maxRows={16}
                 onBlur={() => setIsEditing(false)}
@@ -141,7 +145,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             )
           }
         />
-      </button>
+      </div>
     </div>
   );
 };

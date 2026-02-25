@@ -24,8 +24,8 @@ import CategorySelector from '../fields/CategorySelector';
 import PromptVariables from '../display/PromptVariables';
 import PromptVersions from '../display/PromptVersions';
 import { usePromptGroupsContext } from '~/Providers';
-import DeleteVersion from '../dialogs/DeleteVersion';
 import PromptDetails from '../display/PromptDetails';
+import DeletePrompt from '../dialogs/DeletePrompt';
 import NoPromptGroup from '../lists/NoPromptGroup';
 import PromptEditor from '../editor/PromptEditor';
 import SkeletonForm from '../utils/SkeletonForm';
@@ -164,7 +164,7 @@ const HeaderActions = React.memo(
           onValueChange={canEdit ? onCategoryChange : undefined}
         />
         {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
-        <DeleteVersion
+        <DeletePrompt
           promptId={selectedPromptId}
           groupId={groupId}
           promptName={group?.name || ''}
@@ -443,13 +443,7 @@ const PromptForm = () => {
       <form className="mt-4 flex w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
         <h1 className="sr-only">{localize('com_ui_edit_prompt_page')}</h1>
         <div className="relative w-full">
-          <div
-            className="h-full w-full"
-            style={{
-              transform: `translateX(${showSidePanel ? `-${sidePanelWidth}` : '0'})`,
-              transition: 'transform 0.3s ease-in-out',
-            }}
-          >
+          <div className="h-full w-full">
             <div className="flex h-full">
               <div className="flex-1 overflow-hidden px-4">
                 {/* Header: Title + Actions */}
@@ -575,6 +569,7 @@ const PromptForm = () => {
               width: sidePanelWidth,
               transform: `translateX(${showSidePanel ? '0' : '100%'})`,
               transition: 'transform 0.3s ease-in-out',
+              willChange: 'transform',
             }}
             role="dialog"
             aria-modal="true"

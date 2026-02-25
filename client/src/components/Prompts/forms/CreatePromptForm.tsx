@@ -122,6 +122,7 @@ const CreatePromptForm = ({
                     placeholder=" "
                     tabIndex={0}
                     aria-label={localize('com_ui_prompt_name')}
+                    aria-required="true"
                   />
                   <label
                     htmlFor="prompt-name"
@@ -165,12 +166,13 @@ const CreatePromptForm = ({
                   <div>
                     <TextareaAutosize
                       {...field}
-                      className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none sm:text-base"
+                      className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary sm:text-base"
                       minRows={4}
                       maxRows={16}
                       tabIndex={0}
                       placeholder={localize('com_ui_prompt_input')}
                       aria-label={localize('com_ui_prompt_input_field')}
+                      aria-required="true"
                     />
                     <div
                       className={cn(
@@ -194,10 +196,18 @@ const CreatePromptForm = ({
           <div className="mt-4 flex justify-end">
             <Button
               aria-label={localize('com_ui_create_prompt')}
-              className="w-full sm:w-auto"
+              className={cn(
+                'w-full sm:w-auto',
+                (!isDirty || isSubmitting || !isValid) && 'opacity-50',
+              )}
               tabIndex={0}
               type="submit"
-              disabled={!isDirty || isSubmitting || !isValid}
+              aria-disabled={!isDirty || isSubmitting || !isValid || undefined}
+              onClick={(e: React.MouseEvent) => {
+                if (!isDirty || isSubmitting || !isValid) {
+                  e.preventDefault();
+                }
+              }}
             >
               {localize('com_ui_create_prompt')}
             </Button>
