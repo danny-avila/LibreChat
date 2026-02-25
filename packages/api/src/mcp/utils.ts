@@ -14,9 +14,33 @@ export const mcpToolPattern = new RegExp(escapeRegex(Constants.mcp_delimiter));
  * Normalizes a server name to match the pattern ^[a-zA-Z0-9_.-]+$
  * This is required for Azure OpenAI models with Tool Calling
  */
+function isValidServerNameCharacter(charCode: number): boolean {
+  const isUppercase = charCode >= 65 && charCode <= 90;
+  const isLowercase = charCode >= 97 && charCode <= 122;
+  const isDigit = charCode >= 48 && charCode <= 57;
+  const isDash = charCode === 45;
+  const isDot = charCode === 46;
+  const isUnderscore = charCode === 95;
+
+  return isUppercase || isLowercase || isDigit || isDash || isDot || isUnderscore;
+}
+
+function isValidServerName(serverName: string): boolean {
+  if (serverName.length === 0) {
+    return false;
+  }
+
+  for (let i = 0; i < serverName.length; i += 1) {
+    if (!isValidServerNameCharacter(serverName.charCodeAt(i))) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function normalizeServerName(serverName: string): string {
-  // Check if the server name already matches the pattern
-  if (/^[a-zA-Z0-9_.-]+$/.test(serverName)) {
+  if (isValidServerName(serverName)) {
     return serverName;
   }
 

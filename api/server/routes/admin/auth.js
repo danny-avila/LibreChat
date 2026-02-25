@@ -24,6 +24,8 @@ const setBalanceConfig = createSetBalanceConfig({
 
 const router = express.Router();
 
+router.use(middleware.loginLimiter);
+
 router.post(
   '/login/local',
   middleware.logHeaders,

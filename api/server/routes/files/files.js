@@ -22,6 +22,7 @@ const {
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
 const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
+const { loginLimiter } = require('~/server/middleware');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { checkPermission } = require('~/server/services/PermissionService');
@@ -65,6 +66,8 @@ const safeUnlink = async (req, filePath) => {
 };
 
 const router = express.Router();
+
+router.use(loginLimiter);
 
 router.get('/', async (req, res) => {
   try {

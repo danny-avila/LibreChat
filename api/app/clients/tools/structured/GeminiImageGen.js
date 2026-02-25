@@ -16,6 +16,18 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { spendTokens } = require('~/models/spendTokens');
 const { getFiles } = require('~/models/File');
 
+function isGoogleApisUrl(url) {
+  try {
+    const parsedUrl = new URL(url.toString());
+    return (
+      parsedUrl.protocol === 'https:' &&
+      (parsedUrl.hostname === 'googleapis.com' || parsedUrl.hostname.endsWith('.googleapis.com'))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Configure proxy support for Google APIs
  * This wraps globalThis.fetch to add a proxy dispatcher only for googleapis.com URLs
@@ -27,7 +39,7 @@ if (process.env.PROXY) {
 
   globalThis.fetch = function (url, options = {}) {
     const urlString = url.toString();
-    if (urlString.includes('googleapis.com')) {
+    if (isGoogleApisUrl(urlString)) {
       options = { ...options, dispatcher: proxyAgent };
     }
     return originalFetch.call(this, url, options);

@@ -11,6 +11,7 @@ export const OAUTH_SESSION_COOKIE_PATH = '/api';
 const OAUTH_SESSION_TOKEN_BYTES = 32;
 const OAUTH_TOKEN_NONCE_BYTES = 12;
 const OAUTH_TOKEN_TAG_BYTES = 16;
+const OAUTH_KEY_DERIVATION_SALT = 'librechat:oauth:cookie:v1';
 
 type OAuthEncryptedPayload = {
   uid?: string;
@@ -29,7 +30,7 @@ function getOAuthSessionSecret(): string {
 }
 
 function getOAuthEncryptionKey(): Buffer {
-  return crypto.createHash('sha256').update(getOAuthSessionSecret(), 'utf8').digest();
+  return crypto.scryptSync(getOAuthSessionSecret(), OAUTH_KEY_DERIVATION_SALT, 32);
 }
 
 function encryptOAuthPayload(payload: OAuthEncryptedPayload): string {
@@ -125,6 +126,7 @@ export function generateOAuthCsrfToken(flowId: string): string {
 
 /** Sets a SameSite=Lax CSRF cookie bound to a specific OAuth flow */
 export function setOAuthCsrfCookie(res: Response, flowId: string, cookiePath: string): void {
+  // codeql[js/clear-text-storage-sensitive-data]: cookie payload is encrypted with AES-256-GCM.
   res.cookie(OAUTH_CSRF_COOKIE, generateOAuthCsrfToken(flowId), {
     httpOnly: true,
     secure: shouldUseSecureCookie(),
@@ -186,6 +188,7 @@ export function generateOAuthSessionToken(
 
 /** Sets a SameSite=Lax session cookie that binds the browser to the authenticated userId */
 export function setOAuthSessionCookie(res: Response, userId: string): void {
+  // codeql[js/clear-text-storage-sensitive-data]: cookie payload is encrypted with AES-256-GCM.
   res.cookie(OAUTH_SESSION_COOKIE, generateOAuthSessionToken(userId), {
     httpOnly: true,
     secure: shouldUseSecureCookie(),
