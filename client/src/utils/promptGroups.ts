@@ -10,6 +10,7 @@ import {
   deleteData,
   updateData,
   updateFields,
+  updateFieldsInPlace,
   addToCacheList,
   updateCacheList,
   removeFromCacheList,
@@ -62,6 +63,18 @@ export const updateGroupFields = (
     InfiniteCollections.PROMPT_GROUPS,
     '_id',
     callback,
+  );
+};
+
+export const updateGroupFieldsInPlace = (
+  data: InfiniteData<PromptGroupListResponse>,
+  updatedGroup: Partial<TPromptGroup>,
+): InfiniteData<PromptGroupListResponse> => {
+  return updateFieldsInPlace<PromptGroupListResponse, TPromptGroup>(
+    data,
+    updatedGroup,
+    InfiniteCollections.PROMPT_GROUPS,
+    '_id',
   );
 };
 
