@@ -181,6 +181,7 @@ export default function VariableForm({
                         value={value}
                         onChange={onChange}
                         onBlur={onBlur}
+                        aria-label={field.config.variable}
                       />
                     );
                   }

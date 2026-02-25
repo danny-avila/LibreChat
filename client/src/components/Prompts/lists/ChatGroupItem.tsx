@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { PermissionBits, ResourceType } from 'librechat-data-provider';
 import { Eye, Pencil, EarthIcon, User } from 'lucide-react';
 import { Button, TooltipAnchor } from '@librechat/client';
-
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useAuthContext, useSubmitMessage, useResourcePermissions } from '~/hooks';
 import { useRecordPromptUsage } from '~/data-provider';
@@ -40,7 +39,7 @@ function ChatGroupItem({
 
   const previewButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  const onCardClick: React.MouseEventHandler<HTMLDivElement> = () => {
+  const onCardClick = () => {
     const text = group.productionPrompt?.prompt;
     if (!text?.trim()) {
       return;
