@@ -1265,6 +1265,7 @@
   "com_ui_prompt_text_required": "Text is required",
   "com_ui_click_to_edit": "Click to edit",
   "com_ui_prompt_update_error": "There was an error updating the prompt",
+  "com_ui_prompt_renamed": "Prompt renamed successfully",
   "com_ui_prompt_variables_list": "Prompt variables list",
   "com_ui_prompts": "Prompts",
   "com_ui_prompts_allow_create": "Allow creating Prompts",

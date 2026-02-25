@@ -11,6 +11,7 @@ import {
   TooltipAnchor,
   OGDialogTrigger,
   OGDialogTemplate,
+  useToastContext,
 } from '@librechat/client';
 import { useLocalize, useAuthContext, useResourcePermissions } from '~/hooks';
 import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
@@ -30,7 +31,9 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
 
   const isSharedPrompt = group.author !== user?.id && Boolean(group.authorName);
 
+  const { showToast } = useToastContext();
   const [nameInputValue, setNameInputValue] = useState(group.name);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   const { hasPermission } = useResourcePermissions(ResourceType.PROMPTGROUP, group._id || '');
   const canEdit = hasPermission(PermissionBits.EDIT);
@@ -41,7 +44,15 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
     [group.projectIds, instanceProjectId],
   );
 
-  const updateGroup = useUpdatePromptGroup();
+  const updateGroup = useUpdatePromptGroup({
+    onSuccess: () => {
+      setRenameOpen(false);
+      showToast({ status: 'success', message: localize('com_ui_prompt_renamed') });
+    },
+    onError: () => {
+      showToast({ status: 'error', message: localize('com_ui_prompt_update_error') });
+    },
+  });
 
   const deleteGroup = useDeletePromptGroup({
     onSuccess: (_response, variables) => {
@@ -126,7 +137,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
 
       <div className="relative z-10 flex shrink-0 items-center gap-1 pr-2">
         {canEdit && (
-          <OGDialog>
+          <OGDialog open={renameOpen} onOpenChange={setRenameOpen}>
             <OGDialogTrigger asChild>
               <TooltipAnchor
                 description={localize('com_ui_rename')}
