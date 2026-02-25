@@ -277,13 +277,22 @@ function disposeClient(client) {
 
     if (client.run) {
       if (client.run.Graph) {
-        client.run.Graph.resetValues();
+        if (typeof client.run.Graph.clearHeavyState === 'function') {
+          client.run.Graph.clearHeavyState();
+        } else {
+          client.run.Graph.resetValues();
+        }
 
         graphPropsToClean.forEach((prop) => {
           if (client.run.Graph[prop] !== undefined) {
             client.run.Graph[prop] = null;
           }
         });
+
+        if (client.run.Graph.agentContexts) {
+          client.run.Graph.agentContexts.clear();
+          client.run.Graph.agentContexts = null;
+        }
 
         client.run.Graph = null;
       }
