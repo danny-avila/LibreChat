@@ -1,6 +1,5 @@
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { fetch as undiciFetch, Agent } from 'undici';
 import {
   StdioClientTransport,
@@ -21,6 +20,7 @@ import type {
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
+import { runOutsideTracing } from '~/utils/tracing';
 import { sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
@@ -74,20 +74,6 @@ const DEFAULT_TIMEOUT = 60000;
 const SSE_CONNECT_TIMEOUT = 120000;
 /** Default body timeout for Streamable HTTP GET SSE streams that idle between server pushes */
 const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
-
-const TRACING_ALS_KEY = Symbol.for('ls:tracing_async_local_storage');
-
-/**
- * Runs `fn` outside the LangGraph/LangSmith tracing AsyncLocalStorage context
- * so I/O handles (child processes, sockets, timers) created during transport
- * setup do not permanently retain the RunTree → graph config → message data chain.
- */
-function runOutsideTracing<T>(fn: () => T): T {
-  const storage = (globalThis as typeof globalThis & Record<symbol, AsyncLocalStorage<unknown>>)[
-    TRACING_ALS_KEY
-  ];
-  return storage ? storage.run(undefined as unknown, fn) : fn();
-}
 
 /**
  * Error message prefixes emitted by the MCP SDK's StreamableHTTPClientTransport
@@ -713,10 +699,7 @@ export class MCPConnection extends EventEmitter {
           await this.closeAgents();
         }
 
-        this.transport = await runOutsideTracing(async () => {
-          const transport = await this.constructTransport(this.options);
-          return transport;
-        });
+        this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
         this.setupTransportDebugHandlers();
 
         const connectTimeout = this.options.initTimeout ?? 120000;

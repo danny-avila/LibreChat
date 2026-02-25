@@ -98,6 +98,9 @@ function collectSnapshot(): void {
   const first = snapshots[0];
   const last = snapshots[snapshots.length - 1];
   const elapsedMin = (last.ts - first.ts) / 60_000;
+  if (elapsedMin < 0.1) {
+    return;
+  }
   const rssDelta = last.rss - first.rss;
   const heapDelta = last.heapUsed - first.heapUsed;
   logger.debug('[MemDiag] Trend', {

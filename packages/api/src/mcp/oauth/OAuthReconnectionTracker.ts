@@ -88,10 +88,14 @@ export class OAuthReconnectionTracker {
   }
 
   /** Returns map sizes for diagnostics */
-  public getStats(): { failedUsers: number; activeUsers: number; activeTimestamps: number } {
+  public getStats(): {
+    usersWithFailedServers: number;
+    usersWithActiveReconnections: number;
+    activeTimestamps: number;
+  } {
     return {
-      failedUsers: this.failed.size,
-      activeUsers: this.active.size,
+      usersWithFailedServers: this.failed.size,
+      usersWithActiveReconnections: this.active.size,
       activeTimestamps: this.activeTimestamps.size,
     };
   }

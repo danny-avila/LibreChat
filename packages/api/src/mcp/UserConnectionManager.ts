@@ -253,10 +253,7 @@ export abstract class UserConnectionManager {
       trackedUsers: this.userConnections.size,
       totalConnections,
       activityEntries: this.userLastActivity.size,
-      appConnectionCount: this.appConnections
-        ? ((this.appConnections as unknown as { connections: Map<string, unknown> }).connections
-            ?.size ?? -1)
-        : 0,
+      appConnectionCount: this.appConnections?.getConnectionCount() ?? 0,
     };
   }
 }
