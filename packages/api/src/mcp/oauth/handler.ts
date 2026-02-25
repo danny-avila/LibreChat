@@ -486,9 +486,8 @@ export class MCPOAuthHandler {
 
       /** Dynamic client registration based on the discovered metadata */
       const redirectUri = config?.redirect_uri || this.getDefaultRedirectUri(serverName);
-      logger.debug(`[MCPOAuth] Registering OAuth client with redirect URI: ${redirectUri}`);
+      logger.debug(`[MCPOAuth] Resolving OAuth client with redirect URI: ${redirectUri}`);
 
-      // Before registering, check if we already have a valid client registration
       let clientInfo: OAuthClientInformation | undefined;
 
       if (findToken) {
@@ -499,10 +498,18 @@ export class MCPOAuthHandler {
             findToken,
           });
           if (existing?.clientInfo?.client_id) {
-            logger.debug(
-              `[MCPOAuth] Reusing existing client registration: ${existing.clientInfo.client_id}`,
-            );
-            clientInfo = existing.clientInfo;
+            const existingClient = existing.clientInfo as OAuthClientInformation;
+            const storedRedirectUri = existingClient.redirect_uris?.[0];
+            if (storedRedirectUri && storedRedirectUri !== redirectUri) {
+              logger.debug(
+                `[MCPOAuth] Stored redirect_uri "${storedRedirectUri}" differs from current "${redirectUri}", will re-register`,
+              );
+            } else {
+              logger.debug(
+                `[MCPOAuth] Reusing existing client registration: ${existingClient.client_id}`,
+              );
+              clientInfo = existingClient;
+            }
           }
         } catch (error) {
           logger.debug(

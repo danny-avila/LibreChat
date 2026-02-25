@@ -1212,6 +1212,65 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       // Should have fallen back to registerClient
       expect(mockRegisterClient).toHaveBeenCalled();
     });
+
+    it('should re-register when stored redirect_uri differs from current configuration', async () => {
+      const existingClientInfo = {
+        client_id: 'existing-client-id',
+        client_secret: 'existing-client-secret',
+        redirect_uris: ['http://old-domain.com/api/mcp/test-server/oauth/callback'],
+        token_endpoint_auth_method: 'client_secret_basic',
+      };
+
+      mockGetClientInfoAndMetadata.mockResolvedValueOnce({
+        clientInfo: existingClientInfo,
+        clientMetadata: {},
+      });
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://example.com',
+        authorization_endpoint: 'https://example.com/authorize',
+        token_endpoint: 'https://example.com/token',
+        registration_endpoint: 'https://example.com/register',
+        response_types_supported: ['code'],
+        jwks_uri: 'https://example.com/.well-known/jwks.json',
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['RS256'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        client_secret: 'new-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://example.com/mcp',
+        'user-123',
+        {},
+        undefined,
+        mockFindToken,
+      );
+
+      expect(mockRegisterClient).toHaveBeenCalled();
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        'https://example.com/mcp',
+        expect.objectContaining({
+          clientInformation: expect.objectContaining({
+            client_id: 'new-client-id',
+          }),
+        }),
+      );
+    });
   });
 
   describe('Fallback OAuth Metadata (Legacy Server Support)', () => {
