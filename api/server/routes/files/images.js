@@ -11,6 +11,21 @@ const {
 
 const router = express.Router();
 
+const sanitizePathSegment = (value = '') => value.replace(/[^a-zA-Z0-9_-]/g, '');
+
+const createSafeImagePath = (basePath, userId, filename) => {
+  const safeUserId = sanitizePathSegment(userId);
+  const safeFilename = path.basename(filename);
+  const userPath = path.resolve(basePath, safeUserId);
+  const filePath = path.resolve(userPath, safeFilename);
+
+  if (!filePath.startsWith(`${userPath}${path.sep}`) && filePath !== userPath) {
+    return null;
+  }
+
+  return filePath;
+};
+
 router.post('/', async (req, res) => {
   const metadata = req.body;
   const appConfig = req.config;
@@ -41,12 +56,15 @@ router.post('/', async (req, res) => {
     }
 
     try {
-      const filepath = path.join(
+      const filepath = createSafeImagePath(
         appConfig.paths.imageOutput,
-        req.user.id,
-        path.basename(req.file.filename),
+        req.user?.id,
+        req.file?.filename ?? '',
       );
-      await fs.unlink(filepath);
+
+      if (filepath) {
+        await fs.unlink(filepath);
+      }
     } catch (error) {
       logger.error('[/files/images] Error deleting file:', error);
     }

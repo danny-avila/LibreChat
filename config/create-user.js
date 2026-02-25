@@ -1,4 +1,5 @@
 const path = require('path');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
@@ -14,7 +15,9 @@ const connect = require('./connect');
   console.purple('--------------------------');
 
   if (process.argv.length < 5) {
-    console.orange('Usage: npm run create-user -- <email> <name> <username> [--email-verified=false]');
+    console.orange(
+      'Usage: npm run create-user -- <email> <name> <username> [--email-verified=false]',
+    );
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.orange(
       'If you really need to pass in the password, you can do so as the 4th argument (not recommended for security).',
@@ -72,7 +75,7 @@ const connect = require('./connect');
   if (password === undefined) {
     password = await askQuestion('Password: (leave blank, to generate one)');
     if (!password) {
-      password = Math.random().toString(36).slice(-18);
+      password = crypto.randomBytes(18).toString('base64url');
       console.orange('Your password is: ' + password);
     }
   }
@@ -88,9 +91,9 @@ If \`n\`, and email service is configured, the user will be sent a verification 
 If \`n\`, and email service is not configured, you must have the \`ALLOW_UNVERIFIED_EMAIL_LOGIN\` .env variable set to true,
 or the user will need to attempt logging in to have a verification link sent to them.`);
 
-    const normalizedEmailVerifiedInput = emailVerifiedInput.trim().toLowerCase()
+    const normalizedEmailVerifiedInput = emailVerifiedInput.trim().toLowerCase();
 
-    emailVerified = true
+    emailVerified = true;
 
     if (normalizedEmailVerifiedInput === 'n') {
       emailVerified = false;
