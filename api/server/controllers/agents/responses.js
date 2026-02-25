@@ -24,6 +24,7 @@ const {
   emitResponseInProgress,
   convertInputToMessages,
   validateResponseRequest,
+  buildResponseModelParameters,
   buildAggregatedResponse,
   createResponseAggregator,
   sendResponsesErrorResponse,
@@ -324,7 +325,7 @@ const createResponse = async (req, res) => {
     // Initialize the agent first to check for disableStreaming
     const endpointOption = {
       endpoint: agent.provider,
-      model_parameters: agent.model_parameters ?? {},
+      model_parameters: buildResponseModelParameters(request, agent.model_parameters),
     };
 
     const primaryConfig = await initializeAgent(

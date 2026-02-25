@@ -165,6 +165,7 @@ export {
   // Input conversion
   convertInputToMessages,
   mergeMessagesWithInput,
+  buildResponseModelParameters,
   type InternalMessage,
   // Error response
   sendResponsesErrorResponse,

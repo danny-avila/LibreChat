@@ -96,6 +96,50 @@ export function isValidationFailure(
   return !result.valid;
 }
 
+
+const responseModelParameterKeys: Array<keyof ResponseRequest> = [
+  'frequency_penalty',
+  'instructions',
+  'max_output_tokens',
+  'max_tool_calls',
+  'metadata',
+  'parallel_tool_calls',
+  'presence_penalty',
+  'reasoning',
+  'service_tier',
+  'stream',
+  'temperature',
+  'text',
+  'tool_choice',
+  'tools',
+  'top_p',
+  'truncation',
+  'user',
+];
+
+export function buildResponseModelParameters(
+  request: ResponseRequest,
+  baseModelParameters: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const modelParameters: Record<string, unknown> = {
+    ...baseModelParameters,
+    useResponsesApi: true,
+  };
+
+  for (const key of responseModelParameterKeys) {
+    const value = request[key];
+    if (value !== undefined) {
+      modelParameters[key] = value;
+    }
+  }
+
+  if (request.previous_response_id) {
+    modelParameters.previous_response_id = request.previous_response_id;
+  }
+
+  return modelParameters;
+}
+
 /* =============================================================================
  * INPUT CONVERSION
  * ============================================================================= */

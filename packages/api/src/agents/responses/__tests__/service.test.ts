@@ -1,4 +1,4 @@
-import { convertInputToMessages } from '../service';
+import { buildResponseModelParameters, convertInputToMessages } from '../service';
 import type { InputItem } from '../types';
 
 describe('convertInputToMessages', () => {
@@ -329,5 +329,58 @@ describe('convertInputToMessages', () => {
       { role: 'assistant', content: [{ type: 'text', text: '2+2 is 4.' }] },
       { role: 'user', content: [{ type: 'text', text: 'And 3+3?' }] },
     ]);
+  });
+});
+
+
+describe('buildResponseModelParameters', () => {
+  it('forces useResponsesApi and forwards supported response request params', () => {
+    const modelParameters = buildResponseModelParameters(
+      {
+        model: 'agent_123',
+        input: 'Hello',
+        previous_response_id: 'resp_prev_1',
+        stream: true,
+        temperature: 0.3,
+        truncation: 'auto',
+        text: { format: { type: 'text' } },
+        reasoning: { effort: 'high', summary: 'detailed' },
+        max_output_tokens: 512,
+        top_p: 0.9,
+        metadata: { source: 'api' },
+      },
+      { temperature: 0.7, existingParam: true },
+    );
+
+    expect(modelParameters).toEqual(
+      expect.objectContaining({
+        useResponsesApi: true,
+        previous_response_id: 'resp_prev_1',
+        stream: true,
+        temperature: 0.3,
+        truncation: 'auto',
+        text: { format: { type: 'text' } },
+        reasoning: { effort: 'high', summary: 'detailed' },
+        max_output_tokens: 512,
+        top_p: 0.9,
+        metadata: { source: 'api' },
+        existingParam: true,
+      }),
+    );
+  });
+
+  it('does not inject non-runtime request fields into model parameters', () => {
+    const modelParameters = buildResponseModelParameters({
+      model: 'agent_123',
+      input: 'Hello',
+      store: true,
+      stream_options: { include_usage: true },
+    });
+
+    expect(modelParameters).toEqual({ useResponsesApi: true });
+    expect(modelParameters).not.toHaveProperty('model');
+    expect(modelParameters).not.toHaveProperty('input');
+    expect(modelParameters).not.toHaveProperty('store');
+    expect(modelParameters).not.toHaveProperty('stream_options');
   });
 });
