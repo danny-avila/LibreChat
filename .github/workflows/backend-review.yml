@@ -42,7 +42,7 @@ jobs:
       - name: Install Data Schemas Package
         run: npm run build:data-schemas
 
-      - name: Install API Package
+      - name: Build API Package & Detect Circular Dependencies
         run: |
           output=$(npm run build:api 2>&1)
           echo "$output"
