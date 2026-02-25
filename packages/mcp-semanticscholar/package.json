@@ -1,0 +1,44 @@
+{
+  "name": "mcp-semanticscholar",
+  "module": "./src/index.ts",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "semantic": "./build/index.js"
+  },
+  "scripts": {
+    "dev": "TRANSPORT=http npx tsx src/index.ts",
+    "build": "npx tsc",
+    "start": "npm run start:http",
+    "start:http": "TRANSPORT=http node build/index.js",
+    "start:stdio": "node build/index.js"
+  },
+  "files": [
+    "build"
+  ],
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@smithery/cli": "^1.0.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.1.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "@tanstack/react-query": "^5.69.0",
+    "@thednp/dommatrix": "^2.0.12",
+    "axios": "^1.8.4",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^4.18.0",
+    "pdfjs-dist": "^5.4.54",
+    "zod": "^3.24.2"
+  }
+}

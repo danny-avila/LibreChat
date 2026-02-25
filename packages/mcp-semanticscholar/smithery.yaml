@@ -1,0 +1,29 @@
+# Smithery configuration file: https://smithery.ai/docs/build/project-config/smithery-yaml
+runtime: "container"
+build:
+  dockerfile: "Dockerfile"
+  dockerBuildPath: "."
+startCommand:
+  type: "http"
+  # JSON Schema defining the configuration options for the MCP.
+  configSchema:
+    type: "object"
+    required: []
+    properties:
+      SEMANTIC_SCHOLAR_API_KEY:
+        type: "string"
+        title: "Semantic Scholar API Key"
+        description: "Your Semantic Scholar API key"
+      WILEY_TDM_CLIENT_TOKEN:
+        type: "string"
+        title: "Wiley TDM Client Token"
+        description: "Your Wiley TDM Client Token for downloading papers"
+      debug:
+        type: "boolean"
+        title: "Debug Mode"
+        default: false
+        description: "Enable debug logging for troubleshooting"
+  exampleConfig:
+    SEMANTIC_SCHOLAR_API_KEY: "your-semantic-scholar-api-key-here"
+    WILEY_TDM_CLIENT_TOKEN: "your-wiley-token-here"
+    debug: false

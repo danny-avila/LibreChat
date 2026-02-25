@@ -1,0 +1,18 @@
+# folders
+node_modules
+build
+
+# hidden files and folders
+.env
+.env.local
+.smithery
+.DS_Store
+.vscode
+.claude
+
+# files
+example.md
+run-dev.sh
+
+# folders
+public
