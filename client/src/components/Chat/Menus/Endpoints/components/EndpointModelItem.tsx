@@ -148,6 +148,7 @@ export function renderEndpointModels(
   endpoint: Endpoint | null,
   models: Array<{ name: string; isGlobal?: boolean }>,
   selectedModel: string | null,
+  selectedEndpoint: string | null,
   filteredModels?: string[],
   endpointIndex?: number,
 ) {
@@ -161,7 +162,7 @@ export function renderEndpointModels(
           key={`${endpoint.value}${indexSuffix}-${modelId}-${modelIndex}`}
           modelId={modelId}
           endpoint={endpoint}
-          isSelected={selectedModel === modelId}
+          isSelected={selectedEndpoint === endpoint.value && selectedModel === modelId}
         />
       ),
   );
