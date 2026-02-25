@@ -96,8 +96,11 @@ function EndpointMenuContent({
   const localize = useLocalize();
   const { agentsMap, assistantsMap, modelSpecs, selectedValues, endpointSearchValues } =
     useModelSelectorContext();
-  const { endpoint: selectedEndpoint, model: selectedModel, modelSpec: selectedSpec } =
-    selectedValues;
+  const {
+    endpoint: selectedEndpoint,
+    model: selectedModel,
+    modelSpec: selectedSpec,
+  } = selectedValues;
   const searchValue = endpointSearchValues[endpoint.value] || '';
 
   const endpointSpecs = useMemo(() => {
