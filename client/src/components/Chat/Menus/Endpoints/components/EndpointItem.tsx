@@ -140,6 +140,7 @@ function EndpointMenuContent({
             endpoint.models || [],
             selectedModel,
             selectedEndpoint,
+            selectedSpec,
             filteredModels,
             endpointIndex,
           )
@@ -149,6 +150,7 @@ function EndpointMenuContent({
             endpoint.models,
             selectedModel,
             selectedEndpoint,
+            selectedSpec,
             undefined,
             endpointIndex,
           )}
@@ -166,7 +168,7 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
     setEndpointSearchValue,
     endpointRequiresUserKey,
   } = useModelSelectorContext();
-  const { endpoint: selectedEndpoint } = selectedValues;
+  const { endpoint: selectedEndpoint, modelSpec: selectedSpec } = selectedValues;
 
   const searchValue = endpointSearchValues[endpoint.value] || '';
   const isUserProvided = useMemo(
@@ -188,7 +190,7 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
     </div>
   );
 
-  const isEndpointSelected = selectedEndpoint === endpoint.value;
+  const isEndpointSelected = !selectedSpec && selectedEndpoint === endpoint.value;
 
   if (endpoint.hasModels) {
     const placeholder =
