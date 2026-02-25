@@ -147,6 +147,10 @@ export class OAuthReconnectionManager {
     }
   }
 
+  public getTrackerStats() {
+    return this.reconnectionsTracker.getStats();
+  }
+
   private async canReconnect(userId: string, serverName: string) {
     if (this.mcpManager == null) {
       return false;
