@@ -58,9 +58,11 @@ export class InMemoryEventTransport implements IEventTransport {
           // Check if all subscribers left - cleanup and notify
           if (currentState.emitter.listenerCount('chunk') === 0) {
             currentState.allSubscribersLeftCallback?.();
-            // Auto-cleanup the stream entry when no subscribers remain
+            /* Remove all EventEmitter listeners but preserve stream state
+             * (including allSubscribersLeftCallback) for reconnection.
+             * State is fully cleaned up by cleanup() when the job completes.
+             */
             currentState.emitter.removeAllListeners();
-            this.streams.delete(streamId);
           }
         }
       },

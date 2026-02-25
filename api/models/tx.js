@@ -176,6 +176,7 @@ const tokenValues = Object.assign(
     'claude-opus-4-5': { prompt: 5, completion: 25 },
     'claude-opus-4-6': { prompt: 5, completion: 25 },
     'claude-sonnet-4': { prompt: 3, completion: 15 },
+    'claude-sonnet-4-6': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
     'command-r-plus': { prompt: 3, completion: 15 },
     'command-text': { prompt: 1.5, completion: 2.0 },
@@ -199,6 +200,7 @@ const tokenValues = Object.assign(
     'gemini-2.5-flash-image': { prompt: 0.15, completion: 30 },
     'gemini-3': { prompt: 2, completion: 12 },
     'gemini-3-pro-image': { prompt: 2, completion: 120 },
+    'gemini-3.1': { prompt: 2, completion: 12 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
     grok: { prompt: 2.0, completion: 10.0 }, // Base pattern defaults to grok-2
     'grok-beta': { prompt: 5.0, completion: 15.0 },
@@ -309,6 +311,7 @@ const cacheTokenValues = {
   'claude-3-haiku': { write: 0.3, read: 0.03 },
   'claude-haiku-4-5': { write: 1.25, read: 0.1 },
   'claude-sonnet-4': { write: 3.75, read: 0.3 },
+  'claude-sonnet-4-6': { write: 3.75, read: 0.3 },
   'claude-opus-4': { write: 18.75, read: 1.5 },
   'claude-opus-4-5': { write: 6.25, read: 0.5 },
   'claude-opus-4-6': { write: 6.25, read: 0.5 },
@@ -328,6 +331,8 @@ const cacheTokenValues = {
   'kimi-k2-0711-preview': { write: 0.6, read: 0.15 },
   'kimi-k2-thinking': { write: 0.6, read: 0.15 },
   'kimi-k2-thinking-turbo': { write: 1.15, read: 0.15 },
+  // Gemini 3.1 models - cache read: $0.20/1M (<=200k), cache write: standard input price
+  'gemini-3.1': { write: 2, read: 0.2 },
 };
 
 /**
@@ -337,6 +342,8 @@ const cacheTokenValues = {
  */
 const premiumTokenValues = {
   'claude-opus-4-6': { threshold: 200000, prompt: 10, completion: 37.5 },
+  'claude-sonnet-4-6': { threshold: 200000, prompt: 6, completion: 22.5 },
+  'gemini-3.1': { threshold: 200000, prompt: 4, completion: 18 },
 };
 
 /**
