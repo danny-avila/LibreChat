@@ -131,3 +131,15 @@ If either the template or the secret values have been updated, you can update th
 2. Select "Render and upload env file"
 3. Select "Run Workflow" and select your target environment
 4. The workflow will get the environment-specific values from secrets, perform `envsubst`, upload the file to S3, and redeploy the service. 
+
+## Updating Bedrock Guardrail
+Guardrail configs are managed per-environment through the AWS console. To manage them:
+1. Log into the desired AWS account
+2. Navigate to Bedrock -> Guardrails
+3. Select "Working Draft"
+4. Perform updates
+5. Select "Publish Version"
+6. Note the latest version number
+7. In GitHub, go to Environment -> <env_to_change> -> Secrets
+8. Change `GUARDRAIL_VERSION`, supply the new value
+9. Run the steps for `Updating Environment Files` above.
