@@ -1,11 +1,13 @@
 /**
  * OpenAI-compatible API routes for LibreChat agents.
  *
- * Provides a /v1/chat/completions compatible interface for
+ * Provides a compatibility /v1/chat/completions interface for
  * interacting with LibreChat agents remotely via API.
  *
+ * NOTE: /v1/responses is the primary Agents API interface.
+ *
  * Usage:
- *   POST /v1/chat/completions - Chat with an agent
+ *   POST /v1/chat/completions - Compatibility chat interface
  *   GET /v1/models - List available agents
  *   GET /v1/models/:model - Get agent details
  *

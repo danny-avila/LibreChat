@@ -163,7 +163,7 @@ export function buildResponse(
       : null,
     max_output_tokens: null,
     max_tool_calls: null,
-    store: false,
+    store: context.store,
     background: false,
     service_tier: 'default',
     metadata: {},

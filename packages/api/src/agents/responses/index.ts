@@ -61,6 +61,7 @@ export type {
   ReasoningConfig,
   TextConfig,
   StreamOptions,
+  IncludeField,
   Metadata,
   ResponseRequest,
   // Response field types
@@ -165,6 +166,7 @@ export {
   // Input conversion
   convertInputToMessages,
   mergeMessagesWithInput,
+  buildResponseModelParameters,
   type InternalMessage,
   // Error response
   sendResponsesErrorResponse,

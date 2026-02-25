@@ -24,6 +24,7 @@ const {
   emitResponseInProgress,
   convertInputToMessages,
   validateResponseRequest,
+  buildResponseModelParameters,
   buildAggregatedResponse,
   createResponseAggregator,
   sendResponsesErrorResponse,
@@ -276,6 +277,7 @@ const createResponse = async (req, res) => {
   const request = validation.request;
   const agentId = request.model;
   const isStreaming = request.stream === true;
+  const shouldStore = request.store !== false;
 
   // Look up the agent
   const agent = await getAgent({ id: agentId });
@@ -324,7 +326,7 @@ const createResponse = async (req, res) => {
     // Initialize the agent first to check for disableStreaming
     const endpointOption = {
       endpoint: agent.provider,
-      model_parameters: agent.model_parameters ?? {},
+      model_parameters: buildResponseModelParameters(request, agent.model_parameters),
     };
 
     const primaryConfig = await initializeAgent(
@@ -526,8 +528,7 @@ const createResponse = async (req, res) => {
       const duration = Date.now() - requestStartTime;
       logger.debug(`[Responses API] Request ${responseId} completed in ${duration}ms (streaming)`);
 
-      // Save to database if store: true
-      if (request.store === true) {
+      if (shouldStore) {
         try {
           // Save conversation
           await saveConversation(req, conversationId, agentId, agent);
@@ -673,7 +674,7 @@ const createResponse = async (req, res) => {
 
       const response = buildAggregatedResponse(context, aggregator);
 
-      if (request.store === true) {
+      if (shouldStore) {
         try {
           await saveConversation(req, conversationId, agentId, agent);
 

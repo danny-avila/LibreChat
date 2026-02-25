@@ -229,6 +229,47 @@ describe('createResponse controller', () => {
     });
   });
 
+  describe('Responses API runtime parameter shaping', () => {
+    it('should force useResponsesApi and pass responses params into initializeAgent', async () => {
+      req.body = {
+        model: 'agent-123',
+        input: 'Hello',
+        stream: true,
+        temperature: 0.4,
+        max_output_tokens: 512,
+        truncation: 'auto',
+        reasoning: { effort: 'high', summary: 'detailed' },
+        text: { format: { type: 'text' } },
+        previous_response_id: 'resp_prev_1',
+      };
+
+      const api = require('@librechat/api');
+      api.validateResponseRequest.mockReturnValue({
+        request: req.body,
+      });
+
+      await createResponse(req, res);
+
+      expect(api.initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          endpointOption: expect.objectContaining({
+            model_parameters: expect.objectContaining({
+              useResponsesApi: true,
+              stream: true,
+              temperature: 0.4,
+              max_output_tokens: 512,
+              truncation: 'auto',
+              text: { format: { type: 'text' } },
+              reasoning: { effort: 'high', summary: 'detailed' },
+              previous_response_id: 'resp_prev_1',
+            }),
+          }),
+        }),
+        expect.any(Object),
+      );
+    });
+  });
+
   describe('token usage recording - streaming', () => {
     beforeEach(() => {
       req.body.stream = true;
