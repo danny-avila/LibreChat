@@ -1,8 +1,15 @@
-const { 
+const {
   needsRefreshAzure,
   extractBlobPathFromAzureUrl,
   getNewAzureURL,
 } = require('../../../../../server/services/Files/Azure/crud');
+
+jest.mock('@librechat/api', () => ({
+  getAzureContainerClient: jest.fn(),
+  deleteRagFile: jest.fn(),
+}));
+
+const { getAzureContainerClient } = require('@librechat/api');
 
 describe('Azure crud.js - URL refresh tests', () => {
   const originalEnv = process.env;
@@ -64,6 +71,39 @@ describe('Azure crud.js - URL refresh tests', () => {
 
     it('should return null for invalid URL', () => {
       expect(extractBlobPathFromAzureUrl('not-a-url')).toBe(null);
+    });
+  });
+
+  describe('needsRefreshAzure - public to private transition', () => {
+    it('should return true for plain URL when private access is required', () => {
+      process.env.AZURE_STORAGE_PUBLIC_ACCESS = 'false';
+      const plainUrl = 'https://test.blob.core.windows.net/files/images/user123/test.pdf';
+      expect(needsRefreshAzure(plainUrl, 3600)).toBe(true);
+    });
+
+    it('should return false for plain URL when public access is enabled', () => {
+      process.env.AZURE_STORAGE_PUBLIC_ACCESS = 'true';
+      const plainUrl = 'https://test.blob.core.windows.net/files/images/user123/test.pdf';
+      expect(needsRefreshAzure(plainUrl, 3600)).toBe(false);
+    });
+  });
+
+  describe('getNewAzureURL', () => {
+    it('should return undefined for a URL with no extractable blob path', async () => {
+      const invalidUrl = 'https://test.blob.core.windows.net/files';
+      const result = await getNewAzureURL(invalidUrl);
+      expect(result).toBeUndefined();
+    });
+
+    it('should return a plain blob URL when public access is enabled', async () => {
+      process.env.AZURE_STORAGE_PUBLIC_ACCESS = 'true';
+      const mockBlockBlobClient = { url: 'https://test.blob.core.windows.net/files/images/user123/test.pdf' };
+      const mockContainerClient = { getBlockBlobClient: jest.fn().mockReturnValue(mockBlockBlobClient) };
+      getAzureContainerClient.mockResolvedValue(mockContainerClient);
+
+      const url = 'https://test.blob.core.windows.net/files/images/user123/test.pdf';
+      const result = await getNewAzureURL(url);
+      expect(result).toBe(mockBlockBlobClient.url);
     });
   });
 });

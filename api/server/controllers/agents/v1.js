@@ -59,6 +59,12 @@ const systemTools = {
 const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** DI map: dispatches avatar URL refresh by storage source */
+const urlRefreshersBySource = {
+  [FileSources.s3]: refreshS3Url,
+  [FileSources.azure_blob]: refreshAzureUrl,
+};
+
 /**
  * Creates an Agent.
  * @route POST /Agents
@@ -161,18 +167,11 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
 
     agent.version = agent.versions ? agent.versions.length : 0;
 
-    if (agent.avatar && (agent.avatar?.source === FileSources.s3 || agent.avatar?.source === FileSources.azure_blob)) {
+    const refreshFn = agent.avatar && urlRefreshersBySource[agent.avatar.source];
+    if (refreshFn) {
       try {
-        let newPath;
-        if (agent.avatar.source === FileSources.s3) {
-          newPath = await refreshS3Url(agent.avatar);
-        } else {
-          newPath = await refreshAzureUrl(agent.avatar);
-        }
-        agent.avatar = {
-          ...agent.avatar,
-          filepath: newPath,
-        };
+        const newPath = await refreshFn(agent.avatar);
+        agent.avatar = { ...agent.avatar, filepath: newPath };
       } catch (e) {
         logger.warn('[/Agents/:id] Failed to refresh signed URL', e);
       }
@@ -552,6 +551,7 @@ const getListAgentsHandler = async (req, res) => {
           agents: fullList?.data ?? [],
           userId,
           refreshS3Url,
+          refreshAzureUrl,
           updateAgent,
         });
         cachedRefresh = { urlCache };
@@ -560,7 +560,7 @@ const getListAgentsHandler = async (req, res) => {
         logger.error('[/Agents] Error refreshing avatars for full list: %o', err);
       }
     } else {
-      logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
+      logger.debug('[/Agents] Avatar refresh already checked, skipping');
     }
 
     // Use the new ACL-aware function
@@ -584,12 +584,7 @@ const getListAgentsHandler = async (req, res) => {
         if (agent?._id && publicSet.has(agent._id.toString())) {
           agent.isPublic = true;
         }
-        if (
-          urlCache &&
-          agent?.id &&
-          agent?.avatar?.source === FileSources.s3 &&
-          urlCache[agent.id]
-        ) {
+        if (urlCache && agent?.id && agent?.avatar && urlCache[agent.id]) {
           agent.avatar = { ...agent.avatar, filepath: urlCache[agent.id] };
         }
       } catch (e) {

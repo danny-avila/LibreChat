@@ -39,9 +39,17 @@ if (process.env.AZURE_REFRESH_EXPIRY_MS !== null && process.env.AZURE_REFRESH_EX
 
 const isPublicAccess = () => AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true';
 
+/**
+ * Obtains and caches a User Delegation Key from Azure Blob Storage for use with
+ * Managed Identity (User Delegation SAS) URL signing. The key is cached for its
+ * full 7-day lifespan and proactively refreshed within a 5-minute buffer of expiry.
+ *
+ * @param {import('@azure/storage-blob').BlobServiceClient} blobServiceClient
+ * @returns {Promise<import('@azure/storage-blob').UserDelegationKey>}
+ */
 async function getUserDelegationKey(blobServiceClient) {
   const now = new Date();
-  
+
   if (userDelegationKey && userDelegationKeyExpiry) {
     const timeUntilExpiry = userDelegationKeyExpiry.getTime() - now.getTime();
     if (timeUntilExpiry > DELEGATION_KEY_REFRESH_BUFFER_MS) {
@@ -51,30 +59,34 @@ async function getUserDelegationKey(blobServiceClient) {
 
   const startsOn = now;
   const expiresOn = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
-  
+
   userDelegationKey = await blobServiceClient.getUserDelegationKey(startsOn, expiresOn);
   userDelegationKeyExpiry = expiresOn;
-  
+
   logger.info('[Azure] User delegation key obtained, expires:', expiresOn.toISOString());
   return userDelegationKey;
 }
 
 /**
- * 
- * @param {*} param0 
- * @returns 
+ * Generates a time-limited signed URL (SAS token) for an Azure Blob.
+ * Automatically selects the signing method based on configuration:
+ * - Account Key signing when `AZURE_STORAGE_CONNECTION_STRING` is set
+ * - User Delegation SAS via Managed Identity when only `AZURE_STORAGE_ACCOUNT_NAME` is set
+ *
+ * @param {Object} params
+ * @param {string} params.blobPath - The path of the blob within the container.
+ * @param {string} [params.containerName=AZURE_CONTAINER_NAME] - The Azure Blob Storage container name.
+ * @returns {Promise<string>} A promise that resolves to the generated signed URL.
  */
 async function getSignedAzureURL({ blobPath, containerName = AZURE_CONTAINER_NAME }) {
   try {
     const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
     const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
 
-    const {
-      BlobServiceClient,
-      BlobSASPermissions,
-      generateBlobSASQueryParameters,
-      StorageSharedKeyCredential,
-    } = await import('@azure/storage-blob');
+    // BlobServiceClient is loaded dynamically to allow optional Azure SDK installation.
+    // BlobSASPermissions, generateBlobSASQueryParameters, and StorageSharedKeyCredential
+    // are imported at the top of the module and reused here.
+    const { BlobServiceClient } = await import('@azure/storage-blob');
 
     const startsOn = new Date();
     const expiresOn = new Date(startsOn.getTime() + azureUrlExpirySeconds * 1000);
@@ -384,6 +396,16 @@ async function getAzureFileStream(_req, fileURL) {
   }
 }
 
+/**
+ * Determines whether the provided Azure Blob Storage URL needs to be refreshed.
+ * A plain URL without a SAS token is treated as needing a refresh when private
+ * access is enabled, allowing seamless transitions from public to private access.
+ *
+ * @param {string} signedUrl - The Azure Blob Storage URL, which may include a SAS token.
+ * @param {number} bufferSeconds - The number of seconds before expiration at which the URL
+ *   should be considered in need of refresh.
+ * @returns {boolean} `true` if the URL should be refreshed, `false` if it is still valid.
+ */
 function needsRefreshAzure(signedUrl, bufferSeconds) {
   try {
     const url = new URL(signedUrl);
@@ -425,6 +447,15 @@ function needsRefreshAzure(signedUrl, bufferSeconds) {
   }
 }
 
+/**
+ * Extracts the blob path from an Azure Blob Storage URL.
+ *
+ * For a URL of the form `https://<account>.blob.core.windows.net/<container>/<blobPath>`,
+ * this function returns the `<blobPath>` portion, or `null` if it cannot be determined.
+ *
+ * @param {string} fileUrl - The full Azure Blob Storage URL of the file.
+ * @returns {string | null} The blob path within the container, or `null` on failure.
+ */
 function extractBlobPathFromAzureUrl(fileUrl) {
   try {
     const url = new URL(fileUrl);
@@ -440,6 +471,15 @@ function extractBlobPathFromAzureUrl(fileUrl) {
   }
 }
 
+/**
+ * Generates a new Azure Blob URL for the given file URL.
+ * Returns a signed (SAS) URL when private access is enabled, or a plain blob URL
+ * when public access is configured.
+ *
+ * @param {string} currentURL - The existing Azure Blob file URL that may need to be refreshed or signed.
+ * @returns {Promise<string | undefined>} A promise that resolves to the new URL,
+ *   or `undefined` if the blob path cannot be extracted.
+ */
 async function getNewAzureURL(currentURL) {
   try {
     const blobPath = extractBlobPathFromAzureUrl(currentURL);
@@ -460,6 +500,16 @@ async function getNewAzureURL(currentURL) {
   }
 }
 
+/**
+ * Refreshes Azure Blob file URLs that are close to expiring and persists the updated URLs.
+ *
+ * @param {MongoFile[]} files - The list of file records whose Azure URLs may need refreshing.
+ * @param {(updates: Partial<MongoFile>[]) => Promise<void>} batchUpdateFiles - Function used to
+ *   update the file records in bulk with their new URLs.
+ * @param {number} [bufferSeconds=3600] - The minimum number of seconds before expiry at which a
+ *   URL should be refreshed.
+ * @returns {Promise<MongoFile[]>} A promise that resolves to the array of files with refreshed URLs.
+ */
 async function refreshAzureFileUrls(files, batchUpdateFiles, bufferSeconds = 3600) {
   if (!files || !Array.isArray(files) || files.length === 0) {
     return files;
@@ -497,6 +547,20 @@ async function refreshAzureFileUrls(files, batchUpdateFiles, bufferSeconds = 360
   return files;
 }
 
+/**
+ * Refreshes an Azure Blob storage file URL if it is close to expiration.
+ *
+ * When the file originates from Azure Blob storage and the existing URL is determined to be
+ * near expiry (based on {@link needsRefreshAzure} and the provided `bufferSeconds`), this
+ * function generates and returns a new URL. If the URL does not need to be refreshed or a
+ * new URL cannot be obtained, the original URL is returned instead.
+ *
+ * @param {Object} fileObj - The file metadata object.
+ * @param {string} fileObj.filepath - The current Azure Blob file URL that may need refreshing.
+ * @param {string} fileObj.source - The source type; must be {@link FileSources.azure_blob} to trigger a refresh.
+ * @param {number} [bufferSeconds=3600] - The number of seconds before URL expiry within which a refresh should be attempted.
+ * @returns {Promise<string>} A promise that resolves to the (possibly refreshed) Azure Blob file URL.
+ */
 async function refreshAzureUrl(fileObj, bufferSeconds = 3600) {
   if (!fileObj || fileObj.source !== FileSources.azure_blob || !fileObj.filepath) {
     return fileObj?.filepath || '';
