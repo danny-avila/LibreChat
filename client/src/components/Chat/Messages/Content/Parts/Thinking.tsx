@@ -42,7 +42,7 @@ export const ThinkingButton = memo(
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
     label: string;
     content?: string;
-    contentId?: string;
+    contentId: string;
     showCopyButton?: boolean;
   }) => {
     const localize = useLocalize();
@@ -135,11 +135,13 @@ export const FloatingThinkingBar = memo(
     isExpanded,
     onClick,
     content,
+    contentId,
   }: {
     isVisible: boolean;
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
     content?: string;
+    contentId: string;
   }) => {
     const localize = useLocalize();
     const [isCopied, setIsCopied] = useState(false);
@@ -179,6 +181,8 @@ export const FloatingThinkingBar = memo(
               tabIndex={isVisible ? 0 : -1}
               onClick={onClick}
               aria-label={collapseTooltip}
+              aria-expanded={isExpanded}
+              aria-controls={contentId}
               className={cn(
                 'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
                 'hover:bg-surface-hover hover:text-text-primary',
@@ -304,9 +308,9 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
       </div>
       <div
         id={contentId}
-        role="region"
+        role="group"
         aria-label={label}
-        aria-hidden={!isExpanded}
+        aria-hidden={!isExpanded || undefined}
         className={cn('grid transition-all duration-300 ease-out', isExpanded && 'mb-8')}
         style={{
           gridTemplateRows: isExpanded ? '1fr' : '0fr',
@@ -319,6 +323,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
             isExpanded={isExpanded}
             onClick={handleClick}
             content={textContent}
+            contentId={contentId}
           />
         </div>
       </div>

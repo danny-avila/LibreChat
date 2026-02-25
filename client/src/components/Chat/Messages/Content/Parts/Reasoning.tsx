@@ -110,9 +110,9 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
         </div>
         <div
           id={contentId}
-          role="region"
+          role="group"
           aria-label={label}
-          aria-hidden={!isExpanded}
+          aria-hidden={!isExpanded || undefined}
           className={cn(
             'grid transition-all duration-300 ease-out',
             nextType !== ContentTypes.THINK && isExpanded && 'mb-4',
@@ -128,6 +128,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
               isExpanded={isExpanded}
               onClick={handleClick}
               content={reasoningText}
+              contentId={contentId}
             />
           </div>
         </div>
