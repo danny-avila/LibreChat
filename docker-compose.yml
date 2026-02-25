@@ -9,7 +9,10 @@ services:
     depends_on:
       - mongodb
       - rag_api
-    image: ghcr.io/danny-avila/librechat-dev:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/siteonuk/fleetworx-chat:latest
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
@@ -27,6 +30,7 @@ services:
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/logs
+      - ./librechat.yaml:/app/librechat.yaml
   mongodb:
     container_name: chat-mongodb
     image: mongo:8.0.17
