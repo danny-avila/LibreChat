@@ -113,6 +113,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
               <div
                 className="group/preview relative min-h-[6rem] overflow-y-auto text-sm sm:text-base"
                 style={{ maxHeight: '24rem' }}
+                onClick={() => setIsEditing(true)}
               >
                 {!field.value ? (
                   <p className="italic text-text-tertiary">{localize('com_ui_click_to_edit')}</p>
