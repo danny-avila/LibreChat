@@ -21,6 +21,23 @@ jest.mock('~/hooks', () => ({
   useMediaQuery: jest.fn(() => false), // Mock as desktop by default
   useLocalize: jest.fn(),
   useDefaultConvo: jest.fn(),
+  useFavorites: jest.fn(() => ({
+    favorites: [],
+    isFavoriteAgent: jest.fn(() => false),
+    toggleFavoriteAgent: jest.fn(),
+    isFavoriteModel: jest.fn(() => false),
+    toggleFavoriteModel: jest.fn(),
+    addFavoriteAgent: jest.fn(),
+    removeFavoriteAgent: jest.fn(),
+    addFavoriteModel: jest.fn(),
+    removeFavoriteModel: jest.fn(),
+    reorderFavorites: jest.fn(),
+    isLoading: false,
+    isError: false,
+    isUpdating: false,
+    fetchError: null,
+    updateError: null,
+  })),
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -342,7 +359,7 @@ describe('AgentDetail', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
-      expect(copyLinkButton).toHaveClass('focus:outline-none', 'focus:ring-2');
+      expect(copyLinkButton).toHaveClass('focus-visible:outline-none', 'focus-visible:ring-2');
     });
   });
 

@@ -109,12 +109,12 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   return (
     <div
       ref={ref}
-      className={cn(
-        'group relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-border-medium px-3 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
-        isSmallScreen === true ? 'mb-2 h-14 rounded-xl' : '',
-      )}
+      className="group relative my-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-2 border-transparent px-3 py-2 text-text-primary focus-within:border-ring-primary focus-within:bg-surface-active-alt hover:bg-surface-active-alt"
     >
-      <Search className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary" />
+      <Search
+        aria-hidden="true"
+        className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary"
+      />
       <input
         type="text"
         ref={inputRef}
@@ -134,7 +134,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
       />
       <button
         type="button"
-        aria-label={`${localize('com_ui_clear')} ${localize('com_ui_search')}`}
+        aria-label={localize('com_ui_clear_search')}
         className={cn(
           'absolute right-[7px] flex h-5 w-5 items-center justify-center rounded-full border-none bg-transparent p-0 transition-opacity duration-200',
           showClearIcon ? 'opacity-100' : 'opacity-0',
@@ -144,7 +144,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
         tabIndex={showClearIcon ? 0 : -1}
         disabled={!showClearIcon}
       >
-        <X className="h-5 w-5 cursor-pointer" />
+        <X className="h-5 w-5 cursor-pointer" aria-hidden="true" />
       </button>
     </div>
   );

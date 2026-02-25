@@ -121,9 +121,12 @@ export function getSafetySettings(
 export function getGoogleConfig(
   credentials: string | t.GoogleCredentials | undefined,
   options: t.GoogleConfigOptions = {},
+  acceptRawApiKey = false,
 ) {
   let creds: t.GoogleCredentials = {};
-  if (typeof credentials === 'string') {
+  if (acceptRawApiKey && typeof credentials === 'string') {
+    creds[AuthKeys.GOOGLE_API_KEY] = credentials;
+  } else if (typeof credentials === 'string') {
     try {
       creds = JSON.parse(credentials);
     } catch (err: unknown) {
@@ -154,15 +157,18 @@ export function getGoogleConfig(
 
   let enableWebSearch = web_search;
 
-  const llmConfig: GoogleClientOptions | VertexAIClientOptions = removeNullishValues({
-    ...(modelOptions || {}),
-    model: modelOptions?.model ?? '',
-    maxRetries: 2,
-    topP: modelOptions?.topP ?? undefined,
-    topK: modelOptions?.topK ?? undefined,
-    temperature: modelOptions?.temperature ?? undefined,
-    maxOutputTokens: modelOptions?.maxOutputTokens ?? undefined,
-  });
+  const llmConfig: GoogleClientOptions | VertexAIClientOptions = removeNullishValues(
+    {
+      ...(modelOptions || {}),
+      model: modelOptions?.model ?? '',
+      maxRetries: 2,
+      topP: modelOptions?.topP ?? undefined,
+      topK: modelOptions?.topK ?? undefined,
+      temperature: modelOptions?.temperature ?? undefined,
+      maxOutputTokens: modelOptions?.maxOutputTokens ?? undefined,
+    },
+    true,
+  );
 
   /** Used only for Safety Settings */
   llmConfig.safetySettings = getSafetySettings(llmConfig.model);

@@ -35,6 +35,31 @@ export const ROLE_LOCALIZATIONS = {
     name: 'com_ui_role_owner' as const,
     description: 'com_ui_role_owner_desc' as const,
   } as const,
+  // MCPServer roles
+  mcpServer_viewer: {
+    name: 'com_ui_mcp_server_role_viewer' as const,
+    description: 'com_ui_mcp_server_role_viewer_desc' as const,
+  } as const,
+  mcpServer_editor: {
+    name: 'com_ui_mcp_server_role_editor' as const,
+    description: 'com_ui_mcp_server_role_editor_desc' as const,
+  } as const,
+  mcpServer_owner: {
+    name: 'com_ui_mcp_server_role_owner' as const,
+    description: 'com_ui_mcp_server_role_owner_desc' as const,
+  } as const,
+  remoteAgent_viewer: {
+    name: 'com_ui_remote_agent_role_viewer' as const,
+    description: 'com_ui_remote_agent_role_viewer_desc' as const,
+  } as const,
+  remoteAgent_editor: {
+    name: 'com_ui_remote_agent_role_editor' as const,
+    description: 'com_ui_remote_agent_role_editor_desc' as const,
+  } as const,
+  remoteAgent_owner: {
+    name: 'com_ui_remote_agent_role_owner' as const,
+    description: 'com_ui_remote_agent_role_owner_desc' as const,
+  } as const,
 };
 
 /**

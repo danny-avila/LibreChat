@@ -5,11 +5,16 @@ import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } 
 import {
   Constants,
   FileSources,
+  Permissions,
   EModelEndpoint,
   isParamEndpoint,
+  PermissionTypes,
   getEndpointField,
+  isAgentsEndpoint,
   LocalStorageKeys,
+  isEphemeralAgentId,
   isAssistantsEndpoint,
+  getDefaultParamsEndpoint,
 } from 'librechat-data-provider';
 import type {
   TPreset,
@@ -21,6 +26,7 @@ import type {
 import type { AssistantListItem } from '~/common';
 import {
   updateLastSelectedModel,
+  getLocalStorageItems,
   getDefaultModelSpec,
   getDefaultEndpoint,
   getModelSpecPreset,
@@ -32,6 +38,7 @@ import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
 import { useApplyModelSpecEffects } from './Agents';
 import { usePauseGlobalAudio } from './Audio';
+import { useHasAccess } from '~/hooks';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
@@ -47,6 +54,11 @@ const useNewConvo = (index = 0) => {
   const clearAllLatestMessages = store.useClearLatestMessages(`useNewConvo ${index}`);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+
+  const hasAgentAccess = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.USE,
+  });
 
   const modelsQuery = useGetModelsQuery();
   const assistantsListMap = useAssistantListMap();
@@ -102,8 +114,39 @@ const useNewConvo = (index = 0) => {
             endpointsConfig,
           });
 
+          // If the selected endpoint is agents but user doesn't have access, find an alternative
+          // Skip this check for existing agent conversations (they have agent_id set)
+          // Also check localStorage for new conversations restored after refresh
+          const { lastConversationSetup } = getLocalStorageItems();
+          const storedAgentId =
+            isAgentsEndpoint(lastConversationSetup?.endpoint) && lastConversationSetup?.agent_id;
+          const isExistingAgentConvo =
+            isAgentsEndpoint(defaultEndpoint) &&
+            ((conversation.agent_id && !isEphemeralAgentId(conversation.agent_id)) ||
+              (storedAgentId && !isEphemeralAgentId(storedAgentId)));
+          if (
+            defaultEndpoint &&
+            isAgentsEndpoint(defaultEndpoint) &&
+            !hasAgentAccess &&
+            !isExistingAgentConvo
+          ) {
+            defaultEndpoint = Object.keys(endpointsConfig ?? {}).find(
+              (ep) => !isAgentsEndpoint(ep as EModelEndpoint) && endpointsConfig?.[ep],
+            ) as EModelEndpoint | undefined;
+          }
+
           if (!defaultEndpoint) {
-            defaultEndpoint = Object.keys(endpointsConfig ?? {})[0] as EModelEndpoint;
+            // Find first available endpoint that's not agents (if no access) or any endpoint
+            defaultEndpoint = Object.keys(endpointsConfig ?? {}).find((ep) => {
+              if (
+                isAgentsEndpoint(ep as EModelEndpoint) &&
+                !hasAgentAccess &&
+                !isExistingAgentConvo
+              ) {
+                return false;
+              }
+              return !!endpointsConfig?.[ep];
+            }) as EModelEndpoint;
           }
 
           const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
@@ -149,11 +192,13 @@ const useNewConvo = (index = 0) => {
           }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
+          const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, defaultEndpoint);
           conversation = buildDefaultConvo({
             conversation,
             lastConversationSetup: activePreset as TConversation,
             endpoint: defaultEndpoint,
             models,
+            defaultParamsEndpoint,
           });
         }
 
@@ -207,7 +252,7 @@ const useNewConvo = (index = 0) => {
           state: disableFocus ? {} : { focusChat: true },
         });
       },
-    [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data],
+    [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data, hasAgentAccess],
   );
 
   const newConversation = useCallback(

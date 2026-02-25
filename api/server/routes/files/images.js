@@ -2,14 +2,32 @@ const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { isAgentsEndpoint } = require('librechat-data-provider');
+const { isAssistantsEndpoint } = require('librechat-data-provider');
+const { loginLimiter } = require('~/server/middleware');
 const {
-  filterFile,
-  processImageFile,
   processAgentFileUpload,
+  processImageFile,
+  filterFile,
 } = require('~/server/services/Files/process');
 
 const router = express.Router();
+
+router.use(loginLimiter);
+
+const sanitizePathSegment = (value = '') => value.replace(/[^a-zA-Z0-9_-]/g, '');
+
+const createSafeImagePath = (basePath, userId, filename) => {
+  const safeUserId = sanitizePathSegment(userId);
+  const safeFilename = path.basename(filename);
+  const userPath = path.resolve(basePath, safeUserId);
+  const filePath = path.resolve(userPath, safeFilename);
+
+  if (!filePath.startsWith(`${userPath}${path.sep}`) && filePath !== userPath) {
+    return null;
+  }
+
+  return filePath;
+};
 
 router.post('/', async (req, res) => {
   const metadata = req.body;
@@ -21,7 +39,7 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    if (isAgentsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
+    if (!isAssistantsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
       return await processAgentFileUpload({ req, res, metadata });
     }
 
@@ -41,12 +59,15 @@ router.post('/', async (req, res) => {
     }
 
     try {
-      const filepath = path.join(
+      const filepath = createSafeImagePath(
         appConfig.paths.imageOutput,
-        req.user.id,
-        path.basename(req.file.filename),
+        req.user?.id,
+        req.file?.filename ?? '',
       );
-      await fs.unlink(filepath);
+
+      if (filepath) {
+        await fs.unlink(filepath);
+      }
     } catch (error) {
       logger.error('[/files/images] Error deleting file:', error);
     }

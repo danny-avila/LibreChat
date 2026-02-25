@@ -1,5 +1,14 @@
+import { atom } from 'jotai';
 import { atomFamily, atomWithStorage } from 'jotai/utils';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import { createTabIsolatedStorage } from './jotai-utils';
+
+/**
+ * Tab-isolated storage for MCP values — prevents cross-tab sync so that
+ * each tab's MCP server selections are independent (especially for new chats
+ * which all share the same `LAST_MCP_new` localStorage key).
+ */
+const mcpTabIsolatedStorage = createTabIsolatedStorage<string[]>();
 
 /**
  * Creates a storage atom for MCP values per conversation
@@ -9,7 +18,7 @@ export const mcpValuesAtomFamily = atomFamily((conversationId: string | null) =>
   const key = conversationId ?? Constants.NEW_CONVO;
   const storageKey = `${LocalStorageKeys.LAST_MCP_}${key}`;
 
-  return atomWithStorage<string[]>(storageKey, [], undefined, { getOnInit: true });
+  return atomWithStorage<string[]>(storageKey, [], mcpTabIsolatedStorage, { getOnInit: true });
 });
 
 /**
@@ -18,3 +27,39 @@ export const mcpValuesAtomFamily = atomFamily((conversationId: string | null) =>
 export const mcpPinnedAtom = atomWithStorage<boolean>(LocalStorageKeys.PIN_MCP_, true, undefined, {
   getOnInit: true,
 });
+
+/**
+ * Server initialization state - shared globally so chat dropdown and settings panel
+ * both see the same OAuth/initialization state.
+ *
+ * This enables canceling OAuth from either location.
+ */
+export interface MCPServerInitState {
+  isInitializing: boolean;
+  isCancellable: boolean;
+  oauthUrl: string | null;
+  oauthStartTime: number | null;
+}
+
+const defaultServerInitState: MCPServerInitState = {
+  isInitializing: false,
+  isCancellable: false,
+  oauthUrl: null,
+  oauthStartTime: null,
+};
+
+/**
+ * Global atom for MCP server initialization states.
+ * Keyed by server name.
+ */
+export const mcpServerInitStatesAtom = atom<Record<string, MCPServerInitState>>({});
+
+/**
+ * Helper to get or create a server's init state
+ */
+export const getServerInitState = (
+  states: Record<string, MCPServerInitState>,
+  serverName: string,
+): MCPServerInitState => {
+  return states[serverName] || defaultServerInitState;
+};

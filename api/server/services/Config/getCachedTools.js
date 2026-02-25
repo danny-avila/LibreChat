@@ -1,4 +1,4 @@
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, Time } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 
 /**
@@ -20,7 +20,7 @@ const ToolCacheKeys = {
  * @returns {Promise<LCAvailableTools|null>} The available tools object or null if not cached
  */
 async function getCachedTools(options = {}) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
   const { userId, serverName } = options;
 
   // Return MCP server-specific tools if requested
@@ -39,12 +39,12 @@ async function getCachedTools(options = {}) {
  * @param {Object} options - Options for caching tools
  * @param {string} [options.userId] - User ID for user-specific MCP tools
  * @param {string} [options.serverName] - MCP server name for server-specific tools
- * @param {number} [options.ttl] - Time to live in milliseconds
+ * @param {number} [options.ttl] - Time to live in milliseconds (default: 12 hours)
  * @returns {Promise<boolean>} Whether the operation was successful
  */
 async function setCachedTools(tools, options = {}) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const { userId, serverName, ttl } = options;
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
+  const { userId, serverName, ttl = Time.TWELVE_HOURS } = options;
 
   // Cache by MCP server if specified (requires userId)
   if (serverName && userId) {
@@ -65,7 +65,7 @@ async function setCachedTools(tools, options = {}) {
  * @returns {Promise<void>}
  */
 async function invalidateCachedTools(options = {}) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
   const { userId, serverName, invalidateGlobal = false } = options;
 
   const keysToDelete = [];
@@ -89,7 +89,7 @@ async function invalidateCachedTools(options = {}) {
  * @returns {Promise<LCAvailableTools|null>} The available tools for the server
  */
 async function getMCPServerTools(userId, serverName) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
   const serverTools = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName));
 
   if (serverTools) {

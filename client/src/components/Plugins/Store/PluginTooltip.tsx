@@ -1,5 +1,4 @@
 import { HoverCardPortal, HoverCardContent } from '@librechat/client';
-import './styles.module.css';
 
 type TPluginTooltipProps = {
   content: string;

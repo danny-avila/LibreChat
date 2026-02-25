@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect, useCallback, memo } from 'react';
+import React, { useState, useRef, useLayoutEffect, useEffect, useCallback, memo } from 'react';
 import { useLocalize } from '~/hooks';
 
 interface Option {
@@ -14,6 +14,7 @@ interface RadioProps {
   disabled?: boolean;
   className?: string;
   fullWidth?: boolean;
+  'aria-labelledby'?: string;
 }
 
 const Radio = memo(function Radio({
@@ -23,10 +24,12 @@ const Radio = memo(function Radio({
   disabled = false,
   className = '',
   fullWidth = false,
+  'aria-labelledby': ariaLabelledBy,
 }: RadioProps) {
   const localize = useLocalize();
-  const [currentValue, setCurrentValue] = useState<string>(value ?? '');
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
+  const [currentValue, setCurrentValue] = useState<string>(value ?? '');
   const [backgroundStyle, setBackgroundStyle] = useState<React.CSSProperties>({});
 
   const handleChange = (newValue: string) => {
@@ -51,9 +54,21 @@ const Radio = memo(function Radio({
     }
   }, [currentValue, options]);
 
+  // Mark as mounted after dialog animations settle
+  // Timeout ensures we wait for CSS transitions to complete
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setIsMounted(true);
+    }, 50);
+
+    return () => clearTimeout(timeout);
+  }, []);
+
   useLayoutEffect(() => {
-    updateBackgroundStyle();
-  }, [updateBackgroundStyle]);
+    if (isMounted) {
+      updateBackgroundStyle();
+    }
+  }, [isMounted, updateBackgroundStyle]);
 
   useLayoutEffect(() => {
     if (value !== undefined) {
@@ -66,6 +81,7 @@ const Radio = memo(function Radio({
       <div
         className="relative inline-flex items-center rounded-lg bg-muted p-1 opacity-50"
         role="radiogroup"
+        aria-labelledby={ariaLabelledBy}
       >
         <span className="px-4 py-2 text-xs text-muted-foreground">
           {localize('com_ui_no_options')}
@@ -80,8 +96,9 @@ const Radio = memo(function Radio({
     <div
       className={`relative ${fullWidth ? 'flex' : 'inline-flex'} items-center rounded-lg bg-muted p-1 ${className}`}
       role="radiogroup"
+      aria-labelledby={ariaLabelledBy}
     >
-      {selectedIndex >= 0 && (
+      {selectedIndex >= 0 && isMounted && (
         <div
           className="pointer-events-none absolute inset-y-1 rounded-md border border-border/50 bg-background shadow-sm transition-all duration-300 ease-out"
           style={backgroundStyle}
@@ -102,7 +119,11 @@ const Radio = memo(function Radio({
             currentValue === option.value ? 'text-foreground' : 'text-foreground'
           } ${disabled ? 'cursor-not-allowed opacity-50' : ''} ${fullWidth ? 'flex-1' : ''}`}
         >
-          {option.icon && <span className="flex-shrink-0">{option.icon}</span>}
+          {option.icon && (
+            <span className="flex-shrink-0" aria-hidden="true">
+              {option.icon}
+            </span>
+          )}
           <span className="whitespace-nowrap">{option.label}</span>
         </button>
       ))}

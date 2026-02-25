@@ -77,23 +77,29 @@ export function getOpenAIConfig(
       headers = Object.assign(headers ?? {}, transformed.configOptions?.defaultHeaders);
     }
   } else if (isGoogle) {
-    const googleResult = getGoogleConfig(apiKey, {
-      modelOptions,
-      reverseProxyUrl: baseURL ?? undefined,
-      authHeader: true,
-      addParams,
-      dropParams,
-      defaultParams,
-    });
+    const googleResult = getGoogleConfig(
+      apiKey,
+      {
+        modelOptions,
+        reverseProxyUrl: baseURL ?? undefined,
+        authHeader: true,
+        addParams,
+        dropParams,
+        defaultParams,
+      },
+      true,
+    );
     /** Transform handles addParams/dropParams - it knows about OpenAI params */
     const transformed = transformToOpenAIConfig({
       addParams,
       dropParams,
+      defaultParams,
+      tools: googleResult.tools,
       llmConfig: googleResult.llmConfig,
       fromEndpoint: EModelEndpoint.google,
     });
     llmConfig = transformed.llmConfig;
-    tools = googleResult.tools;
+    tools = transformed.tools;
   } else {
     const openaiResult = getOpenAILLMConfig({
       azure,
@@ -145,7 +151,14 @@ export function getOpenAIConfig(
         return;
       }
 
-      const updatedUrl = configOptions.baseURL?.replace(/\/deployments(?:\/.*)?$/, '/v1');
+      const currentBaseUrl = configOptions.baseURL;
+      let updatedUrl = currentBaseUrl;
+      if (currentBaseUrl) {
+        const deploymentSegmentIndex = currentBaseUrl.indexOf('/deployments/');
+        if (deploymentSegmentIndex >= 0) {
+          updatedUrl = `${currentBaseUrl.slice(0, deploymentSegmentIndex)}/v1`;
+        }
+      }
 
       configOptions.baseURL = constructAzureURL({
         baseURL: updatedUrl || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',

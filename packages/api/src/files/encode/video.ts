@@ -79,6 +79,13 @@ export async function encodeAndFormatVideos(
         mimeType: file.type,
         data: content,
       });
+    } else if (provider === Providers.OPENROUTER) {
+      result.videos.push({
+        type: 'video_url',
+        video_url: {
+          url: `data:${file.type};base64,${content}`,
+        },
+      });
     }
 
     result.files.push(metadata);

@@ -40,6 +40,11 @@ fullnameOverride: ''
 podAnnotations: {}
 podLabels: {}
 
+# Enable or disable injection of service environment variables into pods.
+# When running in namespaces with many services, the injected variables can cause
+# "argument list too long" errors. Set to false to disable.
+enableServiceLinks: true
+
 podSecurityContext: {} # fsGroup: 2000
 
 securityContext: {}

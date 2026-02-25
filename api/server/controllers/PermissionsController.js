@@ -4,15 +4,17 @@
 
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { ResourceType, PrincipalType } = require('librechat-data-provider');
+const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
+const { enrichRemoteAgentPrincipals, backfillRemoteAgentPermissions } = require('@librechat/api');
 const {
   bulkUpdateResourcePermissions,
   ensureGroupPrincipalExists,
   getEffectivePermissions,
   ensurePrincipalExists,
   getAvailableRoles,
+  findAccessibleResources,
+  getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
-const { AclEntry } = require('~/db/models');
 const {
   searchPrincipals: searchLocalPrincipals,
   sortPrincipalsByRelevance,
@@ -22,6 +24,7 @@ const {
   entraIdPrincipalFeatureEnabled,
   searchEntraIdPrincipals,
 } = require('~/server/services/GraphApiService');
+const { AclEntry, AccessRole } = require('~/db/models');
 
 /**
  * Generic controller for resource permission endpoints
@@ -232,7 +235,7 @@ const getResourcePermissions = async (req, res) => {
       },
     ]);
 
-    const principals = [];
+    let principals = [];
     let publicPermission = null;
 
     // Process aggregation results
@@ -276,6 +279,13 @@ const getResourcePermissions = async (req, res) => {
           accessRoleId: result.accessRoleId,
         });
       }
+    }
+
+    if (resourceType === ResourceType.REMOTE_AGENT) {
+      const enricherDeps = { AclEntry, AccessRole, logger };
+      const enrichResult = await enrichRemoteAgentPrincipals(enricherDeps, resourceId, principals);
+      principals = enrichResult.principals;
+      backfillRemoteAgentPermissions(enricherDeps, resourceId, enrichResult.entriesToBackfill);
     }
 
     // Return response in format expected by frontend
@@ -475,10 +485,58 @@ const searchPrincipals = async (req, res) => {
   }
 };
 
+/**
+ * Get user's effective permissions for all accessible resources of a type
+ * @route GET /api/permissions/{resourceType}/effective/all
+ */
+const getAllEffectivePermissions = async (req, res) => {
+  try {
+    const { resourceType } = req.params;
+    validateResourceType(resourceType);
+
+    const { id: userId } = req.user;
+
+    // Find all resources the user has at least VIEW access to
+    const accessibleResourceIds = await findAccessibleResources({
+      userId,
+      role: req.user.role,
+      resourceType,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+
+    if (accessibleResourceIds.length === 0) {
+      return res.status(200).json({});
+    }
+
+    // Get effective permissions for all accessible resources
+    const permissionsMap = await getResourcePermissionsMap({
+      userId,
+      role: req.user.role,
+      resourceType,
+      resourceIds: accessibleResourceIds,
+    });
+
+    // Convert Map to plain object for JSON response
+    const result = {};
+    for (const [resourceId, permBits] of permissionsMap) {
+      result[resourceId] = permBits;
+    }
+
+    res.status(200).json(result);
+  } catch (error) {
+    logger.error('Error getting all effective permissions:', error);
+    res.status(500).json({
+      error: 'Failed to get all effective permissions',
+      details: error.message,
+    });
+  }
+};
+
 module.exports = {
   updateResourcePermissions,
   getResourcePermissions,
   getResourceRoles,
   getUserEffectivePermissions,
+  getAllEffectivePermissions,
   searchPrincipals,
 };

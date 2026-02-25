@@ -20,7 +20,7 @@ export const columns: ColumnDef<TFile | undefined>[] = [
           aria-label={localize('com_ui_name')}
         >
           {localize('com_ui_name')}
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="ml-2 h-4 w-4" aria-hidden="true" />
         </Button>
       );
     },

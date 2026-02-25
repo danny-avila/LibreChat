@@ -3,6 +3,13 @@ import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
 const BaseOptionsSchema = z.object({
+  /** Display name for the MCP server - only letters, numbers, and spaces allowed */
+  title: z
+    .string()
+    .regex(/^[a-zA-Z0-9 ]+$/, 'Title can only contain letters, numbers, and spaces')
+    .optional(),
+  /** Description of the MCP server */
+  description: z.string().optional(),
   /**
    * Controls whether the MCP server is initialized during application startup.
    * - true (default): Server is initialized during app startup and included in app-level connections
@@ -66,6 +73,23 @@ const BaseOptionsSchema = z.object({
     .optional(),
   /** Custom headers to send with OAuth requests (registration, discovery, token exchange, etc.) */
   oauth_headers: z.record(z.string(), z.string()).optional(),
+  /**
+   * API Key authentication configuration for SSE and Streamable HTTP transports
+   * - source: 'admin' means the key is provided by admin and shared by all users
+   * - source: 'user' means each user provides their own key via customUserVars
+   */
+  apiKey: z
+    .object({
+      /** API key value (only for admin-provided mode, stored encrypted) */
+      key: z.string().optional(),
+      /** Whether key is provided by admin or each user */
+      source: z.enum(['admin', 'user']),
+      /** How to format the authorization header */
+      authorization_type: z.enum(['basic', 'bearer', 'custom']),
+      /** Custom header name when authorization_type is 'custom' */
+      custom_header: z.string().optional(),
+    })
+    .optional(),
   customUserVars: z
     .record(
       z.string(),
@@ -180,3 +204,36 @@ export const MCPOptionsSchema = z.union([
 export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);
 
 export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
+
+/**
+ * Helper to omit server-managed fields that should not come from UI
+ */
+const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T) =>
+  schema.omit({
+    startup: true,
+    timeout: true,
+    initTimeout: true,
+    chatMenu: true,
+    serverInstructions: true,
+    requiresOAuth: true,
+    customUserVars: true,
+    oauth_headers: true,
+  });
+
+/**
+ * MCP Server configuration that comes from UI/API input only.
+ * Omits server-managed fields like startup, timeout, customUserVars, etc.
+ * Allows: title, description, url, iconPath, oauth (user credentials)
+ *
+ * SECURITY: Stdio transport is intentionally excluded from user input.
+ * Stdio allows arbitrary command execution and should only be configured
+ * by administrators via the YAML config file (librechat.yaml).
+ * Only remote transports (SSE, HTTP, WebSocket) are allowed via the API.
+ */
+export const MCPServerUserInputSchema = z.union([
+  omitServerManagedFields(WebSocketOptionsSchema),
+  omitServerManagedFields(SSEOptionsSchema),
+  omitServerManagedFields(StreamableHTTPOptionsSchema),
+]);
+
+export type MCPServerUserInput = z.infer<typeof MCPServerUserInputSchema>;

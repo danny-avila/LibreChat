@@ -10,6 +10,7 @@ export default function Plugin({ className = '', ...props }) {
       width="16"
       height="16"
       strokeWidth="2"
+      aria-hidden="true"
       {...props}
     >
       <g fill="currentColor">

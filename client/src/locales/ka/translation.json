@@ -15,7 +15,6 @@
   "com_agents_mcp_icon_size": "მინიმალური ზომა 128 x 128 პიქსელი",
   "com_agents_mcp_name_placeholder": "მორგებული ინსტრუმენტი",
   "com_agents_mcp_trust_subtext": "მორგებული კონექტორები არ არის დამოწმებული LibreChat-ის მიერ",
-  "com_agents_mcps_disabled": "MCP-ების დამატებამდე საჭიროა შეიქმნას აგენტი.",
   "com_agents_missing_provider_model": "გთხოვთ, აგენტის შექმნამდე აირჩიოთ პროვაიდერი და მოდელი.",
   "com_agents_name_placeholder": "არასავალდებულო: აგენტის სახელი",
   "com_agents_no_access": "თქვენ არ გაქვთ შესაბამისი წვდომა აგენტის რედაქტირებისთვის",

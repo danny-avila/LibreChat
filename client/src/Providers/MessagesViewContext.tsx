@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import { useAddedChatContext } from './AddedChatContext';
 import { useChatContext } from './ChatContext';
 
 interface MessagesViewContextValue {
@@ -9,7 +8,6 @@ interface MessagesViewContextValue {
 
   /** Submission and control states */
   isSubmitting: ReturnType<typeof useChatContext>['isSubmitting'];
-  isSubmittingFamily: boolean;
   abortScroll: ReturnType<typeof useChatContext>['abortScroll'];
   setAbortScroll: ReturnType<typeof useChatContext>['setAbortScroll'];
 
@@ -28,15 +26,18 @@ interface MessagesViewContextValue {
 
 const MessagesViewContext = createContext<MessagesViewContextValue | undefined>(undefined);
 
+// Export the context so it can be provided by other providers (e.g., ShareMessagesProvider)
+export { MessagesViewContext };
+export type { MessagesViewContextValue };
+
 export function MessagesViewProvider({ children }: { children: React.ReactNode }) {
   const chatContext = useChatContext();
-  const addedChatContext = useAddedChatContext();
 
   const {
     ask,
     index,
     regenerate,
-    isSubmitting: isSubmittingRoot,
+    isSubmitting,
     conversation,
     latestMessage,
     setAbortScroll,
@@ -46,8 +47,6 @@ export function MessagesViewProvider({ children }: { children: React.ReactNode }
     getMessages,
     setMessages,
   } = chatContext;
-
-  const { isSubmitting: isSubmittingAdditional } = addedChatContext;
 
   /** Memoize conversation-related values */
   const conversationValues = useMemo(
@@ -61,12 +60,11 @@ export function MessagesViewProvider({ children }: { children: React.ReactNode }
   /** Memoize submission states */
   const submissionStates = useMemo(
     () => ({
-      isSubmitting: isSubmittingRoot,
-      isSubmittingFamily: isSubmittingRoot || isSubmittingAdditional,
       abortScroll,
+      isSubmitting,
       setAbortScroll,
     }),
-    [isSubmittingRoot, isSubmittingAdditional, abortScroll, setAbortScroll],
+    [isSubmitting, abortScroll, setAbortScroll],
   );
 
   /** Memoize message operations (these are typically stable references) */
@@ -123,11 +121,10 @@ export function useMessagesConversation() {
 
 /** Hook for components that only need submission states */
 export function useMessagesSubmission() {
-  const { isSubmitting, isSubmittingFamily, abortScroll, setAbortScroll } =
-    useMessagesViewContext();
+  const { isSubmitting, abortScroll, setAbortScroll } = useMessagesViewContext();
   return useMemo(
-    () => ({ isSubmitting, isSubmittingFamily, abortScroll, setAbortScroll }),
-    [isSubmitting, isSubmittingFamily, abortScroll, setAbortScroll],
+    () => ({ isSubmitting, abortScroll, setAbortScroll }),
+    [isSubmitting, abortScroll, setAbortScroll],
   );
 }
 

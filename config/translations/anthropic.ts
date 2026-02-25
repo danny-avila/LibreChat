@@ -10,9 +10,6 @@ export function getClient() {
   /** @type {Anthropic.default.RequestOptions} */
   const options = {
     apiKey: process.env.ANTHROPIC_API_KEY,
-    defaultHeaders: {
-      'anthropic-beta': 'prompt-caching-2024-07-31',
-    },
   };
 
   return new Anthropic(options);

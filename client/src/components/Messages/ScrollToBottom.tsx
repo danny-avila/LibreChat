@@ -1,12 +1,13 @@
-import React from 'react';
+import { forwardRef } from 'react';
 
 type Props = {
   scrollHandler: React.MouseEventHandler<HTMLButtonElement>;
 };
 
-export default function ScrollToBottom({ scrollHandler }: Props) {
+const ScrollToBottom = forwardRef<HTMLButtonElement, Props>(({ scrollHandler }, ref) => {
   return (
     <button
+      ref={ref}
       onClick={scrollHandler}
       className="premium-scroll-button absolute bottom-5 right-1/2 cursor-pointer border border-border-light bg-surface-secondary"
       aria-label="Scroll to bottom"
@@ -22,4 +23,8 @@ export default function ScrollToBottom({ scrollHandler }: Props) {
       </svg>
     </button>
   );
-}
+});
+
+ScrollToBottom.displayName = 'ScrollToBottom';
+
+export default ScrollToBottom;

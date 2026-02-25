@@ -57,16 +57,7 @@ function getGoogleModelName(model: string | null | undefined) {
 }
 
 const MessageEndpointIcon: React.FC<IconProps> = (props) => {
-  const {
-    error,
-    button,
-    iconURL = '',
-    endpoint,
-    size = 30,
-    model = '',
-    assistantName,
-    agentName,
-  } = props;
+  const { error, iconURL = '', endpoint, size = 30, model = '', assistantName, agentName } = props;
 
   const assistantsIcon = {
     icon: iconURL ? (
@@ -119,7 +110,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     ) : (
       <div className="h-6 w-6">
         <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-          <Feather className="h-2/3 w-2/3 text-gray-400" />
+          <Feather className="h-2/3 w-2/3 text-gray-400" aria-hidden="true" />
         </div>
       </div>
     ),
@@ -141,11 +132,6 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       icon: <GPTIcon size={size * 0.5555555555555556} />,
       bg: getOpenAIColor(model),
       name: 'ChatGPT',
-    },
-    [EModelEndpoint.gptPlugins]: {
-      icon: <Plugin size={size * 0.7} />,
-      bg: `rgba(69, 89, 164, ${button === true ? 0.75 : 1})`,
-      name: 'Plugins',
     },
     [EModelEndpoint.google]: {
       icon: getGoogleIcon(model, size),

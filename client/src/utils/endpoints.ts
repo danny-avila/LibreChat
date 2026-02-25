@@ -6,10 +6,33 @@ import {
   LocalStorageKeys,
   getEndpointField,
   isAgentsEndpoint,
+  isEphemeralAgentId,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';
+import { getTimestampedValue } from './timestamps';
+
+/**
+ * Clears model for non-ephemeral agent conversations.
+ * Agents use their configured model internally, so the conversation model should be undefined.
+ * Mutates the template in place.
+ */
+export function clearModelForNonEphemeralAgent<
+  T extends {
+    endpoint?: EModelEndpoint | string | null;
+    agent_id?: string | null;
+    model?: string | null;
+  },
+>(template: T): void {
+  if (
+    isAgentsEndpoint(template.endpoint) &&
+    template.agent_id &&
+    !isEphemeralAgentId(template.agent_id)
+  ) {
+    template.model = undefined as T['model'];
+  }
+}
 
 export const getEntityName = ({
   name = '',
@@ -125,6 +148,18 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
     conversationId: 'new',
   };
 
+  // Reset agent_id if switching to a non-agents endpoint but template has a non-ephemeral agent_id
+  if (
+    !isAgentsEndpoint(newEndpoint) &&
+    template.agent_id &&
+    !isEphemeralAgentId(template.agent_id)
+  ) {
+    template.agent_id = Constants.EPHEMERAL_AGENT_ID;
+  }
+
+  // Clear model for non-ephemeral agents - agents use their configured model internally
+  clearModelForNonEphemeralAgent(template);
+
   const isAssistantSwitch =
     isAssistantsEndpoint(newEndpoint) &&
     isAssistantsEndpoint(currentEndpoint) &&
@@ -185,12 +220,51 @@ export function applyModelSpecEphemeralAgent({
   if (!modelSpec || !updateEphemeralAgent) {
     return;
   }
-  updateEphemeralAgent((convoId ?? Constants.NEW_CONVO) || Constants.NEW_CONVO, {
-    mcp: modelSpec.mcpServers ?? [Constants.mcp_clear as string],
+  const key = (convoId ?? Constants.NEW_CONVO) || Constants.NEW_CONVO;
+  const agent: t.TEphemeralAgent = {
+    mcp: modelSpec.mcpServers ?? [],
     web_search: modelSpec.webSearch ?? false,
     file_search: modelSpec.fileSearch ?? false,
     execute_code: modelSpec.executeCode ?? false,
-  });
+    artifacts: modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '',
+  };
+
+  // For existing conversations, layer per-conversation localStorage overrides
+  // on top of spec defaults so user modifications persist across navigation.
+  // If localStorage is empty (e.g., cleared), spec values stand alone.
+  if (key !== Constants.NEW_CONVO) {
+    const toolStorageMap: Array<[keyof t.TEphemeralAgent, string]> = [
+      ['execute_code', LocalStorageKeys.LAST_CODE_TOGGLE_],
+      ['web_search', LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_],
+      ['file_search', LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_],
+      ['artifacts', LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_],
+    ];
+
+    for (const [toolKey, storagePrefix] of toolStorageMap) {
+      const raw = getTimestampedValue(`${storagePrefix}${key}`);
+      if (raw !== null) {
+        try {
+          agent[toolKey] = JSON.parse(raw) as never;
+        } catch {
+          // ignore parse errors
+        }
+      }
+    }
+
+    const mcpRaw = localStorage.getItem(`${LocalStorageKeys.LAST_MCP_}${key}`);
+    if (mcpRaw !== null) {
+      try {
+        const parsed = JSON.parse(mcpRaw);
+        if (Array.isArray(parsed)) {
+          agent.mcp = parsed;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+  }
+
+  updateEphemeralAgent(key, agent);
 }
 
 /**

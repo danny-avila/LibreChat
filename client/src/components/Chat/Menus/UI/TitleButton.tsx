@@ -22,7 +22,7 @@ export default function TitleButton({ primaryText = '', secondaryText = '' }) {
           <span className="text-text-primary"> {primaryText} </span>
           {!!secondaryText && <span className="text-token-text-secondary">{secondaryText}</span>}
         </div>
-        <ChevronDown className="text-token-text-secondary size-4" />
+        <ChevronDown className="text-token-text-secondary size-4" aria-hidden="true" />
       </button>
     </Trigger>
   );

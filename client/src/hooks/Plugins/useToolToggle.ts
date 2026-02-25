@@ -13,6 +13,7 @@ type ToolValue = boolean | string;
 
 interface UseToolToggleOptions {
   conversationId?: string | null;
+  storageContextKey?: string;
   toolKey: string;
   localStorageKey: LocalStorageKeys;
   isAuthenticated?: boolean;
@@ -26,6 +27,7 @@ interface UseToolToggleOptions {
 
 export function useToolToggle({
   conversationId,
+  storageContextKey,
   toolKey: _toolKey,
   localStorageKey,
   isAuthenticated: externalIsAuthenticated,
@@ -93,8 +95,22 @@ export function useToolToggle({
         ...(prev || {}),
         [toolKey]: value,
       }));
+
+      // Dual-write to environment key for new conversation defaults
+      if (storageContextKey) {
+        const envKey = `${localStorageKey}${storageContextKey}`;
+        localStorage.setItem(envKey, JSON.stringify(value));
+        setTimestamp(envKey);
+      }
     },
-    [setIsDialogOpen, isAuthenticated, setEphemeralAgent, toolKey],
+    [
+      setIsDialogOpen,
+      isAuthenticated,
+      setEphemeralAgent,
+      toolKey,
+      storageContextKey,
+      localStorageKey,
+    ],
   );
 
   const debouncedChange = useMemo(

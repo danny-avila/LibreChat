@@ -2,8 +2,8 @@ import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import { useToastContext } from '@librechat/client';
 import { QueryKeys } from 'librechat-data-provider';
-import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
 import { useCreatePresetMutation, useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
@@ -27,6 +27,8 @@ export default function usePresets() {
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const { user, isAuthenticated } = useAuthContext();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [presetToDelete, setPresetToDelete] = useState<TPreset | null>(null);
 
   const modularChat = useRecoilValue(store.modularChat);
   const availableTools = useRecoilValue(store.availableTools);
@@ -86,6 +88,11 @@ export default function usePresets() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
+      showToast({
+        message: localize('com_endpoint_preset_delete_success'),
+        severity: NotificationSeverity.SUCCESS,
+        showIcon: true,
+      });
     },
     onError: (error) => {
       queryClient.invalidateQueries([QueryKeys.presets]);
@@ -93,6 +100,7 @@ export default function usePresets() {
       showToast({
         message: localize('com_endpoint_preset_delete_error'),
         severity: NotificationSeverity.ERROR,
+        showIcon: true,
       });
     },
   });
@@ -224,10 +232,17 @@ export default function usePresets() {
   const clearAllPresets = () => deletePresetsMutation.mutate(undefined);
 
   const onDeletePreset = (preset: TPreset) => {
-    if (!confirm(localize('com_endpoint_preset_delete_confirm'))) {
+    setPresetToDelete(preset);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDeletePreset = () => {
+    if (!presetToDelete) {
       return;
     }
-    deletePresetsMutation.mutate(preset);
+    deletePresetsMutation.mutate(presetToDelete);
+    setShowDeleteDialog(false);
+    setPresetToDelete(null);
   };
 
   const submitPreset = () => {
@@ -264,5 +279,9 @@ export default function usePresets() {
     onDeletePreset,
     submitPreset,
     exportPreset,
+    showDeleteDialog,
+    setShowDeleteDialog,
+    presetToDelete,
+    confirmDeletePreset,
   };
 }

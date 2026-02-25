@@ -2,6 +2,7 @@ import { SystemCategories } from 'librechat-data-provider';
 import type { IPromptGroupDocument as IPromptGroup } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { PromptGroupsListResponse } from '~/types';
+import { escapeRegExp } from '~/utils/common';
 
 /**
  * Formats prompt groups for the paginated /groups endpoint response
@@ -101,7 +102,6 @@ export function buildPromptGroupFilter({
 
   // Handle name filter - convert to regex for case-insensitive search
   if (name) {
-    const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     filter.name = new RegExp(escapeRegExp(name), 'i');
   }
 
