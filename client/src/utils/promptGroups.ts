@@ -10,9 +10,9 @@ import {
   deleteData,
   updateData,
   updateFields,
-  updateFieldsInPlace,
   addToCacheList,
   updateCacheList,
+  updateFieldsInPlace,
   removeFromCacheList,
   getRecordByProperty,
 } from './collection';
