@@ -195,7 +195,8 @@ describe('loadCustomConfig', () => {
     };
     process.env.CONFIG_PATH = 'validConfig.yaml';
     loadYaml.mockReturnValueOnce(mockConfig);
-    await loadCustomConfig();
+    const result = await loadCustomConfig();
+    expect(result).toEqual(mockConfig);
   });
 
   it('should log the loaded custom config', async () => {
