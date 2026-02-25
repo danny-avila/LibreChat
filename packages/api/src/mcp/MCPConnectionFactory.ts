@@ -328,8 +328,14 @@ export class MCPConnectionFactory {
             await this.flowManager!.deleteFlow(newFlowId, 'mcp_oauth');
           }
 
+          // Store flow state BEFORE redirecting so the callback can find it
+          await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', flowMetadata);
+
+          // Start monitoring in background — createFlow will find the existing PENDING state
           this.flowManager!.createFlow(newFlowId, 'mcp_oauth', flowMetadata, this.signal).catch(
-            () => {},
+            (error) => {
+              logger.warn(`${this.logPrefix} OAuth flow monitor ended`, error);
+            },
           );
 
           if (this.oauthStart) {
