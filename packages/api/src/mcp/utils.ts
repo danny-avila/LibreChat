@@ -39,16 +39,38 @@ function isValidServerName(serverName: string): boolean {
   return true;
 }
 
+function trimUnderscores(value: string): string {
+  let start = 0;
+  let end = value.length;
+
+  while (start < end && value.charCodeAt(start) === 95) {
+    start += 1;
+  }
+
+  while (end > start && value.charCodeAt(end - 1) === 95) {
+    end -= 1;
+  }
+
+  return start === 0 && end === value.length ? value : value.slice(start, end);
+}
+
+function normalizeServerNameCharacters(serverName: string): string {
+  let normalized = '';
+
+  for (let i = 0; i < serverName.length; i += 1) {
+    const charCode = serverName.charCodeAt(i);
+    normalized += isValidServerNameCharacter(charCode) ? serverName[i] : '_';
+  }
+
+  return trimUnderscores(normalized);
+}
+
 export function normalizeServerName(serverName: string): string {
   if (isValidServerName(serverName)) {
     return serverName;
   }
 
-  /** Replace non-matching characters with underscores.
-    This preserves the general structure while ensuring compatibility.
-    Trims leading/trailing underscores
-    */
-  const normalized = serverName.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/^_+|_+$/g, '');
+  const normalized = normalizeServerNameCharacters(serverName);
 
   // If the result is empty (e.g., all characters were non-ASCII and got trimmed),
   // generate a fallback name to ensure we always have a valid function name
