@@ -229,7 +229,8 @@ describe('MCPConnection Agent lifecycle – streamable-http', () => {
     await safeDisconnect(conn);
 
     /**
-     * streamable-http creates one Agent via createFetchFunction.
+     * streamable-http creates two Agents via createFetchFunction: one for POST
+     * (normal timeout) and one for GET SSE (long body timeout).
      * If agents were per-request (old bug), they would not be stored and close
      * would be called 0 times. With our fix, Agents are stored and closed on
      * disconnect regardless of request count — confirming reuse.
@@ -299,6 +300,55 @@ describe('MCPConnection Agent lifecycle – streamable-http', () => {
     await safeDisconnect(conn);
     expect(closeSpy.mock.calls.length).toBe(countAfterFirst);
     conn = null;
+  });
+
+  it('creates separate Agents for POST (normal timeout) and GET SSE (default sseReadTimeout)', async () => {
+    conn = new MCPConnection({
+      serverName: 'test',
+      serverConfig: { type: 'streamable-http', url: server.url },
+      useSSRFProtection: false,
+    });
+
+    await conn.connect();
+
+    const agents = (conn as unknown as { agents: Agent[] }).agents;
+    expect(agents.length).toBeGreaterThanOrEqual(2);
+
+    const optionsSym = Object.getOwnPropertySymbols(agents[0]).find(
+      (s) => s.toString() === 'Symbol(options)',
+    ) as symbol;
+
+    const bodyTimeouts = agents.map(
+      (a) => (a as unknown as Record<symbol, { bodyTimeout: number }>)[optionsSym].bodyTimeout,
+    );
+
+    const hasShortTimeout = bodyTimeouts.some((t) => t <= 120_000);
+    const hasLongTimeout = bodyTimeouts.some((t) => t === 5 * 60 * 1000);
+
+    expect(hasShortTimeout).toBe(true);
+    expect(hasLongTimeout).toBe(true);
+  });
+
+  it('respects a custom sseReadTimeout from server config', async () => {
+    const customTimeout = 10 * 60 * 1000;
+    conn = new MCPConnection({
+      serverName: 'test',
+      serverConfig: { type: 'streamable-http', url: server.url, sseReadTimeout: customTimeout },
+      useSSRFProtection: false,
+    });
+
+    await conn.connect();
+
+    const agents = (conn as unknown as { agents: Agent[] }).agents;
+    const optionsSym = Object.getOwnPropertySymbols(agents[0]).find(
+      (s) => s.toString() === 'Symbol(options)',
+    ) as symbol;
+
+    const bodyTimeouts = agents.map(
+      (a) => (a as unknown as Record<symbol, { bodyTimeout: number }>)[optionsSym].bodyTimeout,
+    );
+
+    expect(bodyTimeouts).toContain(customTimeout);
   });
 });
 
@@ -527,4 +577,145 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
 
     expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
   });
+});
+
+describe('MCPConnection SSE stream disconnect handling', () => {
+  function makeTransportStub() {
+    return {
+      onerror: undefined as ((e: Error) => void) | undefined,
+      onclose: undefined as (() => void) | undefined,
+      onmessage: undefined as ((m: unknown) => void) | undefined,
+      start: jest.fn(),
+      close: jest.fn(),
+      send: jest.fn(),
+    };
+  }
+
+  function makeConn() {
+    return new MCPConnection({
+      serverName: 'test-sse-disconnect',
+      serverConfig: { url: 'http://127.0.0.1:1/sse' },
+      useSSRFProtection: false,
+    });
+  }
+
+  function bindErrorHandler(conn: MCPConnection, transport: ReturnType<typeof makeTransportStub>) {
+    (
+      conn as unknown as { setupTransportErrorHandlers: (t: unknown) => void }
+    ).setupTransportErrorHandlers(transport);
+  }
+
+  beforeEach(() => {
+    mockLogger.debug.mockClear();
+    mockLogger.error.mockClear();
+  });
+
+  it('suppresses "SSE stream disconnected" errors from escalating to full reconnection', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    const emitSpy = jest.spyOn(conn, 'emit');
+    bindErrorHandler(conn, transport);
+
+    transport.onerror?.(
+      new Error('SSE stream disconnected: AbortError: The operation was aborted'),
+    );
+
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      expect.stringContaining('SDK SSE stream recovery in progress'),
+    );
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('suppresses "Failed to reconnect SSE stream" errors (SDK still has retries left)', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    const emitSpy = jest.spyOn(conn, 'emit');
+    bindErrorHandler(conn, transport);
+
+    transport.onerror?.(new Error('Failed to reconnect SSE stream: connection refused'));
+
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      expect.stringContaining('SDK SSE stream recovery in progress'),
+    );
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('escalates "Maximum reconnection attempts exceeded" (SDK gave up)', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    const emitSpy = jest.spyOn(conn, 'emit');
+    bindErrorHandler(conn, transport);
+
+    transport.onerror?.(new Error('Maximum reconnection attempts (2) exceeded.'));
+
+    expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('still escalates non-SSE-stream errors (e.g. POST failures)', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    const emitSpy = jest.spyOn(conn, 'emit');
+    bindErrorHandler(conn, transport);
+
+    transport.onerror?.(new Error('Streamable HTTP error: Error POSTing to endpoint: 500'));
+
+    expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
+  });
+});
+
+describe('MCPConnection SSE GET stream recovery – integration', () => {
+  let server: TestServer;
+  let conn: MCPConnection | null;
+
+  beforeEach(async () => {
+    server = await createStreamableServer();
+    conn = null;
+  });
+
+  afterEach(async () => {
+    await safeDisconnect(conn);
+    conn = null;
+    jest.restoreAllMocks();
+    await server.close();
+  });
+
+  it('survives a GET SSE body timeout without triggering a full transport rebuild', async () => {
+    const SHORT_SSE_TIMEOUT = 1500;
+
+    conn = new MCPConnection({
+      serverName: 'test-sse-recovery',
+      serverConfig: {
+        type: 'streamable-http',
+        url: server.url,
+        sseReadTimeout: SHORT_SSE_TIMEOUT,
+      },
+      useSSRFProtection: false,
+    });
+
+    await conn.connect();
+
+    await conn.fetchTools();
+
+    /**
+     * Wait for the GET SSE body timeout to fire. The SDK will see a stream
+     * error and call onerror("SSE stream disconnected: …"), then internally
+     * schedule a reconnection. Our handler should suppress the escalation.
+     */
+    await new Promise((resolve) => setTimeout(resolve, SHORT_SSE_TIMEOUT + 1000));
+
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      expect.stringContaining('SDK SSE stream recovery in progress'),
+    );
+    expect(mockLogger.error).not.toHaveBeenCalledWith(
+      expect.stringContaining('Reconnection handler failed'),
+      expect.anything(),
+    );
+
+    /**
+     * The connection should still be functional — POST requests use a
+     * separate Agent with the normal timeout and are unaffected.
+     */
+    const tools = await conn.fetchTools();
+    expect(tools).toBeDefined();
+  }, 10_000);
 });
