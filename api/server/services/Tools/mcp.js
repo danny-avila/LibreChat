@@ -152,8 +152,8 @@ async function reinitMCPServer({
       availableTools,
       success: Boolean(
         (connection && !oauthRequired) ||
-          (oauthRequired && oauthUrl) ||
-          (tools && tools.length > 0),
+        (oauthRequired && oauthUrl) ||
+        (tools && tools.length > 0),
       ),
       message: getResponseMessage(),
       oauthRequired,
