@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { isAssistantsEndpoint } = require('librechat-data-provider');
+const { loginLimiter } = require('~/server/middleware');
 const {
   processAgentFileUpload,
   processImageFile,
@@ -10,6 +11,8 @@ const {
 } = require('~/server/services/Files/process');
 
 const router = express.Router();
+
+router.use(loginLimiter);
 
 const sanitizePathSegment = (value = '') => value.replace(/[^a-zA-Z0-9_-]/g, '');
 

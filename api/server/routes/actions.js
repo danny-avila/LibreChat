@@ -13,11 +13,13 @@ const {
   OAUTH_SESSION_COOKIE,
 } = require('@librechat/api');
 const { findToken, updateToken, createToken } = require('~/models');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireJwtAuth, loginLimiter } = require('~/server/middleware');
 const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const router = express.Router();
+
+router.use(loginLimiter);
 const JWT_SECRET = process.env.JWT_SECRET;
 const OAUTH_CSRF_COOKIE_PATH = '/api/actions';
 
