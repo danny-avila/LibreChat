@@ -1,6 +1,15 @@
 import { Constants } from 'librechat-data-provider';
 
-export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
+/**
+ * Escapes special regex characters in a string so they are treated literally.
+ * @param str - The string to escape
+ * @returns The escaped string safe for use in a regex pattern
+ */
+export function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export const mcpToolPattern = new RegExp(escapeRegex(Constants.mcp_delimiter));
 /**
  * Normalizes a server name to match the pattern ^[a-zA-Z0-9_.-]+$
  * This is required for Azure OpenAI models with Tool Calling
@@ -44,15 +53,6 @@ export function sanitizeUrlForLogging(url: string | URL): string {
   } catch {
     return '[invalid URL]';
   }
-}
-
-/**
- * Escapes special regex characters in a string so they are treated literally.
- * @param str - The string to escape
- * @returns The escaped string safe for use in a regex pattern
- */
-export function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

@@ -9,6 +9,16 @@ export const OAUTH_SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
 export const OAUTH_SESSION_COOKIE_PATH = '/api';
 
 const OAUTH_SESSION_TOKEN_BYTES = 32;
+const OAUTH_TOKEN_NONCE_BYTES = 12;
+const OAUTH_TOKEN_TAG_BYTES = 16;
+
+type OAuthEncryptedPayload = {
+  uid?: string;
+  fid?: string;
+  iat?: number;
+  exp: number;
+  nonce: string;
+};
 
 function getOAuthSessionSecret(): string {
   const secret = process.env.JWT_SECRET;
@@ -18,13 +28,55 @@ function getOAuthSessionSecret(): string {
   return secret;
 }
 
-function toBase64Url(value: string): string {
-  return Buffer.from(value, 'utf8').toString('base64url');
+function getOAuthEncryptionKey(): Buffer {
+  return crypto.createHash('sha256').update(getOAuthSessionSecret(), 'utf8').digest();
 }
 
-function fromBase64Url(value: string): string | null {
+function encryptOAuthPayload(payload: OAuthEncryptedPayload): string {
+  const iv = crypto.randomBytes(OAUTH_TOKEN_NONCE_BYTES);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getOAuthEncryptionKey(), iv);
+  const encodedPayload = JSON.stringify(payload);
+  const encrypted = Buffer.concat([cipher.update(encodedPayload, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return `${iv.toString('base64url')}.${encrypted.toString('base64url')}.${authTag.toString('base64url')}`;
+}
+
+function decryptOAuthPayload(token: string): OAuthEncryptedPayload | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    return null;
+  }
+
+  const [ivBase64Url, payloadBase64Url, authTagBase64Url] = parts;
+  if (!ivBase64Url || !payloadBase64Url || !authTagBase64Url) {
+    return null;
+  }
+
+  let iv: Buffer;
+  let encryptedPayload: Buffer;
+  let authTag: Buffer;
+
   try {
-    return Buffer.from(value, 'base64url').toString('utf8');
+    iv = Buffer.from(ivBase64Url, 'base64url');
+    encryptedPayload = Buffer.from(payloadBase64Url, 'base64url');
+    authTag = Buffer.from(authTagBase64Url, 'base64url');
+  } catch {
+    return null;
+  }
+
+  if (iv.length !== OAUTH_TOKEN_NONCE_BYTES || authTag.length !== OAUTH_TOKEN_TAG_BYTES) {
+    return null;
+  }
+
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', getOAuthEncryptionKey(), iv);
+    decipher.setAuthTag(authTag);
+    const decryptedPayload = Buffer.concat([
+      decipher.update(encryptedPayload),
+      decipher.final(),
+    ]).toString('utf8');
+    return JSON.parse(decryptedPayload) as OAuthEncryptedPayload;
   } catch {
     return null;
   }
@@ -62,13 +114,13 @@ export function shouldUseSecureCookie(): boolean {
   return isProduction && !isLocalhost;
 }
 
-/** Generates an HMAC-based token for OAuth CSRF protection */
-export function generateOAuthCsrfToken(flowId: string, secret?: string): string {
-  const key = secret || process.env.JWT_SECRET;
-  if (!key) {
-    throw new Error('JWT_SECRET is required for OAuth CSRF token generation');
-  }
-  return crypto.createHmac('sha256', key).update(flowId).digest('hex').slice(0, 32);
+/** Generates an encrypted token for OAuth CSRF protection */
+export function generateOAuthCsrfToken(flowId: string): string {
+  return encryptOAuthPayload({
+    fid: flowId,
+    exp: Date.now() + OAUTH_CSRF_MAX_AGE,
+    nonce: crypto.randomBytes(OAUTH_TOKEN_NONCE_BYTES).toString('base64url'),
+  });
 }
 
 /** Sets a SameSite=Lax CSRF cookie bound to a specific OAuth flow */
@@ -83,8 +135,8 @@ export function setOAuthCsrfCookie(res: Response, flowId: string, cookiePath: st
 }
 
 /**
- * Validates the per-flow CSRF cookie against the expected HMAC.
- * Uses timing-safe comparison and always clears the cookie to prevent replay.
+ * Validates the per-flow CSRF cookie against the expected OAuth flow.
+ * Always clears the cookie to prevent replay.
  */
 export function validateOAuthCsrf(
   req: Request,
@@ -97,11 +149,13 @@ export function validateOAuthCsrf(
   if (!cookie) {
     return false;
   }
-  const expected = generateOAuthCsrfToken(flowId);
-  if (cookie.length !== expected.length) {
+
+  const payload = decryptOAuthPayload(cookie);
+  if (!payload || payload.fid !== flowId || typeof payload.exp !== 'number') {
     return false;
   }
-  return crypto.timingSafeEqual(Buffer.from(cookie), Buffer.from(expected));
+
+  return Date.now() <= payload.exp;
 }
 
 /**
@@ -116,21 +170,18 @@ export function setOAuthSession(req: Request, res: Response, next: NextFunction)
   next();
 }
 
-/** Creates a signed OAuth session token bound to a user ID with expiration */
+/** Creates an encrypted OAuth session token bound to a user ID with expiration */
 export function generateOAuthSessionToken(
   userId: string,
   maxAge: number = OAUTH_SESSION_MAX_AGE,
 ): string {
   const issuedAt = Date.now();
-  const expiresAt = issuedAt + maxAge;
-  const nonce = crypto.randomBytes(OAUTH_SESSION_TOKEN_BYTES).toString('hex');
-  const payload = JSON.stringify({ uid: userId, iat: issuedAt, exp: expiresAt, nonce });
-  const encodedPayload = toBase64Url(payload);
-  const signature = crypto
-    .createHmac('sha256', getOAuthSessionSecret())
-    .update(encodedPayload)
-    .digest('base64url');
-  return `${encodedPayload}.${signature}`;
+  return encryptOAuthPayload({
+    uid: userId,
+    iat: issuedAt,
+    exp: issuedAt + maxAge,
+    nonce: crypto.randomBytes(OAUTH_SESSION_TOKEN_BYTES).toString('base64url'),
+  });
 }
 
 /** Sets a SameSite=Lax session cookie that binds the browser to the authenticated userId */
@@ -144,48 +195,17 @@ export function setOAuthSessionCookie(res: Response, userId: string): void {
   });
 }
 
-/** Validates the signed session cookie against the expected userId */
+/** Validates the encrypted session cookie against the expected userId */
 export function validateOAuthSession(req: Request, userId: string): boolean {
   const cookie = (req.cookies as Record<string, string> | undefined)?.[OAUTH_SESSION_COOKIE];
   if (!cookie) {
     return false;
   }
 
-  const parts = cookie.split('.');
-  if (parts.length !== 2) {
+  const payload = decryptOAuthPayload(cookie);
+  if (!payload || payload.uid !== userId || typeof payload.exp !== 'number') {
     return false;
   }
 
-  const [encodedPayload, signature] = parts;
-  if (!encodedPayload || !signature) {
-    return false;
-  }
-
-  const expectedSignature = crypto
-    .createHmac('sha256', getOAuthSessionSecret())
-    .update(encodedPayload)
-    .digest('base64url');
-
-  if (signature.length !== expectedSignature.length) {
-    return false;
-  }
-
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
-    return false;
-  }
-
-  const payload = fromBase64Url(encodedPayload);
-  if (!payload) {
-    return false;
-  }
-
-  try {
-    const parsed = JSON.parse(payload) as { uid?: string; exp?: number };
-    if (parsed.uid !== userId || typeof parsed.exp !== 'number') {
-      return false;
-    }
-    return Date.now() <= parsed.exp;
-  } catch {
-    return false;
-  }
+  return Date.now() <= payload.exp;
 }

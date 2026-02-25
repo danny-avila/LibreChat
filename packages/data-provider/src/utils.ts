@@ -1,4 +1,20 @@
-export const envVarRegex = /^\${(.+)}$/;
+export const envVarRegex = /^\$\{([^{}]+)\}$/;
+
+const ENV_VAR_PREFIX = '${';
+const ENV_VAR_SUFFIX = '}';
+
+function isSimpleEnvVariableReference(value: string): boolean {
+  return value.startsWith(ENV_VAR_PREFIX) && value.endsWith(ENV_VAR_SUFFIX);
+}
+
+function parseEnvVariableName(value: string): string | null {
+  if (!isSimpleEnvVariableReference(value)) {
+    return null;
+  }
+
+  const varName = value.slice(ENV_VAR_PREFIX.length, -ENV_VAR_SUFFIX.length);
+  return varName.length > 0 && !varName.includes(ENV_VAR_SUFFIX) ? varName : null;
+}
 
 /** Extracts the environment variable name from a template literal string */
 export function extractVariableName(value: string): string | null {
@@ -6,8 +22,7 @@ export function extractVariableName(value: string): string | null {
     return null;
   }
 
-  const match = value.trim().match(envVarRegex);
-  return match ? match[1] : null;
+  return parseEnvVariableName(value.trim());
 }
 
 /** Extracts the value of an environment variable from a string. */
@@ -16,38 +31,35 @@ export function extractEnvVariable(value: string) {
     return value;
   }
 
-  // Trim the input
   const trimmed = value.trim();
 
-  // Special case: if it's just a single environment variable
-  const singleMatch = trimmed.match(envVarRegex);
-  if (singleMatch) {
-    const varName = singleMatch[1];
-    return process.env[varName] || trimmed;
+  const singleVariableName = parseEnvVariableName(trimmed);
+  if (singleVariableName) {
+    return process.env[singleVariableName] || trimmed;
   }
 
-  // For multiple variables, process them using a regex loop
-  const regex = /\${([^}]+)}/g;
-  let result = trimmed;
+  let result = '';
+  let index = 0;
 
-  // First collect all matches and their positions
-  const matches = [];
-  let match;
-  while ((match = regex.exec(trimmed)) !== null) {
-    matches.push({
-      fullMatch: match[0],
-      varName: match[1],
-      index: match.index,
-    });
-  }
+  while (index < trimmed.length) {
+    const startIndex = trimmed.indexOf(ENV_VAR_PREFIX, index);
+    if (startIndex < 0) {
+      result += trimmed.slice(index);
+      break;
+    }
 
-  // Process matches in reverse order to avoid position shifts
-  for (let i = matches.length - 1; i >= 0; i--) {
-    const { fullMatch, varName, index } = matches[i];
-    const envValue = process.env[varName] || fullMatch;
+    result += trimmed.slice(index, startIndex);
 
-    // Replace at exact position
-    result = result.substring(0, index) + envValue + result.substring(index + fullMatch.length);
+    const endIndex = trimmed.indexOf(ENV_VAR_SUFFIX, startIndex + ENV_VAR_PREFIX.length);
+    if (endIndex < 0) {
+      result += trimmed.slice(startIndex);
+      break;
+    }
+
+    const variableName = trimmed.slice(startIndex + ENV_VAR_PREFIX.length, endIndex);
+    const fullMatch = trimmed.slice(startIndex, endIndex + 1);
+    result += process.env[variableName] || fullMatch;
+    index = endIndex + 1;
   }
 
   return result;

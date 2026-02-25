@@ -36,7 +36,7 @@ const {
   getMCPManager,
 } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
-const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
+const { requireJwtAuth, canAccessMCPServerResource, loginLimiter } = require('~/server/middleware');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
@@ -48,6 +48,8 @@ const { getLogStores } = require('~/cache');
 const router = Router();
 
 const OAUTH_CSRF_COOKIE_PATH = '/api/mcp';
+
+router.use(loginLimiter);
 
 /**
  * Get all MCP tools available to the user
