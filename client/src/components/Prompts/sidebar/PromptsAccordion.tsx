@@ -1,6 +1,6 @@
+import { usePromptGroupsContext } from '~/Providers';
 import PromptSidePanel from './GroupSidePanel';
 import FilterPrompts from './FilterPrompts';
-import { usePromptGroupsContext } from '~/Providers';
 
 export default function PromptsAccordion() {
   const groupsNav = usePromptGroupsContext();

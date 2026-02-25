@@ -1,8 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { Sparkles, Layers } from 'lucide-react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-import { Radio } from '@librechat/client';
 import { PromptsEditorMode } from '~/common';
+import { Radio } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 

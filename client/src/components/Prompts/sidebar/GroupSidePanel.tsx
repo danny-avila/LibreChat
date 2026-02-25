@@ -1,13 +1,13 @@
 import { useMemo, useCallback } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import { useLocation } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
 import { Button, Sidebar, TooltipAnchor } from '@librechat/client';
 import { usePromptGroupsContext, useDashboardContext } from '~/Providers';
-import ManagePrompts from '../buttons/ManagePrompts';
-import List from '../lists/List';
-import PanelNavigation from './PanelNavigation';
 import { useLocalize, useCustomLink } from '~/hooks';
+import ManagePrompts from '../buttons/ManagePrompts';
+import PanelNavigation from './PanelNavigation';
+import List from '../lists/List';
 import { cn } from '~/utils';
 import store from '~/store';
 

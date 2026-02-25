@@ -1,15 +1,15 @@
 import { useState, useMemo, memo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PermissionBits, ResourceType } from 'librechat-data-provider';
-import { Eye, Pencil, EarthIcon, User } from 'lucide-react';
 import { Button, TooltipAnchor } from '@librechat/client';
+import { Eye, Pencil, EarthIcon, User } from 'lucide-react';
+import { PermissionBits, ResourceType } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useAuthContext, useSubmitMessage, useResourcePermissions } from '~/hooks';
 import { useRecordPromptUsage } from '~/data-provider';
 import VariableDialog from '../dialogs/VariableDialog';
 import PreviewPrompt from '../dialogs/PreviewPrompt';
-import ListCard from './ListCard';
 import { detectVariables } from '~/utils';
+import ListCard from './ListCard';
 
 function ChatGroupItem({
   group,

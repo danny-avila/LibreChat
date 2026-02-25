@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { format } from 'date-fns';
-import { User, Calendar, EarthIcon, BarChart3 } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
+import { User, Calendar, EarthIcon, BarChart3 } from 'lucide-react';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
