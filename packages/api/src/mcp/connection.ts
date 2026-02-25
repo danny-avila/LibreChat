@@ -18,10 +18,11 @@ import type {
   Response as UndiciResponse,
 } from 'undici';
 import type { MCPOAuthTokens } from './oauth/types';
-import { withTimeout } from '~/utils/promise';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
+import { runOutsideTracing } from '~/utils/tracing';
 import { sanitizeUrlForLogging } from './utils';
+import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
@@ -698,14 +699,16 @@ export class MCPConnection extends EventEmitter {
           await this.closeAgents();
         }
 
-        this.transport = await this.constructTransport(this.options);
+        this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
         this.setupTransportDebugHandlers();
 
         const connectTimeout = this.options.initTimeout ?? 120000;
-        await withTimeout(
-          this.client.connect(this.transport),
-          connectTimeout,
-          `Connection timeout after ${connectTimeout}ms`,
+        await runOutsideTracing(() =>
+          withTimeout(
+            this.client.connect(this.transport!),
+            connectTimeout,
+            `Connection timeout after ${connectTimeout}ms`,
+          ),
         );
 
         this.connectionState = 'connected';

@@ -86,4 +86,17 @@ export class OAuthReconnectionTracker {
     const key = `${userId}:${serverName}`;
     this.activeTimestamps.delete(key);
   }
+
+  /** Returns map sizes for diagnostics */
+  public getStats(): {
+    usersWithFailedServers: number;
+    usersWithActiveReconnections: number;
+    activeTimestamps: number;
+  } {
+    return {
+      usersWithFailedServers: this.failed.size,
+      usersWithActiveReconnections: this.active.size,
+      activeTimestamps: this.activeTimestamps.size,
+    };
+  }
 }
