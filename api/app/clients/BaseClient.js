@@ -670,11 +670,7 @@ class BaseClient {
       this.handleTokenCountMap(tokenCountMap);
     }
 
-    if (
-      !isEdited &&
-      this.options.req?.body?.files &&
-      Array.isArray(this.options.attachments)
-    ) {
+    if (!isEdited && this.options.req?.body?.files && Array.isArray(this.options.attachments)) {
       const requestFileIds = new Set(this.options.req.body.files.map((f) => f.file_id));
       userMessage.files = [];
       for (const attachment of this.options.attachments) {
