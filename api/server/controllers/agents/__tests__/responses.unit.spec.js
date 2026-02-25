@@ -229,7 +229,6 @@ describe('createResponse controller', () => {
     });
   });
 
-
   describe('Responses API runtime parameter shaping', () => {
     it('should force useResponsesApi and pass responses params into initializeAgent', async () => {
       req.body = {
