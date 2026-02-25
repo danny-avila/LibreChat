@@ -84,6 +84,15 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
     }
   }
 
+  if (request.include !== undefined) {
+    if (
+      !Array.isArray(request.include) ||
+      request.include.some((field) => typeof field !== 'string')
+    ) {
+      return { valid: false, error: 'include must be an array of strings' };
+    }
+  }
+
   return { valid: true, request: request as unknown as ResponseRequest };
 }
 
@@ -96,10 +105,10 @@ export function isValidationFailure(
   return !result.valid;
 }
 
-
 const responseModelParameterKeys: Array<keyof ResponseRequest> = [
   'frequency_penalty',
   'instructions',
+  'include',
   'max_output_tokens',
   'max_tool_calls',
   'metadata',
@@ -332,6 +341,7 @@ export function createResponseContext(
     createdAt: Math.floor(Date.now() / 1000),
     previousResponseId: request.previous_response_id,
     instructions: request.instructions,
+    store: request.store !== false,
   };
 }
 
@@ -482,12 +492,26 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     on_reasoning_delta: {
       handle: (_event: string, data: unknown): void => {
         const deltaData = data as {
-          delta?: { content?: Array<{ type: string; text?: string; think?: string }> };
+          delta?: {
+            content?: Array<{
+              type: string;
+              text?: string;
+              think?: string;
+              encrypted_content?: string;
+            }>;
+          };
         };
         const content = deltaData?.delta?.content;
 
         if (Array.isArray(content)) {
           for (const part of content) {
+            if (part.encrypted_content) {
+              ensureReasoningStarted();
+              if (config.tracker.currentReasoning) {
+                config.tracker.currentReasoning.encrypted_content = part.encrypted_content;
+              }
+            }
+
             const text = part.think || part.text;
             if (text) {
               ensureReasoningContentStarted();
@@ -636,6 +660,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
 export interface ResponseAggregator {
   textChunks: string[];
   reasoningChunks: string[];
+  encryptedReasoningContent?: string;
   toolCalls: Map<
     string,
     {
@@ -664,6 +689,7 @@ export function createResponseAggregator(): ResponseAggregator {
   const aggregator: ResponseAggregator = {
     textChunks: [],
     reasoningChunks: [],
+    encryptedReasoningContent: undefined,
     toolCalls: new Map(),
     toolOutputs: new Map(),
     usage: {
@@ -703,6 +729,9 @@ export function buildAggregatedResponse(
       status: 'completed',
       content: [{ type: 'reasoning_text', text: reasoningText }],
       summary: [],
+      ...(aggregator.encryptedReasoningContent != null
+        ? { encrypted_content: aggregator.encryptedReasoningContent }
+        : {}),
     });
   }
 
@@ -775,7 +804,7 @@ export function buildAggregatedResponse(
     },
     max_output_tokens: null,
     max_tool_calls: null,
-    store: false,
+    store: context.store,
     background: false,
     service_tier: 'default',
     metadata: {},
@@ -814,12 +843,23 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
     on_reasoning_delta: {
       handle: (_event: string, data: unknown): void => {
         const deltaData = data as {
-          delta?: { content?: Array<{ type: string; text?: string; think?: string }> };
+          delta?: {
+            content?: Array<{
+              type: string;
+              text?: string;
+              think?: string;
+              encrypted_content?: string;
+            }>;
+          };
         };
         const content = deltaData?.delta?.content;
 
         if (Array.isArray(content)) {
           for (const part of content) {
+            if (part.encrypted_content) {
+              aggregator.encryptedReasoningContent = part.encrypted_content;
+            }
+
             const text = part.think || part.text;
             if (text) {
               aggregator.addReasoning(text);

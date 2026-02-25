@@ -321,6 +321,9 @@ export interface StreamOptions {
   include_usage?: boolean;
 }
 
+/** Optional response fields to include */
+export type IncludeField = 'reasoning.encrypted_content';
+
 /** Metadata (key-value pairs) */
 export type Metadata = Record<string, string>;
 
@@ -346,6 +349,9 @@ export interface ResponseRequest {
 
   /** Stream options */
   stream_options?: StreamOptions;
+
+  /** Additional response fields to include */
+  include?: IncludeField[];
 
   /** Additional instructions */
   instructions?: string;
@@ -769,6 +775,8 @@ export interface ResponseContext {
   previousResponseId?: string;
   /** Instructions */
   instructions?: string;
+  /** Whether response should be stored */
+  store: boolean;
 }
 
 /** Validation result for requests */

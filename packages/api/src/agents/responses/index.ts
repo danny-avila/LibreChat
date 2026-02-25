@@ -61,6 +61,7 @@ export type {
   ReasoningConfig,
   TextConfig,
   StreamOptions,
+  IncludeField,
   Metadata,
   ResponseRequest,
   // Response field types
