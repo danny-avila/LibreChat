@@ -56,6 +56,50 @@ describe('Document Parser', () => {
     });
   });
 
+  test('parseDocument() parses text from ods', async () => {
+    const file = {
+      originalname: 'sample.ods',
+      path: path.join(__dirname, 'sample.ods'),
+      mimetype: 'application/vnd.oasis.opendocument.spreadsheet',
+    } as Express.Multer.File;
+
+    const document = await parseDocument({ file });
+
+    expect(document).toEqual({
+      bytes: 66,
+      filename: 'sample.ods',
+      filepath: 'document_parser',
+      images: [],
+      text: 'Sheet One:\nData,on,first,sheet\nSecond Sheet:\nData,On\nSecond,Sheet\n',
+    });
+  });
+
+  test.each([
+    'application/msexcel',
+    'application/x-msexcel',
+    'application/x-ms-excel',
+    'application/x-excel',
+    'application/x-dos_ms_excel',
+    'application/xls',
+    'application/x-xls',
+  ])('parseDocument() parses xls with variant MIME type: %s', async (mimetype) => {
+    const file = {
+      originalname: 'sample.xls',
+      path: path.join(__dirname, 'sample.xls'),
+      mimetype,
+    } as Express.Multer.File;
+
+    const document = await parseDocument({ file });
+
+    expect(document).toEqual({
+      bytes: 31,
+      filename: 'sample.xls',
+      filepath: 'document_parser',
+      images: [],
+      text: 'Sheet One:\nData,on,first,sheet\n',
+    });
+  });
+
   test('parseDocument() throws error for unhandled document type', async () => {
     const file = {
       originalname: 'nonexistent.file',
