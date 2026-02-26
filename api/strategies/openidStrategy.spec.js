@@ -1,6 +1,6 @@
+const undici = require('undici');
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
-const undici = require('undici');
 const { ErrorTypes } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
 const { setupOpenId } = require('./openidStrategy');
@@ -152,6 +152,7 @@ describe('setupOpenId', () => {
     process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'id';
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
+    delete process.env.OPENID_EMAIL_CLAIM;
     delete process.env.PROXY;
     delete process.env.OPENID_USE_PKCE;
 
@@ -1400,6 +1401,84 @@ describe('setupOpenId', () => {
         expect.stringContaining("Key 'roleCount' not found in id token!"),
       );
       expect(user).toBe(false);
+    });
+  });
+
+  describe('OPENID_EMAIL_CLAIM', () => {
+    it('should use the default email when OPENID_EMAIL_CLAIM is not set', async () => {
+      const { user } = await validate(tokenset);
+      expect(user.email).toBe('test@example.com');
+    });
+
+    it('should use the configured claim when OPENID_EMAIL_CLAIM is set', async () => {
+      process.env.OPENID_EMAIL_CLAIM = 'upn';
+      const userinfo = { ...tokenset.claims(), upn: 'user@corp.example.com' };
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfo });
+
+      expect(user.email).toBe('user@corp.example.com');
+      expect(createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'user@corp.example.com' }),
+        expect.anything(),
+        true,
+        true,
+      );
+    });
+
+    it('should fall back to preferred_username when email is missing and OPENID_EMAIL_CLAIM is not set', async () => {
+      const userinfo = { ...tokenset.claims() };
+      delete userinfo.email;
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfo });
+
+      expect(user.email).toBe('testusername');
+    });
+
+    it('should fall back to upn when email and preferred_username are missing and OPENID_EMAIL_CLAIM is not set', async () => {
+      const userinfo = { ...tokenset.claims(), upn: 'user@corp.example.com' };
+      delete userinfo.email;
+      delete userinfo.preferred_username;
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfo });
+
+      expect(user.email).toBe('user@corp.example.com');
+    });
+
+    it('should ignore empty string OPENID_EMAIL_CLAIM and use default fallback', async () => {
+      process.env.OPENID_EMAIL_CLAIM = '';
+
+      const { user } = await validate(tokenset);
+
+      expect(user.email).toBe('test@example.com');
+    });
+
+    it('should trim whitespace from OPENID_EMAIL_CLAIM and resolve correctly', async () => {
+      process.env.OPENID_EMAIL_CLAIM = '  upn  ';
+      const userinfo = { ...tokenset.claims(), upn: 'user@corp.example.com' };
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfo });
+
+      expect(user.email).toBe('user@corp.example.com');
+    });
+
+    it('should ignore whitespace-only OPENID_EMAIL_CLAIM and use default fallback', async () => {
+      process.env.OPENID_EMAIL_CLAIM = '   ';
+
+      const { user } = await validate(tokenset);
+
+      expect(user.email).toBe('test@example.com');
+    });
+
+    it('should fall back to default chain with warning when configured claim is missing from userinfo', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_EMAIL_CLAIM = 'nonexistent_claim';
+
+      const { user } = await validate(tokenset);
+
+      expect(user.email).toBe('test@example.com');
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('OPENID_EMAIL_CLAIM="nonexistent_claim" not present in userinfo'),
+      );
     });
   });
 });

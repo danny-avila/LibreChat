@@ -4,6 +4,7 @@ const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SystemRoles } = require('librechat-data-provider');
 const { isEnabled, findOpenIDUser, math } = require('@librechat/api');
+const { getOpenIdEmail } = require('./openidStrategy');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { updateUser, findUser } = require('~/models');
 
@@ -53,7 +54,7 @@ const openIdJwtLogin = (openIdConfig) => {
 
         const { user, error, migration } = await findOpenIDUser({
           findUser,
-          email: payload?.email,
+          email: payload ? getOpenIdEmail(payload) : undefined,
           openidId: payload?.sub,
           idOnTheSource: payload?.oid,
           strategyName: 'openIdJwtLogin',
