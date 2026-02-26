@@ -29,7 +29,7 @@ function Login() {
   useEffect(() => {
     const redirectTo = searchParams.get('redirect_to');
     if (redirectTo) {
-      persistRedirectToSession(decodeURIComponent(redirectTo));
+      persistRedirectToSession(redirectTo);
     } else {
       const state = location.state as LoginLocationState | null;
       if (state?.redirect_to) {
