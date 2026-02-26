@@ -1,6 +1,9 @@
 import { Constants } from 'librechat-data-provider';
 import type { TFile, TMessage } from 'librechat-data-provider';
 
+/** Minimal shape for request file entries (from `req.body.files`) */
+type RequestFile = { file_id?: string };
+
 /** Fields to strip from files before client transmission */
 const FILE_STRIP_FIELDS = ['text', '_id', '__v'] as const;
 
@@ -30,6 +33,27 @@ export function sanitizeFileForTransmit<T extends Partial<TFile>>(
     delete sanitized[field as keyof typeof sanitized];
   }
   return sanitized;
+}
+
+/** Filters attachments to those whose `file_id` appears in `requestFiles`, then sanitizes each. */
+export function buildMessageFiles<T extends Partial<TFile>>(
+  requestFiles: RequestFile[],
+  attachments: T[],
+): Omit<T, (typeof FILE_STRIP_FIELDS)[number]>[] {
+  const requestFileIds = new Set<string>();
+  for (const f of requestFiles) {
+    if (f.file_id) {
+      requestFileIds.add(f.file_id);
+    }
+  }
+
+  const files: Omit<T, (typeof FILE_STRIP_FIELDS)[number]>[] = [];
+  for (const attachment of attachments) {
+    if (attachment.file_id != null && requestFileIds.has(attachment.file_id)) {
+      files.push(sanitizeFileForTransmit(attachment));
+    }
+  }
+  return files;
 }
 
 /**

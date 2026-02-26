@@ -928,4 +928,123 @@ describe('BaseClient', () => {
       expect(result.remainingContextTokens).toBe(2); // 25 - 20 - 3(assistant label)
     });
   });
+
+  describe('sendMessage file population', () => {
+    const attachment = {
+      file_id: 'file-abc',
+      filename: 'image.png',
+      filepath: '/uploads/image.png',
+      type: 'image/png',
+      bytes: 1024,
+      object: 'file',
+      user: 'user-1',
+      embedded: false,
+      usage: 0,
+      text: 'large ocr blob that should be stripped',
+      _id: 'mongo-id-1',
+    };
+
+    beforeEach(() => {
+      TestClient.options.req = { body: { files: [{ file_id: 'file-abc' }] } };
+      TestClient.options.attachments = [attachment];
+    });
+
+    test('populates userMessage.files before saveMessageToDatabase is called', async () => {
+      TestClient.saveMessageToDatabase = jest.fn().mockImplementation((msg) => {
+        return Promise.resolve({ message: msg });
+      });
+
+      await TestClient.sendMessage('Hello');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave).toBeDefined();
+      expect(userSave[0].files).toBeDefined();
+      expect(userSave[0].files).toHaveLength(1);
+      expect(userSave[0].files[0].file_id).toBe('file-abc');
+    });
+
+    test('strips text and _id from files before saving', async () => {
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Hello');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].files[0].text).toBeUndefined();
+      expect(userSave[0].files[0]._id).toBeUndefined();
+      expect(userSave[0].files[0].filename).toBe('image.png');
+    });
+
+    test('deletes image_urls from userMessage when files are present', async () => {
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+      TestClient.options.attachments = [
+        { ...attachment, image_urls: ['data:image/png;base64,...'] },
+      ];
+
+      await TestClient.sendMessage('Hello');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].image_urls).toBeUndefined();
+    });
+
+    test('does not set files when no attachments match request file IDs', async () => {
+      TestClient.options.req = { body: { files: [{ file_id: 'file-nomatch' }] } };
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Hello');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].files).toBeUndefined();
+    });
+
+    test('skips file population when attachments is not an array (Promise case)', async () => {
+      TestClient.options.attachments = Promise.resolve([attachment]);
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Hello');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].files).toBeUndefined();
+    });
+
+    test('skips file population when skipSaveUserMessage is true', async () => {
+      TestClient.skipSaveUserMessage = true;
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Hello');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg?.isCreatedByUser,
+      );
+      expect(userSave).toBeUndefined();
+    });
+
+    test('ignores file_id: undefined entries in req.body.files (no set poisoning)', async () => {
+      TestClient.options.req = {
+        body: { files: [{ file_id: undefined }, { file_id: 'file-abc' }] },
+      };
+      TestClient.options.attachments = [
+        { ...attachment, file_id: undefined },
+        { ...attachment, file_id: 'file-abc' },
+      ];
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Hello');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].files).toHaveLength(1);
+      expect(userSave[0].files[0].file_id).toBe('file-abc');
+    });
+  });
 });
