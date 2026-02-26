@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
@@ -26,6 +26,7 @@ import type {
 import type { AssistantListItem } from '~/common';
 import {
   updateLastSelectedModel,
+  createChatSearchParams,
   getLocalStorageItems,
   getDefaultModelSpec,
   getDefaultEndpoint,
@@ -43,7 +44,6 @@ import store from '~/store';
 
 const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { data: startupConfig } = useGetStartupConfig();
   const applyModelSpecEffects = useApplyModelSpecEffects();
   const clearAllConversations = store.useClearConvoState();
@@ -233,21 +233,20 @@ const useNewConvo = (index = 0) => {
           return;
         }
 
-        const searchParamsString = searchParams?.toString();
-        const getParams = () => (searchParamsString ? `?${searchParamsString}` : '');
+        const freshParams = createChatSearchParams(conversation);
+        const paramsString = freshParams.toString();
+        const queryString = paramsString ? `?${paramsString}` : '';
 
         if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
           const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
           if (appTitle) {
             document.title = appTitle;
           }
-          const path = `/c/${Constants.NEW_CONVO}${getParams()}`;
-          navigate(path, { state: { focusChat: true } });
+          navigate(`/c/${Constants.NEW_CONVO}${queryString}`, { state: { focusChat: true } });
           return;
         }
 
-        const path = `/c/${conversation.conversationId}${getParams()}`;
-        navigate(path, {
+        navigate(`/c/${conversation.conversationId}${queryString}`, {
           replace: true,
           state: disableFocus ? {} : { focusChat: true },
         });
