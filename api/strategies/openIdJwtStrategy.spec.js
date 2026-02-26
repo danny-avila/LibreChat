@@ -339,5 +339,9 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     expect(findUser).toHaveBeenCalledTimes(2);
     expect(findUser.mock.calls[1][0]).toEqual({ email: 'legacy@corp.com' });
     expect(user).toBeTruthy();
+    expect(updateUser).toHaveBeenCalledWith(
+      'legacy-db-id',
+      expect.objectContaining({ provider: 'openid', openidId: payloadNoEmail.sub }),
+    );
   });
 });

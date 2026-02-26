@@ -1,5 +1,5 @@
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { error: jest.fn(), debug: jest.fn(), warn: jest.fn() },
+  logger: { error: jest.fn(), debug: jest.fn(), warn: jest.fn(), info: jest.fn() },
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
@@ -241,6 +241,19 @@ describe('refreshController – OpenID path', () => {
     expect(findOpenIDUser).toHaveBeenCalledWith(
       expect.objectContaining({ email: baseClaims.email }),
     );
+  });
+
+  it('should update openidId when migration is triggered on refresh', async () => {
+    const user = { _id: 'user-db-id', email: baseClaims.email, openidId: null };
+    findOpenIDUser.mockResolvedValue({ user, error: null, migration: true });
+
+    await refreshController(req, res);
+
+    expect(updateUser).toHaveBeenCalledWith(
+      'user-db-id',
+      expect.objectContaining({ provider: 'openid', openidId: baseClaims.sub }),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 
   it('should return 401 and redirect to /login when findOpenIDUser returns no user', async () => {
