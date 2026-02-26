@@ -167,7 +167,8 @@ const AuthContextProvider = ({
         navigate(buildLoginRedirectUrl());
       },
     });
-  }, [authConfig?.test, refreshToken, setUserContext, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are stable at mount; adding refreshToken causes infinite re-fire
+  }, []);
 
   useEffect(() => {
     if (userQuery.data) {
