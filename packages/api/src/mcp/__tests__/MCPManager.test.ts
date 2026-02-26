@@ -27,6 +27,14 @@ jest.mock('~/utils/graph', () => ({
 
 jest.mock('~/utils/env', () => ({
   processMCPEnv: jest.fn((params) => params.options),
+  encodeHeaderValue: jest.fn((value: string) => {
+    if (!value || typeof value !== 'string') return '';
+    // eslint-disable-next-line no-control-regex
+    if (/[^\u0000-\u00FF]/.test(value)) {
+      return `b64:${Buffer.from(value, 'utf8').toString('base64')}`;
+    }
+    return value;
+  }),
 }));
 
 const mockRegistryInstance = {
@@ -788,6 +796,181 @@ describe('MCPManager', () => {
           Authorization: 'Bearer static-token',
         }),
       );
+    });
+  });
+
+  describe('callTool - X-LibreChat-Username Header Injection', () => {
+    const mockFlowManager = {
+      getState: jest.fn(),
+      setState: jest.fn(),
+      clearState: jest.fn(),
+    };
+
+    const mockConnection = {
+      isConnected: jest.fn().mockResolvedValue(true),
+      setRequestHeaders: jest.fn(),
+      timeout: 30000,
+      client: {
+        request: jest.fn().mockResolvedValue({
+          content: [{ type: 'text', text: 'Tool result' }],
+          isError: false,
+        }),
+      },
+    } as unknown as MCPConnection;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+        async (options) => options,
+      );
+    });
+
+    it('should inject x-librechat-username header when user.username is present', async () => {
+      const mockUser: Partial<IUser> = { id: 'user-1', username: 'john_doe' };
+
+      mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://api.example.com',
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+      });
+
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'x-librechat-username': 'john_doe',
+        }),
+      );
+    });
+
+    it('should fall back to user.name when username is not available', async () => {
+      const mockUser: Partial<IUser> = { id: 'user-2', name: 'Jane Smith' };
+
+      mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://api.example.com',
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+      });
+
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'x-librechat-username': 'Jane Smith',
+        }),
+      );
+    });
+
+    it('should not inject header when both username and name are missing', async () => {
+      const mockUser: Partial<IUser> = { id: 'user-3' };
+
+      mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://api.example.com',
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+      });
+
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          'x-librechat-username': expect.anything(),
+        }),
+      );
+    });
+
+    it('should encode non-ASCII usernames using encodeHeaderValue', async () => {
+      const mockUser: Partial<IUser> = { id: 'user-4', username: '用户名' };
+
+      mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://api.example.com',
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+      });
+
+      const expectedEncoded = `b64:${Buffer.from('用户名', 'utf8').toString('base64')}`;
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'x-librechat-username': expectedEncoded,
+        }),
+      );
+    });
+
+    it('should not overwrite server-specific header with different casing', async () => {
+      const mockUser: Partial<IUser> = { id: 'user-5', username: 'auto_user' };
+
+      mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://api.example.com',
+        headers: {
+          'X-LibreChat-Username': 'custom_value',
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+      });
+
+      // The server-specific header should be preserved, auto-injection should NOT overwrite
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'X-LibreChat-Username': 'custom_value',
+        }),
+      );
+      // Should NOT have the auto-injected lowercase key
+      const calledHeaders = (mockConnection.setRequestHeaders as jest.Mock).mock.calls[0][0];
+      expect(calledHeaders).not.toHaveProperty('x-librechat-username');
     });
   });
 
