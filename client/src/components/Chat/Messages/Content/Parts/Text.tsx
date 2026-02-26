@@ -1,10 +1,11 @@
-import { memo, useMemo, ReactElement } from 'react';
+import { memo, useMemo, ReactElement, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
+import useManualCopyToClipboard from '~/hooks/Messages/useManualCopyToClipboard';
 
 type TextPartProps = {
   text: string;
@@ -22,6 +23,9 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(() => showCursor && isSubmitting, [showCursor, isSubmitting]);
 
+  const contentRef = useRef<HTMLDivElement>(null);
+  useManualCopyToClipboard(contentRef, { text });
+
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
       return <Markdown content={text} isLatestMessage={isLatestMessage} />;
@@ -34,6 +38,7 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
 
   return (
     <div
+      ref={contentRef}
       className={cn(
         isSubmitting ? 'submitting' : '',
         showCursorState && !!text.length ? 'result-streaming' : '',
