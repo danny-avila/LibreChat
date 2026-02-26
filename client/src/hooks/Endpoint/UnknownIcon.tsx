@@ -14,6 +14,7 @@ const knownEndpointAssets = {
   [KnownEndpoints.groq]: 'assets/groq.png',
   [KnownEndpoints.helicone]: 'assets/helicone.png',
   [KnownEndpoints.huggingface]: 'assets/huggingface.svg',
+  [KnownEndpoints.llmapi]: 'assets/llmapi.svg',
   [KnownEndpoints.mistral]: 'assets/mistral.png',
   [KnownEndpoints.mlx]: 'assets/mlx.png',
   [KnownEndpoints.ollama]: 'assets/ollama.png',

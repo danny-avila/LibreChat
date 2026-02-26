@@ -336,6 +336,20 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
   custom:
+    # LLM API Example
+    - name: 'llmapi'
+      apiKey: '${LLMAPI_API_KEY}'
+      baseURL: 'https://api.llmapi.ai/v1'
+      models:
+        default:
+          - 'gpt-4o'
+          - 'gpt-4o-mini'
+          - 'claude-3-5-sonnet'
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-4o-mini'
+      modelDisplayLabel: 'LLM API'
+
     # Groq Example
     - name: 'groq'
       apiKey: '${GROQ_API_KEY}'
