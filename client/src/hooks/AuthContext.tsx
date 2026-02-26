@@ -94,7 +94,11 @@ const AuthContextProvider = ({
       const resError = error as TResError;
       doSetError(resError.message);
       const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
-      const loginPath = redirectTo ? `/login?redirect_to=${redirectTo}` : '/login';
+      const decoded = redirectTo ? decodeURIComponent(redirectTo) : null;
+      const loginPath =
+        decoded && isSafeRedirect(decoded)
+          ? `/login?redirect_to=${encodeURIComponent(decoded)}`
+          : '/login';
       navigate(loginPath, { replace: true });
     },
   });

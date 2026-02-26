@@ -13,6 +13,9 @@ function isSafeRedirect(url: string): boolean {
 /** Builds a `/login?redirect_to=...` URL, reading from window.location when no args are provided */
 function buildLoginRedirectUrl(pathname?: string, search?: string, hash?: string): string {
   const p = pathname ?? window.location.pathname;
+  if (p.startsWith('/login')) {
+    return '/login';
+  }
   const s = search ?? window.location.search;
   const h = hash ?? window.location.hash;
   const currentPath = `${p}${s}${h}`;

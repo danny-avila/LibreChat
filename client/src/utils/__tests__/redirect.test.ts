@@ -100,6 +100,25 @@ describe('buildLoginRedirectUrl', () => {
     const result = buildLoginRedirectUrl();
     expect(result).toBe('/login?redirect_to=%2F');
   });
+
+  it('returns plain /login when pathname is /login (prevents recursive redirect)', () => {
+    const result = buildLoginRedirectUrl('/login', '?redirect_to=%2Fc%2Fnew', '');
+    expect(result).toBe('/login');
+  });
+
+  it('returns plain /login when window.location is already /login', () => {
+    Object.defineProperty(window, 'location', {
+      value: { pathname: '/login', search: '?redirect_to=%2Fc%2Fabc', hash: '' },
+      writable: true,
+    });
+    const result = buildLoginRedirectUrl();
+    expect(result).toBe('/login');
+  });
+
+  it('returns plain /login for /login sub-paths', () => {
+    const result = buildLoginRedirectUrl('/login/2fa', '', '');
+    expect(result).toBe('/login');
+  });
 });
 
 describe('getPostLoginRedirect', () => {
