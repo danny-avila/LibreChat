@@ -29,6 +29,8 @@ export type RefreshStats = {
   no_change: number;
   s3_error: number;
   persist_error: number;
+  /** Maps agentId to the latest valid presigned filepath for re-application on cache hits */
+  urlCache: Record<string, string>;
 };
 
 /**
@@ -55,6 +57,7 @@ export const refreshListAvatars = async ({
     no_change: 0,
     s3_error: 0,
     persist_error: 0,
+    urlCache: {},
   };
 
   if (!agents?.length) {
@@ -86,28 +89,23 @@ export const refreshListAvatars = async ({
           logger.debug('[refreshListAvatars] Refreshing S3 avatar for agent: %s', agent._id);
           const newPath = await refreshS3Url(agent.avatar);
 
-          if (newPath && newPath !== agent.avatar.filepath) {
-            try {
-              await updateAgent(
-                { id: agent.id },
-                {
-                  avatar: {
-                    filepath: newPath,
-                    source: agent.avatar.source,
-                  },
-                },
-                {
-                  updatingUserId: userId,
-                  skipVersioning: true,
-                },
-              );
-              stats.updated++;
-            } catch (persistErr) {
-              logger.error('[refreshListAvatars] Avatar refresh persist error: %o', persistErr);
-              stats.persist_error++;
-            }
-          } else {
+          if (!newPath || newPath === agent.avatar.filepath) {
             stats.no_change++;
+            return;
+          }
+
+          stats.urlCache[agent.id] = newPath;
+
+          try {
+            await updateAgent(
+              { id: agent.id },
+              { avatar: { filepath: newPath, source: agent.avatar.source } },
+              { updatingUserId: userId, skipVersioning: true },
+            );
+            stats.updated++;
+          } catch (persistErr) {
+            logger.error('[refreshListAvatars] Avatar refresh persist error: %o', persistErr);
+            stats.persist_error++;
           }
         } catch (err) {
           logger.error('[refreshListAvatars] S3 avatar refresh error: %o', err);
@@ -117,6 +115,10 @@ export const refreshListAvatars = async ({
     );
   }
 
-  logger.info('[refreshListAvatars] Avatar refresh summary: %o', stats);
+  const { urlCache: _urlCache, ...loggableStats } = stats;
+  logger.info('[refreshListAvatars] Avatar refresh summary: %o', {
+    ...loggableStats,
+    urlCacheSize: Object.keys(_urlCache).length,
+  });
   return stats;
 };
