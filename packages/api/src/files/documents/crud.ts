@@ -5,8 +5,9 @@ import type { MistralOCRUploadResult } from '~/types';
 
 /**
  * Parses an uploaded document and extracts its text content and metadata.
+ * Handled types must stay in sync with `documentParserMimeTypes` from data-provider.
  *
- * Throws an Error if it fails to parse or no text is found.
+ * @throws {Error} if `file.mimetype` is not handled or no text is found.
  */
 export async function parseDocument({
   file,

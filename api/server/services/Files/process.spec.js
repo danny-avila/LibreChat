@@ -84,6 +84,9 @@ const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingm
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const XLS_MIME = 'application/vnd.ms-excel';
 const ODS_MIME = 'application/vnd.oasis.opendocument.spreadsheet';
+const ODT_MIME = 'application/vnd.oasis.opendocument.text';
+const ODP_MIME = 'application/vnd.oasis.opendocument.presentation';
+const ODG_MIME = 'application/vnd.oasis.opendocument.graphics';
 
 const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null } = {}) => ({
   user: { id: 'user-123' },
@@ -231,6 +234,23 @@ describe('processAgentFileUpload', () => {
       ).rejects.toThrow('File type text/plain is not supported for text parsing.');
 
       expect(getStrategyFunctions).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['ODT', ODT_MIME],
+      ['ODP', ODP_MIME],
+      ['ODG', ODG_MIME],
+    ])('routes %s through configured OCR when OCR supports the type', async (_, mime) => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [mime] }));
+      const req = makeReq({
+        mimetype: mime,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(checkCapability).toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.mistral_ocr);
     });
 
     test('throws instead of falling back to parseText when document_parser fails for a document MIME type', async () => {
