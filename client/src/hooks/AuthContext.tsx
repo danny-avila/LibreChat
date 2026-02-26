@@ -93,8 +93,14 @@ const AuthContextProvider = ({
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
       doSetError(resError.message);
+      // Preserve a valid redirect_to across login failures so the deep link survives retries.
+      // Cannot use buildLoginRedirectUrl() here — it reads the current pathname (already /login)
+      // and would return plain /login, dropping the redirect_to destination.
       const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
-      const loginPath = redirectTo ? `/login?redirect_to=${redirectTo}` : '/login';
+      const loginPath =
+        redirectTo && isSafeRedirect(redirectTo)
+          ? `/login?redirect_to=${encodeURIComponent(redirectTo)}`
+          : '/login';
       navigate(loginPath, { replace: true });
     },
   });
