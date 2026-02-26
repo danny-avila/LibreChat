@@ -4,11 +4,11 @@ const { logger } = require('@librechat/data-schemas');
 const {
   countTokens,
   getBalanceConfig,
+  buildMessageFiles,
   extractFileContext,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
-  sanitizeFileForTransmit,
 } = require('@librechat/api');
 const {
   Constants,
@@ -670,21 +670,15 @@ class BaseClient {
       this.handleTokenCountMap(tokenCountMap);
     }
 
-    if (!isEdited && this.options.req?.body?.files && Array.isArray(this.options.attachments)) {
-      const requestFileIds = new Set(this.options.req.body.files.map((f) => f.file_id));
-      userMessage.files = [];
-      for (const attachment of this.options.attachments) {
-        if (requestFileIds.has(attachment.file_id)) {
-          userMessage.files.push(sanitizeFileForTransmit(attachment));
-        }
-      }
-      if (userMessage.files.length === 0) {
-        delete userMessage.files;
-      }
-      delete userMessage.image_urls;
-    }
-
     if (!isEdited && !this.skipSaveUserMessage) {
+      const reqFiles = this.options.req?.body?.files;
+      if (reqFiles && Array.isArray(this.options.attachments)) {
+        const files = buildMessageFiles(reqFiles, this.options.attachments);
+        if (files.length > 0) {
+          userMessage.files = files;
+        }
+        delete userMessage.image_urls;
+      }
       userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
       this.savedMessageIds.add(userMessage.messageId);
       if (typeof opts?.getReqData === 'function') {
