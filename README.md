@@ -28,7 +28,7 @@
 
 <p align="center">
 <a href="https://railway.com/deploy/b5k2mn?referralCode=HI9hWz">
-  <img src="https://railway.app/button.svg" alt="Deploy on Railway" height="30">
+  <img src="https://railway.com/button.svg" alt="Deploy on Railway" height="30">
 </a>
 <a href="https://zeabur.com/templates/0X2ZY8">
   <img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="30"/>
