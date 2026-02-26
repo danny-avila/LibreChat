@@ -82,6 +82,10 @@ describe('MCPConnection Error Detection', () => {
       if (message.includes('authentication required') || message.includes('unauthorized')) {
         return true;
       }
+      // Check for missing authorization values (e.g., Amazon Ads MCP returns HTTP 400 with this)
+      if (message.includes('no authorization')) {
+        return true;
+      }
     }
 
     return false;
@@ -170,6 +174,24 @@ describe('MCPConnection Error Detection', () => {
           'Streamable HTTP error: Error POSTing to endpoint: {"error":"invalid_grant","error_description":"The provided authorization grant is invalid, expired, or revoked"}',
       };
       expect(isOAuthError(error)).toBe(true);
+    });
+
+    it('should detect OAuth error for "no authorization" in message (HTTP 400)', () => {
+      const error = {
+        message:
+          'Either no authorization values are specified or it could not be derived from the request',
+      };
+      expect(isOAuthError(error)).toBe(true);
+    });
+
+    it('should detect OAuth error for "No authorization" with different casing', () => {
+      const error = { message: 'No Authorization header provided' };
+      expect(isOAuthError(error)).toBe(true);
+    });
+
+    it('should not detect OAuth error for unrelated 400 errors', () => {
+      const error = { code: 400, message: 'Bad request: missing required field' };
+      expect(isOAuthError(error)).toBe(false);
     });
   });
 
