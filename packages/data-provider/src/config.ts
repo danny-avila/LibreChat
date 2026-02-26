@@ -1524,6 +1524,10 @@ export enum SettingsTabValues {
    * Tab for Personalization Settings
    */
   PERSONALIZATION = 'personalization',
+  /**
+   * Tab for Social Media Account Connections
+   */
+  SOCIAL_ACCOUNTS = 'social_accounts',
 }
 
 export enum STTProviders {

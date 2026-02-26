@@ -1,0 +1,14 @@
+# Environment variables
+.env
+
+# Logs
+*.log
+logs/
+
+# Database backups
+*.sql
+backup/
+
+# Docker volumes (if using local bind mounts)
+data/
+uploads/

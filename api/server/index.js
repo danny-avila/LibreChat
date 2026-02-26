@@ -327,6 +327,7 @@ const startServer = async () => {
   }
 
   // Signage orders proxy routes (PDF Builder integration)
+  // Signage Orders Routes (PDF Builder Integration)
   try {
     const signageOrdersRoutes = require('./routes/signageOrders');
     app.use('/api/signage', signageOrdersRoutes);
@@ -334,6 +335,16 @@ const startServer = async () => {
   } catch (e) {
     console.log('[SKIP] Signage orders routes (error loading)');
     console.error('[ERROR] Signage orders routes error:', e.message);
+  }
+
+  // Social Media Integration Routes (Postiz)
+  try {
+    const socialRoutes = require('./routes/social');
+    app.use('/api/social', socialRoutes);
+    console.log('[OK] Social media integration routes loaded');
+  } catch (e) {
+    console.log('[SKIP] Social media integration routes (error loading)');
+    console.error('[ERROR] Social routes error:', e.message);
   }
 
   // Error Controller
