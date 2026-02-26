@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo } from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import {
   FileSearch,
@@ -34,7 +34,7 @@ import {
 import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
-import { ephemeralAgentByConvoId } from '~/store';
+import store, { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
@@ -72,7 +72,10 @@ const AttachFileMenu = ({
     ephemeralAgentByConvoId(conversationId),
   );
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
-  const { handleFileChange } = useFileHandling();
+  const isTemporary = useRecoilValue(store.isTemporary);
+  const { handleFileChange } = useFileHandling({
+    additionalMetadata: { temporary: isTemporary.toString() },
+  });
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
     toolResource,
   });
