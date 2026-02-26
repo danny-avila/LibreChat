@@ -100,6 +100,45 @@ describe('buildLoginRedirectUrl', () => {
     const result = buildLoginRedirectUrl();
     expect(result).toBe('/login?redirect_to=%2F');
   });
+
+  it('returns plain /login when pathname is /login (prevents recursive redirect)', () => {
+    const result = buildLoginRedirectUrl('/login', '?redirect_to=%2Fc%2Fnew', '');
+    expect(result).toBe('/login');
+  });
+
+  it('returns plain /login when window.location is already /login', () => {
+    Object.defineProperty(window, 'location', {
+      value: { pathname: '/login', search: '?redirect_to=%2Fc%2Fabc', hash: '' },
+      writable: true,
+    });
+    const result = buildLoginRedirectUrl();
+    expect(result).toBe('/login');
+  });
+
+  it('returns plain /login for /login sub-paths', () => {
+    const result = buildLoginRedirectUrl('/login/2fa', '', '');
+    expect(result).toBe('/login');
+  });
+
+  it('returns plain /login for basename-prefixed /login (e.g. /librechat/login)', () => {
+    Object.defineProperty(window, 'location', {
+      value: { pathname: '/librechat/login', search: '?redirect_to=%2Fc%2Fabc', hash: '' },
+      writable: true,
+    });
+    const result = buildLoginRedirectUrl();
+    expect(result).toBe('/login');
+  });
+
+  it('returns plain /login for basename-prefixed /login sub-paths', () => {
+    const result = buildLoginRedirectUrl('/librechat/login/2fa', '', '');
+    expect(result).toBe('/login');
+  });
+
+  it('does NOT match paths where "login" is a substring of a segment', () => {
+    const result = buildLoginRedirectUrl('/c/loginhistory', '', '');
+    expect(result).toContain('redirect_to=');
+    expect(decodeURIComponent(result.split('redirect_to=')[1])).toBe('/c/loginhistory');
+  });
 });
 
 describe('getPostLoginRedirect', () => {
@@ -167,6 +206,36 @@ describe('getPostLoginRedirect', () => {
     const params = new URLSearchParams();
     getPostLoginRedirect(params);
     expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+  });
+});
+
+describe('login error redirect_to preservation (AuthContext onError pattern)', () => {
+  /** Mirrors the logic in AuthContext.tsx loginUser.onError */
+  function buildLoginErrorPath(search: string): string {
+    const redirectTo = new URLSearchParams(search).get('redirect_to');
+    return redirectTo && isSafeRedirect(redirectTo)
+      ? `/login?redirect_to=${encodeURIComponent(redirectTo)}`
+      : '/login';
+  }
+
+  it('preserves a valid redirect_to across login failure', () => {
+    const result = buildLoginErrorPath('?redirect_to=%2Fc%2Fnew');
+    expect(result).toBe('/login?redirect_to=%2Fc%2Fnew');
+  });
+
+  it('drops an open-redirect attempt (absolute URL)', () => {
+    const result = buildLoginErrorPath('?redirect_to=https%3A%2F%2Fevil.com');
+    expect(result).toBe('/login');
+  });
+
+  it('drops a /login redirect_to to prevent loops', () => {
+    const result = buildLoginErrorPath('?redirect_to=%2Flogin');
+    expect(result).toBe('/login');
+  });
+
+  it('returns plain /login when no redirect_to param exists', () => {
+    const result = buildLoginErrorPath('');
+    expect(result).toBe('/login');
   });
 });
 

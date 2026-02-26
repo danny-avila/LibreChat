@@ -14,11 +14,6 @@ export default function useAuthRedirect() {
         return;
       }
 
-      if (location.pathname.startsWith('/login')) {
-        navigate('/login', { replace: true });
-        return;
-      }
-
       navigate(buildLoginRedirectUrl(location.pathname, location.search, location.hash), {
         replace: true,
       });
