@@ -18,7 +18,7 @@ const {
   findUser,
 } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
-const { getOpenIdConfig } = require('~/strategies');
+const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const registrationController = async (req, res) => {
   try {
@@ -87,7 +87,7 @@ const refreshController = async (req, res) => {
       const claims = tokenset.claims();
       const { user, error, migration } = await findOpenIDUser({
         findUser,
-        email: claims.email,
+        email: getOpenIdEmail(claims),
         openidId: claims.sub,
         idOnTheSource: claims.oid,
         strategyName: 'refreshController',
