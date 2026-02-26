@@ -69,6 +69,14 @@ mcpServers:
     command: node
     args:
       - /mcp-scholar/build/stdio-entry.js
+  ieee:
+    type: stdio
+    command: node
+    args:
+      - /mcp-ieee/build/stdio-entry.js
+    env:
+      IEEE_API_KEY: "${IEEE_API_KEY}"
+      IEEE_AUTH_TOKEN: "${IEEE_AUTH_TOKEN}"
 speech:
   stt:
     openai:

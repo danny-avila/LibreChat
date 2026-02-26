@@ -33,6 +33,12 @@ spec:
         volumeMounts:
         - name: mcp-scholar
           mountPath: /mcp-scholar
+      - name: copy-mcp-ieee
+        image: fekihatelm/mcp-ieeeexplore:latest
+        command: ["sh", "-c", "cp -r /app/* /mcp-ieee/"]
+        volumeMounts:
+        - name: mcp-ieee
+          mountPath: /mcp-ieee
       - name: wait-for-litellm
         image: curlimages/curl:8.9.1
         command:
@@ -83,6 +89,8 @@ spec:
           subPath: librechat.yaml
         - name: mcp-scholar
           mountPath: /mcp-scholar
+        - name: mcp-ieee
+          mountPath: /mcp-ieee
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
         livenessProbe:
@@ -105,4 +113,6 @@ spec:
         configMap:
           name: librechat-yaml-config
       - name: mcp-scholar
+        emptyDir: {}
+      - name: mcp-ieee
         emptyDir: {}

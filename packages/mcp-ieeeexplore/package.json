@@ -1,0 +1,31 @@
+{
+  "name": "mcp-ieeeexplore",
+  "module": "./src/index.ts",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "ieee": "./build/index.js"
+  },
+  "scripts": {
+    "dev": "npx tsx src/stdio-entry.ts",
+    "build": "npx tsc",
+    "start": "node build/stdio-entry.js"
+  },
+  "files": [
+    "build"
+  ],
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "IEEE Xplore MCP Server for AccessLLM",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "zod": "^3.24.2"
+  }
+}
