@@ -1221,10 +1221,12 @@ describe('MCP Routes', () => {
           server1: {
             connectionState: 'connected',
             requiresOAuth: false,
+            hasOAuthTokens: false,
           },
           server2: {
             connectionState: 'disconnected',
             requiresOAuth: true,
+            hasOAuthTokens: false,
           },
         },
       });
@@ -1295,6 +1297,7 @@ describe('MCP Routes', () => {
         serverName: 'oauth-server',
         connectionStatus: 'requires_auth',
         requiresOAuth: true,
+        hasOAuthTokens: false,
       });
     });
 

@@ -468,6 +468,15 @@ export function useMCPServerManager({
 
   const handleConfigRevoke = useCallback(
     (targetName: string) => {
+      const revokeMessage = `${localize('com_ui_revoke_key_endpoint', { 0: targetName })}\n${localize('com_ui_revoke_key_confirm')}`;
+      const shouldProceed =
+        typeof window !== 'undefined' && typeof window.confirm === 'function'
+          ? window.confirm(revokeMessage)
+          : true;
+      if (!shouldProceed) {
+        return;
+      }
+
       if (selectedToolForConfig && selectedToolForConfig.name === targetName) {
         const payload: TUpdateUserPlugins = {
           pluginKey: `${Constants.mcp_prefix}${targetName}`,
@@ -478,12 +487,21 @@ export function useMCPServerManager({
         /** Deselection is now handled centrally in updateUserPluginsMutation.onSuccess */
       }
     },
-    [selectedToolForConfig, updateUserPluginsMutation],
+    [localize, selectedToolForConfig, updateUserPluginsMutation],
   );
 
   /** Standalone revoke function for OAuth servers - doesn't require selectedToolForConfig */
   const revokeOAuthForServer = useCallback(
     (serverName: string) => {
+      const revokeMessage = `${localize('com_ui_revoke_key_endpoint', { 0: serverName })}\n${localize('com_ui_revoke_key_confirm')}`;
+      const shouldProceed =
+        typeof window !== 'undefined' && typeof window.confirm === 'function'
+          ? window.confirm(revokeMessage)
+          : true;
+      if (!shouldProceed) {
+        return;
+      }
+
       const payload: TUpdateUserPlugins = {
         pluginKey: `${Constants.mcp_prefix}${serverName}`,
         action: 'uninstall',
@@ -491,7 +509,7 @@ export function useMCPServerManager({
       };
       updateUserPluginsMutation.mutate(payload);
     },
-    [updateUserPluginsMutation],
+    [localize, updateUserPluginsMutation],
   );
 
   const handleSave = useCallback(
