@@ -37,6 +37,7 @@ jest.mock('~/strategies/validators', () => ({ registerSchema: { parse: jest.fn()
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
 
+const { shouldUseSecureCookie } = require('@librechat/api');
 const { setOpenIDAuthTokens } = require('./AuthService');
 
 function mockResponse() {
@@ -173,7 +174,27 @@ describe('setOpenIDAuthTokens', () => {
       }
     });
 
+    it('should set secure: true when shouldUseSecureCookie returns true', () => {
+      shouldUseSecureCookie.mockReturnValue(true);
+
+      const tokenset = {
+        id_token: 'the-id-token',
+        access_token: 'the-access-token',
+        refresh_token: 'the-refresh-token',
+      };
+      const req = mockRequest();
+      const res = mockResponse();
+
+      setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      for (const [, cookie] of Object.entries(res._cookies)) {
+        expect(cookie.options.secure).toBe(true);
+      }
+    });
+
     it('should use shouldUseSecureCookie for cookie fallback path (no session)', () => {
+      shouldUseSecureCookie.mockReturnValue(false);
+
       const tokenset = {
         id_token: 'the-id-token',
         access_token: 'the-access-token',
@@ -359,6 +380,7 @@ describe('COOKIE_DOMAIN configuration', () => {
       expect(opts.domain).toBe('example.com');
       expect(opts.sameSite).toBe('strict');
       expect(opts.httpOnly).toBe(true);
+      expect(opts.secure).toBe(false);
     });
 
     it('should omit domain when COOKIE_DOMAIN is unset', () => {
@@ -367,6 +389,7 @@ describe('COOKIE_DOMAIN configuration', () => {
       const opts = buildCookieOptions(Date.now() + 60000);
       expect(opts).not.toHaveProperty('domain');
       expect(opts.sameSite).toBe('strict');
+      expect(opts.secure).toBe(false);
     });
 
     it('should use sameSite lax for leading-dot domain', () => {
@@ -375,6 +398,7 @@ describe('COOKIE_DOMAIN configuration', () => {
       const opts = buildCookieOptions(Date.now() + 60000);
       expect(opts.domain).toBe('.example.com');
       expect(opts.sameSite).toBe('lax');
+      expect(opts.secure).toBe(false);
     });
 
     it('should set expires as a Date object', () => {

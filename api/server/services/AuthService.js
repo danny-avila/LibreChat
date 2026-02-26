@@ -74,13 +74,12 @@ const COOKIE_DOMAIN = (() => {
 
 const SAME_SITE_POLICY = COOKIE_DOMAIN.startsWith('.') ? 'lax' : 'strict';
 const COOKIE_DOMAIN_OPTION = COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {};
-const SECURE_COOKIE = shouldUseSecureCookie();
 
 /** Builds a cookie options object for auth cookies */
 const buildCookieOptions = (expires) => ({
   expires: new Date(expires),
   httpOnly: true,
-  secure: SECURE_COOKIE,
+  secure: shouldUseSecureCookie(),
   sameSite: SAME_SITE_POLICY,
   ...COOKIE_DOMAIN_OPTION,
 });
