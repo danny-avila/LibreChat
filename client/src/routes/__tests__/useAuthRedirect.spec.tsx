@@ -33,9 +33,8 @@ function TestComponent() {
  * Creates a test router with optional basename to verify navigation works correctly
  * with subdirectory deployments (e.g., /librechat)
  */
-const createTestRouter = (basename = '/') => {
-  // When using basename, initialEntries must include the basename
-  const initialEntry = basename === '/' ? '/' : `${basename}/`;
+const createTestRouter = (basename = '/', initialEntry?: string) => {
+  const defaultEntry = basename === '/' ? '/' : `${basename}/`;
 
   return createMemoryRouter(
     [
@@ -47,10 +46,14 @@ const createTestRouter = (basename = '/') => {
         path: '/login',
         element: <div data-testid="login-page">Login Page</div>,
       },
+      {
+        path: '/c/:id',
+        element: <TestComponent />,
+      },
     ],
     {
       basename,
-      initialEntries: [initialEntry],
+      initialEntries: [initialEntry ?? defaultEntry],
     },
   );
 };
@@ -198,5 +201,74 @@ describe('useAuthRedirect', () => {
       expect(testResult.user).toEqual(mockUser);
       expect(testResult.isAuthenticated).toBe(true);
     });
+  });
+
+  it('should include redirect_to param with encoded current path when redirecting', async () => {
+    (useAuthContext as jest.Mock).mockReturnValue({
+      user: null,
+      isAuthenticated: false,
+    });
+
+    const router = createTestRouter('/', '/c/abc123');
+    render(<RouterProvider router={router} />);
+
+    await waitFor(
+      () => {
+        expect(router.state.location.pathname).toBe('/login');
+        const search = router.state.location.search;
+        const params = new URLSearchParams(search);
+        const redirectTo = params.get('redirect_to');
+        expect(redirectTo).not.toBeNull();
+        expect(decodeURIComponent(redirectTo!)).toBe('/c/abc123');
+      },
+      { timeout: 1000 },
+    );
+  });
+
+  it('should encode query params and hash from the source URL', async () => {
+    (useAuthContext as jest.Mock).mockReturnValue({
+      user: null,
+      isAuthenticated: false,
+    });
+
+    const router = createTestRouter('/', '/c/abc123?q=hello&submit=true#section');
+    render(<RouterProvider router={router} />);
+
+    await waitFor(
+      () => {
+        expect(router.state.location.pathname).toBe('/login');
+        const params = new URLSearchParams(router.state.location.search);
+        const decoded = decodeURIComponent(params.get('redirect_to')!);
+        expect(decoded).toBe('/c/abc123?q=hello&submit=true#section');
+      },
+      { timeout: 1000 },
+    );
+  });
+
+  it('should not append redirect_to when already on /login', async () => {
+    (useAuthContext as jest.Mock).mockReturnValue({
+      user: null,
+      isAuthenticated: false,
+    });
+
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/login',
+          element: <TestComponent />,
+        },
+      ],
+      { initialEntries: ['/login'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await waitFor(
+      () => {
+        expect(router.state.location.pathname).toBe('/login');
+      },
+      { timeout: 1000 },
+    );
+
+    expect(router.state.location.search).toBe('');
   });
 });
