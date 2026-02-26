@@ -4,8 +4,8 @@ const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SystemRoles } = require('librechat-data-provider');
 const { isEnabled, findOpenIDUser, math } = require('@librechat/api');
-const { getOpenIdEmail } = require('./openidStrategy');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
+const { getOpenIdEmail } = require('./openidStrategy');
 const { updateUser, findUser } = require('~/models');
 
 /**
