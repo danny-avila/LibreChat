@@ -1,6 +1,6 @@
+const undici = require('undici');
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
-const undici = require('undici');
 const { ErrorTypes } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
 const { setupOpenId } = require('./openidStrategy');
@@ -1477,7 +1477,7 @@ describe('setupOpenId', () => {
 
       expect(user.email).toBe('test@example.com');
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('OPENID_EMAIL_CLAIM is set to "nonexistent_claim"'),
+        expect.stringContaining('OPENID_EMAIL_CLAIM="nonexistent_claim" not present in userinfo'),
       );
     });
   });

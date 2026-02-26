@@ -35,15 +35,15 @@ jest.mock('~/server/services/Files/strategies', () => ({
   })),
 }));
 jest.mock('~/server/services/Config', () => ({
-  getCustomConfig: jest.fn(),
+  getAppConfig: jest.fn().mockResolvedValue({}),
 }));
 jest.mock('~/cache/getLogStores', () =>
   jest.fn().mockReturnValue({ get: jest.fn(), set: jest.fn() }),
 );
 
 const { findOpenIDUser } = require('@librechat/api');
-const { findUser, updateUser } = require('~/models');
 const openIdJwtLogin = require('./openIdJwtStrategy');
+const { findUser, updateUser } = require('~/models');
 
 // Helper: build a mock openIdConfig
 const mockOpenIdConfig = {
@@ -252,7 +252,11 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     const req = { headers: { authorization: 'Bearer tok' }, session: {} };
     const { user } = await invokeVerify(req, payload);
 
-    expect(findUser).toHaveBeenCalledWith({ email: 'test@corp.example.com' });
+    expect(findUser).toHaveBeenCalledTimes(2);
+    expect(findUser.mock.calls[0][0]).toMatchObject({
+      $or: expect.arrayContaining([{ openidId: payload.sub }]),
+    });
+    expect(findUser.mock.calls[1][0]).toEqual({ email: 'test@corp.example.com' });
     expect(user).toBe(false);
   });
 
@@ -275,5 +279,65 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     await invokeVerify(req, payload);
 
     expect(findUser).toHaveBeenCalledWith({ email: 'test@corp.example.com' });
+  });
+
+  it('should ignore empty string OPENID_EMAIL_CLAIM and use default fallback', async () => {
+    process.env.OPENID_EMAIL_CLAIM = '';
+    findUser.mockResolvedValue(null);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    await invokeVerify(req, payload);
+
+    expect(findUser).toHaveBeenCalledWith({ email: payload.email });
+  });
+
+  it('should ignore whitespace-only OPENID_EMAIL_CLAIM and use default fallback', async () => {
+    process.env.OPENID_EMAIL_CLAIM = '   ';
+    findUser.mockResolvedValue(null);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    await invokeVerify(req, payload);
+
+    expect(findUser).toHaveBeenCalledWith({ email: payload.email });
+  });
+
+  it('should resolve undefined email when payload is null', async () => {
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user } = await invokeVerify(req, null);
+
+    expect(user).toBe(false);
+  });
+
+  it('should attempt email lookup via preferred_username fallback when email claim is absent', async () => {
+    const payloadNoEmail = {
+      sub: 'oidc-new-sub',
+      preferred_username: 'legacy@corp.com',
+      upn: 'legacy@corp.com',
+      exp: 9999999999,
+    };
+
+    const legacyUser = {
+      _id: 'legacy-db-id',
+      email: 'legacy@corp.com',
+      openidId: null,
+      role: SystemRoles.USER,
+    };
+
+    findUser.mockImplementation(async (query) => {
+      if (query.$or) {
+        return null;
+      }
+      if (query.email === 'legacy@corp.com') {
+        return legacyUser;
+      }
+      return null;
+    });
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user } = await invokeVerify(req, payloadNoEmail);
+
+    expect(findUser).toHaveBeenCalledTimes(2);
+    expect(findUser.mock.calls[1][0]).toEqual({ email: 'legacy@corp.com' });
+    expect(user).toBeTruthy();
   });
 });
