@@ -1239,6 +1239,72 @@ describe('MCP Routes', () => {
       expect(getServerConnectionStatus).toHaveBeenCalledTimes(2);
     });
 
+    it('should include hasOAuthTokens as true when matching OAuth tokens exist', async () => {
+      const mockMcpConfig = {
+        server1: { endpoint: 'http://server1.com' },
+      };
+
+      getMCPSetupData.mockResolvedValue({
+        mcpConfig: mockMcpConfig,
+        appConnections: {},
+        userConnections: {},
+        oauthServers: [],
+      });
+
+      require('~/db/models').Token.distinct.mockResolvedValueOnce(['mcp:server1:refresh']);
+      getServerConnectionStatus.mockResolvedValueOnce({
+        connectionState: 'connected',
+        requiresOAuth: true,
+      });
+
+      const response = await request(app).get('/api/mcp/connection/status');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        success: true,
+        connectionStatus: {
+          server1: {
+            connectionState: 'connected',
+            requiresOAuth: true,
+            hasOAuthTokens: true,
+          },
+        },
+      });
+    });
+
+    it('should return status data even if OAuth token lookup fails', async () => {
+      const mockMcpConfig = {
+        server1: { endpoint: 'http://server1.com' },
+      };
+
+      getMCPSetupData.mockResolvedValue({
+        mcpConfig: mockMcpConfig,
+        appConnections: {},
+        userConnections: {},
+        oauthServers: [],
+      });
+
+      require('~/db/models').Token.distinct.mockRejectedValueOnce(new Error('Token query failed'));
+      getServerConnectionStatus.mockResolvedValueOnce({
+        connectionState: 'connected',
+        requiresOAuth: true,
+      });
+
+      const response = await request(app).get('/api/mcp/connection/status');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        success: true,
+        connectionStatus: {
+          server1: {
+            connectionState: 'connected',
+            requiresOAuth: true,
+            hasOAuthTokens: false,
+          },
+        },
+      });
+    });
+
     it('should return 404 when MCP config is not found', async () => {
       getMCPSetupData.mockRejectedValue(new Error('MCP config not found'));
 
@@ -1339,6 +1405,36 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ error: 'Failed to get connection status' });
+    });
+
+    it('should return status data even if OAuth token lookup fails', async () => {
+      const mockMcpConfig = {
+        'oauth-server': { endpoint: 'http://oauth-server.com' },
+      };
+
+      getMCPSetupData.mockResolvedValue({
+        mcpConfig: mockMcpConfig,
+        appConnections: {},
+        userConnections: {},
+        oauthServers: [],
+      });
+
+      require('~/db/models').Token.distinct.mockRejectedValueOnce(new Error('Token query failed'));
+      getServerConnectionStatus.mockResolvedValue({
+        connectionState: 'requires_auth',
+        requiresOAuth: true,
+      });
+
+      const response = await request(app).get('/api/mcp/connection/status/oauth-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        success: true,
+        serverName: 'oauth-server',
+        connectionStatus: 'requires_auth',
+        requiresOAuth: true,
+        hasOAuthTokens: false,
+      });
     });
 
     it('should return 401 when user is not authenticated', async () => {

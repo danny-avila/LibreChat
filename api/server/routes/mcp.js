@@ -59,17 +59,25 @@ function parseMCPServerNameFromIdentifier(identifier) {
 }
 
 async function getOAuthTokenServerNames(userId) {
-  const identifiers = await Token.distinct('identifier', {
-    userId,
-    type: { $in: MCP_OAUTH_TOKEN_TYPES },
-    identifier: /^mcp:/,
-  });
+  try {
+    const identifiers = await Token.distinct('identifier', {
+      userId,
+      type: { $in: MCP_OAUTH_TOKEN_TYPES },
+      identifier: /^mcp:/,
+    });
 
-  return new Set(
-    identifiers
-      .map((identifier) => parseMCPServerNameFromIdentifier(identifier))
-      .filter((serverName) => !!serverName),
-  );
+    return new Set(
+      identifiers
+        .map((identifier) => parseMCPServerNameFromIdentifier(identifier))
+        .filter((serverName) => !!serverName),
+    );
+  } catch (error) {
+    logger.error('[MCP OAuth] Failed to retrieve OAuth token server names', {
+      userId,
+      error,
+    });
+    return new Set();
+  }
 }
 
 /**

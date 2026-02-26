@@ -466,14 +466,20 @@ export function useMCPServerManager({
     [selectedToolForConfig, updateUserPluginsMutation],
   );
 
+  const confirmRevokeForServer = useCallback(
+    (serverName: string) => {
+      const revokeMessage = `${localize('com_ui_revoke_key_endpoint', { 0: serverName })}\n${localize('com_ui_revoke_key_confirm')}`;
+      if (typeof window === 'undefined' || typeof window.confirm !== 'function') {
+        return true;
+      }
+      return window.confirm(revokeMessage);
+    },
+    [localize],
+  );
+
   const handleConfigRevoke = useCallback(
     (targetName: string) => {
-      const revokeMessage = `${localize('com_ui_revoke_key_endpoint', { 0: targetName })}\n${localize('com_ui_revoke_key_confirm')}`;
-      const shouldProceed =
-        typeof window !== 'undefined' && typeof window.confirm === 'function'
-          ? window.confirm(revokeMessage)
-          : true;
-      if (!shouldProceed) {
+      if (!confirmRevokeForServer(targetName)) {
         return;
       }
 
@@ -487,18 +493,13 @@ export function useMCPServerManager({
         /** Deselection is now handled centrally in updateUserPluginsMutation.onSuccess */
       }
     },
-    [localize, selectedToolForConfig, updateUserPluginsMutation],
+    [confirmRevokeForServer, selectedToolForConfig, updateUserPluginsMutation],
   );
 
   /** Standalone revoke function for OAuth servers - doesn't require selectedToolForConfig */
   const revokeOAuthForServer = useCallback(
     (serverName: string) => {
-      const revokeMessage = `${localize('com_ui_revoke_key_endpoint', { 0: serverName })}\n${localize('com_ui_revoke_key_confirm')}`;
-      const shouldProceed =
-        typeof window !== 'undefined' && typeof window.confirm === 'function'
-          ? window.confirm(revokeMessage)
-          : true;
-      if (!shouldProceed) {
+      if (!confirmRevokeForServer(serverName)) {
         return;
       }
 
@@ -509,7 +510,7 @@ export function useMCPServerManager({
       };
       updateUserPluginsMutation.mutate(payload);
     },
-    [localize, updateUserPluginsMutation],
+    [confirmRevokeForServer, updateUserPluginsMutation],
   );
 
   const handleSave = useCallback(
