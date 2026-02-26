@@ -74,6 +74,32 @@ describe('Document Parser', () => {
     });
   });
 
+  test.each([
+    'application/msexcel',
+    'application/x-msexcel',
+    'application/x-ms-excel',
+    'application/x-excel',
+    'application/x-dos_ms_excel',
+    'application/xls',
+    'application/x-xls',
+  ])('parseDocument() parses xls with variant MIME type: %s', async (mimetype) => {
+    const file = {
+      originalname: 'sample.xls',
+      path: path.join(__dirname, 'sample.xls'),
+      mimetype,
+    } as Express.Multer.File;
+
+    const document = await parseDocument({ file });
+
+    expect(document).toEqual({
+      bytes: 31,
+      filename: 'sample.xls',
+      filepath: 'document_parser',
+      images: [],
+      text: 'Sheet One:\nData,on,first,sheet\n',
+    });
+  });
+
   test('parseDocument() throws error for unhandled document type', async () => {
     const file = {
       originalname: 'nonexistent.file',

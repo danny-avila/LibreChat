@@ -83,6 +83,7 @@ const PDF_MIME = 'application/pdf';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const XLS_MIME = 'application/vnd.ms-excel';
+const ODS_MIME = 'application/vnd.oasis.opendocument.spreadsheet';
 
 const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null } = {}) => ({
   user: { id: 'user-123' },
@@ -138,6 +139,9 @@ describe('processAgentFileUpload', () => {
       ['DOCX', DOCX_MIME],
       ['XLSX', XLSX_MIME],
       ['XLS', XLS_MIME],
+      ['ODS', ODS_MIME],
+      ['Excel variant (msexcel)', 'application/msexcel'],
+      ['Excel variant (x-msexcel)', 'application/x-msexcel'],
     ])('uses document_parser automatically for %s when no OCR is configured', async (_, mime) => {
       mergeFileConfig.mockReturnValue(makeFileConfig());
       const req = makeReq({ mimetype: mime, ocrConfig: null });
