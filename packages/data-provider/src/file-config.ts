@@ -61,6 +61,10 @@ export const fullMimeTypesList = [
   'application/xml',
   'application/zip',
   'application/x-parquet',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/vnd.oasis.opendocument.graphics',
   'image/svg',
   'image/svg+xml',
   // Video formats
@@ -179,7 +183,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics|chart|image|formula|text-master)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
@@ -194,6 +198,7 @@ export const defaultOCRMimeTypes = [
   /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)$/,
   /^application\/vnd\.ms-(word|powerpoint|excel)$/,
   /^application\/epub\+zip$/,
+  /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
 ];
 
 export const defaultTextMimeTypes = [/^[\w.-]+\/[\w.-]+$/];
@@ -331,6 +336,10 @@ export const codeTypeMapping: { [key: string]: string } = {
   tcl: 'text/plain', // .tcl - Tcl source
   awk: 'text/plain', // .awk - AWK script
   sed: 'text/plain', // .sed - Sed script
+  odt: 'application/vnd.oasis.opendocument.text', // .odt - OpenDocument Text
+  ods: 'application/vnd.oasis.opendocument.spreadsheet', // .ods - OpenDocument Spreadsheet
+  odp: 'application/vnd.oasis.opendocument.presentation', // .odp - OpenDocument Presentation
+  odg: 'application/vnd.oasis.opendocument.graphics', // .odg - OpenDocument Graphics
 };
 
 /** Maps image extensions to MIME types for formats browsers may not recognize */

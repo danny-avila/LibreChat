@@ -23,6 +23,7 @@ export async function parseDocument({
       break;
     case 'application/vnd.ms-excel':
     case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+    case 'application/vnd.oasis.opendocument.spreadsheet':
       text = await excelSheetToText(file);
       break;
     default:

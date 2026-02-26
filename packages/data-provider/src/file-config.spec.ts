@@ -3,8 +3,92 @@ import {
   fileConfig as baseFileConfig,
   getEndpointFileConfig,
   mergeFileConfig,
+  applicationMimeTypes,
+  defaultOCRMimeTypes,
+  supportedMimeTypes,
 } from './file-config';
 import { EModelEndpoint } from './schemas';
+
+describe('applicationMimeTypes', () => {
+  const odfTypes = [
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/vnd.oasis.opendocument.graphics',
+  ];
+
+  it.each(odfTypes)('matches ODF type: %s', (mimeType) => {
+    expect(applicationMimeTypes.test(mimeType)).toBe(true);
+  });
+
+  const existingTypes = [
+    'application/pdf',
+    'application/json',
+    'application/csv',
+    'application/msword',
+    'application/xml',
+    'application/zip',
+    'application/epub+zip',
+    'application/x-tar',
+    'application/x-sh',
+    'application/typescript',
+    'application/sql',
+    'application/yaml',
+    'application/x-parquet',
+    'application/vnd.apache.parquet',
+    'application/vnd.coffeescript',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ];
+
+  it.each(existingTypes)('matches existing type: %s', (mimeType) => {
+    expect(applicationMimeTypes.test(mimeType)).toBe(true);
+  });
+
+  const invalidTypes = [
+    'application/vnd.oasis.opendocument.text-template',
+    'application/vnd.oasis.opendocument.texts',
+    'application/vnd.oasis.opendocument.chart',
+    'application/vnd.oasis.opendocument.formula',
+    'application/vnd.oasis.opendocument.image',
+    'application/vnd.oasis.opendocument.text-master',
+    'text/plain',
+    'image/png',
+  ];
+
+  it.each(invalidTypes)('does not match invalid type: %s', (mimeType) => {
+    expect(applicationMimeTypes.test(mimeType)).toBe(false);
+  });
+});
+
+describe('defaultOCRMimeTypes', () => {
+  const checkOCRType = (mimeType: string): boolean =>
+    defaultOCRMimeTypes.some((regex) => regex.test(mimeType));
+
+  it.each([
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/vnd.oasis.opendocument.graphics',
+  ])('matches ODF type for OCR: %s', (mimeType) => {
+    expect(checkOCRType(mimeType)).toBe(true);
+  });
+});
+
+describe('supportedMimeTypes', () => {
+  const checkSupported = (mimeType: string): boolean =>
+    supportedMimeTypes.some((regex) => regex.test(mimeType));
+
+  it.each([
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/vnd.oasis.opendocument.graphics',
+  ])('ODF type flows through supportedMimeTypes: %s', (mimeType) => {
+    expect(checkSupported(mimeType)).toBe(true);
+  });
+});
 
 describe('getEndpointFileConfig', () => {
   describe('custom endpoint lookup', () => {
