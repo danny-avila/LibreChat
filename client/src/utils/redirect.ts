@@ -10,10 +10,15 @@ function isSafeRedirect(url: string): boolean {
   return !path.startsWith('/login');
 }
 
+/** Checks whether a pathname is a login route, accounting for optional basename prefix */
+function isLoginPath(pathname: string): boolean {
+  return pathname === '/login' || pathname.endsWith('/login') || pathname.includes('/login/');
+}
+
 /** Builds a `/login?redirect_to=...` URL, reading from window.location when no args are provided */
 function buildLoginRedirectUrl(pathname?: string, search?: string, hash?: string): string {
   const p = pathname ?? window.location.pathname;
-  if (p.startsWith('/login')) {
+  if (isLoginPath(p)) {
     return '/login';
   }
   const s = search ?? window.location.search;
@@ -28,8 +33,7 @@ function buildLoginRedirectUrl(pathname?: string, search?: string, hash?: string
  * cleans up both sources, and returns the validated target (or null).
  */
 function getPostLoginRedirect(searchParams: URLSearchParams): string | null {
-  const encoded = searchParams.get(REDIRECT_PARAM);
-  const urlRedirect = encoded ? decodeURIComponent(encoded) : null;
+  const urlRedirect = searchParams.get(REDIRECT_PARAM);
   const storedRedirect = sessionStorage.getItem(SESSION_KEY);
 
   const target = urlRedirect ?? storedRedirect;

@@ -119,6 +119,20 @@ describe('buildLoginRedirectUrl', () => {
     const result = buildLoginRedirectUrl('/login/2fa', '', '');
     expect(result).toBe('/login');
   });
+
+  it('returns plain /login for basename-prefixed /login (e.g. /librechat/login)', () => {
+    Object.defineProperty(window, 'location', {
+      value: { pathname: '/librechat/login', search: '?redirect_to=%2Fc%2Fabc', hash: '' },
+      writable: true,
+    });
+    const result = buildLoginRedirectUrl();
+    expect(result).toBe('/login');
+  });
+
+  it('returns plain /login for basename-prefixed /login sub-paths', () => {
+    const result = buildLoginRedirectUrl('/librechat/login/2fa', '', '');
+    expect(result).toBe('/login');
+  });
 });
 
 describe('getPostLoginRedirect', () => {
