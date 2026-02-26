@@ -70,6 +70,9 @@ jest.mock('@librechat/data-schemas', () => ({
       findOne: jest.fn(),
       findById: jest.fn(),
     },
+    Token: {
+      distinct: jest.fn(),
+    },
   })),
   createMethods: jest.fn(() => ({
     findUser: jest.fn(),
@@ -157,6 +160,7 @@ describe('MCP Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    require('~/db/models').Token.distinct.mockResolvedValue([]);
   });
 
   describe('GET /:serverName/oauth/initiate', () => {
