@@ -1,24 +1,25 @@
 const REDIRECT_PARAM = 'redirect_to';
 const SESSION_KEY = 'post_login_redirect_to';
 
+/** Matches `/login` as a full path segment, with optional basename prefix (e.g. `/librechat/login/2fa`) */
+const LOGIN_PATH_RE = /(?:^|\/)login(?:\/|$)/;
+
 /** Validates that a redirect target is a safe relative path (not an absolute or protocol-relative URL) */
 function isSafeRedirect(url: string): boolean {
   if (!url.startsWith('/') || url.startsWith('//')) {
     return false;
   }
   const path = url.split('?')[0].split('#')[0];
-  return !path.startsWith('/login');
+  return !LOGIN_PATH_RE.test(path);
 }
 
-/** Checks whether a pathname is a login route, accounting for optional basename prefix */
-function isLoginPath(pathname: string): boolean {
-  return pathname === '/login' || pathname.endsWith('/login') || pathname.includes('/login/');
-}
-
-/** Builds a `/login?redirect_to=...` URL, reading from window.location when no args are provided */
+/**
+ * Builds a `/login?redirect_to=...` URL from the given or current location.
+ * Returns plain `/login` (no param) when already on a login route to prevent recursive nesting.
+ */
 function buildLoginRedirectUrl(pathname?: string, search?: string, hash?: string): string {
   const p = pathname ?? window.location.pathname;
-  if (isLoginPath(p)) {
+  if (LOGIN_PATH_RE.test(p)) {
     return '/login';
   }
   const s = search ?? window.location.search;
