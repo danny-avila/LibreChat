@@ -133,7 +133,10 @@ interface:
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
-
+  loginImageUrl: 'https://librechat.ai/assets/logo.png'
+  loginText: |
+    ## Welcome to LibreChat! Your AI companion for seamless conversations.
+    
 # Example Cloudflare turnstile (optional)
 #turnstile:
 #  siteKey: "your-site-key-here"
