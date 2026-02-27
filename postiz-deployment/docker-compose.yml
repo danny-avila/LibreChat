@@ -178,8 +178,6 @@ services:
       - temporal-network
     volumes:
       - ./dynamicconfig:/etc/temporal/config/dynamicconfig
-    labels:
-      kompose.volume.type: configMap
 
   temporal-admin-tools:
     container_name: temporal-admin-tools
