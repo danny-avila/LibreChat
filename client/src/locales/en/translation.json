@@ -1300,6 +1300,7 @@
   "com_ui_reset_adjustments": "Reset adjustments",
   "com_ui_reset_var": "Reset {{0}}",
   "com_ui_reset_zoom": "Reset Zoom",
+  "com_ui_scroll_to_zoom": "Scroll to zoom",
   "com_ui_resource": "resource",
   "com_ui_response": "Response",
   "com_ui_result": "Result",

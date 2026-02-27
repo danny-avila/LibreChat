@@ -59,6 +59,8 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   }, []);
 
   const [zoom, setZoom] = useState(1);
+  const [showZoomHint, setShowZoomHint] = useState(false);
+  const zoomHintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Dialog zoom and pan state (separate from inline view)
   const [dialogZoom, setDialogZoom] = useState(1);
   const [dialogPan, setDialogPan] = useState({ x: 0, y: 0 });
@@ -364,12 +366,25 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
         e.preventDefault();
         const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
         setZoom((prev) => Math.min(Math.max(prev + delta, MIN_ZOOM), MAX_ZOOM));
+      } else {
+        setShowZoomHint(true);
+        if (zoomHintTimeoutRef.current) {
+          clearTimeout(zoomHintTimeoutRef.current);
+        }
+        zoomHintTimeoutRef.current = setTimeout(() => {
+          setShowZoomHint(false);
+        }, 1500);
       }
     };
 
     // use native event listener with passive: false to prevent scroll
     container.addEventListener('wheel', handleWheelNative, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheelNative);
+    return () => {
+      container.removeEventListener('wheel', handleWheelNative);
+      if (zoomHintTimeoutRef.current) {
+        clearTimeout(zoomHintTimeoutRef.current);
+      }
+    };
   }, [blobUrl]); // blobUrl dep (unused in callback) ensures listener re-attaches when container mounts
 
   const handleMouseDown = useCallback(
@@ -431,6 +446,9 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     setDialogPan({ x: 0, y: 0 });
     setIsDialogOpen(true);
   }, []);
+
+  const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent);
+  const modifierKey = isMac ? '⌘' : 'Ctrl';
 
   const zoomControls = (
     <div
@@ -836,6 +854,22 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
             />
           </div>
           {zoomControls}
+          <div
+            className={cn(
+              'absolute right-2 top-12 z-10 rounded-full border border-border-light bg-surface-secondary px-3 py-1.5 text-xs text-text-secondary shadow-sm transition-all duration-300',
+              showControls && showZoomHint
+                ? 'translate-y-0 opacity-100'
+                : 'pointer-events-none -translate-y-2 opacity-0',
+            )}
+          >
+            <span className="flex items-center gap-1.5">
+              <kbd className="rounded border border-border-medium bg-surface-hover px-1.5 py-0.5 font-sans text-[10px]">
+                {modifierKey}
+              </kbd>
+              <span>+</span>
+              <span>{localize('com_ui_scroll_to_zoom')}</span>
+            </span>
+          </div>
         </div>
       </div>
     </>
