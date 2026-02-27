@@ -24,17 +24,50 @@ const domains = {
 
 const createAuthCallbackHandler = (provider, options = {}) => {
   return (req, res, next) => {
-    const auth = passport.authenticate(provider, { session: false, ...options });
-    auth(req, res, (err) => {
-      if (err || !req.user) {
-        logger.error(`[${provider}Callback] OAuth authentication failed:`, err);
-        const errorMsg = err?.message || `${provider} OAuth authentication failed`;
-        return res.redirect(
-          `${domains.client}/oauth/error?message=${encodeURIComponent(errorMsg)}`,
-        );
-      }
-      next();
+    logger.info(`[${provider}Callback] Request received:`, {
+      code: req.query?.code ? 'present' : 'missing',
+      query: req.query,
     });
+
+    let attempts = 0;
+    const maxAttempts = 2;
+
+    const doAuth = () => {
+      const auth = passport.authenticate(provider, { session: false, ...options });
+      const startTime = Date.now();
+      auth(req, res, (err) => {
+        const duration = Date.now() - startTime;
+        attempts++;
+        logger.info(`[${provider}Callback] Auth attempt ${attempts} completed in ${duration}ms`);
+
+        if (err || !req.user) {
+          logger.error(
+            `[${provider}Callback] OAuth authentication failed (attempt ${attempts}):`,
+            err,
+          );
+          if (attempts < maxAttempts && err?.message === 'Failed to obtain access token') {
+            logger.info(`[${provider}Callback] Retrying OAuth authentication in 500ms...`);
+            setTimeout(() => doAuth(), 500);
+            return;
+          }
+          logger.error(`[${provider}Callback] Full error details:`, {
+            message: err?.message,
+            stack: err?.stack,
+            status: err?.status,
+            cause: err?.cause,
+            code: err?.code,
+            name: err?.name,
+          });
+          const errorMsg = err?.message || `${provider} OAuth authentication failed`;
+          return res.redirect(
+            `${domains.client}/oauth/error?message=${encodeURIComponent(errorMsg)}`,
+          );
+        }
+        next();
+      });
+    };
+
+    doAuth();
   };
 };
 

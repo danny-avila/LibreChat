@@ -1,4 +1,5 @@
 const { Strategy: GitHubStrategy } = require('passport-github2');
+const { logger } = require('@librechat/data-schemas');
 const socialLogin = require('./socialLogin');
 
 const getProfileDetails = ({ profile }) => ({
@@ -12,12 +13,16 @@ const getProfileDetails = ({ profile }) => ({
 
 const githubLogin = socialLogin('github', getProfileDetails);
 
-module.exports = () =>
-  new GitHubStrategy(
+module.exports = () => {
+  const callbackURL = `${process.env.DOMAIN_SERVER}${process.env.GITHUB_CALLBACK_URL}`;
+  logger.info(`[GitHubStrategy] Callback URL: ${callbackURL}`);
+  logger.info(`[GitHubStrategy] Client ID: ${process.env.GITHUB_CLIENT_ID?.slice(0, 8)}...`);
+
+  return new GitHubStrategy(
     {
       clientID: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
-      callbackURL: `${process.env.DOMAIN_SERVER}${process.env.GITHUB_CALLBACK_URL}`,
+      callbackURL,
       proxy: false,
       scope: ['user:email'],
       ...(process.env.GITHUB_ENTERPRISE_BASE_URL && {
@@ -32,3 +37,4 @@ module.exports = () =>
     },
     githubLogin,
   );
+};
