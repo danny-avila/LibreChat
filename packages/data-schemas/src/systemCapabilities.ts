@@ -19,6 +19,7 @@ export const SystemCapabilities = {
   MANAGE_MCP_SERVERS: 'manage:mcpservers',
   READ_PROMPTS: 'read:prompts',
   MANAGE_PROMPTS: 'manage:prompts',
+  READ_ASSISTANTS: 'read:assistants',
   MANAGE_ASSISTANTS: 'manage:assistants',
 } as const;
 
@@ -65,6 +66,7 @@ export const CapabilityImplications: Partial<Record<BaseSystemCapability, BaseSy
     [SystemCapabilities.MANAGE_CONFIGS]: [SystemCapabilities.READ_CONFIGS],
     [SystemCapabilities.MANAGE_AGENTS]: [SystemCapabilities.READ_AGENTS],
     [SystemCapabilities.MANAGE_PROMPTS]: [SystemCapabilities.READ_PROMPTS],
+    [SystemCapabilities.MANAGE_ASSISTANTS]: [SystemCapabilities.READ_ASSISTANTS],
   };
 
 /**
