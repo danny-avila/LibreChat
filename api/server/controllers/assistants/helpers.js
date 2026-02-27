@@ -237,7 +237,14 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
-  if (await hasCapability(req.user, SystemCapabilities.MANAGE_ASSISTANTS)) {
+  let canManageAssistants = false;
+  try {
+    canManageAssistants = await hasCapability(req.user, SystemCapabilities.MANAGE_ASSISTANTS);
+  } catch {
+    /* Deny admin bypass on DB error — fall through to normal filtering */
+  }
+
+  if (canManageAssistants) {
     return body;
   } else if (!appConfig.endpoints?.[endpoint]) {
     return body;

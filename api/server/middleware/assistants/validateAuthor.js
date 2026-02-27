@@ -13,7 +13,14 @@ const { getAssistant } = require('~/models');
  * @returns {Promise<void>}
  */
 const validateAuthor = async ({ req, openai, overrideEndpoint, overrideAssistantId }) => {
-  if (await hasCapability(req.user, SystemCapabilities.MANAGE_ASSISTANTS)) {
+  let canManageAssistants = false;
+  try {
+    canManageAssistants = await hasCapability(req.user, SystemCapabilities.MANAGE_ASSISTANTS);
+  } catch {
+    /* Deny admin bypass on DB error — fall through to normal author validation */
+  }
+
+  if (canManageAssistants) {
     return;
   }
 
