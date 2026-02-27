@@ -55,13 +55,29 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 ## 3. Git Workflow
 
-We utilize a GitFlow workflow to manage changes to this project's codebase. Follow these general steps when contributing code:
+We follow a simplified GitFlow with a small set of long-lived branches and environment configs kept in the repository (instead of environment-specific branches).
 
-1. Fork the repository and create a new branch with a descriptive slash-based name (e.g., `new/feature/x`).
-2. Implement your changes and ensure that all tests pass.
-3. Commit your changes using conventional commit messages with GitFlow flags. Begin the commit message with a tag indicating the change type, such as "feat" (new feature), "fix" (bug fix), "docs" (documentation), or "refactor" (code refactoring), followed by a brief summary of the changes (e.g., `feat: Add new feature X to the project`).
-4. Submit a pull request with a clear and concise description of your changes and the reasons behind them.
-5. We will review your pull request, provide feedback as needed, and eventually merge the approved changes into the main branch.
+### Branch roles
+- `main`: release / production (protected)
+- `develop`: integration for upcoming releases
+- `feature/*`: topic work merged into `develop`
+- `hotfix/*`: urgent fixes starting from `main`, merged back into `main` and `develop`
+- `release/*` (optional): stabilize before tagging, then merge to `main` and `develop`
+- `upstream` (remote): tracks the source repository for rebases/sync
+
+### Environment configuration
+- Keep environment-specific files in the repo instead of creating infra-specific branches:
+  - `.devcontainer/` for DevContainer
+  - `docker-compose*.yml` for local containers
+  - `deploy/` (e.g., `deploy/aws/`, `deploy/railway/`) for cloud manifests/IaC
+- Switch targets via CI/CD variables/secrets (no plaintext secrets in the repo).
+
+### Typical contribution flow
+1. Fork and branch from `develop` (or `main` for hotfixes), e.g., `feature/your-change`.
+2. Implement and ensure tests pass.
+3. Use conventional commits (`feat`, `fix`, `docs`, `chore`, etc.): e.g., `feat: add new feature X`.
+4. Open a PR with a clear description and test notes.
+5. After review, we merge to `develop` (or `main` for hotfixes/release).
 
 ## 4. Commit Message Format
 
@@ -109,7 +125,7 @@ Ensure that your changes meet the following criteria:
 
 Apply the following naming conventions to branches, labels, and other Git-related entities:
 
-- **Branch names:** Descriptive and slash-based (e.g., `new/feature/x`).
+- **Branch names:** Descriptive and slash-based (e.g., `feature/xyz`, `hotfix/issue-123`, `release/1.2.0`).
 - **Labels:** Descriptive and kebab case (e.g., `bug-fix`).
 - **JS/TS:** Directories and file names: Descriptive and camelCase. First letter uppercased for React files (e.g., `helperFunction.ts, ReactComponent.tsx`).
 - **Docs:** Directories and file names: Descriptive and snake_case (e.g., `config_files.md`).

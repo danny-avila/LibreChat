@@ -1,0 +1,8 @@
+# DevContainer data
+data-node/
+meili_data*/
+pgdata/
+*.log
+*.tmp
+.env
+

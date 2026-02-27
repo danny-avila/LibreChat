@@ -1,0 +1,6 @@
+services:
+  api:
+    image: librechat
+    build:
+      context: .
+      target: node
