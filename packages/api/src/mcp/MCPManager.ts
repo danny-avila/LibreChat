@@ -18,6 +18,8 @@ import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
+import { InterceptorManager } from './interceptors/InterceptorManager';
+import type { MCPToolCallContext } from './interceptors/types';
 
 /**
  * Centralized manager for MCP server connections and tool execution.
@@ -25,6 +27,7 @@ import { processMCPEnv } from '~/utils/env';
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  private interceptorManager: InterceptorManager;
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -44,6 +47,13 @@ export class MCPManager extends UserConnectionManager {
   public async initialize(configs: t.MCPServers) {
     await MCPServersInitializer.initialize(configs);
     this.appConnections = new ConnectionsRepository(undefined);
+    
+    // Initialize interceptor system
+    this.interceptorManager = new InterceptorManager({
+      enabled: true,
+      interceptors: ['conversation-context'],
+      options: {}
+    });
   }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */
@@ -311,12 +321,26 @@ Please follow these instructions when using tools from the respective MCP server
         connection.setRequestHeaders(currentOptions.headers || {});
       }
 
+      // Build interceptor context
+      const context: MCPToolCallContext = {
+        conversationId: requestBody?.conversationId,
+        userId: userId,
+        toolName,
+        originalArgs: toolArguments || {},
+        runtime: {
+          user: user,
+        }
+      };
+
+      // Execute interceptors
+      const enrichedArgs = await this.interceptorManager.executeInterceptors(context);
+
       const result = await connection.client.request(
         {
           method: 'tools/call',
           params: {
             name: toolName,
-            arguments: toolArguments,
+            arguments: enrichedArgs,
           },
         },
         CallToolResultSchema,
