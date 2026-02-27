@@ -4,6 +4,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   countTokens,
   getBalanceConfig,
+  buildMessageFiles,
   extractFileContext,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
@@ -670,6 +671,14 @@ class BaseClient {
     }
 
     if (!isEdited && !this.skipSaveUserMessage) {
+      const reqFiles = this.options.req?.body?.files;
+      if (reqFiles && Array.isArray(this.options.attachments)) {
+        const files = buildMessageFiles(reqFiles, this.options.attachments);
+        if (files.length > 0) {
+          userMessage.files = files;
+        }
+        delete userMessage.image_urls;
+      }
       userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
       this.savedMessageIds.add(userMessage.messageId);
       if (typeof opts?.getReqData === 'function') {

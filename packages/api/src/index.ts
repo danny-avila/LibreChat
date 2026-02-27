@@ -43,6 +43,8 @@ export * from './web';
 export * from './cache';
 /* Stream */
 export * from './stream';
+/* Diagnostics */
+export { memoryDiagnostics } from './utils/memory';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';

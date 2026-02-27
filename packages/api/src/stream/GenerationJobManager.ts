@@ -1142,6 +1142,19 @@ class GenerationJobManagerClass {
     return this.jobStore.getJobCount();
   }
 
+  /** Returns sizes of internal runtime maps for diagnostics */
+  getRuntimeStats(): {
+    runtimeStateSize: number;
+    runStepBufferSize: number;
+    eventTransportStreams: number;
+  } {
+    return {
+      runtimeStateSize: this.runtimeState.size,
+      runStepBufferSize: this.runStepBuffers?.size ?? 0,
+      eventTransportStreams: this.eventTransport.getTrackedStreamIds().length,
+    };
+  }
+
   /**
    * Get job count by status.
    */
