@@ -91,12 +91,18 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
 
     let user = await findUser({ ldapId });
     if (user && user.provider !== 'ldap') {
-      logger.info(
-        `[ldapStrategy] User ${user.email} already exists with provider ${user.provider}`,
-      );
-      return done(null, false, {
-        message: ErrorTypes.AUTH_FAILED,
-      });
+      if (isEnabled(process.env.LDAP_ALLOW_ACCOUNT_LINKING)) {
+        logger.info(
+          `[ldapStrategy] Account linking: user ${user.email} migrating from "${user.provider}" to ldap`,
+        );
+      } else {
+        logger.info(
+          `[ldapStrategy] User ${user.email} already exists with provider ${user.provider}`,
+        );
+        return done(null, false, {
+          message: ErrorTypes.AUTH_FAILED,
+        });
+      }
     }
 
     const fullNameAttributes = LDAP_FULL_NAME && LDAP_FULL_NAME.split(',');
@@ -128,6 +134,25 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
         `[LDAP Strategy] Authentication blocked - email domain not allowed [Email: ${mail}]`,
       );
       return done(null, false, { message: 'Email domain not allowed' });
+    }
+
+    if (!user && mail) {
+      const existingUser = await findUser({ email: mail.trim() });
+      if (existingUser) {
+        if (isEnabled(process.env.LDAP_ALLOW_ACCOUNT_LINKING)) {
+          logger.info(
+            `[ldapStrategy] Account linking: user ${mail} migrating from "${existingUser.provider}" to ldap`,
+          );
+          user = existingUser;
+        } else {
+          logger.info(
+            `[ldapStrategy] User ${mail} already exists with provider ${existingUser.provider}`,
+          );
+          return done(null, false, {
+            message: ErrorTypes.AUTH_FAILED,
+          });
+        }
+      }
     }
 
     if (!user) {
