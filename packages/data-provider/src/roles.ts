@@ -203,3 +203,28 @@ export const roleDefaults = defaultRolesSchema.parse({
     },
   },
 });
+
+/** Valid custom role name format: uppercase letters, digits, underscores; 1-50 chars */
+export const CUSTOM_ROLE_NAME_REGEX = /^[A-Z][A-Z0-9_]{0,49}$/;
+
+/** Returns true if the role name is a system-defined role (ADMIN or USER) */
+export function isSystemRole(roleName: string): boolean {
+  return roleName === SystemRoles.ADMIN || roleName === SystemRoles.USER;
+}
+
+/** Clones USER-level permissions with a custom role name */
+export function getCustomRoleDefaults(roleName: string): TRole {
+  const userPerms = roleDefaults[SystemRoles.USER].permissions;
+  return {
+    name: roleName,
+    permissions: JSON.parse(JSON.stringify(userPerms)),
+  };
+}
+
+/** Returns system defaults for ADMIN/USER, or USER-level defaults for any custom role */
+export function getRoleDefaultPermissions(roleName: string): TRole {
+  if (isSystemRole(roleName)) {
+    return roleDefaults[roleName as SystemRoles];
+  }
+  return getCustomRoleDefaults(roleName);
+}

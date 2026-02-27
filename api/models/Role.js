@@ -4,6 +4,8 @@ const {
   roleDefaults,
   permissionsSchema,
   removeNullishValues,
+  CUSTOM_ROLE_NAME_REGEX,
+  getRoleDefaultPermissions,
 } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
 const getLogStores = require('~/cache/getLogStores');
@@ -11,8 +13,8 @@ const { Role } = require('~/db/models');
 
 /**
  * Retrieve a role by name and convert the found role document to a plain object.
- * If the role with the given name doesn't exist and the name is a system defined role,
- * create it and return the lean version.
+ * If the role doesn't exist and the name is valid (system role or valid custom format),
+ * auto-create it with appropriate defaults and return the lean version.
  *
  * @param {string} roleName - The name of the role to find or create.
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
@@ -31,8 +33,8 @@ const getRoleByName = async function (roleName, fieldsToSelect = null) {
     }
     let role = await query.lean().exec();
 
-    if (!role && SystemRoles[roleName]) {
-      role = await new Role(roleDefaults[roleName]).save();
+    if (!role && (SystemRoles[roleName] || CUSTOM_ROLE_NAME_REGEX.test(roleName))) {
+      role = await new Role(getRoleDefaultPermissions(roleName)).save();
       await cache.set(roleName, role);
       return role.toObject();
     }
