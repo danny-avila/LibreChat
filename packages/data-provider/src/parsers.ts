@@ -408,14 +408,15 @@ export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUse
     return result;
   }
 
-  // e.g., "2024-04-29 (1)" (1=Monday)
+  // e.g., "2024-04-29 (1)" where dayjs().day() uses 0=Sunday..6=Saturday
   const currentDate = dayjs().format('YYYY-MM-DD');
   const dayNumber = dayjs().day();
   const combinedDate = `${currentDate} (${dayNumber})`;
   result = result.replace(/{{current_date}}/gi, combinedDate);
 
-  const currentDatetime = dayjs().format('YYYY-MM-DD HH:mm:ss');
-  result = result.replace(/{{current_datetime}}/gi, `${currentDatetime} (${dayNumber})`);
+  const weekdayName = dayjs().format('dddd');
+  const currentDatetime = dayjs().format('YYYY-MM-DD HH:mm:ss Z');
+  result = result.replace(/{{current_datetime}}/gi, `${currentDatetime} (weekday=${weekdayName})`);
 
   const isoDatetime = dayjs().toISOString();
   result = result.replace(/{{iso_datetime}}/gi, isoDatetime);

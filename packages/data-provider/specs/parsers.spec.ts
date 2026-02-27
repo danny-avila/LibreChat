@@ -13,8 +13,11 @@ jest.mock('dayjs', () => {
       if (format === 'YYYY-MM-DD') {
         return '2024-04-29';
       }
-      if (format === 'YYYY-MM-DD HH:mm:ss') {
-        return '2024-04-29 12:34:56';
+      if (format === 'YYYY-MM-DD HH:mm:ss Z') {
+        return '2024-04-29 12:34:56 -04:00';
+      }
+      if (format === 'dddd') {
+        return 'Monday';
       }
       return format; // fallback
     },
@@ -53,7 +56,7 @@ describe('replaceSpecialVars', () => {
 
   test('should replace {{current_datetime}} with the current datetime', () => {
     const result = replaceSpecialVars({ text: 'Now is {{current_datetime}}' });
-    expect(result).toBe('Now is 2024-04-29 12:34:56 (1)');
+    expect(result).toBe('Now is 2024-04-29 12:34:56 -04:00 (weekday=Monday)');
   });
 
   test('should replace {{iso_datetime}} with the ISO datetime', () => {
@@ -90,7 +93,7 @@ describe('replaceSpecialVars', () => {
       user: mockUser,
     });
     expect(result).toBe(
-      'Hello Test User! Today is 2024-04-29 (1) and the time is 2024-04-29 12:34:56 (1). ISO: 2024-04-29T16:34:56.000Z',
+      'Hello Test User! Today is 2024-04-29 (1) and the time is 2024-04-29 12:34:56 -04:00 (weekday=Monday). ISO: 2024-04-29T16:34:56.000Z',
     );
   });
 
@@ -121,7 +124,7 @@ describe('replaceSpecialVars', () => {
 
     // Verify the expected replacements
     expect(result).toContain('2024-04-29 (1)'); // current_date
-    expect(result).toContain('2024-04-29 12:34:56 (1)'); // current_datetime
+    expect(result).toContain('2024-04-29 12:34:56 -04:00 (weekday=Monday)'); // current_datetime
     expect(result).toContain('2024-04-29T16:34:56.000Z'); // iso_datetime
     expect(result).toContain('Test User'); // current_user
   });
