@@ -108,22 +108,22 @@ LibreChat/
 │   │   ├── services/
 │   │   │   ├── Agents/
 │   │   │   │   └── e2bAgent/
-│   │   │   │       ├── index.js           # [已实现] 446行 - ReAct循环Agent核心
-│   │   │   │       ├── contextManager.js  # [已实现] 387行 - 上下文管理器 
-│   │   │   │       ├── prompts.js         # [已实现] 154行 - 系统提示词
-│   │   │   │       └── tools.js           # [已实现] 266行 - 工具定义与执行
+│   │   │   │       ├── index.js           # [已实现] 870行 - ReAct循环Agent核心
+│   │   │   │       ├── contextManager.js  # [已实现] 314行 - 上下文管理器 
+│   │   │   │       ├── prompts.js         # [已实现] 213行 - 系统提示词
+│   │   │   │       └── tools.js           # [已实现] 352行 - 工具定义与执行
 │   │   │   ├── Endpoints/
 │   │   │   │   └── e2bAssistants/
 │   │   │   │       ├── index.js           # [已实现] 端点入口
-│   │   │   │       ├── initialize.js      # [已实现] 748行 - E2B沙箱生命周期管理
+│   │   │   │       ├── initialize.js      # [已实现] 910行 - E2B沙箱生命周期管理
 │   │   │   │       └── buildOptions.js    # [已实现] 选项构建
 │   │   │   ├── Sandbox/
-│   │   │   │   ├── codeExecutor.js        # [已实现] 163行 - Python代码执行
+│   │   │   │   ├── codeExecutor.js        # [已实现] 206行 - Python代码执行
 │   │   │   │   └── fileHandler.js         # [已实现] 172行 - 文件同步与持久化
 │   │   └── routes/
 │   │       └── e2bAssistants/
 │   │           ├── index.js               # [已实现] 路由注册
-│   │           └── controller.js          # [已实现] 619行 - HTTP/SSE控制器
+│   │           └── controller.js          # [已实现] 851行 - HTTP/SSE控制器
 │   └── tests/
 │       └── e2b/
 │           ├── codeExecutor.test.js       # [已实现] CodeExecutor单元测试
@@ -152,80 +152,90 @@ LibreChat/
 
 ### 5.1 Context Manager (`contextManager.js`) 
 - **功能**: 上下文管理的 Single Source of Truth
-- **代码**: 387 行
+- **代码**: 314 行
 - **职责**:
-  - **内部/外部ID分离**: 存储带UUID的 file_id，对外只暴露干净文件名
-  - **上下文生成**: 为 LLM 生成结构化上下文（文件列表、对话历史、工件信息）
-  - **错误恢复**: 提供分层错误建议（关键错误 + 通用调试）
-  - **conversationId追踪**: 防止跨对话混淆
+  - **会话状态管理**: 追踪已上传文件和生成的工件（图表、CSV等）
+  - **上下文生成**: 为 LLM 生成结构化上下文（文件列表、工件信息）
+  - **conversationId 追踪**: 确保工件关联到正确的对话
+  - **文件信息存储**: 存储 file_id 用于沙箱恢复，但不暴露给 LLM
 - **关键方法**:
-  - `getContextForIteration()`: 生成当前迭代的完整上下文
-  - `updateFileContext()`: 更新文件映射
-  - `generateErrorGuidance()`: 生成错误恢复建议
+  - `updateUploadedFiles()`: 更新已上传文件列表
+  - `addGeneratedArtifact()`: 追踪生成的工件
+  - `generateSystemContext()`: 生成结构化上下文注入到 system prompt
 
 ### 5.2 E2BDataAnalystAgent (`index.js`)
 - **功能**: 基于 ReAct 循环的智能代理核心
-- **代码**: 446 行
-- **LLM**: 使用 **OpenAI API**（GPT-4/GPT-4o）
+- **代码**: 870 行
+- **LLM**: 使用 **OpenAI API**（GPT-4/GPT-4o/GPT-5-mini）
 - **特性**:
-  - **ReAct循环**: Thought → Action → Observation → 最多20次迭代
-  - **沙箱复用**: 同一对话使用相同沙箱实例
-  - **双层恢复**: Layer 1 (初始化) + Layer 2 (执行时)
-  - **自愈能力**: 错误自动反馈给 LLM，通过通用调试策略自主修复
-  - **工具调用**: `execute_code`, `upload_file`（已移除冗余的 download_file）
-  - **流式输出**: 支持 SSE 逐 token 返回
+  - **ReAct 循环**: Plan → Execute → Observe，最多 20 次迭代
+  - **沙箱复用**: 同一对话复用相同沙箱实例，沙箱过期自动重建并恢复文件
+  - **三源文件收集**: 从消息附件 + tool_resources + root file_ids 收集文件
+  - **自愈能力**: 完整 traceback 传递给 LLM，自动分析并修复错误
+  - **智能终止**: 检测 `complete_task` 工具调用，明确任务完成信号
+  - **工具调用**: `execute_code`, `list_files`, `complete_task`
+  - **流式输出**: SSE 逐 token 返回 + Azure Assistant 风格的 Content 数组
+  - **执行时间追踪**: 记录代码执行开始时间和总耗时
 
 ### 5.3 E2B Sandbox Manager (`initialize.js`)
-- **功能**: 管理 E2B 沙箱生命周期（创建、销毁、重用）
-- **代码**: 748 行
-- **SDK适配**: 适配了 `@e2b/code-interpreter` v2.8.4
+- **功能**: 管理 E2B 沙箱生命周期（创建、销毁、复用）
+- **代码**: 910 行
+- **SDK 适配**: 适配 `@e2b/code-interpreter` v2.8.4+
 - **关键特性**:
-  - 使用 `Sandbox.create()` 和 `sandbox.kill()`
-  - 文件操作：`.files.write()`, `.files.read()` 与异步流处理
-  - 配置：默认 `secure: false` 以增强兼容性
-  - 智能模板选择：支持自定义模板或默认模板
-  - **双层文件恢复**:
-    * Layer 1: processMessage 检测沙箱过期并恢复文件
-    * Layer 2: tools.js 执行超时检测并重建沙箱
+  - **沙箱池管理**: 使用 Map 存储 userId+conversationId → sandbox 映射
+  - **自动重建**: 检测沙箱过期，自动创建新沙箱并恢复文件
+  - **OpenAI/Azure 双支持**: 自动检测并初始化相应的 LLM 客户端
+  - **文件操作**: `.files.write()`, `.files.read()` 与 Buffer/Stream 处理
+  - **配置**: 默认 `secure: false`，支持自定义模板或默认模板
+  - **生命周期钩子**: `cleanup()` 用于优雅关闭
 
 ### 5.4 Tools (`tools.js`)
 - **功能**: 工具定义与执行逻辑
-- **代码**: 266 行
+- **代码**: 352 行
 - **工具列表**:
-  - `execute_code`: 执行 Python 代码，自动捕获图表
-  - `upload_file`: 上传文件到沙箱
-- **关键改进**:
-  - **统一观察格式**: 成功/失败都返回完整结构（消除无限循环）
-  - **Layer 2 恢复**: 捕获沙箱超时并自动重建
-  - **路径简化**: 直接在 observation 中提供正确的 Web 路径
+  1. **`execute_code`**: 执行 Python 代码，自动捕获图表和输出
+     - 完整错误信息传递（error_type, error_message, traceback）
+     - 图表自动保存到系统存储并返回 Web 路径
+  2. **`list_files`**: 列出沙箱中的文件（用于文件检查）
+  3. **`complete_task`**: 标记任务完成，接受 summary 参数
+     - LLM 主动声明完成，trigger 循环终止
+- **关键特性**:
+  - **统一观察格式**: 成功/失败都返回结构化 JSON
+  - **完整错误链**: errorName + error + traceback 完整传递给 LLM
+  - **Context Manager 集成**: 自动更新工件追踪
 
 ### 5.5 CodeExecutor (`codeExecutor.js`)
-- **功能**: 在沙箱中执行 Python 代码，处理 `stdout`/`stderr`，并提取生成的图表
-- **代码**: 163 行
+- **功能**: 在 E2B 沙箱中执行 Python 代码并处理结果
+- **代码**: 206 行
 - **特性**: 
-  - **图表提取**: 自动从 execution results 中提取 PNG/JPEG/SVG 格式的图片
-  - **安全校验**: 基础代码安全检查，拦截危险函数（如 `os.system`）
-  - **批量执行**: 支持按顺序执行多个代码块
-  - **错误捕获**: 完整的 traceback 传递
+  - **图表提取**: 自动从 execution results 提取 PNG/JPEG/SVG 图片
+  - **错误捕获**: 完整 traceback + errorName + error message 传递
+  - **文件操作**: 支持文件上传（Buffer → sandbox）和文件列表
+  - **沙箱管理集成**: 通过 e2bClientManager 获取当前会话的沙箱实例
+  - **错误恢复**: 使用显式 `hasError` boolean 判断执行状态
 
 ### 5.6 FileHandler (`fileHandler.js`)
 - **功能**: 处理 LibreChat 系统存储与 E2B 沙箱之间的文件同步
 - **代码**: 172 行
 - **特性**:
-  - **多存储支持**: 兼容 Local, S3, Azure Blob Storage
-  - **Artifacts 持久化**: 将沙箱生成的图片/CSV 下载并保存到系统存储
-  - **内存持久化**: 支持直接将 Buffer 保存，无需重复下载
-  - **UUID剥离**: 上传到沙箱时移除文件名中的 UUID 前缀
-  - **沙箱文件恢复**: 从数据库重新上传所有文件到新沙箱
+  - **多存储支持**: 兼容 Local, S3, Azure Blob Storage, OpenAI/Azure Assistant
+  - **双向同步**: 
+    - 上传：系统存储 → E2B 沙箱（使用原始文件名）
+    - 下载：E2B 沙箱 → 系统存储（Artifacts 持久化）
+  - **策略模式**: 根据文件来源（local/s3/azure/openai）选择对应策略
+  - **流式处理**: Stream → Buffer → E2B 上传
+  - **沙箱恢复**: 从数据库 file_id 重新上传文件到新沙箱
 
 ### 5.7 Controller (`controller.js`)
-- **功能**: HTTP/SSE 请求处理
-- **代码**: 619 行
+- **功能**: HTTP/SSE 请求处理与响应流管理
+- **代码**: 851 行
 - **特性**:
-  - **SSE 流式**: 创建 SSE 连接，逐 token 返回
-  - **消息持久化**: 保存用户消息和 Agent 响应到 MongoDB
-  - **历史加载**: 多轮对话时加载历史消息
-  - **错误处理**: 统一错误响应格式
+  - **SSE 流式传输**: Azure Assistant 风格的 Content 数组（TEXT + TOOL_CALL）
+  - **contentParts 初始化**: 使用零宽空格占位符防止稀疏数组错误
+  - **消息持久化**: 用户消息 + Agent 响应保存到 MongoDB
+  - **历史加载**: 多轮对话加载历史消息（转换为 OpenAI 格式）
+  - **文件元数据**: populateCodeFiles 函数处理文件检索
+  - **事件格式**: sync (助手名称) → TEXT/TOOL_CALL (内容) → final (完成)
 
 ### 5.8 System Prompt 优化 (2026-01-15)
 
@@ -469,6 +479,27 @@ LibreChat/
 
 ## 11. 版本历史与修复记录
 
+### 最新更新 (2026-02-09)
+
+#### 🐛 Loading Dot 消失与 Prompt 优化
+- ✅ 修复 contentParts 稀疏数组问题（防止 null reference 错误）
+- ✅ 大幅优化 System Prompt（删除 ~80 行冗余内容）
+- ✅ loading dot 在所有情况下正常显示
+- ✅ 助手名称始终可见
+- ✅ 简单问答不再暴露内部流程
+
+**修复的文件**:
+- `api/server/routes/e2bAssistants/controller.js`: 初始化 contentParts 为包含零宽空格的数组
+- `api/server/services/Agents/e2bAgent/prompts.js`: 删除 Multi-Scenario 和 Common Error Patterns 章节
+- `api/server/services/Agents/e2bAgent/index.js`: Timer 与 finish_reason 优化
+- `client/src/components/Chat/Messages/Content/Parts/ExecuteCode.tsx`: 客户端计时器
+- `docs/WORK_LOG.md`: 更新工作日志
+
+**效果**:
+- 前端错误消除
+- 输出更专业简洁
+- Prompt 长度减少 ~8%
+
 ### 最新更新 (2026-01-21)
 
 #### ⏱️ 执行时间显示功能
@@ -493,6 +524,123 @@ LibreChat/
 - 格式化：< 1s 显示 "XXms"，≥ 1s 显示 "X.Xs"
 - 位置：显示在代码块和输出下方，独立行
 
+---
+
+### 🎯 智能任务完成机制 (2026-01-19)
+**Git Commit**: feat(e2b): Add intelligent task completion with complete_task tool
+
+#### 主要工具
+1. **添加 `complete_task` 工具** ⭐⭐⭐
+   - **需求**: 解决 LLM 执行多步计划时提前停止的问题
+   - **问题**: 之前仅依赖"没有 tool_calls"判断任务完成，导致 LLM 执行一步后就停止
+   - **实现**:
+     - 新增 `complete_task` 工具（tools.js）：接受 summary 参数，返回任务完成标记
+     - 添加工具定义（prompts.js）：描述何时调用该工具
+     - 修改停止逻辑（index.js）：检测 `complete_task` 调用时立即停止循环
+     - 更新 System Prompt：明确要求完成所有步骤后 MUST 调用 `complete_task`
+
+2. **工作流程优化** 🔄
+   - **之前的问题**:
+     ```
+     Iteration 1: 计划 (4步) + 执行 Step 1 → 停止 ❌
+     用户手动提示 → Iteration 2: 执行 Step 2 → 停止 ❌
+     ```
+   - **优化后**:
+     ```
+     Iteration 1: 计划 + Step 1 工具调用
+     Iteration 2: Step 1 解释 + Step 2 工具调用
+     Iteration 3: Step 2 解释 + Step 3 工具调用
+     ...
+     Iteration N: 最后一步解释 + complete_task("所有步骤完成...") ✅
+     ```
+
+3. **Prompt 优化** 📝
+   - 简化 Execution Workflow 描述（从冗长的技术流程说明改为简洁规则）
+   - 删除"One tool per turn"规则（不必要的限制）
+   - 强调"MUST call complete_task"（使用大写 MUST）
+   - 添加具体示例：`complete_task(summary="...")`
+   - 明确禁止行为："do NOT just say 'will summarize', actually call the tool"
+
+4. **停止机制改进** ⚙️
+   - 从被动判断改为主动决策
+   - LLM 自主决定任务何时完成
+   - 系统检测到 `complete_task` 调用后立即停止
+   - 避免依赖"没有 tool_calls"的模糊判断
+
+#### 验证结果
+- ✅ LLM 自动执行多步计划（无需手动提示继续）
+- ✅ 每步执行后立即解释，体验流畅
+- ✅ 完成所有步骤后调用 `complete_task`
+- ✅ 任务完成标记明确，不再提前停止
+
+#### 技术细节
+**文件修改**:
+1. `api/server/services/Agents/e2bAgent/tools.js` (+18 行)
+   - 新增 `complete_task` 工具实现
+2. `api/server/services/Agents/e2bAgent/prompts.js` (+17 行)
+   - 添加工具定义和 workflow 优化
+3. `api/server/services/Agents/e2bAgent/index.js` (+10 行)
+   - 智能停止机制（检测 complete_task）
+
+**停止机制对比**:
+| 方式 | 判断依据 | 问题 |
+|------|---------|------|
+| 旧方式 | `!message.tool_calls` | LLM 解释后没调用工具就停止 |
+| 新方式 | `hasCompleteTask` 检测 | LLM 主动声明完成 ✅ |
+
+---
+
+### 🐛 关键 Bug 修复日 (2026-01-14)
+**Git Commit**: `9a854cb67` - fix: critical E2B Agent bug fixes and TOOL_CALL integration
+
+#### 主要工作
+1. **错误检测逻辑严重 Bug 修复** ⭐⭐⭐
+   - **问题**: JavaScript `!{}` 判断导致错误对象被误判为成功
+   - **影响**: LLM 无法感知代码执行失败，陷入无限重试循环
+   - **修复**: 使用显式 `hasError` boolean 变量
+   - **文件**: `initialize.js`, `codeExecutor.js`, `tools.js`
+
+2. **完整错误信息传递链**
+   - 添加 `errorName` 和 `traceback` 字段
+   - 从 initialize.js → codeExecutor.js → tools.js → LLM
+   - LLM 现在能根据完整堆栈跟踪自动修复错误
+
+3. **TOOL_CALL 事件系统实现** (Azure Assistant 风格)
+   - 实现 Content 数组架构（TEXT 和 TOOL_CALL 交错）
+   - 代码块和输出紧密显示
+   - 文件: `index.js`, `controller.js`
+
+4. 图表显示问题修复 + 通用错误处理策略
+
+#### 验证结果
+- ✅ 错误自动修复成功（ValueError → df.select_dtypes() 修复）
+- ✅ 4 张图表生成成功
+- ✅ TOOL_CALL 事件正确发送
+- ✅ ExecuteCode 组件正确显示
+
+---
+
+### 🚀 流式传输优化日 (2026-01-12)
+**Git Commit**: `e3f4a2b91` - feat: optimize SSE streaming for E2B Agent
+
+#### 主要优化
+1. **SSE 数据结构优化**
+   - 统一 TOOL_CALL 和 TEXT 事件格式
+   - contentIndex 正确递增逻辑
+   - 前端正确解析多内容块
+
+2. **前端渲染优化**
+   - ExecuteCode 组件性能优化
+   - 减少不必要的重渲染
+   - 改进 loading 状态显示
+
+3. **错误处理增强**
+   - SSE 连接中断自动重连
+   - 超时处理机制
+   - 错误消息友好显示
+
+---
+
 为了保持本文档的简洁性，详细的架构优化记录、Bug 修复详情和历史变更已移动到以下专门文档：
 
 - **问题解决与修复详情**: 请参阅 [E2B_AGENT_FIXES.md](./E2B_AGENT_FIXES.md)
@@ -508,6 +656,12 @@ LibreChat/
 ---
 
 **创建日期**: 2025-12-23  
-**最后更新**: 2026-01-15  
-**当前状态**: ✅ 核心功能完成！Azure OpenAI 集成完成，System Prompt 优化完成。助手配置、历史对话、图像显示、沙箱复用、实时流式响应、错误自愈、Azure 风格输出均已正常工作。
+**最后更新**: 2026-02-09  
+**当前状态**: ✅ 核心功能完成！
+- Azure OpenAI 集成完成
+- System Prompt 优化完成（精简 ~8%）
+- complete_task 智能任务完成机制正常工作
+- contentParts 稀疏数组问题已修复
+- 助手配置、历史对话、图像显示、沙箱复用、实时流式响应、错误自愈、Azure 风格输出均已正常工作
+  
 **当前分支**: `feature/e2b-integration`

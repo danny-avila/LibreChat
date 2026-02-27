@@ -27,29 +27,29 @@
 ### 1.3 代码统计
 ```
 Git 统计:
-- 提交数: 56 个（相对于 upstream/main）
-- 文件变更: 79 files changed, 10515 insertions(+), 43 deletions(-)
+- 提交数: 61 个（相对于 upstream/main）
+- 文件变更: 79 files changed, 10515 insertions(+), 145 deletions(-)
 - 新增文件: 33 个核心文件
 
 核心模块代码量:
-- Controller:        733 行 (api/server/routes/e2bAssistants/controller.js)
-- E2BAgent:          687 行 (api/server/services/Agents/e2bAgent/index.js)
+- Controller:        852 行 (api/server/routes/e2bAssistants/controller.js)
+- E2BAgent:          871 行 (api/server/services/Agents/e2bAgent/index.js)
 - Context Manager:   387 行 (api/server/services/Agents/e2bAgent/contextManager.js)
-- Tools:             266 行 (api/server/services/Agents/e2bAgent/tools.js)
-- System Prompts:    233 行 (api/server/services/Agents/e2bAgent/prompts.js)
+- Tools:             353 行 (api/server/services/Agents/e2bAgent/tools.js)
+- System Prompts:    214 行 (api/server/services/Agents/e2bAgent/prompts.js) - 已优化精简
 - Sandbox Manager:   748 行 (api/server/services/Endpoints/e2bAssistants/initialize.js)
 - Code Executor:     206 行 (api/server/services/Sandbox/codeExecutor.js)
 - File Handler:      172 行 (api/server/services/Sandbox/fileHandler.js)
 
 代码分类汇总:
-- 后端核心逻辑:  ~3,724 行
-- 前端组件:       ~370 行
+- 后端核心逻辑:  ~3,800 行
+- 前端组件:       ~400 行
 - 测试代码:       ~808 行
-- 文档:           ~5,296 行
+- 文档:           ~6,500 行
 - E2B 模板:       ~85 行
 - TypeScript Schema: ~86 行
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-总计新增代码:     ~10,369 行
+总计新增代码:     ~11,679 行
 ```
 
 ---
@@ -414,7 +414,12 @@ Tier 2 - 通用调试 (第 320-345 行):
 - 处理图片持久化
 - Layer 2 沙箱恢复
 
-#### 可用工具
+#### 可用工具列表
+
+工具总数: **3 个**
+1. `execute_code` - 执行 Python 代码
+2. `upload_file` - 上传文件到沙箱
+3. `complete_task` - 智能任务完成（2026-01-19 新增）
 
 **execute_code** (第 29-220 行)
 
@@ -507,45 +512,107 @@ return {
 };
 ```
 
-**upload_file** (第 222-237 行)
+**upload_file** (第 239-279 行)
 - 上传文件到沙箱
-- 记录到 Context Manager
+- 支持 base64 编码文件或文本内容
+- 自动记录到 Context Manager
+
+**complete_task** (第 330-353 行) ⭐ 新增
+
+**功能**: 智能任务完成机制，让 LLM 主动决定何时结束任务
+
+**参数**:
+```javascript
+{ summary: string }  // 任务总结（必需）
+```
+
+**返回格式**:
+```javascript
+{
+  success: true,
+  completed: true,
+  message: 'Task completed successfully',
+  summary: '完整的任务总结...'
+}
+```
+
+**设计理念**:
+- **从被动判断到主动决策**: 旧版依赖 "没有 tool_calls" 判断任务完成，容易造成误判（LLM 解释后就停止）
+- **明确终止信号**: LLM 必须显式调用 `complete_task` 才算任务完成
+- **防止提前停止**: 确保 LLM 完成所有计划步骤后才终止
+- **自动总结**: 强制 LLM 提供任务总结，提升输出质量
+
+**工作流**: 
+```
+Iteration 1: 计划 (4步) + 执行 Step 1
+Iteration 2: Step 1 解释 + 执行 Step 2
+Iteration 3: Step 2 解释 + 执行 Step 3
+...
+Iteration N: 最后一步解释 + complete_task(summary="所有步骤完成...") ✅
+```
 
 ---
 
-### 3.4 System Prompts (prompts.js - 154 行)
+### 3.4 System Prompts (prompts.js - 214 行) ⭐ 已优化
 
 **文件位置**: `api/server/services/Agents/e2bAgent/prompts.js`
 
 #### 职责
 - 定义 Agent 的行为规范
-- 说明工具使用方法
+- 说明工具使用方法（3 个工具：execute_code, upload_file, complete_task）
 - 提供可视化和错误处理指导
+
+#### 优化历史 (2026-02-09)
+- 删除 `Multi-Scenario Adaptation Rules` 章节（~50 行冗余示例代码）
+- 删除 `Common Error Patterns` 章节（~15 行硬编码错误类型）
+- 删除数据库连接、XGBoost 等冗余示例代码（~40 行）
+- 从 233 行精简至 214 行（减少 ~8%）
+- **哲学转变**: 从 "详尽示例驱动" → "简洁原则驱动"
 
 #### 核心章节
 
 **1. 身份定义** (第 3-7 行)
 ```
-You are a data analysis expert with access to a Python sandbox environment.
-You help users analyze data, create visualizations, and derive insights.
+You are a Professional Data Analyst Agent specialized in end-to-end Python data tasks.
+帮助用户完成数据采集、预处理、EDA、机器学习、结果解读等任务。
+遵循最佳实践：可复现代码、清晰文档、逐步解释。
 ```
 
-**2. 可视化规则** (第 18-26 行)
+**2. 工具定义** (第 43-50 行)
 ```
-## 🎨 VISUALIZATION RULES (CRITICAL)
-- ✅ CORRECT: Just call plt.show()
-- ❌ WRONG: plt.savefig('/images/myplot.png')
+4. **Tool Calling Format**:
+   - execute_code(code): 执行完整可运行代码
+   - upload_file(filename, content): 保存生成的文件
+   - list_files(path): 检查沙箱中的文件
+   - complete_task(summary): 所有步骤完成后调用（必需）✨
+```
 
-The /images/ directory doesn't exist in the sandbox.
-ALL plots are automatically saved and persisted.
+**3. Execution Workflow** (第 62-79 行) - 关键优化
+```
+### 1. Initial Turn (First Response)
+- Step 1: 生成编号计划（3-5 步）作为第一输出
+- Step 2: 通过 execute_code 工具执行第 1 步
+- Step 3: 立即提供量化解释（纯文本，不在工具参数内）
+
+### 2. Subsequent Turns (Iterative Execution)
+- 直接执行下一步（不要说 "现在执行第 X 步"）
+- 立即解释结果
+- 自动进入下一轮（无需用户确认）
+
+### 3. Final Turn (Task Termination) ✨
+- 执行最后一步 + 解释结果
+- **必须调用 complete_task 工具**终止任务
+- 不要仅用文本终止 — complete_task 工具调用是必需的
 ```
 
-**3. 重要指导** (第 86-91 行)
+**4. 强制性要求** (第 81-88 行)
 ```
-⚠️ CRITICAL - Always Provide Explanations:
-- After executing code, ALWAYS provide text explanation
-- Don't just execute code repeatedly without analysis
-- Each execution should be followed by interpretation
+1. Plan First（先计划，零容忍违规）
+2. Sequential Execution（按顺序完成所有步骤）
+3. Immediate Interpretation Rule（每次执行后必须解释）
+4. Autonomous Operation（不要询问用户确认）
+5. Objective Reporting（仅呈现量化结果和可验证观察）
+6. Language Consistency（全程使用用户语言）
 ```
 
 ---
@@ -670,7 +737,7 @@ return await this.createSandbox(userId, conversationId);
 
 ---
 
-### 3.8 Controller (controller.js - 619 行)
+### 3.8 Controller (controller.js - 852 行) ⭐ 已优化
 
 **文件位置**: `api/server/routes/e2bAssistants/controller.js`
 
@@ -716,21 +783,62 @@ messages.slice(0, 2).forEach((msg, i) => {
 const imageMatches = historyText.match(/\/images\/[^\s)]+/g) || [];
 ```
 
-**SSE 响应** (第 475-530 行)
+**SSE 响应与 contentParts 初始化** (第 520-560 行) ⭐ 关键修复
+
+**稀疏数组问题修复 (2026-02-09)**:
 ```javascript
-// created 事件
-res.write(`event: message\ndata: ${JSON.stringify({
-  type: 'created',
-  message: sanitizeMessageForTransmit(requestMessage)
-})}\n\n`);
+// 旧实现（有风险）
+const contentParts = [];  // 空数组
+let contentIndex = 1;     // 从 1 开始
+// 如果第一个事件是 TOOL_CALL → contentParts[1] 存在，contentParts[0] 为 undefined
+// 前端访问 contentParts[0].type 会报错：Cannot read properties of null (reading 'type')
+
+// 新实现（安全）
+const contentParts = [
+  { type: 'text', text: { value: '\u200B' } }  // 零宽空格占位符
+];
+let currentTextIndex = 0;  // TEXT part 已存在于 index=0
+let contentIndex = 1;      // 后续 index 从 1 开始
+```
+
+**SSE 事件流**:
+```javascript
+// sync 事件（匹配 Azure Assistant 格式）
+sendEvent(res, {
+  sync: true,
+  conversationId: finalConversationId,
+  requestMessage: userMessage,
+  responseMessage: initialResponseMessage  // 包含零宽空格
+});
+
+// 立即发送零宽空格 TEXT 事件（维持 loading 状态）
+sendEvent(res, {
+  type: ContentTypes.TEXT,
+  index: 0,
+  [ContentTypes.TEXT]: { value: '\u200B' },
+  messageId: responseMessageId,
+  conversationId: finalConversationId
+});
+
+// 单次 flush（减少闪烁）
+if (res.flush) res.flush();
 
 // token 流式输出
-agent.on('token', (token) => {
-  res.write(`event: message\ndata: ${JSON.stringify({
-    type: 'content',
-    text: token
-  })}\n\n`);
-});
+onToken = (token) => {
+  // 第一个 token 替换零宽空格，后续 token 追加
+  if (contentParts[currentTextIndex].text.value === '\u200B') {
+    contentParts[currentTextIndex].text.value = token;
+  } else {
+    contentParts[currentTextIndex].text.value += token;
+  }
+  
+  sendEvent(res, {
+    type: 'text',
+    index: currentTextIndex,
+    text: { value: token }
+  });
+  if (res.flush) res.flush();
+};
 
 // final 事件
 res.write(`event: message\ndata: ${JSON.stringify({
@@ -975,21 +1083,23 @@ res.write(`event: message\ndata: ${JSON.stringify({
 
 ✅ **完全可控**: 工具、prompt、执行流程完全自定义  
 ✅ **高度透明**: 完整的日志和调试能力  
-✅ **灵活扩展**: 轻松添加新工具和能力  
+✅ **灵活扩展**: 轻松添加新工具和能力（如 complete_task）  
 ✅ **成本优化**: 精确控制 LLM 调用和资源使用  
 ✅ **供应商独立**: 可随时切换 LLM 或沙箱服务  
+✅ **智能终止**: LLM 主动决定任务何时完成（complete_task 机制）  
+✅ **防御性编程**: 稀疏数组防护、错误自愈、双层沙箱恢复  
 
 ### 6.2 核心模块总览
 
 ```
-Controller (732 行)
-  ├─> E2BAgent (703 行)
-  │    ├─> Context Manager (314 行)
-  │    ├─> System Prompts (243 行)
-  │    └─> Tools (360 行)
+Controller (852 行) ⭐ 已优化
+  ├─> E2BAgent (871 行) ⭐ 已优化
+  │    ├─> Context Manager (387 行)
+  │    ├─> System Prompts (214 行) ⭐ 精简 -8%
+  │    └─> Tools (353 行) ⭐ 新增 complete_task
   │         ├─> Code Executor (206 行)
   │         └─> File Handler (172 行)
-  └─> E2B Sandbox Manager (848 行)
+  └─> E2B Sandbox Manager (748 行)
 ```
 
 ### 6.3 数据流总结
@@ -1092,9 +1202,14 @@ $ git diff --name-status upstream/main..HEAD | grep "^A" | wc -l
 
 ---
 
-**文档版本**: v2.2  
-**最后更新**: 2026-01-22  
-**维护者**: Li Ruisen 
+**文档版本**: v2.3  
+**最后更新**: 2026-02-09  
+**维护者**: Li Ruisen  
+**最新变更**: 
+- 添加 complete_task 智能任务完成机制说明
+- 更新 Controller contentParts 稀疏数组修复
+- 更新 System Prompt 优化（精简 ~8%）
+- 更新代码统计和行数
 **相关文档**: 
 - [问题解决文档](./E2B_AGENT_FIXES.md)
 - [开发文档](./E2B_DATA_ANALYST_AGENT_DEVELOPMENT.md)
