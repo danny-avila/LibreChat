@@ -252,6 +252,11 @@ const tokenValues = Object.assign(
     'moonshot-v1-128k': { prompt: 2.0, completion: 5.0 },
     'moonshot-v1-128k-vision': { prompt: 2.0, completion: 5.0 },
     'moonshot-v1-128k-vision-preview': { prompt: 2.0, completion: 5.0 },
+    // Avian models (https://avian.io)
+    'deepseek/deepseek-v3.2': { prompt: 0.26, completion: 0.38 },
+    'moonshotai/kimi-k2.5': { prompt: 0.45, completion: 2.2 },
+    'z-ai/glm-5': { prompt: 0.3, completion: 2.55 },
+    'minimax/minimax-m2.5': { prompt: 0.3, completion: 1.1 },
     // GPT-OSS models (specific sizes)
     'gpt-oss:20b': { prompt: 0.05, completion: 0.2 },
     'gpt-oss-20b': { prompt: 0.05, completion: 0.2 },

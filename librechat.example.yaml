@@ -336,6 +336,21 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
   custom:
+    # Avian Example
+    - name: 'avian'
+      apiKey: '${AVIAN_API_KEY}'
+      baseURL: 'https://api.avian.io/v1'
+      models:
+        default:
+          - 'deepseek/deepseek-v3.2'
+          - 'moonshotai/kimi-k2.5'
+          - 'z-ai/glm-5'
+          - 'minimax/minimax-m2.5'
+        fetch: false
+      titleConvo: true
+      titleModel: 'deepseek/deepseek-v3.2'
+      modelDisplayLabel: 'avian'
+
     # Groq Example
     - name: 'groq'
       apiKey: '${GROQ_API_KEY}'

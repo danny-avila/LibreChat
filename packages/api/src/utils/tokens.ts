@@ -355,6 +355,11 @@ const aggregateModels = {
   ...bedrockModels,
   ...xAIModels,
   ...qwenModels,
+  // Avian models (https://avian.io)
+  'deepseek/deepseek-v3.2': 164000,
+  'moonshotai/kimi-k2.5': 131000,
+  'z-ai/glm-5': 131000,
+  'minimax/minimax-m2.5': 1000000,
   // GPT-OSS
   'gpt-oss': 131000,
   'gpt-oss:20b': 131000,
@@ -423,11 +428,19 @@ const deepseekMaxOutputs = {
   'deepseek.r1': 64000,
 };
 
+/** Outputs for Avian models (https://avian.io) */
+const avianMaxOutputs = {
+  'deepseek/deepseek-v3.2': 65000,
+  'moonshotai/kimi-k2.5': 8000,
+  'z-ai/glm-5': 16000,
+  'minimax/minimax-m2.5': 1000000,
+};
+
 export const maxOutputTokensMap = {
   [EModelEndpoint.anthropic]: anthropicMaxOutputs,
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
-  [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
-  [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
+  [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs, ...avianMaxOutputs },
+  [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs, ...avianMaxOutputs },
 };
 
 /**
