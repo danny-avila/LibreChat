@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 
+/** Safe to reuse with .replace() at module scope - does not retain lastIndex state */
 // eslint-disable-next-line no-control-regex
 const unsafeChars = /[\r\n\u0000]/g;
 
