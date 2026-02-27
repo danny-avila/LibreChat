@@ -1,7 +1,6 @@
 const express = require('express');
 const {
   SystemRoles,
-  roleDefaults,
   PermissionTypes,
   agentPermissionsSchema,
   promptPermissionsSchema,
@@ -111,10 +110,10 @@ router.get('/:roleName', async (req, res) => {
   // TODO: TEMP, use a better parsing for roleName
   const roleName = _r.toUpperCase();
 
-  if (
-    (req.user.role !== SystemRoles.ADMIN && roleName === SystemRoles.ADMIN) ||
-    (req.user.role !== SystemRoles.ADMIN && !roleDefaults[roleName])
-  ) {
+  const isAdmin = req.user.role === SystemRoles.ADMIN;
+  const isOwnRole = req.user.role === roleName;
+  const isUserRole = roleName === SystemRoles.USER;
+  if (!isAdmin && !isOwnRole && !isUserRole) {
     return res.status(403).send({ message: 'Unauthorized' });
   }
 
