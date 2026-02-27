@@ -58,6 +58,7 @@ const ContentRender = memo(
     });
     const fontSize = useAtomValue(fontSizeAtom);
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+    const ModelNameDisplay = useRecoilValue<boolean>(store.ModelNameDisplay);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const isLast = useMemo(
@@ -90,6 +91,17 @@ const ContentRender = memo(
     );
 
     const { hasParallelContent } = useContentMetadata(msg);
+
+    const displayModel = useMemo(() => {
+      if (!ModelNameDisplay || msg?.isCreatedByUser) {
+        return '';
+      }
+      const resolvedModel = agent?.model ?? assistant?.model ?? msg?.model ?? '';
+      if (!resolvedModel || resolvedModel === messageLabel) {
+        return '';
+      }
+      return resolvedModel;
+    }, [ModelNameDisplay, msg?.isCreatedByUser, msg?.model, agent, assistant, messageLabel]);
 
     if (!msg) {
       return null;
@@ -141,7 +153,14 @@ const ContentRender = memo(
           )}
         >
           {!hasParallelContent && (
-            <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+            <h2 className={cn('select-none font-semibold', fontSize)}>
+              {messageLabel}
+              {displayModel && (
+                <span className="ml-2 text-xs font-normal text-text-secondary">
+                  {displayModel}
+                </span>
+              )}
+            </h2>
           )}
 
           <div className="flex flex-col gap-1">

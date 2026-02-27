@@ -70,6 +70,7 @@ const localStorageAtoms = {
 
   // Account settings
   UsernameDisplay: atomWithLocalStorage('UsernameDisplay', true),
+  ModelNameDisplay: atomWithLocalStorage('ModelNameDisplay', false),
 };
 
 export default { ...staticAtoms, ...localStorageAtoms };

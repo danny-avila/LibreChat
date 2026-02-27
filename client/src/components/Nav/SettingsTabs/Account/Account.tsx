@@ -1,5 +1,6 @@
 import React from 'react';
 import DisplayUsernameMessages from './DisplayUsernameMessages';
+import DisplayModelName from './DisplayModelName';
 import DeleteAccount from './DeleteAccount';
 import Avatar from './Avatar';
 import EnableTwoFactorItem from './TwoFactorAuthentication';
@@ -13,6 +14,9 @@ function Account() {
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
       <div className="pb-3">
         <DisplayUsernameMessages />
+      </div>
+      <div className="pb-3">
+        <DisplayModelName />
       </div>
       <div className="pb-3">
         <Avatar />
