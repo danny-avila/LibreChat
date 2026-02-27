@@ -1,3 +1,4 @@
+import { isMainThread } from 'node:worker_threads';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   logger,
@@ -66,6 +67,13 @@ export function capabilityContextMiddleware(
   _res: Response,
   next: NextFunction,
 ): void {
+  if (!isMainThread) {
+    logger.error(
+      '[capabilityContextMiddleware] Mounted in a worker thread — ' +
+        'ALS context will not propagate to the main thread or other workers. ' +
+        'This middleware should only run in the main Express process.',
+    );
+  }
   capabilityStore.run({ principals: new Map(), results: new Map() }, next);
 }
 
@@ -81,10 +89,21 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
 } {
   const { getUserPrincipals, hasCapabilityForPrincipals } = deps;
 
+  let workerWarned = false;
+
   async function hasCapability(
     user: CapabilityUser,
     capability: SystemCapability,
   ): Promise<boolean> {
+    if (!isMainThread && !workerWarned) {
+      workerWarned = true;
+      logger.warn(
+        '[hasCapability] Called from a worker thread — ALS context is unavailable. ' +
+          'Capability checks will hit the database on every call (no per-request caching). ' +
+          'If this is intentional, no action needed.',
+      );
+    }
+
     const store = capabilityStore.getStore();
 
     const resultKey = `${user.id}:${user.tenantId ?? ''}:${capability}`;
