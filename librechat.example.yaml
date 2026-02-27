@@ -134,6 +134,14 @@ interface:
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
+  # Pin tools loaded by default for users
+  # pinnedTools:
+  #   - 'artifacts'
+  #   - 'execute_code'
+  #   - 'code_interpreter'
+  #   - 'file_search'
+  #   - 'web_search'
+
 # Example Cloudflare turnstile (optional)
 #turnstile:
 #  siteKey: "your-site-key-here"
