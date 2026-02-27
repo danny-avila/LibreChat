@@ -394,6 +394,11 @@ export function getOpenAILLMConfig({
 
   constructAzureResponsesApi();
 
+  // Set apiKey for Entra ID authentication (when apiKey is the placeholder)
+  if (apiKey === 'entra-id-placeholder') {
+    llmConfig.apiKey = apiKey;
+  }
+
   llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
   return { llmConfig, tools, azure: updatedAzure };
 }
