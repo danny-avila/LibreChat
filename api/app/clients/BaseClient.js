@@ -798,6 +798,13 @@ class BaseClient {
           model: responseMessage.model,
         });
       }
+
+      logger.debug('[BaseClient] Response token usage', {
+        messageId: responseMessage.messageId,
+        model: responseMessage.model,
+        promptTokens,
+        completionTokens,
+      });
     }
 
     if (userMessagePromise) {
