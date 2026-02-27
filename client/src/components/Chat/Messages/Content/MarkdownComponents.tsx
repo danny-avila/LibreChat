@@ -103,12 +103,13 @@ export const a: React.ElementType = memo(({ href, children }: TAnchorProps) => {
     if (match && match[0]) {
       const path = match[0];
       const parts = path.split('/');
-      const name = parts.pop();
-      const file_id = parts.pop();
-      return { file_id, filename: name, filepath: path };
+      // parts = ['files', userId, file_id] or ['outputs', userId, file_id]
+      const file_id = parts[2]; // Get the file_id (third element)
+      const filename = typeof children === 'string' ? children : file_id; // Use link text as filename
+      return { file_id, filename, filepath: path };
     }
     return { file_id: '', filename: '', filepath: '' };
-  }, [user?.id, href]);
+  }, [user?.id, href, children]);
 
   const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id);
   const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_blank' };
