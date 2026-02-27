@@ -586,6 +586,15 @@ export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 const localizedStringSchema = z.union([z.string(), z.record(z.string())]);
 export type LocalizedString = z.infer<typeof localizedStringSchema>;
 
+const customWelcomeConfigSchema = z.object({
+  messages: z.record(z.array(z.string())).optional(),
+  includeTimeGreetings: z.boolean().optional().default(false),
+});
+export type TCustomWelcomeConfig = z.infer<typeof customWelcomeConfigSchema>;
+
+// customWelcome can be a string (legacy) or a full config object with language-keyed messages
+const customWelcomeSchema = z.union([z.string(), customWelcomeConfigSchema]);
+
 const mcpServersSchema = z
   .object({
     placeholder: z.string().optional(),
@@ -613,7 +622,7 @@ export const interfaceSchema = z
       })
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
-    customWelcome: z.string().optional(),
+    customWelcome: customWelcomeSchema.optional(),
     mcpServers: mcpServersSchema.optional(),
     endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),

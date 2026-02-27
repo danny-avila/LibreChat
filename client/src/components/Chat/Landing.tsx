@@ -1,12 +1,15 @@
 import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
+import { useRecoilValue } from 'recoil';
 import { easings } from '@react-spring/web';
 import { EModelEndpoint } from 'librechat-data-provider';
+import type { TCustomWelcomeConfig } from 'librechat-data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
+import store from '~/store';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
@@ -27,6 +30,17 @@ function getTextSizeClass(text: string | undefined | null) {
   return 'text-lg sm:text-md';
 }
 
+function getMessagesForLanguage(
+  messages: Record<string, string[]> | undefined,
+  lang: string,
+): string[] {
+  if (!messages) {
+    return [];
+  }
+  const baseLang = lang?.split('-')[0] ?? 'en';
+  return messages[lang] || messages[baseLang] || messages['en'] || Object.values(messages)[0] || [];
+}
+
 export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: boolean }) {
   const { conversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
@@ -35,11 +49,13 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { user } = useAuthContext();
   const localize = useLocalize();
+  const lang = useRecoilValue(store.lang);
 
   const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);
   const [lineCount, setLineCount] = useState(1);
   const [contentHeight, setContentHeight] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
+  const greetingIndexRef = useRef<number | null>(null);
 
   const endpointType = useMemo(() => {
     let ep = conversation?.endpoint ?? '';
@@ -64,42 +80,66 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const name = entity?.name ?? '';
   const description = (entity?.description || conversation?.greeting) ?? '';
 
-  const getGreeting = useCallback(() => {
-    if (typeof startupConfig?.interface?.customWelcome === 'string') {
-      const customWelcome = startupConfig.interface.customWelcome;
-      // Replace {{user.name}} with actual user name if available
-      if (user?.name && customWelcome.includes('{{user.name}}')) {
-        return customWelcome.replace(/{{user.name}}/g, user.name);
-      }
-      return customWelcome;
-    }
-
+  const getTimeGreeting = useCallback(() => {
     const now = new Date();
     const hours = now.getHours();
-
     const dayOfWeek = now.getDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-    // Early morning (midnight to 4:59 AM)
+    let timeGreeting: string;
     if (hours >= 0 && hours < 5) {
-      return localize('com_ui_late_night');
+      timeGreeting = localize('com_ui_late_night');
+    } else if (hours < 12) {
+      timeGreeting = isWeekend
+        ? localize('com_ui_weekend_morning')
+        : localize('com_ui_good_morning');
+    } else if (hours < 17) {
+      timeGreeting = localize('com_ui_good_afternoon');
+    } else {
+      timeGreeting = localize('com_ui_good_evening');
     }
-    // Morning (6 AM to 11:59 AM)
-    else if (hours < 12) {
-      if (isWeekend) {
-        return localize('com_ui_weekend_morning');
-      }
-      return localize('com_ui_good_morning');
+    return timeGreeting + (user?.name ? ', ' + user.name : '');
+  }, [localize, user?.name]);
+
+  const replaceTemplateVariables = useCallback(
+    (message: string): string =>
+      user?.name ? message.replace(/{{user\.name}}/g, user.name) : message,
+    [user?.name],
+  );
+
+  const availableGreetings = useMemo(() => {
+    const customWelcome = startupConfig?.interface?.customWelcome;
+
+    if (!customWelcome) {
+      return [];
     }
-    // Afternoon (12 PM to 4:59 PM)
-    else if (hours < 17) {
-      return localize('com_ui_good_afternoon');
+
+    if (typeof customWelcome === 'string') {
+      return [replaceTemplateVariables(customWelcome)];
     }
-    // Evening (5 PM to 8:59 PM)
-    else {
-      return localize('com_ui_good_evening');
+
+    const config = customWelcome as TCustomWelcomeConfig;
+    const messages = getMessagesForLanguage(config.messages, lang).map(replaceTemplateVariables);
+
+    if (config.includeTimeGreetings) {
+      messages.push(getTimeGreeting());
     }
-  }, [localize, startupConfig?.interface?.customWelcome, user?.name]);
+
+    return messages;
+  }, [startupConfig?.interface?.customWelcome, lang, replaceTemplateVariables, getTimeGreeting]);
+
+  const greetingText = useMemo(() => {
+    if (availableGreetings.length === 0) {
+      return getTimeGreeting();
+    }
+    if (
+      greetingIndexRef.current === null ||
+      greetingIndexRef.current >= availableGreetings.length
+    ) {
+      greetingIndexRef.current = Math.floor(Math.random() * availableGreetings.length);
+    }
+    return availableGreetings[greetingIndexRef.current];
+  }, [availableGreetings, getTimeGreeting]);
 
   const handleLineCountChange = useCallback((count: number) => {
     setTextHasMultipleLines(count > 1);
@@ -131,11 +171,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
 
     return margin;
   }, [lineCount, description, textHasMultipleLines, contentHeight]);
-
-  const greetingText =
-    typeof startupConfig?.interface?.customWelcome === 'string'
-      ? getGreeting()
-      : getGreeting() + (user?.name ? ', ' + user.name : '');
 
   return (
     <div
@@ -184,7 +219,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             </div>
           ) : (
             <SplitText
-              key={`split-text-${greetingText}${user?.name ? '-user' : ''}`}
+              key={`split-text-${greetingText}`}
               text={greetingText}
               className={`${getTextSizeClass(greetingText)} font-medium text-text-primary`}
               delay={50}
