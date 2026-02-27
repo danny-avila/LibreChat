@@ -41,7 +41,11 @@ function isCustomError(err: unknown): err is CustomError {
 }
 
 export function apiNotFound(req: Request, res: Response): void {
-  logger.warn(`[API 404] ${req.method} ${req.originalUrl}`);
+  const safePath = req.path
+    .replace(/[\r\n]/g, '_')
+    .replaceAll('\0', '_')
+    .slice(0, 200);
+  logger.warn(`[API 404] ${req.method} ${safePath}`);
   res.status(404).json({ message: 'Endpoint not found' });
 }
 
