@@ -1,0 +1,108 @@
+# Minimal LibreChat config for AWS SAM deploy
+# Copy this file to librechat.yaml and customize for your deployment.
+# For full options, see: https://www.librechat.ai/docs/configuration/librechat_yaml
+
+# Configuration version (required)
+version: 1.2.8
+
+# Cache settings
+cache: true
+
+# File storage configuration
+fileStrategy: "s3"
+
+# Transaction settings
+transactions:
+  enabled: true
+
+interface:
+  mcpServers:
+    placeholder: "Select MCP Servers"
+    use: true
+    create: true
+    share: true
+    trustCheckbox:
+      label: "I trust this server"
+      subLabel: "Only enable servers you trust"
+  privacyPolicy:
+    externalUrl: "https://example.com/privacy"
+    openNewTab: true
+  termsOfService:
+    externalUrl: "https://example.com/terms"
+    openNewTab: true
+    modalAcceptance: true
+    modalTitle: "Terms of Service"
+    modalContent: |
+      # Terms of Service
+      ## Introduction
+      Welcome to LibreChat!
+  modelSelect: true
+  parameters: true
+  sidePanel: true
+  presets: false
+  prompts: false
+  bookmarks: false
+  multiConvo: true
+  agents: true
+  customWelcome: "Welcome to LibreChat!"
+  runCode: true
+  webSearch: true
+  fileSearch: true
+  fileCitations: true
+
+# MCP Servers Configuration (customize or add your own)
+# Use env var placeholders for secrets, e.g. ${MCP_SOME_TOKEN}
+mcpServers:
+  # Example: third-party MCP
+  # Deepwiki:
+  #   url: "https://mcp.deepwiki.com/mcp"
+  #   name: "DeepWiki"
+  #   description: "DeepWiki MCP Server..."
+  #   type: "streamable-http"
+  # Example: your own MCP (replace with your API URL and token env var)
+  # MyMcp:
+  #   name: "My MCP Server"
+  #   description: "Description of the server"
+  #   url: "https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/dev/mcp/your_mcp"
+  #   type: "streamable-http"
+  #   headers:
+  #     Authorization: "Bearer ${MCP_MY_TOKEN}"
+
+# Registration (optional)
+# registration:
+#   socialLogins: ['saml', 'github', 'google', 'openid', ...]
+registration:
+  socialLogins:
+    - "saml"
+    - "openid"
+  # allowedDomains:
+  #   - "example.edu"
+  #   - "*.example.edu"
+
+# Balance settings (optional)
+balance:
+  enabled: true
+  startBalance: 650000
+  autoRefillEnabled: true
+  refillIntervalValue: 1440
+  refillIntervalUnit: "minutes"
+  refillAmount: 250000
+
+# Custom endpoints (e.g. Bedrock)
+endpoints:
+  # bedrock:
+  #   cache: true
+  #   promptCache: true
+  #   titleModel: "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+
+# Model specs – default model selection for new users
+# modelSpecs:
+#   prioritize: true
+#   list:
+#     - name: "my-default"
+#       label: "My Default Model"
+#       description: "Default model for new conversations"
+#       default: true
+#       preset:
+#         endpoint: "bedrock"
+#         model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
