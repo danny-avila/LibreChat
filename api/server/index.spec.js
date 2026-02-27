@@ -100,6 +100,24 @@ describe('Server Configuration', () => {
     expect(response.headers['expires']).toBe('0');
   });
 
+  it('should return 404 JSON for undefined API routes', async () => {
+    const response = await request(app).get('/api/nonexistent');
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ message: 'Endpoint not found' });
+  });
+
+  it('should return 404 JSON for nested undefined API routes', async () => {
+    const response = await request(app).get('/api/nonexistent/nested/path');
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ message: 'Endpoint not found' });
+  });
+
+  it('should serve SPA HTML for non-API unmatched routes', async () => {
+    const response = await request(app).get('/this/does/not/exist');
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toMatch(/html/);
+  });
+
   it('should return 500 for unknown errors via ErrorController', async () => {
     // Testing the error handling here on top of unit tests to ensure the middleware is correctly integrated
 

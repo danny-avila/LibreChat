@@ -324,8 +324,10 @@ if (cluster.isMaster) {
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);
 
-    /** Error handler */
-    app.use(ErrorController);
+    /** 404 for unmatched API routes */
+    app.use('/api', (req, res) => {
+      res.status(404).json({ message: 'Endpoint not found' });
+    });
 
     /** SPA fallback - serve index.html for all unmatched routes */
     app.use((req, res) => {
@@ -342,6 +344,9 @@ if (cluster.isMaster) {
       res.type('html');
       res.send(updatedIndexHtml);
     });
+
+    /** Error handler (must be last — Express identifies error middleware by its 4-arg signature) */
+    app.use(ErrorController);
 
     /** Start listening on shared port (cluster will distribute connections) */
     app.listen(port, host, async (err) => {
