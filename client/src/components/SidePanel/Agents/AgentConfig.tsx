@@ -29,6 +29,7 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
+import AgentConversationStarters from '~/components/SidePanel/Agents/AgentConversationStarters';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
@@ -257,6 +258,24 @@ export default function AgentConfig() {
         </div>
         {/* Instructions */}
         <Instructions />
+
+        <div className="relative mb-6">
+          {/* the label of conversation starters is in the component */}
+          <Controller
+            name="conversation_starters"
+            control={control}
+            defaultValue={[]}
+            render={({ field }) => (
+              <AgentConversationStarters
+                field={field}
+                inputClass={inputClass}
+                labelClass={labelClass}
+                initialStarters={agent?.conversation_starters}
+              />
+            )}
+          />
+        </div>
+
         {/* Model and Provider */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="provider">
