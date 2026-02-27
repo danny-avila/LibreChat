@@ -12,6 +12,7 @@ const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
+  apiNotFound,
   ErrorController,
   memoryDiagnostics,
   performStartupChecks,
@@ -164,9 +165,7 @@ const startServer = async () => {
   app.use('/api/mcp', routes.mcp);
 
   /** 404 for unmatched API routes */
-  app.use('/api', (req, res) => {
-    res.status(404).json({ message: 'Endpoint not found' });
-  });
+  app.use('/api', apiNotFound);
 
   /** SPA fallback - serve index.html for all unmatched routes */
   app.use((req, res) => {
@@ -184,7 +183,7 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
-  /** Error handler (must be last — Express identifies error middleware by its 4-arg signature) */
+  /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
 
   app.listen(port, host, async (err) => {

@@ -40,6 +40,11 @@ function isCustomError(err: unknown): err is CustomError {
   return err !== null && typeof err === 'object' && 'statusCode' in err && 'body' in err;
 }
 
+export function apiNotFound(req: Request, res: Response): void {
+  logger.warn(`[API 404] ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ message: 'Endpoint not found' });
+}
+
 export const ErrorController = (
   err: Error | CustomError,
   req: Request,
