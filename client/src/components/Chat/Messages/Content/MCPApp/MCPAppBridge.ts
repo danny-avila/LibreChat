@@ -1,6 +1,15 @@
 import { callMCPAppTool, fetchMCPResource } from './mcpAppUtils';
 import type { McpUiResourceCsp, McpUiResourcePermissions } from './mcpAppUtils';
 import { getHostContext } from './mcpAppTheme';
+import {
+  LIBRECHAT_MCP_HOST_NAME,
+  LIBRECHAT_MCP_HOST_VERSION,
+  MCP_APPS_PROTOCOL_VERSION,
+} from 'librechat-data-provider';
+
+const MCP_PROTOCOL_VERSION = MCP_APPS_PROTOCOL_VERSION ?? '2026-01-26';
+const MCP_HOST_NAME = LIBRECHAT_MCP_HOST_NAME ?? 'LibreChat';
+const MCP_HOST_VERSION = LIBRECHAT_MCP_HOST_VERSION ?? '1.0.0';
 
 type DisplayMode = 'inline' | 'fullscreen' | 'pip';
 
@@ -48,6 +57,7 @@ export class MCPAppBridge {
     number | string,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
+
   private displayMode: DisplayMode;
   private appAvailableDisplayModes: Set<DisplayMode> | null = null;
 
@@ -68,7 +78,9 @@ export class MCPAppBridge {
     const measuredWidth = rect?.width ?? this.iframe.clientWidth;
 
     const maxHeight =
-      Number.isFinite(measuredHeight) && measuredHeight > 0 ? Math.round(measuredHeight) : undefined;
+      Number.isFinite(measuredHeight) && measuredHeight > 0
+        ? Math.round(measuredHeight)
+        : undefined;
     const maxWidth =
       Number.isFinite(measuredWidth) && measuredWidth > 0 ? Math.round(measuredWidth) : undefined;
 
@@ -133,10 +145,7 @@ export class MCPAppBridge {
   }
 
   /** Send theme/context update */
-  sendContextUpdate(
-    theme: 'light' | 'dark',
-    displayMode: DisplayMode = 'inline',
-  ): void {
+  sendContextUpdate(theme: 'light' | 'dark', displayMode: DisplayMode = 'inline'): void {
     this.displayMode = displayMode;
     const hostContext = this.getHostContext(theme);
     this.sendNotification(
@@ -341,7 +350,7 @@ export class MCPAppBridge {
           this.appAvailableDisplayModes = appModes.length > 0 ? new Set(appModes) : null;
           const hostContext = this.getHostContext(this.options.theme);
           const result = {
-            protocolVersion: '2026-01-26',
+            protocolVersion: MCP_PROTOCOL_VERSION,
             hostCapabilities: {
               openLinks: {},
               serverTools: { listChanged: false },
@@ -351,8 +360,8 @@ export class MCPAppBridge {
               updateModelContext: { text: {}, structuredContent: {} },
             },
             hostInfo: {
-              name: 'LibreChat',
-              version: '1.0.0',
+              name: MCP_HOST_NAME,
+              version: MCP_HOST_VERSION,
             },
             hostContext,
             // Legacy compatibility for older app runtimes.
@@ -386,6 +395,7 @@ export class MCPAppBridge {
           } catch (error) {
             if (this.isCancellationError(error)) {
               this.sendToolCancelled(error instanceof Error ? error.message : undefined);
+              break;
             }
             throw error;
           }
@@ -415,7 +425,13 @@ export class MCPAppBridge {
 
         case 'ui/message': {
           const message = params as { role?: unknown; content?: unknown };
-          const role = message.role === 'user' ? 'user' : 'user';
+          if (message.role !== 'user') {
+            if (id !== undefined) {
+              this.sendError(id, -32602, 'ui/message role must be "user"');
+            }
+            break;
+          }
+          const role = 'user';
           if (this.options.onMessage) {
             this.options.onMessage({ role, content: message.content });
           }

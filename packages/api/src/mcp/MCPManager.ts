@@ -1,6 +1,11 @@
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
-import { CallToolResultSchema, ReadResourceResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolResultSchema,
+  ReadResourceResultSchema,
+  ErrorCode,
+  McpError,
+} from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { GraphTokenResolver } from '~/utils/graph';
@@ -26,12 +31,17 @@ import { processMCPEnv } from '~/utils/env';
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  private readonly allToolsCache = new WeakMap<MCPConnection, t.LCAvailableTools>();
+  private readonly allToolsCacheListeners = new WeakSet<MCPConnection>();
 
   /** Creates and initializes the singleton MCPManager instance */
-  public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
+  public static async createInstance(
+    configs: t.MCPServers,
+    options?: { enableApps?: boolean },
+  ): Promise<MCPManager> {
     if (MCPManager.instance) throw new Error('MCPManager has already been initialized.');
     MCPManager.instance = new MCPManager();
-    await MCPManager.instance.initialize(configs);
+    await MCPManager.instance.initialize(configs, options);
     return MCPManager.instance;
   }
 
@@ -42,9 +52,10 @@ export class MCPManager extends UserConnectionManager {
   }
 
   /** Initializes the MCPManager by setting up server registry and app connections */
-  public async initialize(configs: t.MCPServers) {
-    await MCPServersInitializer.initialize(configs);
-    this.appConnections = new ConnectionsRepository(undefined);
+  public async initialize(configs: t.MCPServers, options?: { enableApps?: boolean }) {
+    this.enableApps = options?.enableApps !== false;
+    await MCPServersInitializer.initialize(configs, { enableApps: this.enableApps });
+    this.appConnections = new ConnectionsRepository(undefined, undefined, this.enableApps);
   }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */
@@ -104,7 +115,12 @@ export class MCPManager extends UserConnectionManager {
     );
 
     const useSSRFProtection = MCPServersRegistry.getInstance().shouldEnableSSRFProtection();
-    const basic: t.BasicConnectionOptions = { serverName, serverConfig, useSSRFProtection };
+    const basic: t.BasicConnectionOptions = {
+      serverName,
+      serverConfig,
+      useSSRFProtection,
+      enableApps: this.enableApps,
+    };
 
     if (!useOAuth) {
       const result = await MCPConnectionFactory.discoverTools(basic);
@@ -228,20 +244,48 @@ Please follow these instructions when using tools from the respective MCP server
   /**
    * Returns all tool functions (including app-only) for a given server connection.
    */
-  private async getToolsFromConnection(
+  private attachAllToolsCacheInvalidation(connection: MCPConnection): void {
+    if (this.allToolsCacheListeners.has(connection)) {
+      return;
+    }
+
+    this.allToolsCacheListeners.add(connection);
+    connection.on('connectionChange', () => {
+      this.allToolsCache.delete(connection);
+    });
+  }
+
+  private async getAllToolsFromConnection(
     serverName: string,
     connection: MCPConnection,
   ): Promise<t.LCAvailableTools> {
+    const cached = this.allToolsCache.get(connection);
+    if (cached) {
+      return cached;
+    }
+
     try {
       const { allTools } = await MCPServerInspector.getAllToolFunctions(serverName, connection);
+      this.allToolsCache.set(connection, allTools);
+      this.attachAllToolsCacheInvalidation(connection);
       return allTools;
     } catch (error) {
       logger.warn(
-        `[getToolsFromConnection] Error getting all tools for server ${serverName}`,
+        `[getAllToolsFromConnection] Error getting all tools for server ${serverName}`,
         error,
       );
       return {};
     }
+  }
+
+  /**
+   * Returns all tool functions (including app-only) for a given server connection.
+   */
+  private async getToolsFromConnection(
+    serverName: string,
+    connection: MCPConnection,
+  ): Promise<t.LCAvailableTools> {
+    return this.getAllToolsFromConnection(serverName, connection);
   }
 
   /**
@@ -289,11 +333,7 @@ Please follow these instructions when using tools from the respective MCP server
     try {
       const appConnection = await this.appConnections?.get(serverName);
       if (appConnection) {
-        const { allTools } = await MCPServerInspector.getAllToolFunctions(
-          serverName,
-          appConnection,
-        );
-        return allTools;
+        return await this.getAllToolsFromConnection(serverName, appConnection);
       }
 
       const userConnections = this.getUserConnections(userId);
@@ -301,16 +341,9 @@ Please follow these instructions when using tools from the respective MCP server
         return null;
       }
 
-      const { allTools } = await MCPServerInspector.getAllToolFunctions(
-        serverName,
-        userConnections.get(serverName)!,
-      );
-      return allTools;
+      return await this.getAllToolsFromConnection(serverName, userConnections.get(serverName)!);
     } catch (error) {
-      logger.warn(
-        `[getAllToolsForServer] Error getting tools for server ${serverName}`,
-        error,
-      );
+      logger.warn(`[getAllToolsForServer] Error getting tools for server ${serverName}`, error);
       return null;
     }
   }

@@ -1,6 +1,10 @@
 import { callMCPAppTool, fetchMCPResource } from './mcpAppUtils';
 import type { MCPAppBridgeOptions } from './MCPAppBridge';
 import { getHostContext } from './mcpAppTheme';
+import { LIBRECHAT_MCP_HOST_NAME, LIBRECHAT_MCP_HOST_VERSION } from 'librechat-data-provider';
+
+const MCP_HOST_NAME = LIBRECHAT_MCP_HOST_NAME ?? 'LibreChat';
+const MCP_HOST_VERSION = LIBRECHAT_MCP_HOST_VERSION ?? '1.0.0';
 
 type ExtAppBridgeModule = typeof import('@modelcontextprotocol/ext-apps/app-bridge');
 
@@ -18,20 +22,18 @@ export class MCPAppBridgeSDKAdapter {
   private destroyed = false;
   private viewInitialized = false;
   private initialPayloadSent = false;
-  private pendingHostContext:
-    | ReturnType<typeof getHostContext>
-    | null = null;
-  private pendingSandboxResource:
-    | {
-        html: string;
-        csp?: Parameters<
-          import('@modelcontextprotocol/ext-apps/app-bridge').AppBridge['sendSandboxResourceReady']
-        >[0]['csp'];
-        permissions?: Parameters<
-          import('@modelcontextprotocol/ext-apps/app-bridge').AppBridge['sendSandboxResourceReady']
-        >[0]['permissions'];
-      }
-    | null = null;
+  private pendingHostContext: ReturnType<typeof getHostContext> | null = null;
+
+  private pendingSandboxResource: {
+    html: string;
+    csp?: Parameters<
+      import('@modelcontextprotocol/ext-apps/app-bridge').AppBridge['sendSandboxResourceReady']
+    >[0]['csp'];
+    permissions?: Parameters<
+      import('@modelcontextprotocol/ext-apps/app-bridge').AppBridge['sendSandboxResourceReady']
+    >[0]['permissions'];
+  } | null = null;
+
   private appAvailableDisplayModes: Set<'inline' | 'fullscreen' | 'pip'> | null = null;
 
   constructor(options: MCPAppBridgeOptions) {
@@ -56,7 +58,9 @@ export class MCPAppBridgeSDKAdapter {
     const measuredWidth = rect?.width ?? this.iframe.clientWidth;
     return {
       maxHeight:
-        Number.isFinite(measuredHeight) && measuredHeight > 0 ? Math.round(measuredHeight) : undefined,
+        Number.isFinite(measuredHeight) && measuredHeight > 0
+          ? Math.round(measuredHeight)
+          : undefined,
       maxWidth:
         Number.isFinite(measuredWidth) && measuredWidth > 0 ? Math.round(measuredWidth) : undefined,
     };
@@ -82,7 +86,7 @@ export class MCPAppBridgeSDKAdapter {
 
     const bridge = new sdk.AppBridge(
       null,
-      { name: 'LibreChat', version: '1.0.0' },
+      { name: MCP_HOST_NAME, version: MCP_HOST_VERSION },
       {
         openLinks: {},
         serverTools: { listChanged: false },
@@ -107,7 +111,9 @@ export class MCPAppBridgeSDKAdapter {
         };
       } catch (error) {
         if (this.isCancellationError(error)) {
-          void bridge.sendToolCancelled({ reason: error instanceof Error ? error.message : 'cancelled' });
+          void bridge.sendToolCancelled({
+            reason: error instanceof Error ? error.message : 'cancelled',
+          });
         }
         throw error;
       }
@@ -169,8 +175,9 @@ export class MCPAppBridgeSDKAdapter {
 
     bridge.oninitialized = () => {
       this.viewInitialized = true;
-      const appCapabilities = (bridge as unknown as { getAppCapabilities?: () => unknown })
-        .getAppCapabilities?.() as { availableDisplayModes?: string[] } | undefined;
+      const appCapabilities = (
+        bridge as unknown as { getAppCapabilities?: () => unknown }
+      ).getAppCapabilities?.() as { availableDisplayModes?: string[] } | undefined;
       const modes = Array.isArray(appCapabilities?.availableDisplayModes)
         ? appCapabilities.availableDisplayModes
             .map((mode) => this.normalizeMode(mode))
@@ -242,7 +249,9 @@ export class MCPAppBridgeSDKAdapter {
     return this.appAvailableDisplayModes.has(mode);
   }
 
-  private resolveDisplayMode(mode: 'inline' | 'fullscreen' | 'pip'): 'inline' | 'fullscreen' | 'pip' {
+  private resolveDisplayMode(
+    mode: 'inline' | 'fullscreen' | 'pip',
+  ): 'inline' | 'fullscreen' | 'pip' {
     if (!this.isHostModeAllowed(mode) || !this.isAppModeAllowed(mode)) {
       return 'inline';
     }

@@ -99,7 +99,11 @@ describe('MCP Apps Controller', () => {
 
       await readMCPResource(req, res);
 
-      expect(mockManager.readResource).toHaveBeenCalledWith('user-1', 'calendar', 'ui://calendar/app');
+      expect(mockManager.readResource).toHaveBeenCalledWith(
+        'user-1',
+        'calendar',
+        'ui://calendar/app',
+      );
       expect(res.json).toHaveBeenCalledTimes(1);
 
       const payload = res.json.mock.calls[0][0];
@@ -110,7 +114,9 @@ describe('MCP Apps Controller', () => {
       expect(uiMeta.csp.connectDomains).toEqual(
         expect.arrayContaining(['https://api.allowed.com', 'https://api.keep.com']),
       );
-      expect(uiMeta.csp.connectDomains).not.toEqual(expect.arrayContaining(['https://api.blocked.com']));
+      expect(uiMeta.csp.connectDomains).not.toEqual(
+        expect.arrayContaining(['https://api.blocked.com']),
+      );
       expect(uiMeta.csp.resourceDomains).not.toEqual(
         expect.arrayContaining(['https://assets.blocked.com']),
       );
@@ -120,6 +126,31 @@ describe('MCP Apps Controller', () => {
       expect(uiMeta.csp.baseUriDomains).not.toEqual(
         expect.arrayContaining(['https://base.danger.example']),
       );
+    });
+
+    it('returns 400 when uri does not use ui:// scheme', async () => {
+      getAppConfig.mockResolvedValue({
+        mcpSettings: {
+          apps: true,
+        },
+      });
+
+      const mockManager = {
+        readResource: jest.fn(),
+      };
+      getMCPManager.mockReturnValue(mockManager);
+
+      const req = {
+        user: { id: 'user-1', role: 'USER' },
+        body: { serverName: 'calendar', uri: 'config://calendar/secret' },
+      };
+      const res = createResponse();
+
+      await readMCPResource(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: 'uri must use the ui:// scheme' });
+      expect(mockManager.readResource).not.toHaveBeenCalled();
     });
   });
 
@@ -157,6 +188,17 @@ describe('MCP Apps Controller', () => {
   });
 
   describe('serveMCPSandbox', () => {
+    it('returns 401 when user is missing', async () => {
+      const req = {};
+      const res = createResponse();
+
+      await serveMCPSandbox(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(res.sendFile).not.toHaveBeenCalled();
+    });
+
     it('returns 403 when apps are disabled', async () => {
       getAppConfig.mockResolvedValue({
         mcpSettings: {

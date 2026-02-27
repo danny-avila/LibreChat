@@ -180,6 +180,36 @@ describe('MCPAppBridge protocol compatibility', () => {
     );
   });
 
+  it('rejects ui/message payloads when role is not user', () => {
+    const onMessage = jest.fn();
+    const { bridge, postMessage, contentWindow } = createBridge({
+      onMessage,
+    });
+    bridge.start();
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: contentWindow,
+        data: {
+          jsonrpc: '2.0',
+          id: 11,
+          method: 'ui/message',
+          params: {
+            role: 'assistant',
+            content: 'invalid role',
+          },
+        },
+      }),
+    );
+
+    expect(onMessage).not.toHaveBeenCalled();
+    const errorResponse = postMessage.mock.calls.find((call) => call[0]?.id === 11)?.[0];
+    expect(errorResponse.error).toEqual({
+      code: -32602,
+      message: 'ui/message role must be "user"',
+    });
+  });
+
   it('forces inline display mode when fullscreen is disabled', () => {
     const onDisplayModeRequest = jest.fn().mockReturnValue('fullscreen');
     const { bridge, postMessage, contentWindow } = createBridge({
@@ -305,5 +335,9 @@ describe('MCPAppBridge protocol compatibility', () => {
       .find((msg) => msg?.method === 'ui/notifications/tool-cancelled');
     expect(toolCancelled).toBeDefined();
     expect(toolCancelled.params).toEqual({ reason: 'request cancelled' });
+    const rpcError = postMessage.mock.calls
+      .map((call) => call[0])
+      .find((msg) => msg?.id === 10 && msg?.error);
+    expect(rpcError).toBeUndefined();
   });
 });

@@ -57,9 +57,11 @@ function hasPermission(permission?: PermissionGrant): boolean {
  */
 export function normalizePermissions(
   permissions?: McpUiResourcePermissions,
-): Partial<
-  Record<'camera' | 'microphone' | 'geolocation' | 'clipboardWrite', Record<string, never>>
-> | undefined {
+):
+  | Partial<
+      Record<'camera' | 'microphone' | 'geolocation' | 'clipboardWrite', Record<string, never>>
+    >
+  | undefined {
   const normalized: Partial<
     Record<'camera' | 'microphone' | 'geolocation' | 'clipboardWrite', Record<string, never>>
   > = {};
@@ -130,10 +132,4 @@ export async function callMCPAppTool(
 ): Promise<unknown> {
   const { request } = await import('librechat-data-provider');
   return request.post('/api/mcp/app-tool-call', { serverName, toolName, arguments: args });
-}
-
-/** Generate a unique JSON-RPC request ID */
-let rpcIdCounter = 0;
-export function nextRpcId(): number {
-  return ++rpcIdCounter;
 }

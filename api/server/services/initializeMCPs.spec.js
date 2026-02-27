@@ -81,6 +81,7 @@ describe('initializeMCPs', () => {
       expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
         expect.anything(), // mongoose
         ['localhost'],
+        true,
       );
     });
 
@@ -93,7 +94,11 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs();
 
-      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(expect.anything(), allowedDomains);
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
+        expect.anything(),
+        allowedDomains,
+        true,
+      );
     });
 
     it('should handle undefined mcpSettings gracefully', async () => {
@@ -104,7 +109,7 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs();
 
-      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(expect.anything(), undefined);
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(expect.anything(), undefined, true);
     });
 
     it('should throw and log error if MCPServersRegistry initialization fails', async () => {
@@ -132,7 +137,7 @@ describe('initializeMCPs', () => {
 
       // MCPManager should be created with empty object when no configured servers
       expect(mockCreateMCPManager).toHaveBeenCalledTimes(1);
-      expect(mockCreateMCPManager).toHaveBeenCalledWith({});
+      expect(mockCreateMCPManager).toHaveBeenCalledWith({}, { enableApps: true });
     });
 
     it('should initialize MCPManager with configured servers when provided', async () => {
@@ -144,7 +149,7 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs();
 
-      expect(mockCreateMCPManager).toHaveBeenCalledWith(mcpServers);
+      expect(mockCreateMCPManager).toHaveBeenCalledWith(mcpServers, { enableApps: true });
     });
 
     it('should throw and log error if MCPManager initialization fails', async () => {
@@ -157,6 +162,22 @@ describe('initializeMCPs', () => {
         '[MCP] Failed to initialize MCPManager:',
         managerError,
       );
+    });
+
+    it('threads enableApps=false when mcpSettings.apps is disabled', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        mcpSettings: { apps: false },
+      });
+
+      await initializeMCPs();
+
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
+        expect.anything(),
+        undefined,
+        false,
+      );
+      expect(mockCreateMCPManager).toHaveBeenCalledWith({}, { enableApps: false });
     });
   });
 
@@ -275,7 +296,7 @@ describe('initializeMCPs', () => {
       expect(mockCreateMCPManager).toHaveBeenCalledTimes(1);
 
       // Verify manager was created with empty config (not null/undefined)
-      expect(mockCreateMCPManager).toHaveBeenCalledWith({});
+      expect(mockCreateMCPManager).toHaveBeenCalledWith({}, { enableApps: true });
     });
   });
 });

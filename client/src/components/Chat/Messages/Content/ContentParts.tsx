@@ -63,12 +63,16 @@ const ContentParts = memo(function ContentParts({
       if (part.type === ContentTypes.TOOL_CALL) {
         const toolCallId = (part[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id;
         if (toolCallId != null && toolCallId.length > 0) {
-          return `part-${messageId}-tool-${toolCallId}`;
+          return `part-${messageId}-tool-${toolCallId}-${idx}`;
         }
       }
 
-      if (part.type === ContentTypes.TEXT && part.tool_call_ids != null && part.tool_call_ids.length > 0) {
-        return `part-${messageId}-tool-links-${part.tool_call_ids.join(',')}`;
+      if (
+        part.type === ContentTypes.TEXT &&
+        part.tool_call_ids != null &&
+        part.tool_call_ids.length > 0
+      ) {
+        return `part-${messageId}-tool-links-${part.tool_call_ids.join(',')}-${idx}`;
       }
 
       return `part-${messageId}-${idx}`;

@@ -19,6 +19,7 @@ export class MCPServerInspector {
     private readonly config: t.ParsedServerConfig,
     private connection: MCPConnection | undefined,
     private readonly useSSRFProtection: boolean = false,
+    private readonly enableApps: boolean = true,
   ) {}
 
   /**
@@ -35,6 +36,7 @@ export class MCPServerInspector {
     rawConfig: t.MCPOptions,
     connection?: MCPConnection,
     allowedDomains?: string[] | null,
+    enableApps: boolean = true,
   ): Promise<t.ParsedServerConfig> {
     // Validate domain against allowlist BEFORE attempting connection
     const isDomainAllowed = await isMCPDomainAllowed(rawConfig, allowedDomains);
@@ -45,7 +47,13 @@ export class MCPServerInspector {
 
     const useSSRFProtection = !Array.isArray(allowedDomains) || allowedDomains.length === 0;
     const start = Date.now();
-    const inspector = new MCPServerInspector(serverName, rawConfig, connection, useSSRFProtection);
+    const inspector = new MCPServerInspector(
+      serverName,
+      rawConfig,
+      connection,
+      useSSRFProtection,
+      enableApps,
+    );
     await inspector.inspectServer();
     inspector.config.initDuration = Date.now() - start;
     return inspector.config;
@@ -62,6 +70,7 @@ export class MCPServerInspector {
           serverName: this.serverName,
           serverConfig: this.config,
           useSSRFProtection: this.useSSRFProtection,
+          enableApps: this.enableApps,
         });
       }
 
@@ -138,9 +147,7 @@ export class MCPServerInspector {
           description: tool.description,
           parameters: tool.inputSchema as JsonSchemaType,
         },
-        ...(tool._meta != null
-          ? { _meta: tool._meta as t.LCFunctionTool['_meta'] }
-          : {}),
+        ...(tool._meta != null ? { _meta: tool._meta as t.LCFunctionTool['_meta'] } : {}),
       };
 
       // Always store in allTools for bridge access

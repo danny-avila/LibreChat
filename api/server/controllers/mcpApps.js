@@ -75,7 +75,9 @@ function isBlockedDomain(candidate, blockedDomains) {
 }
 
 function mergeDomains(first = [], second = []) {
-  return Array.from(new Set([...(Array.isArray(first) ? first : []), ...(Array.isArray(second) ? second : [])]));
+  return Array.from(
+    new Set([...(Array.isArray(first) ? first : []), ...(Array.isArray(second) ? second : [])]),
+  );
 }
 
 function filterBlockedDomains(domains, blockedDomains) {
@@ -128,7 +130,10 @@ function applyAppSettingsToResult(result, appSettings) {
     }
 
     const nextContent = { ...content };
-    const meta = nextContent._meta != null && typeof nextContent._meta === 'object' ? { ...nextContent._meta } : {};
+    const meta =
+      nextContent._meta != null && typeof nextContent._meta === 'object'
+        ? { ...nextContent._meta }
+        : {};
     const uiMeta = meta.ui != null && typeof meta.ui === 'object' ? { ...meta.ui } : {};
     const csp = uiMeta.csp != null && typeof uiMeta.csp === 'object' ? { ...uiMeta.csp } : {};
 
@@ -144,7 +149,8 @@ function applyAppSettingsToResult(result, appSettings) {
 
     uiMeta.csp = csp;
     uiMeta.maxHeight = appSettings.maxHeight ?? DEFAULT_MCP_APP_SETTINGS.maxHeight;
-    uiMeta.allowFullscreen = appSettings.allowFullscreen ?? DEFAULT_MCP_APP_SETTINGS.allowFullscreen;
+    uiMeta.allowFullscreen =
+      appSettings.allowFullscreen ?? DEFAULT_MCP_APP_SETTINGS.allowFullscreen;
     meta.ui = uiMeta;
     nextContent._meta = meta;
 
@@ -175,6 +181,9 @@ const readMCPResource = async (req, res) => {
     const { serverName, uri } = req.body;
     if (!serverName || !uri) {
       return res.status(400).json({ error: 'serverName and uri are required' });
+    }
+    if (typeof uri !== 'string' || !uri.startsWith('ui://')) {
+      return res.status(400).json({ error: 'uri must use the ui:// scheme' });
     }
 
     const mcpManager = getMCPManager();
@@ -217,7 +226,9 @@ const appToolCall = async (req, res) => {
     const toolData = allTools?.[toolKey];
 
     if (!toolData) {
-      return res.status(404).json({ error: `Tool "${toolName}" not found on server "${serverName}"` });
+      return res
+        .status(404)
+        .json({ error: `Tool "${toolName}" not found on server "${serverName}"` });
     }
 
     const visibility = Array.isArray(toolData._meta?.ui?.visibility)
@@ -243,6 +254,10 @@ const appToolCall = async (req, res) => {
  */
 const serveMCPSandbox = async (req, res) => {
   try {
+    if (!req.user?.id) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const { appsEnabled } = await getMCPAppsConfig(req.user?.role);
     if (!appsEnabled) {
       return res.status(403).json({ error: 'MCP Apps are disabled' });
@@ -260,9 +275,10 @@ const serveMCPSandbox = async (req, res) => {
     return res.sendFile(sandboxPath, (error) => {
       if (error) {
         logger.error('[serveMCPSandbox] Error:', error);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Failed to load MCP sandbox' });
+        if (res.headersSent) {
+          return;
         }
+        res.status(500).json({ error: 'Failed to load MCP sandbox' });
       }
     });
   } catch (error) {

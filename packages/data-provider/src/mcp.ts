@@ -2,6 +2,14 @@ import { z } from 'zod';
 import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
+export const MCP_UI_EXTENSION_ID = 'io.modelcontextprotocol/ui';
+export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app';
+export const MCP_APPS_PROTOCOL_VERSION = '2026-01-26';
+export const LIBRECHAT_MCP_HOST_NAME = 'LibreChat';
+export const LIBRECHAT_MCP_HOST_VERSION = '1.0.0';
+export const LIBRECHAT_MCP_CLIENT_NAME = '@librechat/api-client';
+export const LIBRECHAT_MCP_CLIENT_VERSION = '1.2.3';
+
 const BaseOptionsSchema = z.object({
   /** Display name for the MCP server - only letters, numbers, and spaces allowed */
   title: z
@@ -19,6 +27,8 @@ const BaseOptionsSchema = z.object({
   startup: z.boolean().optional(),
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
+  /** Timeout (ms) for the long-lived SSE GET stream body before undici aborts it. Default: 300_000 (5 min). */
+  sseReadTimeout: z.number().positive().optional(),
   initTimeout: z.number().optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
@@ -212,6 +222,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
   schema.omit({
     startup: true,
     timeout: true,
+    sseReadTimeout: true,
     initTimeout: true,
     chatMenu: true,
     serverInstructions: true,

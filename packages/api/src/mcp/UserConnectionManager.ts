@@ -17,6 +17,7 @@ import { mcpConfig } from './mcpConfig';
 export abstract class UserConnectionManager {
   // Connections shared by all users.
   public appConnections: ConnectionsRepository | null = null;
+  protected enableApps = true;
   // Connections per userId -> serverName -> connection
   protected userConnections: Map<string, Map<string, MCPConnection>> = new Map();
   /** Last activity timestamp for users (not per server) */
@@ -118,6 +119,7 @@ export abstract class UserConnectionManager {
           serverName: serverName,
           serverConfig: config,
           useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
+          enableApps: this.enableApps,
         },
         {
           useOAuth: true,

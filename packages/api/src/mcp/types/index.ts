@@ -16,7 +16,12 @@ import type {
   TextContent,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { SearchResultData, UIResource, MCPAppArtifact, TPlugin } from 'librechat-data-provider';
+import type {
+  SearchResultData,
+  UIResource,
+  MCPAppArtifact,
+  TPlugin,
+} from 'librechat-data-provider';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
 import type { FlowStateManager } from '~/flow/manager';
@@ -175,6 +180,7 @@ export interface BasicConnectionOptions {
   serverName: string;
   serverConfig: MCPOptions;
   useSSRFProtection?: boolean;
+  enableApps?: boolean;
 }
 
 export interface OAuthConnectionOptions {

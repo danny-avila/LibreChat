@@ -15,16 +15,25 @@
     'use strict';
 
     let innerFrame = null;
+    let innerFrameBlobUrl = null;
     const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
     const parentOrigin = (() => {
+      let origin = '*';
       try {
         if (document.referrer) {
-          return new URL(document.referrer).origin;
+          origin = new URL(document.referrer).origin;
+        } else {
+          console.warn(
+            '[MCP Sandbox] document.referrer is empty; using wildcard parent origin "*".'
+          );
         }
-      } catch {
-        // Fall back to wildcard when referrer is unavailable.
+      } catch (error) {
+        console.warn(
+          '[MCP Sandbox] Failed to parse document.referrer; using wildcard parent origin "*".',
+          error
+        );
       }
-      return '*';
+      return origin;
     })();
     const SANDBOX_BASE_STYLE =
       '<style data-librechat-mcp-base-style>' +
@@ -84,6 +93,10 @@
       if (innerFrame) {
         innerFrame.remove();
       }
+      if (innerFrameBlobUrl) {
+        URL.revokeObjectURL(innerFrameBlobUrl);
+        innerFrameBlobUrl = null;
+      }
 
       innerFrame = document.createElement('iframe');
       innerFrame.sandbox = 'allow-scripts';
@@ -96,7 +109,8 @@
       const fullHtml = injectIntoHead(html, cspMeta + SANDBOX_BASE_STYLE);
 
       const blob = new Blob([fullHtml], { type: 'text/html' });
-      innerFrame.src = URL.createObjectURL(blob);
+      innerFrameBlobUrl = URL.createObjectURL(blob);
+      innerFrame.src = innerFrameBlobUrl;
 
       innerFrame.style.width = '100%';
       innerFrame.style.height = '100%';
@@ -105,6 +119,13 @@
 
       document.body.appendChild(innerFrame);
     }
+
+    window.addEventListener('beforeunload', () => {
+      if (innerFrameBlobUrl) {
+        URL.revokeObjectURL(innerFrameBlobUrl);
+        innerFrameBlobUrl = null;
+      }
+    });
 
     function injectIntoHead(html, injection) {
       if (typeof html !== 'string' || !html.length) {

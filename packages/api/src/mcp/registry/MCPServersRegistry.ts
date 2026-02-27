@@ -24,6 +24,7 @@ export class MCPServersRegistry {
   private readonly dbConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly allowedDomains?: string[] | null;
+  private readonly enableApps: boolean;
   private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
   private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
   private readonly pendingGetAllPromises = new Map<
@@ -31,10 +32,15 @@ export class MCPServersRegistry {
     Promise<Record<string, t.ParsedServerConfig>>
   >();
 
-  constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
+  constructor(
+    mongoose: typeof import('mongoose'),
+    allowedDomains?: string[] | null,
+    enableApps: boolean = true,
+  ) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create('App', false);
     this.allowedDomains = allowedDomains;
+    this.enableApps = enableApps;
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
@@ -53,6 +59,7 @@ export class MCPServersRegistry {
   public static createInstance(
     mongoose: typeof import('mongoose'),
     allowedDomains?: string[] | null,
+    enableApps: boolean = true,
   ): MCPServersRegistry {
     if (!mongoose) {
       throw new Error(
@@ -65,7 +72,7 @@ export class MCPServersRegistry {
       return MCPServersRegistry.instance;
     }
     logger.info('[MCPServersRegistry] Creating new instance');
-    MCPServersRegistry.instance = new MCPServersRegistry(mongoose, allowedDomains);
+    MCPServersRegistry.instance = new MCPServersRegistry(mongoose, allowedDomains, enableApps);
     return MCPServersRegistry.instance;
   }
 
@@ -149,6 +156,7 @@ export class MCPServersRegistry {
     config: t.MCPOptions,
     storageLocation: 'CACHE' | 'DB',
     userId?: string,
+    enableApps?: boolean,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
     let parsedConfig: t.ParsedServerConfig;
@@ -158,6 +166,7 @@ export class MCPServersRegistry {
         config,
         undefined,
         this.allowedDomains,
+        enableApps ?? this.enableApps,
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -175,6 +184,7 @@ export class MCPServersRegistry {
     config: t.MCPOptions,
     storageLocation: 'CACHE' | 'DB',
     userId?: string,
+    enableApps?: boolean,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
 
@@ -200,6 +210,7 @@ export class MCPServersRegistry {
         configForInspection,
         undefined,
         this.allowedDomains,
+        enableApps ?? this.enableApps,
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);

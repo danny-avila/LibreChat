@@ -5,6 +5,7 @@ import { createMCPAppBridge, type MCPAppBridgeLike } from './createMCPAppBridge'
 import type { McpUiResourceCsp, McpUiResourcePermissions } from './mcpAppUtils';
 import { normalizePermissions } from './mcpAppUtils';
 import { mainTextareaId } from '~/common';
+import { useLocalize } from '~/hooks';
 import { MessagesViewContext } from '~/Providers/MessagesViewContext';
 
 interface ResourceMeta {
@@ -141,7 +142,7 @@ export default function MCPAppContainer({
   }, []);
   const bridgeRef = useRef<MCPAppBridgeLike | null>(null);
   const [inlineIframeHeight, setInlineIframeHeight] = useState(0);
-  const [inlineRect, setInlineRect] = useState({ top: 0, left: 0, width: 0 });
+  const [inlineWidth, setInlineWidth] = useState(0);
   const [inlineViewportTop, setInlineViewportTop] = useState(0);
   const [inlineViewportLeft, setInlineViewportLeft] = useState(0);
   const [scrollViewportTop, setScrollViewportTop] = useState(0);
@@ -150,11 +151,13 @@ export default function MCPAppContainer({
   const [revealed, setRevealed] = useState(false);
   const [displayMode, setDisplayMode] = useState<'inline' | 'fullscreen'>('inline');
   const [sandboxSrc, setSandboxSrc] = useState<string>('about:blank');
+  const [sandboxBootstrapError, setSandboxBootstrapError] = useState<string | null>(null);
   const displayModeRef = useRef<'inline' | 'fullscreen'>('inline');
   const sandboxReadyRef = useRef(false);
 
   const { theme: themeMode } = useContext(ThemeContext);
   const theme = isDark(themeMode) ? 'dark' : 'light';
+  const localize = useLocalize();
   const askRef = useRef(ask);
   askRef.current = ask;
   const setMcpAppModelContextRef = useRef(setMcpAppModelContext);
@@ -199,11 +202,14 @@ export default function MCPAppContainer({
         if (!active) {
           return;
         }
+        setSandboxBootstrapError(null);
         setSandboxSrc(buildOpaqueSandboxSrc(htmlTemplate));
       } catch (error) {
         console.error('[MCPAppContainer] Failed to bootstrap opaque sandbox source:', error);
         if (active) {
-          setSandboxSrc(SANDBOX_ENDPOINT);
+          setSandboxSrc('about:blank');
+          setSandboxBootstrapError('Failed to load the secure MCP app sandbox.');
+          setDisplayMode('inline');
         }
       }
     })();
@@ -327,16 +333,18 @@ export default function MCPAppContainer({
     if (bridgeRef.current) {
       bridgeRef.current.sendContextUpdate(theme, displayMode);
     }
-  }, [theme, displayMode, inlineIframeHeight, inlineRect.width, resourceMeta]);
+  }, [theme, displayMode, inlineIframeHeight, inlineWidth]);
+
+  const allowFullscreen = isFullscreenAllowed(resourceMeta?.ui?.allowFullscreen);
 
   useEffect(() => {
     if (displayMode !== 'fullscreen') {
       return;
     }
-    if (!isFullscreenAllowed(resourceMeta?.ui?.allowFullscreen)) {
+    if (!allowFullscreen) {
       setDisplayMode('inline');
     }
-  }, [displayMode, resourceMeta]);
+  }, [allowFullscreen, displayMode]);
 
   useEffect(() => {
     if (displayMode !== 'fullscreen') {
@@ -386,11 +394,7 @@ export default function MCPAppContainer({
       const rect = inlineAnchorNode.getBoundingClientRect();
       setInlineViewportTop(rect.top);
       setInlineViewportLeft(rect.left);
-      setInlineRect({
-        top: rect.top + window.scrollY,
-        left: rect.left + window.scrollX,
-        width: rect.width,
-      });
+      setInlineWidth(rect.width);
 
       const scrollViewport = resolveScrollViewport();
       if (scrollViewport) {
@@ -429,12 +433,10 @@ export default function MCPAppContainer({
     const rect = inlineAnchorNode.getBoundingClientRect();
     setInlineViewportTop(rect.top);
     setInlineViewportLeft(rect.left);
-    setInlineRect({
-      top: rect.top + window.scrollY,
-      left: rect.left + window.scrollX,
-      width: rect.width,
-    });
-    const scrollContainer = inlineAnchorNode.closest('.scrollbar-gutter-stable') as HTMLElement | null;
+    setInlineWidth(rect.width);
+    const scrollContainer = inlineAnchorNode.closest(
+      '.scrollbar-gutter-stable',
+    ) as HTMLElement | null;
     if (scrollContainer) {
       const scrollRect = scrollContainer.getBoundingClientRect();
       setScrollViewportTop(scrollRect.top);
@@ -479,6 +481,20 @@ export default function MCPAppContainer({
 
   const showBorder = resourceMeta?.ui?.prefersBorder === true;
 
+  if (sandboxBootstrapError) {
+    return (
+      <div
+        className={`mcp-app-container my-2 ${showBorder ? 'rounded-lg border border-border-medium' : ''}`}
+        style={{ maxWidth: '100%', overflow: 'hidden' }}
+      >
+        <div className="rounded-md border border-border-medium bg-surface-primary px-4 py-3 text-sm">
+          <div className="font-medium text-text-primary">{localize('com_ui_mcp_init_failed')}</div>
+          <div className="mt-1 text-text-secondary">{sandboxBootstrapError}</div>
+        </div>
+      </div>
+    );
+  }
+
   const fullscreen = displayMode === 'fullscreen';
   const inlineWrapperBottom = inlineViewportTop + inlineIframeHeight;
   // Match native message behavior: content can scroll behind the header area.
@@ -501,7 +517,7 @@ export default function MCPAppContainer({
         position: 'fixed',
         top: inlineViewportTop,
         left: inlineViewportLeft,
-        width: inlineRect.width,
+        width: inlineWidth,
         height: inlineIframeHeight,
         zIndex: 0,
         overflow: 'hidden',
@@ -551,7 +567,9 @@ export default function MCPAppContainer({
               >
                 {fullscreen && (
                   <>
-                    <span className="text-sm font-medium text-text-primary">MCP App</span>
+                    <span className="text-sm font-medium text-text-primary">
+                      {localize('com_ui_mcp_server')}
+                    </span>
                     <button
                       onClick={() => setDisplayMode('inline')}
                       className="rounded-md p-1 text-text-secondary hover:bg-surface-hover hover:text-text-primary"
