@@ -1,7 +1,6 @@
 import { Schema } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
 import type { ISystemGrant } from '~/types';
-import { normalizePrincipalId } from '~/utils/principal';
 
 const systemGrantSchema = new Schema<ISystemGrant>(
   {
@@ -49,17 +48,12 @@ const systemGrantSchema = new Schema<ISystemGrant>(
   { timestamps: true },
 );
 
-/**
- * Normalize principalId to ObjectId for USER/GROUP principals before save,
- * ensuring consistent type regardless of how the document was constructed.
- * ROLE principals always use string IDs (role names).
+/*
+ * principalId normalization (string → ObjectId for USER/GROUP) is handled
+ * explicitly by grantCapability — the only sanctioned write path.
+ * All writes MUST go through grantCapability; do not use Model.create()
+ * or save() directly, as there is no schema-level normalization hook.
  */
-systemGrantSchema.pre('save', function () {
-  this.principalId = normalizePrincipalId(
-    this.principalId as string | import('mongoose').Types.ObjectId,
-    this.principalType as PrincipalType,
-  );
-});
 
 systemGrantSchema.index(
   { principalType: 1, principalId: 1, capability: 1, tenantId: 1 },
