@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import type { ChatFormValues } from '~/common';
 import {
   useSearchEnabled,
   useAssistantsMap,
@@ -13,6 +15,7 @@ import {
   AgentsMapContext,
   SetConvoProvider,
   FileMapContext,
+  ChatFormProvider,
 } from '~/Providers';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { UnifiedSidebar } from '~/components/UnifiedSidebar';
@@ -54,39 +57,45 @@ export default function Root() {
     logout('/login?redirect=false');
   };
 
+  const methods = useForm<ChatFormValues>({
+    defaultValues: { text: '' },
+  });
+
   if (!isAuthenticated) {
     return null;
   }
 
   return (
-    <SetConvoProvider>
-      <FileMapContext.Provider value={fileMap}>
-        <AssistantsMapContext.Provider value={assistantsMap}>
-          <AgentsMapContext.Provider value={agentsMap}>
-            <PromptGroupsProvider>
-              <Banner onHeightChange={setBannerHeight} />
-              <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
-                <div className="relative z-0 flex h-full w-full overflow-hidden">
-                  <UnifiedSidebar />
-                  <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
-                    <Outlet />
+    <ChatFormProvider {...methods}>
+      <SetConvoProvider>
+        <FileMapContext.Provider value={fileMap}>
+          <AssistantsMapContext.Provider value={assistantsMap}>
+            <AgentsMapContext.Provider value={agentsMap}>
+              <PromptGroupsProvider>
+                <Banner onHeightChange={setBannerHeight} />
+                <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
+                  <div className="relative z-0 flex h-full w-full overflow-hidden">
+                    <UnifiedSidebar />
+                    <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
+                      <Outlet />
+                    </div>
                   </div>
                 </div>
-              </div>
-            </PromptGroupsProvider>
-          </AgentsMapContext.Provider>
-          {config?.interface?.termsOfService?.modalAcceptance === true && (
-            <TermsAndConditionsModal
-              open={showTerms}
-              onOpenChange={setShowTerms}
-              onAccept={handleAcceptTerms}
-              onDecline={handleDeclineTerms}
-              title={config.interface.termsOfService.modalTitle}
-              modalContent={config.interface.termsOfService.modalContent}
-            />
-          )}
-        </AssistantsMapContext.Provider>
-      </FileMapContext.Provider>
-    </SetConvoProvider>
+              </PromptGroupsProvider>
+            </AgentsMapContext.Provider>
+            {config?.interface?.termsOfService?.modalAcceptance === true && (
+              <TermsAndConditionsModal
+                open={showTerms}
+                onOpenChange={setShowTerms}
+                onAccept={handleAcceptTerms}
+                onDecline={handleDeclineTerms}
+                title={config.interface.termsOfService.modalTitle}
+                modalContent={config.interface.termsOfService.modalContent}
+              />
+            )}
+          </AssistantsMapContext.Provider>
+        </FileMapContext.Provider>
+      </SetConvoProvider>
+    </ChatFormProvider>
   );
 }

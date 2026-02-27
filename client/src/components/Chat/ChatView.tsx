@@ -1,12 +1,10 @@
 import { memo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import type { ChatFormValues } from '~/common';
-import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
+import { ChatContext, AddedChatContext, useFileMapContext } from '~/Providers';
 import { useAddedResponse, useResumeOnLoad, useAdaptiveSSE, useChatHelpers } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
@@ -56,10 +54,6 @@ function ChatView({ index = 0 }: { index?: number }) {
   // Wait for messages to load before resuming to avoid race condition
   useResumeOnLoad(conversationId, chatHelpers.getMessages, index, !isLoading);
 
-  const methods = useForm<ChatFormValues>({
-    defaultValues: { text: '' },
-  });
-
   let content: JSX.Element | null | undefined;
   const isLandingPage =
     (!messagesTree || messagesTree.length === 0) &&
@@ -77,39 +71,37 @@ function ChatView({ index = 0 }: { index?: number }) {
   }
 
   return (
-    <ChatFormProvider {...methods}>
-      <ChatContext.Provider value={chatHelpers}>
-        <AddedChatContext.Provider value={addedChatHelpers}>
-          <Presentation>
-            <div className="relative flex h-full w-full flex-col">
-              {!isLoading && <Header />}
-              <>
+    <ChatContext.Provider value={chatHelpers}>
+      <AddedChatContext.Provider value={addedChatHelpers}>
+        <Presentation>
+          <div className="relative flex h-full w-full flex-col">
+            {!isLoading && <Header />}
+            <>
+              <div
+                className={cn(
+                  'flex flex-col',
+                  isLandingPage
+                    ? 'flex-1 items-center justify-end sm:justify-center'
+                    : 'h-full overflow-y-auto',
+                )}
+              >
+                {content}
                 <div
                   className={cn(
-                    'flex flex-col',
-                    isLandingPage
-                      ? 'flex-1 items-center justify-end sm:justify-center'
-                      : 'h-full overflow-y-auto',
+                    'w-full',
+                    isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                   )}
                 >
-                  {content}
-                  <div
-                    className={cn(
-                      'w-full',
-                      isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
-                    )}
-                  >
-                    <ChatForm index={index} />
-                    {isLandingPage ? <ConversationStarters /> : <Footer />}
-                  </div>
+                  <ChatForm index={index} />
+                  {isLandingPage ? <ConversationStarters /> : <Footer />}
                 </div>
-                {isLandingPage && <Footer />}
-              </>
-            </div>
-          </Presentation>
-        </AddedChatContext.Provider>
-      </ChatContext.Provider>
-    </ChatFormProvider>
+              </div>
+              {isLandingPage && <Footer />}
+            </>
+          </div>
+        </Presentation>
+      </AddedChatContext.Provider>
+    </ChatContext.Provider>
   );
 }
 

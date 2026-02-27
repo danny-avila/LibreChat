@@ -1,4 +1,4 @@
-import { memo, lazy, Suspense } from 'react';
+import { memo, lazy, Suspense, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
@@ -19,7 +19,6 @@ function CollapsedBar({
 }) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
-  const { user } = useAuthContext();
   const { newConversation: newConvo } = useNewConvo();
   const { conversation } = store.useCreateConversationAtom(0);
 
@@ -87,15 +86,21 @@ function CollapsedBar({
         ))}
       </div>
 
-      <div className="mt-auto flex flex-col items-center pt-2">
+      <div className="mt-auto flex w-full flex-col items-center px-1 pt-2">
         <Suspense fallback={<Skeleton className="h-8 w-8 rounded-full" />}>
-          <div className="collapsed-account-settings">
-            <AccountSettings />
-          </div>
+          <CollapsedAccountSettings />
         </Suspense>
       </div>
     </aside>
   );
 }
+
+const CollapsedAccountSettings = memo(() => (
+  <div className="flex w-full justify-center [&_.mt-text-sm]:mt-0 [&_.mt-text-sm]:w-auto [&_.mt-text-sm]:gap-0 [&_.mt-text-sm]:p-1.5 [&_.mt-text-sm_div:not(:first-child)]:hidden">
+    <AccountSettings />
+  </div>
+));
+
+CollapsedAccountSettings.displayName = 'CollapsedAccountSettings';
 
 export default memo(CollapsedBar);

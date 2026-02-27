@@ -11,7 +11,7 @@ import {
   useLocalStorage,
   useNavScrolling,
 } from '~/hooks';
-import { useConversationsInfiniteQuery } from '~/data-provider';
+import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
 import store from '~/store';
 
@@ -20,6 +20,7 @@ const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'))
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
   const { isAuthenticated } = useAuthContext();
+  useTitleGeneration(isAuthenticated);
 
   const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
   const [showLoading, setShowLoading] = useState(false);
