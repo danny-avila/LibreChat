@@ -136,6 +136,10 @@ export const conversationPreset = {
   useResponsesApi: {
     type: Boolean,
   },
+  /** OpenAI Playground stored prompt ID (pmpt_...) */
+  stored_prompt_id: {
+    type: String,
+  },
   /** OpenAI Responses API / Anthropic API / Google API */
   web_search: {
     type: Boolean,

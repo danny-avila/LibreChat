@@ -649,6 +649,68 @@ describe('extractDefaultParams', () => {
   });
 });
 
+describe('Stored Playground Prompt (stored_prompt_id)', () => {
+  it('should inject prompt.id into modelKwargs and force useResponsesApi when stored_prompt_id is set', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: {
+        model: 'gpt-4o',
+        stored_prompt_id: 'pmpt_abc123',
+      } as Partial<t.OpenAIParameters>,
+    });
+
+    expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+    expect(result.llmConfig.modelKwargs).toEqual(
+      expect.objectContaining({ prompt: { id: 'pmpt_abc123' } }),
+    );
+  });
+
+  it('should not set modelKwargs.prompt when stored_prompt_id is absent', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: {
+        model: 'gpt-4o',
+        useResponsesApi: true,
+      } as Partial<t.OpenAIParameters>,
+    });
+
+    expect(result.llmConfig.modelKwargs?.prompt).toBeUndefined();
+  });
+
+  it('should preserve a manually-set useResponsesApi=true alongside stored_prompt_id', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: {
+        model: 'gpt-4o',
+        useResponsesApi: true,
+        stored_prompt_id: 'pmpt_xyz789',
+      } as Partial<t.OpenAIParameters>,
+    });
+
+    expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+    expect(result.llmConfig.modelKwargs).toEqual(
+      expect.objectContaining({ prompt: { id: 'pmpt_xyz789' } }),
+    );
+  });
+
+  it('should not add stored_prompt_id itself to llmConfig or modelKwargs as a raw field', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: {
+        model: 'gpt-4o',
+        stored_prompt_id: 'pmpt_abc123',
+      } as Partial<t.OpenAIParameters>,
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('stored_prompt_id');
+    expect(result.llmConfig.modelKwargs?.stored_prompt_id).toBeUndefined();
+  });
+});
+
 describe('applyDefaultParams', () => {
   it('should apply defaults only when field is undefined', () => {
     const target: Record<string, unknown> = {
