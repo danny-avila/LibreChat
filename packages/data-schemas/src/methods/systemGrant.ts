@@ -212,11 +212,11 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   }
 
   return {
-    hasCapabilityForPrincipals,
     grantCapability,
-    revokeCapability,
-    getCapabilitiesForPrincipal,
     seedSystemGrants,
+    revokeCapability,
+    hasCapabilityForPrincipals,
+    getCapabilitiesForPrincipal,
   };
 }
 
