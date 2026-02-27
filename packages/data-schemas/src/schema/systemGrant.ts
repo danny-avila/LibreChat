@@ -7,6 +7,7 @@ const systemGrantSchema = new Schema<ISystemGrant>(
   {
     principalType: {
       type: String,
+      enum: Object.values(PrincipalType),
       required: true,
     },
     principalId: {
