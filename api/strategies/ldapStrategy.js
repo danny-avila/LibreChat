@@ -52,10 +52,15 @@ if (LDAP_EMAIL) {
 }
 const rejectUnauthorized = isEnabled(LDAP_TLS_REJECT_UNAUTHORIZED);
 const startTLS = isEnabled(LDAP_STARTTLS);
+const ldapUrls = LDAP_URL
+  ? LDAP_URL.split(',')
+      .map((url) => url.trim())
+      .filter((url) => url.length > 0)
+  : LDAP_URL;
 
 const ldapOptions = {
   server: {
-    url: LDAP_URL,
+    url: ldapUrls,
     bindDN: LDAP_BIND_DN,
     bindCredentials: LDAP_BIND_CREDENTIALS,
     searchBase: LDAP_USER_SEARCH_BASE,
@@ -80,7 +85,7 @@ const ldapOptions = {
   passwordField: 'password',
 };
 
-const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
+const verifyLdapUser = async (userinfo, done) => {
   if (!userinfo) {
     return done(null, false, { message: 'Invalid credentials' });
   }
@@ -162,6 +167,23 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     logger.error('[ldapStrategy]', err);
     done(err);
   }
-});
+};
+
+const ldapLogin = new LdapStrategy(ldapOptions, verifyLdapUser);
+const createLdapStrategy = (url) =>
+  new LdapStrategy(
+    {
+      ...ldapOptions,
+      server: {
+        ...ldapOptions.server,
+        url,
+      },
+    },
+    verifyLdapUser,
+  );
+const getLdapUrls = () => (Array.isArray(ldapUrls) ? ldapUrls : []);
+
+ldapLogin.create = createLdapStrategy;
+ldapLogin.getLdapUrls = getLdapUrls;
 
 module.exports = ldapLogin;

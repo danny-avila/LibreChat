@@ -26,10 +26,12 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({}),
 }));
 
-// Mock passport-ldapauth to capture verify callback
+// Mock passport-ldapauth to capture verify callback and options
 let verifyCallback;
+let capturedOptions;
 jest.mock('passport-ldapauth', () => {
   return jest.fn().mockImplementation((options, verify) => {
+    capturedOptions = options;
     verifyCallback = verify; // capture the strategy verify function
     return { name: 'ldap', options, verify };
   });
@@ -51,6 +53,7 @@ const callVerify = (userinfo) =>
 describe('ldapStrategy', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    capturedOptions = undefined;
 
     // minimal required env for ldapStrategy module to export
     process.env.LDAP_URL = 'ldap://example.com';
@@ -100,6 +103,37 @@ describe('ldapStrategy', () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it('passes LDAP_URL as an array when multiple URLs are provided', () => {
+    process.env.LDAP_URL = [
+      'ldap://first.example.com',
+      'ldap://second.example.com',
+      'ldap://third.example.com',
+    ].join(',');
+
+    jest.isolateModules(() => {
+      require('./ldapStrategy');
+    });
+
+    expect(capturedOptions.server.url).toEqual([
+      'ldap://first.example.com',
+      'ldap://second.example.com',
+      'ldap://third.example.com',
+    ]);
+  });
+
+  it('filters empty LDAP_URL entries when provided', () => {
+    process.env.LDAP_URL = 'ldap://first.example.com,, ldap://second.example.com,';
+
+    jest.isolateModules(() => {
+      require('./ldapStrategy');
+    });
+
+    expect(capturedOptions.server.url).toEqual([
+      'ldap://first.example.com',
+      'ldap://second.example.com',
+    ]);
   });
 
   it('blocks login if an existing user has a different provider', async () => {
