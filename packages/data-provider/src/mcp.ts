@@ -19,6 +19,8 @@ const BaseOptionsSchema = z.object({
   startup: z.boolean().optional(),
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
+  /** Timeout (ms) for the long-lived SSE GET stream body before undici aborts it. Default: 300_000 (5 min). */
+  sseReadTimeout: z.number().positive().optional(),
   initTimeout: z.number().optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
@@ -212,6 +214,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
   schema.omit({
     startup: true,
     timeout: true,
+    sseReadTimeout: true,
     initTimeout: true,
     chatMenu: true,
     serverInstructions: true,
