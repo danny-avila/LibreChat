@@ -132,6 +132,10 @@ const startServer = async () => {
     await configureSocialLogins(app);
   }
 
+  /* Per-request capability cache — must be registered before any route that calls hasCapability */
+  const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
+  app.use(capabilityContextMiddleware);
+
   app.use('/oauth', routes.oauth);
   /* API Endpoints */
   app.use('/api/auth', routes.auth);

@@ -1004,7 +1004,7 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const updatedBalance = await Balance.findOne({ user: userId });
     expect(totalInput).toBeGreaterThan(premiumTokenValues['gemini-3.1'].threshold);
-    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
+    expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
   });
 
   test('non-premium models should not be affected by inputTokenCount regardless of prompt size', async () => {

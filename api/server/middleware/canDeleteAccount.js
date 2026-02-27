@@ -1,6 +1,7 @@
 const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { SystemRoles } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 /**
  * Checks if the user can delete their account
@@ -17,12 +18,23 @@ const { SystemRoles } = require('librechat-data-provider');
 const canDeleteAccount = async (req, res, next = () => {}) => {
   const { user } = req;
   const { ALLOW_ACCOUNT_DELETION = true } = process.env;
-  if (user?.role === SystemRoles.ADMIN || isEnabled(ALLOW_ACCOUNT_DELETION)) {
+  if (isEnabled(ALLOW_ACCOUNT_DELETION)) {
     return next();
-  } else {
-    logger.error(`[User] [Delete Account] [User cannot delete account] [User: ${user?.id}]`);
-    return res.status(403).send({ message: 'You do not have permission to delete this account' });
   }
+  let hasManageUsers = false;
+  if (user) {
+    try {
+      hasManageUsers = await hasCapability(user, SystemCapabilities.MANAGE_USERS);
+    } catch (err) {
+      logger.error('[canDeleteAccount] capability check failed, denying:', err);
+    }
+  }
+  if (hasManageUsers) {
+    logger.debug(`[canDeleteAccount] MANAGE_USERS bypass for user ${user.id}`);
+    return next();
+  }
+  logger.error(`[User] [Delete Account] [User cannot delete account] [User: ${user?.id}]`);
+  return res.status(403).send({ message: 'You do not have permission to delete this account' });
 };
 
 module.exports = canDeleteAccount;
