@@ -26,6 +26,7 @@ const auth = require('./auth');
 const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
+const apiRegistry = require('./apiRegistry');
 
 module.exports = {
   mcp,
@@ -55,5 +56,6 @@ module.exports = {
   assistants,
   categories,
   staticRoute,
+  apiRegistry,
   accessPermissions,
 };

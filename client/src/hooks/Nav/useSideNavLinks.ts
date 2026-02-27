@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
-import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote } from 'lucide-react';
+import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote, Globe } from 'lucide-react';
 import {
   Permissions,
   EModelEndpoint,
@@ -11,6 +11,7 @@ import {
 } from 'librechat-data-provider';
 import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
 import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
+import { APIRegistryPanel } from '~/components/SidePanel/APIRegistry';
 import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
@@ -169,6 +170,17 @@ export default function useSideNavLinks({
         icon: MCPIcon,
         id: 'mcp-builder',
         Component: MCPBuilderPanel,
+      });
+    }
+
+    // API Registry Panel (below MCP, above HIDE)
+    if (hasAccessToUseMCPSettings || hasAccessToCreateMCP) {
+      links.push({
+        title: 'com_nav_api_registry',
+        label: '',
+        icon: Globe,
+        id: 'api-registry',
+        Component: APIRegistryPanel,
       });
     }
 

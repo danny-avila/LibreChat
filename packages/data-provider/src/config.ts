@@ -1760,6 +1760,8 @@ export enum Constants {
   mcp_delimiter = '_mcp_',
   /** Prefix for MCP plugins */
   mcp_prefix = 'mcp_',
+  /** Prefix for API Registry plugins */
+  api_registry_prefix = 'api_',
   /** Unique value to indicate all MCP servers. For backend use only. */
   mcp_all = 'sys__all__sys',
   /** Unique value to indicate clearing MCP servers from UI state. For frontend use only. */

@@ -251,6 +251,15 @@ export const mcp = {
 
 export const mcpServer = (serverName: string) => `${BASE_URL}/api/mcp/servers/${serverName}`;
 
+// API Registry endpoints
+export const apiRegistry = {
+  parse: `${BASE_URL}/api/registry/apis/parse`,
+  apis: `${BASE_URL}/api/registry/apis`,
+};
+
+export const apiRegistryServer = (serverName: string) => `${BASE_URL}/api/registry/apis/${serverName}`;
+export const apiRegistryTools = (serverName: string) => `${BASE_URL}/api/registry/apis/${serverName}/tools`;
+
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
 
 export const files = () => `${BASE_URL}/api/files`;
