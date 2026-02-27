@@ -70,6 +70,18 @@ describe('canDeleteAccount', () => {
       expect(res.status).toHaveBeenCalledWith(403);
     });
 
+    it('returns 403 when hasCapability rejects (DB error)', async () => {
+      hasCapability.mockRejectedValue(new Error('DB timeout'));
+      const next = jest.fn();
+      const req = makeReq({ id: 'admin-1', role: 'ADMIN' });
+      const res = makeRes();
+
+      await canDeleteAccount(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+
     it('blocks when user is undefined — does not throw', async () => {
       const next = jest.fn();
       const req = makeReq(undefined);
