@@ -425,6 +425,186 @@ describe('capabilities integration (real MongoDB)', () => {
     });
   });
 
+  describe('ALS edge cases', () => {
+    it('returns correct results when ALS context is missing (background job / child process)', async () => {
+      await methods.seedSystemGrants();
+
+      const { hasCapability } = generateCapabilityCheck({
+        getUserPrincipals: methods.getUserPrincipals,
+        hasCapabilityForPrincipals: methods.hasCapabilityForPrincipals,
+      });
+
+      expect(capabilityStore.getStore()).toBeUndefined();
+
+      const adminResult = await hasCapability(adminUser, SystemCapabilities.ACCESS_ADMIN);
+      const userResult = await hasCapability(regularUser, SystemCapabilities.ACCESS_ADMIN);
+
+      expect(adminResult).toBe(true);
+      expect(userResult).toBe(false);
+    });
+
+    it('every DB call executes (no caching) when ALS context is missing', async () => {
+      await methods.seedSystemGrants();
+      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+      const hasCapabilityForPrincipals = jest.fn(methods.hasCapabilityForPrincipals);
+
+      const { hasCapability } = generateCapabilityCheck({
+        getUserPrincipals,
+        hasCapabilityForPrincipals,
+      });
+
+      expect(capabilityStore.getStore()).toBeUndefined();
+
+      await hasCapability(adminUser, SystemCapabilities.ACCESS_ADMIN);
+      await hasCapability(adminUser, SystemCapabilities.ACCESS_ADMIN);
+      await hasCapability(adminUser, SystemCapabilities.MANAGE_USERS);
+
+      expect(getUserPrincipals).toHaveBeenCalledTimes(3);
+      expect(hasCapabilityForPrincipals).toHaveBeenCalledTimes(3);
+    });
+
+    it('nested capabilityContextMiddleware creates an independent inner context', async () => {
+      await methods.seedSystemGrants();
+      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+
+      const { hasCapability } = generateCapabilityCheck({
+        getUserPrincipals,
+        hasCapabilityForPrincipals: methods.hasCapabilityForPrincipals,
+      });
+
+      await withinRequestContext(async () => {
+        await hasCapability(adminUser, SystemCapabilities.ACCESS_ADMIN);
+
+        await withinRequestContext(async () => {
+          await hasCapability(adminUser, SystemCapabilities.ACCESS_ADMIN);
+        });
+
+        await hasCapability(adminUser, SystemCapabilities.MANAGE_USERS);
+      });
+
+      /**
+       * Outer context: 1 call (ACCESS_ADMIN) — principals cached, MANAGE_USERS reuses them.
+       * Inner context: 1 call (ACCESS_ADMIN) — fresh context, no cache from outer.
+       * Total: 2 getUserPrincipals calls.
+       */
+      expect(getUserPrincipals).toHaveBeenCalledTimes(2);
+    });
+
+    it('store.results.set with undefined store is a no-op (optional chaining safety)', async () => {
+      await methods.seedSystemGrants();
+
+      const { hasCapability } = generateCapabilityCheck({
+        getUserPrincipals: methods.getUserPrincipals,
+        hasCapabilityForPrincipals: methods.hasCapabilityForPrincipals,
+      });
+
+      expect(capabilityStore.getStore()).toBeUndefined();
+
+      await expect(hasCapability(adminUser, SystemCapabilities.ACCESS_ADMIN)).resolves.toBe(true);
+    });
+
+    it('grant change mid-request is invisible due to result caching', async () => {
+      await methods.seedSystemGrants();
+
+      const { hasCapability } = generateCapabilityCheck({
+        getUserPrincipals: methods.getUserPrincipals,
+        hasCapabilityForPrincipals: methods.hasCapabilityForPrincipals,
+      });
+
+      await withinRequestContext(async () => {
+        const before = await hasCapability(regularUser, SystemCapabilities.READ_AGENTS);
+        expect(before).toBe(false);
+
+        await methods.grantCapability({
+          principalType: PrincipalType.USER,
+          principalId: regularUser.id,
+          capability: SystemCapabilities.READ_AGENTS,
+        });
+
+        const after = await hasCapability(regularUser, SystemCapabilities.READ_AGENTS);
+        expect(after).toBe(false);
+      });
+
+      const afterContext = await hasCapability(regularUser, SystemCapabilities.READ_AGENTS);
+      expect(afterContext).toBe(true);
+    });
+
+    it('requireCapability works correctly without ALS context', async () => {
+      await methods.seedSystemGrants();
+
+      const { requireCapability } = generateCapabilityCheck({
+        getUserPrincipals: methods.getUserPrincipals,
+        hasCapabilityForPrincipals: methods.hasCapabilityForPrincipals,
+      });
+
+      expect(capabilityStore.getStore()).toBeUndefined();
+
+      const middleware = requireCapability(SystemCapabilities.ACCESS_ADMIN);
+      const next = jest.fn();
+      const jsonMock = jest.fn();
+      const statusMock = jest.fn().mockReturnValue({ json: jsonMock });
+      const req = { user: { id: adminUser.id, role: adminUser.role } };
+      const res = { status: statusMock };
+
+      await middleware(req as never, res as never, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(statusMock).not.toHaveBeenCalled();
+    });
+
+    it('concurrent contexts with interleaved awaits maintain isolation', async () => {
+      await methods.seedSystemGrants();
+
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: regularUser.id,
+        capability: SystemCapabilities.READ_AGENTS,
+      });
+
+      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+
+      const { hasCapability } = generateCapabilityCheck({
+        getUserPrincipals,
+        hasCapabilityForPrincipals: methods.hasCapabilityForPrincipals,
+      });
+
+      let adminResolve: () => void;
+      const adminGate = new Promise<void>((r) => {
+        adminResolve = r;
+      });
+
+      let userResolve: () => void;
+      const userGate = new Promise<void>((r) => {
+        userResolve = r;
+      });
+
+      const adminPromise = withinRequestContext(async () => {
+        const r1 = await hasCapability(adminUser, SystemCapabilities.ACCESS_ADMIN);
+        adminResolve!();
+        await userGate;
+        const r2 = await hasCapability(adminUser, SystemCapabilities.READ_AGENTS);
+        return { r1, r2 };
+      });
+
+      const userPromise = withinRequestContext(async () => {
+        await adminGate;
+        const r1 = await hasCapability(regularUser, SystemCapabilities.ACCESS_ADMIN);
+        userResolve!();
+        const r2 = await hasCapability(regularUser, SystemCapabilities.READ_AGENTS);
+        return { r1, r2 };
+      });
+
+      const [adminResults, userResults] = await Promise.all([adminPromise, userPromise]);
+
+      expect(adminResults.r1).toBe(true);
+      expect(adminResults.r2).toBe(true);
+      expect(userResults.r1).toBe(false);
+      expect(userResults.r2).toBe(true);
+
+      expect(getUserPrincipals).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('CapabilityImplications consistency', () => {
     it('every implication pair resolves correctly through the full stack', async () => {
       const pairs = Object.entries(CapabilityImplications) as [
