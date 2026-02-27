@@ -21,7 +21,14 @@ const canDeleteAccount = async (req, res, next = () => {}) => {
   if (isEnabled(ALLOW_ACCOUNT_DELETION)) {
     return next();
   }
-  const hasManageUsers = user ? await hasCapability(user, SystemCapabilities.MANAGE_USERS) : false;
+  let hasManageUsers = false;
+  if (user) {
+    try {
+      hasManageUsers = await hasCapability(user, SystemCapabilities.MANAGE_USERS);
+    } catch (err) {
+      logger.error('[canDeleteAccount] capability check failed, denying:', err);
+    }
+  }
   if (hasManageUsers) {
     return next();
   }
