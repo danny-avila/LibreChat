@@ -112,7 +112,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
       return cached;
     }
 
-    const principalKey = `${user.id}:${user.role}`;
+    const principalKey = `${user.id}:${user.role}:${user.tenantId ?? ''}`;
     let principals: ResolvedPrincipal[];
     const cachedPrincipals = store?.principals.get(principalKey);
     if (cachedPrincipals) {
