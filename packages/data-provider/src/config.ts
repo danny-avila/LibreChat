@@ -743,6 +743,7 @@ export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
 export type TStartupConfig = {
   appTitle: string;
+  logoUrl?: string;
   socialLogins?: string[];
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
