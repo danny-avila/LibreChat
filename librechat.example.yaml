@@ -570,6 +570,24 @@ endpoints:
 #     maxWidth: 1900  # Maximum width for resized images (default: 1900)
 #     maxHeight: 1900  # Maximum height for resized images (default: 1900)
 #     quality: 0.92  # JPEG quality for compression (0.0-1.0, default: 0.92)
+#   # File metadata exposure to LLMs
+#   # When enabled, file metadata is injected into messages sent to LLMs,
+#   # allowing models to reference files by name and pass metadata to tools.
+#   metadata:
+#     enabled: true  # Enable metadata injection (default: false)
+#     # Fields to expose (default: filename, type, bytes)
+#     # Available fields:
+#     #   Core (safe): filename, type, bytes, source, width, height, createdAt, updatedAt
+#     #   Opt-in (sensitive): filepath, conversationId, file_id
+#     fields:
+#       - filename
+#       - type
+#       - bytes
+#       - source
+#       # - filepath  # Uncomment to expose full storage path (S3 URL, local path, etc.)
+#       # - conversationId  # Uncomment to expose session identifier
+#       # - file_id  # Uncomment to expose unique file identifier
+#     format: markdown  # Output format: markdown, json, or xml
 # # See the Custom Configuration Guide for more information on Assistants Config:
 # # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
 

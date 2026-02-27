@@ -459,6 +459,50 @@ export const endpointFileConfigSchema = z.object({
   supportedMimeTypes: supportedMimeTypesSchema.optional(),
 });
 
+/**
+ * Enum for file metadata fields that can be exposed to LLMs.
+ * Core fields are safe defaults; opt-in fields require explicit configuration.
+ */
+export enum FileMetadataFields {
+  // Core fields (safe defaults)
+  filename = 'filename',
+  type = 'type',
+  bytes = 'bytes',
+  width = 'width',
+  height = 'height',
+  createdAt = 'createdAt',
+  updatedAt = 'updatedAt',
+  // Opt-in fields (use with caution - may expose internal details)
+  source = 'source',
+  filepath = 'filepath',
+  conversationId = 'conversationId',
+  file_id = 'file_id',
+}
+
+/**
+ * Default metadata fields exposed to LLMs when metadata is enabled.
+ */
+export const defaultFileMetadataFields = [
+  FileMetadataFields.filename,
+  FileMetadataFields.type,
+  FileMetadataFields.bytes,
+];
+
+/**
+ * Schema for file metadata configuration.
+ * Controls what file metadata is exposed to LLMs in messages.
+ */
+export const fileMetadataConfigSchema = z.object({
+  /** Enable metadata injection into LLM messages (default: false) */
+  enabled: z.boolean().default(false),
+  /** Which metadata fields to expose (default: filename, type, bytes) */
+  fields: z.array(z.nativeEnum(FileMetadataFields)).optional(),
+  /** Output format for metadata (default: markdown) */
+  format: z.enum(['markdown', 'json', 'xml']).optional().default('markdown'),
+});
+
+export type TFileMetadataConfig = z.infer<typeof fileMetadataConfigSchema>;
+
 export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
@@ -488,6 +532,8 @@ export const fileConfigSchema = z.object({
       supportedMimeTypes: supportedMimeTypesSchema.optional(),
     })
     .optional(),
+  /** File metadata exposure configuration for LLMs */
+  metadata: fileMetadataConfigSchema.optional(),
 });
 
 export type TFileConfig = z.infer<typeof fileConfigSchema>;
@@ -699,6 +745,13 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     if (dynamic.text.supportedMimeTypes) {
       mergedConfig.text.supportedMimeTypes = convertStringsToRegex(dynamic.text.supportedMimeTypes);
     }
+  }
+
+  if (dynamic.metadata !== undefined) {
+    mergedConfig.metadata = {
+      ...mergedConfig.metadata,
+      ...dynamic.metadata,
+    };
   }
 
   if (!dynamic.endpoints) {
