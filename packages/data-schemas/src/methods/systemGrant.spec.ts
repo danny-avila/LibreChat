@@ -6,6 +6,7 @@ import type { SystemCapability } from '~/systemCapabilities';
 import { SystemCapabilities, CapabilityImplications } from '~/systemCapabilities';
 import { createSystemGrantMethods } from './systemGrant';
 import systemGrantSchema from '~/schema/systemGrant';
+import logger from '~/config/winston';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -75,6 +76,17 @@ describe('systemGrant methods', () => {
 
     it('does not throw when called (try-catch protects startup)', async () => {
       await expect(methods.seedSystemGrants()).resolves.not.toThrow();
+    });
+
+    it('logs error and swallows exception when bulkWrite fails', async () => {
+      jest.spyOn(SystemGrant, 'bulkWrite').mockRejectedValueOnce(new Error('disk full'));
+
+      await expect(methods.seedSystemGrants()).resolves.not.toThrow();
+
+      expect(logger.error).toHaveBeenCalledWith(
+        '[seedSystemGrants] Failed to seed capabilities — will retry on next restart',
+        expect.any(Error),
+      );
     });
   });
 
@@ -630,6 +642,54 @@ describe('systemGrant methods', () => {
       await SystemGrant.create(doc);
 
       await expect(SystemGrant.create(doc)).rejects.toThrow(/duplicate key|E11000/);
+    });
+
+    it('rejects duplicate platform-level grants (absent tenantId) — non-sparse index', async () => {
+      const principalId = new Types.ObjectId();
+
+      await SystemGrant.create({
+        principalType: PrincipalType.USER,
+        principalId,
+        capability: SystemCapabilities.ACCESS_ADMIN,
+      });
+
+      await expect(
+        SystemGrant.create({
+          principalType: PrincipalType.USER,
+          principalId,
+          capability: SystemCapabilities.ACCESS_ADMIN,
+        }),
+      ).rejects.toThrow(/duplicate key|E11000/);
+    });
+
+    it('allows same grant for different tenants (tenantId is part of unique key)', async () => {
+      const principalId = new Types.ObjectId();
+      const base = {
+        principalType: PrincipalType.USER,
+        principalId,
+        capability: SystemCapabilities.ACCESS_ADMIN,
+      };
+
+      await SystemGrant.create({ ...base, tenantId: 'tenant-a' });
+      await SystemGrant.create({ ...base, tenantId: 'tenant-b' });
+
+      const count = await SystemGrant.countDocuments({ principalId });
+      expect(count).toBe(2);
+    });
+
+    it('platform-level and tenant-scoped grants coexist (different unique key values)', async () => {
+      const principalId = new Types.ObjectId();
+      const base = {
+        principalType: PrincipalType.USER,
+        principalId,
+        capability: SystemCapabilities.ACCESS_ADMIN,
+      };
+
+      await SystemGrant.create(base);
+      await SystemGrant.create({ ...base, tenantId: 'tenant-1' });
+
+      const count = await SystemGrant.countDocuments({ principalId });
+      expect(count).toBe(2);
     });
   });
 });
