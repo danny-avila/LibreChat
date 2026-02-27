@@ -86,7 +86,7 @@
   "com_agents_no_access": "Jums nav piekļuves šī aģenta rediģēšanai.",
   "com_agents_no_agent_id_error": "Nav atrasts aģenta ID. Lūdzu, pārliecinieties, ka aģents ir izveidots.",
   "com_agents_no_more_results": "Jūs esat sasniedzis rezultātu beigas",
-  "com_agents_not_available": "Aģents nav pieejams",
+  "com_agents_prompt_selection": "Izvēlieties uzvedni pēc nosaukuma vai komandas.",
   "com_agents_recommended": "Mūsu rekomendētie aģenti",
   "com_agents_results_for": "Rezultāti par '{{query}}'",
   "com_agents_search_aria": "Meklēt aģentus",

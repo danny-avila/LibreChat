@@ -18,6 +18,7 @@
   "com_agents_name_placeholder": "اختياري: اسم العميل",
   "com_agents_no_access": "ليس لديك صلاحية تعديل هذا الوكيل.",
   "com_agents_not_available": "المساعد غير متوفر",
+  "com_agents_prompt_selection": "اختيار الموجه",
   "com_agents_search_name": "البحث عن الوكلاء بالاسم",
   "com_agents_update_error": "حدث خطأ أثناء تحديث الوكيل الخاص بك.",
   "com_assistants_actions": "إجراءات",

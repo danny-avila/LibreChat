@@ -18,6 +18,7 @@
   "com_agents_name_placeholder": "Valgfrit: Navnet på agenten",
   "com_agents_no_access": "Du har ikke adgang til at redigere denne agent.",
   "com_agents_not_available": "Agent ikke tilgængelig",
+  "com_agents_prompt_selection": "Vælg prompt",
   "com_agents_search_info": "Når det er aktiveret, kan din agent søge på nettet efter opdaterede oplysninger. Kræver en gyldig API-nøgle.",
   "com_agents_search_name": "Søg agenter efter navn",
   "com_agents_update_error": "Der opstod en fejl ved opdateringen af din agent.",

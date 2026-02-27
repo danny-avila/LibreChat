@@ -75,7 +75,7 @@
   "com_agents_name_placeholder": "選填：代理人的名稱",
   "com_agents_no_access": "您沒有權限編輯此助理",
   "com_agents_no_agent_id_error": "找不到 Agent ID。請先建立 Agent。",
-  "com_agents_not_available": "代理不可用",
+  "com_agents_prompt_selection": "請依名稱或指令選擇提示。",
   "com_agents_recommended": "我們推薦的agents",
   "com_agents_search_info": "啟用後，允許您的 Agent 搜尋網路以取得最新資訊。需要有效的 API 金鑰。",
   "com_agents_search_instructions": "輸入名稱或描述來搜尋agents",

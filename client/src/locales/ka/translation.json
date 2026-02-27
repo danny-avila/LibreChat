@@ -20,6 +20,7 @@
   "com_agents_no_access": "თქვენ არ გაქვთ შესაბამისი წვდომა აგენტის რედაქტირებისთვის",
   "com_agents_no_agent_id_error": "აგენტის ID ვერ მოიძებნა. გთხოვთ, დარწმუნდეთ, რომ აგენტი  შექმნილია.",
   "com_agents_not_available": "აგენტი მიუწვდომელია",
+  "com_agents_prompt_selection": "აირჩიეთ პრომპტი სახელით ან ბრძანებით.",
   "com_agents_search_name": "აგენტების ძებნა სახელით",
   "com_agents_update_error": "თქვენი აგენტის განახლებისას დაფიქსირდა შეცდომა",
   "com_assistants_action_attempt": "ასისტენტს სურს გაესაუბროს {{0}}",

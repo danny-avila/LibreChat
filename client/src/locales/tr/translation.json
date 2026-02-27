@@ -17,7 +17,7 @@
   "com_agents_missing_provider_model": "Lütfen bir ajan oluşturmadan önce bir sağlayıcı ve model seçin.",
   "com_agents_name_placeholder": "İsteğe bağlı: Ajanın adı",
   "com_agents_no_access": "Bu ajanı düzenleme erişiminiz yok.",
-  "com_agents_not_available": "Ajan Mevcut Değil",
+  "com_agents_prompt_selection": "Komut veya ada göre bir istem seçin.",
   "com_agents_search_name": "Ajanları ada göre ara",
   "com_agents_update_error": "Ajanınız güncellenirken bir hata oluştu.",
   "com_assistants_actions": "Eylemler",

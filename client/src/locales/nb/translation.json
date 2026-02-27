@@ -87,6 +87,7 @@
   "com_agents_no_agent_id_error": "Ingen agent-ID funnet. Sørg for at agenten er opprettet først.",
   "com_agents_no_more_results": "Du har nådd slutten av resultatene.",
   "com_agents_not_available": "Agent ikke tilgjengelig",
+  "com_agents_prompt_selection": "Velg en prompt etter navn eller kommando.",
   "com_agents_recommended": "Våre anbefalte agenter",
   "com_agents_results_for": "Resultater for «{{query}}»",
   "com_agents_search_aria": "Søk etter agenter",

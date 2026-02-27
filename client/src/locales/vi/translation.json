@@ -18,6 +18,7 @@
   "com_agents_name_placeholder": "Tùy chọn: Tên của agent",
   "com_agents_no_access": "Bạn không có quyền chỉnh sửa agent này.",
   "com_agents_not_available": "Agent không có sẵn",
+  "com_agents_prompt_selection": "Chọn prompt theo tên hoặc lệnh.",
   "com_agents_search_info": "Khi được bật, cho phép agent của bạn tìm kiếm thông tin mới nhất trên web. Yêu cầu khóa API hợp lệ.",
   "com_assistants_file_search": "Tìm kiếm Tập tin",
   "com_assistants_knowledge": "Kiến thức",

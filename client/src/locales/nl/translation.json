@@ -72,7 +72,7 @@
   "com_agents_name_placeholder": "Optioneel: De naam van de agent",
   "com_agents_no_access": "Je hebt geen toegang om deze agent te bewerken.",
   "com_agents_no_more_results": "Je bent aan het einde van de resultaten gekomen",
-  "com_agents_not_available": "Agent niet beschikbaar",
+  "com_agents_prompt_selection": "Selecteer een prompt op naam of commando.",
   "com_agents_recommended": "Onze aanbevolen agenten",
   "com_agents_results_for": "Resultaten voor '{{query}}'",
   "com_agents_search_aria": "Agenten zoeken",

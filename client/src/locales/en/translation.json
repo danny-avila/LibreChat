@@ -87,6 +87,7 @@
   "com_agents_no_agent_id_error": "No agent ID found. Please ensure the agent is created first.",
   "com_agents_no_more_results": "You've reached the end of the results",
   "com_agents_not_available": "Agent Not Available",
+  "com_agents_prompt_selection": "Select Prompt",
   "com_agents_recommended": "Our recommended agents",
   "com_agents_results_for": "Results for '{{query}}'",
   "com_agents_search_aria": "Search for agents",
