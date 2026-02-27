@@ -335,6 +335,7 @@ const patchPromptGroup = async (req, res) => {
     const author = req.user.id;
     const filter = { _id: groupId, author };
     if (await hasCapability(req.user, SystemCapabilities.MANAGE_PROMPTS)) {
+      logger.debug(`[patchPromptGroup] MANAGE_PROMPTS bypass for user ${req.user.id}`);
       delete filter.author;
     }
 
@@ -423,6 +424,7 @@ router.get('/', async (req, res) => {
     // If no groupId, return user's own prompts
     const query = { author };
     if (await hasCapability(req.user, SystemCapabilities.READ_PROMPTS)) {
+      logger.debug(`[GET /prompts] READ_PROMPTS bypass for user ${req.user.id}`);
       delete query.author;
     }
     const prompts = await getPrompts(query);

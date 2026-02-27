@@ -3,7 +3,7 @@ const {
   defaultOrderQuery,
   defaultAssistantsVersion,
 } = require('librechat-data-provider');
-const { SystemCapabilities } = require('@librechat/data-schemas');
+const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   initializeClient: initAzureClient,
 } = require('~/server/services/Endpoints/azureAssistants');
@@ -237,16 +237,19 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
+  if (!appConfig.endpoints?.[endpoint]) {
+    return body;
+  }
+
   let canManageAssistants = false;
   try {
     canManageAssistants = await hasCapability(req.user, SystemCapabilities.MANAGE_ASSISTANTS);
-  } catch {
-    /* Deny admin bypass on DB error — fall through to normal filtering */
+  } catch (err) {
+    logger.debug('[fetchAssistants] capability check failed, denying bypass:', err);
   }
 
   if (canManageAssistants) {
-    return body;
-  } else if (!appConfig.endpoints?.[endpoint]) {
+    logger.debug(`[fetchAssistants] MANAGE_ASSISTANTS bypass for user ${req.user.id}`);
     return body;
   }
 

@@ -30,6 +30,7 @@ const canDeleteAccount = async (req, res, next = () => {}) => {
     }
   }
   if (hasManageUsers) {
+    logger.debug(`[canDeleteAccount] MANAGE_USERS bypass for user ${user.id}`);
     return next();
   }
   logger.error(`[User] [Delete Account] [User cannot delete account] [User: ${user?.id}]`);
