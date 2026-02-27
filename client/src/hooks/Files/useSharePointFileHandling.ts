@@ -8,6 +8,7 @@ interface UseSharePointFileHandlingProps {
   toolResource?: string;
   fileFilter?: (file: File) => boolean;
   additionalMetadata?: Record<string, string | undefined>;
+  endpointOverride?: string;
 }
 
 interface UseSharePointFileHandlingReturn {

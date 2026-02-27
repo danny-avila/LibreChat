@@ -29,6 +29,7 @@ type UseFileHandling = {
   fileSetter?: FileSetter;
   fileFilter?: (file: File) => boolean;
   additionalMetadata?: Record<string, string | undefined>;
+  endpointOverride?: string;
 };
 
 const useFileHandling = (params?: UseFileHandling) => {
@@ -50,8 +51,14 @@ const useFileHandling = (params?: UseFileHandling) => {
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
-  const endpointType = useMemo(() => conversation?.endpointType, [conversation?.endpointType]);
-  const endpoint = useMemo(() => conversation?.endpoint ?? 'default', [conversation?.endpoint]);
+  const endpointType = useMemo(
+    () => params?.endpointOverride ?? conversation?.endpointType,
+    [params?.endpointOverride, conversation?.endpointType],
+  );
+  const endpoint = useMemo(
+    () => params?.endpointOverride ?? conversation?.endpoint ?? 'default',
+    [params?.endpointOverride, conversation?.endpoint],
+  );
 
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
