@@ -72,6 +72,8 @@ class AgentClient extends BaseClient {
     const {
       agentConfigs,
       contentParts,
+      lazyLoadAgent,
+      getAgentConfig,
       collectedUsage,
       artifactPromises,
       maxContextTokens,
@@ -79,6 +81,8 @@ class AgentClient extends BaseClient {
     } = options;
 
     this.agentConfigs = agentConfigs;
+    this.lazyLoadAgent = lazyLoadAgent;
+    this.getAgentConfig = getAgentConfig;
     this.maxContextTokens = maxContextTokens;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
@@ -853,6 +857,29 @@ class AgentClient extends BaseClient {
 
         memoryPromise = this.runMemory(messages);
 
+        // Pre-load any stub agents before creating the Run
+        // This is necessary because LangGraph builds its tool registry during Run.create()
+        // We must have all tools available before that point for them to work correctly
+        // Note: This still saves time vs eager loading during initial setup since we delay
+        // until just before the first message is processed
+        if (this.lazyLoadAgent && this.agentConfigs) {
+          const stubAgentIds = [];
+          for (const [agentId, agent] of this.agentConfigs.entries()) {
+            if (agent._isStub) {
+              stubAgentIds.push(agentId);
+            }
+          }
+
+          if (stubAgentIds.length > 0) {
+            logger.info(
+              `[AgentClient] Pre-loading ${stubAgentIds.length} stub agents before run creation: ${stubAgentIds.join(', ')}`,
+            );
+            // Load all stubs in parallel for efficiency
+            await Promise.all(stubAgentIds.map((agentId) => this.lazyLoadAgent(agentId)));
+            logger.info(`[AgentClient] All stub agents loaded successfully`);
+          }
+        }
+
         run = await createRun({
           agents,
           messages,
@@ -878,6 +905,14 @@ class AgentClient extends BaseClient {
 
         if (userMCPAuthMap != null) {
           config.configurable.userMCPAuthMap = userMCPAuthMap;
+        }
+
+        // Pass lazy agent loader through config for on-demand initialization during handoffs
+        // Also pass the agentConfigs Map and getter so the runtime can access updated configs
+        if (this.lazyLoadAgent) {
+          config.configurable.lazyLoadAgent = this.lazyLoadAgent;
+          config.configurable.getAgentConfig = this.getAgentConfig;
+          config.configurable.agentConfigs = this.agentConfigs;
         }
 
         /** @deprecated Agent Chain */

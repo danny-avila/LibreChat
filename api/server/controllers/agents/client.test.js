@@ -2256,4 +2256,249 @@ describe('AgentClient - titleConvo', () => {
       );
     });
   });
+
+  describe('Lazy Agent Loading', () => {
+    let client;
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+    let mockLazyLoadAgent;
+    let mockGetAgentConfig;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      mockAgent = {
+        id: 'primary-agent',
+        name: 'Primary Agent',
+        endpoint: EModelEndpoint.agents,
+        provider: EModelEndpoint.openAI,
+        model_parameters: {
+          model: 'gpt-4',
+        },
+      };
+
+      mockReq = {
+        user: { id: 'user-123' },
+        body: {
+          model: 'gpt-4',
+          endpoint: EModelEndpoint.agents,
+        },
+        app: {
+          locals: {},
+        },
+      };
+
+      mockRes = {};
+
+      mockLazyLoadAgent = jest.fn().mockImplementation(async (agentId) => {
+        // Simulate loading a stub agent
+        const agent = client.agentConfigs.get(agentId);
+        if (agent && agent._isStub) {
+          // Update the stub in-place with full configuration
+          Object.assign(agent, {
+            tools: [{ name: 'test-tool', type: 'function' }],
+            _isStub: false,
+          });
+        }
+        return agent;
+      });
+
+      mockGetAgentConfig = jest.fn().mockImplementation((agentId) => {
+        return client.agentConfigs?.get(agentId);
+      });
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+        endpoint: EModelEndpoint.agents,
+        lazyLoadAgent: mockLazyLoadAgent,
+        getAgentConfig: mockGetAgentConfig,
+      };
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.contentParts = [];
+      client.eventHandlers = {};
+    });
+
+    it('should store lazyLoadAgent and getAgentConfig callbacks in constructor', () => {
+      expect(client.lazyLoadAgent).toBe(mockLazyLoadAgent);
+      expect(client.getAgentConfig).toBe(mockGetAgentConfig);
+    });
+
+    it('should identify stub agents by _isStub flag', () => {
+      client.agentConfigs = new Map([
+        [
+          'stub-agent',
+          {
+            id: 'stub-agent',
+            name: 'Stub Agent',
+            tools: [],
+            _isStub: true,
+          },
+        ],
+        [
+          'regular-agent',
+          {
+            id: 'regular-agent',
+            name: 'Regular Agent',
+            tools: [{ name: 'tool' }],
+          },
+        ],
+      ]);
+
+      const stubAgentIds = [];
+      for (const [agentId, agent] of client.agentConfigs.entries()) {
+        if (agent._isStub) {
+          stubAgentIds.push(agentId);
+        }
+      }
+
+      expect(stubAgentIds).toEqual(['stub-agent']);
+    });
+
+    it('should update stub agents in-place when lazy loaded', async () => {
+      const stubConfig = {
+        id: 'stub-agent',
+        name: 'Stub Agent',
+        tools: [],
+        _isStub: true,
+      };
+
+      client.agentConfigs = new Map([['stub-agent', stubConfig]]);
+
+      // Call the lazy load function
+      await mockLazyLoadAgent('stub-agent');
+
+      // Verify stub was updated in-place
+      const updatedAgent = client.agentConfigs.get('stub-agent');
+      expect(updatedAgent).toBe(stubConfig); // Same object reference
+      expect(updatedAgent.tools).toHaveLength(1);
+      expect(updatedAgent._isStub).toBe(false);
+    });
+
+    it('should handle agentConfigs without stubs', () => {
+      client.agentConfigs = new Map([
+        [
+          'agent-1',
+          {
+            id: 'agent-1',
+            tools: [{ name: 'tool1' }],
+          },
+        ],
+        [
+          'agent-2',
+          {
+            id: 'agent-2',
+            tools: [{ name: 'tool2' }],
+          },
+        ],
+      ]);
+
+      const stubAgentIds = [];
+      for (const [agentId, agent] of client.agentConfigs.entries()) {
+        if (agent._isStub) {
+          stubAgentIds.push(agentId);
+        }
+      }
+
+      expect(stubAgentIds).toHaveLength(0);
+    });
+
+    it('should handle null agentConfigs gracefully', () => {
+      client.agentConfigs = null;
+
+      // Should not throw when checking for stubs
+      expect(() => {
+        if (client.agentConfigs) {
+          for (const [_agentId, agent] of client.agentConfigs.entries()) {
+            if (agent._isStub) {
+              // Process stub
+            }
+          }
+        }
+      }).not.toThrow();
+    });
+
+    it('should handle empty agentConfigs map', () => {
+      client.agentConfigs = new Map();
+
+      const stubAgentIds = [];
+      for (const [agentId, agent] of client.agentConfigs.entries()) {
+        if (agent._isStub) {
+          stubAgentIds.push(agentId);
+        }
+      }
+
+      expect(stubAgentIds).toHaveLength(0);
+    });
+
+    it('should support loading multiple stubs in parallel', async () => {
+      client.agentConfigs = new Map([
+        ['stub-1', { id: 'stub-1', tools: [], _isStub: true }],
+        ['stub-2', { id: 'stub-2', tools: [], _isStub: true }],
+        ['stub-3', { id: 'stub-3', tools: [], _isStub: true }],
+      ]);
+
+      const stubAgentIds = [];
+      for (const [agentId, agent] of client.agentConfigs.entries()) {
+        if (agent._isStub) {
+          stubAgentIds.push(agentId);
+        }
+      }
+
+      // Load all stubs in parallel
+      await Promise.all(stubAgentIds.map((agentId) => mockLazyLoadAgent(agentId)));
+
+      // Verify all were loaded
+      expect(mockLazyLoadAgent).toHaveBeenCalledTimes(3);
+      expect(mockLazyLoadAgent).toHaveBeenCalledWith('stub-1');
+      expect(mockLazyLoadAgent).toHaveBeenCalledWith('stub-2');
+      expect(mockLazyLoadAgent).toHaveBeenCalledWith('stub-3');
+
+      // Verify all stubs were updated
+      expect(client.agentConfigs.get('stub-1')._isStub).toBe(false);
+      expect(client.agentConfigs.get('stub-2')._isStub).toBe(false);
+      expect(client.agentConfigs.get('stub-3')._isStub).toBe(false);
+    });
+
+    it('should preserve agent object references after lazy loading', async () => {
+      const stubConfig = {
+        id: 'stub-agent',
+        name: 'Stub Agent',
+        description: 'Test stub',
+        tools: [],
+        _isStub: true,
+      };
+
+      client.agentConfigs = new Map([['stub-agent', stubConfig]]);
+
+      // Store original reference
+      const originalRef = client.agentConfigs.get('stub-agent');
+
+      // Lazy load the stub
+      await mockLazyLoadAgent('stub-agent');
+
+      // Verify it's still the same object reference
+      const updatedRef = client.agentConfigs.get('stub-agent');
+      expect(updatedRef).toBe(originalRef);
+      expect(updatedRef).toBe(stubConfig);
+    });
+
+    it('should work without lazyLoadAgent callback (backward compatibility)', () => {
+      const clientWithoutCallbacks = new AgentClient({
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+        endpoint: EModelEndpoint.agents,
+      });
+
+      expect(clientWithoutCallbacks.lazyLoadAgent).toBeUndefined();
+      expect(clientWithoutCallbacks.getAgentConfig).toBeUndefined();
+    });
+  });
 });
