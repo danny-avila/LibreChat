@@ -22,6 +22,22 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+const createAuthCallbackHandler = (provider, options = {}) => {
+  return (req, res, next) => {
+    const auth = passport.authenticate(provider, { session: false, ...options });
+    auth(req, res, (err) => {
+      if (err || !req.user) {
+        logger.error(`[${provider}Callback] OAuth authentication failed:`, err);
+        const errorMsg = err?.message || `${provider} OAuth authentication failed`;
+        return res.redirect(
+          `${domains.client}/oauth/error?message=${encodeURIComponent(errorMsg)}`,
+        );
+      }
+      next();
+    });
+  };
+};
+
 router.use(logHeaders);
 router.use(loginLimiter);
 
@@ -29,12 +45,17 @@ const oauthHandler = createOAuthHandler();
 
 router.get('/error', (req, res) => {
   /** A single error message is pushed by passport when authentication fails. */
-  const errorMessage = req.session?.messages?.pop() || 'Unknown OAuth error';
+  const errorMessage = req.session?.messages?.pop() || req.query?.message || 'Unknown OAuth error';
+  const errorType = req.query?.error || ErrorTypes.AUTH_FAILED;
   logger.error('Error in OAuth authentication:', {
     message: errorMessage,
+    query: req.query,
+    params: req.params,
   });
 
-  res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
+  res.redirect(
+    `${domains.client}/login?redirect=false&error=${errorType}&message=${encodeURIComponent(errorMessage)}`,
+  );
 });
 
 /**
@@ -50,10 +71,7 @@ router.get(
 
 router.get(
   '/google/callback',
-  passport.authenticate('google', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
+  createAuthCallbackHandler('google', {
     scope: ['openid', 'profile', 'email'],
   }),
   setBalanceConfig,
@@ -75,10 +93,7 @@ router.get(
 
 router.get(
   '/facebook/callback',
-  passport.authenticate('facebook', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
+  createAuthCallbackHandler('facebook', {
     scope: ['public_profile'],
     profileFields: ['id', 'email', 'name'],
   }),
@@ -99,11 +114,7 @@ router.get('/openid', (req, res, next) => {
 
 router.get(
   '/openid/callback',
-  passport.authenticate('openid', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-  }),
+  createAuthCallbackHandler('openid'),
   setBalanceConfig,
   checkDomainAllowed,
   oauthHandler,
@@ -122,10 +133,7 @@ router.get(
 
 router.get(
   '/github/callback',
-  passport.authenticate('github', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
+  createAuthCallbackHandler('github', {
     scope: ['user:email', 'read:user'],
   }),
   setBalanceConfig,
@@ -146,10 +154,7 @@ router.get(
 
 router.get(
   '/discord/callback',
-  passport.authenticate('discord', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
+  createAuthCallbackHandler('discord', {
     scope: ['identify', 'email'],
   }),
   setBalanceConfig,
@@ -169,11 +174,7 @@ router.get(
 
 router.post(
   '/apple/callback',
-  passport.authenticate('apple', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-  }),
+  createAuthCallbackHandler('apple'),
   setBalanceConfig,
   checkDomainAllowed,
   oauthHandler,
@@ -189,14 +190,6 @@ router.get(
   }),
 );
 
-router.post(
-  '/saml/callback',
-  passport.authenticate('saml', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-  }),
-  oauthHandler,
-);
+router.post('/saml/callback', createAuthCallbackHandler('saml'), oauthHandler);
 
 module.exports = router;

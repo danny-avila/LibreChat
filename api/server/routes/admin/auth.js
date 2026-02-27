@@ -24,6 +24,22 @@ const setBalanceConfig = createSetBalanceConfig({
 
 const router = express.Router();
 
+const createAuthCallbackHandler = (provider, failureUrl) => {
+  return (req, res, next) => {
+    const auth = passport.authenticate(provider, { session: false });
+    auth(req, res, (err) => {
+      if (err || !req.user) {
+        logger.error(`[${provider}Callback] OAuth authentication failed:`, err);
+        const errorMsg = err?.message || `${provider} OAuth authentication failed`;
+        return res.redirect(
+          `${failureUrl}?error=auth_failed&error_description=${encodeURIComponent(errorMsg)}`,
+        );
+      }
+      next();
+    });
+  };
+};
+
 router.post(
   '/login/local',
   middleware.logHeaders,
@@ -61,11 +77,7 @@ router.get('/oauth/openid', (req, res, next) => {
 
 router.get(
   '/oauth/openid/callback',
-  passport.authenticate('openidAdmin', {
-    failureRedirect: `${getAdminPanelUrl()}/auth/openid/callback?error=auth_failed&error_description=Authentication+failed`,
-    failureMessage: true,
-    session: false,
-  }),
+  createAuthCallbackHandler('openidAdmin', `${getAdminPanelUrl()}/auth/openid/callback`),
   requireAdmin,
   setBalanceConfig,
   middleware.checkDomainAllowed,

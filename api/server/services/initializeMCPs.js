@@ -13,7 +13,7 @@ async function initializeMCPs() {
     createMCPServersRegistry(null, appConfig?.mcpSettings?.allowedDomains);
   } catch (error) {
     logger.error('[MCP] Failed to initialize MCPServersRegistry:', error);
-    throw error;
+    logger.warn('[MCP] Continuing without MCP servers registry - some features may be unavailable');
   }
 
   try {
@@ -32,7 +32,7 @@ async function initializeMCPs() {
     }
   } catch (error) {
     logger.error('[MCP] Failed to initialize MCPManager:', error);
-    throw error;
+    logger.warn('[MCP] Continuing without MCP manager - some features may be unavailable');
   }
 }
 
