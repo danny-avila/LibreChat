@@ -375,6 +375,26 @@ describe('capabilities integration (real MongoDB)', () => {
 
       expect(getUserPrincipals).toHaveBeenCalledTimes(2);
     });
+
+    it('uses separate principal cache keys for different tenantIds (same user)', async () => {
+      await methods.seedSystemGrants();
+      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+
+      const { hasCapability } = generateCapabilityCheck({
+        getUserPrincipals,
+        hasCapabilityForPrincipals: methods.hasCapabilityForPrincipals,
+      });
+
+      await withinRequestContext(async () => {
+        await hasCapability(adminUser, SystemCapabilities.ACCESS_ADMIN);
+        await hasCapability(
+          { ...adminUser, tenantId: 'tenant-a' },
+          SystemCapabilities.ACCESS_ADMIN,
+        );
+      });
+
+      expect(getUserPrincipals).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('requireCapability middleware (real DB, real ALS)', () => {
