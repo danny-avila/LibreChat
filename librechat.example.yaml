@@ -134,6 +134,20 @@ interface:
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
+# Scheduled Tasks configuration
+# Controls cron-based task scheduling for Agents
+scheduledTasks:
+  # Enable or disable scheduled tasks feature
+  enabled: true
+  # Enable or disable the scheduler worker on this instance
+  workerEnabled: true
+  # Minimum interval between scheduled runs (minutes)
+  minIntervalMinutes: 10
+  # Maximum number of concurrent task runs
+  maxConcurrentRuns: 3
+  # Per-run timeout (seconds)
+  maxRuntimeSeconds: 900
+
 # Example Cloudflare turnstile (optional)
 #turnstile:
 #  siteKey: "your-site-key-here"

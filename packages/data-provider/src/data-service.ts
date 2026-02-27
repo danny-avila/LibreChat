@@ -1,5 +1,13 @@
 import type { AxiosResponse } from 'axios';
 import type * as t from './types';
+import type {
+  ScheduledTask,
+  ScheduledTaskCreateParams,
+  ScheduledTaskListResponse,
+  ScheduledTaskRun,
+  ScheduledTaskRunsResponse,
+  ScheduledTaskUpdateParams,
+} from './types/scheduledTasks';
 import * as endpoints from './api-endpoints';
 import * as a from './types/assistants';
 import * as ag from './types/agents';
@@ -1024,6 +1032,38 @@ export const createMemory = (data: {
   value: string;
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
+};
+
+/* Scheduled Tasks */
+export const getScheduledTasks = (): Promise<ScheduledTaskListResponse> => {
+  return request.get(endpoints.scheduledTasks());
+};
+
+export const getScheduledTask = (id: string): Promise<ScheduledTask> => {
+  return request.get(endpoints.scheduledTaskById(id));
+};
+
+export const createScheduledTask = (data: ScheduledTaskCreateParams): Promise<ScheduledTask> => {
+  return request.post(endpoints.scheduledTasks(), data);
+};
+
+export const updateScheduledTask = (
+  id: string,
+  data: ScheduledTaskUpdateParams,
+): Promise<ScheduledTask> => {
+  return request.patch(endpoints.scheduledTaskById(id), data);
+};
+
+export const deleteScheduledTask = (id: string): Promise<void> => {
+  return request.delete(endpoints.scheduledTaskById(id));
+};
+
+export const runScheduledTask = (id: string): Promise<ScheduledTaskRun> => {
+  return request.post(endpoints.runScheduledTask(id));
+};
+
+export const getScheduledTaskRuns = (id: string): Promise<ScheduledTaskRunsResponse> => {
+  return request.get(endpoints.scheduledTaskRuns(id));
 };
 
 export function searchPrincipals(

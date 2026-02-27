@@ -185,6 +185,12 @@ export const mcpOAuthBind = (serverName: string) => `${BASE_URL}/api/mcp/${serve
 
 export const actionOAuthBind = (actionId: string) =>
   `${BASE_URL}/api/actions/${actionId}/oauth/bind`;
+const scheduledTasksRoot = `${BASE_URL}/api/scheduled-tasks`;
+
+export const scheduledTasks = () => `${scheduledTasksRoot}`;
+export const scheduledTaskById = (id: string) => `${scheduledTasksRoot}/${id}`;
+export const scheduledTaskRuns = (id: string) => `${scheduledTasksRoot}/${id}/runs`;
+export const runScheduledTask = (id: string) => `${scheduledTasksRoot}/${id}/run`;
 
 export const config = () => `${BASE_URL}/api/config`;
 
