@@ -1,32 +1,34 @@
 import { startTransition } from 'react';
+import { useSetRecoilState } from 'recoil';
 import { TooltipAnchor, Button, Sidebar } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
-/** Element ID for the close sidebar button - used for focus management */
 export const CLOSE_SIDEBAR_ID = 'close-sidebar-button';
-/** Element ID for the open sidebar button - used for focus management */
 export const OPEN_SIDEBAR_ID = 'open-sidebar-button';
 
 export default function OpenSidebar({
-  setNavVisible,
+  setNavVisible: _setNavVisible,
   className,
 }: {
-  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  setNavVisible?: React.Dispatch<React.SetStateAction<boolean>>;
   className?: string;
 }) {
   const localize = useLocalize();
+  const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
 
   const handleClick = () => {
-    // Use startTransition to mark this as a non-urgent update
-    // This prevents blocking the main thread during the cascade of re-renders
     startTransition(() => {
-      setNavVisible((prev) => {
-        localStorage.setItem('navVisible', JSON.stringify(!prev));
-        return !prev;
-      });
+      if (_setNavVisible) {
+        _setNavVisible((prev) => {
+          localStorage.setItem('navVisible', JSON.stringify(!prev));
+          return !prev;
+        });
+      } else {
+        setSidebarExpanded(true);
+      }
     });
-    // Delay focus until after the sidebar animation completes (200ms)
     setTimeout(() => {
       document.getElementById(CLOSE_SIDEBAR_ID)?.focus();
     }, 250);

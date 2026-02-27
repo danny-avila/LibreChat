@@ -31,7 +31,7 @@ function NavContent({ links, isCollapsed, resize }: Omit<NavProps, 'defaultActiv
                   return isCollapsed ? (
                     <TooltipAnchor
                       description={localize(link.title)}
-                      side="left"
+                      side="right"
                       key={`nav-link-${index}`}
                       render={
                         <Button

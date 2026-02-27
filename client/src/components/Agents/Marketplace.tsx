@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
-import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
-import type { ContextType } from '~/common';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
@@ -39,8 +37,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const { conversation, newConversation } = useChatContext();
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const { navVisible, setNavVisible } = useOutletContext<ContextType>();
-  const [hideSidePanel, setHideSidePanel] = useRecoilState(store.hideSidePanel);
+  const [navVisible, setNavVisible] = useRecoilState(store.sidebarExpanded);
 
   // Get URL parameters
   const searchQuery = searchParams.get('q') || '';
@@ -58,15 +55,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
   // Set page title
   useDocumentTitle(`${localize('com_agents_marketplace')} | LibreChat`);
-
-  // Ensure right sidebar is always visible in marketplace
-  useEffect(() => {
-    setHideSidePanel(false);
-
-    // Also try to force expand via localStorage
-    localStorage.setItem('hideSidePanel', 'false');
-    localStorage.setItem('fullPanelCollapse', 'false');
-  }, [setHideSidePanel, hideSidePanel]);
 
   // Ensure endpoints config is loaded first (required for agent queries)
   useGetEndpointsQuery();
@@ -207,18 +195,10 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     newConversation();
   };
 
-  // Layout configuration for SidePanelGroup
   const defaultLayout = useMemo(() => {
     const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
     return typeof resizableLayout === 'string' ? JSON.parse(resizableLayout) : undefined;
   }, []);
-
-  const defaultCollapsed = useMemo(() => {
-    const collapsedPanels = localStorage.getItem('react-resizable-panels:collapsed');
-    return typeof collapsedPanels === 'string' ? JSON.parse(collapsedPanels) : true;
-  }, []);
-
-  const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
   const hasAccessToMarketplace = useHasAccess({
     permissionType: PermissionTypes.MARKETPLACE,
@@ -242,11 +222,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   return (
     <div className={`relative flex w-full grow overflow-hidden bg-presentation ${className}`}>
       <SidePanelProvider>
-        <SidePanelGroup
-          defaultLayout={defaultLayout}
-          fullPanelCollapse={fullCollapse}
-          defaultCollapsed={defaultCollapsed}
-        >
+        <SidePanelGroup defaultLayout={defaultLayout}>
           <main className="flex h-full flex-col overflow-hidden" role="main">
             {/* Scrollable container */}
             <div

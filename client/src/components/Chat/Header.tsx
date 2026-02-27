@@ -1,9 +1,8 @@
 import { memo, useMemo } from 'react';
+import { useRecoilState } from 'recoil';
 import { useMediaQuery } from '@librechat/client';
-import { useOutletContext } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { ContextType } from '~/common';
 import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
@@ -13,12 +12,13 @@ import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
 
 function Header() {
   const { data: startupConfig } = useGetStartupConfig();
-  const { navVisible, setNavVisible } = useOutletContext<ContextType>();
+  const [navVisible, setNavVisible] = useRecoilState(store.sidebarExpanded);
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,

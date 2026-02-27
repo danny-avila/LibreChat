@@ -9,7 +9,14 @@ interface SidePanelContextValue {
 const SidePanelContext = createContext<SidePanelContextValue | undefined>(undefined);
 
 export function SidePanelProvider({ children }: { children: React.ReactNode }) {
-  const { conversation } = useChatContext();
+  let conversation;
+  try {
+    const chatContext = useChatContext();
+    conversation = chatContext?.conversation;
+  } catch {
+    // ChatContext not available yet (e.g., before navigating to a chat route)
+    conversation = undefined;
+  }
 
   /** Context value only created when endpoint changes */
   const contextValue = useMemo<SidePanelContextValue>(
@@ -24,8 +31,6 @@ export function SidePanelProvider({ children }: { children: React.ReactNode }) {
 
 export function useSidePanelContext() {
   const context = useContext(SidePanelContext);
-  if (!context) {
-    throw new Error('useSidePanelContext must be used within SidePanelProvider');
-  }
-  return context;
+  // Return a safe default if context is not available
+  return context ?? { endpoint: undefined };
 }
