@@ -120,7 +120,11 @@ export async function initializeBedrock({
   };
 
   if (bedrockConfig?.guardrailConfig) {
-    llmConfig.guardrailConfig = bedrockConfig.guardrailConfig;
+    llmConfig.guardrailConfig = {
+      guardrailIdentifier: extractEnvVariable(bedrockConfig.guardrailConfig.guardrailIdentifier),
+      guardrailVersion: extractEnvVariable(bedrockConfig.guardrailConfig.guardrailVersion),
+      trace: bedrockConfig.guardrailConfig.trace,
+    };
   }
 
   const model = model_parameters?.model as string | undefined;
