@@ -124,7 +124,9 @@ class BaseClient {
    * @returns {number}
    */
   getTokenCountForResponse(responseMessage) {
-    logger.debug('[BaseClient] `recordTokenUsage` not implemented.', responseMessage);
+    logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
+      messageId: responseMessage?.messageId,
+    });
   }
 
   /**
@@ -661,10 +663,13 @@ class BaseClient {
     );
 
     if (tokenCountMap) {
-      logger.debug('[BaseClient] tokenCountMap', tokenCountMap);
       if (tokenCountMap[userMessage.messageId]) {
         userMessage.tokenCount = tokenCountMap[userMessage.messageId];
-        logger.debug('[BaseClient] userMessage', userMessage);
+        logger.debug('[BaseClient] userMessage', {
+          messageId: userMessage.messageId,
+          tokenCount: userMessage.tokenCount,
+          conversationId: userMessage.conversationId,
+        });
       }
 
       this.handleTokenCountMap(tokenCountMap);
