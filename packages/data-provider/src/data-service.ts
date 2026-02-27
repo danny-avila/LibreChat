@@ -1104,6 +1104,32 @@ export function deleteUserByAdmin(userId: string): Promise<{ message: string }> 
   return request.delete(endpoints.adminDeleteUser(userId));
 }
 
+// Admin Group Types
+export interface AdminGroup {
+  name: string;
+}
+
+export interface AdminGroupsResponse {
+  groups: AdminGroup[];
+  systemRoles: string[];
+}
+
+export function getAdminGroups(): Promise<AdminGroupsResponse> {
+  return request.get(endpoints.adminGroups());
+}
+
+export function createAdminGroup(name: string): Promise<{ message: string; group: AdminGroup }> {
+  return request.post(endpoints.adminCreateGroup(), { name });
+}
+
+export function deleteAdminGroup(
+  groupName: string,
+  resetUsers?: boolean,
+): Promise<{ message: string }> {
+  const url = endpoints.adminDeleteGroup(groupName) + (resetUsers ? '?resetUsers=true' : '');
+  return request.delete(url);
+}
+
 // Admin Conversation Types
 export interface AdminConversationUser {
   _id: string;
@@ -1179,3 +1205,5 @@ export type { AdminConversation as TAdminConversation };
 export type { AdminConversationUser as TAdminConversationUser };
 export type { AdminConversationsResponse as TAdminConversationsResponse };
 export type { AdminConversationMessagesResponse as TAdminConversationMessagesResponse };
+export type { AdminGroup as TAdminGroup };
+export type { AdminGroupsResponse as TAdminGroupsResponse };

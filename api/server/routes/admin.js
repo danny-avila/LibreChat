@@ -7,6 +7,10 @@ const {
   deleteUserByAdminController,
   listAllConversationsController,
   getConversationMessagesController,
+  listGroupsController,
+  createGroupController,
+  deleteGroupController,
+  getUsersByGroupController,
 } = require('~/server/controllers/AdminController');
 const { requireJwtAuth, checkAdmin } = require('~/server/middleware');
 
@@ -71,5 +75,33 @@ router.get('/conversations', listAllConversationsController);
  * @access Admin only
  */
 router.get('/conversations/:conversationId/messages', getConversationMessagesController);
+
+/**
+ * @route GET /api/admin/groups
+ * @desc List all groups
+ * @access Admin only
+ */
+router.get('/groups', listGroupsController);
+
+/**
+ * @route POST /api/admin/groups
+ * @desc Create a new group
+ * @access Admin only
+ */
+router.post('/groups', createGroupController);
+
+/**
+ * @route DELETE /api/admin/groups/:groupName
+ * @desc Delete a group
+ * @access Admin only
+ */
+router.delete('/groups/:groupName', deleteGroupController);
+
+/**
+ * @route GET /api/admin/groups/:groupName/users
+ * @desc Get users by group
+ * @access Admin only
+ */
+router.get('/groups/:groupName/users', getUsersByGroupController);
 
 module.exports = router;

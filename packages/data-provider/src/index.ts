@@ -51,6 +51,7 @@ export type {
   TAdminGroup,
   TAdminGroupsResponse,
 } from './data-service';
+export type { AdminGroup, AdminGroupsResponse } from './data-service';
 /* general helpers */
 export * from './utils';
 export * from './actions';

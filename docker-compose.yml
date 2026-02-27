@@ -5,7 +5,7 @@ services:
   api:
     container_name: LibreChat
     ports:
-      - "${PORT}:${PORT}"
+      - "80:${PORT:-3080}"
     depends_on:
       - mongodb
       - rag_api

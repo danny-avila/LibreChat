@@ -354,6 +354,12 @@ export const adminUpdateUserGroups = (userId: string) =>
   `${BASE_URL}/api/admin/users/${userId}/groups`;
 export const adminDeleteUser = (userId: string) => `${BASE_URL}/api/admin/users/${userId}`;
 
+// Admin Group Endpoints
+export const adminGroups = () => `${BASE_URL}/api/admin/groups`;
+export const adminCreateGroup = () => `${BASE_URL}/api/admin/groups`;
+export const adminDeleteGroup = (groupName: string) =>
+  `${BASE_URL}/api/admin/groups/${encodeURIComponent(groupName)}`;
+
 export const adminConversations = (params?: {
   page?: number;
   limit?: number;
