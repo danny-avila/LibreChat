@@ -152,6 +152,20 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: ScraperProviders.CRAWL4AI,
+      label: localize('com_ui_web_search_provider_crawl4ai'),
+      inputs: {
+        crawl4aiApiUrl: {
+          placeholder: localize('com_ui_web_search_crawl4ai_instance_url'),
+          type: 'text' as const,
+        },
+        crawl4aiApiKey: {
+          placeholder: localize('com_ui_web_search_crawl4ai_api_key'),
+          type: 'password' as const,
+        },
+      },
+    },
   ];
 
   const [dropdownOpen, setDropdownOpen] = useState({
