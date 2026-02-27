@@ -72,9 +72,11 @@ const canAccessResource = (options) => {
           message: 'Authentication required',
         });
       }
-      // Capability-based admin bypass: check if user has the capability for this resource type
       const cap = ResourceCapabilityMap[resourceType];
       if (cap && (await hasCapability(req.user, cap))) {
+        logger.debug(
+          `[canAccessResource] ${cap} bypass for user ${req.user.id} on ${resourceType} ${rawResourceId}`,
+        );
         return next();
       }
       const userId = req.user.id;
