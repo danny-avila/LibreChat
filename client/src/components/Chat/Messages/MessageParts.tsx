@@ -122,6 +122,7 @@ export default function Message(props: TMessageProps) {
                 hasParallelContent ? 'w-full' : 'w-11/12',
                 isCreatedByUser ? 'user-turn' : 'agent-turn',
               )}
+              data-testid={isCreatedByUser ? 'user-message' : 'assistant-message'}
             >
               {!hasParallelContent && (
                 <h2 className={cn('select-none font-semibold text-text-primary', fontSize)}>
