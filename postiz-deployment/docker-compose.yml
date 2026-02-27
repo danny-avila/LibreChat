@@ -86,6 +86,8 @@ services:
         condition: service_healthy
       postiz-redis:
         condition: service_healthy
+      temporal:
+        condition: service_started
 
   postiz-postgres:
     image: postgres:17-alpine
@@ -201,7 +203,7 @@ services:
     networks:
       - temporal-network
     ports:
-      - '8081:8080'
+      - '${TEMPORAL_UI_PORT}:8080'
 
 volumes:
   postgres-volume:
