@@ -1,5 +1,6 @@
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
+import { isEnabled } from '~/utils';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
@@ -186,6 +187,15 @@ export class MCPManager extends UserConnectionManager {
     const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
     for (const [serverName, config] of Object.entries(configs)) {
       if (config.serverInstructions != null) {
+        // Skip if serverInstructions is true/boolean or "true" string - this means
+        // instructions should be fetched from server but weren't (e.g., OAuth server
+        // that couldn't be connected to at startup)
+        if (isEnabled(config.serverInstructions) && typeof config.serverInstructions !== 'string') {
+          continue;
+        }
+        if (typeof config.serverInstructions === 'string' && config.serverInstructions.toLowerCase().trim() === 'true') {
+          continue;
+        }
         instructions[serverName] = config.serverInstructions as string;
       }
     }

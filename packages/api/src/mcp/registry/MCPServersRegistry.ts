@@ -213,6 +213,25 @@ export class MCPServersRegistry {
     return parsedConfig;
   }
 
+  /**
+   * Updates the serverInstructions field for a server config.
+   * Used to set instructions fetched from OAuth servers after successful connection.
+   * @param serverName - The name of the server
+   * @param instructions - The instructions string fetched from the server
+   */
+  public async updateServerInstructions(serverName: string, instructions: string): Promise<void> {
+    // Update in cache repository (YAML-defined servers)
+    const configFromCache = await this.cacheConfigsRepo.get(serverName);
+    if (configFromCache) {
+      configFromCache.serverInstructions = instructions;
+      await this.cacheConfigsRepo.update(serverName, configFromCache);
+      // Clear read-through caches to ensure fresh data on next read
+      await this.readThroughCache.clear();
+      await this.readThroughCacheAll.clear();
+      logger.debug(`[MCPServersRegistry] Updated serverInstructions for "${serverName}"`);
+    }
+  }
+
   // TODO: This is currently used to determine if a server requires OAuth. However, this info can
   // can be determined through config.requiresOAuth. Refactor usages and remove this method.
   public async getOAuthServers(userId?: string): Promise<Set<string>> {

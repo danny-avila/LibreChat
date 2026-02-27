@@ -6,6 +6,7 @@ import { MCPConnection } from './connection';
 import type * as t from './types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { mcpConfig } from './mcpConfig';
+import { isEnabled } from '~/utils';
 
 /**
  * Abstract base class for managing user-specific MCP connections with lifecycle management.
@@ -144,6 +145,25 @@ export abstract class UserConnectionManager {
       this.userConnections.get(userId)?.set(serverName, connection);
 
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
+
+      // For OAuth servers, fetch and update serverInstructions if enabled but not yet fetched
+      if (config.requiresOAuth && isEnabled(config.serverInstructions)) {
+        try {
+          const instructions = connection.client.getInstructions();
+          if (instructions && typeof instructions === 'string') {
+            await MCPServersRegistry.getInstance().updateServerInstructions(serverName, instructions);
+            logger.debug(
+              `[MCP][User: ${userId}][${serverName}] Fetched and updated server instructions`,
+            );
+          }
+        } catch (instructionsError) {
+          logger.warn(
+            `[MCP][User: ${userId}][${serverName}] Failed to fetch server instructions:`,
+            instructionsError,
+          );
+        }
+      }
+
       // Update timestamp on creation
       this.updateUserLastActivity(userId);
       return connection;
