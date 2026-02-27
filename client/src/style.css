@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+html, body {
+  /* Prevents the pull-to-refresh action */
+  overscroll-behavior-y: contain;
+}
+
 /* Custom Variables */
 :root {
   --white: #fff;
