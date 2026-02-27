@@ -77,6 +77,17 @@ export class MCPServerInspector {
 
   private async detectOAuth(): Promise<void> {
     if (this.config.requiresOAuth != null) return;
+    
+    // Check for OAuth configuration in librechat.yaml for ALL server types
+    // This allows stdio servers to have OAuth configured even without a URL
+    if (this.config.oauth && 
+        this.config.oauth.client_id && 
+        this.config.oauth.client_secret && 
+        this.config.oauth.redirect_uri) {
+      this.config.requiresOAuth = true;
+      return;
+    }
+    
     if (this.config.url == null || this.config.startup === false) {
       this.config.requiresOAuth = false;
       return;
