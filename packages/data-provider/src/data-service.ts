@@ -784,6 +784,14 @@ export const branchMessage = async (
   return request.post(endpoints.messagesBranch(), payload);
 };
 
+export function deleteMessage(payload: {
+  conversationId: string;
+  messageId: string;
+}): Promise<{ deletedMessageIds: string[] }> {
+  const { conversationId, messageId } = payload;
+  return request.delete(endpoints.messages({ conversationId, messageId }));
+}
+
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
   if (
     conversationId === config.Constants.NEW_CONVO ||

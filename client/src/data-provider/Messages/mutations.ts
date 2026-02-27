@@ -3,6 +3,71 @@ import { dataService, QueryKeys, Constants } from 'librechat-data-provider';
 import type { UseMutationResult, UseMutationOptions } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 
+type DeleteMessageRequest = {
+  conversationId: string;
+  messageId: string;
+};
+
+type DeleteMessageResponse = {
+  deletedMessageIds: string[];
+};
+
+type DeleteMessageContext = {
+  previousMessages: t.TMessage[] | undefined;
+  conversationId: string;
+};
+
+export const useDeleteMessageMutation = (
+  conversationId: string | null,
+  _options?: UseMutationOptions<DeleteMessageResponse, Error, DeleteMessageRequest, DeleteMessageContext>,
+): UseMutationResult<DeleteMessageResponse, Error, DeleteMessageRequest, DeleteMessageContext> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError, onMutate: userOnMutate, ...options } = _options ?? {};
+
+  return useMutation({
+    mutationFn: (variables: DeleteMessageRequest) => dataService.deleteMessage(variables),
+    onMutate: async (vars) => {
+      if (userOnMutate) {
+        await userOnMutate(vars);
+      }
+      if (conversationId) {
+        await queryClient.cancelQueries([QueryKeys.messages, conversationId]);
+      }
+      const previousMessages = conversationId
+        ? queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, conversationId])
+        : undefined;
+
+      return { previousMessages, conversationId: conversationId ?? vars.conversationId };
+    },
+    onError: (error, vars, context) => {
+      if (context?.conversationId && context?.previousMessages) {
+        queryClient.setQueryData(
+          [QueryKeys.messages, context.conversationId],
+          context.previousMessages,
+        );
+      }
+      onError?.(error, vars, context);
+    },
+    onSuccess: (data, vars, context) => {
+      const targetConversationId = context?.conversationId ?? conversationId;
+      if (targetConversationId) {
+        const deletedSet = new Set(data.deletedMessageIds);
+        queryClient.setQueryData<t.TMessage[]>(
+          [QueryKeys.messages, targetConversationId],
+          (prev) => {
+            if (!prev) {
+              return prev;
+            }
+            return prev.filter((msg) => !deletedSet.has(msg.messageId));
+          },
+        );
+      }
+      onSuccess?.(data, vars, context);
+    },
+    ...options,
+  });
+};
+
 type EditArtifactContext = {
   previousMessages: Record<string, t.TMessage[] | undefined>;
   updatedConversationId: string | null;

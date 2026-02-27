@@ -33,6 +33,7 @@ export default function Message(props: TMessageProps) {
     conversation,
     isSubmitting,
     latestMessage,
+    handleDelete,
     handleContinue,
     copyToClipboard,
     regenerateMessage,
@@ -167,6 +168,7 @@ export default function Message(props: TMessageProps) {
                       handleContinue={handleContinue}
                       latestMessage={latestMessage}
                       isLast={isLast}
+                      onDelete={handleDelete}
                     />
                   </SubRow>
                 )}
