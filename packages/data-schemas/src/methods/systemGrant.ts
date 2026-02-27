@@ -183,18 +183,32 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Seed the ADMIN role with all system capabilities (no tenantId — single-instance mode).
-   * Idempotent: safe to call on every startup.
+   * Idempotent and concurrency-safe: uses bulkWrite with ordered:false so parallel
+   * server instances (K8s rolling deploy, PM2 cluster) do not race on E11000.
    */
   async function seedSystemGrants(): Promise<void> {
-    await Promise.all(
-      Object.values(SystemCapabilities).map((capability) =>
-        grantCapability({
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const now = new Date();
+    const ops = Object.values(SystemCapabilities).map((capability) => ({
+      updateOne: {
+        filter: {
           principalType: PrincipalType.ROLE,
           principalId: SystemRoles.ADMIN,
           capability,
-        }),
-      ),
-    );
+          tenantId: { $exists: false },
+        },
+        update: {
+          $setOnInsert: {
+            principalType: PrincipalType.ROLE,
+            principalId: SystemRoles.ADMIN,
+            capability,
+            grantedAt: now,
+          },
+        },
+        upsert: true,
+      },
+    }));
+    await SystemGrant.bulkWrite(ops, { ordered: false });
   }
 
   return {
