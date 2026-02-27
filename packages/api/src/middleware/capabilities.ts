@@ -1,5 +1,6 @@
-import { logger } from '@librechat/data-schemas';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
+  logger,
   configCapability,
   SystemCapabilities,
   readConfigCapability,
@@ -30,6 +31,11 @@ interface CapabilityUser {
   tenantId?: string;
 }
 
+interface CapabilityStore {
+  principals: Map<string, ResolvedPrincipal[]>;
+  results: Map<string, boolean>;
+}
+
 export type HasCapabilityFn = (
   user: CapabilityUser,
   capability: SystemCapability,
@@ -37,13 +43,31 @@ export type HasCapabilityFn = (
 
 export type RequireCapabilityFn = (
   capability: SystemCapability,
-) => (req: ServerRequest, res: Response, next: NextFunction) => Promise<unknown>;
+) => (req: ServerRequest, res: Response, next: NextFunction) => Promise<void>;
 
 export type HasConfigCapabilityFn = (
   user: CapabilityUser,
   section: ConfigSection,
   verb?: 'manage' | 'read',
 ) => Promise<boolean>;
+
+/**
+ * Per-request store for caching resolved principals and capability check results.
+ * When running inside an Express request (via `capabilityContextMiddleware`),
+ * duplicate `hasCapability` calls within the same request are served from
+ * the in-memory Map instead of hitting the database again.
+ * Outside a request context (background jobs, tests), the store is undefined
+ * and every check falls through to the database — correct behavior.
+ */
+export const capabilityStore = new AsyncLocalStorage<CapabilityStore>();
+
+export function capabilityContextMiddleware(
+  _req: ServerRequest,
+  _res: Response,
+  next: NextFunction,
+): void {
+  capabilityStore.run({ principals: new Map(), results: new Map() }, next);
+}
 
 /**
  * Factory that creates `hasCapability` and `requireCapability` with injected
@@ -61,8 +85,31 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     user: CapabilityUser,
     capability: SystemCapability,
   ): Promise<boolean> {
-    const principals = await getUserPrincipals({ userId: user.id, role: user.role });
-    return hasCapabilityForPrincipals({ principals, capability, tenantId: user.tenantId });
+    const store = capabilityStore.getStore();
+
+    const resultKey = `${user.id}:${user.tenantId ?? ''}:${capability}`;
+    const cached = store?.results.get(resultKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const principalKey = `${user.id}:${user.role}`;
+    let principals: ResolvedPrincipal[];
+    const cachedPrincipals = store?.principals.get(principalKey);
+    if (cachedPrincipals) {
+      principals = cachedPrincipals;
+    } else {
+      principals = await getUserPrincipals({ userId: user.id, role: user.role });
+      store?.principals.set(principalKey, principals);
+    }
+
+    const result = await hasCapabilityForPrincipals({
+      principals,
+      capability,
+      tenantId: user.tenantId,
+    });
+    store?.results.set(resultKey, result);
+    return result;
   }
 
   /**
@@ -89,12 +136,14 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     return async (req: ServerRequest, res: Response, next: NextFunction) => {
       try {
         if (!req.user) {
-          return res.status(401).json({ message: 'Authentication required' });
+          res.status(401).json({ message: 'Authentication required' });
+          return;
         }
 
         const id = req.user.id ?? req.user._id?.toString();
         if (!id) {
-          return res.status(401).json({ message: 'Authentication required' });
+          res.status(401).json({ message: 'Authentication required' });
+          return;
         }
 
         const user: CapabilityUser = {
@@ -104,13 +153,14 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
         };
 
         if (await hasCapability(user, capability)) {
-          return next();
+          next();
+          return;
         }
 
-        return res.status(403).json({ message: 'Forbidden' });
+        res.status(403).json({ message: 'Forbidden' });
       } catch (err) {
         logger.error(`[requireCapability] Error checking capability: ${capability}`, err);
-        return res.status(500).json({ message: 'Internal Server Error' });
+        res.status(500).json({ message: 'Internal Server Error' });
       }
     };
   }

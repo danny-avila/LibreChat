@@ -1,4 +1,9 @@
-const { hasCapability, requireCapability, hasConfigCapability } = require('./capabilities');
+const {
+  hasCapability,
+  requireCapability,
+  hasConfigCapability,
+  capabilityContextMiddleware,
+} = require('./capabilities');
 const checkAdmin = require('./admin');
 
 module.exports = {
@@ -6,4 +11,5 @@ module.exports = {
   hasCapability,
   requireCapability,
   hasConfigCapability,
+  capabilityContextMiddleware,
 };
