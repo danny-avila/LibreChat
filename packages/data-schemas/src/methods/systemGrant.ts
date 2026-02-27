@@ -4,6 +4,7 @@ import type { SystemCapability } from '~/systemCapabilities';
 import type { ISystemGrant } from '~/types';
 import { SystemCapabilities, CapabilityImplications } from '~/systemCapabilities';
 import { normalizePrincipalId } from '~/utils/principal';
+import logger from '~/config/winston';
 
 export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -187,28 +188,35 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
    * server instances (K8s rolling deploy, PM2 cluster) do not race on E11000.
    */
   async function seedSystemGrants(): Promise<void> {
-    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
-    const now = new Date();
-    const ops = Object.values(SystemCapabilities).map((capability) => ({
-      updateOne: {
-        filter: {
-          principalType: PrincipalType.ROLE,
-          principalId: SystemRoles.ADMIN,
-          capability,
-          tenantId: { $exists: false },
-        },
-        update: {
-          $setOnInsert: {
+    try {
+      const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+      const now = new Date();
+      const ops = Object.values(SystemCapabilities).map((capability) => ({
+        updateOne: {
+          filter: {
             principalType: PrincipalType.ROLE,
             principalId: SystemRoles.ADMIN,
             capability,
-            grantedAt: now,
+            tenantId: { $exists: false },
           },
+          update: {
+            $setOnInsert: {
+              principalType: PrincipalType.ROLE,
+              principalId: SystemRoles.ADMIN,
+              capability,
+              grantedAt: now,
+            },
+          },
+          upsert: true,
         },
-        upsert: true,
-      },
-    }));
-    await SystemGrant.bulkWrite(ops, { ordered: false });
+      }));
+      await SystemGrant.bulkWrite(ops, { ordered: false });
+    } catch (err) {
+      logger.error(
+        '[seedSystemGrants] Failed to seed capabilities — will retry on next restart',
+        err,
+      );
+    }
   }
 
   return {
