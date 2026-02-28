@@ -136,6 +136,8 @@ class AgentClient extends BaseClient {
           spec: this.options.spec,
           iconURL: this.options.iconURL,
           endpoint: this.options.endpoint,
+          endpointType: this.options.endpointType,
+          model: this.options.agent?.model_parameters?.model,
           agent_id: this.options.agent.id,
           modelLabel: this.options.modelLabel,
           resendFiles: this.options.resendFiles,

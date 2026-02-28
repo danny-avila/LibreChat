@@ -660,6 +660,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   attachments?: TAttachment[];
   clientTimestamp?: string;
   feedback?: TFeedback;
+  tokenCount?: number;
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {

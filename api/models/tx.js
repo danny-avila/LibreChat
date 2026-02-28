@@ -1,34 +1,24 @@
-const { matchModelName, findMatchingPattern } = require('@librechat/api');
+const { matchModelName, findMatchingPattern } = require('librechat-data-provider');
 const defaultRate = 6;
 
 /**
  * Token Pricing Configuration
  *
- * IMPORTANT: Key Ordering for Pattern Matching
- * ============================================
- * The `findMatchingPattern` function iterates through object keys in REVERSE order
- * (last-defined keys are checked first) and uses `modelName.includes(key)` for matching.
+ * Pattern Matching Strategy
+ * ========================
+ * The `findMatchingPattern` function uses a longest-match strategy: it checks all keys
+ * and returns the longest key that is a substring of the model name. This ensures
+ * specific patterns always take priority over generic ones regardless of definition order.
  *
- * This means:
- * 1. BASE PATTERNS must be defined FIRST (e.g., "kimi", "moonshot")
- * 2. SPECIFIC PATTERNS must be defined AFTER their base patterns (e.g., "kimi-k2", "kimi-k2.5")
+ * Example for Kimi models:
+ *   kimi: { prompt: 0.6, completion: 2.5 },        // Base pattern (3 chars)
+ *   'kimi-k2': { prompt: 0.6, completion: 2.5 },   // More specific (7 chars)
+ *   'kimi-k2.5': { prompt: 0.6, completion: 3.0 }, // Most specific (9 chars)
  *
- * Example ordering for Kimi models:
- *   kimi: { prompt: 0.6, completion: 2.5 },       // Base pattern - checked last
- *   'kimi-k2': { prompt: 0.6, completion: 2.5 },  // More specific - checked before "kimi"
- *   'kimi-k2.5': { prompt: 0.6, completion: 3.0 }, // Most specific - checked first
+ * For model name "kimi-k2.5", all three keys match, but "kimi-k2.5" wins (longest).
  *
- * Why this matters:
- * - Model name "kimi-k2.5" contains both "kimi" and "kimi-k2" as substrings
- * - If "kimi" were checked first, it would incorrectly match and return wrong pricing
- * - By defining specific patterns AFTER base patterns, they're checked first in reverse iteration
- *
- * This applies to BOTH `tokenValues` and `cacheTokenValues` objects.
- *
- * When adding new model families:
- * 1. Define the base/generic pattern first
- * 2. Define increasingly specific patterns after
- * 3. Ensure no pattern is a substring of another that should match differently
+ * Keys are ordered base-to-specific for readability, but this is not required
+ * by the algorithm. This applies to BOTH `tokenValues` and `cacheTokenValues` objects.
  */
 
 /**

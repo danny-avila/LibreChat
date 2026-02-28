@@ -8,6 +8,7 @@ import {
   isAgentsEndpoint,
   replaceSpecialVars,
   providerEndpointMap,
+  getModelMaxTokens,
 } from 'librechat-data-provider';
 import type {
   AgentToolResources,
@@ -21,12 +22,7 @@ import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/ag
 import type { Response as ServerResponse } from 'express';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
-import {
-  optionalChainWithEmptyCheck,
-  extractLibreChatParams,
-  getModelMaxTokens,
-  getThreadData,
-} from '~/utils';
+import { optionalChainWithEmptyCheck, extractLibreChatParams, getThreadData } from '~/utils';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';

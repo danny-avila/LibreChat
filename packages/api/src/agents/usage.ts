@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
 import type { UsageMetadata } from '../stream/interfaces/IJobStore';
-import type { EndpointTokenConfig } from '../types/tokens';
+import type { EndpointTokenConfig } from 'librechat-data-provider';
 
 interface TokenUsage {
   promptTokens?: number;
