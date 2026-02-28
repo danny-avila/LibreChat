@@ -8,13 +8,16 @@ const logoutController = async (req, res) => {
   const parsedCookies = req.headers.cookie ? cookies.parse(req.headers.cookie) : {};
   const isOpenIdUser = req.user?.openidId != null && req.user?.provider === 'openid';
 
-  /** For OpenID users, read refresh token from session; for others, use cookie */
+  /** For OpenID users, read tokens from session; for others, use cookie */
   let refreshToken;
+  let idToken;
   if (isOpenIdUser && req.session?.openidTokens) {
     refreshToken = req.session.openidTokens.refreshToken;
+    idToken = req.session.openidTokens.idToken;
     delete req.session.openidTokens;
   }
   refreshToken = refreshToken || parsedCookies.refreshToken;
+  idToken = idToken || parsedCookies.openid_id_token;
 
   try {
     const logout = await logoutUser(req, refreshToken);
@@ -46,6 +49,14 @@ const logoutController = async (req, res) => {
           const postLogoutRedirectUri =
             process.env.OPENID_POST_LOGOUT_REDIRECT_URI || `${process.env.DOMAIN_CLIENT}/login`;
           endSessionUrl.searchParams.set('post_logout_redirect_uri', postLogoutRedirectUri);
+
+          /** Add id_token_hint (preferred) or client_id for OIDC spec compliance */
+          if (idToken) {
+            endSessionUrl.searchParams.set('id_token_hint', idToken);
+          } else {
+            endSessionUrl.searchParams.set('client_id', process.env.OPENID_CLIENT_ID);
+          }
+
           response.redirect = endSessionUrl.toString();
         } else {
           logger.warn(
