@@ -14,6 +14,7 @@ const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
+  apiNotFound,
   ErrorController,
   performStartupChecks,
   handleJsonParseError,
@@ -297,6 +298,7 @@ if (cluster.isMaster) {
     /** Routes */
     app.use('/oauth', routes.oauth);
     app.use('/api/auth', routes.auth);
+    app.use('/api/admin', routes.adminAuth);
     app.use('/api/actions', routes.actions);
     app.use('/api/keys', routes.keys);
     app.use('/api/api-keys', routes.apiKeys);
@@ -310,7 +312,6 @@ if (cluster.isMaster) {
     app.use('/api/endpoints', routes.endpoints);
     app.use('/api/balance', routes.balance);
     app.use('/api/models', routes.models);
-    app.use('/api/plugins', routes.plugins);
     app.use('/api/config', routes.config);
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
@@ -324,8 +325,8 @@ if (cluster.isMaster) {
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);
 
-    /** Error handler */
-    app.use(ErrorController);
+    /** 404 for unmatched API routes */
+    app.use('/api', apiNotFound);
 
     /** SPA fallback - serve index.html for all unmatched routes */
     app.use((req, res) => {
@@ -342,6 +343,9 @@ if (cluster.isMaster) {
       res.type('html');
       res.send(updatedIndexHtml);
     });
+
+    /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
+    app.use(ErrorController);
 
     /** Start listening on shared port (cluster will distribute connections) */
     app.listen(port, host, async (err) => {
