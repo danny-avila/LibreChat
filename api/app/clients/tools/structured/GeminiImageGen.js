@@ -454,8 +454,8 @@ function createGeminiImageTool(fields = {}) {
         usageMetadata: apiResponse.usageMetadata,
         req,
         userId,
-        conversationId,
         messageId,
+        conversationId,
         model: geminiModel,
       }).catch((error) => {
         logger.error('[GeminiImageGen] Failed to record token usage:', error);
