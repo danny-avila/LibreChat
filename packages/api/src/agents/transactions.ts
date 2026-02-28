@@ -1,26 +1,7 @@
+import { CANCEL_RATE } from '@librechat/data-schemas';
 import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
-import type { EndpointTokenConfig } from '../types/tokens';
-
-const CANCEL_RATE = 1.15;
-
-export interface TransactionDoc {
-  user: string;
-  conversationId: string;
-  tokenType: string;
-  model?: string;
-  context?: string;
-  valueKey?: string;
-  rate?: number;
-  rawAmount?: number;
-  tokenValue?: number;
-  inputTokens?: number;
-  writeTokens?: number;
-  readTokens?: number;
-  messageId?: string;
-  inputTokenCount?: number;
-  rateDetail?: Record<string, number>;
-  endpointTokenConfig?: EndpointTokenConfig;
-}
+import type { TransactionData } from '@librechat/data-schemas';
+import type { EndpointTokenConfig } from '~/types/tokens';
 
 interface GetMultiplierParams {
   valueKey?: string;
@@ -69,7 +50,7 @@ interface StructuredTxData extends BaseTxData {
 }
 
 export interface PreparedEntry {
-  doc: TransactionDoc;
+  doc: TransactionData;
   tokenValue: number;
   balance?: Partial<TCustomConfig['balance']> | null;
 }
@@ -102,7 +83,7 @@ export interface TxMetadata {
 }
 
 export interface BulkWriteDeps {
-  insertMany: (docs: TransactionDoc[]) => Promise<unknown>;
+  insertMany: (docs: TransactionData[]) => Promise<unknown>;
   updateBalance: (params: { user: string; incrementValue: number }) => Promise<unknown>;
 }
 
@@ -110,9 +91,9 @@ function calculateTokenValue(
   txData: StandardTxData,
   pricing: PricingFns,
 ): { tokenValue: number; rate: number } {
-  const { tokenType, model, endpointTokenConfig, inputTokenCount, rawAmount } = txData;
+  const { tokenType, model, endpointTokenConfig, inputTokenCount, rawAmount, valueKey } = txData;
   const multiplier = Math.abs(
-    pricing.getMultiplier({ tokenType, model, endpointTokenConfig, inputTokenCount }),
+    pricing.getMultiplier({ valueKey, tokenType, model, endpointTokenConfig, inputTokenCount }),
   );
   let rate = multiplier;
   let tokenValue = rawAmount * multiplier;
@@ -346,16 +327,17 @@ export async function bulkWriteTransactions(
     return;
   }
 
-  await dbOps.insertMany(docs.map((d) => d.doc));
-
   let totalTokenValue = 0;
   let balanceEnabled = false;
-  for (const { tokenValue, balance } of docs) {
-    totalTokenValue += tokenValue;
+  const plainDocs = docs.map(({ doc, tokenValue, balance }) => {
     if (balance?.enabled) {
       balanceEnabled = true;
+      totalTokenValue += tokenValue;
     }
-  }
+    return doc;
+  });
+
+  await dbOps.insertMany(plainDocs);
 
   if (!balanceEnabled) {
     return;
