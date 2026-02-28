@@ -20,7 +20,7 @@ class E2BClientManager {
     this.defaultConfig = {
       // 默认使用官方基础模板，避免 404
       template: process.env.E2B_SANDBOX_TEMPLATE || 'code-interpreter', 
-      timeoutMs: parseInt(process.env.E2B_DEFAULT_TIMEOUT_MS) || 3600000, // 1小时
+      timeoutMs: parseInt(process.env.E2B_DEFAULT_TIMEOUT_MS) || 3600000, // 24小时
     };
   }
 
@@ -122,6 +122,21 @@ class E2BClientManager {
   async getSandbox(userId, conversationId) {
     const key = `${userId}:${conversationId}`;
     return this.sandboxes.get(key);
+  }
+
+  /**
+   * 仅删除本地沙箱引用（不调用E2B kill API）
+   * 用于沙箱已过期、本地缓存需要清除的场景
+   * @param {string} userId 
+   * @param {string} conversationId 
+   */
+  removeSandbox(userId, conversationId) {
+    const key = `${userId}:${conversationId}`;
+    const sandboxData = this.sandboxes.get(key);
+    if (sandboxData) {
+      logger.info(`[E2B] Removing stale sandbox reference: ${sandboxData.id || key}`);
+      this.sandboxes.delete(key);
+    }
   }
 
   /**

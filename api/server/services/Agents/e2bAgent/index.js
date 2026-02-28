@@ -151,6 +151,32 @@ class E2BDataAnalystAgent {
           openai: this.openai, // For fetching files from OpenAI/Azure if needed
         });
         
+        // CRITICAL: If ALL file uploads failed, the cached sandbox reference is stale/expired.
+        // Kill the stale reference, recreate the sandbox, and retry file sync.
+        if (uploadedFiles.length === 0 && uniqueFileIds.length > 0) {
+          logger.warn(`[E2BAgent] All ${uniqueFileIds.length} file uploads failed — sandbox likely expired. Removing stale reference and recreating...`);
+          try {
+            e2bClientManager.removeSandbox(this.userId, this.conversationId);
+            await e2bClientManager.createSandbox(
+              this.assistant.e2b_sandbox_template || 'xed696qfsyzpaei3ulh5',
+              this.userId,
+              this.conversationId,
+              this.assistant.e2b_config
+            );
+            logger.info(`[E2BAgent] Sandbox recreated after stale reference, retrying file sync...`);
+            uploadedFiles = await fileHandler.syncFilesToSandbox({
+              req: this.req,
+              userId: this.userId,
+              conversationId: this.conversationId,
+              fileIds: uniqueFileIds,
+              openai: this.openai,
+            });
+            logger.info(`[E2BAgent] Retry sync result: ${uploadedFiles.length}/${uniqueFileIds.length} files restored`);
+          } catch (recreateError) {
+            logger.error(`[E2BAgent] Failed to recreate sandbox during file sync:`, recreateError);
+          }
+        }
+
         if (uploadedFiles.length > 0) {
           logger.info(`[E2BAgent] Successfully synced files: ${uploadedFiles.map(f => f.filename).join(', ')}`);
           
@@ -160,52 +186,13 @@ class E2BDataAnalystAgent {
           logger.info(`[E2BAgent] Context Manager updated. Current state:`, JSON.stringify(this.contextManager.getSummary()));
         }
         
-        // CRITICAL: Clean up invalid file_ids from assistant configuration
-        // If some files failed to sync (e.g., deleted from DB), remove them from tool_resources
+        // Log partial sync failures but DO NOT remove file IDs from the assistant config.
+        // Sync failures are often caused by sandbox expiry or transient E2B errors, NOT by
+        // files being deleted from the DB. Permanently deleting persistent file IDs here
+        // would destroy the assistant's file configuration on every sandbox timeout.
         if (uploadedFiles.length < uniqueFileIds.length) {
-          const syncedFileIds = new Set(uploadedFiles.map(f => f.file_id));
-          const invalidFileIds = uniqueFileIds.filter(id => !syncedFileIds.has(id));
-          
-          if (invalidFileIds.length > 0) {
-            logger.warn(`[E2BAgent] Found ${invalidFileIds.length} invalid file IDs that failed to sync: ${invalidFileIds.join(', ')}`);
-            logger.info(`[E2BAgent] Removing invalid file IDs from assistant configuration...`);
-            
-            try {
-              const { updateE2BAssistantDoc } = require('~/models/E2BAssistant');
-              
-              // Update tool_resources.code_interpreter.file_ids
-              if (this.assistant?.tool_resources?.code_interpreter?.file_ids) {
-                const cleanedToolResourceFileIds = this.assistant.tool_resources.code_interpreter.file_ids
-                  .filter(id => !invalidFileIds.includes(id));
-                
-                this.assistant.tool_resources.code_interpreter.file_ids = cleanedToolResourceFileIds;
-                logger.info(`[E2BAgent] Cleaned tool_resources.code_interpreter.file_ids: ${cleanedToolResourceFileIds.length} valid files`);
-              }
-              
-              // Update root file_ids (V1 style)
-              if (this.assistant?.file_ids && Array.isArray(this.assistant.file_ids)) {
-                const cleanedRootFileIds = this.assistant.file_ids
-                  .filter(id => !invalidFileIds.includes(id));
-                
-                this.assistant.file_ids = cleanedRootFileIds;
-                logger.info(`[E2BAgent] Cleaned root file_ids: ${cleanedRootFileIds.length} valid files`);
-              }
-              
-              // Persist changes to database
-              await updateE2BAssistantDoc(
-                { id: this.assistant.id, author: this.userId },
-                { 
-                  tool_resources: this.assistant.tool_resources,
-                  file_ids: this.assistant.file_ids 
-                }
-              );
-              
-              logger.info(`[E2BAgent] ✓ Successfully removed ${invalidFileIds.length} invalid file IDs from database`);
-            } catch (cleanupError) {
-              logger.error(`[E2BAgent] Failed to clean up invalid file IDs:`, cleanupError);
-              // Don't throw - continue with valid files
-            }
-          }
+          const failedCount = uniqueFileIds.length - uploadedFiles.length;
+          logger.warn(`[E2BAgent] ${failedCount} file(s) failed to sync to sandbox (transient error - preserving assistant file_ids in DB)`);
         }
       } else {
         logger.info(`[E2BAgent] No files to sync (neither attachments nor assistant persistent files)`);
@@ -290,6 +277,9 @@ class E2BDataAnalystAgent {
       let finalContent = ''; // Will accumulate all assistant content
       const intermediateSteps = [];
       let shouldExitMainLoop = false; // Flag to exit both loops
+      let consecutiveNoToolCallCount = 0; // Track how many times LLM skips tool calls in a row
+      let lastToolFailed = false;    // Did the last tool call produce an error?
+      let lastToolName = null;       // Which tool was last called?
 
       while (iteration < this.maxIterations && !shouldExitMainLoop) {
         iteration++;
@@ -414,21 +404,38 @@ class E2BDataAnalystAgent {
               shouldExitMainLoop = true; // LLM主动决定完成，立即停止
             }
 
-            // 如果没有工具调用，提醒 LLM 继续执行计划
+            // 如果没有工具调用，基于上一步工具状态做精准决策
             if (!message.tool_calls || message.tool_calls.length === 0) {
-              // 🔧 FIX: 不要因为 finish_reason='stop' 就退出
-              // LLM 可能只是完成了一步的分析，还需要继续执行后续步骤
-              logger.info(`[E2BAgent] LLM returned text without tool calls (finish_reason: ${message.finish_reason}). Prompting to continue with next step.`);
-              
-              // 添加系统提示，提醒 LLM 继续执行计划
-              messages.push({
-                role: 'user',
-                content: 'Please continue with the next step of your plan. If all steps are completed, use the `complete_task` tool to finish.'
-              });
-              
-              // 继续下一次迭代
+              consecutiveNoToolCallCount++;
+              logger.info(`[E2BAgent] LLM returned text without tool calls (finish_reason: ${message.finish_reason}, lastToolFailed=${lastToolFailed}, consecutiveCount=${consecutiveNoToolCallCount})`);
+
+              // 硬上限：连续3次无工具调用直接终止，无论原因
+              if (consecutiveNoToolCallCount >= 3) {
+                logger.warn(`[E2BAgent] Hard limit: ${consecutiveNoToolCallCount} consecutive text-only responses — terminating loop.`);
+                shouldExitMainLoop = true;
+                break;
+              }
+
+              // 上一步工具执行失败 → LLM 应该立即重试工具，不应输出文本
+              if (lastToolFailed) {
+                logger.warn(`[E2BAgent] Last tool (${lastToolName}) failed but LLM produced text instead of retrying — injecting retry directive.`);
+                messages.push({
+                  role: 'user',
+                  content: `The last \`${lastToolName}\` call failed. Call \`execute_code\` now to fix and retry — do NOT produce text explanations.`
+                });
+              } else {
+                // 无工具失败背景 → 正常推进或总结
+                messages.push({
+                  role: 'user',
+                  content: 'Continue with the next step using `execute_code`. If all steps are done, call `complete_task`.'
+                });
+              }
               continue;
             }
+            
+            // Reset counter when LLM successfully calls a tool
+            consecutiveNoToolCallCount = 0;
+            // (lastToolFailed will be set accurately per-tool inside the tool loop below)
 
             // 5. 执行工具调用 (ReAct 模式)
             for (const toolCall of message.tool_calls) {
@@ -521,6 +528,10 @@ class E2BDataAnalystAgent {
                 logger.error(`[E2BAgent] Error executing tool ${name}:`, err);
                 result = { success: false, error: err.message };
               }
+              
+              // Track last tool state for no-tool-call decision logic
+              lastToolFailed = !result.success;
+              lastToolName = name;
               
               // 计算执行时间
               const elapsedTime = Date.now() - startTime;

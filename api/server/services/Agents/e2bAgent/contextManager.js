@@ -108,9 +108,65 @@ class ContextManager {
     const filesList = this.sessionState.uploadedFiles
       .map(f => {
         const fullPath = `/home/user/${f.filename}`;
+        const ext = f.filename.split('.').pop()?.toLowerCase();
+
+        let usageHint;
+        if (ext === 'pdf') {
+          usageHint = `# Option 1 - Best for LLM reading (Markdown with tables):
+import pymupdf4llm
+text = pymupdf4llm.to_markdown('${fullPath}')
+print(text[:3000])
+
+# Option 2 - Table extraction:
+import camelot
+tables = camelot.read_pdf('${fullPath}', pages='all')
+df = tables[0].df  # first table
+
+# Option 3 - Fast text extraction:
+import fitz
+doc = fitz.open('${fullPath}')
+text = '\\n'.join(page.get_text() for page in doc)`;
+        } else if (ext === 'docx') {
+          usageHint = `from docx import Document
+doc = Document('${fullPath}')
+text = '\\n'.join(p.text for p in doc.paragraphs)
+print(text[:3000])`;
+        } else if (ext === 'pptx') {
+          usageHint = `from pptx import Presentation
+prs = Presentation('${fullPath}')
+text = '\\n'.join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, 'text'))
+print(text[:3000])`;
+        } else if (['png', 'jpg', 'jpeg', 'tiff', 'bmp', 'webp'].includes(ext)) {
+          usageHint = `# OCR image (deep learning, 80+ languages):
+import easyocr
+reader = easyocr.Reader(['en', 'ch_sim'])  # add languages as needed
+result = reader.readtext('${fullPath}')
+text = '\\n'.join([r[1] for r in result])
+print(text)`;
+        } else if (ext === 'csv') {
+          usageHint = `df = pd.read_csv('${fullPath}')`;
+        } else if (['xlsx', 'xls'].includes(ext)) {
+          usageHint = `df = pd.read_excel('${fullPath}')
+# Multiple sheets: pd.read_excel('${fullPath}', sheet_name=None)`;
+        } else if (ext === 'parquet') {
+          usageHint = `df = pd.read_parquet('${fullPath}')`;
+        } else if (ext === 'json') {
+          usageHint = `df = pd.read_json('${fullPath}')`;
+        } else {
+          // Universal fallback: markitdown
+          usageHint = `# Universal converter (PDF/Word/Excel/PPT/HTML → Markdown):
+from markitdown import MarkItDown
+md = MarkItDown()
+result = md.convert('${fullPath}')
+print(result.text_content[:3000])`;
+        }
+
         return `  📄 ${f.filename}
      Path: ${fullPath}
-     Usage: df = pd.read_csv('${fullPath}')`;
+     Usage:
+\`\`\`python
+${usageHint}
+\`\`\``;
       })
       .join('\n\n');
 
@@ -121,12 +177,10 @@ ${filesList}
 ⚠️ CRITICAL RULES:
 1. Use COMPLETE paths exactly as shown above
 2. NEVER add UUID, prefix, or modify the filename
-3. If file not found, check spelling matches exactly
+3. If file not found, use list_files('/home/user') to check available files
 
 📊 VISUALIZATION TIP:
-- Just use plt.show() - images are captured automatically
-- DO NOT save to /images/ directory (it doesn't exist in sandbox)
-- Optional: Save to /tmp/ if needed, but plt.show() is enough`;
+- Just use plt.show() - images are captured automatically`;
   }
 
   /**

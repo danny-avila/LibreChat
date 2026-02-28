@@ -1298,10 +1298,91 @@ npm run e2b:build:dev
 
 ---
 
+## 2026-02-28 (周六)
+
+### 🐛 多项系统性 Bug 修复 + 库扩展
+**Git Commit**: feat(e2b): Expand libraries, fix file recovery, sandbox expiry, and infinite loop
+
+### 主要工作
+
+#### 1. 库列表扩展 (prompts.js + template.ts) ⭐
+- **问题**: 沙箱实际已安装 40+ 个专业库，但 system prompt 中只列了 14 个
+- **修复**: 将默认库列表从 14 个扩展到 40+ 个，按类别分组：
+  - 核心数据分析、高性能 DataFrame（polars/dask/modin）
+  - ML 补全（catboost、imbalanced-learn、feature-engine、ydata-profiling）
+  - PDF 处理（pymupdf/pymupdf4llm/pdfplumber/camelot-py）
+  - Office 文档（python-docx/python-pptx/markitdown）
+  - OCR（easyocr/pytesseract）
+  - 地理空间、音频、高级 NLP、数据库等
+
+#### 2. 文件类型感知代码示例 (contextManager.js + prompts.js) ⭐⭐
+- **问题**: LLM 拿到文件时只知道文件名，不知道该用哪个库读取
+- **修复**:
+  - `contextManager.js` 的 `_generateFilesContext()` 根据后缀名动态生成对应读取代码
+    - PDF → `pymupdf4llm.to_markdown()` / `camelot` / `fitz`（三种选项）
+    - Word → `python-docx`；PPT → `python-pptx`；图片 → `easyocr`
+    - CSV/Excel/Parquet/JSON → 对应 pandas 方法；其他格式 → `markitdown`
+  - `prompts.js` 在 File Management 章节新增 "File Type Handling" 表格
+
+#### 3. 规则强化 (prompts.js)
+- **新增 Rule 7**: 严禁在文本中输出 markdown 代码块（`\`\`\`python`），所有代码必须通过 `execute_code` 工具执行
+- **新增 Rule 8**: FileNotFoundError 强制恢复协议——立即 `list_files` → 文件存在则立即重试
+
+#### 4. FileNotFoundError 自动注入 (tools.js) ⭐⭐
+- **问题**: LLM 遇到 FileNotFoundError 后调用 `list_files`，但这需要额外一轮 tool call，期间 LLM 可能输出文字解释陷入循环
+- **修复**: `execute_code` 内部检测到 FileNotFoundError 时，**自动执行** `os.listdir('/home/user/')` 并将结果直接注入 observation：
+  - `available_files_in_sandbox`: 文件路径列表
+  - `action_required`: 强制立即重试指令
+- **效果**: LLM 无需额外工具调用即可看到正确文件，直接重试
+
+#### 5. 持久化文件恢复来源扩展 (tools.js) ⭐⭐
+- **问题**: 沙箱过期恢复时只看 `context.files`（当前消息附件），助手配置中的持久化文件未被恢复
+- **修复**: 合并 4 个来源（Set 去重）：
+  1. 当次消息附件 (`context.files`)
+  2. ContextManager 已跟踪文件
+  3. `assistant.tool_resources.code_interpreter.file_ids`（V2 持久化）
+  4. `assistant.file_ids`（V1 持久化）
+- 恢复成功后调用 `contextManager.updateUploadedFiles()` 更新状态
+
+#### 6. 全量上传失败时自动重建沙箱 (index.js) ⭐⭐⭐
+- **问题**: 沙箱过期后 `getSandbox()` 返回旧引用，`syncFilesToSandbox()` 全部失败（0 文件上传），LLM 拿到空沙箱
+- **修复**: 检测"所有文件上传失败"时：
+  1. 调用 `e2bClientManager.removeSandbox()` 删除本地缓存的旧引用
+  2. 调用 `createSandbox()` 重建沙箱
+  3. 自动重试 `syncFilesToSandbox()`
+
+#### 7. 禁止误删持久化文件 ID (index.js) ⭐⭐⭐
+- **问题**: 原有逻辑在文件同步部分失败时，会将"失败的 file_id"从数据库永久删除，导致助手配置中的持久化文件丢失
+- **根本原因**: 同步失败往往是沙箱过期导致的瞬态错误，而非文件真的从 DB 删除
+- **修复**: 删除清理逻辑，改为仅 `logger.warn`，不修改数据库
+
+#### 8. 无工具调用决策优化 (index.js) ⭐⭐
+- **问题**: LLM 遇到错误后输出文字解释而非重试，且无退出条件会产生无限循环
+- **修复**: 新增 `lastToolFailed` / `lastToolName` 状态变量，三层决策：
+  1. **硬上限**: 连续 3 次无工具调用 → 强制终止循环
+  2. **失败重试**: 上一步工具失败 → 注入"立即重试"指令
+  3. **正常推进**: 无失败背景 → 注入"继续下一步"指令
+
+#### 9. removeSandbox() 方法 (initialize.js)
+- 新增 `removeSandbox(userId, conversationId)` 方法，只删除本地 Map 引用，不调用 E2B kill API
+- 用于沙箱已过期但本地缓存未清除的场景
+
+#### 10. 诊断日志 + 跨用户污染防护 (controller.js)
+- `getMessages()` 查询增加 `user: req.user.id` 过滤，防止跨用户数据污染
+- 新增 `conversationId from frontend` 日志，便于诊断新对话是否真正无历史
+
+#### 11. 中文回复问题排查
+- **现象**: 纯英文新对话收到中文回复
+- **排查结论**: 用户在任务描述末尾添加了"中文回答"四字，LLM 遵循该指令
+- **深层问题**: 即使无此字，Rule 6（语言一致性规则）在 10000+ 字系统 prompt 后半部分，LLM 权重不足
+- **未解决**: 待后续评估是否需要将语言规则提到系统 prompt 最前面
+
+---
+
 ## 统计摘要
 
 ### 总工作时长
-约 **86-90 小时**（分布在 2025-12-23 至 2026-01-26）
+约 **92-96 小时**（分布在 2025-12-23 至 2026-02-28）
 
 ### 关键里程碑
 1. **2025-12-23**: 项目启动，架构设计
@@ -1315,6 +1396,7 @@ npm run e2b:build:dev
 9. **2026-01-12**: 流式传输优化
 10. **2026-01-14**: 关键 Bug 修复 + 文档重组
 11. **2026-01-26**: 流式体验最终优化 (Pending, Race Conditions, Stability)
+12. **2026-02-28**: 库扩展 + 文件恢复 + 沙箱过期修复 + 无限循环修复
 
 ### 代码量统计
 - **总代码**: ~3200+ 行（核心逻辑）
@@ -1346,7 +1428,7 @@ npm run e2b:build:dev
 ---
 
 **文档版本**: 1.2  
-**最后更新**: 2026-01-26  
+**最后更新**: 2026-02-28  
 **维护者**: @airi
 
 **相关文档**:

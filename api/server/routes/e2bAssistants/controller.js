@@ -580,9 +580,13 @@ const chat = async (req, res) => {
 
     // Load conversation history if this is a continuing conversation
     let history = [];
+    // DIAGNOSTIC: Log whether conversationId was provided by frontend or generated
+    logger.info(`[E2B Assistant] conversationId from frontend: ${conversationId || '(none - new conversation)'}, finalConversationId: ${finalConversationId}, isNewConversation: ${!conversationId}`);
     if (conversationId) {
       try {
-        const dbMessages = await getMessages({ conversationId });
+        // Always filter by user to prevent cross-user contamination
+        const dbMessages = await getMessages({ conversationId, user: req.user.id });
+        logger.info(`[E2B Assistant] getMessages(${conversationId}) returned ${dbMessages.length} raw messages (user=${req.user.id})`);
         
         // CRITICAL: Clean history to remove ANY file_id exposure
         // We ONLY keep text content, NO tool_calls or internal data

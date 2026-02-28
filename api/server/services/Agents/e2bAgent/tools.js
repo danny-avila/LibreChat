@@ -43,7 +43,24 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
           observation.error_type = result.errorName;
           observation.error_message = result.error;
           observation.traceback = result.traceback;
-          // Note: No specific debug hints - LLM should analyze the traceback independently
+
+          // Auto-inject file listing on FileNotFoundError so LLM can retry immediately
+          // without needing to call list_files separately (avoids text-only detour)
+          const isFileNotFound = result.errorName === 'FileNotFoundError' ||
+            (result.error && result.error.includes('No such file or directory'));
+          if (isFileNotFound) {
+            try {
+              logger.info('[E2BAgent Tools] FileNotFoundError detected — auto-listing /home/user/');
+              const listResult = await codeExecutor.execute(userId, conversationId,
+                'import os; files = os.listdir("/home/user"); print("\\n".join(f"/home/user/{f}" for f in sorted(files)) if files else "(directory is empty)")'
+              );
+              observation.available_files_in_sandbox = listResult.stdout?.trim() || '(could not list files)';
+              observation.action_required = '⚠️ Use one of the paths in `available_files_in_sandbox` and call `execute_code` again immediately with the correct path. Do NOT produce text — just call the tool.';
+              logger.info(`[E2BAgent Tools] Auto-list result: ${observation.available_files_in_sandbox}`);
+            } catch (listErr) {
+              logger.warn('[E2BAgent Tools] Auto-list-files failed:', listErr.message);
+            }
+          }
         } else if (!result.stdout && !result.hasVisualization) {
           logger.info(`[E2BAgent Tools] Code executed successfully (empty stdout - likely assignment statement)`);
         } else {
@@ -155,23 +172,38 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
               assistantConfig
             );
             
-            // 恢复文件状态 - 优先使用当前请求的文件列表
-            let fileIdsToRestore = [];
-            
-            // 1. 从当前请求的 files 参数获取（最准确）
+            // 恢复文件状态 - 合并所有来源，确保持久化文件也被恢复
+            const fileIdSet = new Set();
+
+            // 1. 当次消息附件
             if (currentFiles && currentFiles.length > 0) {
-              fileIdsToRestore = currentFiles.map(f => f.file_id || f.fileId).filter(id => id);
-              logger.info(`[E2BAgent Tools] Found ${fileIdsToRestore.length} files from current request`);
+              currentFiles.map(f => f.file_id || f.fileId).filter(Boolean).forEach(id => fileIdSet.add(id));
+              logger.info(`[E2BAgent Tools] Recovery source 1 (current attachments): ${currentFiles.length} files`);
             }
-            
-            // 2. 降级方案：从 Context Manager 获取（可能为空）
-            if (fileIdsToRestore.length === 0) {
-              const uploadedFiles = contextManager.sessionState.uploadedFiles;
-              if (uploadedFiles && uploadedFiles.length > 0) {
-                fileIdsToRestore = uploadedFiles.map(f => f.file_id).filter(id => id);
-                logger.info(`[E2BAgent Tools] Found ${fileIdsToRestore.length} files from Context Manager`);
-              }
+
+            // 2. Context Manager 已跟踪文件（本轮会话中已同步的文件）
+            const ctxFiles = contextManager.sessionState.uploadedFiles || [];
+            if (ctxFiles.length > 0) {
+              ctxFiles.map(f => f.file_id).filter(Boolean).forEach(id => fileIdSet.add(id));
+              logger.info(`[E2BAgent Tools] Recovery source 2 (Context Manager): ${ctxFiles.length} files`);
             }
+
+            // 3. 助手持久化文件 (tool_resources.code_interpreter.file_ids)
+            const toolResourceFileIds = assistant?.tool_resources?.code_interpreter?.file_ids || [];
+            if (toolResourceFileIds.length > 0) {
+              toolResourceFileIds.filter(Boolean).forEach(id => fileIdSet.add(id));
+              logger.info(`[E2BAgent Tools] Recovery source 3 (assistant tool_resources): ${toolResourceFileIds.length} files`);
+            }
+
+            // 4. 助手持久化文件 (root file_ids, V1 style)
+            const rootFileIds = assistant?.file_ids || [];
+            if (rootFileIds.length > 0) {
+              rootFileIds.filter(Boolean).forEach(id => fileIdSet.add(id));
+              logger.info(`[E2BAgent Tools] Recovery source 4 (assistant root file_ids): ${rootFileIds.length} files`);
+            }
+
+            const fileIdsToRestore = [...fileIdSet];
+            logger.info(`[E2BAgent Tools] Total unique file IDs to restore: ${fileIdsToRestore.length}`);
             
             // 恢复文件
             if (fileIdsToRestore.length > 0) {
@@ -185,6 +217,11 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
               });
               
               logger.info(`[E2BAgent Tools] Successfully restored ${resyncedFiles.length} files`);
+              // Update Context Manager so subsequent iterations know about restored files
+              if (resyncedFiles.length > 0) {
+                contextManager.updateUploadedFiles(resyncedFiles);
+                logger.info(`[E2BAgent Tools] Context Manager updated with ${resyncedFiles.length} restored files`);
+              }
             } else {
               logger.warn(`[E2BAgent Tools] No files found to restore after sandbox recovery`);
             }
