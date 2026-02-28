@@ -45,11 +45,11 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { updateBalance, bulkInsertTransactions } = require('~/models');
+const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { getConvoFiles } = require('~/models/Conversation');
-const { updateBalance, bulkInsertTransactions } = require('~/models');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
