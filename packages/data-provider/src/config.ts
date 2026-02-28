@@ -1196,7 +1196,7 @@ export const defaultModels = {
     // Gemini 3.1 Models
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
-    // Gemini 3.0 Models
+    // Gemini 3 Models
     'gemini-3-pro-preview',
     'gemini-3-flash-preview',
     // Gemini 2.5 Models
