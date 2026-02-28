@@ -534,7 +534,7 @@ const bedrock: Record<string, SettingDefinition> = {
     key: 'reasoning_effort',
     label: 'com_endpoint_reasoning_effort',
     labelCode: true,
-    description: 'com_endpoint_bedrock_reasoning_config',
+    description: 'com_endpoint_bedrock_reasoning_effort',
     descriptionCode: true,
     type: 'enum',
     default: ReasoningEffort.unset,
