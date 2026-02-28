@@ -134,6 +134,7 @@ export const bedrockInputSchema = s.tConversationSchema
     thinking: true,
     thinkingBudget: true,
     effort: true,
+    reasoning_effort: true,
     promptCache: true,
     /* Catch-all fields */
     topK: true,
@@ -178,6 +179,7 @@ export const bedrockInputParser = s.tConversationSchema
     thinking: true,
     thinkingBudget: true,
     effort: true,
+    reasoning_effort: true,
     promptCache: true,
     /* Catch-all fields */
     topK: true,
@@ -256,6 +258,8 @@ export const bedrockInputParser = s.tConversationSchema
         delete additionalFields.effort;
       }
 
+      delete additionalFields.reasoning_effort;
+
       if ((typedData.model as string).includes('anthropic.')) {
         const betaHeaders = getBedrockAnthropicBetaHeaders(typedData.model as string);
         if (betaHeaders.length > 0) {
@@ -268,23 +272,34 @@ export const bedrockInputParser = s.tConversationSchema
       delete additionalFields.effort;
       delete additionalFields.output_config;
       delete additionalFields.anthropic_beta;
+
+      const reasoningEffort = additionalFields.reasoning_effort;
+      delete additionalFields.reasoning_effort;
+      if (reasoningEffort && typeof reasoningEffort === 'string' && reasoningEffort !== '') {
+        additionalFields.reasoning_config = reasoningEffort;
+      }
     }
 
     const isAnthropicModel =
       typeof typedData.model === 'string' && typedData.model.includes('anthropic.');
 
-    /** Strip stale anthropic_beta from previously-persisted additionalModelRequestFields */
+    /** Strip stale fields from previously-persisted additionalModelRequestFields */
     if (
-      !isAnthropicModel &&
       typeof typedData.additionalModelRequestFields === 'object' &&
       typedData.additionalModelRequestFields != null
     ) {
       const amrf = typedData.additionalModelRequestFields as Record<string, unknown>;
-      delete amrf.anthropic_beta;
-      delete amrf.thinking;
-      delete amrf.thinkingBudget;
-      delete amrf.effort;
-      delete amrf.output_config;
+      if (!isAnthropicModel) {
+        delete amrf.anthropic_beta;
+        delete amrf.thinking;
+        delete amrf.thinkingBudget;
+        delete amrf.effort;
+        delete amrf.output_config;
+      }
+      if (isAnthropicModel) {
+        delete amrf.reasoning_config;
+        delete amrf.reasoning_effort;
+      }
     }
 
     /** Default promptCache for claude and nova models, if not defined */

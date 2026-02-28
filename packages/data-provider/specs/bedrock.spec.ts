@@ -688,5 +688,124 @@ describe('bedrockInputParser', () => {
       expect(amrf.anthropic_beta).toBeDefined();
       expect(Array.isArray(amrf.anthropic_beta)).toBe(true);
     });
+
+    test('should strip stale reasoning_config when switching to Anthropic model', () => {
+      const staleConversationData = {
+        model: 'anthropic.claude-sonnet-4-6',
+        additionalModelRequestFields: {
+          reasoning_config: 'high',
+        },
+      };
+      const result = bedrockInputParser.parse(staleConversationData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBeUndefined();
+    });
+  });
+
+  describe('Bedrock reasoning_effort → reasoning_config for Moonshot/ZAI models', () => {
+    test('should map reasoning_effort to reasoning_config for moonshotai.kimi-k2.5', () => {
+      const input = {
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBe('high');
+      expect(amrf.reasoning_effort).toBeUndefined();
+    });
+
+    test('should map reasoning_effort to reasoning_config for moonshot.kimi-k2.5', () => {
+      const input = {
+        model: 'moonshot.kimi-k2.5',
+        reasoning_effort: 'medium',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBe('medium');
+    });
+
+    test('should map reasoning_effort to reasoning_config for zai.glm-4.7', () => {
+      const input = {
+        model: 'zai.glm-4.7',
+        reasoning_effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBe('high');
+    });
+
+    test('should map reasoning_effort "low" to reasoning_config for Moonshot model', () => {
+      const input = {
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'low',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBe('low');
+    });
+
+    test('should not include reasoning_config when reasoning_effort is unset (empty string)', () => {
+      const input = {
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: '',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should not include reasoning_config when reasoning_effort is not provided', () => {
+      const input = {
+        model: 'moonshotai.kimi-k2.5',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should not add reasoning_config to Anthropic models', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-4-6',
+        reasoning_effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBeUndefined();
+      expect(amrf.reasoning_effort).toBeUndefined();
+    });
+
+    test('should not add thinking or anthropic_beta to Moonshot models with reasoning_effort', () => {
+      const input = {
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toBeUndefined();
+      expect(amrf.thinkingBudget).toBeUndefined();
+      expect(amrf.anthropic_beta).toBeUndefined();
+    });
+
+    test('should pass reasoning_config through bedrockOutputParser', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'high',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBe('high');
+    });
+
+    test('should strip stale reasoning_config from additionalModelRequestFields for Anthropic models', () => {
+      const staleData = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        additionalModelRequestFields: {
+          reasoning_config: 'high',
+        },
+      };
+      const result = bedrockInputParser.parse(staleData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBeUndefined();
+    });
   });
 });
