@@ -268,4 +268,5 @@ const handleAbortError = async (res, req, error, data) => {
 module.exports = {
   handleAbort,
   handleAbortError,
+  spendCollectedUsage,
 };

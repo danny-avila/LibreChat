@@ -5,8 +5,10 @@
  * particularly for parallel agents (addedConvo) where multiple
  * models need their tokens spent.
  *
- * spendCollectedUsage now delegates to recordCollectedUsage from @librechat/api,
+ * spendCollectedUsage delegates to recordCollectedUsage from @librechat/api,
  * passing pricing + bulkWriteOps deps, with context: 'abort'.
+ * After spending, it clears the collectedUsage array to prevent double-spending
+ * from the AgentClient finally block (which shares the same array reference).
  */
 
 const mockSpendTokens = jest.fn().mockResolvedValue();
@@ -77,52 +79,11 @@ jest.mock('./abortRun', () => ({
   abortRun: jest.fn(),
 }));
 
-// Import the module after mocks are set up
-// spendCollectedUsage is not exported, so we replicate the delegation logic for testing
-const { spendCollectedUsage: _unused, ...abortMiddleware } = (() => {
-  // The real spendCollectedUsage delegates to recordCollectedUsage
-  // We replicate the wrapper here to test the contract
-  const spendCollectedUsage = async ({
-    userId,
-    conversationId,
-    collectedUsage,
-    fallbackModel,
-    messageId,
-  }) => {
-    if (!collectedUsage || collectedUsage.length === 0) {
-      return;
-    }
-
-    await mockRecordCollectedUsage(
-      {
-        spendTokens: mockSpendTokens,
-        spendStructuredTokens: mockSpendStructuredTokens,
-        pricing: { getMultiplier: mockGetMultiplier, getCacheMultiplier: mockGetCacheMultiplier },
-        bulkWriteOps: { insertMany: mockBulkInsertTransactions, updateBalance: mockUpdateBalance },
-      },
-      {
-        user: userId,
-        conversationId,
-        collectedUsage,
-        context: 'abort',
-        messageId,
-        model: fallbackModel,
-      },
-    );
-
-    collectedUsage.length = 0;
-  };
-
-  return { spendCollectedUsage };
-})();
+const { spendCollectedUsage } = require('./abortMiddleware');
 
 describe('abortMiddleware - spendCollectedUsage', () => {
-  let spendCollectedUsage;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    // Replicate the delegation wrapper matching the real implementation
-    spendCollectedUsage = _unused;
   });
 
   describe('spendCollectedUsage delegation', () => {
@@ -162,8 +123,8 @@ describe('abortMiddleware - spendCollectedUsage', () => {
       expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
         {
-          spendTokens: mockSpendTokens,
-          spendStructuredTokens: mockSpendStructuredTokens,
+          spendTokens: expect.any(Function),
+          spendStructuredTokens: expect.any(Function),
           pricing: {
             getMultiplier: mockGetMultiplier,
             getCacheMultiplier: mockGetCacheMultiplier,
@@ -233,6 +194,11 @@ describe('abortMiddleware - spendCollectedUsage', () => {
       );
     });
 
+    /**
+     * Race condition prevention: after abort middleware spends tokens,
+     * the collectedUsage array is cleared so AgentClient.recordCollectedUsage()
+     * (which shares the same array reference) sees an empty array and returns early.
+     */
     it('should clear collectedUsage array after spending to prevent double-spending', async () => {
       const collectedUsage = [
         { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
