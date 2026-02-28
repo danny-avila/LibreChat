@@ -150,6 +150,7 @@ export function getGoogleConfig(
 
   const {
     web_search,
+    thinkingLevel,
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
     ...modelOptions
@@ -196,19 +197,37 @@ export function getGoogleConfig(
     );
   }
 
-  const shouldEnableThinking =
-    thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
+  const modelName = (modelOptions?.model ?? '') as string;
+  const isGemini3Plus = /gemini-([3-9]|\d{2,})/i.test(modelName);
 
-  if (shouldEnableThinking && provider === Providers.GOOGLE) {
-    (llmConfig as GoogleClientOptions).thinkingConfig = {
-      thinkingBudget: thinking ? thinkingBudget : googleSettings.thinkingBudget.default,
-      includeThoughts: Boolean(thinking),
+  if (isGemini3Plus && thinking) {
+    const thinkingConfig: { includeThoughts: boolean; thinkingLevel?: string } = {
+      includeThoughts: true,
     };
-  } else if (shouldEnableThinking && provider === Providers.VERTEXAI) {
-    (llmConfig as VertexAIClientOptions).thinkingBudget = thinking
-      ? thinkingBudget
-      : googleSettings.thinkingBudget.default;
-    (llmConfig as VertexAIClientOptions).includeThoughts = Boolean(thinking);
+    if (thinkingLevel) {
+      thinkingConfig.thinkingLevel = thinkingLevel as string;
+    }
+    if (provider === Providers.GOOGLE) {
+      (llmConfig as GoogleClientOptions).thinkingConfig = thinkingConfig;
+    } else if (provider === Providers.VERTEXAI) {
+      (llmConfig as Record<string, unknown>).thinkingConfig = thinkingConfig;
+      (llmConfig as VertexAIClientOptions).includeThoughts = true;
+    }
+  } else if (!isGemini3Plus) {
+    const shouldEnableThinking =
+      thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
+
+    if (shouldEnableThinking && provider === Providers.GOOGLE) {
+      (llmConfig as GoogleClientOptions).thinkingConfig = {
+        thinkingBudget: thinking ? thinkingBudget : googleSettings.thinkingBudget.default,
+        includeThoughts: Boolean(thinking),
+      };
+    } else if (shouldEnableThinking && provider === Providers.VERTEXAI) {
+      (llmConfig as VertexAIClientOptions).thinkingBudget = thinking
+        ? thinkingBudget
+        : googleSettings.thinkingBudget.default;
+      (llmConfig as VertexAIClientOptions).includeThoughts = Boolean(thinking);
+    }
   }
 
   /*
