@@ -251,8 +251,9 @@ function checkForSafetyBlock(response) {
  * @param {string} params.userId - The user ID
  * @param {string} params.conversationId - The conversation ID
  * @param {string} params.model - The model name
+ * @param {string} [params.messageId] - The response message ID for transaction correlation
  */
-async function recordTokenUsage({ usageMetadata, req, userId, conversationId, model }) {
+async function recordTokenUsage({ usageMetadata, req, userId, conversationId, model, messageId }) {
   if (!usageMetadata) {
     logger.debug('[GeminiImageGen] No usage metadata available for balance tracking');
     return;
@@ -288,6 +289,7 @@ async function recordTokenUsage({ usageMetadata, req, userId, conversationId, mo
       {
         user: userId,
         model,
+        messageId,
         conversationId,
         context: 'image_generation',
         balance,
@@ -445,10 +447,14 @@ function createGeminiImageTool(fields = {}) {
       ];
 
       const conversationId = runnableConfig?.configurable?.thread_id;
+      const messageId =
+        runnableConfig?.configurable?.run_id ??
+        runnableConfig?.configurable?.requestBody?.messageId;
       recordTokenUsage({
         usageMetadata: apiResponse.usageMetadata,
         req,
         userId,
+        messageId,
         conversationId,
         model: geminiModel,
       }).catch((error) => {
