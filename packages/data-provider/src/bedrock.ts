@@ -4,6 +4,8 @@ import * as s from './schemas';
 const DEFAULT_ENABLED_MAX_TOKENS = 8192;
 const DEFAULT_THINKING_BUDGET = 2000;
 
+const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReasoningConfig));
+
 type ThinkingConfig = { type: 'enabled'; budget_tokens: number } | { type: 'adaptive' };
 
 type AnthropicReasoning = {
@@ -258,6 +260,7 @@ export const bedrockInputParser = s.tConversationSchema
         delete additionalFields.effort;
       }
 
+      /** Anthropic uses 'effort' via output_config, not reasoning_config */
       delete additionalFields.reasoning_effort;
 
       if ((typedData.model as string).includes('anthropic.')) {
@@ -275,7 +278,10 @@ export const bedrockInputParser = s.tConversationSchema
 
       const reasoningEffort = additionalFields.reasoning_effort;
       delete additionalFields.reasoning_effort;
-      if (reasoningEffort && typeof reasoningEffort === 'string' && reasoningEffort !== '') {
+      if (
+        typeof reasoningEffort === 'string' &&
+        bedrockReasoningConfigValues.has(reasoningEffort)
+      ) {
         additionalFields.reasoning_config = reasoningEffort;
       }
     }
@@ -295,8 +301,8 @@ export const bedrockInputParser = s.tConversationSchema
         delete amrf.thinkingBudget;
         delete amrf.effort;
         delete amrf.output_config;
-      }
-      if (isAnthropicModel) {
+        delete amrf.reasoning_config;
+      } else {
         delete amrf.reasoning_config;
         delete amrf.reasoning_effort;
       }
