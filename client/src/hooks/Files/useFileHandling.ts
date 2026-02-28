@@ -13,7 +13,7 @@ import {
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
 import debounce from 'lodash/debounce';
-import type { TEndpointsConfig, TError } from 'librechat-data-provider';
+import type { EModelEndpoint, TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
@@ -29,7 +29,8 @@ type UseFileHandling = {
   fileSetter?: FileSetter;
   fileFilter?: (file: File) => boolean;
   additionalMetadata?: Record<string, string | undefined>;
-  endpointOverride?: string;
+  /** Overrides both `endpoint` and `endpointType` for validation and upload routing */
+  endpointOverride?: EModelEndpoint;
 };
 
 const useFileHandling = (params?: UseFileHandling) => {
@@ -51,13 +52,14 @@ const useFileHandling = (params?: UseFileHandling) => {
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
+  const endpointOverride = params?.endpointOverride;
   const endpointType = useMemo(
-    () => params?.endpointOverride ?? conversation?.endpointType,
-    [params?.endpointOverride, conversation?.endpointType],
+    () => endpointOverride ?? conversation?.endpointType,
+    [endpointOverride, conversation?.endpointType],
   );
   const endpoint = useMemo(
-    () => params?.endpointOverride ?? conversation?.endpoint ?? 'default',
-    [params?.endpointOverride, conversation?.endpoint],
+    () => endpointOverride ?? conversation?.endpoint ?? 'default',
+    [endpointOverride, conversation?.endpoint],
   );
 
   const { data: fileConfig = null } = useGetFileConfig({
