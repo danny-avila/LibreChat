@@ -1,6 +1,7 @@
 import {
   Verbosity,
   ImageDetail,
+  ThinkingLevel,
   EModelEndpoint,
   openAISettings,
   googleSettings,
@@ -672,6 +673,32 @@ const google: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     columnSpan: 2,
   },
+  thinkingLevel: {
+    key: 'thinkingLevel',
+    label: 'com_endpoint_thinking_level',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking_level',
+    descriptionCode: true,
+    type: 'enum',
+    default: ThinkingLevel.unset,
+    component: 'slider',
+    options: [
+      ThinkingLevel.unset,
+      ThinkingLevel.minimal,
+      ThinkingLevel.low,
+      ThinkingLevel.medium,
+      ThinkingLevel.high,
+    ],
+    enumMappings: {
+      [ThinkingLevel.unset]: 'com_ui_auto',
+      [ThinkingLevel.minimal]: 'com_ui_minimal',
+      [ThinkingLevel.low]: 'com_ui_low',
+      [ThinkingLevel.medium]: 'com_ui_medium',
+      [ThinkingLevel.high]: 'com_ui_high',
+    },
+    optionType: 'conversation',
+    columnSpan: 4,
+  },
   web_search: {
     key: 'web_search',
     label: 'com_endpoint_use_search_grounding',
@@ -698,6 +725,7 @@ const googleConfig: SettingsConfiguration = [
   librechat.resendFiles,
   google.thinking,
   google.thinkingBudget,
+  google.thinkingLevel,
   google.web_search,
   librechat.fileTokenLimit,
 ];
@@ -717,6 +745,7 @@ const googleCol2: SettingsConfiguration = [
   librechat.resendFiles,
   google.thinking,
   google.thinkingBudget,
+  google.thinkingLevel,
   google.web_search,
   librechat.fileTokenLimit,
 ];
