@@ -211,6 +211,7 @@ describe('AgentClient - recordCollectedUsage', () => {
       expect(client.usage.output_tokens).toBeGreaterThan(0);
     });
 
+    /** Bug regression: parallel agents where second agent has LOWER input tokens produced negative output via incremental calculation. */
     it('should NOT produce negative output_tokens', async () => {
       const collectedUsage = [
         { input_tokens: 200, output_tokens: 100, model: 'gpt-4' },
@@ -341,6 +342,7 @@ describe('AgentClient - recordCollectedUsage', () => {
       expect(usage).toBeUndefined();
     });
 
+    /** Verifies usage passes the check in BaseClient.sendMessage: if (usage != null && Number(usage[this.outputTokensKey]) > 0) */
     it('should have output_tokens > 0 for BaseClient.sendMessage check', async () => {
       mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 200, output_tokens: 130 });
       const collectedUsage = [
