@@ -821,6 +821,56 @@ describe('BaseClient', () => {
     });
   });
 
+  describe('recordTokenUsage model assignment', () => {
+    test('should pass this.model to recordTokenUsage, not the agent ID from responseMessage.model', async () => {
+      const actualModel = 'claude-opus-4-5';
+      const agentId = 'agent_p5Z_IU6EIxBoqn1BoqLBp';
+
+      TestClient.model = actualModel;
+      TestClient.options.endpoint = 'agents';
+      TestClient.options.agent = { id: agentId };
+
+      TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(50);
+      TestClient.recordTokenUsage = jest.fn().mockResolvedValue(undefined);
+      TestClient.buildMessages.mockReturnValue({
+        prompt: [],
+        tokenCountMap: { res: 50 },
+      });
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: actualModel,
+        }),
+      );
+
+      const callArgs = TestClient.recordTokenUsage.mock.calls[0][0];
+      expect(callArgs.model).not.toBe(agentId);
+    });
+
+    test('should pass this.model even when this.model differs from modelOptions.model', async () => {
+      const instanceModel = 'gpt-4o';
+      TestClient.model = instanceModel;
+      TestClient.modelOptions = { model: 'gpt-4o-mini' };
+
+      TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(50);
+      TestClient.recordTokenUsage = jest.fn().mockResolvedValue(undefined);
+      TestClient.buildMessages.mockReturnValue({
+        prompt: [],
+        tokenCountMap: { res: 50 },
+      });
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: instanceModel,
+        }),
+      );
+    });
+  });
+
   describe('getMessagesWithinTokenLimit with instructions', () => {
     test('should always include instructions when present', async () => {
       TestClient.maxContextTokens = 50;

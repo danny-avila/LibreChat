@@ -797,7 +797,8 @@ class BaseClient {
           promptTokens,
           completionTokens,
           balance: balanceConfig,
-          model: responseMessage.model,
+          /** Note: When using agents, responseMessage.model is the agent ID, not the model */
+          model: this.model,
           messageId: this.responseMessageId,
         });
       }
