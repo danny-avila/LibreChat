@@ -575,7 +575,7 @@ describe('getOpenAILLMConfig', () => {
   });
 
   describe('OpenRouter Configuration', () => {
-    it('should include include_reasoning for OpenRouter', () => {
+    it('should include include_reasoning for OpenRouter when no reasoning_effort set', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
         streaming: true,
@@ -586,6 +586,55 @@ describe('getOpenAILLMConfig', () => {
       });
 
       expect(result.llmConfig).toHaveProperty('include_reasoning', true);
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+    });
+
+    it('should use reasoning object for OpenRouter when reasoning_effort is set', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-3-sonnet',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('reasoning', { effort: ReasoningEffort.high });
+      expect(result.llmConfig).not.toHaveProperty('include_reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('should exclude reasoning_summary from OpenRouter reasoning object', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-3-sonnet',
+          reasoning_effort: ReasoningEffort.high,
+          reasoning_summary: ReasoningSummary.detailed,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('reasoning', { effort: ReasoningEffort.high });
+      expect((result.llmConfig.reasoning as Record<string, unknown>)?.summary).toBeUndefined();
+    });
+
+    it('should support OpenRouter-specific effort levels', () => {
+      for (const effort of [ReasoningEffort.xhigh, ReasoningEffort.minimal, ReasoningEffort.none]) {
+        const result = getOpenAILLMConfig({
+          apiKey: 'test-api-key',
+          streaming: true,
+          useOpenRouter: true,
+          modelOptions: {
+            model: 'openai/o3-mini',
+            reasoning_effort: effort,
+          },
+        });
+
+        expect(result.llmConfig).toHaveProperty('reasoning', { effort });
+      }
     });
   });
 

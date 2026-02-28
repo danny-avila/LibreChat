@@ -861,7 +861,7 @@ describe('getOpenAIConfig', () => {
       expect(result.provider).toBe('openrouter');
     });
 
-    it('should handle OpenRouter with reasoning params', () => {
+    it('should handle OpenRouter with reasoning params (no summary)', () => {
       const modelOptions = {
         reasoning_effort: ReasoningEffort.high,
         reasoning_summary: ReasoningSummary.detailed,
@@ -872,10 +872,11 @@ describe('getOpenAIConfig', () => {
         modelOptions,
       });
 
+      // OpenRouter reasoning object should only include effort, not summary
       expect(result.llmConfig.reasoning).toEqual({
         effort: ReasoningEffort.high,
-        summary: ReasoningSummary.detailed,
       });
+      expect(result.llmConfig.include_reasoning).toBeUndefined();
       expect(result.provider).toBe('openrouter');
     });
 
@@ -1205,8 +1206,9 @@ describe('getOpenAIConfig', () => {
         model: 'gpt-4-turbo',
         temperature: 0.8,
         streaming: false,
-        include_reasoning: true, // OpenRouter specific
+        reasoning: { effort: ReasoningEffort.high }, // OpenRouter reasoning object
       });
+      expect(result.llmConfig.include_reasoning).toBeUndefined();
       // Should NOT have useResponsesApi for OpenRouter
       expect(result.llmConfig.useResponsesApi).toBeUndefined();
       expect(result.llmConfig.maxTokens).toBe(2000);
@@ -1480,13 +1482,12 @@ describe('getOpenAIConfig', () => {
           user: 'openrouter-user',
           temperature: 0.7,
           maxTokens: 4000,
-          include_reasoning: true, // OpenRouter specific
           reasoning: {
             effort: ReasoningEffort.high,
-            summary: ReasoningSummary.detailed,
           },
           apiKey: apiKey,
         });
+        expect(result.llmConfig.include_reasoning).toBeUndefined();
         expect(result.llmConfig.modelKwargs).toMatchObject({
           top_k: 50,
           repetition_penalty: 1.1,

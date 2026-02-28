@@ -1,6 +1,7 @@
 import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { SettingDefinition } from 'librechat-data-provider';
+import type { OpenRouterReasoning } from '@librechat/agents';
 import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
@@ -223,10 +224,19 @@ export function getOpenAILLMConfig({
   }
 
   if (useOpenRouter) {
-    llmConfig.include_reasoning = true;
-  }
-
-  if (
+    if (hasReasoningParams({ reasoning_effort })) {
+      /** OpenRouter uses a unified `reasoning` object instead of `reasoning_effort` */
+      llmConfig.reasoning = removeNullishValues(
+        {
+          effort: reasoning_effort,
+        },
+        true,
+      ) as OpenRouterReasoning;
+    } else {
+      /** Fallback: enable reasoning by default for OpenRouter (replaces legacy include_reasoning) */
+      llmConfig.include_reasoning = true;
+    }
+  } else if (
     hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
     (llmConfig.useResponsesApi === true ||
       (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))
