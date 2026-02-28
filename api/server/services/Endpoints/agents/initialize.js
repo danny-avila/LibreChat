@@ -306,6 +306,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       }
     } catch (err) {
       logger.error(`[initializeClient] Error processing agent ${agentId}:`, err);
+      skippedAgentIds.add(agentId);
     }
   }
 
@@ -315,7 +316,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       if (checkAgentInit(agentId)) {
         continue;
       }
-      await processAgent(agentId);
+      try {
+        await processAgent(agentId);
+      } catch (err) {
+        logger.error(`[initializeClient] Error processing chain agent ${agentId}:`, err);
+        skippedAgentIds.add(agentId);
+      }
     }
     const chain = await createSequentialChainEdges([primaryConfig.id].concat(agent_ids), '{convo}');
     collectEdges(chain);
