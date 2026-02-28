@@ -185,6 +185,12 @@ export enum AnthropicEffort {
   max = 'max',
 }
 
+export enum BedrockReasoningConfig {
+  low = 'low',
+  medium = 'medium',
+  high = 'high',
+}
+
 export enum ReasoningSummary {
   none = '',
   auto = 'auto',
