@@ -198,6 +198,17 @@ export function getGoogleConfig(
   }
 
   const modelName = (modelOptions?.model ?? '') as string;
+
+  /**
+   * Gemini 3+ uses a qualitative `thinkingLevel` ('minimal'|'low'|'medium'|'high')
+   * instead of the numeric `thinkingBudget` used by Gemini 2.5 and earlier.
+   * When `thinking` is enabled (default: true), we always send `thinkingConfig`
+   * with `includeThoughts: true`. The `thinkingBudget` param is ignored for Gemini 3+.
+   *
+   * For Vertex AI, top-level `includeThoughts` is still required because
+   * `@langchain/google-common`'s `formatGenerationConfig` reads it separately
+   * from `thinkingConfig` — they serve different purposes in the request pipeline.
+   */
   const isGemini3Plus = /gemini-([3-9]|\d{2,})/i.test(modelName);
 
   if (isGemini3Plus && thinking) {
