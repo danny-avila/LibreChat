@@ -486,6 +486,10 @@ const createResponse = async (req, res) => {
           thread_id: conversationId,
           user_id: userId,
           user: createSafeUser(req.user),
+          requestBody: {
+            messageId: responseId,
+            conversationId,
+          },
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
         signal: abortController.signal,
@@ -631,6 +635,10 @@ const createResponse = async (req, res) => {
           thread_id: conversationId,
           user_id: userId,
           user: createSafeUser(req.user),
+          requestBody: {
+            messageId: responseId,
+            conversationId,
+          },
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
         signal: abortController.signal,
