@@ -1,6 +1,7 @@
 import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { SettingDefinition } from 'librechat-data-provider';
+import type { OpenRouterReasoning } from '@librechat/agents';
 import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
@@ -223,10 +224,19 @@ export function getOpenAILLMConfig({
   }
 
   if (useOpenRouter) {
-    llmConfig.include_reasoning = true;
-  }
-
-  if (
+    if (hasReasoningParams({ reasoning_effort })) {
+      /**
+       * OpenRouter uses a `reasoning` object — `summary` is not supported.
+       * ChatOpenRouter treats `reasoning` and `include_reasoning` as mutually exclusive:
+       * `include_reasoning` is legacy compat that maps to `{ enabled: true }` only when
+       * no `reasoning` object is present, so we intentionally omit it here.
+       */
+      llmConfig.reasoning = { effort: reasoning_effort } as OpenRouterReasoning;
+    } else {
+      /** No explicit effort; fall back to legacy `include_reasoning` for reasoning token inclusion */
+      llmConfig.include_reasoning = true;
+    }
+  } else if (
     hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
     (llmConfig.useResponsesApi === true ||
       (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))
