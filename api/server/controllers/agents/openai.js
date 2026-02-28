@@ -154,9 +154,10 @@ const OpenAIChatCompletionController = async (req, res) => {
   const parentMessageId = request.parent_message_id ?? null;
   const created = Math.floor(Date.now() / 1000);
 
+  /** @type {import('@librechat/api').OpenAIResponseContext} — key must be `requestId` to match the type used by createChunk/buildNonStreamingResponse */
   const context = {
     created,
-    responseId,
+    requestId: responseId,
     model: agentId,
   };
 
