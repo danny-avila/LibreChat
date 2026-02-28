@@ -4,7 +4,7 @@ import logger from '~/config/winston';
 interface UpdateBalanceParams {
   user: string;
   incrementValue: number;
-  setValues?: Partial<Pick<IBalance, 'tokenCredits'>>;
+  setValues?: Partial<Pick<IBalance, 'tokenCredits' | 'lastRefill'>>;
 }
 
 export function createTransactionMethods(mongoose: typeof import('mongoose')) {
