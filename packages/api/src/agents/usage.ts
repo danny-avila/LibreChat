@@ -70,8 +70,8 @@ export async function recordCollectedUsage(
     user,
     model,
     balance,
-    transactions,
     messageId,
+    transactions,
     conversationId,
     collectedUsage,
     endpointTokenConfig,
@@ -111,12 +111,12 @@ export async function recordCollectedUsage(
     total_output_tokens += Number(usage.output_tokens) || 0;
 
     const txMetadata: TxMetadata = {
+      user,
       context,
       balance,
-      transactions,
       messageId,
+      transactions,
       conversationId,
-      user,
       endpointTokenConfig,
       model: usage.model ?? model,
     };
