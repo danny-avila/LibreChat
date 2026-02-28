@@ -379,6 +379,7 @@ describe('recordCollectedUsage', () => {
 
       await recordCollectedUsage(deps, {
         ...baseParams,
+        messageId: 'msg-123',
         endpointTokenConfig,
         collectedUsage,
       });
@@ -389,6 +390,7 @@ describe('recordCollectedUsage', () => {
           conversationId: 'convo-123',
           model: 'gpt-4',
           context: 'message',
+          messageId: 'msg-123',
           balance: { enabled: true },
           transactions: { enabled: true },
           endpointTokenConfig,
@@ -428,6 +430,95 @@ describe('recordCollectedUsage', () => {
       expect(mockSpendTokens).toHaveBeenCalledWith(
         expect.objectContaining({ context: 'title' }),
         expect.any(Object),
+      );
+    });
+  });
+
+  describe('messageId propagation', () => {
+    it('should pass messageId to spendTokens', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 10, output_tokens: 5, model: 'gpt-4' },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        messageId: 'msg-1',
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'msg-1' }),
+        expect.any(Object),
+      );
+    });
+
+    it('should pass messageId to spendStructuredTokens for cache paths', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'claude-3',
+          cache_creation_input_tokens: 25,
+          cache_read_input_tokens: 15,
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        messageId: 'msg-cache-1',
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'msg-cache-1' }),
+        expect.any(Object),
+      );
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+    });
+
+    it('should pass undefined messageId when not provided', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 10, output_tokens: 5, model: 'gpt-4' },
+      ];
+
+      await recordCollectedUsage(deps, {
+        user: 'user-123',
+        conversationId: 'convo-123',
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: undefined }),
+        expect.any(Object),
+      );
+    });
+
+    it('should propagate messageId across multiple usage entries', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        { input_tokens: 200, output_tokens: 60, model: 'gpt-4' },
+        {
+          input_tokens: 150,
+          output_tokens: 30,
+          model: 'gpt-4',
+          input_token_details: { cache_creation: 10, cache_read: 5 },
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        messageId: 'msg-multi',
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(1);
+
+      for (const call of mockSpendTokens.mock.calls) {
+        expect(call[0]).toEqual(expect.objectContaining({ messageId: 'msg-multi' }));
+      }
+      expect(mockSpendStructuredTokens.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ messageId: 'msg-multi' }),
       );
     });
   });

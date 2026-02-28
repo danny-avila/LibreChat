@@ -137,12 +137,14 @@ class BaseClient {
    * @param {AppConfig['balance']} [balance]
    * @param {number} promptTokens
    * @param {number} completionTokens
+   * @param {string} [messageId]
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, balance, promptTokens, completionTokens }) {
+  async recordTokenUsage({ model, balance, promptTokens, completionTokens, messageId }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
       balance,
+      messageId,
       promptTokens,
       completionTokens,
     });
@@ -796,6 +798,7 @@ class BaseClient {
           completionTokens,
           balance: balanceConfig,
           model: responseMessage.model,
+          messageId: this.responseMessageId,
         });
       }
 

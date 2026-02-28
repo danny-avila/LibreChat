@@ -27,8 +27,15 @@ const { abortRun } = require('./abortRun');
  * @param {string} params.conversationId - Conversation ID
  * @param {Array<Object>} params.collectedUsage - Usage metadata from all models
  * @param {string} [params.fallbackModel] - Fallback model name if not in usage
+ * @param {string} [params.messageId] - The response message ID for transaction correlation
  */
-async function spendCollectedUsage({ userId, conversationId, collectedUsage, fallbackModel }) {
+async function spendCollectedUsage({
+  userId,
+  conversationId,
+  collectedUsage,
+  fallbackModel,
+  messageId,
+}) {
   if (!collectedUsage || collectedUsage.length === 0) {
     return;
   }
@@ -50,6 +57,7 @@ async function spendCollectedUsage({ userId, conversationId, collectedUsage, fal
 
     const txMetadata = {
       context: 'abort',
+      messageId,
       conversationId,
       user: userId,
       model: usage.model ?? fallbackModel,
@@ -144,6 +152,7 @@ async function abortMessage(req, res) {
       conversationId: jobData?.conversationId,
       collectedUsage,
       fallbackModel: jobData?.model,
+      messageId: jobData?.responseMessageId,
     });
   } else {
     // Fallback: no collected usage, use text-based token counting for primary model only
