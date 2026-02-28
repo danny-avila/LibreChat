@@ -728,7 +728,7 @@ export const tConversationSchema = z.object({
   system: z.string().optional(),
   thinking: z.boolean().optional(),
   thinkingBudget: coerceNumber.optional(),
-  thinkingLevel: eThinkingLevelSchema.optional().nullable(),
+  thinkingLevel: eThinkingLevelSchema.optional(),
   stream: z.boolean().optional(),
   /* artifacts */
   artifacts: z.string().optional(),
