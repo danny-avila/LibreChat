@@ -1,9 +1,10 @@
+import type { IBalance, TransactionData } from '~/types';
 import logger from '~/config/winston';
 
 interface UpdateBalanceParams {
   user: string;
   incrementValue: number;
-  setValues?: Record<string, unknown>;
+  setValues?: Partial<Pick<IBalance, 'tokenCredits'>>;
 }
 
 export function createTransactionMethods(mongoose: typeof import('mongoose')) {
@@ -15,10 +16,8 @@ export function createTransactionMethods(mongoose: typeof import('mongoose')) {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const currentBalanceDoc = await Balance.findOne({ user }).lean();
-        const currentCredits = currentBalanceDoc
-          ? (currentBalanceDoc as unknown as { tokenCredits: number }).tokenCredits
-          : 0;
+        const currentBalanceDoc = await Balance.findOne({ user }).lean<IBalance>();
+        const currentCredits = currentBalanceDoc?.tokenCredits ?? 0;
         const newCredits = Math.max(0, currentCredits + incrementValue);
 
         const updatePayload = {
@@ -87,7 +86,8 @@ export function createTransactionMethods(mongoose: typeof import('mongoose')) {
     );
   }
 
-  async function bulkInsertTransactions(docs: Record<string, unknown>[]): Promise<void> {
+  /** Bypasses document middleware; all computed fields must be pre-calculated before calling. */
+  async function bulkInsertTransactions(docs: TransactionData[]): Promise<void> {
     const Transaction = mongoose.models.Transaction;
     if (docs.length) {
       await Transaction.insertMany(docs);

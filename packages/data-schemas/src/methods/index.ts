@@ -21,7 +21,6 @@ import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
 import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
 import { createAclEntryMethods, type AclEntryMethods } from './aclEntry';
 import { createShareMethods, type ShareMethods } from './share';
-/* Transactions */
 import { createTransactionMethods, type TransactionMethods } from './transaction';
 
 export type AllMethods = UserMethods &
