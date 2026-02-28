@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import useFileHandling from './useFileHandling';
 import useSharePointDownload from './useSharePointDownload';
+import type { EModelEndpoint } from 'librechat-data-provider';
 import type { SharePointFile } from '~/data-provider/Files/sharepoint';
 
 interface UseSharePointFileHandlingProps {
@@ -8,6 +9,7 @@ interface UseSharePointFileHandlingProps {
   toolResource?: string;
   fileFilter?: (file: File) => boolean;
   additionalMetadata?: Record<string, string | undefined>;
+  endpointOverride?: EModelEndpoint;
 }
 
 interface UseSharePointFileHandlingReturn {
