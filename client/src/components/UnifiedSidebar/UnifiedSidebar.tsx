@@ -1,4 +1,4 @@
-import { useCallback, useMemo, memo, startTransition } from 'react';
+import { useCallback, useState, memo, startTransition } from 'react';
 import { useRecoilState } from 'recoil';
 import { getConfigDefaults } from 'librechat-data-provider';
 import { useMediaQuery } from '@librechat/client';
@@ -13,15 +13,16 @@ import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
 
+function getInitialActivePanel(): string {
+  const saved = localStorage.getItem('side:active-panel');
+  return typeof saved === 'string' ? saved : 'conversations';
+}
+
 function UnifiedSidebar() {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [expanded, setExpanded] = useRecoilState(store.sidebarExpanded);
-
-  const defaultActive = useMemo(() => {
-    const activePanel = localStorage.getItem('side:active-panel');
-    return typeof activePanel === 'string' ? activePanel : 'conversations';
-  }, []);
+  const [activeSection, setActiveSection] = useState(getInitialActivePanel);
 
   const links = useUnifiedSidebarLinks({
     interfaceConfig: defaultInterface,
@@ -34,15 +35,10 @@ function UnifiedSidebar() {
     });
   }, [setExpanded]);
 
-  const handleExpand = useCallback(() => {
-    startTransition(() => {
-      setExpanded(true);
-    });
-  }, [setExpanded]);
-
   const handleExpandToSection = useCallback(
     (sectionId: string) => {
       localStorage.setItem('side:active-panel', sectionId);
+      setActiveSection(sectionId);
       startTransition(() => {
         setExpanded(true);
       });
@@ -61,10 +57,10 @@ function UnifiedSidebar() {
           style={{ width: 320 }}
         >
           <SidePanelProvider>
-            <ActivePanelProvider defaultActive={defaultActive}>
+            <ActivePanelProvider defaultActive={activeSection}>
               <ExpandedPanel
                 links={links}
-                defaultActive={defaultActive}
+                defaultActive={activeSection}
                 onCollapse={handleCollapse}
               />
             </ActivePanelProvider>
@@ -91,13 +87,13 @@ function UnifiedSidebar() {
 
   return (
     <SidePanelProvider>
-      <ActivePanelProvider defaultActive={defaultActive}>
+      <ActivePanelProvider defaultActive={activeSection}>
         <aside
           className="flex h-full flex-shrink-0 border-r border-border-light"
           style={{ width: 320, minWidth: 260, maxWidth: '40%' }}
           aria-label={localize('com_nav_control_panel')}
         >
-          <ExpandedPanel links={links} defaultActive={defaultActive} onCollapse={handleCollapse} />
+          <ExpandedPanel links={links} defaultActive={activeSection} onCollapse={handleCollapse} />
         </aside>
       </ActivePanelProvider>
     </SidePanelProvider>

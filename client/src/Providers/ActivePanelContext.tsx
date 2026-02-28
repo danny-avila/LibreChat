@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 interface ActivePanelContextType {
   active: string | undefined;
@@ -15,6 +15,12 @@ export function ActivePanelProvider({
   defaultActive?: string;
 }) {
   const [active, _setActive] = useState<string | undefined>(defaultActive);
+
+  useEffect(() => {
+    if (defaultActive != null) {
+      _setActive(defaultActive);
+    }
+  }, [defaultActive]);
 
   const setActive = (id: string) => {
     localStorage.setItem('side:active-panel', id);
