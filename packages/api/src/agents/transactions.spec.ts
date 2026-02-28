@@ -1,13 +1,57 @@
-import { CANCEL_RATE } from '@librechat/data-schemas';
+import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import {
+  CANCEL_RATE,
+  createMethods,
+  transactionSchema,
+  balanceSchema,
+} from '@librechat/data-schemas';
 import {
   prepareTokenSpend,
   prepareStructuredTokenSpend,
   bulkWriteTransactions,
 } from './transactions';
-import type { PricingFns, BulkWriteDeps, TxMetadata, PreparedEntry } from './transactions';
+import type { PricingFns, TxMetadata, PreparedEntry } from './transactions';
+
+jest.mock('@librechat/data-schemas', () => {
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return {
+    ...actual,
+    logger: {
+      debug: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      info: jest.fn(),
+    },
+  };
+});
+
+let mongoServer: MongoMemoryServer;
+let Transaction: mongoose.Model<unknown>;
+let Balance: mongoose.Model<unknown>;
+let dbMethods: ReturnType<typeof createMethods>;
+
+beforeAll(async () => {
+  mongoServer = await MongoMemoryServer.create();
+  await mongoose.connect(mongoServer.getUri());
+  Transaction = mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema);
+  Balance = mongoose.models.Balance || mongoose.model('Balance', balanceSchema);
+  dbMethods = createMethods(mongoose);
+});
+
+afterAll(async () => {
+  await mongoose.disconnect();
+  await mongoServer.stop();
+});
+
+beforeEach(async () => {
+  await mongoose.connection.dropDatabase();
+});
+
+const testUserId = new mongoose.Types.ObjectId().toString();
 
 const baseTxData: TxMetadata = {
-  user: 'user-123',
+  user: testUserId,
   context: 'message',
   conversationId: 'convo-123',
   model: 'gpt-4',
@@ -94,8 +138,7 @@ describe('prepareTokenSpend', () => {
   });
 
   it('should pass valueKey to getMultiplier', () => {
-    const txData = { ...baseTxData };
-    prepareTokenSpend(txData, { promptTokens: 100 }, mockPricing);
+    prepareTokenSpend(baseTxData, { promptTokens: 100 }, mockPricing);
     expect(mockPricing.getMultiplier).toHaveBeenCalledWith(
       expect.objectContaining({ tokenType: 'prompt', model: 'gpt-4' }),
     );
@@ -214,95 +257,218 @@ describe('prepareStructuredTokenSpend', () => {
   });
 });
 
-describe('bulkWriteTransactions', () => {
-  let mockDbOps: BulkWriteDeps;
-
-  beforeEach(() => {
-    mockDbOps = {
-      insertMany: jest.fn().mockResolvedValue(undefined),
-      updateBalance: jest.fn().mockResolvedValue({}),
+describe('bulkWriteTransactions (real DB)', () => {
+  it('should return early for empty docs without DB writes', async () => {
+    const dbOps = {
+      insertMany: dbMethods.bulkInsertTransactions,
+      updateBalance: dbMethods.updateBalance,
     };
+    await bulkWriteTransactions({ user: testUserId, docs: [] }, dbOps);
+    const txCount = await Transaction.countDocuments();
+    expect(txCount).toBe(0);
   });
 
-  it('should return early for empty docs', async () => {
-    await bulkWriteTransactions({ user: 'user-123', docs: [] }, mockDbOps);
-    expect(mockDbOps.insertMany).not.toHaveBeenCalled();
-    expect(mockDbOps.updateBalance).not.toHaveBeenCalled();
-  });
-
-  it('should call insertMany with extracted docs', async () => {
+  it('should insert transaction documents into MongoDB', async () => {
     const docs: PreparedEntry[] = [
       {
-        doc: { user: 'user-123', conversationId: 'c1', tokenType: 'prompt', tokenValue: -100 },
-        tokenValue: -100,
-        balance: { enabled: true },
-      },
-      {
-        doc: { user: 'user-123', conversationId: 'c1', tokenType: 'completion', tokenValue: -50 },
-        tokenValue: -50,
-        balance: { enabled: true },
-      },
-    ];
-    await bulkWriteTransactions({ user: 'user-123', docs }, mockDbOps);
-    expect(mockDbOps.insertMany).toHaveBeenCalledWith([docs[0].doc, docs[1].doc]);
-  });
-
-  it('should sum tokenValue only for balance-enabled docs', async () => {
-    const docs: PreparedEntry[] = [
-      {
-        doc: { user: 'u', conversationId: 'c', tokenType: 'prompt', tokenValue: -100 },
-        tokenValue: -100,
-        balance: { enabled: true },
-      },
-      {
-        doc: { user: 'u', conversationId: 'c', tokenType: 'completion', tokenValue: -50 },
-        tokenValue: -50,
-        balance: { enabled: false },
-      },
-    ];
-    await bulkWriteTransactions({ user: 'u', docs }, mockDbOps);
-    expect(mockDbOps.updateBalance).toHaveBeenCalledWith({ user: 'u', incrementValue: -100 });
-  });
-
-  it('should NOT call updateBalance when no docs have balance enabled', async () => {
-    const docs: PreparedEntry[] = [
-      {
-        doc: { user: 'u', conversationId: 'c', tokenType: 'prompt', tokenValue: -100 },
-        tokenValue: -100,
-        balance: { enabled: false },
-      },
-    ];
-    await bulkWriteTransactions({ user: 'u', docs }, mockDbOps);
-    expect(mockDbOps.insertMany).toHaveBeenCalled();
-    expect(mockDbOps.updateBalance).not.toHaveBeenCalled();
-  });
-
-  it('should call updateBalance with total from all balance-enabled docs', async () => {
-    const docs: PreparedEntry[] = [
-      {
-        doc: { user: 'u', conversationId: 'c', tokenType: 'prompt', tokenValue: -200 },
+        doc: {
+          user: testUserId,
+          conversationId: 'c1',
+          tokenType: 'prompt',
+          tokenValue: -200,
+          rate: 2,
+          rawAmount: -100,
+        },
         tokenValue: -200,
         balance: { enabled: true },
       },
       {
-        doc: { user: 'u', conversationId: 'c', tokenType: 'completion', tokenValue: -100 },
+        doc: {
+          user: testUserId,
+          conversationId: 'c1',
+          tokenType: 'completion',
+          tokenValue: -100,
+          rate: 2,
+          rawAmount: -50,
+        },
         tokenValue: -100,
         balance: { enabled: true },
       },
     ];
-    await bulkWriteTransactions({ user: 'u', docs }, mockDbOps);
-    expect(mockDbOps.updateBalance).toHaveBeenCalledWith({ user: 'u', incrementValue: -300 });
+    const dbOps = {
+      insertMany: dbMethods.bulkInsertTransactions,
+      updateBalance: dbMethods.updateBalance,
+    };
+    await bulkWriteTransactions({ user: testUserId, docs }, dbOps);
+
+    const saved = await Transaction.find({ user: testUserId }).lean();
+    expect(saved).toHaveLength(2);
+    expect(saved.map((t: Record<string, unknown>) => t.tokenType).sort()).toEqual([
+      'completion',
+      'prompt',
+    ]);
+  });
+
+  it('should create balance document and update credits', async () => {
+    const docs: PreparedEntry[] = [
+      {
+        doc: { user: testUserId, conversationId: 'c1', tokenType: 'prompt', tokenValue: -300 },
+        tokenValue: -300,
+        balance: { enabled: true },
+      },
+    ];
+    const dbOps = {
+      insertMany: dbMethods.bulkInsertTransactions,
+      updateBalance: dbMethods.updateBalance,
+    };
+    await bulkWriteTransactions({ user: testUserId, docs }, dbOps);
+
+    const bal = (await Balance.findOne({ user: testUserId }).lean()) as Record<
+      string,
+      unknown
+    > | null;
+    expect(bal).toBeDefined();
+    expect(bal!.tokenCredits).toBe(0);
+  });
+
+  it('should NOT update balance when no docs have balance enabled', async () => {
+    const docs: PreparedEntry[] = [
+      {
+        doc: { user: testUserId, conversationId: 'c1', tokenType: 'prompt', tokenValue: -100 },
+        tokenValue: -100,
+        balance: { enabled: false },
+      },
+    ];
+    const dbOps = {
+      insertMany: dbMethods.bulkInsertTransactions,
+      updateBalance: dbMethods.updateBalance,
+    };
+    await bulkWriteTransactions({ user: testUserId, docs }, dbOps);
+
+    const txCount = await Transaction.countDocuments({ user: testUserId });
+    expect(txCount).toBe(1);
+    const bal = await Balance.findOne({ user: testUserId }).lean();
+    expect(bal).toBeNull();
+  });
+
+  it('should only sum tokenValue from balance-enabled docs', async () => {
+    await Balance.create({ user: testUserId, tokenCredits: 1000 });
+
+    const docs: PreparedEntry[] = [
+      {
+        doc: { user: testUserId, conversationId: 'c1', tokenType: 'prompt', tokenValue: -100 },
+        tokenValue: -100,
+        balance: { enabled: true },
+      },
+      {
+        doc: { user: testUserId, conversationId: 'c1', tokenType: 'completion', tokenValue: -50 },
+        tokenValue: -50,
+        balance: { enabled: false },
+      },
+    ];
+    const dbOps = {
+      insertMany: dbMethods.bulkInsertTransactions,
+      updateBalance: dbMethods.updateBalance,
+    };
+    await bulkWriteTransactions({ user: testUserId, docs }, dbOps);
+
+    const bal = (await Balance.findOne({ user: testUserId }).lean()) as Record<
+      string,
+      unknown
+    > | null;
+    expect(bal!.tokenCredits).toBe(900);
   });
 
   it('should handle null balance gracefully', async () => {
     const docs: PreparedEntry[] = [
       {
-        doc: { user: 'u', conversationId: 'c', tokenType: 'prompt', tokenValue: -100 },
+        doc: { user: testUserId, conversationId: 'c1', tokenType: 'prompt', tokenValue: -100 },
         tokenValue: -100,
         balance: null,
       },
     ];
-    await bulkWriteTransactions({ user: 'u', docs }, mockDbOps);
-    expect(mockDbOps.updateBalance).not.toHaveBeenCalled();
+    const dbOps = {
+      insertMany: dbMethods.bulkInsertTransactions,
+      updateBalance: dbMethods.updateBalance,
+    };
+    await bulkWriteTransactions({ user: testUserId, docs }, dbOps);
+
+    const txCount = await Transaction.countDocuments({ user: testUserId });
+    expect(txCount).toBe(1);
+    const bal = await Balance.findOne({ user: testUserId }).lean();
+    expect(bal).toBeNull();
+  });
+});
+
+describe('end-to-end: prepare → bulk write → verify', () => {
+  it('should prepare, write, and correctly update balance for standard tokens', async () => {
+    await Balance.create({ user: testUserId, tokenCredits: 10000 });
+    (mockPricing.getMultiplier as jest.Mock).mockReturnValue(2);
+
+    const entries = prepareTokenSpend(
+      baseTxData,
+      { promptTokens: 100, completionTokens: 50 },
+      mockPricing,
+    );
+    const dbOps = {
+      insertMany: dbMethods.bulkInsertTransactions,
+      updateBalance: dbMethods.updateBalance,
+    };
+    await bulkWriteTransactions({ user: testUserId, docs: entries }, dbOps);
+
+    const txns = (await Transaction.find({ user: testUserId }).lean()) as Record<string, unknown>[];
+    expect(txns).toHaveLength(2);
+
+    const prompt = txns.find((t) => t.tokenType === 'prompt');
+    const completion = txns.find((t) => t.tokenType === 'completion');
+    expect(prompt!.tokenValue).toBe(-200);
+    expect(prompt!.rate).toBe(2);
+    expect(completion!.tokenValue).toBe(-100);
+    expect(completion!.rate).toBe(2);
+
+    const bal = (await Balance.findOne({ user: testUserId }).lean()) as Record<
+      string,
+      unknown
+    > | null;
+    expect(bal!.tokenCredits).toBe(10000 + -200 + -100);
+  });
+
+  it('should prepare and write structured tokens with cache pricing', async () => {
+    await Balance.create({ user: testUserId, tokenCredits: 5000 });
+    (mockPricing.getMultiplier as jest.Mock).mockReturnValue(1);
+    (mockPricing.getCacheMultiplier as jest.Mock).mockImplementation(({ cacheType }) => {
+      if (cacheType === 'write') {
+        return 3;
+      }
+      if (cacheType === 'read') {
+        return 0.1;
+      }
+      return null;
+    });
+
+    const entries = prepareStructuredTokenSpend(
+      baseTxData,
+      { promptTokens: { input: 100, write: 50, read: 200 }, completionTokens: 80 },
+      mockPricing,
+    );
+    const dbOps = {
+      insertMany: dbMethods.bulkInsertTransactions,
+      updateBalance: dbMethods.updateBalance,
+    };
+    await bulkWriteTransactions({ user: testUserId, docs: entries }, dbOps);
+
+    const txns = (await Transaction.find({ user: testUserId }).lean()) as Record<string, unknown>[];
+    expect(txns).toHaveLength(2);
+
+    const prompt = txns.find((t) => t.tokenType === 'prompt');
+    expect(prompt!.inputTokens).toBe(-100);
+    expect(prompt!.writeTokens).toBe(-50);
+    expect(prompt!.readTokens).toBe(-200);
+
+    const bal = (await Balance.findOne({ user: testUserId }).lean()) as Record<
+      string,
+      unknown
+    > | null;
+    expect(bal!.tokenCredits).toBeLessThan(5000);
   });
 });
