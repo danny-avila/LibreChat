@@ -306,6 +306,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       }
     } catch (err) {
       logger.error(`[initializeClient] Error processing agent ${agentId}:`, err);
+      skippedAgentIds.add(agentId);
     }
   }
 
