@@ -38,6 +38,8 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { updateBalance, bulkInsertTransactions } = require('~/models');
+const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
@@ -509,7 +511,12 @@ const createResponse = async (req, res) => {
       const balanceConfig = getBalanceConfig(req.config);
       const transactionsConfig = getTransactionsConfig(req.config);
       recordCollectedUsage(
-        { spendTokens, spendStructuredTokens },
+        {
+          spendTokens,
+          spendStructuredTokens,
+          pricing: { getMultiplier, getCacheMultiplier },
+          bulkWriteOps: { insertMany: bulkInsertTransactions, updateBalance },
+        },
         {
           user: userId,
           conversationId,
@@ -658,7 +665,12 @@ const createResponse = async (req, res) => {
       const balanceConfig = getBalanceConfig(req.config);
       const transactionsConfig = getTransactionsConfig(req.config);
       recordCollectedUsage(
-        { spendTokens, spendStructuredTokens },
+        {
+          spendTokens,
+          spendStructuredTokens,
+          pricing: { getMultiplier, getCacheMultiplier },
+          bulkWriteOps: { insertMany: bulkInsertTransactions, updateBalance },
+        },
         {
           user: userId,
           conversationId,

@@ -13,11 +13,12 @@ const {
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
-  getProviderConfig,
   omitTitleOptions,
+  getProviderConfig,
   memoryInstructions,
-  applyContextToAgent,
   createTokenCounter,
+  applyContextToAgent,
+  recordCollectedUsage,
   GenerationJobManager,
   getTransactionsConfig,
   createMemoryProcessor,
@@ -44,9 +45,11 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { getConvoFiles } = require('~/models/Conversation');
+const { updateBalance, bulkInsertTransactions } = require('~/models');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
@@ -624,83 +627,29 @@ class AgentClient extends BaseClient {
     context = 'message',
     collectedUsage = this.collectedUsage,
   }) {
-    if (!collectedUsage || !collectedUsage.length) {
-      return;
-    }
-    // Use first entry's input_tokens as the base input (represents initial user message context)
-    // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
-    const firstUsage = collectedUsage[0];
-    const input_tokens =
-      (firstUsage?.input_tokens || 0) +
-      (Number(firstUsage?.input_token_details?.cache_creation) ||
-        Number(firstUsage?.cache_creation_input_tokens) ||
-        0) +
-      (Number(firstUsage?.input_token_details?.cache_read) ||
-        Number(firstUsage?.cache_read_input_tokens) ||
-        0);
-
-    // Sum output_tokens directly from all entries - works for both sequential and parallel execution
-    // This avoids the incremental calculation that produced negative values for parallel agents
-    let total_output_tokens = 0;
-
-    for (const usage of collectedUsage) {
-      if (!usage) {
-        continue;
-      }
-
-      // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
-      const cache_creation =
-        Number(usage.input_token_details?.cache_creation) ||
-        Number(usage.cache_creation_input_tokens) ||
-        0;
-      const cache_read =
-        Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
-
-      // Accumulate output tokens for the usage summary
-      total_output_tokens += Number(usage.output_tokens) || 0;
-
-      const txMetadata = {
+    const result = await recordCollectedUsage(
+      {
+        spendTokens,
+        spendStructuredTokens,
+        pricing: { getMultiplier, getCacheMultiplier },
+        bulkWriteOps: { insertMany: bulkInsertTransactions, updateBalance },
+      },
+      {
+        user: this.user ?? this.options.req.user?.id,
+        conversationId: this.conversationId,
+        collectedUsage,
+        model: model ?? this.model ?? this.options.agent.model_parameters.model,
         context,
+        messageId: this.responseMessageId,
         balance,
         transactions,
-        messageId: this.responseMessageId,
-        conversationId: this.conversationId,
-        user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
-        model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
-      };
+      },
+    );
 
-      if (cache_creation > 0 || cache_read > 0) {
-        spendStructuredTokens(txMetadata, {
-          promptTokens: {
-            input: usage.input_tokens,
-            write: cache_creation,
-            read: cache_read,
-          },
-          completionTokens: usage.output_tokens,
-        }).catch((err) => {
-          logger.error(
-            '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending structured tokens',
-            err,
-          );
-        });
-        continue;
-      }
-      spendTokens(txMetadata, {
-        promptTokens: usage.input_tokens,
-        completionTokens: usage.output_tokens,
-      }).catch((err) => {
-        logger.error(
-          '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending tokens',
-          err,
-        );
-      });
+    if (result) {
+      this.usage = result;
     }
-
-    this.usage = {
-      input_tokens,
-      output_tokens: total_output_tokens,
-    };
   }
 
   /**
