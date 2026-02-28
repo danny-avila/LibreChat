@@ -700,6 +700,30 @@ describe('bedrockInputParser', () => {
       const amrf = result.additionalModelRequestFields as Record<string, unknown>;
       expect(amrf.reasoning_config).toBeUndefined();
     });
+
+    test('should strip stale reasoning_config when switching from Moonshot to Meta model', () => {
+      const staleData = {
+        model: 'meta.llama-3-1-70b',
+        additionalModelRequestFields: {
+          reasoning_config: 'high',
+        },
+      };
+      const result = bedrockInputParser.parse(staleData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should strip stale reasoning_config when switching from ZAI to DeepSeek model', () => {
+      const staleData = {
+        model: 'deepseek.deepseek-r1',
+        additionalModelRequestFields: {
+          reasoning_config: 'medium',
+        },
+      };
+      const result = bedrockInputParser.parse(staleData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
   });
 
   describe('Bedrock reasoning_effort → reasoning_config for Moonshot/ZAI models', () => {
@@ -759,6 +783,33 @@ describe('bedrockInputParser', () => {
         model: 'moonshotai.kimi-k2.5',
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should not forward reasoning_effort "none" to reasoning_config', () => {
+      const result = bedrockInputParser.parse({
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'none',
+      }) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should not forward reasoning_effort "minimal" to reasoning_config', () => {
+      const result = bedrockInputParser.parse({
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'minimal',
+      }) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should not forward reasoning_effort "xhigh" to reasoning_config', () => {
+      const result = bedrockInputParser.parse({
+        model: 'zai.glm-4.7',
+        reasoning_effort: 'xhigh',
+      }) as Record<string, unknown>;
       const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
       expect(amrf?.reasoning_config).toBeUndefined();
     });
