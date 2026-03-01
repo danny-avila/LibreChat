@@ -27,6 +27,7 @@ const updateFavoritesController = async (req, res) => {
     for (const fav of favorites) {
       const hasAgent = !!fav.agentId;
       const hasModel = !!(fav.model && fav.endpoint);
+      const hasSpec = !!fav.spec;
 
       if (fav.agentId && fav.agentId.length > MAX_STRING_LENGTH) {
         return res
@@ -43,16 +44,28 @@ const updateFavoritesController = async (req, res) => {
           .status(400)
           .json({ message: `endpoint exceeds maximum length of ${MAX_STRING_LENGTH}` });
       }
+      if (fav.spec != null && typeof fav.spec !== 'string') {
+        return res.status(400).json({ message: 'spec must be a string' });
+      }
+      if (typeof fav.spec === 'string' && fav.spec.length === 0) {
+        return res.status(400).json({ message: 'spec must not be empty' });
+      }
+      if (fav.spec && fav.spec.length > MAX_STRING_LENGTH) {
+        return res
+          .status(400)
+          .json({ message: `spec exceeds maximum length of ${MAX_STRING_LENGTH}` });
+      }
 
-      if (!hasAgent && !hasModel) {
+      const typeCount = [hasAgent, hasModel, hasSpec].filter(Boolean).length;
+      if (typeCount === 0) {
         return res.status(400).json({
-          message: 'Each favorite must have either agentId or model+endpoint',
+          message: 'Each favorite must have either agentId, model+endpoint, or spec',
         });
       }
 
-      if (hasAgent && hasModel) {
+      if (typeCount > 1) {
         return res.status(400).json({
-          message: 'Favorite cannot have both agentId and model/endpoint',
+          message: 'Favorite cannot have multiple types (agentId, model/endpoint, or spec)',
         });
       }
     }
