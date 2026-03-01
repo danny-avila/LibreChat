@@ -980,8 +980,9 @@ export const configSchema = z.object({
     .object({
       socialLogins: z.array(z.string()).optional(),
       allowedDomains: z.array(z.string()).optional(),
+      emailVerificationExpiry: z.number().default(900),
     })
-    .default({ socialLogins: defaultSocialLogins }),
+    .default({ socialLogins: defaultSocialLogins, emailVerificationExpiry: 900 }),
   balance: balanceSchema.optional(),
   transactions: transactionsSchema.optional(),
   speech: z
