@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { getAgentAvatarUrl, renderAgentAvatar, getContactDisplayName } from '../agents';
+import { getAgentAvatarUrl, AgentAvatar, getContactDisplayName } from '../agents';
 import type t from 'librechat-data-provider';
 
 // Mock the Feather icon from lucide-react
@@ -61,7 +61,7 @@ describe('Agent Utilities', () => {
     });
   });
 
-  describe('renderAgentAvatar', () => {
+  describe('AgentAvatar', () => {
     it('should render image when avatar URL exists', () => {
       const agent = {
         id: '1',
@@ -69,7 +69,7 @@ describe('Agent Utilities', () => {
         avatar: '/test-avatar.png',
       } as unknown as t.Agent;
 
-      render(<div>{renderAgentAvatar(agent)}</div>);
+      render(<AgentAvatar agent={agent} />);
 
       const img = screen.getByAltText('Test Agent avatar');
       expect(img).toBeInTheDocument();
@@ -83,7 +83,7 @@ describe('Agent Utilities', () => {
         name: 'Test Agent',
       } as t.Agent;
 
-      render(<div>{renderAgentAvatar(agent)}</div>);
+      render(<AgentAvatar agent={agent} />);
 
       const featherIcon = screen.getByTestId('feather-icon');
       expect(featherIcon).toBeInTheDocument();
@@ -97,13 +97,13 @@ describe('Agent Utilities', () => {
         avatar: '/test-avatar.png',
       } as unknown as t.Agent;
 
-      const { rerender } = render(<div>{renderAgentAvatar(agent, { size: 'sm' })}</div>);
+      const { rerender } = render(<AgentAvatar agent={agent} size="sm" />);
       expect(screen.getByAltText('Test Agent avatar')).toHaveClass('h-12', 'w-12');
 
-      rerender(<div>{renderAgentAvatar(agent, { size: 'lg' })}</div>);
+      rerender(<AgentAvatar agent={agent} size="lg" />);
       expect(screen.getByAltText('Test Agent avatar')).toHaveClass('h-20', 'w-20');
 
-      rerender(<div>{renderAgentAvatar(agent, { size: 'xl' })}</div>);
+      rerender(<AgentAvatar agent={agent} size="xl" />);
       expect(screen.getByAltText('Test Agent avatar')).toHaveClass('h-24', 'w-24');
     });
 
@@ -114,7 +114,7 @@ describe('Agent Utilities', () => {
         avatar: '/test-avatar.png',
       } as unknown as t.Agent;
 
-      render(<div>{renderAgentAvatar(agent, { className: 'custom-class' })}</div>);
+      render(<AgentAvatar agent={agent} className="custom-class" />);
 
       const container = screen.getByAltText('Test Agent avatar').parentElement;
       expect(container).toHaveClass('custom-class');
@@ -127,10 +127,10 @@ describe('Agent Utilities', () => {
         avatar: '/test-avatar.png',
       } as unknown as t.Agent;
 
-      const { rerender } = render(<div>{renderAgentAvatar(agent, { showBorder: true })}</div>);
+      const { rerender } = render(<AgentAvatar agent={agent} showBorder={true} />);
       expect(screen.getByAltText('Test Agent avatar')).toHaveClass('border-1');
 
-      rerender(<div>{renderAgentAvatar(agent, { showBorder: false })}</div>);
+      rerender(<AgentAvatar agent={agent} showBorder={false} />);
       expect(screen.getByAltText('Test Agent avatar')).not.toHaveClass('border-1');
     });
   });
