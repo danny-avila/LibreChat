@@ -58,17 +58,40 @@ const ContentParts = memo(function ContentParts({
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
+  const getPartKey = useCallback(
+    (part: TMessageContentParts, idx: number) => {
+      if (part.type === ContentTypes.TOOL_CALL) {
+        const toolCallId = (part[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id;
+        if (toolCallId != null && toolCallId.length > 0) {
+          return `part-${messageId}-tool-${toolCallId}-${idx}`;
+        }
+      }
+
+      if (
+        part.type === ContentTypes.TEXT &&
+        part.tool_call_ids != null &&
+        part.tool_call_ids.length > 0
+      ) {
+        return `part-${messageId}-tool-links-${part.tool_call_ids.join(',')}-${idx}`;
+      }
+
+      return `part-${messageId}-${idx}`;
+    },
+    [messageId],
+  );
+
   /**
    * Render a single content part with proper context.
    */
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+      const partKey = getPartKey(part, idx);
       const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
       const partAttachments = attachmentMap[toolCallId];
 
       return (
         <MessageContext.Provider
-          key={`provider-${messageId}-${idx}`}
+          key={partKey}
           value={{
             messageId,
             isExpanded: true,
@@ -83,7 +106,6 @@ const ContentParts = memo(function ContentParts({
             part={part}
             attachments={partAttachments}
             isSubmitting={effectiveIsSubmitting}
-            key={`part-${messageId}-${idx}`}
             isCreatedByUser={isCreatedByUser}
             isLast={isLastPart}
             showCursor={isLastPart && isLast}
@@ -96,6 +118,7 @@ const ContentParts = memo(function ContentParts({
       content,
       conversationId,
       effectiveIsSubmitting,
+      getPartKey,
       isCreatedByUser,
       isLast,
       isLatestMessage,

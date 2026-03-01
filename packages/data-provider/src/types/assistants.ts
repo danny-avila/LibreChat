@@ -24,6 +24,7 @@ export enum Tools {
   function = 'function',
   memory = 'memory',
   ui_resources = 'ui_resources',
+  mcp_app = 'mcp_app',
 }
 
 export enum EToolResources {

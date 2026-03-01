@@ -114,6 +114,8 @@ export type TPayload = Partial<TMessage> &
     editedContent?: TEditedContent | null;
     /** Added conversation for multi-convo feature */
     addedConvo?: TConversation;
+    /** Latest MCP App-provided model context snapshot for subsequent turns */
+    mcpAppModelContext?: Record<string, unknown>;
   };
 
 export type TEditedContent =
@@ -143,6 +145,8 @@ export type TSubmission = {
   editedContent?: TEditedContent | null;
   /** Added conversation for multi-convo feature */
   addedConvo?: TConversation;
+  /** Latest MCP App-provided model context snapshot for subsequent turns */
+  mcpAppModelContext?: Record<string, unknown>;
 };
 
 export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };

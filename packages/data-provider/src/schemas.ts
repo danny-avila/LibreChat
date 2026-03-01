@@ -650,6 +650,13 @@ export type UIResource = {
   [key: string]: unknown;
 };
 
+export type MCPAppArtifact = {
+  resourceUri: string;
+  serverName: string;
+  toolResult?: unknown;
+  toolArguments?: Record<string, unknown>;
+};
+
 export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
@@ -658,6 +665,7 @@ export type TAttachmentMetadata = {
   [Tools.ui_resources]?: UIResource[];
   [Tools.web_search]?: SearchResultData;
   [Tools.file_search]?: SearchResultData;
+  [Tools.mcp_app]?: MCPAppArtifact;
 };
 
 export type TAttachment =

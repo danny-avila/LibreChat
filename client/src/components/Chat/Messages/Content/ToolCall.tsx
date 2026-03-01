@@ -2,13 +2,15 @@ import { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } fr
 import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
 import {
+  Tools,
   Constants,
   dataService,
   actionDelimiter,
   actionDomainSeparator,
 } from 'librechat-data-provider';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, MCPAppArtifact } from 'librechat-data-provider';
 import { useLocalize, useProgress } from '~/hooks';
+import { MCPAppInline } from './MCPApp';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -137,6 +139,20 @@ export default function ToolCall({
 
   const progress = useProgress(initialProgress);
   const cancelled = (!isSubmitting && progress < 1) || error === true;
+  const mcpAppAttachment = useMemo(
+    () => attachments?.find((attachment) => attachment.type === Tools.mcp_app),
+    [attachments],
+  );
+  const liveMCPApp = mcpAppAttachment?.[Tools.mcp_app] as MCPAppArtifact | undefined;
+  const stableMCPAppRef = useRef<MCPAppArtifact | undefined>(undefined);
+
+  useEffect(() => {
+    if (liveMCPApp) {
+      stableMCPAppRef.current = liveMCPApp;
+    }
+  }, [liveMCPApp]);
+
+  const mcpApp = liveMCPApp ?? stableMCPAppRef.current;
 
   const getFinishedText = () => {
     if (cancelled) {
@@ -278,6 +294,7 @@ export default function ToolCall({
           </p>
         </div>
       )}
+      {mcpApp ? <MCPAppInline artifact={mcpApp} /> : null}
       {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
     </>
   );

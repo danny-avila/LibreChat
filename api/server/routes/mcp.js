@@ -29,6 +29,7 @@ const {
   getMCPServerById,
   getMCPTools,
 } = require('~/server/controllers/mcp');
+const { readMCPResource, appToolCall, serveMCPSandbox } = require('~/server/controllers/mcpApps');
 const {
   getOAuthReconnectionManager,
   getMCPServersRegistry,
@@ -745,5 +746,25 @@ router.delete(
   }),
   deleteMCPServerController,
 );
+
+// --- MCP Apps Support ---
+
+/**
+ * Read a UI resource from an MCP server
+ * @route POST /api/mcp/resources/read
+ */
+router.post('/resources/read', requireJwtAuth, checkMCPUsePermissions, readMCPResource);
+
+/**
+ * Bridge: proxy tool calls from MCP App iframe to MCP server
+ * @route POST /api/mcp/app-tool-call
+ */
+router.post('/app-tool-call', requireJwtAuth, checkMCPUsePermissions, appToolCall);
+
+/**
+ * Serve the sandbox proxy HTML
+ * @route GET /api/mcp/sandbox
+ */
+router.get('/sandbox', requireJwtAuth, checkMCPUsePermissions, serveMCPSandbox);
 
 module.exports = router;

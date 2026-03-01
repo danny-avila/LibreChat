@@ -204,8 +204,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   return (
     <form
       onSubmit={methods.handleSubmit(submitMessage)}
+      // Layering: keep composer above inline MCP app portals, while fullscreen apps still override with a higher z-index.
       className={cn(
-        'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
+        'relative z-50 mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
         maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
         centerFormOnLanding &&
           (conversationId == null || conversationId === Constants.NEW_CONVO) &&
