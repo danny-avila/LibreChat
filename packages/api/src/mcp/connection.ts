@@ -691,7 +691,7 @@ export class MCPConnection extends EventEmitter {
         }
 
         this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
-        this.setupTransportDebugHandlers();
+        this.patchTransportSend();
 
         const connectTimeout = this.options.initTimeout ?? 120000;
         await runOutsideTracing(() =>
@@ -816,7 +816,7 @@ export class MCPConnection extends EventEmitter {
     return this.connectPromise;
   }
 
-  private setupTransportDebugHandlers(): void {
+  private patchTransportSend(): void {
     if (!this.transport) {
       return;
     }
