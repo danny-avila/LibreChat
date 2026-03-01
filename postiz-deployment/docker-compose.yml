@@ -5,12 +5,6 @@ services:
     restart: always
     env_file:
       - .env
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
     environment:
       # === Required Settings
       MAIN_URL: ${MAIN_URL}
@@ -93,7 +87,7 @@ services:
       postiz-redis:
         condition: service_healthy
       temporal:
-        condition: service_healthy
+        condition: service_started
 
   postiz-postgres:
     image: postgres:17-alpine
@@ -185,12 +179,6 @@ services:
         condition: service_healthy
       temporal-elasticsearch:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 90s
     environment:
       - DB=postgres12
       - DB_PORT=5432
