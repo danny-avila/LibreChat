@@ -337,11 +337,9 @@ export async function bulkWriteTransactions(
     return doc;
   });
 
-  await dbOps.insertMany(plainDocs);
-
-  if (!balanceEnabled) {
-    return;
+  if (balanceEnabled) {
+    await dbOps.updateBalance({ user, incrementValue: totalTokenValue });
   }
 
-  await dbOps.updateBalance({ user, incrementValue: totalTokenValue });
+  await dbOps.insertMany(plainDocs);
 }
