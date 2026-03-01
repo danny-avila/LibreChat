@@ -60,6 +60,10 @@ export enum PermissionTypes {
    * Type for Remote Agent (API) Permissions
    */
   REMOTE_AGENTS = 'REMOTE_AGENTS',
+  /**
+   * Type for Export Permissions
+   */
+  EXPORTS = 'EXPORTS',
 }
 
 /**
@@ -79,6 +83,8 @@ export enum Permissions {
   VIEW_ROLES = 'VIEW_ROLES',
   /** Can share resources publicly (with everyone) */
   SHARE_PUBLIC = 'SHARE_PUBLIC',
+  /** Can include endpoint options (system prompts) in exports */
+  INCLUDE_ENDPOINTS = 'INCLUDE_ENDPOINTS',
 }
 
 export const promptPermissionsSchema = z.object({
@@ -169,6 +175,11 @@ export const remoteAgentsPermissionsSchema = z.object({
 });
 export type TRemoteAgentsPermissions = z.infer<typeof remoteAgentsPermissionsSchema>;
 
+export const exportsPermissionsSchema = z.object({
+  [Permissions.INCLUDE_ENDPOINTS]: z.boolean().default(false),
+});
+export type TExportsPermissions = z.infer<typeof exportsPermissionsSchema>;
+
 // Define a single permissions schema that holds all permission types.
 export const permissionsSchema = z.object({
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
@@ -185,4 +196,5 @@ export const permissionsSchema = z.object({
   [PermissionTypes.FILE_CITATIONS]: fileCitationsPermissionsSchema,
   [PermissionTypes.MCP_SERVERS]: mcpServersPermissionsSchema,
   [PermissionTypes.REMOTE_AGENTS]: remoteAgentsPermissionsSchema,
+  [PermissionTypes.EXPORTS]: exportsPermissionsSchema,
 });

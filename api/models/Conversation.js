@@ -1,7 +1,9 @@
 const { logger } = require('@librechat/data-schemas');
 const { createTempChatExpirationDate } = require('@librechat/api');
+const mongoose = require('mongoose');
+const { PrincipalType, ResourceType } = require('librechat-data-provider');
 const { getMessages, deleteMessages } = require('./Message');
-const { Conversation } = require('~/db/models');
+const { Conversation, AclEntry, Agent } = require('~/db/models');
 
 /**
  * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
@@ -19,13 +21,59 @@ const searchConversation = async (conversationId) => {
 
 /**
  * Retrieves a single conversation for a given user and conversation ID.
+ * If the conversation uses a saved Agent, fetches includeEndpointsForRole from AclEntry.
  * @param {string} user - The user's ID.
  * @param {string} conversationId - The conversation's ID.
  * @returns {Promise<TConversation>} The conversation object.
  */
 const getConvo = async (user, conversationId) => {
   try {
-    return await Conversation.findOne({ user, conversationId }).lean();
+    const convo = await Conversation.findOne({ user, conversationId }).lean();
+
+    if (!convo || !convo.agent_id) {
+      return convo;
+    }
+
+    let agentObjectId = null;
+
+    // Try to use agent_id directly if it's a valid ObjectId
+    if (mongoose.Types.ObjectId.isValid(convo.agent_id)) {
+      agentObjectId = mongoose.Types.ObjectId(convo.agent_id);
+    } else {
+      // agent_id might be a custom agent ID (like 'agent_-U9deRZIht4hV4KImIHpk')
+      // Look up the Agent by this ID to get its MongoDB _id
+      const agent = await Agent.findOne({ id: convo.agent_id }).lean();
+      if (agent && agent._id) {
+        agentObjectId = agent._id;
+      }
+    }
+
+    // If we have a valid agentObjectId, fetch the ACL
+    if (agentObjectId) {
+      try {
+        const publicAcl = await AclEntry.findOne({
+          resourceType: ResourceType.AGENT,
+          resourceId: agentObjectId,
+          principalType: PrincipalType.PUBLIC,
+        }).lean();
+
+        if (publicAcl) {
+          convo.includeEndpointsForRole = publicAcl.includeEndpointsForRole ?? false;
+        } else {
+          convo.includeEndpointsForRole = false;
+        }
+      } catch (aclError) {
+        console.error('[getConvo] Error fetching ACL:', {
+          message: aclError.message,
+          agentObjectId: agentObjectId?.toString(),
+        });
+        convo.includeEndpointsForRole = false;
+      }
+    } else {
+      convo.includeEndpointsForRole = false;
+    }
+
+    return convo;
   } catch (error) {
     logger.error('[getConvo] Error getting single conversation', error);
     throw new Error('Error getting single conversation');

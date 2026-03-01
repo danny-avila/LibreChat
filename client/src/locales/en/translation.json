@@ -1069,6 +1069,8 @@
   "com_ui_import_conversation_upload_error": "Error uploading file. Please try again.",
   "com_ui_importing": "Importing",
   "com_ui_include_shadcnui": "Include shadcn/ui components instructions",
+  "com_ui_include_endpoint_options": "Include Endpoint Options",
+  "com_ui_include_endpoint_options_description": "Allow this role to export conversations with system prompts and endpoint configurations included",
   "com_ui_initializing": "Initializing...",
   "com_ui_input": "Input",
   "com_ui_instructions": "Instructions",

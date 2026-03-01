@@ -143,6 +143,7 @@ export const updateResourcePermissionsRequestSchema = z.object({
   removed: principalSchema.array(),
   public: z.boolean(),
   publicAccessRoleId: z.string().optional(),
+  includeEndpointsForRole: z.boolean().optional(),
 });
 
 /**
@@ -255,6 +256,7 @@ export const getResourcePermissionsResponseSchema = z.object({
   principals: z.array(principalSchema),
   public: z.boolean(),
   publicAccessRoleId: z.nativeEnum(AccessRoleIds).optional(),
+  includeEndpointsForRole: z.boolean().optional(),
 });
 
 /**

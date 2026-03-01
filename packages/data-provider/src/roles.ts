@@ -16,6 +16,7 @@ import {
   remoteAgentsPermissionsSchema,
   temporaryChatPermissionsSchema,
   fileCitationsPermissionsSchema,
+  exportsPermissionsSchema,
 } from './permissions';
 
 /**
@@ -103,11 +104,18 @@ const defaultRolesSchema = z.object({
         [Permissions.SHARE]: z.boolean().default(true),
         [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
+      [PermissionTypes.EXPORTS]: exportsPermissionsSchema.extend({
+        [Permissions.INCLUDE_ENDPOINTS]: z.boolean().default(true),
+      }),
     }),
   }),
   [SystemRoles.USER]: roleSchema.extend({
     name: z.literal(SystemRoles.USER),
-    permissions: permissionsSchema,
+    permissions: permissionsSchema.extend({
+      [PermissionTypes.EXPORTS]: exportsPermissionsSchema.extend({
+        [Permissions.INCLUDE_ENDPOINTS]: z.boolean().default(true),
+      }),
+    }),
   }),
 });
 
@@ -175,6 +183,9 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.EXPORTS]: {
+        [Permissions.INCLUDE_ENDPOINTS]: true,
+      },
     },
   },
   [SystemRoles.USER]: {
@@ -200,6 +211,9 @@ export const roleDefaults = defaultRolesSchema.parse({
       [PermissionTypes.FILE_CITATIONS]: {},
       [PermissionTypes.MCP_SERVERS]: {},
       [PermissionTypes.REMOTE_AGENTS]: {},
+      [PermissionTypes.EXPORTS]: {
+        [Permissions.INCLUDE_ENDPOINTS]: true,
+      },
     },
   },
 });
