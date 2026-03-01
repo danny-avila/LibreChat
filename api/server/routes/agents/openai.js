@@ -10,7 +10,6 @@
  *   POST /v1/chat/completions - Compatibility chat interface
  *   GET /v1/models - List available agents
  *   GET /v1/models/:model - Get agent details
- *
  * Request format:
  *   {
  *     "model": "agent_id_here",
