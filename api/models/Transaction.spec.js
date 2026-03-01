@@ -4,6 +4,8 @@ const { spendTokens, spendStructuredTokens } = require('./spendTokens');
 const { getMultiplier, getCacheMultiplier, premiumTokenValues, tokenValues } = require('./tx');
 const { createTransaction, createStructuredTransaction } = require('./Transaction');
 const { Balance, Transaction } = require('~/db/models');
+const { createMethods } = require('@librechat/data-schemas');
+const { recordCollectedUsage } = require('@librechat/api');
 
 let mongoServer;
 beforeAll(async () => {
@@ -983,5 +985,259 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const updatedBalance = await Balance.findOne({ user: userId });
     expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+});
+
+describe('Bulk path parity', () => {
+  /**
+   * Each test here mirrors an existing legacy test above, replacing spendTokens/
+   * spendStructuredTokens with recordCollectedUsage + bulk deps.
+   * The balance deduction and transaction document fields must be numerically identical.
+   */
+  let bulkDeps;
+  let methods;
+
+  beforeEach(() => {
+    methods = createMethods(mongoose);
+    bulkDeps = {
+      spendTokens: () => Promise.resolve(),
+      spendStructuredTokens: () => Promise.resolve(),
+      pricing: { getMultiplier, getCacheMultiplier },
+      bulkWriteOps: {
+        insertMany: methods.bulkInsertTransactions,
+        updateBalance: methods.updateBalance,
+      },
+    };
+  });
+
+  test('balance should decrease when spending tokens via bulk path', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+    const promptTokens = 100;
+    const completionTokens = 50;
+
+    await recordCollectedUsage(bulkDeps, {
+      user: userId.toString(),
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'test',
+      balance: { enabled: true },
+      transactions: { enabled: true },
+      collectedUsage: [{ input_tokens: promptTokens, output_tokens: completionTokens, model }],
+    });
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    const promptMultiplier = getMultiplier({
+      model,
+      tokenType: 'prompt',
+      inputTokenCount: promptTokens,
+    });
+    const completionMultiplier = getMultiplier({
+      model,
+      tokenType: 'completion',
+      inputTokenCount: promptTokens,
+    });
+    const expectedTotalCost =
+      promptTokens * promptMultiplier + completionTokens * completionMultiplier;
+    const expectedBalance = initialBalance - expectedTotalCost;
+
+    expect(updatedBalance.tokenCredits).toBeCloseTo(expectedBalance, 0);
+
+    const txns = await Transaction.find({ user: userId }).lean();
+    expect(txns).toHaveLength(2);
+  });
+
+  test('bulk path should not update balance when balance.enabled is false', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+
+    await recordCollectedUsage(bulkDeps, {
+      user: userId.toString(),
+      conversationId: 'test-conversation-id',
+      model,
+      context: 'test',
+      balance: { enabled: false },
+      transactions: { enabled: true },
+      collectedUsage: [{ input_tokens: 100, output_tokens: 50, model }],
+    });
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBe(initialBalance);
+    const txns = await Transaction.find({ user: userId }).lean();
+    expect(txns).toHaveLength(2); // transactions still recorded
+  });
+
+  test('bulk path should not insert when transactions.enabled is false', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    await recordCollectedUsage(bulkDeps, {
+      user: userId.toString(),
+      conversationId: 'test-conversation-id',
+      model: 'gpt-3.5-turbo',
+      context: 'test',
+      balance: { enabled: true },
+      transactions: { enabled: false },
+      collectedUsage: [{ input_tokens: 100, output_tokens: 50, model: 'gpt-3.5-turbo' }],
+    });
+
+    const txns = await Transaction.find({ user: userId }).lean();
+    expect(txns).toHaveLength(0);
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance.tokenCredits).toBe(initialBalance);
+  });
+
+  test('bulk path handles incomplete context for completion tokens — same CANCEL_RATE as legacy', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 17613154.55;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-3-5-sonnet';
+    const promptTokens = 10;
+    const completionTokens = 50;
+
+    await recordCollectedUsage(bulkDeps, {
+      user: userId.toString(),
+      conversationId: 'test-convo',
+      model,
+      context: 'incomplete',
+      balance: { enabled: true },
+      transactions: { enabled: true },
+      collectedUsage: [{ input_tokens: promptTokens, output_tokens: completionTokens, model }],
+    });
+
+    const txns = await Transaction.find({ user: userId }).lean();
+    const completionTx = txns.find((t) => t.tokenType === 'completion');
+    const completionMultiplier = getMultiplier({
+      model,
+      tokenType: 'completion',
+      inputTokenCount: promptTokens,
+    });
+    expect(completionTx.tokenValue).toBeCloseTo(-completionTokens * completionMultiplier * 1.15, 0);
+  });
+
+  test('bulk path structured tokens — balance deduction matches legacy spendStructuredTokens', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 17613154.55;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-3-5-sonnet';
+    const promptInput = 11;
+    const promptWrite = 140522;
+    const promptRead = 0;
+    const completionTokens = 5;
+    const totalInput = promptInput + promptWrite + promptRead;
+
+    await recordCollectedUsage(bulkDeps, {
+      user: userId.toString(),
+      conversationId: 'test-convo',
+      model,
+      context: 'message',
+      balance: { enabled: true },
+      transactions: { enabled: true },
+      collectedUsage: [
+        {
+          input_tokens: promptInput,
+          output_tokens: completionTokens,
+          model,
+          input_token_details: { cache_creation: promptWrite, cache_read: promptRead },
+        },
+      ],
+    });
+
+    const promptMultiplier = getMultiplier({
+      model,
+      tokenType: 'prompt',
+      inputTokenCount: totalInput,
+    });
+    const completionMultiplier = getMultiplier({
+      model,
+      tokenType: 'completion',
+      inputTokenCount: totalInput,
+    });
+    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' }) ?? promptMultiplier;
+    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' }) ?? promptMultiplier;
+
+    const expectedPromptCost =
+      promptInput * promptMultiplier + promptWrite * writeMultiplier + promptRead * readMultiplier;
+    const expectedCompletionCost = completionTokens * completionMultiplier;
+    const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
+    const expectedBalance = initialBalance - expectedTotalCost;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(Math.abs(updatedBalance.tokenCredits - expectedBalance)).toBeLessThan(100);
+  });
+
+  test('premium pricing above threshold via bulk path — same balance as legacy', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-opus-4-6';
+    const promptTokens = 250000;
+    const completionTokens = 500;
+
+    await recordCollectedUsage(bulkDeps, {
+      user: userId.toString(),
+      conversationId: 'test-premium',
+      model,
+      context: 'test',
+      balance: { enabled: true },
+      transactions: { enabled: true },
+      collectedUsage: [{ input_tokens: promptTokens, output_tokens: completionTokens, model }],
+    });
+
+    const premiumPromptRate = premiumTokenValues[model].prompt;
+    const premiumCompletionRate = premiumTokenValues[model].completion;
+    const expectedCost =
+      promptTokens * premiumPromptRate + completionTokens * premiumCompletionRate;
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+
+  test('real-world multi-entry batch: 5 sequential tool calls — same total deduction as 5 legacy spendTokens calls', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 100000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'claude-opus-4-5-20251101';
+    const calls = [
+      { input_tokens: 31596, output_tokens: 151 },
+      { input_tokens: 35368, output_tokens: 150 },
+      { input_tokens: 58362, output_tokens: 295 },
+      { input_tokens: 112604, output_tokens: 193 },
+      { input_tokens: 257440, output_tokens: 2217 },
+    ];
+
+    let expectedTotalCost = 0;
+    for (const { input_tokens, output_tokens } of calls) {
+      const pm = getMultiplier({ model, tokenType: 'prompt', inputTokenCount: input_tokens });
+      const cm = getMultiplier({ model, tokenType: 'completion', inputTokenCount: input_tokens });
+      expectedTotalCost += input_tokens * pm + output_tokens * cm;
+    }
+
+    await recordCollectedUsage(bulkDeps, {
+      user: userId.toString(),
+      conversationId: 'test-sequential',
+      model,
+      context: 'message',
+      balance: { enabled: true },
+      transactions: { enabled: true },
+      collectedUsage: calls.map((c) => ({ ...c, model })),
+    });
+
+    const txns = await Transaction.find({ user: userId }).lean();
+    expect(txns).toHaveLength(10); // 5 calls × 2 docs (prompt + completion)
+
+    const updatedBalance = await Balance.findOne({ user: userId });
+    expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
   });
 });
