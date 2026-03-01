@@ -72,6 +72,24 @@ export const fileStrategiesSchema = z
   })
   .optional();
 
+const cloudfrontSigningSchema = z.enum(['none', 'cookies', 'url']);
+
+export const cloudfrontConfigSchema = z
+  .object({
+    domain: z.string().url(),
+    distributionId: z.string().optional(),
+    invalidateOnDelete: z.boolean().default(false),
+    imageSigning: cloudfrontSigningSchema.default('none'),
+    urlExpiry: z.number().positive().default(3600),
+  })
+  .refine((data) => !data.invalidateOnDelete || !!data.distributionId, {
+    message: 'distributionId is required when invalidateOnDelete is true',
+    path: ['distributionId'],
+  })
+  .optional();
+
+export type CloudFrontConfig = z.infer<typeof cloudfrontConfigSchema>;
+
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
 
@@ -971,6 +989,7 @@ export const configSchema = z.object({
   turnstile: turnstileSchema.optional(),
   fileStrategy: fileSourceSchema.default(FileSources.local),
   fileStrategies: fileStrategiesSchema,
+  cloudfront: cloudfrontConfigSchema,
   actions: z
     .object({
       allowedDomains: z.array(z.string()).optional(),

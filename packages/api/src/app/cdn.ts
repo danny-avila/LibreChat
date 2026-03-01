@@ -4,23 +4,59 @@ import type { AppConfig } from '@librechat/data-schemas';
 import { initializeAzureBlobService } from '~/cdn/azure';
 import { initializeFirebase } from '~/cdn/firebase';
 import { initializeS3 } from '~/cdn/s3';
+import { initializeCloudFront } from '~/cdn/cloudfront';
 
-/**
- * Initializes file storage clients based on the configured file strategy.
- * This should be called after loading the app configuration.
- * @param {Object} options
- * @param {AppConfig} options.appConfig - The application configuration
- */
-export function initializeFileStorage(appConfig: AppConfig) {
-  const { fileStrategy } = appConfig;
-
-  if (fileStrategy === FileSources.firebase) {
+function initializeStrategy(strategy: string, appConfig: AppConfig): void {
+  if (strategy === FileSources.firebase) {
     initializeFirebase();
-  } else if (fileStrategy === FileSources.azure_blob) {
+  } else if (strategy === FileSources.azure_blob) {
     initializeAzureBlobService().catch((error) => {
       logger.error('Error initializing Azure Blob Service:', error);
     });
-  } else if (fileStrategy === FileSources.s3) {
+  } else if (strategy === FileSources.s3) {
     initializeS3();
+  } else if (strategy === FileSources.cloudfront) {
+    const cloudfrontConfig = appConfig.cloudfront;
+    if (!cloudfrontConfig) {
+      logger.error(
+        '[initializeFileStorage] CloudFront strategy requires cloudfront config in librechat.yaml',
+      );
+      return;
+    }
+    initializeCloudFront(cloudfrontConfig);
+  }
+}
+
+/**
+ * Initializes file storage clients based on the configured file strategies.
+ * Handles both the main fileStrategy and granular fileStrategies config.
+ */
+export function initializeFileStorage(appConfig: AppConfig): void {
+  const { fileStrategy, fileStrategies } = appConfig;
+
+  const strategiesToInit = new Set<string>();
+
+  if (fileStrategy) {
+    strategiesToInit.add(fileStrategy);
+  }
+
+  if (fileStrategies) {
+    const { default: defaultStrategy, avatar, image, document } = fileStrategies;
+    if (defaultStrategy) {
+      strategiesToInit.add(defaultStrategy);
+    }
+    if (avatar) {
+      strategiesToInit.add(avatar);
+    }
+    if (image) {
+      strategiesToInit.add(image);
+    }
+    if (document) {
+      strategiesToInit.add(document);
+    }
+  }
+
+  for (const strategy of strategiesToInit) {
+    initializeStrategy(strategy, appConfig);
   }
 }

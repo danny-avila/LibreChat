@@ -11,6 +11,7 @@ import type {
   TCustomEndpoints,
   TAssistantEndpoint,
   TAnthropicEndpoint,
+  CloudFrontConfig,
 } from 'librechat-data-provider';
 
 export type JsonSchemaType = {
@@ -58,10 +59,17 @@ export interface AppConfig {
   memory?: TMemoryConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
-  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
-  fileStrategy: FileSources.local | FileSources.s3 | FileSources.firebase | FileSources.azure_blob;
+  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob', 'cloudfront') */
+  fileStrategy:
+    | FileSources.local
+    | FileSources.s3
+    | FileSources.firebase
+    | FileSources.azure_blob
+    | FileSources.cloudfront;
   /** File strategies configuration */
   fileStrategies?: TCustomConfig['fileStrategies'];
+  /** CloudFront CDN configuration */
+  cloudfront?: CloudFrontConfig;
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Actions configurations */

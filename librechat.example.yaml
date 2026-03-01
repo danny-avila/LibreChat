@@ -18,12 +18,24 @@ cache: true
 #   image: "firebase"   # Storage for uploaded images in chats
 #   document: "local"   # Storage for document uploads (PDFs, text files, etc.)
 
-# Available strategies: "local", "s3", "firebase"
+# Available strategies: "local", "s3", "firebase", "cloudfront"
 # If not specified, defaults to "local" for all file types
 # You can mix and match strategies based on your needs:
 # - Use S3 for avatars for fast global access
 # - Use Firebase for images with automatic optimization
 # - Use local storage for documents for privacy/compliance
+# - Use CloudFront for CDN-accelerated delivery (requires S3 + cloudfront config below)
+
+# CloudFront CDN Configuration (optional)
+# Use when fileStrategy: "cloudfront" or fileStrategies includes cloudfront
+# Requires: AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_BUCKET_NAME
+# For signed URLs: CLOUDFRONT_KEY_PAIR_ID, CLOUDFRONT_PRIVATE_KEY
+# cloudfront:
+#  domain: "https://d1234abcd.cloudfront.net"
+#  distributionId: "E1234ABCD"       # Required if invalidateOnDelete is true
+#  invalidateOnDelete: false          # Create cache invalidation on file delete
+#  imageSigning: "none"               # "none", "cookies", or "url"
+#  urlExpiry: 3600                    # Signed URL expiry in seconds
 
 # Custom interface configuration
 interface:
@@ -113,23 +125,23 @@ interface:
   #   public: false
   # MCP Servers configuration example
   # mcpServers:
-    # Controls user permissions for MCP (Model Context Protocol) server management
-    # - use: Allow users to use configured MCP servers
-    # - create: Allow users to create and manage new MCP servers
-    # - share: Allow users to share MCP servers with other users
-    # - public: Allow users to share MCP servers publicly (with everyone)
-     
-    # Creation / edit MCP server config Dialog config example
-    # trustCheckbox:
-    #   label:
-    #     en: 'I understand and I want to continue'
-    #     de: 'Ich verstehe und möchte fortfahren'
-    #     de-DE: 'Ich verstehe und möchte fortfahren' # You can narrow translation to regions like (de-DE or de-CH)
-    #   subLabel:
-    #     en: |
-    #       Librechat hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data. <a href="https://google.de" target="_blank"><strong>Learn more.</strong></a>
-    #     de: |
-    #       LibreChat hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
+  # Controls user permissions for MCP (Model Context Protocol) server management
+  # - use: Allow users to use configured MCP servers
+  # - create: Allow users to create and manage new MCP servers
+  # - share: Allow users to share MCP servers with other users
+  # - public: Allow users to share MCP servers publicly (with everyone)
+
+  # Creation / edit MCP server config Dialog config example
+  # trustCheckbox:
+  #   label:
+  #     en: 'I understand and I want to continue'
+  #     de: 'Ich verstehe und möchte fortfahren'
+  #     de-DE: 'Ich verstehe und möchte fortfahren' # You can narrow translation to regions like (de-DE or de-CH)
+  #   subLabel:
+  #     en: |
+  #       Librechat hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data. <a href="https://google.de" target="_blank"><strong>Learn more.</strong></a>
+  #     de: |
+  #       LibreChat hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
