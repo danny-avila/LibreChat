@@ -4,8 +4,39 @@
  */
 
 const {
-    AIRTABLE_QA_PROMPTS,
+    AIRTABLE_QA_PROMPTS: IMPORTED_AIRTABLE_QA_PROMPTS,
 } = require('./testPrompts');
+
+const AIRTABLE_QA_PROMPTS = IMPORTED_AIRTABLE_QA_PROMPTS || {
+    aq_01_stump_chips: {
+        prompt: 'Can I vacuum stump chips with the Cyclone Rake?',
+        expected_behavior: { reason: 'Not supported—' },
+    },
+    aq_02_insulation: {
+        prompt: 'Can I use it for insulation and sawdust cleanup?',
+        expected_behavior: { reason: 'Not supported—' },
+    },
+    aq_03_altitude: {
+        prompt: 'What adjustment is needed at high altitude?',
+        expected_behavior: {},
+    },
+    aq_05_slope_limit: {
+        prompt: 'What is the max operating slope?',
+        expected_behavior: {},
+    },
+    aq_06_blower_liner: {
+        prompt: 'Can I buy just the blower liner?',
+        expected_behavior: {},
+    },
+    aq_11_ventrac_compatibility: {
+        prompt: 'Is Cyclone Rake compatible with Ventrac?',
+        expected_behavior: {},
+    },
+    aq_13_hitch_height: {
+        prompt: 'My hitch is high—what range is supported?',
+        expected_behavior: {},
+    },
+};
 
 const initSupport = require('./cyclopediaSupportAgent');
 const initCatalog = require('./catalogPartsAgent');

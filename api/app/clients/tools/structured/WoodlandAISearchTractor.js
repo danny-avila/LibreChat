@@ -532,6 +532,83 @@ class WoodlandAISearchTractor extends Tool {
     return map;
   }
 
+  _strictUrlForSku(value, sku) {
+    const s = typeof value === 'string' ? value.trim() : '';
+    if (!/^https?:\/\//i.test(s)) return undefined;
+    if (/^https?:\/\/(www\.)?cyclonerake\.com\/?$/i.test(s)) return undefined;
+    try {
+      const parsed = new URL(s);
+      const host = (parsed.hostname || '').toLowerCase();
+      const path = (parsed.pathname || '').toLowerCase();
+      const normalizedSku = String(sku || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
+      if (host.endsWith('cyclonerake.com')) {
+        const pathHasDigit = /\d/.test(path);
+        const pathNormalized = path.replace(/[^a-z0-9]/g, '');
+        const matchesSku = normalizedSku ? pathNormalized.includes(normalizedSku) : false;
+        if (!pathHasDigit && !matchesSku) {
+          return undefined;
+        }
+      }
+    } catch (_) {
+      return undefined;
+    }
+    return s;
+  }
+
+  _buildSkuFallbackUrl(sku) {
+    const normalizedSku = typeof sku === 'string' ? sku.trim() : '';
+    if (!normalizedSku) {
+      return undefined;
+    }
+    const fallbackBase =
+      process.env.WOODLAND_TRACTOR_SKU_FALLBACK_URL_BASE ||
+      'https://www.cyclonerake.com/search/?q=';
+    return `${fallbackBase}${encodeURIComponent(normalizedSku)}`;
+  }
+
+  _skuUrlWithFallback(sku, url) {
+    const normalizedSku = typeof sku === 'string' ? sku.trim() : '';
+    if (!normalizedSku) {
+      return undefined;
+    }
+    return this._strictUrlForSku(url, normalizedSku) || this._buildSkuFallbackUrl(normalizedSku);
+  }
+
+  _enforceCompatUrlPolicy(doc) {
+    if (!doc || typeof doc !== 'object') {
+      return doc;
+    }
+    const n = doc.normalized_compat;
+    if (!n || typeof n !== 'object') {
+      return doc;
+    }
+
+    const apply = (group, skuKey, urlKey) => {
+      const target = n[group];
+      if (!target || typeof target !== 'object') {
+        return;
+      }
+      const sku = target[skuKey];
+      const url = target[urlKey];
+      target[urlKey] = this._skuUrlWithFallback(sku, url);
+    };
+
+    apply('oem', 'mda', 'mda_url');
+    apply('oem', 'hitch', 'hitch_url');
+    apply('oem', 'hose', 'hose_url');
+    apply('oem', 'upgrade_hose', 'upgrade_hose_url');
+    apply('oem', 'rubber_collar', 'rubber_collar_url');
+
+    apply('aftermarket', 'mda', 'mda_url');
+    apply('aftermarket', 'hitch', 'hitch_url');
+    apply('aftermarket', 'hose', 'hose_url');
+    apply('aftermarket', 'upgrade_hose', 'upgrade_hose_url');
+
+    return doc;
+  }
+
   _normalizeDoc(d) {
     const bool = (v) => (typeof v === 'boolean' ? v : undefined);
     const str = (v) => (v == null ? undefined : String(v));
@@ -577,25 +654,31 @@ class WoodlandAISearchTractor extends Tool {
       compatible_with_large_rakes: bool(d?.can_connect_to_large_rakes),
       aftermarket: {
         mda: str(d?.ammda_sku),
-        mda_url: str(d?.ammda_sku_url),
+        mda_url: this._skuUrlWithFallback(str(d?.ammda_sku), str(d?.ammda_sku_url)),
         hitch: str(d?.amhitch_sku),
-        hitch_url: str(d?.amhitch_sku_url),
+        hitch_url: this._skuUrlWithFallback(str(d?.amhitch_sku), str(d?.amhitch_sku_url)),
         hose: str(d?.amhose_sku),
-        hose_url: str(d?.amhose_sku_url),
+        hose_url: this._skuUrlWithFallback(str(d?.amhose_sku), str(d?.amhose_sku_url)),
         upgrade_hose: str(d?.amupgradehose_sku),
-        upgrade_hose_url: str(d?.amupgradehose_sku_url),
+        upgrade_hose_url: this._skuUrlWithFallback(
+          str(d?.amupgradehose_sku),
+          str(d?.amupgradehose_sku_url),
+        ),
       },
       oem: {
         mda: str(d?.mda_sku),
-        mda_url: str(d?.mda_sku_url),
+        mda_url: this._skuUrlWithFallback(str(d?.mda_sku), str(d?.mda_sku_url)),
         hitch: str(d?.hitch_sku),
-        hitch_url: str(d?.hitch_sku_url),
+        hitch_url: this._skuUrlWithFallback(str(d?.hitch_sku), str(d?.hitch_sku_url)),
         hose: str(d?.hose_sku),
-        hose_url: str(d?.hose_sku_url),
+        hose_url: this._skuUrlWithFallback(str(d?.hose_sku), str(d?.hose_sku_url)),
         upgrade_hose: str(d?.upgradehose_sku),
-        upgrade_hose_url: str(d?.upgradehose_sku_url),
+        upgrade_hose_url: this._skuUrlWithFallback(str(d?.upgradehose_sku), str(d?.upgradehose_sku_url)),
         rubber_collar: str(d?.rubbercollar_sku),
-        rubber_collar_url: str(d?.rubbercollar_sku_url),
+        rubber_collar_url: this._skuUrlWithFallback(
+          str(d?.rubbercollar_sku),
+          str(d?.rubbercollar_sku_url),
+        ),
       },
       compatible_with:
         this._cleanCompat(list(d?.compatible_models)) ||
@@ -707,19 +790,21 @@ class WoodlandAISearchTractor extends Tool {
     if (!n) return 'No compatibility data available.';
 
     const yn = (v) => (v === true ? 'Yes' : v === false ? 'No' : 'Unknown');
-    const strictUrl = (u) => {
-      const s = typeof u === 'string' ? u.trim() : '';
-      if (!/^https?:\/\//i.test(s)) return undefined; // only allow explicit http/https
-      return s;
+    const strictSku = (value) => {
+      const s = typeof value === 'string' ? value.trim() : '';
+      return s || undefined;
     };
-    const link = (label, url) => {
-      const L = String(label ?? 'N/A').trim();
-      const U = strictUrl(url);
-      return U ? `[${L}](${U})` : L || 'N/A';
+    const skuWithOwnUrl = (sku, url) => {
+      const S = strictSku(sku);
+      if (!S) return 'N/A';
+      const U = this._skuUrlWithFallback(S, url);
+      return U ? `[${S}](${U})` : S;
     };
     const field = (label, sku, url, aftermarketSku, aftermarketUrl) => {
-      const main = `${label}: ${sku ? link(sku, url) : 'N/A'}`;
-      const am = aftermarketSku ? ` (Aftermarket: ${link(aftermarketSku, aftermarketUrl)})` : '';
+      const main = `${label}: ${skuWithOwnUrl(sku, url)}`;
+      const am = strictSku(aftermarketSku)
+        ? ` (Aftermarket: ${skuWithOwnUrl(aftermarketSku, aftermarketUrl)})`
+        : '';
       return `- **${main}${am}**`;
     };
 
@@ -762,20 +847,21 @@ class WoodlandAISearchTractor extends Tool {
   _formatGroupedTable(doc) {
     const n = doc?.normalized_compat;
     if (!n) return '';
-    const strictUrl = (u) => {
-      const s = typeof u === 'string' ? u.trim() : '';
-      if (!/^https?:\/\//i.test(s)) return undefined;
-      return s;
+    const strictSku = (value) => {
+      const s = typeof value === 'string' ? value.trim() : '';
+      return s || undefined;
     };
-    const mdLink = (sku, url) => {
-      const label = String(sku || '').trim();
-      if (!label) return 'N/A';
-      const U = strictUrl(url);
-      return U ? `[${label}](${U})` : label;
+    const toLinkedSku = (sku, url) => {
+      const S = strictSku(sku);
+      if (!S) return undefined;
+      const U = this._skuUrlWithFallback(S, url);
+      return U ? `[${S}](${U})` : S;
     };
     const pick = (oemSku, oemUrl, amSku, amUrl) => {
-      if (oemSku) return mdLink(oemSku, oemUrl);
-      if (amSku) return mdLink(amSku, amUrl);
+      const oem = toLinkedSku(oemSku, oemUrl);
+      if (oem) return oem;
+      const am = toLinkedSku(amSku, amUrl);
+      if (am) return am;
       return 'N/A';
     };
     const row = (part, oemSku, oemUrl, amSku, amUrl) => `| ${part} | ${pick(oemSku, oemUrl, amSku, amUrl)} |`;
@@ -1504,7 +1590,7 @@ class WoodlandAISearchTractor extends Tool {
       }
       // Attach normalized compatibility projection and provenance to each doc
       if (Array.isArray(docs)) {
-        docs = docs.map((d) => (d ? this._normalizeDoc(d) : d));
+        docs = docs.map((d) => (d ? this._enforceCompatUrlPolicy(this._normalizeDoc(d)) : d));
       }
       // Build minimal, safe projection (avoid leaking noisy root fields that may confuse renderers)
       const projectedDocs = Array.isArray(docs)
@@ -1523,7 +1609,7 @@ class WoodlandAISearchTractor extends Tool {
       const groupedTables = Array.isArray(docs)
         ? docs.map((d) => this._formatGroupedTable(d))
         : [];
-      const includeRaw =
+      const includeRawRequested =
         String(
           this._env(
             /* fields override first */ undefined,
@@ -1532,6 +1618,16 @@ class WoodlandAISearchTractor extends Tool {
         )
           .toLowerCase()
           .trim() === 'true';
+      const includeRawUnsafeAllowed =
+        String(process.env.WOODLAND_ALLOW_UNSAFE_RAW_DOCS || 'false')
+          .toLowerCase()
+          .trim() === 'true';
+      const includeRaw = includeRawRequested && includeRawUnsafeAllowed;
+      if (includeRawRequested && !includeRawUnsafeAllowed) {
+        logger.warn(
+          '[woodland-ai-search-tractor] Raw docs requested but blocked; set WOODLAND_ALLOW_UNSAFE_RAW_DOCS=true for local debugging only',
+        );
+      }
       const payload = includeRaw
         ? {
             docs: projectedDocs,

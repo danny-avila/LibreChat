@@ -21,8 +21,11 @@ function createResponseMock(scenario) {
   // For now, mimic a minimal plausible answer containing SKUs if present.
   const skuPart = scenario.skus.length ? `SKUs: ${scenario.skus.join(', ')}` : '';
   const escalationPart = scenario.expected.should_escalate ? ' Technician assistance required.' : '';
+  const policyPart = scenario.flags.policy_denial_intent
+    ? ' Not supported—this request conflicts with Woodland policy.'
+    : '';
   return {
-    answer: `${skuPart}${escalationPart}`.trim(),
+    answer: `${skuPart}${escalationPart}${policyPart}`.trim(),
   };
 }
 

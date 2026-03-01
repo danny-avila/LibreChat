@@ -96,12 +96,43 @@ class WoodlandAISearchCatalog extends Tool {
     return v ?? fallback;
   }
 
+  _sanitizeUrl(value, associatedValue) {
+    const s = typeof value === 'string' ? value.trim() : '';
+    if (!/^https?:\/\//i.test(s)) {
+      return undefined;
+    }
+    if (/^https?:\/\/(www\.)?cyclonerake\.com\/?$/i.test(s)) {
+      return undefined;
+    }
+    try {
+      const parsed = new URL(s);
+      const host = (parsed.hostname || '').toLowerCase();
+      const path = (parsed.pathname || '').toLowerCase();
+      if (host.endsWith('cyclonerake.com') && associatedValue) {
+        const token = String(associatedValue)
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '');
+        const pathNormalized = path.replace(/[^a-z0-9]/g, '');
+        const pathHasDigit = /\d/.test(path);
+        const matchesToken = token ? pathNormalized.includes(token) : false;
+        if (!pathHasDigit && !matchesToken) {
+          return undefined;
+        }
+      }
+      return s;
+    } catch (_) {
+      return undefined;
+    }
+  }
+
   _provenance(d) {
     try {
       let url = (typeof d?.url === 'string' && d.url) || '';
+      const sku = (typeof d?.sku === 'string' && d.sku) || (typeof d?.product_sku === 'string' && d.product_sku) || '';
       if (url && this.baseUrl && !/^https?:\/\//i.test(url)) {
         url = this.baseUrl.replace(/\/+$/, '') + '/' + url.replace(/^\/+/, '');
       }
+      url = this._sanitizeUrl(url, sku);
       const host = url ? new URL(url).hostname : undefined;
       return { url: url || undefined, host, site: d?.site, page_type: d?.page_type };
     } catch (_) {
@@ -341,7 +372,17 @@ class WoodlandAISearchCatalog extends Tool {
     }
     normalized.fitment = fitment;
 
-    return { ...d, normalized_catalog: normalized };
+    const sanitizedTopLevelUrl = this._sanitizeUrl(str(d?.url), sku);
+    const sanitizedCanonicalUrl = this._sanitizeUrl(str(d?.canonical_url), sku);
+
+    return {
+      ...d,
+      ...(sanitizedTopLevelUrl ? { url: sanitizedTopLevelUrl } : { url: undefined }),
+      ...(sanitizedCanonicalUrl
+        ? { canonical_url: sanitizedCanonicalUrl }
+        : { canonical_url: undefined }),
+      normalized_catalog: normalized,
+    };
   }
 
   constructor(fields = {}) {

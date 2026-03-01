@@ -1,7 +1,12 @@
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
-const { logger } = require('~/config');
+let logger;
+try {
+  ({ logger } = require('~/config'));
+} catch (_) {
+  ({ logger } = require('@librechat/data-schemas'));
+}
 
 class WoodlandProductHistory extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
@@ -181,6 +186,35 @@ class WoodlandProductHistory extends Tool {
     return filters.join(' and ');
   }
 
+  _sanitizeUrl(value, associatedValue) {
+    const s = typeof value === 'string' ? value.trim() : '';
+    if (!/^https?:\/\//i.test(s)) {
+      return undefined;
+    }
+    if (/^https?:\/\/(www\.)?cyclonerake\.com\/?$/i.test(s)) {
+      return undefined;
+    }
+    try {
+      const parsed = new URL(s);
+      const host = (parsed.hostname || '').toLowerCase();
+      const path = (parsed.pathname || '').toLowerCase();
+      if (host.endsWith('cyclonerake.com') && associatedValue) {
+        const token = String(associatedValue)
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '');
+        const pathNormalized = path.replace(/[^a-z0-9]/g, '');
+        const pathHasDigit = /\d/.test(path);
+        const matchesToken = token ? pathNormalized.includes(token) : false;
+        if (!pathHasDigit && !matchesToken) {
+          return undefined;
+        }
+      }
+      return s;
+    } catch (_) {
+      return undefined;
+    }
+  }
+
   _collectUrls(doc) {
     const urls = new Set();
     const prioritized = [];
@@ -191,10 +225,14 @@ class WoodlandProductHistory extends Tool {
         if (!trimmed) {
           return;
         }
+        const sanitized = this._sanitizeUrl(trimmed);
+        if (!sanitized) {
+          return;
+        }
         if (priority) {
-          prioritized.push(trimmed);
+          prioritized.push(sanitized);
         } else {
-          urls.add(trimmed);
+          urls.add(sanitized);
         }
       } else if (Array.isArray(val)) {
         val.forEach((item) => push(item, priority));
@@ -259,6 +297,10 @@ class WoodlandProductHistory extends Tool {
   }
 
   _shapeDocument(doc) {
+    const { primaryUrl, supplementalUrls } = this._collectUrls(doc);
+    const citationLabel = doc.rake_model || doc.model || 'Product History';
+    const citationMarkdown = primaryUrl ? `[${citationLabel}](${primaryUrl})` : citationLabel;
+
     // Extract and truncate content field - this contains all the Airtable product details
     let content = typeof doc.content === 'string' ? doc.content.trim() : '';
     if (content.length > WoodlandProductHistory.MAX_CONTENT_LENGTH) {
@@ -272,6 +314,22 @@ class WoodlandProductHistory extends Tool {
       deck_hose: doc.deck_hose,
       collector_bag: doc.collector_bag,
       blower_color: doc.blower_color,
+      url: primaryUrl || undefined,
+      citations: [primaryUrl, ...supplementalUrls].filter(Boolean),
+      citation: {
+        label: citationLabel,
+        url: primaryUrl || undefined,
+        markdown: citationMarkdown,
+      },
+      normalized_catalog: {
+        title: doc.rake_model || doc.model || undefined,
+        url: primaryUrl || undefined,
+        citation: {
+          label: citationLabel,
+          url: primaryUrl || undefined,
+          markdown: citationMarkdown,
+        },
+      },
       content: content || undefined,
     };
   }

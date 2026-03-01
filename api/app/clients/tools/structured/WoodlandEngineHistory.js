@@ -1,7 +1,12 @@
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
-const { logger } = require('~/config');
+let logger;
+try {
+  ({ logger } = require('~/config'));
+} catch (_) {
+  ({ logger } = require('@librechat/data-schemas'));
+}
 
 class WoodlandEngineHistory extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
@@ -134,6 +139,35 @@ class WoodlandEngineHistory extends Tool {
     return filters.join(' and ');
   }
 
+  _sanitizeUrl(value, associatedValue) {
+    const s = typeof value === 'string' ? value.trim() : '';
+    if (!/^https?:\/\//i.test(s)) {
+      return undefined;
+    }
+    if (/^https?:\/\/(www\.)?cyclonerake\.com\/?$/i.test(s)) {
+      return undefined;
+    }
+    try {
+      const parsed = new URL(s);
+      const host = (parsed.hostname || '').toLowerCase();
+      const path = (parsed.pathname || '').toLowerCase();
+      if (host.endsWith('cyclonerake.com') && associatedValue) {
+        const token = String(associatedValue)
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '');
+        const pathNormalized = path.replace(/[^a-z0-9]/g, '');
+        const pathHasDigit = /\d/.test(path);
+        const matchesToken = token ? pathNormalized.includes(token) : false;
+        if (!pathHasDigit && !matchesToken) {
+          return undefined;
+        }
+      }
+      return s;
+    } catch (_) {
+      return undefined;
+    }
+  }
+
   _collectUrls(doc) {
     const urls = new Set();
     const prioritized = [];
@@ -144,10 +178,14 @@ class WoodlandEngineHistory extends Tool {
         if (!trimmed) {
           return;
         }
+        const sanitized = this._sanitizeUrl(trimmed);
+        if (!sanitized) {
+          return;
+        }
         if (priority) {
-          prioritized.push(trimmed);
+          prioritized.push(sanitized);
         } else {
-          urls.add(trimmed);
+          urls.add(sanitized);
         }
       } else if (Array.isArray(val)) {
         val.forEach((item) => push(item, priority));
@@ -192,10 +230,39 @@ class WoodlandEngineHistory extends Tool {
   _shapeDocument(doc) {
     const { primaryUrl, supplementalUrls } = this._collectUrls(doc);
     const normalized = this._normalizeAttributes(doc);
+    const citationLabel = doc.engine_model || doc.rake_model || 'Engine History';
+    const citationMarkdown = primaryUrl ? `[${citationLabel}](${primaryUrl})` : citationLabel;
+    const sanitizedDoc = { ...doc };
+    Object.keys(sanitizedDoc).forEach((key) => {
+      if (!/(_url)$/i.test(key)) {
+        return;
+      }
+      const baseKey = key.replace(/_url$/i, '');
+      const associatedValue = this._isMeaningfulValue(sanitizedDoc[baseKey])
+        ? String(sanitizedDoc[baseKey]).trim()
+        : undefined;
+      const sanitized = this._sanitizeUrl(sanitizedDoc[key], associatedValue);
+      sanitizedDoc[key] = sanitized || undefined;
+    });
 
     return {
-      ...doc,
+      ...sanitizedDoc,
+      url: primaryUrl || undefined,
       citations: [primaryUrl, ...supplementalUrls].filter(Boolean),
+      citation: {
+        label: citationLabel,
+        url: primaryUrl || undefined,
+        markdown: citationMarkdown,
+      },
+      normalized_catalog: {
+        title: doc.engine_model || doc.rake_model || undefined,
+        url: primaryUrl || undefined,
+        citation: {
+          label: citationLabel,
+          url: primaryUrl || undefined,
+          markdown: citationMarkdown,
+        },
+      },
       normalized_engine: normalized,
     };
   }
@@ -211,7 +278,7 @@ class WoodlandEngineHistory extends Tool {
     return str.toLowerCase() !== 'n/a';
   }
 
-  _lookupUrl(doc, fieldName) {
+  _lookupUrl(doc, fieldName, associatedValue) {
     if (!fieldName || typeof fieldName !== 'string') {
       return '';
     }
@@ -224,7 +291,7 @@ class WoodlandEngineHistory extends Tool {
     ]);
     for (const key of variants) {
       if (key in doc && this._isMeaningfulValue(doc[key])) {
-        return String(doc[key]).trim();
+        return this._sanitizeUrl(String(doc[key]).trim(), associatedValue) || '';
       }
     }
     return '';
@@ -234,8 +301,9 @@ class WoodlandEngineHistory extends Tool {
     if (!this._isMeaningfulValue(doc?.[fieldName])) {
       return undefined;
     }
-    const entry = { value: String(doc[fieldName]).trim() };
-    const url = this._lookupUrl(doc, fieldName);
+    const value = String(doc[fieldName]).trim();
+    const entry = { value };
+    const url = this._lookupUrl(doc, fieldName, value);
     if (url) {
       entry.url = url;
     }

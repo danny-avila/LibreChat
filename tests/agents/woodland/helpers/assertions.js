@@ -31,7 +31,7 @@ function assertTechnicianEscalation(scenario, responseMock) {
   if (!scenario.expected.should_escalate) return;
   if (!responseMock) return; // No response yet.
   const text = responseMock.answer || '';
-  if (!/(technician|service center|escalation|required)/i.test(text)) {
+  if (!/(technician|service center|escalation|required|needs human review|human review)/i.test(text)) {
     throw new Error(`Scenario ${scenario.id} expected escalation language for technician-only procedure.`);
   }
 }

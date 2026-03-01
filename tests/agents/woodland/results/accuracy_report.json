@@ -1,0 +1,32 @@
+{
+  "total": 830,
+  "successful": 830,
+  "failed": 0,
+  "timeouts": 0,
+  "avg_duration_ms": 1,
+  "by_agent": {
+    "SupervisorRouter": {
+      "count": 830,
+      "avg_duration": 1
+    }
+  },
+  "by_flag": {
+    "critical_parts": {
+      "total": 0,
+      "passed": 0
+    },
+    "technician_only": {
+      "total": 8,
+      "passed": 8
+    },
+    "hitch_relevant": {
+      "total": 5,
+      "passed": 5
+    },
+    "multi_option": {
+      "total": 3,
+      "passed": 3
+    }
+  },
+  "failures": []
+}

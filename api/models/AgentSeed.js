@@ -37,7 +37,7 @@ const WOODLAND_AGENTS = [
     // No attached agents; route via tools only
     agent_ids: [],
     hide_sequential_outputs: true,
-    temperature: 0.2,
+    temperature: 0,
     recursion_limit: 10,
     conversation_starters: [
       'I need help with my Cyclone Rake',

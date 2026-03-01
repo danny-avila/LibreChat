@@ -6,10 +6,10 @@
  * full SupervisorRouter orchestration.
  */
 
-const { initializeSupervisorRouter } = require('../../../../api/app/clients/agents/Woodland/supervisorRouterAgent');
-const { initializeCatalogPartsAgent } = require('../../../../api/app/clients/agents/Woodland/catalogPartsAgent');
-const { initializeCyclopediaSupportAgent } = require('../../../../api/app/clients/agents/Woodland/cyclopediaSupportAgent');
-const { initializeTractorFitmentAgent } = require('../../../../api/app/clients/agents/Woodland/tractorFitmentAgent');
+const initializeSupervisorRouter = require('../../../../api/app/clients/agents/Woodland/supervisorRouterAgent');
+const initializeCatalogPartsAgent = require('../../../../api/app/clients/agents/Woodland/catalogPartsAgent');
+const initializeCyclopediaSupportAgent = require('../../../../api/app/clients/agents/Woodland/cyclopediaSupportAgent');
+const initializeTractorFitmentAgent = require('../../../../api/app/clients/agents/Woodland/tractorFitmentAgent');
 
 /**
  * InvocationMode: Determines which agent to invoke
@@ -127,6 +127,14 @@ async function invokeAgent(scenario, agents, mode = InvocationMode.AUTO) {
     metadata: {
       policy_flags: response.policy_flags || [],
       validation_warnings: response.validation_warnings || [],
+      intent_metadata: response.intent_metadata || {
+        primary_intent: 'unknown',
+        secondary_intents: [],
+        confidence: null,
+        missing_anchors: [],
+        clarifying_question: null,
+        recommended_tools: [],
+      },
       hitch_relevance: response.hitch_relevance || null,
       procedural_safety: response.procedural_safety || null,
       skus_found: response.skus_found || [],
@@ -158,14 +166,13 @@ async function batchInvoke(scenarios, agents, options = {}) {
     
     const batchPromises = batch.map(async (scenario, idx) => {
       const absoluteIdx = i + idx;
+      let timeoutId;
       
       try {
-        const response = await Promise.race([
-          invokeAgent(scenario, agents, mode),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout')), timeout)
-          ),
-        ]);
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Timeout')), timeout);
+        });
+        const response = await Promise.race([invokeAgent(scenario, agents, mode), timeoutPromise]);
 
         return {
           scenario_id: scenario.id,
@@ -188,6 +195,9 @@ async function batchInvoke(scenarios, agents, options = {}) {
           },
         };
       } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
         if (onProgress) {
           onProgress(absoluteIdx + 1, total);
         }

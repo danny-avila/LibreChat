@@ -9,7 +9,14 @@ const initializeCyclopediaSupportAgent = require('./cyclopediaSupportAgent');
 const initializeCasesReferenceAgent = require('./casesReferenceAgent');
 const initializeWebsiteProductAgent = require('./websiteProductAgent');
 const initializeTractorFitmentAgent = require('./tractorFitmentAgent');
-const { applyUrlPolicyAsync } = require('../tools/structured/util/urlPolicy');
+let applyUrlPolicyAsync = async (_query, response) => response;
+try {
+  ({ applyUrlPolicyAsync } = require('../../tools/structured/util/urlPolicy'));
+} catch (error) {
+  logger.warn('[SupervisorRouter] URL policy helper unavailable, using passthrough', {
+    error: error?.message,
+  });
+}
 
 const DOMAIN_AGENT_CONFIGS = [
   {
@@ -215,9 +222,42 @@ const resolveDomainTools = (
 
 const INSTRUCTIONS = promptTemplates.supervisorRouter;
 
+const evaluateCompletenessWarnings = (text, metadata = {}) => {
+  const warnings = [];
+  const normalizedText = typeof text === 'string' ? text : '';
+
+  const urlExpected =
+    /product|engine|catalog|part|fitment|tractor|manual|documentation|spec/i.test(normalizedText);
+  const hasUrlLike = /https?:\/\/|\[[^\]]+\]\(https?:\/\//i.test(normalizedText);
+  const hasUrlUnavailable = /\[URL unavailable from index\]|URL:\s*None/i.test(normalizedText);
+  if (urlExpected && !hasUrlLike && !hasUrlUnavailable) {
+    warnings.push('missing_url_or_fallback');
+  }
+
+  const criticalPartSignal = /critical\s*part|impeller|liner|hitch|hose|mda|rubber\s*collar/i.test(
+    normalizedText,
+  );
+  const hasSku = /\b\d{3,}[A-Za-z0-9-]*\b/.test(normalizedText);
+  if (criticalPartSignal && !hasSku) {
+    warnings.push('missing_sku_for_part_response');
+  }
+
+  const requiresEscalation =
+    Array.isArray(metadata?.missing_anchors) && metadata.missing_anchors.length > 0;
+  const hasEscalationLanguage = /needs human review|technician|service center|escalat/i.test(
+    normalizedText,
+  );
+  if (requiresEscalation && !hasEscalationLanguage) {
+    warnings.push('missing_escalation_language');
+  }
+
+  return warnings;
+};
+
 module.exports = async function initializeSupervisorRouterAgent(params) {
   const classifier = await createIntentClassifier(params);
   const cachedIntent = { text: null, metadata: null };
+  let lastIntentMetadata = null;
   const baseTools = Array.isArray(params?.tools) ? params.tools : [];
   const baseToolNames = baseTools
     .map((tool) => tool?.name)
@@ -420,12 +460,47 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     } catch (error) {
       logger?.warn?.('[SupervisorRouter] URL validation failed', { error: error?.message });
     }
-    if (result && typeof result === 'object' && augmented?.intentMetadata) {
-      result.metadata = {
-        ...result.metadata,
-        ...augmented.intentMetadata,
+
+    if (result && typeof result === 'object' && lastIntentMetadata) {
+      result.intent_metadata = {
+        primary_intent: lastIntentMetadata.primaryIntent || 'unknown',
+        secondary_intents: Array.isArray(lastIntentMetadata.secondaryIntents)
+          ? lastIntentMetadata.secondaryIntents
+          : [],
+        confidence:
+          typeof lastIntentMetadata.confidence === 'number'
+            ? lastIntentMetadata.confidence
+            : undefined,
+        missing_anchors: Array.isArray(lastIntentMetadata.missingAnchors)
+          ? lastIntentMetadata.missingAnchors
+          : [],
+        clarifying_question: lastIntentMetadata.clarifyingQuestion || null,
+        recommended_tools: Array.isArray(lastIntentMetadata.recommendedTools)
+          ? lastIntentMetadata.recommendedTools
+          : [],
       };
     }
+
+    try {
+      if (result && typeof result === 'object') {
+        const outputText =
+          (typeof result.output === 'string' && result.output) ||
+          (typeof result.answer === 'string' && result.answer) ||
+          (typeof result.text === 'string' && result.text) ||
+          '';
+        const warnings = evaluateCompletenessWarnings(outputText, lastIntentMetadata || {});
+        if (warnings.length) {
+          result.validation_warnings = Array.isArray(result.validation_warnings)
+            ? Array.from(new Set([...result.validation_warnings, ...warnings]))
+            : warnings;
+        }
+      }
+    } catch (error) {
+      logger?.warn?.('[SupervisorRouter] completeness validation failed', {
+        error: error?.message,
+      });
+    }
+
     return result;
   };
 
@@ -577,6 +652,7 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
       setActiveTools(recommended || allDomainToolNames);
       let sanitized = augmented;
       if (augmented && typeof augmented === 'object') {
+        lastIntentMetadata = augmented.intentMetadata || null;
         // Remove helper metadata before handing off to the executor.
         const { intentMetadata: _ignored, ...rest } = augmented;
         sanitized = rest;

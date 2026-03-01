@@ -1,3 +1,4 @@
+const { z } = require('zod');
 const initializeFunctionsAgent = require('../Functions/initializeFunctionsAgent');
 
 const CLASSIFIER_INSTRUCTIONS = `You are the Woodland Intent Classifier. Analyze the user's request using pattern matching and semantic understanding to classify into ONE primary domain with confidence scoring.
@@ -106,14 +107,155 @@ VALIDATION RULES:
 - If parts requested BUT model not stated, set secondary_intents=["product_history"] for model identification first`;
 
 function safeParse(text) {
+  if (typeof text !== 'string') {
+    return null;
+  }
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const candidate = fenced ? fenced[1] : trimmed;
   try {
-    return JSON.parse(text);
+    return JSON.parse(candidate);
   } catch (error) {
     return null;
   }
 }
 
-module.exports = async function createIntentClassifier(params) {
+const INTENT_VALUES = [
+  'parts',
+  'sales',
+  'support',
+  'tractor_fitment',
+  'product_history',
+  'engine_history',
+  'cases',
+  'service',
+  'unknown',
+];
+
+const intentSchema = z.object({
+  primary_intent: z.enum(INTENT_VALUES),
+  secondary_intents: z.array(z.enum(INTENT_VALUES)).default([]),
+  confidence: z.number().min(0).max(1),
+  safety_critical: z.boolean().default(false),
+  legacy_product: z.boolean().default(false),
+  missing_anchors: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        type: z.string().optional(),
+        label: z.string().optional(),
+        options: z.array(z.string()).optional(),
+      }),
+    )
+    .default([]),
+  clarifying_question: z.string().nullable().default(null),
+});
+
+const fallbackIntent = (text = '') => ({
+  primary_intent: 'unknown',
+  secondary_intents: [],
+  confidence: 0.45,
+  safety_critical: false,
+  legacy_product: false,
+  missing_anchors: [{ key: 'customer intent', label: 'Customer intent' }],
+  clarifying_question:
+    text && text.trim().length > 0
+      ? 'Could you share whether you need parts, fitment, troubleshooting, or pricing help?'
+      : 'Could you share what you need help with (parts, fitment, troubleshooting, or pricing)?',
+});
+
+function normalizeMissingAnchors(raw) {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        return { key: entry, label: entry };
+      }
+      if (entry && typeof entry === 'object') {
+        const key = typeof entry.key === 'string' && entry.key.trim() ? entry.key.trim() : null;
+        if (!key) {
+          return null;
+        }
+        return {
+          key,
+          type: typeof entry.type === 'string' ? entry.type : undefined,
+          label: typeof entry.label === 'string' ? entry.label : key,
+          options: Array.isArray(entry.options)
+            ? entry.options.map((opt) => String(opt)).filter(Boolean)
+            : undefined,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function enforceIntentRules(raw, inputText) {
+  const normalized = {
+    ...fallbackIntent(inputText),
+    ...(raw && typeof raw === 'object' ? raw : {}),
+  };
+
+  const primaryIntent = INTENT_VALUES.includes(normalized.primary_intent)
+    ? normalized.primary_intent
+    : 'unknown';
+  const secondaryIntents = Array.isArray(normalized.secondary_intents)
+    ? normalized.secondary_intents.filter((intent) => INTENT_VALUES.includes(intent))
+    : [];
+  const numericConfidence = Number(normalized.confidence);
+  const confidence = Number.isFinite(numericConfidence)
+    ? Math.max(0, Math.min(1, numericConfidence))
+    : fallbackIntent(inputText).confidence;
+
+  const safetyCritical = Boolean(normalized.safety_critical);
+  const legacyProduct = Boolean(normalized.legacy_product);
+  const missingAnchors = normalizeMissingAnchors(normalized.missing_anchors);
+
+  let clarifyingQuestion =
+    typeof normalized.clarifying_question === 'string'
+      ? normalized.clarifying_question.trim() || null
+      : null;
+
+  let effectivePrimary = primaryIntent;
+  let effectiveConfidence = confidence;
+
+  if (safetyCritical) {
+    effectivePrimary = 'support';
+    effectiveConfidence = 1;
+  }
+
+  if (legacyProduct && effectiveConfidence < 0.85) {
+    effectiveConfidence = 0.85;
+  }
+
+  if ((effectiveConfidence < 0.7 || missingAnchors.length > 0) && !clarifyingQuestion) {
+    clarifyingQuestion =
+      missingAnchors.length > 0
+        ? `To proceed, please provide: ${missingAnchors.map((a) => a.label || a.key).join(', ')}.`
+        : 'Could you share a bit more detail so I can route this correctly?';
+  }
+
+  if (effectiveConfidence >= 0.8 && missingAnchors.length === 0) {
+    clarifyingQuestion = null;
+  }
+
+  const candidate = {
+    primary_intent: effectivePrimary,
+    secondary_intents: secondaryIntents,
+    confidence: Number(effectiveConfidence.toFixed(2)),
+    safety_critical: safetyCritical,
+    legacy_product: legacyProduct,
+    missing_anchors: missingAnchors,
+    clarifying_question: clarifyingQuestion,
+  };
+
+  const parsed = intentSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : fallbackIntent(inputText);
+}
+
+module.exports = async function createIntentClassifier(params = {}) {
   const { model, pastMessages, currentDateString, ...rest } = params;
   const classifier = await initializeFunctionsAgent({
     tools: [],
@@ -128,22 +270,22 @@ module.exports = async function createIntentClassifier(params) {
   return {
     async classify(text) {
       if (!text) {
-        return null;
+        return fallbackIntent('');
       }
 
       try {
         const response = await classifier.invoke({ input: text });
         const raw = response?.output ?? response;
         if (typeof raw === 'string') {
-          return safeParse(raw);
+          return enforceIntentRules(safeParse(raw), text);
         }
         if (raw && typeof raw.output === 'string') {
-          return safeParse(raw.output);
+          return enforceIntentRules(safeParse(raw.output), text);
         }
       } catch (error) {
         // swallow classification errors; supervisor will fall back to default behavior
       }
-      return null;
+      return fallbackIntent(text);
     },
   };
 };
