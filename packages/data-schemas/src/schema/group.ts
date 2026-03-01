@@ -29,10 +29,10 @@ const groupSchema = new Schema<IGroup>(
     ],
     source: {
       type: String,
-      enum: ['local', 'entra'],
+      enum: ['local', 'entra', 'oidc'],
       default: 'local',
     },
-    /** External ID (e.g., Entra ID) */
+    /** External ID (e.g., Entra ID, OIDC provider) */
     idOnTheSource: {
       type: String,
       sparse: true,
