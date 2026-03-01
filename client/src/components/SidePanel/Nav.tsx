@@ -74,7 +74,7 @@ function NavContent({ links, isCollapsed, resize }: Omit<NavProps, 'defaultActiv
           />
         ))}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {links.map((link) =>
           link.id === active && link.Component ? <link.Component key={link.id} /> : null,
         )}
