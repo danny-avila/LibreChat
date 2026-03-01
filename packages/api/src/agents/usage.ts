@@ -1,34 +1,20 @@
 import { logger } from '@librechat/data-schemas';
 import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
-import type { UsageMetadata } from '../stream/interfaces/IJobStore';
-import type { EndpointTokenConfig } from '../types/tokens';
-
-interface TokenUsage {
-  promptTokens?: number;
-  completionTokens?: number;
-}
-
-interface StructuredPromptTokens {
-  input?: number;
-  write?: number;
-  read?: number;
-}
-
-interface StructuredTokenUsage {
-  promptTokens?: StructuredPromptTokens;
-  completionTokens?: number;
-}
-
-interface TxMetadata {
-  user: string;
-  model?: string;
-  context: string;
-  messageId?: string;
-  conversationId: string;
-  balance?: Partial<TCustomConfig['balance']> | null;
-  transactions?: Partial<TTransactionsConfig>;
-  endpointTokenConfig?: EndpointTokenConfig;
-}
+import type {
+  StructuredTokenUsage,
+  BulkWriteDeps,
+  PreparedEntry,
+  TxMetadata,
+  TokenUsage,
+  PricingFns,
+} from './transactions';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
+import type { EndpointTokenConfig } from '~/types/tokens';
+import {
+  prepareStructuredTokenSpend,
+  bulkWriteTransactions,
+  prepareTokenSpend,
+} from './transactions';
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
 type SpendStructuredTokensFn = (
@@ -39,6 +25,8 @@ type SpendStructuredTokensFn = (
 export interface RecordUsageDeps {
   spendTokens: SpendTokensFn;
   spendStructuredTokens: SpendStructuredTokensFn;
+  pricing?: PricingFns;
+  bulkWriteOps?: BulkWriteDeps;
 }
 
 export interface RecordUsageParams {
@@ -61,6 +49,9 @@ export interface RecordUsageResult {
 /**
  * Records token usage for collected LLM calls and spends tokens against balance.
  * This handles both sequential execution (tool calls) and parallel execution (multiple agents).
+ *
+ * When `pricing` and `bulkWriteOps` deps are provided, prepares all transaction documents
+ * in-memory first, then writes them in a single `insertMany` + one `updateBalance` call.
  */
 export async function recordCollectedUsage(
   deps: RecordUsageDeps,
@@ -78,8 +69,6 @@ export async function recordCollectedUsage(
     context = 'message',
   } = params;
 
-  const { spendTokens, spendStructuredTokens } = deps;
-
   if (!collectedUsage || !collectedUsage.length) {
     return;
   }
@@ -95,6 +84,11 @@ export async function recordCollectedUsage(
       0);
 
   let total_output_tokens = 0;
+
+  const { pricing, bulkWriteOps } = deps;
+  const useBulk = pricing && bulkWriteOps;
+
+  const allDocs: PreparedEntry[] = [];
 
   for (const usage of collectedUsage) {
     if (!usage) {
@@ -121,26 +115,68 @@ export async function recordCollectedUsage(
       model: usage.model ?? model,
     };
 
-    if (cache_creation > 0 || cache_read > 0) {
-      spendStructuredTokens(txMetadata, {
-        promptTokens: {
-          input: usage.input_tokens,
-          write: cache_creation,
-          read: cache_read,
-        },
-        completionTokens: usage.output_tokens,
-      }).catch((err) => {
-        logger.error('[packages/api #recordCollectedUsage] Error spending structured tokens', err);
-      });
+    if (useBulk) {
+      const entries =
+        cache_creation > 0 || cache_read > 0
+          ? prepareStructuredTokenSpend(
+              txMetadata,
+              {
+                promptTokens: {
+                  input: usage.input_tokens,
+                  write: cache_creation,
+                  read: cache_read,
+                },
+                completionTokens: usage.output_tokens,
+              },
+              pricing,
+            )
+          : prepareTokenSpend(
+              txMetadata,
+              {
+                promptTokens: usage.input_tokens,
+                completionTokens: usage.output_tokens,
+              },
+              pricing,
+            );
+      allDocs.push(...entries);
       continue;
     }
 
-    spendTokens(txMetadata, {
-      promptTokens: usage.input_tokens,
-      completionTokens: usage.output_tokens,
-    }).catch((err) => {
-      logger.error('[packages/api #recordCollectedUsage] Error spending tokens', err);
-    });
+    if (cache_creation > 0 || cache_read > 0) {
+      deps
+        .spendStructuredTokens(txMetadata, {
+          promptTokens: {
+            input: usage.input_tokens,
+            write: cache_creation,
+            read: cache_read,
+          },
+          completionTokens: usage.output_tokens,
+        })
+        .catch((err) => {
+          logger.error(
+            '[packages/api #recordCollectedUsage] Error spending structured tokens',
+            err,
+          );
+        });
+      continue;
+    }
+
+    deps
+      .spendTokens(txMetadata, {
+        promptTokens: usage.input_tokens,
+        completionTokens: usage.output_tokens,
+      })
+      .catch((err) => {
+        logger.error('[packages/api #recordCollectedUsage] Error spending tokens', err);
+      });
+  }
+
+  if (useBulk && allDocs.length > 0) {
+    try {
+      await bulkWriteTransactions({ user, docs: allDocs }, bulkWriteOps);
+    } catch (err) {
+      logger.error('[packages/api #recordCollectedUsage] Error in bulk write', err);
+    }
   }
 
   return {

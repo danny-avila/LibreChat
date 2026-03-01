@@ -1,5 +1,7 @@
 import logger from '~/config/winston';
 
+export const CANCEL_RATE = 1.15;
+
 /**
  * Checks if the connected MongoDB deployment supports transactions
  * This requires a MongoDB replica set configuration

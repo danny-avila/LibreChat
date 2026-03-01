@@ -25,6 +25,7 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
@@ -493,7 +494,12 @@ const OpenAIChatCompletionController = async (req, res) => {
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
     recordCollectedUsage(
-      { spendTokens, spendStructuredTokens },
+      {
+        spendTokens,
+        spendStructuredTokens,
+        pricing: { getMultiplier, getCacheMultiplier },
+        bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+      },
       {
         user: userId,
         conversationId,

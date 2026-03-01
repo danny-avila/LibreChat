@@ -393,7 +393,9 @@ describe('getOpenAILLMConfig', () => {
         },
       });
 
-      expect(result.llmConfig).toHaveProperty('reasoning', { effort: ReasoningEffort.high });
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+      });
       expect(result.llmConfig).not.toHaveProperty('include_reasoning');
       expect(result.llmConfig.modelKwargs).toHaveProperty('plugins', [{ id: 'web' }]);
     });
@@ -617,7 +619,9 @@ describe('getOpenAILLMConfig', () => {
         },
       });
 
-      expect(result.llmConfig).toHaveProperty('reasoning', { effort: ReasoningEffort.high });
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+      });
       expect(result.llmConfig).not.toHaveProperty('include_reasoning');
       expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
     });
@@ -634,7 +638,9 @@ describe('getOpenAILLMConfig', () => {
         },
       });
 
-      expect(result.llmConfig).toHaveProperty('reasoning', { effort: ReasoningEffort.high });
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+      });
     });
 
     it.each([ReasoningEffort.xhigh, ReasoningEffort.minimal, ReasoningEffort.none])(
@@ -650,7 +656,7 @@ describe('getOpenAILLMConfig', () => {
           },
         });
 
-        expect(result.llmConfig).toHaveProperty('reasoning', { effort });
+        expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', { effort });
         expect(result.llmConfig).not.toHaveProperty('include_reasoning');
       },
     );

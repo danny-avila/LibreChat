@@ -1,7 +1,6 @@
 import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { SettingDefinition } from 'librechat-data-provider';
-import type { OpenRouterReasoning } from '@librechat/agents';
 import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
@@ -231,7 +230,8 @@ export function getOpenAILLMConfig({
        * `include_reasoning` is legacy compat that maps to `{ enabled: true }` only when
        * no `reasoning` object is present, so we intentionally omit it here.
        */
-      llmConfig.reasoning = { effort: reasoning_effort } as OpenRouterReasoning;
+      modelKwargs.reasoning = { effort: reasoning_effort };
+      hasModelKwargs = true;
     } else {
       /** No explicit effort; fall back to legacy `include_reasoning` for reasoning token inclusion */
       llmConfig.include_reasoning = true;
