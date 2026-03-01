@@ -165,6 +165,25 @@ describe('Standard token parity', () => {
     expect(balance.tokenCredits).toBe(initialBalance);
   });
 
+  test('abort context — transactions inserted, no balance update when balance not passed', async () => {
+    const userId = new mongoose.Types.ObjectId().toString();
+    const initialBalance = 10000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    const model = 'gpt-3.5-turbo';
+    const entries = prepareTokenSpend(
+      txMeta(userId, { model, context: 'abort', balance: undefined }),
+      { promptTokens: 100, completionTokens: 50 },
+      pricing,
+    );
+    await bulkWriteTransactions({ user: userId, docs: entries }, dbOps());
+
+    const txns = await Transaction.find({ user: userId }).lean();
+    expect(txns).toHaveLength(2);
+    const balance = (await Balance.findOne({ user: userId }).lean()) as Record<string, unknown>;
+    expect(balance.tokenCredits).toBe(initialBalance);
+  });
+
   test('NaN promptTokens — only completion doc inserted, identical to legacy', async () => {
     const userId = new mongoose.Types.ObjectId().toString();
     const initialBalance = 10000000;
@@ -300,7 +319,7 @@ describe('Structured token parity', () => {
     const promptTx = txns.find((t) => t.tokenType === 'prompt');
     expect(promptTx!.inputTokens).toBe(-11);
     expect(promptTx!.writeTokens).toBe(-140522);
-    expect(Math.abs(promptTx!.readTokens ?? 0)).toBe(0);
+    expect(Math.abs(Number(promptTx!.readTokens ?? 0))).toBe(0);
   });
 
   test('structured tokens with both cache_creation and cache_read', async () => {

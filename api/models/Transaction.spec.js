@@ -1240,4 +1240,86 @@ describe('Bulk path parity', () => {
     const updatedBalance = await Balance.findOne({ user: userId });
     expect(updatedBalance.tokenCredits).toBeCloseTo(initialBalance - expectedTotalCost, 0);
   });
+
+  test('bulk path should save transaction but not update balance when balance disabled, transactions enabled', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    await recordCollectedUsage(bulkDeps, {
+      user: userId.toString(),
+      conversationId: 'test-conversation-id',
+      model: 'gpt-3.5-turbo',
+      context: 'test',
+      balance: { enabled: false },
+      transactions: { enabled: true },
+      collectedUsage: [{ input_tokens: 100, output_tokens: 50, model: 'gpt-3.5-turbo' }],
+    });
+
+    const txns = await Transaction.find({ user: userId }).lean();
+    expect(txns).toHaveLength(2);
+    expect(txns[0].rawAmount).toBeDefined();
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance.tokenCredits).toBe(initialBalance);
+  });
+
+  test('bulk path structured tokens should not save when transactions.enabled is false', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    await recordCollectedUsage(bulkDeps, {
+      user: userId.toString(),
+      conversationId: 'test-conversation-id',
+      model: 'claude-3-5-sonnet',
+      context: 'message',
+      balance: { enabled: true },
+      transactions: { enabled: false },
+      collectedUsage: [
+        {
+          input_tokens: 10,
+          output_tokens: 5,
+          model: 'claude-3-5-sonnet',
+          input_token_details: { cache_creation: 100, cache_read: 5 },
+        },
+      ],
+    });
+
+    const txns = await Transaction.find({ user: userId }).lean();
+    expect(txns).toHaveLength(0);
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance.tokenCredits).toBe(initialBalance);
+  });
+
+  test('bulk path structured tokens should save but not update balance when balance disabled', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const initialBalance = 10000000;
+    await Balance.create({ user: userId, tokenCredits: initialBalance });
+
+    await recordCollectedUsage(bulkDeps, {
+      user: userId.toString(),
+      conversationId: 'test-conversation-id',
+      model: 'claude-3-5-sonnet',
+      context: 'message',
+      balance: { enabled: false },
+      transactions: { enabled: true },
+      collectedUsage: [
+        {
+          input_tokens: 10,
+          output_tokens: 5,
+          model: 'claude-3-5-sonnet',
+          input_token_details: { cache_creation: 100, cache_read: 5 },
+        },
+      ],
+    });
+
+    const txns = await Transaction.find({ user: userId }).lean();
+    expect(txns).toHaveLength(2);
+    const promptTx = txns.find((t) => t.tokenType === 'prompt');
+    expect(promptTx.inputTokens).toBe(-10);
+    expect(promptTx.writeTokens).toBe(-100);
+    expect(promptTx.readTokens).toBe(-5);
+    const balance = await Balance.findOne({ user: userId });
+    expect(balance.tokenCredits).toBe(initialBalance);
+  });
 });

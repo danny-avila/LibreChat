@@ -278,6 +278,19 @@ describe('recordCollectedUsage — bulk path parity', () => {
       const docs = mockInsertMany.mock.calls[0][0];
       expect(docs[0].model).toBe('param-model');
     });
+
+    it('should fallback to undefined model when both usage.model and param model are missing', async () => {
+      const collectedUsage: UsageMetadata[] = [{ input_tokens: 100, output_tokens: 50 }];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        model: undefined,
+        collectedUsage,
+      });
+
+      const docs = mockInsertMany.mock.calls[0][0];
+      expect(docs[0].model).toBeUndefined();
+    });
   });
 
   describe('real-world scenarios', () => {
