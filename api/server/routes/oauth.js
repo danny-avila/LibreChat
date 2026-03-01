@@ -7,12 +7,13 @@ const { ErrorTypes } = require('librechat-data-provider');
 const { createSetBalanceConfig } = require('@librechat/api');
 const { checkDomainAllowed, loginLimiter, logHeaders } = require('~/server/middleware');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
+const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
-const { Balance } = require('~/db/models');
 
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
-  Balance,
+  findBalanceByUser,
+  upsertBalanceFields,
 });
 
 const router = express.Router();
@@ -29,7 +30,7 @@ const oauthHandler = createOAuthHandler();
 
 router.get('/error', (req, res) => {
   /** A single error message is pushed by passport when authentication fails. */
-  const errorMessage = req.session?.messages?.pop() || 'Unknown error';
+  const errorMessage = req.session?.messages?.pop() || 'Unknown OAuth error';
   logger.error('Error in OAuth authentication:', {
     message: errorMessage,
   });

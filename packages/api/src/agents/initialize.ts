@@ -17,7 +17,7 @@ import type {
   Agent,
   TUser,
 } from 'librechat-data-provider';
-import type { GenericTool, LCToolRegistry, ToolMap } from '@librechat/agents';
+import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { Response as ServerResponse } from 'express';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
@@ -42,11 +42,14 @@ export type InitializedAgent = Agent & {
   maxContextTokens: number;
   useLegacyContent: boolean;
   resendFiles: boolean;
+  tool_resources?: AgentToolResources;
   userMCPAuthMap?: Record<string, Record<string, string>>;
   /** Tool map for ToolNode to use when executing tools (required for PTC) */
   toolMap?: ToolMap;
   /** Tool registry for PTC and tool search (only present when MCP tools with env classification exist) */
   toolRegistry?: LCToolRegistry;
+  /** Serializable tool definitions for event-driven execution */
+  toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
   hasDeferredTools?: boolean;
 };
@@ -79,10 +82,13 @@ export interface InitializeAgentParams {
     tool_options: AgentToolOptions | undefined;
     tool_resources: AgentToolResources | undefined;
   }) => Promise<{
-    tools: GenericTool[];
-    toolContextMap: Record<string, unknown>;
+    /** Full tool instances (only present when definitionsOnly=false) */
+    tools?: GenericTool[];
+    toolContextMap?: Record<string, unknown>;
     userMCPAuthMap?: Record<string, Record<string, string>>;
     toolRegistry?: LCToolRegistry;
+    /** Serializable tool definitions for event-driven mode */
+    toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
   } | null>;
   /** Endpoint option (contains model_parameters and endpoint info) */
@@ -272,11 +278,12 @@ export async function initializeAgent(
   });
 
   const {
-    tools: structuredTools,
+    toolRegistry,
     toolContextMap,
     userMCPAuthMap,
-    toolRegistry,
+    toolDefinitions,
     hasDeferredTools,
+    tools: structuredTools,
   } = (await loadTools?.({
     req,
     res,
@@ -291,6 +298,7 @@ export async function initializeAgent(
     toolContextMap: {},
     userMCPAuthMap: undefined,
     toolRegistry: undefined,
+    toolDefinitions: [],
     hasDeferredTools: false,
   };
 
@@ -343,13 +351,17 @@ export async function initializeAgent(
     agent.provider = options.provider;
   }
 
+  /** Check for tool presence from either full instances or definitions (event-driven mode) */
+  const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
+
   let tools: GenericTool[] = options.tools?.length
     ? (options.tools as GenericTool[])
-    : structuredTools;
+    : (structuredTools ?? []);
+
   if (
     (agent.provider === Providers.GOOGLE || agent.provider === Providers.VERTEXAI) &&
     options.tools?.length &&
-    structuredTools?.length
+    hasAgentTools
   ) {
     throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
   } else if (
@@ -391,15 +403,20 @@ export async function initializeAgent(
 
   const initializedAgent: InitializedAgent = {
     ...agent,
-    tools: (tools ?? []) as GenericTool[] & string[],
-    attachments: finalAttachments,
     resendFiles,
-    userMCPAuthMap,
     toolRegistry,
+    tool_resources,
+    userMCPAuthMap,
+    toolDefinitions,
     hasDeferredTools,
+    attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
-    maxContextTokens: Math.round((agentMaxContextNum - maxOutputTokensNum) * 0.9),
+    tools: (tools ?? []) as GenericTool[] & string[],
+    maxContextTokens:
+      maxContextTokens != null && maxContextTokens > 0
+        ? maxContextTokens
+        : Math.round((agentMaxContextNum - maxOutputTokensNum) * 0.9),
   };
 
   return initializedAgent;

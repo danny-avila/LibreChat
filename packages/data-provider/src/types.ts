@@ -52,6 +52,7 @@ export type TEndpointOption = Pick<
   | 'promptCache'
   | 'thinking'
   | 'thinkingBudget'
+  | 'effort'
   // Assistant/Agent fields
   | 'assistant_id'
   | 'agent_id'
@@ -98,6 +99,7 @@ export type TEphemeralAgent = {
   web_search?: boolean;
   file_search?: boolean;
   execute_code?: boolean;
+  artifacts?: string;
 };
 
 export type TPayload = Partial<TMessage> &
@@ -233,6 +235,33 @@ export type TUpdateUserKeyRequest = {
   name: string;
   value: string;
   expiresAt: string;
+};
+
+export type TAgentApiKeyCreateRequest = {
+  name: string;
+  expiresAt?: string | null;
+};
+
+export type TAgentApiKeyCreateResponse = {
+  id: string;
+  name: string;
+  key: string;
+  keyPrefix: string;
+  createdAt: string;
+  expiresAt?: string;
+};
+
+export type TAgentApiKeyListItem = {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  lastUsedAt?: string;
+  expiresAt?: string;
+  createdAt: string;
+};
+
+export type TAgentApiKeyListResponse = {
+  keys: TAgentApiKeyListItem[];
 };
 
 export type TUpdateConversationRequest = {
@@ -511,7 +540,6 @@ export type TPromptGroup = {
   command?: string;
   oneliner?: string;
   category?: string;
-  projectIds?: string[];
   productionId?: string | null;
   productionPrompt?: Pick<TPrompt, 'prompt'> | null;
   author: string;
@@ -564,9 +592,7 @@ export type TCreatePromptResponse = {
   group?: TPromptGroup;
 };
 
-export type TUpdatePromptGroupPayload = Partial<TPromptGroup> & {
-  removeProjectIds?: string[];
-};
+export type TUpdatePromptGroupPayload = Partial<TPromptGroup>;
 
 export type TUpdatePromptGroupVariables = {
   id: string;

@@ -23,6 +23,7 @@ const {
   PluginAuth,
   MemoryEntry,
   PromptGroup,
+  AgentApiKey,
   Transaction,
   Conversation,
   ConversationTag,
@@ -79,6 +80,7 @@ async function gracefulExit(code = 0) {
   const tasks = [
     Action.deleteMany({ user: uid }),
     Agent.deleteMany({ author: uid }),
+    AgentApiKey.deleteMany({ user: uid }),
     Assistant.deleteMany({ user: uid }),
     Balance.deleteMany({ user: uid }),
     ConversationTag.deleteMany({ user: uid }),
@@ -105,7 +107,7 @@ async function gracefulExit(code = 0) {
   await Promise.all(tasks);
 
   // 6) Remove user from all groups
-  await Group.updateMany({ memberIds: user._id }, { $pull: { memberIds: user._id } });
+  await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });
 
   // 7) Finally delete the user document itself
   await User.deleteOne({ _id: uid });

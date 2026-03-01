@@ -14,17 +14,18 @@ import {
 import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { useLocalize, useResourcePermissions } from '~/hooks';
+import { useLiveAnnouncer } from '~/Providers';
 import { cn } from '~/utils';
 
 interface DashGroupItemProps {
   group: TPromptGroup;
-  instanceProjectId?: string;
 }
 
-function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps) {
+function DashGroupItemComponent({ group }: DashGroupItemProps) {
   const params = useParams();
   const navigate = useNavigate();
   const localize = useLocalize();
+  const { announcePolite } = useLiveAnnouncer();
 
   const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [nameInputValue, setNameInputValue] = useState(group.name);
@@ -33,10 +34,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const canEdit = hasPermission(PermissionBits.EDIT);
   const canDelete = hasPermission(PermissionBits.DELETE);
 
-  const isGlobalGroup = useMemo(
-    () => instanceProjectId && group.projectIds?.includes(instanceProjectId),
-    [group.projectIds, instanceProjectId],
-  );
+  const isPublicGroup = useMemo(() => group.isPublic === true, [group.isPublic]);
 
   const updateGroup = useUpdatePromptGroup({
     onMutate: () => {
@@ -49,6 +47,8 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const deleteGroup = useDeletePromptGroup({
     onSuccess: (_response, variables) => {
       if (variables.id === group._id) {
+        const announcement = localize('com_ui_prompt_deleted', { 0: group.name });
+        announcePolite({ message: announcement, isStatus: true });
         navigate('/d/prompts');
       }
     },
@@ -111,7 +111,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
         </div>
 
         <div className="flex h-full items-center gap-2">
-          {isGlobalGroup && (
+          {isPublicGroup && (
             <EarthIcon
               className="icon-md text-green-500"
               aria-label={localize('com_ui_global_group')}

@@ -53,6 +53,12 @@ const checkResourcePermissionAccess = (requiredPermission) => (req, res, next) =
       requiredPermission,
       resourceIdParam: 'resourceId',
     });
+  } else if (resourceType === ResourceType.REMOTE_AGENT) {
+    middleware = canAccessResource({
+      resourceType: ResourceType.REMOTE_AGENT,
+      requiredPermission,
+      resourceIdParam: 'resourceId',
+    });
   } else if (resourceType === ResourceType.PROMPTGROUP) {
     middleware = canAccessResource({
       resourceType: ResourceType.PROMPTGROUP,

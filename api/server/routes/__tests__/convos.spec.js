@@ -31,20 +31,14 @@ jest.mock('@librechat/data-schemas', () => ({
   })),
 }));
 
-jest.mock('~/models/Conversation', () => ({
+jest.mock('~/models', () => ({
   getConvosByCursor: jest.fn(),
   getConvo: jest.fn(),
   deleteConvos: jest.fn(),
   saveConvo: jest.fn(),
-}));
-
-jest.mock('~/models/ToolCall', () => ({
-  deleteToolCalls: jest.fn(),
-}));
-
-jest.mock('~/models', () => ({
   deleteAllSharedLinks: jest.fn(),
   deleteConvoSharedLink: jest.fn(),
+  deleteToolCalls: jest.fn(),
 }));
 
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
@@ -108,9 +102,13 @@ jest.mock('~/server/services/Endpoints/assistants', () => ({
 describe('Convos Routes', () => {
   let app;
   let convosRouter;
-  const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
-  const { deleteConvos, saveConvo } = require('~/models/Conversation');
-  const { deleteToolCalls } = require('~/models/ToolCall');
+  const {
+    deleteAllSharedLinks,
+    deleteConvoSharedLink,
+    deleteToolCalls,
+    deleteConvos,
+    saveConvo,
+  } = require('~/models');
 
   beforeAll(() => {
     convosRouter = require('../convos');
@@ -385,6 +383,40 @@ describe('Convos Routes', () => {
       expect(deleteConvoSharedLink).not.toHaveBeenCalled();
     });
 
+    it('should return 400 when request body is empty (DoS prevention)', async () => {
+      const response = await request(app).delete('/api/convos').send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'no parameters provided' });
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when arg is null (DoS prevention)', async () => {
+      const response = await request(app).delete('/api/convos').send({ arg: null });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'no parameters provided' });
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when arg is undefined (DoS prevention)', async () => {
+      const response = await request(app).delete('/api/convos').send({ arg: undefined });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'no parameters provided' });
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when request body is null (DoS prevention)', async () => {
+      const response = await request(app)
+        .delete('/api/convos')
+        .set('Content-Type', 'application/json')
+        .send('null');
+
+      expect(response.status).toBe(400);
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
     it('should return 500 if deleteConvoSharedLink fails', async () => {
       const mockConversationId = 'conv-error';
 
@@ -486,7 +518,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockArchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ user: { id: 'test-user-123' } }),
+        expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: true },
         { context: `POST /api/convos/archive ${mockConversationId}` },
       );
@@ -515,7 +547,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockUnarchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ user: { id: 'test-user-123' } }),
+        expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: false },
         { context: `POST /api/convos/archive ${mockConversationId}` },
       );

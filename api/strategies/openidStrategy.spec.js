@@ -1,3 +1,4 @@
+const undici = require('undici');
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes } = require('librechat-data-provider');
@@ -7,6 +8,10 @@ const { setupOpenId } = require('./openidStrategy');
 // --- Mocks ---
 jest.mock('node-fetch');
 jest.mock('jsonwebtoken/decode');
+jest.mock('undici', () => ({
+  fetch: jest.fn(),
+  ProxyAgent: jest.fn(),
+}));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
     saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
@@ -147,6 +152,7 @@ describe('setupOpenId', () => {
     process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'id';
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
+    delete process.env.OPENID_EMAIL_CLAIM;
     delete process.env.PROXY;
     delete process.env.OPENID_USE_PKCE;
 
@@ -435,6 +441,81 @@ describe('setupOpenId', () => {
     expect(details.message).toBe('You must have "requiredRole" role to log in.');
   });
 
+  it('should not treat substring matches in string roles as satisfying required role', async () => {
+    // Arrange – override required role to "read" then re-setup
+    process.env.OPENID_REQUIRED_ROLE = 'read';
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+    // Token contains "bread" which *contains* "read" as a substring
+    jwtDecode.mockReturnValue({
+      roles: 'bread',
+    });
+
+    // Act
+    const { user, details } = await validate(tokenset);
+
+    // Assert – verify that substring match does not grant access
+    expect(user).toBe(false);
+    expect(details.message).toBe('You must have "read" role to log in.');
+  });
+
+  it('should allow login when roles claim is a space-separated string containing the required role', async () => {
+    // Arrange – IdP returns roles as a space-delimited string
+    jwtDecode.mockReturnValue({
+      roles: 'role1 role2 requiredRole',
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – login succeeds when required role is present after splitting
+    expect(user).toBeTruthy();
+    expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should allow login when roles claim is a comma-separated string containing the required role', async () => {
+    // Arrange – IdP returns roles as a comma-delimited string
+    jwtDecode.mockReturnValue({
+      roles: 'role1,role2,requiredRole',
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – login succeeds when required role is present after splitting
+    expect(user).toBeTruthy();
+    expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should allow login when roles claim is a mixed comma-and-space-separated string containing the required role', async () => {
+    // Arrange – IdP returns roles with comma-and-space delimiters
+    jwtDecode.mockReturnValue({
+      roles: 'role1, role2, requiredRole',
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – login succeeds when required role is present after splitting
+    expect(user).toBeTruthy();
+    expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should reject login when roles claim is a space-separated string that does not contain the required role', async () => {
+    // Arrange – IdP returns a delimited string but required role is absent
+    jwtDecode.mockReturnValue({
+      roles: 'role1 role2 otherRole',
+    });
+
+    // Act
+    const { user, details } = await validate(tokenset);
+
+    // Assert – login is rejected with the correct error message
+    expect(user).toBe(false);
+    expect(details.message).toBe('You must have "requiredRole" role to log in.');
+  });
+
   it('should allow login when single required role is present (backward compatibility)', async () => {
     // Arrange – ensure single role configuration (as set in beforeEach)
     // OPENID_REQUIRED_ROLE = 'requiredRole'
@@ -451,6 +532,292 @@ describe('setupOpenId', () => {
     expect(user.email).toBe(tokenset.claims().email);
     expect(user.username).toBe(tokenset.claims().preferred_username);
     expect(createUser).toHaveBeenCalled();
+  });
+
+  describe('group overage and groups handling', () => {
+    it.each([
+      ['groups array contains required group', ['group-required', 'other-group'], true, undefined],
+      [
+        'groups array missing required group',
+        ['other-group'],
+        false,
+        'You must have "group-required" role to log in.',
+      ],
+      ['groups string equals required group', 'group-required', true, undefined],
+      [
+        'groups string is other group',
+        'other-group',
+        false,
+        'You must have "group-required" role to log in.',
+      ],
+    ])(
+      'uses groups claim directly when %s (no overage)',
+      async (_label, groupsClaim, expectedAllowed, expectedMessage) => {
+        process.env.OPENID_REQUIRED_ROLE = 'group-required';
+        process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+        process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+
+        jwtDecode.mockReturnValue({
+          groups: groupsClaim,
+          permissions: ['admin'],
+        });
+
+        await setupOpenId();
+        verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+        const { user, details } = await validate(tokenset);
+
+        expect(undici.fetch).not.toHaveBeenCalled();
+        expect(Boolean(user)).toBe(expectedAllowed);
+        expect(details?.message).toBe(expectedMessage);
+      },
+    );
+
+    it.each([
+      ['token kind is not id', { kind: 'access', path: 'groups', decoded: { hasgroups: true } }],
+      ['parameter path is not groups', { kind: 'id', path: 'roles', decoded: { hasgroups: true } }],
+      ['decoded token is falsy', { kind: 'id', path: 'groups', decoded: null }],
+      [
+        'no overage indicators in decoded token',
+        {
+          kind: 'id',
+          path: 'groups',
+          decoded: {
+            permissions: ['admin'],
+          },
+        },
+      ],
+      [
+        'only _claim_names present (no _claim_sources)',
+        {
+          kind: 'id',
+          path: 'groups',
+          decoded: {
+            _claim_names: { groups: 'src1' },
+            permissions: ['admin'],
+          },
+        },
+      ],
+      [
+        'only _claim_sources present (no _claim_names)',
+        {
+          kind: 'id',
+          path: 'groups',
+          decoded: {
+            _claim_sources: { src1: { endpoint: 'https://graph.windows.net/ignored' } },
+            permissions: ['admin'],
+          },
+        },
+      ],
+    ])('does not attempt overage resolution when %s', async (_label, cfg) => {
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = cfg.path;
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = cfg.kind;
+
+      jwtDecode.mockReturnValue(cfg.decoded);
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      const { user, details } = await validate(tokenset);
+
+      expect(undici.fetch).not.toHaveBeenCalled();
+      expect(user).toBe(false);
+      expect(details.message).toBe('You must have "group-required" role to log in.');
+      const { logger } = require('@librechat/data-schemas');
+      const expectedTokenKind = cfg.kind === 'access' ? 'access token' : 'id token';
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining(`Key '${cfg.path}' not found in ${expectedTokenKind}!`),
+      );
+    });
+  });
+
+  describe('resolving groups via Microsoft Graph', () => {
+    it('denies login and does not call Graph when access token is missing', async () => {
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+
+      const { logger } = require('@librechat/data-schemas');
+
+      jwtDecode.mockReturnValue({
+        hasgroups: true,
+        permissions: ['admin'],
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      const tokensetWithoutAccess = {
+        ...tokenset,
+        access_token: undefined,
+      };
+
+      const { user, details } = await validate(tokensetWithoutAccess);
+
+      expect(user).toBe(false);
+      expect(details.message).toBe('You must have "group-required" role to log in.');
+
+      expect(undici.fetch).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Access token missing; cannot resolve group overage'),
+      );
+    });
+
+    it.each([
+      [
+        'Graph returns HTTP error',
+        async () => ({
+          ok: false,
+          status: 403,
+          statusText: 'Forbidden',
+          json: async () => ({}),
+        }),
+        [
+          '[openidStrategy] Failed to resolve groups via Microsoft Graph getMemberObjects: HTTP 403 Forbidden',
+        ],
+      ],
+      [
+        'Graph network error',
+        async () => {
+          throw new Error('network error');
+        },
+        [
+          '[openidStrategy] Error resolving groups via Microsoft Graph getMemberObjects:',
+          expect.any(Error),
+        ],
+      ],
+      [
+        'Graph returns unexpected shape (no value)',
+        async () => ({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({}),
+        }),
+        [
+          '[openidStrategy] Unexpected response format when resolving groups via Microsoft Graph getMemberObjects',
+        ],
+      ],
+      [
+        'Graph returns invalid value type',
+        async () => ({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({ value: 'not-an-array' }),
+        }),
+        [
+          '[openidStrategy] Unexpected response format when resolving groups via Microsoft Graph getMemberObjects',
+        ],
+      ],
+    ])(
+      'denies login when overage resolution fails because %s',
+      async (_label, setupFetch, expectedErrorArgs) => {
+        process.env.OPENID_REQUIRED_ROLE = 'group-required';
+        process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+        process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+
+        const { logger } = require('@librechat/data-schemas');
+
+        jwtDecode.mockReturnValue({
+          hasgroups: true,
+          permissions: ['admin'],
+        });
+
+        await setupOpenId();
+        verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+        undici.fetch.mockImplementation(setupFetch);
+
+        const { user, details } = await validate(tokenset);
+
+        expect(undici.fetch).toHaveBeenCalled();
+        expect(user).toBe(false);
+        expect(details.message).toBe('You must have "group-required" role to log in.');
+
+        expect(logger.error).toHaveBeenCalledWith(...expectedErrorArgs);
+      },
+    );
+
+    it.each([
+      [
+        'hasgroups overage and Graph contains required group',
+        {
+          hasgroups: true,
+        },
+        ['group-required', 'some-other-group'],
+        true,
+      ],
+      [
+        '_claim_* overage and Graph contains required group',
+        {
+          _claim_names: { groups: 'src1' },
+          _claim_sources: { src1: { endpoint: 'https://graph.windows.net/ignored' } },
+        },
+        ['group-required', 'some-other-group'],
+        true,
+      ],
+      [
+        'hasgroups overage and Graph does NOT contain required group',
+        {
+          hasgroups: true,
+        },
+        ['some-other-group'],
+        false,
+      ],
+      [
+        '_claim_* overage and Graph does NOT contain required group',
+        {
+          _claim_names: { groups: 'src1' },
+          _claim_sources: { src1: { endpoint: 'https://graph.windows.net/ignored' } },
+        },
+        ['some-other-group'],
+        false,
+      ],
+    ])(
+      'resolves groups via Microsoft Graph when %s',
+      async (_label, decodedTokenValue, graphGroups, expectedAllowed) => {
+        process.env.OPENID_REQUIRED_ROLE = 'group-required';
+        process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+        process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+
+        const { logger } = require('@librechat/data-schemas');
+
+        jwtDecode.mockReturnValue(decodedTokenValue);
+
+        await setupOpenId();
+        verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+        undici.fetch.mockResolvedValue({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({
+            value: graphGroups,
+          }),
+        });
+
+        const { user } = await validate(tokenset);
+
+        expect(undici.fetch).toHaveBeenCalledWith(
+          'https://graph.microsoft.com/v1.0/me/getMemberObjects',
+          expect.objectContaining({
+            method: 'POST',
+            headers: expect.objectContaining({
+              Authorization: `Bearer ${tokenset.access_token}`,
+            }),
+          }),
+        );
+        expect(Boolean(user)).toBe(expectedAllowed);
+
+        expect(logger.debug).toHaveBeenCalledWith(
+          expect.stringContaining(
+            `Successfully resolved ${graphGroups.length} groups via Microsoft Graph getMemberObjects`,
+          ),
+        );
+      },
+    );
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
@@ -540,10 +907,11 @@ describe('setupOpenId', () => {
   });
 
   it('should attach federatedTokens to user object for token propagation', async () => {
-    // Arrange - setup tokenset with access token, refresh token, and expiration
+    // Arrange - setup tokenset with access token, id token, refresh token, and expiration
     const tokensetWithTokens = {
       ...tokenset,
       access_token: 'mock_access_token_abc123',
+      id_token: 'mock_id_token_def456',
       refresh_token: 'mock_refresh_token_xyz789',
       expires_at: 1234567890,
     };
@@ -555,9 +923,29 @@ describe('setupOpenId', () => {
     expect(user.federatedTokens).toBeDefined();
     expect(user.federatedTokens).toEqual({
       access_token: 'mock_access_token_abc123',
+      id_token: 'mock_id_token_def456',
       refresh_token: 'mock_refresh_token_xyz789',
       expires_at: 1234567890,
     });
+  });
+
+  it('should include id_token in federatedTokens distinct from access_token', async () => {
+    // Arrange - use different values for access_token and id_token
+    const tokensetWithTokens = {
+      ...tokenset,
+      access_token: 'the_access_token',
+      id_token: 'the_id_token',
+      refresh_token: 'the_refresh_token',
+      expires_at: 9999999999,
+    };
+
+    // Act
+    const { user } = await validate(tokensetWithTokens);
+
+    // Assert - id_token and access_token must be different values
+    expect(user.federatedTokens.access_token).toBe('the_access_token');
+    expect(user.federatedTokens.id_token).toBe('the_id_token');
+    expect(user.federatedTokens.id_token).not.toBe(user.federatedTokens.access_token);
   });
 
   it('should include tokenset along with federatedTokens', async () => {
@@ -565,6 +953,7 @@ describe('setupOpenId', () => {
     const tokensetWithTokens = {
       ...tokenset,
       access_token: 'test_access_token',
+      id_token: 'test_id_token',
       refresh_token: 'test_refresh_token',
       expires_at: 9999999999,
     };
@@ -576,7 +965,9 @@ describe('setupOpenId', () => {
     expect(user.tokenset).toBeDefined();
     expect(user.federatedTokens).toBeDefined();
     expect(user.tokenset.access_token).toBe('test_access_token');
+    expect(user.tokenset.id_token).toBe('test_id_token');
     expect(user.federatedTokens.access_token).toBe('test_access_token');
+    expect(user.federatedTokens.id_token).toBe('test_id_token');
   });
 
   it('should set role to "ADMIN" if OPENID_ADMIN_ROLE is set and user has that role', async () => {
@@ -923,6 +1314,46 @@ describe('setupOpenId', () => {
       expect(user.role).toBeUndefined();
     });
 
+    it('should grant admin when admin role claim is a space-separated string containing the admin role', async () => {
+      // Arrange – IdP returns admin roles as a space-delimited string
+      process.env.OPENID_ADMIN_ROLE = 'site-admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'app_roles';
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+        app_roles: 'user site-admin moderator',
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      // Act
+      const { user } = await validate(tokenset);
+
+      // Assert – admin role is granted after splitting the delimited string
+      expect(user.role).toBe('ADMIN');
+    });
+
+    it('should not grant admin when admin role claim is a space-separated string that does not contain the admin role', async () => {
+      // Arrange – delimited string present but admin role is absent
+      process.env.OPENID_ADMIN_ROLE = 'site-admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'app_roles';
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+        app_roles: 'user moderator',
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      // Act
+      const { user } = await validate(tokenset);
+
+      // Assert – admin role is not granted
+      expect(user.role).toBeUndefined();
+    });
+
     it('should handle nested path with special characters in keys', async () => {
       process.env.OPENID_REQUIRED_ROLE = 'app-user';
       process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'resource_access.my-app-123.roles';
@@ -1045,6 +1476,84 @@ describe('setupOpenId', () => {
         expect.stringContaining("Key 'roleCount' not found in id token!"),
       );
       expect(user).toBe(false);
+    });
+  });
+
+  describe('OPENID_EMAIL_CLAIM', () => {
+    it('should use the default email when OPENID_EMAIL_CLAIM is not set', async () => {
+      const { user } = await validate(tokenset);
+      expect(user.email).toBe('test@example.com');
+    });
+
+    it('should use the configured claim when OPENID_EMAIL_CLAIM is set', async () => {
+      process.env.OPENID_EMAIL_CLAIM = 'upn';
+      const userinfo = { ...tokenset.claims(), upn: 'user@corp.example.com' };
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfo });
+
+      expect(user.email).toBe('user@corp.example.com');
+      expect(createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'user@corp.example.com' }),
+        expect.anything(),
+        true,
+        true,
+      );
+    });
+
+    it('should fall back to preferred_username when email is missing and OPENID_EMAIL_CLAIM is not set', async () => {
+      const userinfo = { ...tokenset.claims() };
+      delete userinfo.email;
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfo });
+
+      expect(user.email).toBe('testusername');
+    });
+
+    it('should fall back to upn when email and preferred_username are missing and OPENID_EMAIL_CLAIM is not set', async () => {
+      const userinfo = { ...tokenset.claims(), upn: 'user@corp.example.com' };
+      delete userinfo.email;
+      delete userinfo.preferred_username;
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfo });
+
+      expect(user.email).toBe('user@corp.example.com');
+    });
+
+    it('should ignore empty string OPENID_EMAIL_CLAIM and use default fallback', async () => {
+      process.env.OPENID_EMAIL_CLAIM = '';
+
+      const { user } = await validate(tokenset);
+
+      expect(user.email).toBe('test@example.com');
+    });
+
+    it('should trim whitespace from OPENID_EMAIL_CLAIM and resolve correctly', async () => {
+      process.env.OPENID_EMAIL_CLAIM = '  upn  ';
+      const userinfo = { ...tokenset.claims(), upn: 'user@corp.example.com' };
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfo });
+
+      expect(user.email).toBe('user@corp.example.com');
+    });
+
+    it('should ignore whitespace-only OPENID_EMAIL_CLAIM and use default fallback', async () => {
+      process.env.OPENID_EMAIL_CLAIM = '   ';
+
+      const { user } = await validate(tokenset);
+
+      expect(user.email).toBe('test@example.com');
+    });
+
+    it('should fall back to default chain with warning when configured claim is missing from userinfo', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_EMAIL_CLAIM = 'nonexistent_claim';
+
+      const { user } = await validate(tokenset);
+
+      expect(user.email).toBe('test@example.com');
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('OPENID_EMAIL_CLAIM="nonexistent_claim" not present in userinfo'),
+      );
     });
   });
 });

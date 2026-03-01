@@ -1,7 +1,8 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.2-rc2",
+  "version": "v0.8.3-rc1",
   "description": "",
+  "packageManager": "npm@11.10.0",
   "workspaces": [
     "api",
     "client",
@@ -15,6 +16,7 @@
     "user-stats": "node config/user-stats.js",
     "rebuild:package-lock": "node config/packages",
     "reinstall": "node config/update.js -l -g",
+    "smart-reinstall": "node config/smart-reinstall.js",
     "b:reinstall": "bun config/update.js -b -l -g",
     "reinstall:docker": "node config/update.js -d -g",
     "update:local": "node config/update.js -l",
@@ -36,7 +38,7 @@
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
-    "backend:inspect": "cross-env NODE_ENV=production node --inspect api/server/index.js",
+    "backend:inspect": "cross-env NODE_ENV=production node --inspect --expose-gc api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:experimental": "cross-env NODE_ENV=production node api/server/experimental.js",
     "backend:stop": "node config/stop-backend.js",
@@ -46,6 +48,7 @@
     "build:client": "cd client && npm run build",
     "build:client-package": "cd packages/client && npm run build",
     "build:packages": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package",
+    "build": "npx turbo run build",
     "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
@@ -104,7 +107,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",
-    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/eslintrc": "^3.3.4",
     "@eslint/js": "^9.20.0",
     "@playwright/test": "^1.56.1",
     "@types/react-virtualized": "^9.22.0",
@@ -128,11 +131,22 @@
     "lint-staged": "^15.4.3",
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
+    "turbo": "^2.8.7",
     "typescript-eslint": "^8.24.0"
   },
   "overrides": {
+    "@anthropic-ai/sdk": "0.73.0",
+    "@librechat/agents": {
+      "@langchain/anthropic": {
+        "@anthropic-ai/sdk": "0.73.0",
+        "fast-xml-parser": "5.3.6"
+      },
+      "@anthropic-ai/sdk": "0.73.0",
+      "fast-xml-parser": "5.3.6"
+    },
     "axios": "1.12.1",
     "elliptic": "^6.6.1",
+    "fast-xml-parser": "5.3.6",
     "form-data": "^4.0.4",
     "tslib": "^2.8.1",
     "mdast-util-gfm-autolink-literal": "2.0.0",
@@ -150,6 +164,10 @@
       "micromark-extension-math": {
         "katex": "^0.16.21"
       }
+    },
+    "langsmith": "0.4.12",
+    "eslint": {
+      "ajv": "6.14.0"
     }
   },
   "nodemonConfig": {

@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { ResourceType, PermissionTypes, Permissions } = require('librechat-data-provider');
-const { getRoleByName } = require('~/models/Role');
+const { getRoleByName } = require('~/models');
 
 /**
  * Maps resource types to their corresponding permission types
@@ -9,6 +9,7 @@ const resourceToPermissionType = {
   [ResourceType.AGENT]: PermissionTypes.AGENTS,
   [ResourceType.PROMPTGROUP]: PermissionTypes.PROMPTS,
   [ResourceType.MCPSERVER]: PermissionTypes.MCP_SERVERS,
+  [ResourceType.REMOTE_AGENT]: PermissionTypes.REMOTE_AGENTS,
 };
 
 /**

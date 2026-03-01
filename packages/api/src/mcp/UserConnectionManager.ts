@@ -49,7 +49,7 @@ export abstract class UserConnectionManager {
     serverName: string;
     forceNew?: boolean;
   } & Omit<t.OAuthConnectionOptions, 'useOAuth'>): Promise<MCPConnection> {
-    const userId = user.id;
+    const userId = user?.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
     }
@@ -117,6 +117,7 @@ export abstract class UserConnectionManager {
         {
           serverName: serverName,
           serverConfig: config,
+          useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
         },
         {
           useOAuth: true,
@@ -235,5 +236,24 @@ export abstract class UserConnectionManager {
         );
       }
     }
+  }
+
+  /** Returns counts of tracked users and connections for diagnostics */
+  public getConnectionStats(): {
+    trackedUsers: number;
+    totalConnections: number;
+    activityEntries: number;
+    appConnectionCount: number;
+  } {
+    let totalConnections = 0;
+    for (const serverMap of this.userConnections.values()) {
+      totalConnections += serverMap.size;
+    }
+    return {
+      trackedUsers: this.userConnections.size,
+      totalConnections,
+      activityEntries: this.userLastActivity.size,
+      appConnectionCount: this.appConnections?.getConnectionCount() ?? 0,
+    };
   }
 }

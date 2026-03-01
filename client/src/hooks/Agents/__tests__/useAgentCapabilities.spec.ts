@@ -15,6 +15,7 @@ describe('useAgentCapabilities', () => {
     expect(result.current.webSearchEnabled).toBe(false);
     expect(result.current.codeEnabled).toBe(false);
     expect(result.current.deferredToolsEnabled).toBe(false);
+    expect(result.current.programmaticToolsEnabled).toBe(false);
   });
 
   it('should return all capabilities as false when capabilities is empty array', () => {
@@ -22,6 +23,7 @@ describe('useAgentCapabilities', () => {
 
     expect(result.current.toolsEnabled).toBe(false);
     expect(result.current.deferredToolsEnabled).toBe(false);
+    expect(result.current.programmaticToolsEnabled).toBe(false);
   });
 
   it('should return true for enabled capabilities', () => {
@@ -60,6 +62,26 @@ describe('useAgentCapabilities', () => {
     expect(result.current.deferredToolsEnabled).toBe(false);
   });
 
+  it('should return programmaticToolsEnabled as true when programmatic_tools is in capabilities', () => {
+    const capabilities = [AgentCapabilities.programmatic_tools];
+
+    const { result } = renderHook(() => useAgentCapabilities(capabilities));
+
+    expect(result.current.programmaticToolsEnabled).toBe(true);
+  });
+
+  it('should return programmaticToolsEnabled as false when programmatic_tools is not in capabilities', () => {
+    const capabilities = [
+      AgentCapabilities.tools,
+      AgentCapabilities.actions,
+      AgentCapabilities.artifacts,
+    ];
+
+    const { result } = renderHook(() => useAgentCapabilities(capabilities));
+
+    expect(result.current.programmaticToolsEnabled).toBe(false);
+  });
+
   it('should handle all capabilities being enabled', () => {
     const capabilities = [
       AgentCapabilities.tools,
@@ -71,6 +93,7 @@ describe('useAgentCapabilities', () => {
       AgentCapabilities.web_search,
       AgentCapabilities.execute_code,
       AgentCapabilities.deferred_tools,
+      AgentCapabilities.programmatic_tools,
     ];
 
     const { result } = renderHook(() => useAgentCapabilities(capabilities));
@@ -84,5 +107,6 @@ describe('useAgentCapabilities', () => {
     expect(result.current.webSearchEnabled).toBe(true);
     expect(result.current.codeEnabled).toBe(true);
     expect(result.current.deferredToolsEnabled).toBe(true);
+    expect(result.current.programmaticToolsEnabled).toBe(true);
   });
 });

@@ -14,10 +14,6 @@ jest.mock('~/server/services/Config', () => ({
   }),
 }));
 
-jest.mock('~/models/Project', () => ({
-  getProjectByName: jest.fn().mockResolvedValue(null),
-}));
-
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(),
 }));
@@ -34,15 +30,6 @@ jest.mock('~/server/services/Files/process', () => ({
   filterFile: jest.fn(),
 }));
 
-jest.mock('~/models/Action', () => ({
-  updateAction: jest.fn(),
-  getActions: jest.fn().mockResolvedValue([]),
-}));
-
-jest.mock('~/models/File', () => ({
-  deleteFileByFilter: jest.fn(),
-}));
-
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
   findPubliclyAccessibleResources: jest.fn().mockResolvedValue([]),
@@ -51,14 +38,24 @@ jest.mock('~/server/services/PermissionService', () => ({
   checkPermission: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('~/models', () => ({
-  getCategoriesWithCounts: jest.fn(),
-}));
+jest.mock('~/models', () => {
+  const mongoose = require('mongoose');
+  const { createMethods } = require('@librechat/data-schemas');
+  const methods = createMethods(mongoose, {
+    removeAllPermissions: jest.fn().mockResolvedValue(undefined),
+  });
+  return {
+    ...methods,
+    getCategoriesWithCounts: jest.fn(),
+    deleteFileByFilter: jest.fn(),
+  };
+});
 
 // Mock cache for S3 avatar refresh tests
 const mockCache = {
   get: jest.fn(),
   set: jest.fn(),
+  delete: jest.fn(),
 };
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => mockCache),
@@ -174,7 +171,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         // Unauthorized fields that should be stripped
         author: new mongoose.Types.ObjectId().toString(), // Should not be able to set author
         authorName: 'Hacker', // Should be stripped
-        isCollaborative: true, // Should be stripped on creation
         versions: [], // Should be stripped
         _id: new mongoose.Types.ObjectId(), // Should be stripped
         id: 'custom_agent_id', // Should be overridden
@@ -193,7 +189,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       // Verify unauthorized fields were not set
       expect(createdAgent.author.toString()).toBe(mockReq.user.id); // Should be the request user, not the malicious value
       expect(createdAgent.authorName).toBeUndefined();
-      expect(createdAgent.isCollaborative).toBeFalsy();
       expect(createdAgent.versions).toHaveLength(1); // Should have exactly 1 version from creation
       expect(createdAgent.id).not.toBe('custom_agent_id'); // Should have generated ID
       expect(createdAgent.id).toMatch(/^agent_/); // Should have proper prefix
@@ -444,7 +439,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         model: 'gpt-3.5-turbo',
         author: existingAgentAuthorId,
         description: 'Original description',
-        isCollaborative: false,
         versions: [
           {
             name: 'Original Agent',
@@ -466,7 +460,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         name: 'Updated Agent',
         description: 'Updated description',
         model: 'gpt-4',
-        isCollaborative: true, // This IS allowed in updates
       };
 
       await updateAgentHandler(mockReq, mockRes);
@@ -479,13 +472,11 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(updatedAgent.name).toBe('Updated Agent');
       expect(updatedAgent.description).toBe('Updated description');
       expect(updatedAgent.model).toBe('gpt-4');
-      expect(updatedAgent.isCollaborative).toBe(true);
       expect(updatedAgent.author).toBe(existingAgentAuthorId.toString());
 
       // Verify in database
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.name).toBe('Updated Agent');
-      expect(agentInDb.isCollaborative).toBe(true);
     });
 
     test('should reject update with unauthorized fields (mass assignment protection)', async () => {
@@ -538,26 +529,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       const updatedAgent = mockRes.json.mock.calls[0][0];
       expect(updatedAgent.name).toBe('Admin Update');
-    });
-
-    test('should handle projectIds updates', async () => {
-      mockReq.user.id = existingAgentAuthorId.toString();
-      mockReq.params.id = existingAgentId;
-
-      const projectId1 = new mongoose.Types.ObjectId().toString();
-      const projectId2 = new mongoose.Types.ObjectId().toString();
-
-      mockReq.body = {
-        projectIds: [projectId1, projectId2],
-      };
-
-      await updateAgentHandler(mockReq, mockRes);
-
-      expect(mockRes.json).toHaveBeenCalled();
-
-      const updatedAgent = mockRes.json.mock.calls[0][0];
-      expect(updatedAgent).toBeDefined();
-      // Note: updateAgentProjects requires more setup, so we just verify the handler doesn't crash
     });
 
     test('should validate tool_resources in updates', async () => {
@@ -1309,7 +1280,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     });
 
     test('should skip avatar refresh if cache hit', async () => {
-      mockCache.get.mockResolvedValue(true);
+      mockCache.get.mockResolvedValue({ urlCache: {} });
       findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
       findPubliclyAccessibleResources.mockResolvedValue([]);
 
@@ -1348,8 +1319,12 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       // Verify S3 URL was refreshed
       expect(refreshS3Url).toHaveBeenCalled();
 
-      // Verify cache was set
-      expect(mockCache.set).toHaveBeenCalled();
+      // Verify cache was set with urlCache map, not a plain boolean
+      expect(mockCache.set).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ urlCache: expect.any(Object) }),
+        expect.any(Number),
+      );
 
       // Verify response was returned
       expect(mockRes.json).toHaveBeenCalled();
@@ -1562,6 +1537,84 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       // Verify that the handler completed successfully
       expect(mockRes.json).toHaveBeenCalled();
+    });
+
+    test('should treat legacy boolean cache entry as a miss and run refresh', async () => {
+      // Simulate a cache entry written by the pre-fix code
+      mockCache.get.mockResolvedValue(true);
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+      refreshS3Url.mockResolvedValue('new-s3-path.jpg');
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      // Boolean true fails the shape guard, so refresh must run
+      expect(refreshS3Url).toHaveBeenCalled();
+      // Cache is overwritten with the proper format
+      expect(mockCache.set).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ urlCache: expect.any(Object) }),
+        expect.any(Number),
+      );
+    });
+
+    test('should apply cached urlCache filepath to paginated response on cache hit', async () => {
+      const agentId = agentWithS3Avatar.id;
+      const cachedUrl = 'cached-presigned-url.jpg';
+
+      mockCache.get.mockResolvedValue({ urlCache: { [agentId]: cachedUrl } });
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(refreshS3Url).not.toHaveBeenCalled();
+
+      const responseData = mockRes.json.mock.calls[0][0];
+      const agent = responseData.data.find((a) => a.id === agentId);
+      // Cached URL is served, not the stale DB value 'old-s3-path.jpg'
+      expect(agent.avatar.filepath).toBe(cachedUrl);
+    });
+
+    test('should preserve DB filepath for agents absent from urlCache on cache hit', async () => {
+      mockCache.get.mockResolvedValue({ urlCache: {} });
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(refreshS3Url).not.toHaveBeenCalled();
+
+      const responseData = mockRes.json.mock.calls[0][0];
+      const agent = responseData.data.find((a) => a.id === agentWithS3Avatar.id);
+      expect(agent.avatar.filepath).toBe('old-s3-path.jpg');
     });
   });
 });

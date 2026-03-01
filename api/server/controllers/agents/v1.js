@@ -11,7 +11,9 @@ const {
   convertOcrToContextInPlace,
 } = require('@librechat/api');
 const {
+  Time,
   Tools,
+  CacheKeys,
   Constants,
   FileSources,
   ResourceType,
@@ -21,18 +23,7 @@ const {
   PermissionBits,
   actionDelimiter,
   removeNullishValues,
-  CacheKeys,
-  Time,
 } = require('librechat-data-provider');
-const {
-  getListAgentsByAccess,
-  countPromotedAgents,
-  revertAgentVersion,
-  createAgent,
-  updateAgent,
-  deleteAgent,
-  getAgent,
-} = require('~/models/Agent');
 const {
   findPubliclyAccessibleResources,
   findAccessibleResources,
@@ -40,14 +31,13 @@ const {
   grantPermission,
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { getCategoriesWithCounts, deleteFileByFilter } = require('~/models');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
-const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
+const db = require('~/models');
 
 const systemTools = {
   [Tools.execute_code]: true,
@@ -92,18 +82,27 @@ const createAgentHandler = async (req, res) => {
       }
     }
 
-    const agent = await createAgent(agentData);
+    const agent = await db.createAgent(agentData);
 
-    // Automatically grant owner permissions to the creator
     try {
-      await grantPermission({
-        principalType: PrincipalType.USER,
-        principalId: userId,
-        resourceType: ResourceType.AGENT,
-        resourceId: agent._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
-        grantedBy: userId,
-      });
+      await Promise.all([
+        grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          accessRoleId: AccessRoleIds.AGENT_OWNER,
+          grantedBy: userId,
+        }),
+        grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.REMOTE_AGENT,
+          resourceId: agent._id,
+          accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
+          grantedBy: userId,
+        }),
+      ]);
       logger.debug(
         `[createAgent] Granted owner permissions to user ${userId} for agent ${agent.id}`,
       );
@@ -143,7 +142,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
 
     // Permissions are validated by middleware before calling this function
     // Simply load the agent by ID
-    const agent = await getAgent({ id });
+    const agent = await db.getAgent({ id });
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -163,9 +162,6 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     }
 
     agent.author = agent.author.toString();
-
-    // @deprecated - isCollaborative replaced by ACL permissions
-    agent.isCollaborative = !!agent.isCollaborative;
 
     // Check if agent is public
     const isPublic = await hasPublicPermission({
@@ -190,9 +186,6 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         author: agent.author,
         provider: agent.provider,
         model: agent.model,
-        projectIds: agent.projectIds,
-        // @deprecated - isCollaborative replaced by ACL permissions
-        isCollaborative: agent.isCollaborative,
         isPublic: agent.isPublic,
         version: agent.version,
         // Safe metadata
@@ -237,7 +230,7 @@ const updateAgentHandler = async (req, res) => {
     // Convert OCR to context in incoming updateData
     convertOcrToContextInPlace(updateData);
 
-    const existingAgent = await getAgent({ id });
+    const existingAgent = await db.getAgent({ id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -254,7 +247,7 @@ const updateAgentHandler = async (req, res) => {
 
     let updatedAgent =
       Object.keys(updateData).length > 0
-        ? await updateAgent({ id }, updateData, {
+        ? await db.updateAgent({ id }, updateData, {
             updatingUserId: req.user.id,
           })
         : existingAgent;
@@ -304,7 +297,7 @@ const duplicateAgentHandler = async (req, res) => {
   const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
 
   try {
-    const agent = await getAgent({ id });
+    const agent = await db.getAgent({ id });
     if (!agent) {
       return res.status(404).json({
         error: 'Agent not found',
@@ -352,7 +345,7 @@ const duplicateAgentHandler = async (req, res) => {
     });
 
     const newActionsList = [];
-    const originalActions = (await getActions({ agent_id: id }, true)) ?? [];
+    const originalActions = (await db.getActions({ agent_id: id }, true)) ?? [];
     const promises = [];
 
     /**
@@ -371,7 +364,7 @@ const duplicateAgentHandler = async (req, res) => {
         delete filteredMetadata[field];
       }
 
-      const newAction = await updateAction(
+      const newAction = await db.updateAction(
         { action_id: newActionId },
         {
           metadata: filteredMetadata,
@@ -394,18 +387,27 @@ const duplicateAgentHandler = async (req, res) => {
 
     const agentActions = await Promise.all(promises);
     newAgentData.actions = agentActions;
-    const newAgent = await createAgent(newAgentData);
+    const newAgent = await db.createAgent(newAgentData);
 
-    // Automatically grant owner permissions to the duplicator
     try {
-      await grantPermission({
-        principalType: PrincipalType.USER,
-        principalId: userId,
-        resourceType: ResourceType.AGENT,
-        resourceId: newAgent._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
-        grantedBy: userId,
-      });
+      await Promise.all([
+        grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.AGENT,
+          resourceId: newAgent._id,
+          accessRoleId: AccessRoleIds.AGENT_OWNER,
+          grantedBy: userId,
+        }),
+        grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.REMOTE_AGENT,
+          resourceId: newAgent._id,
+          accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
+          grantedBy: userId,
+        }),
+      ]);
       logger.debug(
         `[duplicateAgent] Granted owner permissions to user ${userId} for duplicated agent ${newAgent.id}`,
       );
@@ -438,11 +440,11 @@ const duplicateAgentHandler = async (req, res) => {
 const deleteAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const agent = await getAgent({ id });
+    const agent = await db.getAgent({ id });
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    await deleteAgent({ id });
+    await db.deleteAgent({ id });
     return res.json({ message: 'Agent deleted' });
   } catch (error) {
     logger.error('[/Agents/:id] Error deleting Agent', error);
@@ -512,31 +514,34 @@ const getListAgentsHandler = async (req, res) => {
      */
     const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
     const refreshKey = `${userId}:agents_avatar_refresh`;
-    const alreadyChecked = await cache.get(refreshKey);
-    if (alreadyChecked) {
-      logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
-    } else {
+    let cachedRefresh = await cache.get(refreshKey);
+    const isValidCachedRefresh =
+      cachedRefresh != null && typeof cachedRefresh === 'object' && cachedRefresh.urlCache != null;
+    if (!isValidCachedRefresh) {
       try {
-        const fullList = await getListAgentsByAccess({
+        const fullList = await db.getListAgentsByAccess({
           accessibleIds,
           otherParams: {},
           limit: MAX_AVATAR_REFRESH_AGENTS,
           after: null,
         });
-        await refreshListAvatars({
+        const { urlCache } = await refreshListAvatars({
           agents: fullList?.data ?? [],
           userId,
           refreshS3Url,
-          updateAgent,
+          updateAgent: db.updateAgent,
         });
-        await cache.set(refreshKey, true, Time.THIRTY_MINUTES);
+        cachedRefresh = { urlCache };
+        await cache.set(refreshKey, cachedRefresh, Time.THIRTY_MINUTES);
       } catch (err) {
         logger.error('[/Agents] Error refreshing avatars for full list: %o', err);
       }
+    } else {
+      logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
     }
 
     // Use the new ACL-aware function
-    const data = await getListAgentsByAccess({
+    const data = await db.getListAgentsByAccess({
       accessibleIds,
       otherParams: filter,
       limit,
@@ -550,10 +555,19 @@ const getListAgentsHandler = async (req, res) => {
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
 
+    const urlCache = cachedRefresh?.urlCache;
     data.data = agents.map((agent) => {
       try {
         if (agent?._id && publicSet.has(agent._id.toString())) {
           agent.isPublic = true;
+        }
+        if (
+          urlCache &&
+          agent?.id &&
+          agent?.avatar?.source === FileSources.s3 &&
+          urlCache[agent.id]
+        ) {
+          agent.avatar = { ...agent.avatar, filepath: urlCache[agent.id] };
         }
       } catch (e) {
         // Silently ignore mapping errors
@@ -592,7 +606,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
-    const existingAgent = await getAgent({ id: agent_id });
+    const existingAgent = await db.getAgent({ id: agent_id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -624,7 +638,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       const { deleteFile } = getStrategyFunctions(_avatar.source);
       try {
         await deleteFile(req, { filepath: _avatar.filepath });
-        await deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
+        await db.deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
       } catch (error) {
         logger.error('[/:agent_id/avatar] Error deleting old avatar', error);
       }
@@ -637,9 +651,17 @@ const uploadAgentAvatarHandler = async (req, res) => {
       },
     };
 
-    const updatedAgent = await updateAgent({ id: agent_id }, data, {
+    const updatedAgent = await db.updateAgent({ id: agent_id }, data, {
       updatingUserId: req.user.id,
     });
+
+    try {
+      const avatarCache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+      await avatarCache.delete(`${req.user.id}:agents_avatar_refresh`);
+    } catch (cacheErr) {
+      logger.error('[/:agent_id/avatar] Error invalidating avatar refresh cache', cacheErr);
+    }
+
     res.status(201).json(updatedAgent);
   } catch (error) {
     const message = 'An error occurred while updating the Agent Avatar';
@@ -685,7 +707,7 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(400).json({ error: 'version_index is required' });
     }
 
-    const existingAgent = await getAgent({ id });
+    const existingAgent = await db.getAgent({ id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -693,7 +715,7 @@ const revertAgentVersionHandler = async (req, res) => {
 
     // Permissions are enforced via route middleware (ACL EDIT)
 
-    const updatedAgent = await revertAgentVersion({ id }, version_index);
+    const updatedAgent = await db.revertAgentVersion({ id }, version_index);
 
     if (updatedAgent.author) {
       updatedAgent.author = updatedAgent.author.toString();
@@ -717,8 +739,8 @@ const revertAgentVersionHandler = async (req, res) => {
  */
 const getAgentCategories = async (_req, res) => {
   try {
-    const categories = await getCategoriesWithCounts();
-    const promotedCount = await countPromotedAgents();
+    const categories = await db.getCategoriesWithCounts();
+    const promotedCount = await db.countPromotedAgents();
     const formattedCategories = categories.map((category) => ({
       value: category.value,
       label: category.label,

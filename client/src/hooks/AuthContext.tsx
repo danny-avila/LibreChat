@@ -3,7 +3,6 @@ import {
   useMemo,
   useState,
   useEffect,
-  ReactNode,
   useContext,
   useCallback,
   createContext,
@@ -13,6 +12,7 @@ import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import {
   useGetRole,
   useGetUserQuery,
@@ -20,6 +20,7 @@ import {
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
+import { isSafeRedirect, buildLoginRedirectUrl, getPostLoginRedirect } from '~/utils';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
@@ -58,20 +59,22 @@ const AuthContextProvider = ({
         setTokenHeader(token);
         setIsAuthenticated(isAuthenticated);
 
-        // Use a custom redirect if set
-        const finalRedirect = logoutRedirectRef.current || redirect;
-        // Clear the stored redirect
+        const searchParams = new URLSearchParams(window.location.search);
+        const postLoginRedirect = getPostLoginRedirect(searchParams);
+
+        const logoutRedirect = logoutRedirectRef.current;
         logoutRedirectRef.current = undefined;
+
+        const finalRedirect =
+          logoutRedirect ??
+          postLoginRedirect ??
+          (redirect && isSafeRedirect(redirect) ? redirect : null);
 
         if (finalRedirect == null) {
           return;
         }
 
-        if (finalRedirect.startsWith('http://') || finalRedirect.startsWith('https://')) {
-          window.location.href = finalRedirect;
-        } else {
-          navigate(finalRedirect, { replace: true });
-        }
+        navigate(finalRedirect, { replace: true });
       }, 50),
     [navigate, setUser],
   );
@@ -81,7 +84,6 @@ const AuthContextProvider = ({
     onSuccess: (data: t.TLoginResponse) => {
       const { user, token, twoFAPending, tempToken } = data;
       if (twoFAPending) {
-        // Redirect to the two-factor authentication route.
         navigate(`/login/2fa?tempToken=${tempToken}`, { replace: true });
         return;
       }
@@ -91,7 +93,15 @@ const AuthContextProvider = ({
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
       doSetError(resError.message);
-      navigate('/login', { replace: true });
+      // Preserve a valid redirect_to across login failures so the deep link survives retries.
+      // Cannot use buildLoginRedirectUrl() here — it reads the current pathname (already /login)
+      // and would return plain /login, dropping the redirect_to destination.
+      const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
+      const loginPath =
+        redirectTo && isSafeRedirect(redirectTo)
+          ? `/login?redirect_to=${encodeURIComponent(redirectTo)}`
+          : '/login';
+      navigate(loginPath, { replace: true });
     },
   });
   const logoutUser = useLogoutUserMutation({
@@ -141,22 +151,23 @@ const AuthContextProvider = ({
         const { user, token = '' } = data ?? {};
         if (token) {
           setUserContext({ token, isAuthenticated: true, user });
-        } else {
-          console.log('Token is not present. User is not authenticated.');
-          if (authConfig?.test === true) {
-            return;
-          }
-          navigate('/login');
+          return;
         }
+        console.log('Token is not present. User is not authenticated.');
+        if (authConfig?.test === true) {
+          return;
+        }
+        navigate(buildLoginRedirectUrl());
       },
       onError: (error) => {
         console.log('refreshToken mutation error:', error);
         if (authConfig?.test === true) {
           return;
         }
-        navigate('/login');
+        navigate(buildLoginRedirectUrl());
       },
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are stable at mount; adding refreshToken causes infinite re-fire
   }, []);
 
   useEffect(() => {
@@ -164,7 +175,7 @@ const AuthContextProvider = ({
       setUser(userQuery.data);
     } else if (userQuery.isError) {
       doSetError((userQuery.error as Error).message);
-      navigate('/login', { replace: true });
+      navigate(buildLoginRedirectUrl(), { replace: true });
     }
     if (error != null && error && isAuthenticated) {
       doSetError(undefined);
@@ -186,24 +197,22 @@ const AuthContextProvider = ({
   ]);
 
   useEffect(() => {
-    const handleTokenUpdate = (event) => {
+    const handleTokenUpdate = (event: CustomEvent<string>) => {
       console.log('tokenUpdated event received event');
-      const newToken = event.detail;
       setUserContext({
-        token: newToken,
+        token: event.detail,
         isAuthenticated: true,
         user: user,
       });
     };
 
-    window.addEventListener('tokenUpdated', handleTokenUpdate);
+    window.addEventListener('tokenUpdated', handleTokenUpdate as EventListener);
 
     return () => {
-      window.removeEventListener('tokenUpdated', handleTokenUpdate);
+      window.removeEventListener('tokenUpdated', handleTokenUpdate as EventListener);
     };
   }, [setUserContext, user]);
 
-  // Make the provider update only when it should
   const memoedValue = useMemo(
     () => ({
       user,

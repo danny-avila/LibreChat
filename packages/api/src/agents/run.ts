@@ -1,4 +1,4 @@
-import { Run, Providers } from '@librechat/agents';
+import { Run, Providers, Constants } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
 import type {
@@ -10,14 +10,12 @@ import type {
   GenericTool,
   RunConfig,
   IState,
+  LCTool,
 } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
-
-/** Tool search tool name constant */
-const TOOL_SEARCH_NAME = 'tool_search';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -90,7 +88,7 @@ export function extractDiscoveredToolsFromHistory(messages: BaseMessage[]): Set<
     }
 
     const name = (message as { name?: string }).name;
-    if (name !== TOOL_SEARCH_NAME) {
+    if (name !== Constants.TOOL_SEARCH) {
       continue;
     }
 
@@ -134,6 +132,7 @@ export function overrideDeferLoadingForDiscoveredTools(
 const customProviders = new Set([
   Providers.XAI,
   Providers.DEEPSEEK,
+  Providers.MOONSHOT,
   Providers.OPENROUTER,
   KnownEndpoints.ollama,
 ]);
@@ -166,6 +165,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   useLegacyContent?: boolean;
   toolContextMap?: Record<string, string>;
   toolRegistry?: LCToolRegistry;
+  /** Serializable tool definitions for event-driven execution */
+  toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
 };
@@ -279,23 +280,39 @@ export async function createRun({
     /**
      * Override defer_loading for tools that were discovered in previous turns.
      * This prevents the LLM from having to re-discover tools via tool_search.
+     * Also add the discovered tools' definitions so the LLM has their schemas.
      */
+    let toolDefinitions = agent.toolDefinitions ?? [];
     if (discoveredTools.size > 0 && agent.toolRegistry) {
       overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
+
+      /** Add discovered tools' definitions so the LLM can see their schemas */
+      const existingToolNames = new Set(toolDefinitions.map((d) => d.name));
+      for (const toolName of discoveredTools) {
+        if (existingToolNames.has(toolName)) {
+          continue;
+        }
+        const toolDef = agent.toolRegistry.get(toolName);
+        if (toolDef) {
+          toolDefinitions = [...toolDefinitions, toolDef];
+        }
+      }
     }
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     const agentInput: AgentInputs = {
       provider,
       reasoningKey,
+      toolDefinitions,
       agentId: agent.id,
-      name: agent.name ?? undefined,
       tools: agent.tools,
       clientOptions: llmConfig,
       instructions: systemContent,
+      name: agent.name ?? undefined,
       toolRegistry: agent.toolRegistry,
       maxContextTokens: agent.maxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
+      discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
     };
     agentInputs.push(agentInput);
   };

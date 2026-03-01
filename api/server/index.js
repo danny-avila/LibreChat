@@ -13,24 +13,25 @@ const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
   ErrorController,
+  memoryDiagnostics,
   performStartupChecks,
   handleJsonParseError,
-  initializeFileStorage,
   GenerationJobManager,
   createStreamServices,
+  initializeFileStorage,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
-const { updateInterfacePermissions } = require('~/models/interface');
+const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
+const { getRoleByName, updateAccessPermissions, seedDatabase } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
-const { seedDatabase } = require('~/models');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -60,7 +61,7 @@ const startServer = async () => {
   const appConfig = await getAppConfig();
   initializeFileStorage(appConfig);
   await performStartupChecks(appConfig);
-  await updateInterfacePermissions(appConfig);
+  await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -137,6 +138,7 @@ const startServer = async () => {
   app.use('/api/admin', routes.adminAuth);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
+  app.use('/api/api-keys', routes.apiKeys);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
   app.use('/api/messages', routes.messages);
@@ -200,6 +202,11 @@ const startServer = async () => {
     const streamServices = createStreamServices();
     GenerationJobManager.configure(streamServices);
     GenerationJobManager.initialize();
+
+    const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
+    if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
+      memoryDiagnostics.start();
+    }
   });
 };
 
@@ -247,6 +254,15 @@ process.on('uncaughtException', (err) => {
         stack: err.stack,
       },
     );
+    return;
+  }
+
+  if (isEnabled(process.env.CONTINUE_ON_UNCAUGHT_EXCEPTION)) {
+    logger.error('Unhandled error encountered. The app will continue running.', {
+      name: err?.name,
+      message: err?.message,
+      stack: err?.stack,
+    });
     return;
   }
 

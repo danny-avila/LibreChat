@@ -5,20 +5,23 @@
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
+const { enrichRemoteAgentPrincipals, backfillRemoteAgentPermissions } = require('@librechat/api');
 const {
   bulkUpdateResourcePermissions,
   ensureGroupPrincipalExists,
+  getResourcePermissionsMap,
+  findAccessibleResources,
   getEffectivePermissions,
   ensurePrincipalExists,
   getAvailableRoles,
-  findAccessibleResources,
-  getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
-const { AclEntry } = require('~/db/models');
 const {
   searchPrincipals: searchLocalPrincipals,
   sortPrincipalsByRelevance,
   calculateRelevanceScore,
+  findRoleByIdentifier,
+  aggregateAclEntries,
+  bulkWriteAclEntries,
 } = require('~/models');
 const {
   entraIdPrincipalFeatureEnabled,
@@ -184,8 +187,7 @@ const getResourcePermissions = async (req, res) => {
     const { resourceType, resourceId } = req.params;
     validateResourceType(resourceType);
 
-    // Use aggregation pipeline for efficient single-query data retrieval
-    const results = await AclEntry.aggregate([
+    const results = await aggregateAclEntries([
       // Match ACL entries for this resource
       {
         $match: {
@@ -234,7 +236,7 @@ const getResourcePermissions = async (req, res) => {
       },
     ]);
 
-    const principals = [];
+    let principals = [];
     let publicPermission = null;
 
     // Process aggregation results
@@ -278,6 +280,18 @@ const getResourcePermissions = async (req, res) => {
           accessRoleId: result.accessRoleId,
         });
       }
+    }
+
+    if (resourceType === ResourceType.REMOTE_AGENT) {
+      const enricherDeps = {
+        aggregateAclEntries,
+        bulkWriteAclEntries,
+        findRoleByIdentifier,
+        logger,
+      };
+      const enrichResult = await enrichRemoteAgentPrincipals(enricherDeps, resourceId, principals);
+      principals = enrichResult.principals;
+      backfillRemoteAgentPermissions(enricherDeps, resourceId, enrichResult.entriesToBackfill);
     }
 
     // Return response in format expected by frontend

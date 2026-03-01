@@ -58,19 +58,6 @@
     ]
   },
   {
-    "name": "Browser",
-    "pluginKey": "web-browser",
-    "description": "Scrape and summarize webpage data",
-    "icon": "assets/web-browser.svg",
-    "authConfig": [
-      {
-        "authField": "OPENAI_API_KEY",
-        "label": "OpenAI API Key",
-        "description": "Browser makes use of OpenAI embeddings"
-      }
-    ]
-  },
-  {
     "name": "DALL-E-3",
     "pluginKey": "dalle",
     "description": "[DALL-E-3] Create realistic images and art from a description in natural language",
@@ -174,9 +161,10 @@
     "icon": "assets/gemini_image_gen.svg",
     "authConfig": [
       {
-        "authField": "GEMINI_API_KEY||GOOGLE_KEY||GEMINI_VERTEX_ENABLED",
-        "label": "Gemini API Key (Optional if Vertex AI is configured)",
-        "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank if using Vertex AI with service account."
+        "authField": "GEMINI_API_KEY||GOOGLE_KEY||GOOGLE_SERVICE_KEY_FILE",
+        "label": "Gemini API Key (optional)",
+        "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank to use Vertex AI with a service account (GOOGLE_SERVICE_KEY_FILE or api/data/auth.json).",
+        "optional": true
       }
     ]
   }

@@ -31,6 +31,10 @@ export const checkPluginAuth = (plugin?: TPlugin): boolean => {
   }
 
   return plugin.authConfig.every((authFieldObj) => {
+    if (authFieldObj.optional === true) {
+      return true;
+    }
+
     const authFieldOptions = authFieldObj.authField.split('||');
     let isFieldAuthenticated = false;
 

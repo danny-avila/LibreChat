@@ -25,11 +25,12 @@ const {
   deletePromptGroup,
   createPromptGroup,
   getPromptGroup,
+  getRoleByName,
   deletePrompt,
   getPrompts,
   savePrompt,
   getPrompt,
-} = require('~/models/Prompt');
+} = require('~/models');
 const {
   canAccessPromptGroupResource,
   canAccessPromptViaGroup,
@@ -41,7 +42,6 @@ const {
   findAccessibleResources,
   grantPermission,
 } = require('~/server/services/PermissionService');
-const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 
@@ -53,15 +53,6 @@ const checkPromptAccess = generateCheckAccess({
 const checkPromptCreate = generateCheckAccess({
   permissionType: PermissionTypes.PROMPTS,
   permissions: [Permissions.USE, Permissions.CREATE],
-  getRoleByName,
-});
-
-const checkGlobalPromptShare = generateCheckAccess({
-  permissionType: PermissionTypes.PROMPTS,
-  permissions: [Permissions.USE, Permissions.CREATE],
-  bodyProps: {
-    [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-  },
   getRoleByName,
 });
 
@@ -364,7 +355,7 @@ const patchPromptGroup = async (req, res) => {
 
 router.patch(
   '/groups/:groupId',
-  checkGlobalPromptShare,
+  checkPromptCreate,
   canAccessPromptGroupResource({
     requiredPermission: PermissionBits.EDIT,
   }),

@@ -95,6 +95,12 @@ export const revokeUserKey = (name: string) => `${keysEndpoint}/${name}`;
 
 export const revokeAllUserKeys = () => `${keysEndpoint}?all=true`;
 
+const apiKeysEndpoint = `${BASE_URL}/api/api-keys`;
+
+export const apiKeys = () => apiKeysEndpoint;
+
+export const apiKeyById = (id: string) => `${apiKeysEndpoint}/${id}`;
+
 export const conversationsRoot = `${BASE_URL}/api/convos`;
 
 export const conversations = (params: q.ConversationListParams) => {
@@ -174,6 +180,11 @@ export const mcpAuthValues = (serverName: string) => {
 export const cancelMCPOAuth = (serverName: string) => {
   return `${BASE_URL}/api/mcp/oauth/cancel/${serverName}`;
 };
+
+export const mcpOAuthBind = (serverName: string) => `${BASE_URL}/api/mcp/${serverName}/oauth/bind`;
+
+export const actionOAuthBind = (actionId: string) =>
+  `${BASE_URL}/api/actions/${actionId}/oauth/bind`;
 
 export const config = () => `${BASE_URL}/api/config`;
 
@@ -329,6 +340,8 @@ export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;
 export const updateMCPServersPermissions = (roleName: string) => `${getRole(roleName)}/mcp-servers`;
+export const updateRemoteAgentsPermissions = (roleName: string) =>
+  `${getRole(roleName)}/remote-agents`;
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;

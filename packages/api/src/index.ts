@@ -2,6 +2,8 @@ export * from './app';
 export * from './cdn';
 /* Auth */
 export * from './auth';
+/* API Keys */
+export * from './apiKeys';
 /* MCP */
 export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';
@@ -41,6 +43,8 @@ export * from './web';
 export * from './cache';
 /* Stream */
 export * from './stream';
+/* Diagnostics */
+export { memoryDiagnostics } from './utils/memory';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';

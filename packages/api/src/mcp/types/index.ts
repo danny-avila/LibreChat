@@ -166,10 +166,11 @@ export type AddServerResult = {
 export interface BasicConnectionOptions {
   serverName: string;
   serverConfig: MCPOptions;
+  useSSRFProtection?: boolean;
 }
 
 export interface OAuthConnectionOptions {
-  user: IUser;
+  user?: IUser;
   useOAuth: true;
   requestBody?: RequestBody;
   customUserVars?: Record<string, string>;
@@ -180,4 +181,22 @@ export interface OAuthConnectionOptions {
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
   connectionTimeout?: number;
+}
+
+export interface ToolDiscoveryOptions {
+  serverName: string;
+  user?: IUser;
+  flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
+  tokenMethods?: TokenMethods;
+  signal?: AbortSignal;
+  oauthStart?: (authURL: string) => Promise<void>;
+  customUserVars?: Record<string, string>;
+  requestBody?: RequestBody;
+  connectionTimeout?: number;
+}
+
+export interface ToolDiscoveryResult {
+  tools: Tool[] | null;
+  oauthRequired: boolean;
+  oauthUrl: string | null;
 }

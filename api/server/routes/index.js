@@ -10,6 +10,7 @@ const presets = require('./presets');
 const prompts = require('./prompts');
 const balance = require('./balance');
 const actions = require('./actions');
+const apiKeys = require('./apiKeys');
 const banner = require('./banner');
 const search = require('./search');
 const models = require('./models');
@@ -31,6 +32,7 @@ module.exports = {
   auth,
   adminAuth,
   keys,
+  apiKeys,
   user,
   tags,
   roles,

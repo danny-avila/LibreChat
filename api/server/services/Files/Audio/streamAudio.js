@@ -5,8 +5,8 @@ const {
   parseTextParts,
   findLastSeparatorIndex,
 } = require('librechat-data-provider');
-const { getMessage } = require('~/models/Message');
 const { getLogStores } = require('~/cache');
+const { getMessage } = require('~/models');
 
 /**
  * @param {string[]} voiceIds - Array of voice IDs

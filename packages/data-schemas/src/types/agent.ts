@@ -1,5 +1,5 @@
 import { Document, Types } from 'mongoose';
-import type { GraphEdge, AgentToolOptions } from 'librechat-data-provider';
+import type { GraphEdge, AgentToolOptions, AgentToolResources } from 'librechat-data-provider';
 
 export interface ISupportContact {
   name?: string;
@@ -31,11 +31,8 @@ export interface IAgent extends Omit<Document, 'model'> {
   /** @deprecated Use edges instead */
   agent_ids?: string[];
   edges?: GraphEdge[];
-  /** @deprecated Use ACL permissions instead */
-  isCollaborative?: boolean;
   conversation_starters?: string[];
-  tool_resources?: unknown;
-  projectIds?: Types.ObjectId[];
+  tool_resources?: AgentToolResources;
   versions?: Omit<IAgent, 'versions'>[];
   category: string;
   support_contact?: ISupportContact;

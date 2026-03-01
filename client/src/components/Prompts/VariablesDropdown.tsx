@@ -5,6 +5,7 @@ import { useFormContext } from 'react-hook-form';
 import { DropdownPopup } from '@librechat/client';
 import { specialVariables } from 'librechat-data-provider';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
+import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 interface VariableOption {
@@ -30,6 +31,7 @@ export default function VariablesDropdown({
   const localize = useLocalize();
   const methods = useFormContext();
   const { setValue, getValues } = methods;
+  const { announcePolite } = useLiveAnnouncer();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -39,6 +41,8 @@ export default function VariablesDropdown({
     const prefix = localize(label);
     setValue(fieldName, currentText + spacer + prefix + ': ' + value);
     setIsMenuOpen(false);
+    const announcement = localize('com_ui_special_variable_added', { 0: prefix });
+    announcePolite({ message: announcement, isStatus: true });
   };
 
   return (

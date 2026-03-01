@@ -3,7 +3,9 @@ const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const {
   countTokens,
+  checkBalance,
   getBalanceConfig,
+  buildMessageFiles,
   extractFileContext,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
@@ -20,19 +22,13 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   supportsBalanceCheck,
+  isBedrockDocumentType,
 } = require('librechat-data-provider');
-const {
-  updateMessage,
-  getMessages,
-  saveMessage,
-  saveConvo,
-  getConvo,
-  getFiles,
-} = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
+const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
+const db = require('~/models');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -669,6 +665,14 @@ class BaseClient {
     }
 
     if (!isEdited && !this.skipSaveUserMessage) {
+      const reqFiles = this.options.req?.body?.files;
+      if (reqFiles && Array.isArray(this.options.attachments)) {
+        const files = buildMessageFiles(reqFiles, this.options.attachments);
+        if (files.length > 0) {
+          userMessage.files = files;
+        }
+        delete userMessage.image_urls;
+      }
       userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
       this.savedMessageIds.add(userMessage.messageId);
       if (typeof opts?.getReqData === 'function') {
@@ -683,18 +687,26 @@ class BaseClient {
       balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
-      await checkBalance({
-        req: this.options.req,
-        res: this.options.res,
-        txData: {
-          user: this.user,
-          tokenType: 'prompt',
-          amount: promptTokens,
-          endpoint: this.options.endpoint,
-          model: this.modelOptions?.model ?? this.model,
-          endpointTokenConfig: this.options.endpointTokenConfig,
+      await checkBalance(
+        {
+          req: this.options.req,
+          res: this.options.res,
+          txData: {
+            user: this.user,
+            tokenType: 'prompt',
+            amount: promptTokens,
+            endpoint: this.options.endpoint,
+            model: this.modelOptions?.model ?? this.model,
+            endpointTokenConfig: this.options.endpointTokenConfig,
+          },
         },
-      });
+        {
+          logViolation,
+          getMultiplier: db.getMultiplier,
+          findBalanceByUser: db.findBalanceByUser,
+          createAutoRefillTransaction: db.createAutoRefillTransaction,
+        },
+      );
     }
 
     const { completion, metadata } = await this.sendCompletion(payload, opts);
@@ -883,7 +895,7 @@ class BaseClient {
   async loadHistory(conversationId, parentMessageId = null) {
     logger.debug('[BaseClient] Loading history:', { conversationId, parentMessageId });
 
-    const messages = (await getMessages({ conversationId })) ?? [];
+    const messages = (await db.getMessages({ conversationId })) ?? [];
 
     if (messages.length === 0) {
       return [];
@@ -939,8 +951,13 @@ class BaseClient {
     }
 
     const hasAddedConvo = this.options?.req?.body?.addedConvo != null;
-    const savedMessage = await saveMessage(
-      this.options?.req,
+    const reqCtx = {
+      userId: this.options?.req?.user?.id,
+      isTemporary: this.options?.req?.body?.isTemporary,
+      interfaceConfig: this.options?.req?.config?.interfaceConfig,
+    };
+    const savedMessage = await db.saveMessage(
+      reqCtx,
       {
         ...message,
         endpoint: this.options.endpoint,
@@ -965,7 +982,7 @@ class BaseClient {
     const existingConvo =
       this.fetchedConvo === true
         ? null
-        : await getConvo(this.options?.req?.user?.id, message.conversationId);
+        : await db.getConvo(this.options?.req?.user?.id, message.conversationId);
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
@@ -992,7 +1009,7 @@ class BaseClient {
       }
     }
 
-    const conversation = await saveConvo(this.options?.req, fieldsToKeep, {
+    const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
     });
@@ -1005,7 +1022,7 @@ class BaseClient {
    * @param {Partial<TMessage>} message
    */
   async updateMessageInDatabase(message) {
-    await updateMessage(this.options.req, message);
+    await db.updateMessage(this.options?.req?.user?.id, message);
   }
 
   /**
@@ -1300,6 +1317,9 @@ class BaseClient {
 
     const allFiles = [];
 
+    const provider = this.options.agent?.provider ?? this.options.endpoint;
+    const isBedrock = provider === EModelEndpoint.bedrock;
+
     for (const file of attachments) {
       /** @type {FileSources} */
       const source = file.source ?? FileSources.local;
@@ -1315,6 +1335,9 @@ class BaseClient {
       if (file.type.startsWith('image/')) {
         categorizedAttachments.images.push(file);
       } else if (file.type === 'application/pdf') {
+        categorizedAttachments.documents.push(file);
+        allFiles.push(file);
+      } else if (isBedrock && isBedrockDocumentType(file.type)) {
         categorizedAttachments.documents.push(file);
         allFiles.push(file);
       } else if (file.type.startsWith('video/')) {
@@ -1399,7 +1422,7 @@ class BaseClient {
         return message;
       }
 
-      const files = await getFiles(
+      const files = await db.getFiles(
         {
           file_id: { $in: fileIds },
         },

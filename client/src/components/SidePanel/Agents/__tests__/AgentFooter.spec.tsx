@@ -26,8 +26,6 @@ mockUseWatch.mockImplementation(({ name }) => {
       _id: 'agent-db-123',
       name: 'Test Agent',
       author: 'user-123',
-      projectIds: ['project-1'],
-      isCollaborative: false,
     };
   }
   if (name === 'id') {
@@ -174,7 +172,7 @@ jest.mock('~/components/Sharing', () => ({
     resourceType: ResourceType;
   }) => (
     <div
-      data-testid="grant-access-dialog"
+      data-testid={`grant-access-dialog-${resourceType}`}
       data-resource-db-id={resourceDbId}
       data-resource-id={resourceId}
       data-resource-name={resourceName}
@@ -237,8 +235,6 @@ describe('AgentFooter', () => {
           _id: 'agent-db-123',
           name: 'Test Agent',
           author: 'user-123',
-          projectIds: ['project-1'],
-          isCollaborative: false,
         };
       }
       if (name === 'id') {
@@ -274,7 +270,7 @@ describe('AgentFooter', () => {
       expect(screen.getByTestId('version-button')).toBeInTheDocument();
       expect(screen.getByTestId('delete-button')).toBeInTheDocument();
       expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
-      expect(screen.getByTestId('grant-access-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('grant-access-dialog-agent')).toBeInTheDocument();
       expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
       expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
     });
@@ -338,7 +334,7 @@ describe('AgentFooter', () => {
       expect(screen.getByText('Create')).toBeInTheDocument();
       expect(screen.queryByTestId('version-button')).not.toBeInTheDocument();
       expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('grant-access-dialog')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument();
       expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument();
     });
 
@@ -346,7 +342,7 @@ describe('AgentFooter', () => {
       mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.admin));
       const { unmount } = render(<AgentFooter {...defaultProps} />);
       expect(screen.getByTestId('admin-settings')).toBeInTheDocument();
-      expect(screen.getByTestId('grant-access-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('grant-access-dialog-agent')).toBeInTheDocument();
 
       // Clean up the first render
       unmount();
@@ -363,7 +359,7 @@ describe('AgentFooter', () => {
         return undefined;
       });
       render(<AgentFooter {...defaultProps} />);
-      expect(screen.queryByTestId('grant-access-dialog')).toBeInTheDocument(); // Still shows because hasAccess is true
+      expect(screen.queryByTestId('grant-access-dialog-agent')).toBeInTheDocument(); // Still shows because hasAccess is true
       expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument(); // Should not show for different author
     });
 
@@ -376,8 +372,6 @@ describe('AgentFooter', () => {
             _id: 'agent-db-123',
             name: 'Test Agent',
             author: 'different-user', // Different author
-            projectIds: ['project-1'],
-            isCollaborative: false,
           };
         }
         if (name === 'id') {
@@ -392,7 +386,7 @@ describe('AgentFooter', () => {
         permissionBits: 0,
       });
       render(<AgentFooter {...defaultProps} />);
-      expect(screen.queryByTestId('grant-access-dialog')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument();
     });
 
     test('hides action buttons when permissions are loading', () => {
@@ -403,8 +397,6 @@ describe('AgentFooter', () => {
             _id: 'agent-db-123',
             name: 'Test Agent',
             author: 'user-123', // Same as current user
-            projectIds: ['project-1'],
-            isCollaborative: false,
           };
         }
         if (name === 'id') {
@@ -419,7 +411,7 @@ describe('AgentFooter', () => {
       });
       render(<AgentFooter {...defaultProps} />);
       expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('grant-access-dialog')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument();
       // Duplicate button should still show as it doesn't depend on permissions loading
       expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
     });
