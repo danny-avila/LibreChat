@@ -1,6 +1,27 @@
 const { URL } = require('node:url');
 const initializeFunctionsAgent = require('../Functions/initializeFunctionsAgent');
 
+const buildToolEnforcementInstructions = (allowedTools = []) => {
+  if (!Array.isArray(allowedTools) || allowedTools.length === 0) {
+    return '';
+  }
+
+  if (allowedTools.length === 1) {
+    return [
+      'TOOL ENFORCEMENT (SYSTEM):',
+      `- You must call '${allowedTools[0]}' at least once before producing your final response.`,
+      '- Do not return greeting-only, placeholder-only, or summary-only messages before a tool call.',
+      '- If required fields are missing, ask one concise follow-up question or make the best structured tool call with known fields.',
+    ].join('\n');
+  }
+
+  return [
+    'TOOL ENFORCEMENT (SYSTEM):',
+    `- You must call at least one allowed tool before producing your final response. Allowed tools: ${allowedTools.join(', ')}`,
+    '- Do not return greeting-only, placeholder-only, or summary-only messages before a tool call.',
+  ].join('\n');
+};
+
 const pickTools = (allTools = [], allowedNames = []) => {
   if (!allowedNames.length) {
     return allTools;
@@ -31,7 +52,16 @@ const sanitizeCitations = (text, whitelist = []) => {
   });
 };
 
-const { logger } = require('@librechat/data-schemas');
+let logger;
+try {
+  ({ logger } = require('~/config'));
+} catch (_) {
+  try {
+    ({ logger } = require('@librechat/data-schemas'));
+  } catch (_) {
+    logger = console;
+  }
+}
 
 const HAZARDOUS_TERMS = [
   /\bduct\s*tape\b/i,
@@ -134,13 +164,17 @@ module.exports = async function createWoodlandFunctionsAgent(
   { agentName, instructions, allowedTools, citationWhitelist } = {},
 ) {
   const filteredTools = pickTools(tools, allowedTools);
+  const toolEnforcement = buildToolEnforcementInstructions(allowedTools);
+  const composedInstructions = [instructions || customInstructions || '', toolEnforcement]
+    .filter(Boolean)
+    .join('\n\n');
   const trimmedPastMessages = Array.isArray(pastMessages) ? pastMessages.slice(-6) : pastMessages;
   const executor = await initializeFunctionsAgent({
     tools: filteredTools,
     model,
     pastMessages: trimmedPastMessages,
     customName: customName || agentName,
-    customInstructions: instructions || customInstructions,
+    customInstructions: composedInstructions,
     currentDateString,
     ...rest,
   });

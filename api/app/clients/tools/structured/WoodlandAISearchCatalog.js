@@ -3,7 +3,16 @@ const crypto = require('node:crypto');
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
-const { logger } = require('~/config');
+let logger;
+try {
+  ({ logger } = require('~/config'));
+} catch (_) {
+  try {
+    ({ logger } = require('@librechat/data-schemas'));
+  } catch (_) {
+    logger = console;
+  }
+}
 const TTLCache = require('../util/ttlCache');
 const { applyCatalogPolicy, canonicalizeModel } = require('./util/woodlandCatalogPolicy');
 // Hitch relevance helpers (lazy usage inside matching logic)

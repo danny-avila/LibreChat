@@ -1,4 +1,13 @@
-const { logger } = require('~/config');
+let logger;
+try {
+  ({ logger } = require('~/config'));
+} catch (_) {
+  try {
+    ({ logger } = require('@librechat/data-schemas'));
+  } catch (_) {
+    logger = console;
+  }
+}
 const rawConfig = require('./woodlandCatalogPolicyConfig.json');
 const { resolveSkuHistory } = require('./woodlandSkuHistoryResolver');
 

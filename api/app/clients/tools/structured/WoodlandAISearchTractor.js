@@ -264,11 +264,16 @@ class WoodlandAISearchTractor extends Tool {
         .describe('Search word or phrase for Tractor Azure AI Search'),
       top: z.number().int().positive().optional(),
       make: z.string().optional(),
+      tractorMake: z.string().optional(),
       model: z.string().optional(),
+      tractorModel: z.string().optional(),
       deck_size: z.union([z.string(), z.number()]).optional(),
+      deckWidth: z.union([z.string(), z.number()]).optional(),
       family: z.union([z.string(), z.array(z.string())]).optional(),
       rake_name: z.union([z.string(), z.array(z.string())]).optional(),
+      cycloneRakeModel: z.union([z.string(), z.array(z.string())]).optional(),
       rake_sku: z.union([z.string(), z.array(z.string())]).optional(),
+      cycloneRakeSku: z.union([z.string(), z.array(z.string())]).optional(),
       sku: z.string().optional(),
       part_type: z.string().optional(),
       require_active: z.boolean().optional(),
@@ -1345,22 +1350,71 @@ class WoodlandAISearchTractor extends Tool {
     return maybe({ filter: undefined, searchFields: this.searchFields }, baseSelect);
   }
 
+  _useOutputEnvelope() {
+    return String(process.env.WOODLAND_TOOL_OUTPUT_ENVELOPE || 'false')
+      .toLowerCase()
+      .trim() === 'true';
+  }
+
+  _serializePayload(payload) {
+    if (!this._useOutputEnvelope()) {
+      return JSON.stringify(payload);
+    }
+
+    const docs = Array.isArray(payload?.docs) ? payload.docs : [];
+    return JSON.stringify({
+      status: 'ok',
+      tool: this.name,
+      count: docs.length,
+      ...payload,
+      results: docs,
+    });
+  }
+
+  _serializeError(error) {
+    const msg = (error && (error.message || String(error))) || 'Unknown error';
+    if (!this._useOutputEnvelope()) {
+      return `AZURE_SEARCH_FAILED: ${msg}`;
+    }
+
+    return JSON.stringify({
+      status: 'error',
+      tool: this.name,
+      message: `AZURE_SEARCH_FAILED: ${msg}`,
+      count: 0,
+      docs: [],
+      results: [],
+      support_answers: [],
+      grouped_tables: [],
+    });
+  }
+
   async _call(data) {
     const {
       query,
       top: topIn,
       make,
+      tractorMake,
       model,
+      tractorModel,
       deck_size,
+      deckWidth,
       family,
       rake_name,
+      cycloneRakeModel,
       rake_sku,
+      cycloneRakeSku,
       sku,
       part_type,
       require_active,
       relaxed,
       embedding,
     } = data;
+    const normalizedMake = make || tractorMake;
+    const normalizedModel = model || tractorModel;
+    const normalizedDeckSize = deck_size ?? deckWidth;
+    const normalizedRakeName = rake_name ?? cycloneRakeModel;
+    const normalizedRakeSku = rake_sku ?? cycloneRakeSku;
     const finalTop =
       typeof topIn === 'number' && Number.isFinite(topIn)
         ? Math.max(1, Math.floor(topIn))
@@ -1418,9 +1472,9 @@ class WoodlandAISearchTractor extends Tool {
       const pickFirst = (value) => (Array.isArray(value) ? value.find(Boolean) : value);
       const merged = {
         ...extracted,
-        make: make || extracted.make,
-        model: model || extracted.model,
-        deckSize: this._normalizeDeckSize(deck_size) || extracted.deckSize,
+        make: normalizedMake || extracted.make,
+        model: normalizedModel || extracted.model,
+        deckSize: this._normalizeDeckSize(normalizedDeckSize) || extracted.deckSize,
         family: Array.isArray(family)
           ? family.find(Boolean)
             ? this._familyAliases(family[0])
@@ -1428,8 +1482,8 @@ class WoodlandAISearchTractor extends Tool {
           : family
             ? this._familyAliases(family)
             : extracted.family,
-        rakeName: pickFirst(rake_name) || extracted.rakeName,
-        rakeSku: pickFirst(rake_sku) || extracted.rakeSku,
+        rakeName: pickFirst(normalizedRakeName) || extracted.rakeName,
+        rakeSku: pickFirst(normalizedRakeSku) || extracted.rakeSku,
         partType: part_type || extracted.partType,
         partNumber: sku || extracted.partNumber,
         rakeNameAlias: extracted.rakeNameAlias,
@@ -1636,13 +1690,12 @@ class WoodlandAISearchTractor extends Tool {
             grouped_tables: groupedTables,
           }
         : { docs: projectedDocs, support_answers: supportAnswers, grouped_tables: groupedTables };
-      return JSON.stringify(payload);
+      return this._serializePayload(payload);
     } catch (error) {
       logger.error('[woodland-ai-search-tractor] Azure AI Search request failed', {
         error: error?.message || String(error),
       });
-      const msg = (error && (error.message || String(error))) || 'Unknown error';
-      return `AZURE_SEARCH_FAILED: ${msg}`;
+      return this._serializeError(error);
     }
   }
 }

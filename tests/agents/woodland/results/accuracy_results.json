@@ -14,7 +14,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 9,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -59,7 +59,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 9,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -104,7 +104,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 9,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -149,7 +149,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 8,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -194,7 +194,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 8,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -239,7 +239,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 3,
+      "durationMs": 6,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -284,7 +284,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 3,
+      "durationMs": 6,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -329,7 +329,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 3,
+      "durationMs": 6,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -374,7 +374,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 3,
+      "durationMs": 6,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -419,7 +419,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 3,
+      "durationMs": 6,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -464,7 +464,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 4,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -512,7 +512,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 4,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -560,7 +560,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 4,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -608,7 +608,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 4,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -656,7 +656,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 4,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -704,7 +704,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 6,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -752,7 +752,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -800,7 +800,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -848,7 +848,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -944,7 +944,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -989,7 +989,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1034,7 +1034,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1079,7 +1079,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1124,8 +1124,8 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
-      "answer": "TOOL_CALL_FAILED: No tool returned a usable response.",
+      "durationMs": 368,
+      "answer": "[{\"id\":\"aHR0cHM6Ly9jeWNsb3BlZGlhLmN5Y2xvbmVyYWtlLmNvbS9kb2NzL2FmdGVybWFya2V0LXBhcnRzLWFjY2Vzc29yaWVzLXdhcnJhbnR5LWNvdmVyYWdlI3NlYzE\",\"title\":\"Aftermarket Parts &amp; Accessories Warranty Coverage\",\"content\":\"Updated on Jul 17, 2025\\nPublished on Feb 17, 2025\\n1 minute(s) read\\nG\\nE\\nWhen you purchase aftermarket parts or accessories for your Cyclone Rake, they come with a 60-day warranty from the delivery date. This warranty protects you against:\\nDefects in materials\\nDefects in materials\\nIssues with workmanship\\nIssues with workmanship\",\"parent_id\":\"https://cyclopedia.cyclonerake.com/docs/aftermarket-parts-accessories-warranty-coverage\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/aftermarket-parts-accessories-warranty-coverage\",\"canonical_url\":\"https://cyclopedia.cyclonerake.com/docs/aftermarket-parts-accessories-warranty-coverage\",\"anchor\":\"\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null,\"breadcrumb\":null,\"headings\":[],\"toc_items\":[],\"section_order\":1,\"tags\":[\"60-day warrantyaftermarket accessoriesaftermarket partscustomer supportparts warrantywarrantywarranty claimwarranty protection\",\"pagetype:other\"],\"audience\":\"public\",\"mentioned_models\":[],\"mentioned_parts\":[],\"images_alt\":[\"Document360\",\"Aftermarket Cyclone Rake 60-day warranty for parts and accessories displayed in a badge.\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"content_length\":null,\"author\":null,\"last_published\":null,\"last_updated\":null,\"last_crawled\":\"2026-03-01T07:11:11.712Z\",\"reviewed\":true,\"allowlist_match\":null,\"source\":\"doc360\",\"normalized_cyclopedia\":{\"title\":\"Aftermarket Parts &amp; Accessories Warranty Coverage\",\"headings\":[],\"tags\":[\"60-day warrantyaftermarket accessoriesaftermarket partscustomer supportparts warrantywarrantywarranty claimwarranty protection\",\"pagetype:other\"],\"images_alt\":[\"Document360\",\"Aftermarket Cyclone Rake 60-day warranty for parts and accessories displayed in a badge.\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"site\":\"cyclopedia.cyclonerake.com\",\"last_crawled\":\"Sun Mar 01 2026 07:11:11 GMT+0000 (Greenwich Mean Time)\",\"reviewed\":true,\"allowlist_match\":null,\"provenance\":{\"url\":\"https://cyclopedia.cyclonerake.com/docs/aftermarket-parts-accessories-warranty-coverage\",\"host\":\"cyclopedia.cyclonerake.com\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null},\"troubleshooting\":{\"steps\":[],\"checklists\":[],\"scenarios\":[],\"hasTroubleshooting\":false},\"citation\":{\"label\":\"Aftermarket Parts &amp; Accessories Warranty Coverage\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/aftermarket-parts-accessories-warranty-coverage\",\"markdown\":\"Aftermarket Parts &amp; Accessories Warranty Coverage\"}}},{\"id\":\"aHR0cHM6Ly9jeWNsb3BlZGlhLmN5Y2xvbmVyYWtlLmNvbS9kb2NzL3dhcnJhbnR5LWluZm9ybWF0aW9uLWZvci1yZWNvbmRpdGlvbmVkLWN5Y2xvbmUtcmFrZS1wcm9kdWN0cyNzZWMx\",\"title\":\"Warranty Information for Reconditioned Cyclone Rake Products\",\"content\":\"Updated on Jul 17, 2025\\nPublished on Mar 20, 2025\\n1 minute(s) read\\nG\\nE\\nWe stand behind the quality of our Reconditioned Cyclone Rake products with comprehensive warranty coverage. Here's what you need to know about our warranty policies.\\nAll Reconditioned Cyclone Rakes and Cyclone bundles for residential use come with a 2-year bumper-to-bumper warranty covering:\\nAny defects in workmanship\\nAny defects in workmanship\\nAny defects in materials\\nAny defects in materials\\nThis warranty gives you peace of mind knowing we've got you covered for unexpected issues. Remember that normal wear and tear and accidental damage (such as hitting a tree) are not covered under this warranty.\\nAll Reconditioned Cyclone Rakes and Cyclone Rake Bundles used commercially come with a 3-month bumper-to-bumper warranty, covering:\\nDefects in materials\\nDefects in materials\\nDefects in workmanship\\nDefects in workmanship\\nAs with the residential warranty, this does not cover wear and tear or accidental damage.\",\"parent_id\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"canonical_url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"anchor\":\"\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null,\"breadcrumb\":null,\"headings\":[],\"toc_items\":[],\"section_order\":1,\"tags\":[\"commercial warrantyparts warrantyresidental warrantywarrantywarranty protection\",\"pagetype:other\"],\"audience\":\"public\",\"mentioned_models\":[],\"mentioned_parts\":[],\"images_alt\":[\"Document360\",\"Reconditioned Cyclone Rake seal featuring a two-year residential warranty information.\",\"Reconditioned Cyclone Rake with a 3-month commercial warranty badge.\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"content_length\":null,\"author\":null,\"last_published\":null,\"last_updated\":null,\"last_crawled\":\"2026-03-01T07:11:11.711Z\",\"reviewed\":true,\"allowlist_match\":null,\"source\":\"doc360\",\"normalized_cyclopedia\":{\"title\":\"Warranty Information for Reconditioned Cyclone Rake Products\",\"headings\":[],\"tags\":[\"commercial warrantyparts warrantyresidental warrantywarrantywarranty protection\",\"pagetype:other\"],\"images_alt\":[\"Document360\",\"Reconditioned Cyclone Rake seal featuring a two-year residential warranty information.\",\"Reconditioned Cyclone Rake with a 3-month commercial warranty badge.\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"site\":\"cyclopedia.cyclonerake.com\",\"last_crawled\":\"Sun Mar 01 2026 07:11:11 GMT+0000 (Greenwich Mean Time)\",\"reviewed\":true,\"allowlist_match\":null,\"provenance\":{\"url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"host\":\"cyclopedia.cyclonerake.com\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null},\"troubleshooting\":{\"steps\":[],\"checklists\":[],\"scenarios\":[],\"hasTroubleshooting\":false},\"citation\":{\"label\":\"Warranty Information for Reconditioned Cyclone Rake Products\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"markdown\":\"Warranty Information for Reconditioned Cyclone Rake Products\"}}},{\"id\":\"aHR0cHM6Ly9jeWNsb3BlZGlhLmN5Y2xvbmVyYWtlLmNvbS9kb2NzL3dhcnJhbnR5LWluZm9ybWF0aW9uLWZvci1yZWNvbmRpdGlvbmVkLWN5Y2xvbmUtcmFrZS1wcm9kdWN0cyNzZWMz\",\"title\":\"Warranty Information for Reconditioned Cyclone Rake Products\",\"content\":\"All Reconditioned Power Gear is custom-made and warranted against defects in materials and workmanship for 30 days. Because these items are custom-made, please order carefully, especially when it comes to sizing. There are no refunds or exchanges for incorrectly sized orders.\\nOur team is always happy to assist. Whether you'd like to call, schedule a callback, or send us a message through our Contact Us form, we're ready to help!\\ncommercial warranty\\nparts warranty\\nresidental warranty\\nwarranty\\nwarranty protection\\nCopyright © 2025 Cyclone Rake. All Rights Reserved.\",\"parent_id\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"canonical_url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"anchor\":\"\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null,\"breadcrumb\":null,\"headings\":[],\"toc_items\":[],\"section_order\":3,\"tags\":[\"commercial warrantyparts warrantyresidental warrantywarrantywarranty protection\",\"pagetype:other\"],\"audience\":\"public\",\"mentioned_models\":[],\"mentioned_parts\":[],\"images_alt\":[\"Document360\",\"Reconditioned Cyclone Rake seal featuring a two-year residential warranty information.\",\"Reconditioned Cyclone Rake with a 3-month commercial warranty badge.\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"content_length\":null,\"author\":null,\"last_published\":null,\"last_updated\":null,\"last_crawled\":\"2026-03-01T07:11:11.711Z\",\"reviewed\":true,\"allowlist_match\":null,\"source\":\"doc360\",\"normalized_cyclopedia\":{\"title\":\"Warranty Information for Reconditioned Cyclone Rake Products\",\"headings\":[],\"tags\":[\"commercial warrantyparts warrantyresidental warrantywarrantywarranty protection\",\"pagetype:other\"],\"images_alt\":[\"Document360\",\"Reconditioned Cyclone Rake seal featuring a two-year residential warranty information.\",\"Reconditioned Cyclone Rake with a 3-month commercial warranty badge.\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"site\":\"cyclopedia.cyclonerake.com\",\"last_crawled\":\"Sun Mar 01 2026 07:11:11 GMT+0000 (Greenwich Mean Time)\",\"reviewed\":true,\"allowlist_match\":null,\"provenance\":{\"url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"host\":\"cyclopedia.cyclonerake.com\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null},\"troubleshooting\":{\"steps\":[],\"checklists\":[],\"scenarios\":[],\"hasTroubleshooting\":false},\"citation\":{\"label\":\"Warranty Information for Reconditioned Cyclone Rake Products\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"markdown\":\"Warranty Information for Reconditioned Cyclone Rake Products\"}}},{\"id\":\"aHR0cHM6Ly9jeWNsb3BlZGlhLmN5Y2xvbmVyYWtlLmNvbS9kb2NzL3dhcnJhbnR5LWluZm9ybWF0aW9uLWZvci1yZWNvbmRpdGlvbmVkLWN5Y2xvbmUtcmFrZS1wcm9kdWN0cyNzZWMy\",\"title\":\"Warranty Information for Reconditioned Cyclone Rake Products\",\"content\":\"All Reconditioned Power Parts and Accessories are warranted for 90 days from the date of shipment. This warranty covers manufacturing or material defects but not normal wear and tear.\",\"parent_id\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"canonical_url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"anchor\":\"\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null,\"breadcrumb\":null,\"headings\":[],\"toc_items\":[],\"section_order\":2,\"tags\":[\"commercial warrantyparts warrantyresidental warrantywarrantywarranty protection\",\"pagetype:other\"],\"audience\":\"public\",\"mentioned_models\":[],\"mentioned_parts\":[],\"images_alt\":[\"Document360\",\"Reconditioned Cyclone Rake seal featuring a two-year residential warranty information.\",\"Reconditioned Cyclone Rake with a 3-month commercial warranty badge.\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"content_length\":null,\"author\":null,\"last_published\":null,\"last_updated\":null,\"last_crawled\":\"2026-03-01T07:11:11.711Z\",\"reviewed\":true,\"allowlist_match\":null,\"source\":\"doc360\",\"normalized_cyclopedia\":{\"title\":\"Warranty Information for Reconditioned Cyclone Rake Products\",\"headings\":[],\"tags\":[\"commercial warrantyparts warrantyresidental warrantywarrantywarranty protection\",\"pagetype:other\"],\"images_alt\":[\"Document360\",\"Reconditioned Cyclone Rake seal featuring a two-year residential warranty information.\",\"Reconditioned Cyclone Rake with a 3-month commercial warranty badge.\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"site\":\"cyclopedia.cyclonerake.com\",\"last_crawled\":\"Sun Mar 01 2026 07:11:11 GMT+0000 (Greenwich Mean Time)\",\"reviewed\":true,\"allowlist_match\":null,\"provenance\":{\"url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"host\":\"cyclopedia.cyclonerake.com\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null},\"troubleshooting\":{\"steps\":[],\"checklists\":[],\"scenarios\":[],\"hasTroubleshooting\":false},\"citation\":{\"label\":\"Warranty Information for Reconditioned Cyclone Rake Products\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/warranty-information-for-reconditioned-cyclone-rake-products\",\"markdown\":\"Warranty Information for Reconditioned Cyclone Rake Products\"}}},{\"id\":\"aHR0cHM6Ly9jeWNsb3BlZGlhLmN5Y2xvbmVyYWtlLmNvbS9kb2NzL2J1eWluZy1hbmQtdXNpbmctY3ljbG9uZS1yYWtlLXBhcnRzI3NlYzE\",\"title\":\"Buying and Using Cyclone Rake Parts Without Owning a Cyclone Rake\",\"content\":\"Updated on Nov 6, 2025\\nPublished on Apr 17, 2025\\n1 minute(s) read\\nE\\nWhile we do sell individual replacement parts, there are some important considerations to keep in mind:\\nOur components are specifically designed for use with the Cyclone Rake system\\nOur components are specifically designed for use with the Cyclone Rake system\\nEach part is engineered to work within our integrated design\\nEach part is engineered to work within our integrated design\\nWe can't guarantee how these components will perform when used with other manufacturers' products or in custom applications\\nWe can't guarantee how these components will perform when used with other manufacturers' products or in custom applications\\nParts used outside of our complete Cyclone Rake system will not be covered under our warranty\\nParts used outside of our complete Cyclone Rake system will not be covered under our warranty\\nOur technical support team may have limited ability to assist with integration into non-Cyclone Rake applications\\nOur technical support team may have limited ability to assist with integration into non-Cyclone Rake applications\\nYou're welcome to browse the parts section of our website and order any components that might suit your needs, but please understand that performance, fit, and durability may vary when our parts are used in ways they weren't specifically designed for.\",\"parent_id\":\"https://cyclopedia.cyclonerake.com/docs/buying-and-using-cyclone-rake-parts\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/buying-and-using-cyclone-rake-parts\",\"canonical_url\":\"https://cyclopedia.cyclonerake.com/docs/buying-and-using-cyclone-rake-parts\",\"anchor\":\"\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null,\"breadcrumb\":null,\"headings\":[],\"toc_items\":[],\"section_order\":1,\"tags\":[\"pagetype:other\"],\"audience\":\"public\",\"mentioned_models\":[],\"mentioned_parts\":[],\"images_alt\":[\"Document360\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"content_length\":null,\"author\":null,\"last_published\":null,\"last_updated\":null,\"last_crawled\":\"2026-03-01T07:11:11.712Z\",\"reviewed\":true,\"allowlist_match\":null,\"source\":\"doc360\",\"normalized_cyclopedia\":{\"title\":\"Buying and Using Cyclone Rake Parts Without Owning a Cyclone Rake\",\"headings\":[],\"tags\":[\"pagetype:other\"],\"images_alt\":[\"Document360\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"site\":\"cyclopedia.cyclonerake.com\",\"last_crawled\":\"Sun Mar 01 2026 07:11:11 GMT+0000 (Greenwich Mean Time)\",\"reviewed\":true,\"allowlist_match\":null,\"provenance\":{\"url\":\"https://cyclopedia.cyclonerake.com/docs/buying-and-using-cyclone-rake-parts\",\"host\":\"cyclopedia.cyclonerake.com\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null},\"troubleshooting\":{\"steps\":[],\"checklists\":[],\"scenarios\":[],\"hasTroubleshooting\":false},\"citation\":{\"label\":\"Buying and Using Cyclone Rake Parts Without Owning a Cyclone Rake\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/buying-and-using-cyclone-rake-parts\",\"markdown\":\"Buying and Using Cyclone Rake Parts Without Owning a Cyclone Rake\"}}},{\"id\":\"aHR0cHM6Ly9jeWNsb3BlZGlhLmN5Y2xvbmVyYWtlLmNvbS9kb2NzL2FmdGVybWFya2V0LXBhcnRzLWFjY2Vzc29yaWVzLXdhcnJhbnR5LWNvdmVyYWdlI3NlYzI\",\"title\":\"Aftermarket Parts &amp; Accessories Warranty Coverage\",\"content\":\"The warranty does not include:\\nCollision damage\\nCollision damage\\nNormal wear and tear\\nNormal wear and tear\\nAge-related damage\\nAge-related damage\",\"parent_id\":\"https://cyclopedia.cyclonerake.com/docs/aftermarket-parts-accessories-warranty-coverage\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/aftermarket-parts-accessories-warranty-coverage\",\"canonical_url\":\"https://cyclopedia.cyclonerake.com/docs/aftermarket-parts-accessories-warranty-coverage\",\"anchor\":\"\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null,\"breadcrumb\":null,\"headings\":[],\"toc_items\":[],\"section_order\":2,\"tags\":[\"60-day warrantyaftermarket accessoriesaftermarket partscustomer supportparts warrantywarrantywarranty claimwarranty protection\",\"pagetype:other\"],\"audience\":\"public\",\"mentioned_models\":[],\"mentioned_parts\":[],\"images_alt\":[\"Document360\",\"Aftermarket Cyclone Rake 60-day warranty for parts and accessories displayed in a badge.\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"content_length\":null,\"author\":null,\"last_published\":null,\"last_updated\":null,\"last_crawled\":\"2026-03-01T07:11:11.712Z\",\"reviewed\":true,\"allowlist_match\":null,\"source\":\"doc360\",\"normalized_cyclopedia\":{\"title\":\"Aftermarket Parts &amp; Accessories Warranty Coverage\",\"headings\":[],\"tags\":[\"60-day warrantyaftermarket accessoriesaftermarket partscustomer supportparts warrantywarrantywarranty claimwarranty protection\",\"pagetype:other\"],\"images_alt\":[\"Document360\",\"Aftermarket Cyclone Rake 60-day warranty for parts and accessories displayed in a badge.\",\"A person with raised hands pondering a question, symbolizing curiosity and inquiry.\"],\"site\":\"cyclopedia.cyclonerake.com\",\"last_crawled\":\"Sun Mar 01 2026 07:11:11 GMT+0000 (Greenwich Mean Time)\",\"reviewed\":true,\"allowlist_match\":null,\"provenance\":{\"url\":\"https://cyclopedia.cyclonerake.com/docs/aftermarket-parts-accessories-warranty-coverage\",\"host\":\"cyclopedia.cyclonerake.com\",\"site\":\"cyclopedia.cyclonerake.com\",\"page_type\":null},\"troubleshooting\":{\"steps\":[],\"checklists\":[],\"scenarios\":[],\"hasTroubleshooting\":false},\"citation\":{\"label\":\"Aftermarket Parts &amp; Accessories Warranty Coverage\",\"url\":\"https://cyclopedia.cyclonerake.com/docs/aftermarket-parts-accessories-warranty-coverage\",\"markdown\":\"Aftermarket Parts &amp; Accessories Warranty Coverage\"}}}]",
       "documents": [],
       "metadata": {
         "policy_flags": [],
@@ -1167,7 +1167,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1215,7 +1215,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1263,7 +1263,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1311,7 +1311,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1359,7 +1359,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1407,7 +1407,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1455,7 +1455,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1503,7 +1503,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1551,7 +1551,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1647,7 +1647,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1695,7 +1695,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1743,7 +1743,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1791,7 +1791,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1839,7 +1839,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1887,7 +1887,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1935,7 +1935,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -1983,7 +1983,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2079,7 +2079,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2127,7 +2127,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 3,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2175,7 +2175,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2367,7 +2367,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2415,7 +2415,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2463,7 +2463,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2511,7 +2511,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2559,7 +2559,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2607,7 +2607,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2655,7 +2655,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2703,7 +2703,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2799,7 +2799,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2847,7 +2847,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2895,7 +2895,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -2943,7 +2943,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -3039,7 +3039,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -3087,7 +3087,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -3183,7 +3183,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -3327,7 +3327,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -3567,7 +3567,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -3615,7 +3615,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -3663,7 +3663,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -3711,7 +3711,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -3807,7 +3807,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -3855,7 +3855,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4047,7 +4047,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4095,7 +4095,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4143,7 +4143,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4191,7 +4191,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4287,7 +4287,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4335,7 +4335,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4383,7 +4383,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4527,7 +4527,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 9,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4575,7 +4575,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 9,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4623,7 +4623,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 9,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4671,7 +4671,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 8,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4719,7 +4719,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4767,7 +4767,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4815,7 +4815,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4863,7 +4863,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4911,7 +4911,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -4959,7 +4959,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5007,7 +5007,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5055,7 +5055,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5103,7 +5103,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5151,7 +5151,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5199,7 +5199,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5247,7 +5247,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5295,7 +5295,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5343,7 +5343,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5439,7 +5439,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5487,7 +5487,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 8,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5535,7 +5535,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 7,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5583,7 +5583,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 7,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5631,7 +5631,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 7,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5727,7 +5727,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5775,7 +5775,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5823,7 +5823,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5871,7 +5871,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -5967,7 +5967,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6015,7 +6015,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6063,7 +6063,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6111,7 +6111,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6159,7 +6159,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6207,7 +6207,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6255,7 +6255,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6303,7 +6303,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6399,7 +6399,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6447,7 +6447,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6495,7 +6495,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6543,7 +6543,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6591,7 +6591,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6639,7 +6639,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6687,7 +6687,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 3,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6735,7 +6735,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6783,7 +6783,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6831,7 +6831,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -6927,7 +6927,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 12,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7167,7 +7167,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7359,7 +7359,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7407,7 +7407,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7503,7 +7503,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7599,7 +7599,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7647,7 +7647,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 3,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7695,7 +7695,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7791,7 +7791,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7887,7 +7887,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7935,7 +7935,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -7983,7 +7983,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8127,7 +8127,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8223,7 +8223,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8367,7 +8367,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8415,7 +8415,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8463,7 +8463,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8607,7 +8607,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8655,7 +8655,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8703,7 +8703,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8799,7 +8799,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8847,7 +8847,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8895,7 +8895,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8943,7 +8943,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -8991,7 +8991,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9039,7 +9039,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9087,7 +9087,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 11,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9135,7 +9135,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 10,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9183,7 +9183,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 10,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9231,7 +9231,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9279,7 +9279,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9327,7 +9327,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9375,7 +9375,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9423,7 +9423,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9471,7 +9471,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9519,7 +9519,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9567,7 +9567,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 9,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9615,7 +9615,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 9,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9663,7 +9663,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 8,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9711,7 +9711,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 8,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9759,7 +9759,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9807,7 +9807,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -9942,7 +9942,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10032,7 +10032,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10080,7 +10080,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10128,7 +10128,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10176,7 +10176,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10224,7 +10224,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10512,7 +10512,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10608,7 +10608,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10752,7 +10752,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10800,7 +10800,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10848,7 +10848,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10896,7 +10896,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -10944,7 +10944,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -11040,7 +11040,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -11232,7 +11232,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -11280,7 +11280,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -11328,7 +11328,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -11376,7 +11376,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -11424,7 +11424,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -11664,7 +11664,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -11712,7 +11712,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -11952,7 +11952,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -12192,7 +12192,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 7,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -12237,7 +12237,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 7,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -12282,7 +12282,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -12327,7 +12327,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -12372,7 +12372,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -12747,7 +12747,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -12837,7 +12837,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -12882,7 +12882,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -12930,7 +12930,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -12978,7 +12978,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13026,7 +13026,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13074,7 +13074,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13218,7 +13218,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13314,7 +13314,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13362,7 +13362,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 7,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13410,7 +13410,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 7,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13458,7 +13458,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 7,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13506,7 +13506,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 6,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13554,7 +13554,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 6,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13602,7 +13602,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13698,7 +13698,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13842,7 +13842,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13890,7 +13890,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -13938,7 +13938,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14082,7 +14082,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14178,7 +14178,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14322,7 +14322,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14370,7 +14370,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14466,7 +14466,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14562,7 +14562,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14610,7 +14610,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14802,7 +14802,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14850,7 +14850,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14898,7 +14898,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -14994,7 +14994,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15234,7 +15234,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15282,7 +15282,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 5,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15330,7 +15330,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15378,7 +15378,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15426,7 +15426,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15474,7 +15474,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15522,7 +15522,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15570,7 +15570,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15618,7 +15618,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15666,7 +15666,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15714,7 +15714,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15762,7 +15762,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15810,7 +15810,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15858,7 +15858,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -15954,7 +15954,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -16050,7 +16050,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -16290,7 +16290,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -16338,7 +16338,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -16434,7 +16434,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -16482,7 +16482,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -16578,7 +16578,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -16722,7 +16722,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -16818,7 +16818,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -16962,7 +16962,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17010,7 +17010,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17058,7 +17058,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17106,7 +17106,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17154,7 +17154,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17442,7 +17442,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 7,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17487,7 +17487,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 7,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17532,7 +17532,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 7,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17577,7 +17577,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 6,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17622,7 +17622,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 6,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17907,7 +17907,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -17955,7 +17955,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18003,7 +18003,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18147,7 +18147,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18243,7 +18243,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18387,7 +18387,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18435,7 +18435,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18483,7 +18483,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18531,7 +18531,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18579,7 +18579,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18675,7 +18675,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18867,7 +18867,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -18912,7 +18912,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19092,7 +19092,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19140,7 +19140,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19188,7 +19188,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19236,7 +19236,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19284,7 +19284,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19332,7 +19332,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19380,7 +19380,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19428,7 +19428,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19476,7 +19476,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19524,7 +19524,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19572,7 +19572,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19620,7 +19620,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19668,7 +19668,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -19764,7 +19764,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20004,7 +20004,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20052,7 +20052,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20097,7 +20097,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20142,7 +20142,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20187,7 +20187,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20232,7 +20232,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20517,7 +20517,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20565,7 +20565,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20613,7 +20613,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20757,7 +20757,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20805,7 +20805,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20901,7 +20901,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -20997,7 +20997,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21045,7 +21045,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21237,7 +21237,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21333,7 +21333,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21477,7 +21477,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21525,7 +21525,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21573,7 +21573,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21621,7 +21621,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21669,7 +21669,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21717,7 +21717,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 7,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21765,7 +21765,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 6,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21861,7 +21861,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -21957,7 +21957,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22005,7 +22005,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22053,7 +22053,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22149,7 +22149,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22197,7 +22197,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22245,7 +22245,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22293,7 +22293,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22341,7 +22341,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22437,7 +22437,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22533,7 +22533,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22677,7 +22677,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22725,7 +22725,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22821,7 +22821,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22917,7 +22917,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -22965,7 +22965,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -23013,7 +23013,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -23109,7 +23109,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -23157,7 +23157,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -23253,7 +23253,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -23493,7 +23493,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -23589,7 +23589,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -23637,7 +23637,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -23877,7 +23877,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -23973,7 +23973,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -24117,7 +24117,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -24261,7 +24261,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -24357,7 +24357,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -24405,7 +24405,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -24501,7 +24501,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -24645,7 +24645,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -24693,7 +24693,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -24789,7 +24789,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -24837,7 +24837,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -24933,7 +24933,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25077,7 +25077,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25125,7 +25125,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25173,7 +25173,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25221,7 +25221,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25269,7 +25269,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25317,7 +25317,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25365,7 +25365,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25413,7 +25413,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25461,7 +25461,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25509,7 +25509,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25749,7 +25749,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25797,7 +25797,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25845,7 +25845,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25893,7 +25893,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -25989,7 +25989,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26217,7 +26217,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26262,7 +26262,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26310,7 +26310,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26358,7 +26358,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26406,7 +26406,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26454,7 +26454,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26502,7 +26502,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 4,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26550,7 +26550,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 4,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26598,7 +26598,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 4,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26646,7 +26646,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 4,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26694,7 +26694,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 4,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26742,7 +26742,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26790,7 +26790,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26886,7 +26886,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -26982,7 +26982,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27030,7 +27030,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27078,7 +27078,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27222,7 +27222,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27270,7 +27270,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27318,7 +27318,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27366,7 +27366,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27414,7 +27414,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27462,7 +27462,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27510,7 +27510,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27654,7 +27654,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27702,7 +27702,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27798,7 +27798,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27942,7 +27942,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -27990,7 +27990,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28086,7 +28086,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28182,7 +28182,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28227,7 +28227,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28272,7 +28272,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28647,7 +28647,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28695,7 +28695,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28791,7 +28791,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28839,7 +28839,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28887,7 +28887,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28935,7 +28935,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -28983,7 +28983,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29079,7 +29079,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29127,7 +29127,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29175,7 +29175,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29223,7 +29223,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29271,7 +29271,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29319,7 +29319,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29367,7 +29367,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29415,7 +29415,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29511,7 +29511,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29607,7 +29607,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29655,7 +29655,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29703,7 +29703,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -29847,7 +29847,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30072,7 +30072,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30120,7 +30120,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30168,7 +30168,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30216,7 +30216,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30264,7 +30264,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30312,7 +30312,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30360,7 +30360,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30456,7 +30456,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30552,7 +30552,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30600,7 +30600,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30792,7 +30792,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30840,7 +30840,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -30888,7 +30888,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -31032,7 +31032,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -31080,7 +31080,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -31176,7 +31176,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -31272,7 +31272,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -31320,7 +31320,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -31512,7 +31512,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -31608,7 +31608,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -31752,7 +31752,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -31800,7 +31800,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -31896,7 +31896,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32232,7 +32232,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32280,7 +32280,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32328,7 +32328,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32376,7 +32376,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32424,7 +32424,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32562,7 +32562,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32697,7 +32697,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32745,7 +32745,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32793,7 +32793,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32841,7 +32841,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32889,7 +32889,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 4,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32937,7 +32937,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -32985,7 +32985,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33033,7 +33033,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33129,7 +33129,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33225,7 +33225,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33369,7 +33369,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33417,7 +33417,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33465,7 +33465,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33513,7 +33513,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33561,7 +33561,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33609,7 +33609,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33657,7 +33657,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33705,7 +33705,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33753,7 +33753,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33801,7 +33801,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33849,7 +33849,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33897,7 +33897,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33945,7 +33945,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -33993,7 +33993,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34041,7 +34041,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34137,7 +34137,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34185,7 +34185,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34281,7 +34281,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34377,7 +34377,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34425,7 +34425,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34473,7 +34473,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34713,7 +34713,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34809,7 +34809,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34857,7 +34857,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34905,7 +34905,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -34953,7 +34953,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35049,7 +35049,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35097,7 +35097,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35145,7 +35145,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35193,7 +35193,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35241,7 +35241,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35433,7 +35433,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35577,7 +35577,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35625,7 +35625,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35673,7 +35673,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35721,7 +35721,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35769,7 +35769,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35817,7 +35817,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35865,7 +35865,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35913,7 +35913,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -35961,7 +35961,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36009,7 +36009,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36057,7 +36057,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36105,7 +36105,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36153,7 +36153,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36201,7 +36201,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36297,7 +36297,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36345,7 +36345,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36393,7 +36393,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36489,7 +36489,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36633,7 +36633,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36681,7 +36681,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36777,7 +36777,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36825,7 +36825,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36873,7 +36873,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36921,7 +36921,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -36969,7 +36969,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37017,7 +37017,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37065,7 +37065,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37113,7 +37113,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37209,7 +37209,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37257,7 +37257,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 3,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37305,7 +37305,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 3,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37353,7 +37353,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37401,7 +37401,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37449,7 +37449,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 0,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37497,7 +37497,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37545,7 +37545,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37593,7 +37593,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37689,7 +37689,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37737,7 +37737,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37785,7 +37785,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37833,7 +37833,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37881,7 +37881,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -37929,7 +37929,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38217,7 +38217,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38265,7 +38265,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38313,7 +38313,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38409,7 +38409,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38457,7 +38457,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38553,7 +38553,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38697,7 +38697,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38745,7 +38745,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38841,7 +38841,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38937,7 +38937,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -38985,7 +38985,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -39033,7 +39033,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -39129,7 +39129,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 0,
+      "durationMs": 1,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -39177,7 +39177,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 2,
+      "durationMs": 3,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -39273,7 +39273,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -39417,7 +39417,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -39465,7 +39465,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CyclopediaSupportAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -39511,7 +39511,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -39559,7 +39559,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {
@@ -39607,7 +39607,7 @@
     "response": {
       "success": true,
       "agentName": "SupervisorRouter",
-      "durationMs": 1,
+      "durationMs": 2,
       "answer": "[tool:CatalogPartsAgent] already called; reusing prior result.",
       "documents": [],
       "metadata": {

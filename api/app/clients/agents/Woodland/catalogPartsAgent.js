@@ -1,13 +1,26 @@
 const promptTemplates = require('./promptTemplates');
 const createWoodlandFunctionsAgent = require('./createWoodlandFunctionsAgent');
 const initializeProductHistoryAgent = require('./productHistoryAgent');
+const WoodlandAISearchCatalog = require('../../tools/structured/WoodlandAISearchCatalog');
 
 const INSTRUCTIONS = promptTemplates.catalogParts;
 
 let productHistoryToolCache = null;
 
 module.exports = async function initializeCatalogPartsAgent(params) {
-  const agent = await createWoodlandFunctionsAgent(params, {
+  const providedTools = Array.isArray(params?.tools) ? params.tools : [];
+  let tools = providedTools;
+  if (!providedTools.length) {
+    try {
+      tools = [new WoodlandAISearchCatalog({})];
+    } catch (_) {
+      tools = providedTools;
+    }
+  }
+
+  const effectiveParams = { ...(params || {}), tools };
+
+  const agent = await createWoodlandFunctionsAgent(effectiveParams, {
     agentName: 'CatalogPartsAgent',
     instructions: INSTRUCTIONS,
     allowedTools: ['woodland-ai-search-catalog'],
@@ -16,7 +29,7 @@ module.exports = async function initializeCatalogPartsAgent(params) {
   // Initialize Product History tool once for cross-validation
   if (!productHistoryToolCache) {
     try {
-      const historyAgent = await initializeProductHistoryAgent(params);
+      const historyAgent = await initializeProductHistoryAgent(effectiveParams);
       productHistoryToolCache = historyAgent?.tools?.find((t) => /product-history/i.test(t?.name));
     } catch (error) {
       // Non-fatal: continue without Product History

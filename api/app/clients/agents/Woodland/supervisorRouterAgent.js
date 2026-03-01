@@ -1,6 +1,15 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
-const { logger } = require('@librechat/data-schemas');
+let logger;
+try {
+  ({ logger } = require('~/config'));
+} catch (_) {
+  try {
+    ({ logger } = require('@librechat/data-schemas'));
+  } catch (_) {
+    logger = console;
+  }
+}
 const promptTemplates = require('./promptTemplates');
 const createWoodlandFunctionsAgent = require('./createWoodlandFunctionsAgent');
 const createIntentClassifier = require('./intentClassifier');
@@ -222,6 +231,17 @@ const resolveDomainTools = (
 
 const INSTRUCTIONS = promptTemplates.supervisorRouter;
 
+const stripMetadataBlocks = (value) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  return value
+    .replace(/\[Intent Classification\][\s\S]*?\[\/Intent Classification\]\s*/gi, '')
+    .replace(/\[Validation Guidance\][\s\S]*?\[\/Validation Guidance\]\s*/gi, '')
+    .trim();
+};
+
 const evaluateCompletenessWarnings = (text, metadata = {}) => {
   const warnings = [];
   const normalizedText = typeof text === 'string' ? text : '';
@@ -319,7 +339,8 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
             });
           }
         }
-        const payload = typeof input === 'string' ? input : JSON.stringify(input);
+        const payloadRaw = typeof input === 'string' ? input : JSON.stringify(input);
+        const payload = stripMetadataBlocks(payloadRaw);
         const result = await agent.invoke({ input: payload });
         if (!result || typeof result === 'string') {
           const output = result || '';

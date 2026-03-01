@@ -2,7 +2,16 @@
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
-const { logger } = require('~/config');
+let logger;
+try {
+  ({ logger } = require('~/config'));
+} catch (_) {
+  try {
+    ({ logger } = require('@librechat/data-schemas'));
+  } catch (_) {
+    logger = console;
+  }
+}
 const { resolveScenarioChecklist } = require('./util/woodlandCyclopediaScenarioResolver');
 const { deriveCyclopediaHints } = require('./util/woodlandCyclopediaHints');
 

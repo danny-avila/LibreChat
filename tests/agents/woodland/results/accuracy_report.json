@@ -3,11 +3,11 @@
   "successful": 830,
   "failed": 0,
   "timeouts": 0,
-  "avg_duration_ms": 1,
+  "avg_duration_ms": 3,
   "by_agent": {
     "SupervisorRouter": {
       "count": 830,
-      "avg_duration": 1
+      "avg_duration": 3
     }
   },
   "by_flag": {

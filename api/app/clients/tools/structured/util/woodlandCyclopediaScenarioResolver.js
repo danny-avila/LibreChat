@@ -1,5 +1,14 @@
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
-const { logger } = require('~/config');
+let logger;
+try {
+  ({ logger } = require('~/config'));
+} catch (_) {
+  try {
+    ({ logger } = require('@librechat/data-schemas'));
+  } catch (_) {
+    logger = console;
+  }
+}
 
 const SERVICE_ENDPOINT_ENV = 'AZURE_AI_SEARCH_SERVICE_ENDPOINT';
 const API_KEY_ENV = 'AZURE_AI_SEARCH_API_KEY';

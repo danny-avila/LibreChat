@@ -186,6 +186,55 @@ class WoodlandProductHistory extends Tool {
     return filters.join(' and ');
   }
 
+  _useOutputEnvelope() {
+    return String(process.env.WOODLAND_TOOL_OUTPUT_ENVELOPE || 'false')
+      .toLowerCase()
+      .trim() === 'true';
+  }
+
+  _serializeSuccess(results, top) {
+    const sliced = results.slice(0, top);
+    if (!this._useOutputEnvelope()) {
+      return JSON.stringify(sliced);
+    }
+    return JSON.stringify({
+      status: 'ok',
+      tool: this.name,
+      count: sliced.length,
+      docs: sliced,
+      results: sliced,
+    });
+  }
+
+  _serializeNeedsReview(message) {
+    if (!this._useOutputEnvelope()) {
+      return message;
+    }
+    return JSON.stringify({
+      status: 'needs_human_review',
+      tool: this.name,
+      message,
+      count: 0,
+      docs: [],
+      results: [],
+    });
+  }
+
+  _serializeError(error) {
+    const msg = `AZURE_SEARCH_FAILED: ${error?.message || error}`;
+    if (!this._useOutputEnvelope()) {
+      return msg;
+    }
+    return JSON.stringify({
+      status: 'error',
+      tool: this.name,
+      message: msg,
+      count: 0,
+      docs: [],
+      results: [],
+    });
+  }
+
   _sanitizeUrl(value, associatedValue) {
     const s = typeof value === 'string' ? value.trim() : '';
     if (!/^https?:\/\//i.test(s)) {
@@ -1175,7 +1224,7 @@ class WoodlandProductHistory extends Tool {
       }
 
       if (results.length === 0) {
-        return 'NEEDS_HUMAN_REVIEW: No reviewed records found.';
+        return this._serializeNeedsReview('NEEDS_HUMAN_REVIEW: No reviewed records found.');
       }
 
       // Rank results by attribute match score (more important than search score)
@@ -1202,10 +1251,10 @@ class WoodlandProductHistory extends Tool {
         });
       }
       
-      return JSON.stringify(results.slice(0, top));
+      return this._serializeSuccess(results, top);
     } catch (error) {
       logger.error('[woodland-ai-product-history] Search request failed', error);
-      return `AZURE_SEARCH_FAILED: ${error?.message || error}`;
+      return this._serializeError(error);
     }
   }
 }
