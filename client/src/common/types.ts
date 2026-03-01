@@ -132,13 +132,6 @@ export type NavLink = {
   id: string;
 };
 
-export interface NavProps {
-  isCollapsed: boolean;
-  links: NavLink[];
-  resize?: (size: number) => void;
-  defaultActive?: string;
-}
-
 export interface DataColumnMeta {
   meta:
     | {

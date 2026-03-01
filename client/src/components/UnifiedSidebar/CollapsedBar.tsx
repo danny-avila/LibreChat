@@ -40,7 +40,7 @@ function CollapsedBar({
       <div className="flex flex-col gap-0.5 overflow-y-auto px-1">
         {links.map((link, index) => (
           <TooltipAnchor
-            key={`collapsed-${index}`}
+            key={`nav-icon-${index}`}
             side="right"
             description={localize(link.title)}
             render={
@@ -48,7 +48,7 @@ function CollapsedBar({
                 size="icon"
                 variant="ghost"
                 aria-label={localize(link.title)}
-                className="h-9 w-9 rounded-lg"
+                className="h-9 w-9 rounded-lg text-text-secondary"
                 onClick={(e) => {
                   if (link.onClick) {
                     link.onClick(e);
@@ -57,7 +57,7 @@ function CollapsedBar({
                   onExpandToSection(link.id);
                 }}
               >
-                <link.icon className="h-4 w-4 text-text-secondary" />
+                <link.icon className="h-4 w-4" aria-hidden="true" />
               </Button>
             }
           />

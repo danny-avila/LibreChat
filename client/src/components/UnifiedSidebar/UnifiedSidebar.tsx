@@ -115,11 +115,7 @@ function UnifiedSidebar() {
         >
           <SidePanelProvider>
             <ActivePanelProvider defaultActive={activeSection}>
-              <ExpandedPanel
-                links={links}
-                defaultActive={activeSection}
-                onCollapse={handleCollapse}
-              />
+              <ExpandedPanel links={links} onCollapse={handleCollapse} />
             </ActivePanelProvider>
           </SidePanelProvider>
         </div>
@@ -152,11 +148,7 @@ function UnifiedSidebar() {
           {showExpanded ? (
             <>
               <div className="h-full" style={{ minWidth: sidebarWidth }}>
-                <ExpandedPanel
-                  links={links}
-                  defaultActive={activeSection}
-                  onCollapse={handleCollapse}
-                />
+                <ExpandedPanel links={links} onCollapse={handleCollapse} />
               </div>
               <div
                 role="separator"
