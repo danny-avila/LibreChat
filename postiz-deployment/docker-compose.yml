@@ -5,6 +5,17 @@ services:
     restart: always
     env_file:
       - .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
     environment:
       # === Required Settings
       MAIN_URL: ${MAIN_URL}
@@ -73,6 +84,13 @@ services:
       # === Developer Settings
       NX_ADD_PLUGINS: ${NX_ADD_PLUGINS}
 
+      # === Node.js Performance Settings
+      NODE_OPTIONS: "--max-old-space-size=1536"
+      
+      # === Keep-alive Settings
+      KEEP_ALIVE_TIMEOUT: "65000"
+      HEADERS_TIMEOUT: "66000"
+
     volumes:
       - postiz-config:/config/
       - postiz-uploads:/uploads/
@@ -128,6 +146,17 @@ services:
     container_name: temporal-elasticsearch
     image: elasticsearch:7.17.27
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
     environment:
       - cluster.routing.allocation.disk.threshold_enabled=true
       - cluster.routing.allocation.disk.watermark.low=512mb
@@ -174,6 +203,17 @@ services:
     ports:
       - '7233:7233'
     image: temporalio/auto-setup:1.28.1
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
     depends_on:
       temporal-postgresql:
         condition: service_healthy
