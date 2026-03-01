@@ -16,47 +16,7 @@ const {
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 
-/**
- * Create a pipeline for the aggregation to get prompt groups
- * @param {Object} query
- * @param {number} skip
- * @param {number} limit
- * @returns {[Object]} - The pipeline for the aggregation
- */
-const createGroupPipeline = (query, skip, limit) => {
-  return [
-    { $match: query },
-    { $sort: { createdAt: -1 } },
-    { $skip: skip },
-    { $limit: limit },
-    {
-      $lookup: {
-        from: 'prompts',
-        localField: 'productionId',
-        foreignField: '_id',
-        as: 'productionPrompt',
-      },
-    },
-    { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
-    {
-      $project: {
-        name: 1,
-        numberOfGenerations: 1,
-        oneliner: 1,
-        category: 1,
-        projectIds: 1,
-        productionId: 1,
-        author: 1,
-        authorName: 1,
-        createdAt: 1,
-        updatedAt: 1,
-        'productionPrompt.prompt': 1,
-        // 'productionPrompt._id': 1,
-        // 'productionPrompt.type': 1,
-      },
-    },
-  ];
-};
+const isValidObjectIdString = (id) => /^[a-f\d]{24}$/i.test(id);
 
 /**
  * Create a pipeline for the aggregation to get all prompt groups
@@ -68,6 +28,7 @@ const createAllGroupsPipeline = (
   query,
   $project = {
     name: 1,
+    numberOfGenerations: 1,
     oneliner: 1,
     category: 1,
     author: 1,
@@ -80,7 +41,7 @@ const createAllGroupsPipeline = (
 ) => {
   return [
     { $match: query },
-    { $sort: { createdAt: -1 } },
+    { $sort: { numberOfGenerations: -1, updatedAt: -1, _id: 1 } },
     {
       $lookup: {
         from: 'prompts',
@@ -137,77 +98,8 @@ const getAllPromptGroups = async (req, filter) => {
     const promptGroupsPipeline = createAllGroupsPipeline(combinedQuery);
     return await PromptGroup.aggregate(promptGroupsPipeline).exec();
   } catch (error) {
-    console.error('Error getting all prompt groups', error);
+    logger.error('Error getting all prompt groups', error);
     return { message: 'Error getting all prompt groups' };
-  }
-};
-
-/**
- * Get prompt groups with filters
- * @param {ServerRequest} req
- * @param {TPromptGroupsWithFilterRequest} filter
- * @returns {Promise<PromptGroupListResponse>}
- */
-const getPromptGroups = async (req, filter) => {
-  try {
-    const { pageNumber = 1, pageSize = 10, name, ...query } = filter;
-
-    const validatedPageNumber = Math.max(parseInt(pageNumber, 10), 1);
-    const validatedPageSize = Math.max(parseInt(pageSize, 10), 1);
-
-    let searchShared = true;
-    let searchSharedOnly = false;
-    if (name) {
-      query.name = new RegExp(escapeRegExp(name), 'i');
-    }
-    if (!query.category) {
-      delete query.category;
-    } else if (query.category === SystemCategories.MY_PROMPTS) {
-      searchShared = false;
-      delete query.category;
-    } else if (query.category === SystemCategories.NO_CATEGORY) {
-      query.category = '';
-    } else if (query.category === SystemCategories.SHARED_PROMPTS) {
-      searchSharedOnly = true;
-      delete query.category;
-    }
-
-    let combinedQuery = query;
-
-    if (searchShared) {
-      // const projects = req.user.projects || []; // TODO: handle multiple projects
-      const project = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, 'promptGroupIds');
-      if (project && project.promptGroupIds && project.promptGroupIds.length > 0) {
-        const projectQuery = { _id: { $in: project.promptGroupIds }, ...query };
-        delete projectQuery.author;
-        combinedQuery = searchSharedOnly ? projectQuery : { $or: [projectQuery, query] };
-      }
-    }
-
-    const skip = (validatedPageNumber - 1) * validatedPageSize;
-    const limit = validatedPageSize;
-
-    const promptGroupsPipeline = createGroupPipeline(combinedQuery, skip, limit);
-    const totalPromptGroupsPipeline = [{ $match: combinedQuery }, { $count: 'total' }];
-
-    const [promptGroupsResults, totalPromptGroupsResults] = await Promise.all([
-      PromptGroup.aggregate(promptGroupsPipeline).exec(),
-      PromptGroup.aggregate(totalPromptGroupsPipeline).exec(),
-    ]);
-
-    const promptGroups = promptGroupsResults;
-    const totalPromptGroups =
-      totalPromptGroupsResults.length > 0 ? totalPromptGroupsResults[0].total : 0;
-
-    return {
-      promptGroups,
-      pageNumber: validatedPageNumber.toString(),
-      pageSize: validatedPageSize.toString(),
-      pages: Math.ceil(totalPromptGroups / validatedPageSize).toString(),
-    };
-  } catch (error) {
-    console.error('Error getting prompt groups', error);
-    return { message: 'Error getting prompt groups' };
   }
 };
 
@@ -269,27 +161,41 @@ async function getListPromptGroupsByAccess({
   const baseQuery = { ...otherParams, _id: { $in: accessibleIds } };
 
   // Add cursor condition
+  let matchQuery = baseQuery;
   if (after && typeof after === 'string' && after !== 'undefined' && after !== 'null') {
     try {
       const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
-      const { updatedAt, _id } = cursor;
+      const { numberOfGenerations = 0, updatedAt, _id } = cursor;
 
-      const cursorCondition = {
-        $or: [
-          { updatedAt: { $lt: new Date(updatedAt) } },
-          { updatedAt: new Date(updatedAt), _id: { $gt: new ObjectId(_id) } },
-        ],
-      };
-
-      // Merge cursor condition with base query
-      if (Object.keys(baseQuery).length > 0) {
-        baseQuery.$and = [{ ...baseQuery }, cursorCondition];
-        // Remove the original conditions from baseQuery to avoid duplication
-        Object.keys(baseQuery).forEach((key) => {
-          if (key !== '$and') delete baseQuery[key];
-        });
+      if (
+        typeof numberOfGenerations !== 'number' ||
+        !Number.isFinite(numberOfGenerations) ||
+        typeof updatedAt !== 'string' ||
+        isNaN(new Date(updatedAt).getTime()) ||
+        typeof _id !== 'string' ||
+        !isValidObjectIdString(_id)
+      ) {
+        logger.warn('[createAllGroupsPipeline] Invalid cursor fields, skipping cursor condition');
       } else {
-        Object.assign(baseQuery, cursorCondition);
+        const cursorCondition = {
+          $or: [
+            { numberOfGenerations: { $lt: numberOfGenerations } },
+            {
+              numberOfGenerations: numberOfGenerations,
+              updatedAt: { $lt: new Date(updatedAt) },
+            },
+            {
+              numberOfGenerations: numberOfGenerations,
+              updatedAt: new Date(updatedAt),
+              _id: { $gt: new ObjectId(_id) },
+            },
+          ],
+        };
+
+        matchQuery =
+          Object.keys(baseQuery).length > 0
+            ? { $and: [baseQuery, cursorCondition] }
+            : cursorCondition;
       }
     } catch (error) {
       logger.warn('Invalid cursor:', error.message);
@@ -297,7 +203,10 @@ async function getListPromptGroupsByAccess({
   }
 
   // Build aggregation pipeline
-  const pipeline = [{ $match: baseQuery }, { $sort: { updatedAt: -1, _id: 1 } }];
+  const pipeline = [
+    { $match: matchQuery },
+    { $sort: { numberOfGenerations: -1, updatedAt: -1, _id: 1 } },
+  ];
 
   // Only apply limit if pagination is requested
   if (isPaginated) {
@@ -350,6 +259,7 @@ async function getListPromptGroupsByAccess({
     const lastGroup = promptGroups[normalizedLimit - 1];
     nextCursor = Buffer.from(
       JSON.stringify({
+        numberOfGenerations: lastGroup.numberOfGenerations,
         updatedAt: lastGroup.updatedAt.toISOString(),
         _id: lastGroup._id.toString(),
       }),
@@ -366,11 +276,31 @@ async function getListPromptGroupsByAccess({
   };
 }
 
+/**
+ * Increment the numberOfGenerations counter for a prompt group.
+ * @param {string} groupId - The ID of the prompt group.
+ * @returns {Promise<{ numberOfGenerations: number }>}
+ */
+const incrementPromptGroupUsage = async (groupId) => {
+  const result = await PromptGroup.findByIdAndUpdate(
+    groupId,
+    { $inc: { numberOfGenerations: 1 } },
+    { new: true, select: 'numberOfGenerations' },
+  ).lean();
+
+  if (!result) {
+    throw new Error('Prompt group not found');
+  }
+
+  return { numberOfGenerations: result.numberOfGenerations };
+};
+
 module.exports = {
-  getPromptGroups,
+  isValidObjectIdString,
   deletePromptGroup,
   getAllPromptGroups,
   getListPromptGroupsByAccess,
+  incrementPromptGroupUsage,
   /**
    * Create a prompt and its respective group
    * @param {TCreatePromptRecord} saveData
