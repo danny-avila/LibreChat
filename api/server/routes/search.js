@@ -15,11 +15,11 @@ router.get('/enable', async function (req, res) {
   }
 
   try {
-    const providerType = detectSearchProvider ? detectSearchProvider() : null;
+    const providerType = detectSearchProvider();
 
     if (providerType && providerType !== 'meilisearch') {
       // Use generic search provider (OpenSearch, etc.)
-      const provider = getSearchProvider ? getSearchProvider() : null;
+      const provider = getSearchProvider();
       if (!provider) {
         return res.send(false);
       }

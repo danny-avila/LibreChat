@@ -24,6 +24,8 @@ export interface OpenSearchProviderOptions {
   password?: string;
   /** Skip TLS certificate verification (useful for self-signed certs in dev) */
   insecure?: boolean;
+  /** Connection timeout in milliseconds (default: 30000) */
+  connectionTimeoutMs?: number;
 }
 
 interface OpenSearchBulkResponseItem {
@@ -36,6 +38,7 @@ export class OpenSearchProvider implements SearchProvider {
   private node: string;
   private authHeader: string;
   private insecure: boolean;
+  private connectionTimeoutMs: number;
 
   constructor(options: OpenSearchProviderOptions) {
     if (!options.node) {
@@ -46,6 +49,7 @@ export class OpenSearchProvider implements SearchProvider {
     const password = options.password || '';
     this.authHeader = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
     this.insecure = options.insecure ?? false;
+    this.connectionTimeoutMs = options.connectionTimeoutMs ?? 30000;
   }
 
   // ------------------------------------------------------------------ //
@@ -63,10 +67,14 @@ export class OpenSearchProvider implements SearchProvider {
       Authorization: this.authHeader,
     };
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.connectionTimeoutMs);
+
     const fetchOptions: RequestInit & { dispatcher?: unknown } = {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     };
 
     // Support insecure TLS via undici dispatcher when available
@@ -78,21 +86,28 @@ export class OpenSearchProvider implements SearchProvider {
         fetchOptions.dispatcher = new Agent({
           connect: { rejectUnauthorized: false },
         });
-      } catch {
-        // undici not available; fetch will use default TLS settings
-        logger.debug('[OpenSearchProvider] undici not available for insecure TLS');
+      } catch (error) {
+        logger.warn(
+          '[OpenSearchProvider] Insecure TLS requested but "undici" is not available. ' +
+            'Falling back to default TLS verification. To enable insecure TLS, install the "undici" package.',
+          { error },
+        );
       }
     }
 
-    const response = await fetch(url, fetchOptions);
-    const text = await response.text();
-    let data: Record<string, unknown> = {};
     try {
-      data = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      data = { raw: text };
+      const response = await fetch(url, fetchOptions);
+      const text = await response.text();
+      let data: Record<string, unknown> = {};
+      try {
+        data = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        data = { raw: text };
+      }
+      return { status: response.status, data };
+    } finally {
+      clearTimeout(timeout);
     }
-    return { status: response.status, data };
   }
 
   private async bulkRequest(
@@ -107,10 +122,14 @@ export class OpenSearchProvider implements SearchProvider {
 
     const bodyStr = operations.join('\n') + '\n';
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.connectionTimeoutMs * 2);
+
     const fetchOptions: RequestInit & { dispatcher?: unknown } = {
       method: 'POST',
       headers,
       body: bodyStr,
+      signal: controller.signal,
     };
 
     if (this.insecure) {
@@ -125,12 +144,16 @@ export class OpenSearchProvider implements SearchProvider {
       }
     }
 
-    const response = await fetch(url, fetchOptions);
-    const data = (await response.json()) as {
-      errors: boolean;
-      items: OpenSearchBulkResponseItem[];
-    };
-    return data;
+    try {
+      const response = await fetch(url, fetchOptions);
+      const data = (await response.json()) as {
+        errors: boolean;
+        items: OpenSearchBulkResponseItem[];
+      };
+      return data;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   // ------------------------------------------------------------------ //
@@ -369,8 +392,10 @@ export class OpenSearchProvider implements SearchProvider {
       }
       if (params?.sort) {
         searchBody.sort = params.sort.map((s) => {
-          const [field, order] = s.split(':');
-          return { [field]: { order: order || 'asc' } };
+          const match = s.match(/^(.+?):(asc|desc)$/i);
+          const field = match ? match[1] : s;
+          const order = match ? match[2].toLowerCase() : 'asc';
+          return { [field]: { order } };
         });
       }
 
@@ -381,9 +406,17 @@ export class OpenSearchProvider implements SearchProvider {
         total?: { value?: number } | number;
       } | undefined;
 
-      const hits: SearchHit[] = (hitsData?.hits || []).map((hit) => ({
-        ...hit._source,
-      }));
+      const hits: SearchHit[] = (hitsData?.hits || []).map((hit) => {
+        const source = hit._source || ({} as SearchHit);
+        const result: SearchHit = {
+          ...source,
+          _opensearch_id: hit._id,
+        };
+        if (!(source as Record<string, unknown>).id) {
+          (result as Record<string, unknown>).id = hit._id;
+        }
+        return result;
+      });
 
       let totalHits = 0;
       if (typeof hitsData?.total === 'object' && hitsData.total !== null) {
@@ -458,9 +491,9 @@ export class OpenSearchProvider implements SearchProvider {
     const parts = filter.split(/\s+AND\s+/i);
 
     for (const part of parts) {
-      const match = part.trim().match(/^(\w+)\s*=\s*["'](.+?)["']$/);
+      const match = part.trim().match(/^(\w+)\s*=\s*(["'])(.*)\2$/);
       if (match) {
-        const [, field, value] = match;
+        const [, field, , value] = match;
         clauses.push({ term: { [field]: value } });
       }
     }

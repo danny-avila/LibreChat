@@ -30,7 +30,11 @@ data:
   OPENSEARCH_HOST: "{{ $opensearchProto }}://{{ $osMasterService }}.{{ .Release.Namespace | lower }}.svc.cluster.local:9200"
   {{- end }}
   {{- if not (dig "configEnv" "OPENSEARCH_INSECURE" "" .Values.librechat) }}
+  {{- if $securityDisabled }}
   OPENSEARCH_INSECURE: "true"
+  {{- else }}
+  OPENSEARCH_INSECURE: "false"
+  {{- end }}
   {{- end }}
   {{- if not (dig "configEnv" "OPENSEARCH_USERNAME" "" .Values.librechat) }}
   {{- if and (hasKey .Values.opensearch "opensearchUsername") .Values.opensearch.opensearchUsername }}

@@ -48,16 +48,14 @@ services:
       - ./meili_data_v1.35.1:/meili_data
 
   # ---- OpenSearch (alternative to MeiliSearch) ----
-  # To use OpenSearch instead of MeiliSearch:
-  #   1. Comment out the 'meilisearch' service above
-  #   2. Uncomment the 'opensearch' service below
+  # To use OpenSearch instead of MeiliSearch, create a docker-compose.override.yml with:
+  #   1. The 'opensearch' service definition (copy from below and uncomment)
+  #   2. Override the 'api' service environment to remove MEILI_HOST
   #   3. In .env, set:
   #        SEARCH_PROVIDER=opensearch
   #        OPENSEARCH_HOST=http://opensearch:9200
   #        OPENSEARCH_INSECURE=true
-  #   4. In the 'api' service environment, replace MEILI_HOST with:
-  #        OPENSEARCH_HOST=http://opensearch:9200
-  #   5. Comment out MEILI_HOST in the 'api' service environment
+  # See docker-compose.override.yaml.example for a working example.
   # opensearch:
   #   container_name: chat-opensearch
   #   image: opensearchproject/opensearch:3.4.0
@@ -73,16 +71,14 @@ services:
   #     - "9200:9200"
 
   # ---- Typesense (alternative to MeiliSearch) ----
-  # To use Typesense instead of MeiliSearch:
-  #   1. Comment out the 'meilisearch' service above
-  #   2. Uncomment the 'typesense' service below
+  # To use Typesense instead of MeiliSearch, create a docker-compose.override.yml with:
+  #   1. The 'typesense' service definition (copy from below and uncomment)
+  #   2. Override the 'api' service environment to remove MEILI_HOST
   #   3. In .env, set:
   #        SEARCH_PROVIDER=typesense
   #        TYPESENSE_HOST=http://typesense:8108
   #        TYPESENSE_API_KEY=xyz  (match the --api-key below)
-  #   4. In the 'api' service environment, replace MEILI_HOST with:
-  #        TYPESENSE_HOST=http://typesense:8108
-  #   5. Comment out MEILI_HOST in the 'api' service environment
+  # See docker-compose.override.yaml.example for a working example.
   # typesense:
   #   container_name: chat-typesense
   #   image: typesense/typesense:30.1

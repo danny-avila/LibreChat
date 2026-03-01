@@ -262,6 +262,7 @@ async function deleteDocumentsWithoutUserFieldGeneric(provider, indexName) {
   let deletedCount = 0;
   let offset = 0;
   const batchSize = 1000;
+  const primaryKey = indexName === 'messages' ? 'messageId' : 'conversationId';
 
   try {
     while (true) {
@@ -274,7 +275,10 @@ async function deleteDocumentsWithoutUserFieldGeneric(provider, indexName) {
         break;
       }
 
-      const idsToDelete = searchResult.hits.filter((hit) => !hit.user).map((hit) => hit.id);
+      const idsToDelete = searchResult.hits
+        .filter((hit) => !hit.user)
+        .map((hit) => hit.id || hit[primaryKey])
+        .filter(Boolean);
 
       if (idsToDelete.length > 0) {
         logger.info(

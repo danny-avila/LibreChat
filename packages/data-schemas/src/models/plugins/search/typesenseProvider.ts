@@ -405,7 +405,7 @@ export class TypesenseProvider implements SearchProvider {
     }
     // Typesense supports batch delete via filter_by
     // For ID-based deletion, we use individual deletes or filter
-    const filterBy = `id: [${documentIds.join(',')}]`;
+    const filterBy = `id: [${documentIds.map((id) => JSON.stringify(id)).join(',')}]`;
     try {
       await this.request(
         'DELETE',
@@ -503,8 +503,10 @@ export class TypesenseProvider implements SearchProvider {
       if (params?.sort) {
         const sortBy = params.sort
           .map((s) => {
-            const [field, order] = s.split(':');
-            return `${field}:${order || 'asc'}`;
+            const match = s.match(/^(.+?):(asc|desc)$/i);
+            const field = match ? match[1] : s;
+            const order = match ? match[2].toLowerCase() : 'asc';
+            return `${field}:${order}`;
           })
           .join(',');
         searchUrl += `&sort_by=${encodeURIComponent(sortBy)}`;
@@ -541,9 +543,9 @@ export class TypesenseProvider implements SearchProvider {
     const typesenseParts: string[] = [];
 
     for (const part of parts) {
-      const match = part.trim().match(/^(\w+)\s*=\s*["'](.+?)["']$/);
+      const match = part.trim().match(/^(\w+)\s*=\s*(["'])(.*)\2$/);
       if (match) {
-        const [, field, value] = match;
+        const [, field, , value] = match;
         typesenseParts.push(`${field}:=${value}`);
       }
     }
