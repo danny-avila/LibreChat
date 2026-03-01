@@ -11,7 +11,6 @@ import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/webso
 import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type {
   RequestInit as UndiciRequestInit,
   RequestInfo as UndiciRequestInfo,
@@ -503,10 +502,6 @@ export class MCPConnection extends EventEmitter {
             this.emit('connectionChange', 'disconnected');
           };
 
-          transport.onmessage = (message) => {
-            logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
-          };
-
           this.setupTransportErrorHandlers(transport);
           return transport;
         }
@@ -543,10 +538,6 @@ export class MCPConnection extends EventEmitter {
           transport.onclose = () => {
             logger.info(`${this.getLogPrefix()} Streamable-http transport closed`);
             this.emit('connectionChange', 'disconnected');
-          };
-
-          transport.onmessage = (message: JSONRPCMessage) => {
-            logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
 
           this.setupTransportErrorHandlers(transport);
@@ -711,6 +702,7 @@ export class MCPConnection extends EventEmitter {
           ),
         );
 
+        this.setupTransportOnMessageHandler();
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
@@ -829,13 +821,6 @@ export class MCPConnection extends EventEmitter {
       return;
     }
 
-    this.transport.onmessage = (msg) => {
-      const { method, id } = msg as { method?: string; id?: number };
-      logger.debug(
-        `${this.getLogPrefix()} Transport received: method=${method ?? 'response'} id=${id}`,
-      );
-    };
-
     const originalSend = this.transport.send.bind(this.transport);
     this.transport.send = async (msg) => {
       if ('result' in msg && !('method' in msg) && Object.keys(msg.result ?? {}).length === 0) {
@@ -844,11 +829,28 @@ export class MCPConnection extends EventEmitter {
         }
         this.lastPingTime = Date.now();
       }
-      const { method, id } = msg as { method?: string; id?: number };
+      const method = 'method' in msg ? msg.method : undefined;
+      const id = 'id' in msg ? (msg as { id: string | number | null }).id : undefined;
       logger.debug(
-        `${this.getLogPrefix()} Transport sending: method=${method ?? 'response'} id=${id}`,
+        `${this.getLogPrefix()} Transport sending: method=${method ?? 'response'} id=${id ?? 'none'}`,
       );
       return originalSend(msg);
+    };
+  }
+
+  private setupTransportOnMessageHandler(): void {
+    if (!this.transport?.onmessage) {
+      return;
+    }
+
+    const sdkHandler = this.transport.onmessage;
+    this.transport.onmessage = (msg) => {
+      const method = 'method' in msg ? msg.method : undefined;
+      const id = 'id' in msg ? (msg as { id: string | number | null }).id : undefined;
+      logger.debug(
+        `${this.getLogPrefix()} Transport received: method=${method ?? 'response'} id=${id ?? 'none'}`,
+      );
+      sdkHandler(msg);
     };
   }
 
