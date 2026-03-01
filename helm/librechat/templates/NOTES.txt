@@ -20,3 +20,15 @@
   echo "Visit http://127.0.0.1:8080 to use your application"
   kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
 {{- end }}
+
+2. Search Backend:
+{{- if .Values.meilisearch.enabled }}
+  Search is powered by MeiliSearch (default).
+{{- else if .Values.opensearch.enabled }}
+  Search is powered by OpenSearch.
+  OpenSearch supports multi-replica mode and is Apache-2.0 licensed.
+{{- else if and (hasKey .Values "typesense") .Values.typesense.enabled }}
+  Search is powered by Typesense.
+{{- else }}
+  No search backend is enabled. Conversation search will be disabled.
+{{- end }}

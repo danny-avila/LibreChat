@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getSearchProvider, detectSearchProvider } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const { isEnabled, FlowStateManager } = require('@librechat/api');
 const { getLogStores } = require('~/cache');
@@ -188,7 +188,126 @@ async function ensureFilterableAttributes(client) {
 }
 
 /**
- * Performs the actual sync operations for messages and conversations
+ * Ensures indexes have proper filterable attributes for non-MeiliSearch providers.
+ * @param {import('./search/searchProvider').SearchProvider} provider - Search provider instance
+ * @returns {Promise<{settingsUpdated: boolean, orphanedDocsFound: boolean}>}
+ */
+async function ensureFilterableAttributesGeneric(provider) {
+  let settingsUpdated = false;
+  let hasOrphanedDocs = false;
+
+  try {
+    for (const indexName of ['messages', 'convos']) {
+      try {
+        const settings = await provider.getIndexSettings(indexName);
+        const filterableAttrs = settings.filterableAttributes || [];
+
+        if (!filterableAttrs.includes('user')) {
+          logger.info(`[indexSync] Configuring ${indexName} index to filter by user...`);
+          await provider.updateIndexSettings(indexName, {
+            filterableAttributes: ['user'],
+          });
+          logger.info(`[indexSync] ${indexName} index configured for user filtering`);
+          settingsUpdated = true;
+        }
+
+        // Check for orphaned documents
+        try {
+          const searchResult = await provider.search(indexName, '', { limit: 1 });
+          if (searchResult.hits.length > 0 && !searchResult.hits[0].user) {
+            logger.info(
+              `[indexSync] Existing ${indexName} missing user field, will clean up orphaned documents...`,
+            );
+            hasOrphanedDocs = true;
+          }
+        } catch (searchError) {
+          logger.debug(`[indexSync] Could not check ${indexName} documents:`, searchError.message);
+        }
+      } catch (error) {
+        logger.warn(
+          `[indexSync] Could not check/update ${indexName} index settings:`,
+          error.message,
+        );
+      }
+    }
+
+    if (hasOrphanedDocs) {
+      for (const indexName of ['messages', 'convos']) {
+        try {
+          await deleteDocumentsWithoutUserFieldGeneric(provider, indexName);
+        } catch (error) {
+          logger.debug(`[indexSync] Could not clean up ${indexName}:`, error.message);
+        }
+      }
+      logger.info('[indexSync] Orphaned documents cleaned up without forcing resync.');
+    }
+
+    if (settingsUpdated) {
+      logger.info('[indexSync] Index settings updated. Full re-sync will be triggered.');
+    }
+  } catch (error) {
+    logger.error('[indexSync] Error ensuring filterable attributes:', error);
+  }
+
+  return { settingsUpdated, orphanedDocsFound: hasOrphanedDocs };
+}
+
+/**
+ * Deletes documents without user field from a search index (generic provider version).
+ * @param {import('./search/searchProvider').SearchProvider} provider
+ * @param {string} indexName
+ * @returns {Promise<number>}
+ */
+async function deleteDocumentsWithoutUserFieldGeneric(provider, indexName) {
+  let deletedCount = 0;
+  let offset = 0;
+  const batchSize = 1000;
+  const primaryKey = indexName === 'messages' ? 'messageId' : 'conversationId';
+
+  try {
+    while (true) {
+      const searchResult = await provider.search(indexName, '', {
+        limit: batchSize,
+        offset: offset,
+      });
+
+      if (searchResult.hits.length === 0) {
+        break;
+      }
+
+      const idsToDelete = searchResult.hits
+        .filter((hit) => !hit.user)
+        .map((hit) => hit.id || hit[primaryKey])
+        .filter(Boolean);
+
+      if (idsToDelete.length > 0) {
+        logger.info(
+          `[indexSync] Deleting ${idsToDelete.length} documents without user field from ${indexName} index`,
+        );
+        await provider.deleteDocuments(indexName, idsToDelete);
+        deletedCount += idsToDelete.length;
+      }
+
+      if (searchResult.hits.length < batchSize) {
+        break;
+      }
+
+      offset += batchSize;
+    }
+
+    if (deletedCount > 0) {
+      logger.info(`[indexSync] Deleted ${deletedCount} orphaned documents from ${indexName} index`);
+    }
+  } catch (error) {
+    logger.error(`[indexSync] Error deleting documents from ${indexName}:`, error);
+  }
+
+  return deletedCount;
+}
+
+/**
+ * Performs the actual sync operations for messages and conversations.
+ * Supports both MeiliSearch (legacy) and generic search providers (OpenSearch, etc.).
  * @param {FlowStateManager} flowManager - Flow state manager instance
  * @param {string} flowId - Flow identifier
  * @param {string} flowType - Flow type
@@ -200,16 +319,39 @@ async function performSync(flowManager, flowId, flowType) {
       return { messagesSync: false, convosSync: false };
     }
 
-    const client = MeiliSearchClient.getInstance();
+    const providerType = detectSearchProvider ? detectSearchProvider() : 'meilisearch';
+    let settingsUpdated = false;
+    let _orphanedDocsFound = false;
 
-    const { status } = await client.health();
-    if (status !== 'available') {
-      throw new Error('Meilisearch not available');
+    if (providerType === 'meilisearch') {
+      // Legacy MeiliSearch path — fully backward compatible
+      const client = MeiliSearchClient.getInstance();
+
+      const { status } = await client.health();
+      if (status !== 'available') {
+        throw new Error('Meilisearch not available');
+      }
+
+      /** Ensures indexes have proper filterable attributes configured */
+      const result = await ensureFilterableAttributes(client);
+      settingsUpdated = result.settingsUpdated;
+      _orphanedDocsFound = result.orphanedDocsFound;
+    } else {
+      // Generic provider path (OpenSearch, etc.)
+      const provider = getSearchProvider ? getSearchProvider() : null;
+      if (!provider) {
+        throw new Error('Search provider not configured');
+      }
+
+      const healthy = await provider.healthCheck();
+      if (!healthy) {
+        throw new Error(`${providerType} not available`);
+      }
+
+      const result = await ensureFilterableAttributesGeneric(provider);
+      settingsUpdated = result.settingsUpdated;
+      _orphanedDocsFound = result.orphanedDocsFound;
     }
-
-    /** Ensures indexes have proper filterable attributes configured */
-    const { settingsUpdated, orphanedDocsFound: _orphanedDocsFound } =
-      await ensureFilterableAttributes(client);
 
     let messagesSync = false;
     let convosSync = false;
@@ -239,7 +381,7 @@ async function performSync(flowManager, flowId, flowType) {
 
       if (settingsUpdated || unindexedMessages > syncThreshold) {
         logger.info(`[indexSync] Starting message sync (${unindexedMessages} unindexed)`);
-        await Message.syncWithMeili();
+        await (Message.syncWithSearch || Message.syncWithMeili).call(Message);
         messagesSync = true;
       } else if (unindexedMessages > 0) {
         logger.info(
@@ -265,7 +407,7 @@ async function performSync(flowManager, flowId, flowType) {
       const unindexedConvos = convoCount - convosIndexed;
       if (settingsUpdated || unindexedConvos > syncThreshold) {
         logger.info(`[indexSync] Starting convos sync (${unindexedConvos} unindexed)`);
-        await Conversation.syncWithMeili();
+        await (Conversation.syncWithSearch || Conversation.syncWithMeili).call(Conversation);
         convosSync = true;
       } else if (unindexedConvos > 0) {
         logger.info(
@@ -315,8 +457,9 @@ async function indexSync() {
   });
 
   // Use a unique flow ID for the sync operation
-  const flowId = 'meili-index-sync';
-  const flowType = 'MEILI_SYNC';
+  const providerType = detectSearchProvider ? detectSearchProvider() : 'meilisearch';
+  const flowId = `search-index-sync-${providerType}`;
+  const flowType = 'SEARCH_SYNC';
 
   try {
     // This will only execute the handler if no other instance is running the sync
@@ -341,14 +484,17 @@ async function indexSync() {
       logger.debug('[indexSync] Creating indices...');
       currentTimeout = setTimeout(async () => {
         try {
-          await Message.syncWithMeili();
-          await Conversation.syncWithMeili();
+          await (Message.syncWithSearch || Message.syncWithMeili).call(Message);
+          await (Conversation.syncWithSearch || Conversation.syncWithMeili).call(Conversation);
         } catch (err) {
           logger.error('[indexSync] Trouble creating indices, try restarting the server.', err);
         }
       }, 750);
-    } else if (err.message.includes('Meilisearch not configured')) {
-      logger.info('[indexSync] Meilisearch not configured, search will be disabled.');
+    } else if (
+      err.message.includes('Meilisearch not configured') ||
+      err.message.includes('Search provider not configured')
+    ) {
+      logger.info('[indexSync] Search provider not configured, search will be disabled.');
     } else {
       logger.error('[indexSync] error', err);
     }
