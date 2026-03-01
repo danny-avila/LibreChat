@@ -6,10 +6,10 @@
  * The docs written to insertMany must carry the same metadata as the args that
  * would have been passed to spendTokens/spendStructuredTokens.
  */
-import { recordCollectedUsage } from './usage';
 import type { UsageMetadata } from '../stream/interfaces/IJobStore';
 import type { RecordUsageDeps, RecordUsageParams } from './usage';
 import type { BulkWriteDeps, PricingFns } from './transactions';
+import { recordCollectedUsage } from './usage';
 
 describe('recordCollectedUsage — bulk path parity', () => {
   let mockSpendTokens: jest.Mock;

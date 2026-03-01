@@ -1,7 +1,7 @@
 const { logger, CANCEL_RATE } = require('@librechat/data-schemas');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
-const { updateBalance } = require('~/models');
 const { Transaction } = require('~/db/models');
+const { updateBalance } = require('~/models');
 
 /** Method to calculate and set the tokenValue for a transaction */
 function calculateTokenValue(txn) {

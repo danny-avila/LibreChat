@@ -1,7 +1,7 @@
-import { recordCollectedUsage } from './usage';
 import type { UsageMetadata } from '../stream/interfaces/IJobStore';
 import type { RecordUsageDeps, RecordUsageParams } from './usage';
 import type { BulkWriteDeps, PricingFns } from './transactions';
+import { recordCollectedUsage } from './usage';
 
 describe('recordCollectedUsage', () => {
   let mockSpendTokens: jest.Mock;
