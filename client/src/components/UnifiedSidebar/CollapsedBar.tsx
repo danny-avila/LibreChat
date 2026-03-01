@@ -1,65 +1,43 @@
-import { memo, lazy, Suspense, useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { QueryKeys } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
-import { TooltipAnchor, NewChatIcon, Button, Avatar, Skeleton } from '@librechat/client';
+import { lazy, Suspense } from 'react';
+import { Sidebar, TooltipAnchor, Button, Skeleton } from '@librechat/client';
 import type { NavLink } from '~/common';
-import { useLocalize, useNewConvo, useAuthContext } from '~/hooks';
-import { clearMessagesCache } from '~/utils';
-import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
 
 function CollapsedBar({
   links,
+  onExpand,
   onExpandToSection,
 }: {
   links: NavLink[];
+  onExpand: () => void;
   onExpandToSection: (sectionId: string) => void;
 }) {
   const localize = useLocalize();
-  const queryClient = useQueryClient();
-  const { newConversation: newConvo } = useNewConvo();
-  const { conversation } = store.useCreateConversationAtom(0);
 
   return (
-    <aside
-      className="flex h-full w-[50px] flex-shrink-0 flex-col items-center border-r border-border-light bg-surface-primary-alt py-2"
-      aria-label={localize('com_nav_control_panel')}
-    >
-      <div className="flex flex-col items-center gap-1">
+    <div className="flex h-full w-full flex-col border-r border-border-light bg-surface-primary-alt">
+      <div className="px-1 py-1">
         <TooltipAnchor
           side="right"
-          description={localize('com_ui_new_chat')}
+          description={localize('com_nav_open_sidebar')}
           render={
             <Button
-              asChild
               size="icon"
               variant="ghost"
-              aria-label={localize('com_ui_new_chat')}
-              className="h-10 w-10 rounded-xl"
+              aria-label={localize('com_nav_open_sidebar')}
+              aria-expanded={false}
+              className="h-9 w-9 rounded-lg"
+              onClick={onExpand}
             >
-              <Link
-                to="/c/new"
-                state={{ focusChat: true }}
-                onClick={(e) => {
-                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
-                    return;
-                  }
-                  e.preventDefault();
-                  clearMessagesCache(queryClient, conversation?.conversationId);
-                  queryClient.invalidateQueries([QueryKeys.messages]);
-                  newConvo();
-                }}
-              >
-                <NewChatIcon className="h-5 w-5 text-text-primary" />
-              </Link>
+              <Sidebar aria-hidden="true" className="h-5 w-5 text-text-primary" />
             </Button>
           }
         />
       </div>
 
-      <div className="mt-2 flex flex-1 flex-col items-center gap-1 overflow-y-auto">
+      <div className="flex flex-col gap-0.5 overflow-y-auto px-1">
         {links.map((link, index) => (
           <TooltipAnchor
             key={`collapsed-${index}`}
@@ -70,7 +48,7 @@ function CollapsedBar({
                 size="icon"
                 variant="ghost"
                 aria-label={localize(link.title)}
-                className="h-10 w-10 rounded-xl"
+                className="h-9 w-9 rounded-lg"
                 onClick={(e) => {
                   if (link.onClick) {
                     link.onClick(e);
@@ -86,21 +64,13 @@ function CollapsedBar({
         ))}
       </div>
 
-      <div className="mt-auto flex w-full flex-col items-center px-1 pt-2">
-        <Suspense fallback={<Skeleton className="h-8 w-8 rounded-full" />}>
-          <CollapsedAccountSettings />
+      <div className="mt-auto px-1 py-1">
+        <Suspense fallback={<Skeleton className="h-9 w-9 rounded-lg" />}>
+          <AccountSettings collapsed />
         </Suspense>
       </div>
-    </aside>
+    </div>
   );
 }
 
-const CollapsedAccountSettings = memo(() => (
-  <div className="flex w-full justify-center [&_.mt-text-sm]:mt-0 [&_.mt-text-sm]:w-auto [&_.mt-text-sm]:gap-0 [&_.mt-text-sm]:p-1.5 [&_.mt-text-sm_div:not(:first-child)]:hidden">
-    <AccountSettings />
-  </div>
-));
-
-CollapsedAccountSettings.displayName = 'CollapsedAccountSettings';
-
-export default memo(CollapsedBar);
+export default CollapsedBar;

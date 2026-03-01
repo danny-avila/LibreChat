@@ -4,6 +4,7 @@ import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
+import { useMediaQuery } from '@librechat/client';
 import {
   useLocalize,
   useHasAccess,
@@ -13,12 +14,14 @@ import {
 } from '~/hooks';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
+import SearchBar from '~/components/Nav/SearchBar';
 import store from '~/store';
 
 const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'));
 
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { isAuthenticated } = useAuthContext();
   useTitleGeneration(isAuthenticated);
 
@@ -104,13 +107,14 @@ const ConversationsSection = memo(() => {
       role="region"
       aria-label={localize('com_ui_chat_history')}
     >
-      {hasAccessToBookmarks && (
-        <div className="px-1 pb-1">
+      <div className="flex items-center gap-0.5 px-1 pb-0.5">
+        {hasAccessToBookmarks && (
           <Suspense fallback={null}>
             <BookmarkNav tags={tags} setTags={setTags} />
           </Suspense>
-        </div>
-      )}
+        )}
+        <SearchBar isSmallScreen={isSmallScreen} />
+      </div>
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
         <Conversations
           conversations={conversations}
