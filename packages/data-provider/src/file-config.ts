@@ -61,6 +61,10 @@ export const fullMimeTypesList = [
   'application/xml',
   'application/zip',
   'application/x-parquet',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/vnd.oasis.opendocument.graphics',
   'image/svg',
   'image/svg+xml',
   // Video formats
@@ -139,6 +143,39 @@ export const retrievalMimeTypesList = [
 
 export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i;
 
+/** @see https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_DocumentBlock.html */
+export type BedrockDocumentFormat =
+  | 'pdf'
+  | 'csv'
+  | 'doc'
+  | 'docx'
+  | 'xls'
+  | 'xlsx'
+  | 'html'
+  | 'txt'
+  | 'md';
+
+/** Maps MIME types to Bedrock Converse API document format values */
+export const bedrockDocumentFormats: Record<string, BedrockDocumentFormat> = {
+  'application/pdf': 'pdf',
+  'text/csv': 'csv',
+  'application/csv': 'csv',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'text/html': 'html',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+};
+
+export const isBedrockDocumentType = (mimeType?: string): boolean =>
+  mimeType != null && mimeType in bedrockDocumentFormats;
+
+/** File extensions accepted by Bedrock document uploads (for input accept attributes) */
+export const bedrockDocumentExtensions =
+  '.pdf,.csv,.doc,.docx,.xls,.xlsx,.html,.htm,.txt,.md,application/pdf,text/csv,application/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/html,text/plain,text/markdown';
+
 export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 
@@ -146,7 +183,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
@@ -157,10 +194,20 @@ export const videoMimeTypes = /^video\/(mp4|avi|mov|wmv|flv|webm|mkv|m4v|3gp|ogv
 
 export const defaultOCRMimeTypes = [
   imageMimeTypes,
+  excelMimeTypes,
   /^application\/pdf$/,
-  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)$/,
-  /^application\/vnd\.ms-(word|powerpoint|excel)$/,
+  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)$/,
+  /^application\/vnd\.ms-(word|powerpoint)$/,
   /^application\/epub\+zip$/,
+  /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
+];
+
+/** MIME types handled by the built-in document parser (pdf, docx, excel variants, ods) */
+export const documentParserMimeTypes = [
+  excelMimeTypes,
+  /^application\/pdf$/,
+  /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/,
+  /^application\/vnd\.oasis\.opendocument\.spreadsheet$/,
 ];
 
 export const defaultTextMimeTypes = [/^[\w.-]+\/[\w.-]+$/];
@@ -298,6 +345,10 @@ export const codeTypeMapping: { [key: string]: string } = {
   tcl: 'text/plain', // .tcl - Tcl source
   awk: 'text/plain', // .awk - AWK script
   sed: 'text/plain', // .sed - Sed script
+  odt: 'application/vnd.oasis.opendocument.text', // .odt - OpenDocument Text
+  ods: 'application/vnd.oasis.opendocument.spreadsheet', // .ods - OpenDocument Spreadsheet
+  odp: 'application/vnd.oasis.opendocument.presentation', // .odp - OpenDocument Presentation
+  odg: 'application/vnd.oasis.opendocument.graphics', // .odg - OpenDocument Graphics
 };
 
 /** Maps image extensions to MIME types for formats browsers may not recognize */

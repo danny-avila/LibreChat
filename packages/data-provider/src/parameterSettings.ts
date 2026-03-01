@@ -1,6 +1,7 @@
 import {
   Verbosity,
   ImageDetail,
+  ThinkingLevel,
   EModelEndpoint,
   openAISettings,
   googleSettings,
@@ -530,6 +531,30 @@ const bedrock: Record<string, SettingDefinition> = {
     showDefault: false,
     columnSpan: 2,
   },
+  reasoning_effort: {
+    key: 'reasoning_effort',
+    label: 'com_endpoint_reasoning_effort',
+    labelCode: true,
+    description: 'com_endpoint_bedrock_reasoning_effort',
+    descriptionCode: true,
+    type: 'enum',
+    default: ReasoningEffort.unset,
+    component: 'slider',
+    options: [
+      ReasoningEffort.unset,
+      ReasoningEffort.low,
+      ReasoningEffort.medium,
+      ReasoningEffort.high,
+    ],
+    enumMappings: {
+      [ReasoningEffort.unset]: 'com_ui_off',
+      [ReasoningEffort.low]: 'com_ui_low',
+      [ReasoningEffort.medium]: 'com_ui_medium',
+      [ReasoningEffort.high]: 'com_ui_high',
+    },
+    optionType: 'model',
+    columnSpan: 4,
+  },
 };
 
 const mistral: Record<string, SettingDefinition> = {
@@ -648,6 +673,32 @@ const google: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     columnSpan: 2,
   },
+  thinkingLevel: {
+    key: 'thinkingLevel',
+    label: 'com_endpoint_thinking_level',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking_level',
+    descriptionCode: true,
+    type: 'enum',
+    default: ThinkingLevel.unset,
+    component: 'slider',
+    options: [
+      ThinkingLevel.unset,
+      ThinkingLevel.minimal,
+      ThinkingLevel.low,
+      ThinkingLevel.medium,
+      ThinkingLevel.high,
+    ],
+    enumMappings: {
+      [ThinkingLevel.unset]: 'com_ui_auto',
+      [ThinkingLevel.minimal]: 'com_ui_minimal',
+      [ThinkingLevel.low]: 'com_ui_low',
+      [ThinkingLevel.medium]: 'com_ui_medium',
+      [ThinkingLevel.high]: 'com_ui_high',
+    },
+    optionType: 'conversation',
+    columnSpan: 4,
+  },
   web_search: {
     key: 'web_search',
     label: 'com_endpoint_use_search_grounding',
@@ -674,6 +725,7 @@ const googleConfig: SettingsConfiguration = [
   librechat.resendFiles,
   google.thinking,
   google.thinkingBudget,
+  google.thinkingLevel,
   google.web_search,
   librechat.fileTokenLimit,
 ];
@@ -693,6 +745,7 @@ const googleCol2: SettingsConfiguration = [
   librechat.resendFiles,
   google.thinking,
   google.thinkingBudget,
+  google.thinkingLevel,
   google.web_search,
   librechat.fileTokenLimit,
 ];
@@ -905,6 +958,34 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   librechat.fileTokenLimit,
 ];
 
+const bedrockZAI: SettingsConfiguration = [
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  meta.temperature,
+  meta.topP,
+  librechat.resendFiles,
+  bedrock.region,
+  bedrock.reasoning_effort,
+  librechat.fileTokenLimit,
+];
+
+const bedrockZAICol1: SettingsConfiguration = [
+  baseDefinitions.model as SettingDefinition,
+  librechat.modelLabel,
+  librechat.promptPrefix,
+];
+
+const bedrockZAICol2: SettingsConfiguration = [
+  librechat.maxContextTokens,
+  meta.temperature,
+  meta.topP,
+  librechat.resendFiles,
+  bedrock.region,
+  bedrock.reasoning_effort,
+  librechat.fileTokenLimit,
+];
+
 const bedrockMoonshot: SettingsConfiguration = [
   librechat.modelLabel,
   bedrock.system,
@@ -917,6 +998,7 @@ const bedrockMoonshot: SettingsConfiguration = [
   baseDefinitions.stop,
   librechat.resendFiles,
   bedrock.region,
+  bedrock.reasoning_effort,
   librechat.fileTokenLimit,
 ];
 
@@ -936,6 +1018,7 @@ const bedrockMoonshotCol2: SettingsConfiguration = [
   bedrock.topP,
   librechat.resendFiles,
   bedrock.region,
+  bedrock.reasoning_effort,
   librechat.fileTokenLimit,
 ];
 
@@ -952,6 +1035,9 @@ export const paramSettings: Record<string, SettingsConfiguration | undefined> = 
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.DeepSeek}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Moonshot}`]: bedrockMoonshot,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.MoonshotAI}`]: bedrockMoonshot,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.OpenAI}`]: bedrockGeneral,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.ZAI}`]: bedrockZAI,
   [EModelEndpoint.google]: googleConfig,
 };
 
@@ -999,6 +1085,15 @@ export const presetSettings: Record<
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Moonshot}`]: {
     col1: bedrockMoonshotCol1,
     col2: bedrockMoonshotCol2,
+  },
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.MoonshotAI}`]: {
+    col1: bedrockMoonshotCol1,
+    col2: bedrockMoonshotCol2,
+  },
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.OpenAI}`]: bedrockGeneralColumns,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.ZAI}`]: {
+    col1: bedrockZAICol1,
+    col2: bedrockZAICol2,
   },
   [EModelEndpoint.google]: {
     col1: googleCol1,

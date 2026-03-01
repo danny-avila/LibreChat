@@ -1,5 +1,6 @@
 export * from './avatars';
 export * from './chain';
+export * from './client';
 export * from './context';
 export * from './edges';
 export * from './handlers';
@@ -8,6 +9,7 @@ export * from './legacy';
 export * from './memory';
 export * from './migration';
 export * from './openai';
+export * from './transactions';
 export * from './usage';
 export * from './resources';
 export * from './responses';

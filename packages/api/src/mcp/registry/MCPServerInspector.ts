@@ -18,6 +18,7 @@ export class MCPServerInspector {
     private readonly serverName: string,
     private readonly config: t.ParsedServerConfig,
     private connection: MCPConnection | undefined,
+    private readonly useSSRFProtection: boolean = false,
   ) {}
 
   /**
@@ -42,8 +43,9 @@ export class MCPServerInspector {
       throw new MCPDomainNotAllowedError(domain ?? 'unknown');
     }
 
+    const useSSRFProtection = !Array.isArray(allowedDomains) || allowedDomains.length === 0;
     const start = Date.now();
-    const inspector = new MCPServerInspector(serverName, rawConfig, connection);
+    const inspector = new MCPServerInspector(serverName, rawConfig, connection, useSSRFProtection);
     await inspector.inspectServer();
     inspector.config.initDuration = Date.now() - start;
     return inspector.config;
@@ -59,6 +61,7 @@ export class MCPServerInspector {
         this.connection = await MCPConnectionFactory.create({
           serverName: this.serverName,
           serverConfig: this.config,
+          useSSRFProtection: this.useSSRFProtection,
         });
       }
 

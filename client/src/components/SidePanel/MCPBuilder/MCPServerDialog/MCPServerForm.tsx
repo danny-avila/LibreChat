@@ -1,10 +1,10 @@
 import { FormProvider } from 'react-hook-form';
+import type { useMCPServerForm } from './hooks/useMCPServerForm';
 import ConnectionSection from './sections/ConnectionSection';
 import BasicInfoSection from './sections/BasicInfoSection';
 import TransportSection from './sections/TransportSection';
-import AuthSection from './sections/AuthSection';
 import TrustSection from './sections/TrustSection';
-import type { useMCPServerForm } from './hooks/useMCPServerForm';
+import AuthSection from './sections/AuthSection';
 
 interface MCPServerFormProps {
   formHook: ReturnType<typeof useMCPServerForm>;

@@ -1,6 +1,7 @@
-import { recordCollectedUsage } from './usage';
-import type { RecordUsageDeps, RecordUsageParams } from './usage';
 import type { UsageMetadata } from '../stream/interfaces/IJobStore';
+import type { RecordUsageDeps, RecordUsageParams } from './usage';
+import type { BulkWriteDeps, PricingFns } from './transactions';
+import { recordCollectedUsage } from './usage';
 
 describe('recordCollectedUsage', () => {
   let mockSpendTokens: jest.Mock;
@@ -379,6 +380,7 @@ describe('recordCollectedUsage', () => {
 
       await recordCollectedUsage(deps, {
         ...baseParams,
+        messageId: 'msg-123',
         endpointTokenConfig,
         collectedUsage,
       });
@@ -389,6 +391,7 @@ describe('recordCollectedUsage', () => {
           conversationId: 'convo-123',
           model: 'gpt-4',
           context: 'message',
+          messageId: 'msg-123',
           balance: { enabled: true },
           transactions: { enabled: true },
           endpointTokenConfig,
@@ -429,6 +432,290 @@ describe('recordCollectedUsage', () => {
         expect.objectContaining({ context: 'title' }),
         expect.any(Object),
       );
+    });
+  });
+
+  describe('messageId propagation', () => {
+    it('should pass messageId to spendTokens', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 10, output_tokens: 5, model: 'gpt-4' },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        messageId: 'msg-1',
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'msg-1' }),
+        expect.any(Object),
+      );
+    });
+
+    it('should pass messageId to spendStructuredTokens for cache paths', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'claude-3',
+          cache_creation_input_tokens: 25,
+          cache_read_input_tokens: 15,
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        messageId: 'msg-cache-1',
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'msg-cache-1' }),
+        expect.any(Object),
+      );
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+    });
+
+    it('should pass undefined messageId when not provided', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 10, output_tokens: 5, model: 'gpt-4' },
+      ];
+
+      await recordCollectedUsage(deps, {
+        user: 'user-123',
+        conversationId: 'convo-123',
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: undefined }),
+        expect.any(Object),
+      );
+    });
+
+    it('should propagate messageId across multiple usage entries', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        { input_tokens: 200, output_tokens: 60, model: 'gpt-4' },
+        {
+          input_tokens: 150,
+          output_tokens: 30,
+          model: 'gpt-4',
+          input_token_details: { cache_creation: 10, cache_read: 5 },
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        messageId: 'msg-multi',
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(1);
+
+      for (const call of mockSpendTokens.mock.calls) {
+        expect(call[0]).toEqual(expect.objectContaining({ messageId: 'msg-multi' }));
+      }
+      expect(mockSpendStructuredTokens.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ messageId: 'msg-multi' }),
+      );
+    });
+  });
+
+  describe('bulk write path', () => {
+    let mockInsertMany: jest.Mock;
+    let mockUpdateBalance: jest.Mock;
+    let mockPricing: PricingFns;
+    let mockBulkWriteOps: BulkWriteDeps;
+    let bulkDeps: RecordUsageDeps;
+
+    beforeEach(() => {
+      mockInsertMany = jest.fn().mockResolvedValue(undefined);
+      mockUpdateBalance = jest.fn().mockResolvedValue({});
+      mockPricing = {
+        getMultiplier: jest.fn().mockReturnValue(1),
+        getCacheMultiplier: jest.fn().mockReturnValue(null),
+      };
+      mockBulkWriteOps = {
+        insertMany: mockInsertMany,
+        updateBalance: mockUpdateBalance,
+      };
+      bulkDeps = {
+        spendTokens: mockSpendTokens,
+        spendStructuredTokens: mockSpendStructuredTokens,
+        pricing: mockPricing,
+        bulkWriteOps: mockBulkWriteOps,
+      };
+    });
+
+    it('should use bulk path when pricing and bulkWriteOps are provided', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+      ];
+
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
+      expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
+    });
+
+    it('should batch all entries into a single insertMany call', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        { input_tokens: 200, output_tokens: 60, model: 'gpt-4' },
+        { input_tokens: 300, output_tokens: 70, model: 'gpt-4' },
+      ];
+
+      await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      const insertedDocs = mockInsertMany.mock.calls[0][0];
+      expect(insertedDocs.length).toBe(6); // 2 per entry (prompt + completion)
+    });
+
+    it('should call updateBalance once when balance is enabled', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        { input_tokens: 200, output_tokens: 60, model: 'gpt-4' },
+      ];
+
+      await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        balance: { enabled: true },
+        collectedUsage,
+      });
+
+      expect(mockUpdateBalance).toHaveBeenCalledTimes(1);
+      expect(mockUpdateBalance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: 'user-123',
+          incrementValue: expect.any(Number),
+        }),
+      );
+    });
+
+    it('should not call updateBalance when balance is disabled', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+      ];
+
+      await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        balance: { enabled: false },
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      expect(mockUpdateBalance).not.toHaveBeenCalled();
+    });
+
+    it('should handle cache tokens via bulk path', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'gpt-4',
+          input_token_details: { cache_creation: 20, cache_read: 10 },
+        },
+      ];
+
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
+      expect(result).toBeDefined();
+    });
+
+    it('should handle mixed cache and non-cache entries in bulk', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        {
+          input_tokens: 150,
+          output_tokens: 30,
+          model: 'gpt-4',
+          input_token_details: { cache_creation: 10, cache_read: 5 },
+        },
+      ];
+
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
+      expect(result?.output_tokens).toBe(80);
+    });
+
+    it('should fall back to legacy path when pricing is missing', async () => {
+      const legacyDeps: RecordUsageDeps = {
+        spendTokens: mockSpendTokens,
+        spendStructuredTokens: mockSpendStructuredTokens,
+        bulkWriteOps: mockBulkWriteOps,
+        // no pricing
+      };
+
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+      ];
+
+      await recordCollectedUsage(legacyDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledTimes(1);
+      expect(mockInsertMany).not.toHaveBeenCalled();
+    });
+
+    it('should fall back to legacy path when bulkWriteOps is missing', async () => {
+      const legacyDeps: RecordUsageDeps = {
+        spendTokens: mockSpendTokens,
+        spendStructuredTokens: mockSpendStructuredTokens,
+        pricing: mockPricing,
+        // no bulkWriteOps
+      };
+
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+      ];
+
+      await recordCollectedUsage(legacyDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledTimes(1);
+      expect(mockInsertMany).not.toHaveBeenCalled();
+    });
+
+    it('should handle errors in bulk write gracefully', async () => {
+      mockInsertMany.mockRejectedValue(new Error('DB error'));
+
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+      ];
+
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
     });
   });
 });

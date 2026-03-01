@@ -29,7 +29,9 @@ if (cacheConfig.USE_REDIS) {
         );
         return null;
       }
-      const delay = Math.min(times * 50, cacheConfig.REDIS_RETRY_MAX_DELAY);
+      const base = Math.min(Math.pow(2, times) * 50, cacheConfig.REDIS_RETRY_MAX_DELAY);
+      const jitter = Math.floor(Math.random() * Math.min(base, 1000));
+      const delay = Math.min(base + jitter, cacheConfig.REDIS_RETRY_MAX_DELAY);
       logger.info(`ioredis reconnecting... attempt ${times}, delay ${delay}ms`);
       return delay;
     },
@@ -71,7 +73,9 @@ if (cacheConfig.USE_REDIS) {
                 );
                 return null;
               }
-              const delay = Math.min(times * 100, cacheConfig.REDIS_RETRY_MAX_DELAY);
+              const base = Math.min(Math.pow(2, times) * 100, cacheConfig.REDIS_RETRY_MAX_DELAY);
+              const jitter = Math.floor(Math.random() * Math.min(base, 1000));
+              const delay = Math.min(base + jitter, cacheConfig.REDIS_RETRY_MAX_DELAY);
               logger.info(`ioredis cluster reconnecting... attempt ${times}, delay ${delay}ms`);
               return delay;
             },
@@ -149,7 +153,9 @@ if (cacheConfig.USE_REDIS) {
           );
           return new Error('Max reconnection attempts reached');
         }
-        const delay = Math.min(retries * 100, cacheConfig.REDIS_RETRY_MAX_DELAY);
+        const base = Math.min(Math.pow(2, retries) * 100, cacheConfig.REDIS_RETRY_MAX_DELAY);
+        const jitter = Math.floor(Math.random() * Math.min(base, 1000));
+        const delay = Math.min(base + jitter, cacheConfig.REDIS_RETRY_MAX_DELAY);
         logger.info(`@keyv/redis reconnecting... attempt ${retries}, delay ${delay}ms`);
         return delay;
       },

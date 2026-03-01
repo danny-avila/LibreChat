@@ -8,15 +8,18 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vitejs.dev/config/
-const backendPort = process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT) || 3080;
-const backendURL = process.env.HOST ? `http://${process.env.HOST}:${backendPort}` : `http://localhost:${backendPort}`;
+const backendPort = (process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT)) || 3080;
+const backendURL = process.env.HOST
+  ? `http://${process.env.HOST}:${backendPort}`
+  : `http://localhost:${backendPort}`;
 
 export default defineConfig(({ command }) => ({
   base: '',
   server: {
-    allowedHosts: process.env.VITE_ALLOWED_HOSTS && process.env.VITE_ALLOWED_HOSTS.split(',') || [],
+    allowedHosts:
+      (process.env.VITE_ALLOWED_HOSTS && process.env.VITE_ALLOWED_HOSTS.split(',')) || [],
     host: process.env.HOST || 'localhost',
-    port: process.env.PORT && Number(process.env.PORT) || 3090,
+    port: (process.env.PORT && Number(process.env.PORT)) || 3090,
     strictPort: false,
     proxy: {
       '/api': {
@@ -143,7 +146,12 @@ export default defineConfig(({ command }) => ({
             if (normalizedId.includes('@dicebear')) {
               return 'avatars';
             }
-            if (normalizedId.includes('react-dnd') || normalizedId.includes('react-flip-toolkit')) {
+            if (
+              normalizedId.includes('react-dnd') ||
+              normalizedId.includes('dnd-core') ||
+              normalizedId.includes('react-flip-toolkit') ||
+              normalizedId.includes('flip-toolkit')
+            ) {
               return 'react-interactions';
             }
             if (normalizedId.includes('react-hook-form')) {
@@ -219,7 +227,10 @@ export default defineConfig(({ command }) => ({
             if (normalizedId.includes('framer-motion')) {
               return 'framer-motion';
             }
-            if (normalizedId.includes('node_modules/highlight.js')) {
+            if (
+              normalizedId.includes('node_modules/highlight.js') ||
+              normalizedId.includes('node_modules/lowlight')
+            ) {
               return 'markdown_highlight';
             }
             if (normalizedId.includes('katex') || normalizedId.includes('node_modules/katex')) {

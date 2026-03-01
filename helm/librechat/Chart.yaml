@@ -23,7 +23,7 @@ version: 1.10.0
 # It is recommended to use it with quotes.
 
 # renovate: image=ghcr.io/danny-avila/librechat
-appVersion: "v0.8.2"
+appVersion: "v0.8.3-rc1"
 
 home: https://www.librechat.ai
 
@@ -40,7 +40,11 @@ dependencies:
     version: "3.4.0"
     condition: opensearch.enabled
     repository: "https://opensearch-project.github.io/helm-charts"
+  - name: redis
+    version: "24.1.3"
+    condition: redis.enabled
+    repository: "https://charts.bitnami.com/bitnami"
   - name: librechat-rag-api
-    version: "0.5.2"
+    version: "0.5.3"
     condition: librechat-rag-api.enabled
     repository: file://../librechat-rag-api

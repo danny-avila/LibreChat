@@ -204,13 +204,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   );
 
   logger.debug(
-    `[initializeClient] Tool definitions for primary agent: ${primaryConfig.toolDefinitions?.length ?? 0}`,
-  );
-
-  /** Store primary agent's tool context for ON_TOOL_EXECUTE callback */
-  logger.debug(`[initializeClient] Storing tool context for agentId: ${primaryConfig.id}`);
-  logger.debug(
-    `[initializeClient] toolRegistry size: ${primaryConfig.toolRegistry?.size ?? 'undefined'}`,
+    `[initializeClient] Storing tool context for ${primaryConfig.id}: ${primaryConfig.toolDefinitions?.length ?? 0} tools, registry size: ${primaryConfig.toolRegistry?.size ?? '0'}`,
   );
   agentToolContexts.set(primaryConfig.id, {
     agent: primaryAgent,
@@ -312,6 +306,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       }
     } catch (err) {
       logger.error(`[initializeClient] Error processing agent ${agentId}:`, err);
+      skippedAgentIds.add(agentId);
     }
   }
 
@@ -321,7 +316,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       if (checkAgentInit(agentId)) {
         continue;
       }
-      await processAgent(agentId);
+      try {
+        await processAgent(agentId);
+      } catch (err) {
+        logger.error(`[initializeClient] Error processing chain agent ${agentId}:`, err);
+        skippedAgentIds.add(agentId);
+      }
     }
     const chain = await createSequentialChainEdges([primaryConfig.id].concat(agent_ids), '{convo}');
     collectEdges(chain);

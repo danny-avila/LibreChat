@@ -4,6 +4,8 @@ import * as s from './schemas';
 const DEFAULT_ENABLED_MAX_TOKENS = 8192;
 const DEFAULT_THINKING_BUDGET = 2000;
 
+const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReasoningConfig));
+
 type ThinkingConfig = { type: 'enabled'; budget_tokens: number } | { type: 'adaptive' };
 
 type AnthropicReasoning = {
@@ -35,27 +37,34 @@ function parseOpusVersion(model: string): { major: number; minor: number } | nul
   return null;
 }
 
-/** Extracts sonnet major version from both naming formats */
-function parseSonnetVersion(model: string): number | null {
-  const nameFirst = model.match(/claude-sonnet[-.]?(\d+)/);
+/** Extracts sonnet major/minor version from both naming formats.
+ *  Uses single-digit minor capture to avoid matching date suffixes (e.g., -20250514). */
+function parseSonnetVersion(model: string): { major: number; minor: number } | null {
+  const nameFirst = model.match(/claude-sonnet[-.]?(\d+)(?:[-.](\d)(?!\d))?/);
   if (nameFirst) {
-    return parseInt(nameFirst[1], 10);
+    return {
+      major: parseInt(nameFirst[1], 10),
+      minor: nameFirst[2] != null ? parseInt(nameFirst[2], 10) : 0,
+    };
   }
-  const numFirst = model.match(/claude-(\d+)(?:[-.]?\d+)?-sonnet/);
+  const numFirst = model.match(/claude-(\d+)(?:[-.](\d)(?!\d))?-sonnet/);
   if (numFirst) {
-    return parseInt(numFirst[1], 10);
+    return {
+      major: parseInt(numFirst[1], 10),
+      minor: numFirst[2] != null ? parseInt(numFirst[2], 10) : 0,
+    };
   }
   return null;
 }
 
-/** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 5+) */
+/** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 4.6+) */
 export function supportsAdaptiveThinking(model: string): boolean {
   const opus = parseOpusVersion(model);
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 6))) {
     return true;
   }
   const sonnet = parseSonnetVersion(model);
-  if (sonnet != null && sonnet >= 5) {
+  if (sonnet != null && (sonnet.major > 4 || (sonnet.major === 4 && sonnet.minor >= 6))) {
     return true;
   }
   return false;
@@ -64,7 +73,7 @@ export function supportsAdaptiveThinking(model: string): boolean {
 /** Checks if a model qualifies for the context-1m beta header (Sonnet 4+, Opus 4.6+, Opus 5+) */
 export function supportsContext1m(model: string): boolean {
   const sonnet = parseSonnetVersion(model);
-  if (sonnet != null && sonnet >= 4) {
+  if (sonnet != null && sonnet.major >= 4) {
     return true;
   }
   const opus = parseOpusVersion(model);
@@ -127,6 +136,7 @@ export const bedrockInputSchema = s.tConversationSchema
     thinking: true,
     thinkingBudget: true,
     effort: true,
+    reasoning_effort: true,
     promptCache: true,
     /* Catch-all fields */
     topK: true,
@@ -171,6 +181,7 @@ export const bedrockInputParser = s.tConversationSchema
     thinking: true,
     thinkingBudget: true,
     effort: true,
+    reasoning_effort: true,
     promptCache: true,
     /* Catch-all fields */
     topK: true,
@@ -249,6 +260,9 @@ export const bedrockInputParser = s.tConversationSchema
         delete additionalFields.effort;
       }
 
+      /** Anthropic uses 'effort' via output_config, not reasoning_config */
+      delete additionalFields.reasoning_effort;
+
       if ((typedData.model as string).includes('anthropic.')) {
         const betaHeaders = getBedrockAnthropicBetaHeaders(typedData.model as string);
         if (betaHeaders.length > 0) {
@@ -261,23 +275,37 @@ export const bedrockInputParser = s.tConversationSchema
       delete additionalFields.effort;
       delete additionalFields.output_config;
       delete additionalFields.anthropic_beta;
+
+      const reasoningEffort = additionalFields.reasoning_effort;
+      delete additionalFields.reasoning_effort;
+      if (
+        typeof reasoningEffort === 'string' &&
+        bedrockReasoningConfigValues.has(reasoningEffort)
+      ) {
+        additionalFields.reasoning_config = reasoningEffort;
+      }
     }
 
     const isAnthropicModel =
       typeof typedData.model === 'string' && typedData.model.includes('anthropic.');
 
-    /** Strip stale anthropic_beta from previously-persisted additionalModelRequestFields */
+    /** Strip stale fields from previously-persisted additionalModelRequestFields */
     if (
-      !isAnthropicModel &&
       typeof typedData.additionalModelRequestFields === 'object' &&
       typedData.additionalModelRequestFields != null
     ) {
       const amrf = typedData.additionalModelRequestFields as Record<string, unknown>;
-      delete amrf.anthropic_beta;
-      delete amrf.thinking;
-      delete amrf.thinkingBudget;
-      delete amrf.effort;
-      delete amrf.output_config;
+      if (!isAnthropicModel) {
+        delete amrf.anthropic_beta;
+        delete amrf.thinking;
+        delete amrf.thinkingBudget;
+        delete amrf.effort;
+        delete amrf.output_config;
+        delete amrf.reasoning_config;
+      } else {
+        delete amrf.reasoning_config;
+        delete amrf.reasoning_effort;
+      }
     }
 
     /** Default promptCache for claude and nova models, if not defined */

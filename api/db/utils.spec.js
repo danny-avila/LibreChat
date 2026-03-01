@@ -265,8 +265,8 @@ describe('batchResetMeiliFlags', () => {
 
       const result = await batchResetMeiliFlags(testCollection);
 
-      // Only one document has _meiliIndex: true
-      expect(result).toBe(1);
+      // both documents should be updated
+      expect(result).toBe(2);
     });
 
     it('should handle mixed document states correctly', async () => {
@@ -275,16 +275,18 @@ describe('batchResetMeiliFlags', () => {
         { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: false },
         { _id: new mongoose.Types.ObjectId(), expiredAt: new Date(), _meiliIndex: true },
         { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: null },
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null },
       ]);
 
       const result = await batchResetMeiliFlags(testCollection);
 
-      expect(result).toBe(2);
+      expect(result).toBe(4);
 
       const flaggedDocs = await testCollection
         .find({ expiredAt: null, _meiliIndex: false })
         .toArray();
-      expect(flaggedDocs).toHaveLength(3); // 2 were updated, 1 was already false
+      expect(flaggedDocs).toHaveLength(5); // 4 were updated, 1 was already false
     });
   });
 

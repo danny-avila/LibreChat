@@ -49,6 +49,7 @@ export enum Providers {
 export const documentSupportedProviders = new Set<string>([
   EModelEndpoint.anthropic,
   EModelEndpoint.openAI,
+  EModelEndpoint.bedrock,
   EModelEndpoint.custom,
   // handled in AttachFileMenu and DragDropModal since azureOpenAI only supports documents with Use Responses API set to true
   // EModelEndpoint.azureOpenAI,
@@ -101,7 +102,10 @@ export enum BedrockProviders {
   Meta = 'meta',
   MistralAI = 'mistral',
   Moonshot = 'moonshot',
+  MoonshotAI = 'moonshotai',
+  OpenAI = 'openai',
   StabilityAI = 'stability',
+  ZAI = 'zai',
 }
 
 export const getModelKey = (endpoint: EModelEndpoint | string, model: string) => {
@@ -181,6 +185,12 @@ export enum AnthropicEffort {
   max = 'max',
 }
 
+export enum BedrockReasoningConfig {
+  low = 'low',
+  medium = 'medium',
+  high = 'high',
+}
+
 export enum ReasoningSummary {
   none = '',
   auto = 'auto',
@@ -190,6 +200,14 @@ export enum ReasoningSummary {
 
 export enum Verbosity {
   none = '',
+  low = 'low',
+  medium = 'medium',
+  high = 'high',
+}
+
+export enum ThinkingLevel {
+  unset = '',
+  minimal = 'minimal',
   low = 'low',
   medium = 'medium',
   high = 'high',
@@ -212,6 +230,7 @@ export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
 export const eAnthropicEffortSchema = z.nativeEnum(AnthropicEffort);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
 export const eVerbositySchema = z.nativeEnum(Verbosity);
+export const eThinkingLevelSchema = z.nativeEnum(ThinkingLevel);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -355,6 +374,9 @@ export const googleSettings = {
      * the budget based on the complexity of the request.
      */
     default: -1 as const,
+  },
+  thinkingLevel: {
+    default: ThinkingLevel.unset as const,
   },
 };
 
@@ -540,6 +562,7 @@ export const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
   label: z.string(),
   description: z.string(),
+  optional: z.boolean().optional(),
 });
 
 export type TPluginAuthConfig = z.infer<typeof tPluginAuthConfigSchema>;
@@ -711,6 +734,7 @@ export const tConversationSchema = z.object({
   system: z.string().optional(),
   thinking: z.boolean().optional(),
   thinkingBudget: coerceNumber.optional(),
+  thinkingLevel: eThinkingLevelSchema.optional(),
   stream: z.boolean().optional(),
   /* artifacts */
   artifacts: z.string().optional(),
@@ -857,6 +881,7 @@ export const tQueryParamsSchema = tConversationSchema
     promptCache: true,
     thinking: true,
     thinkingBudget: true,
+    thinkingLevel: true,
     effort: true,
     /** @endpoints bedrock */
     region: true,
@@ -932,6 +957,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   topK: true,
   thinking: true,
   thinkingBudget: true,
+  thinkingLevel: true,
   web_search: true,
   fileTokenLimit: true,
   iconURL: true,
@@ -963,6 +989,7 @@ export const googleGenConfigSchema = z
       .object({
         includeThoughts: z.boolean().optional(),
         thinkingBudget: coerceNumber.optional(),
+        thinkingLevel: z.string().optional(),
       })
       .optional(),
     web_search: z.boolean().optional(),

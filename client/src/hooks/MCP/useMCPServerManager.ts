@@ -28,7 +28,10 @@ export interface MCPServerDefinition {
 // The init states (isInitializing, isCancellable, etc.) are stored in the global Jotai atom
 type PollIntervals = Record<string, NodeJS.Timeout | null>;
 
-export function useMCPServerManager({ conversationId }: { conversationId?: string | null } = {}) {
+export function useMCPServerManager({
+  conversationId,
+  storageContextKey,
+}: { conversationId?: string | null; storageContextKey?: string } = {}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
@@ -73,6 +76,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({
     conversationId,
+    storageContextKey,
     servers: selectableServers,
   });
   const mcpValuesRef = useRef(mcpValues);
@@ -429,33 +433,6 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     [startupConfig?.interface?.mcpServers?.placeholder, localize],
   );
 
-  const batchToggleServers = useCallback(
-    (serverNames: string[]) => {
-      const connectedServers: string[] = [];
-      const disconnectedServers: string[] = [];
-
-      serverNames.forEach((serverName) => {
-        if (isInitializing(serverName)) {
-          return;
-        }
-
-        const serverStatus = connectionStatus?.[serverName];
-        if (serverStatus?.connectionState === 'connected') {
-          connectedServers.push(serverName);
-        } else {
-          disconnectedServers.push(serverName);
-        }
-      });
-
-      setMCPValues(connectedServers);
-
-      disconnectedServers.forEach((serverName) => {
-        initializeServer(serverName);
-      });
-    },
-    [connectionStatus, setMCPValues, initializeServer, isInitializing],
-  );
-
   const toggleServerSelection = useCallback(
     (serverName: string) => {
       if (isInitializing(serverName)) {
@@ -469,15 +446,10 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
         const filteredValues = currentValues.filter((name) => name !== serverName);
         setMCPValues(filteredValues);
       } else {
-        const serverStatus = connectionStatus?.[serverName];
-        if (serverStatus?.connectionState === 'connected') {
-          setMCPValues([...currentValues, serverName]);
-        } else {
-          initializeServer(serverName);
-        }
+        setMCPValues([...currentValues, serverName]);
       }
     },
-    [mcpValues, setMCPValues, connectionStatus, initializeServer, isInitializing],
+    [mcpValues, setMCPValues, isInitializing],
   );
 
   const handleConfigSave = useCallback(
@@ -673,7 +645,6 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     isPinned,
     setIsPinned,
     placeholderText,
-    batchToggleServers,
     toggleServerSelection,
     localize,
 

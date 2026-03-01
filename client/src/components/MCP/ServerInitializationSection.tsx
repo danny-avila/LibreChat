@@ -9,12 +9,14 @@ interface ServerInitializationSectionProps {
   requiresOAuth: boolean;
   hasCustomUserVars?: boolean;
   conversationId?: string | null;
+  storageContextKey?: string;
 }
 
 export default function ServerInitializationSection({
   serverName,
   requiresOAuth,
   conversationId,
+  storageContextKey,
   sidePanel = false,
   hasCustomUserVars = false,
 }: ServerInitializationSectionProps) {
@@ -28,7 +30,7 @@ export default function ServerInitializationSection({
     initializeServer,
     availableMCPServers,
     revokeOAuthForServer,
-  } = useMCPServerManager({ conversationId });
+  } = useMCPServerManager({ conversationId, storageContextKey });
 
   const { connectionStatus } = useMCPConnectionStatus({
     enabled: !!availableMCPServers && availableMCPServers.length > 0,

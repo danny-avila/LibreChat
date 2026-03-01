@@ -8,7 +8,7 @@ const { getLogStores } = require('~/cache');
 
 const getAvailablePluginsController = async (req, res) => {
   try {
-    const cache = getLogStores(CacheKeys.CONFIG_STORE);
+    const cache = getLogStores(CacheKeys.TOOL_CACHE);
     const cachedPlugins = await cache.get(CacheKeys.PLUGINS);
     if (cachedPlugins) {
       res.status(200).json(cachedPlugins);
@@ -63,7 +63,7 @@ const getAvailableTools = async (req, res) => {
       logger.warn('[getAvailableTools] User ID not found in request');
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    const cache = getLogStores(CacheKeys.CONFIG_STORE);
+    const cache = getLogStores(CacheKeys.TOOL_CACHE);
     const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
 
     const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));

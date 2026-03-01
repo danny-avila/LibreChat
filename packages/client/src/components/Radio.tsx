@@ -14,6 +14,7 @@ interface RadioProps {
   disabled?: boolean;
   className?: string;
   fullWidth?: boolean;
+  'aria-labelledby'?: string;
 }
 
 const Radio = memo(function Radio({
@@ -23,6 +24,7 @@ const Radio = memo(function Radio({
   disabled = false,
   className = '',
   fullWidth = false,
+  'aria-labelledby': ariaLabelledBy,
 }: RadioProps) {
   const localize = useLocalize();
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -79,6 +81,7 @@ const Radio = memo(function Radio({
       <div
         className="relative inline-flex items-center rounded-lg bg-muted p-1 opacity-50"
         role="radiogroup"
+        aria-labelledby={ariaLabelledBy}
       >
         <span className="px-4 py-2 text-xs text-muted-foreground">
           {localize('com_ui_no_options')}
@@ -93,6 +96,7 @@ const Radio = memo(function Radio({
     <div
       className={`relative ${fullWidth ? 'flex' : 'inline-flex'} items-center rounded-lg bg-muted p-1 ${className}`}
       role="radiogroup"
+      aria-labelledby={ariaLabelledBy}
     >
       {selectedIndex >= 0 && isMounted && (
         <div

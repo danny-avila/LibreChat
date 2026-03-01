@@ -8,9 +8,10 @@
 import { Constants, actionDelimiter } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
-import { buildToolClassification, type ToolDefinition } from './classification';
+import type { ToolDefinition } from './classification';
+import { resolveJsonSchemaRefs, normalizeJsonSchema } from '~/mcp/zod';
+import { buildToolClassification } from './classification';
 import { getToolDefinition } from './registry/definitions';
-import { resolveJsonSchemaRefs } from '~/mcp/zod';
 
 export interface MCPServerTool {
   function?: {
@@ -138,7 +139,7 @@ export async function loadToolDefinitions(
             name: actualToolName,
             description: toolDef.function.description,
             parameters: toolDef.function.parameters
-              ? resolveJsonSchemaRefs(toolDef.function.parameters)
+              ? normalizeJsonSchema(resolveJsonSchemaRefs(toolDef.function.parameters))
               : undefined,
             serverName,
           });
@@ -153,7 +154,7 @@ export async function loadToolDefinitions(
         name: toolName,
         description: toolDef.function.description,
         parameters: toolDef.function.parameters
-          ? resolveJsonSchemaRefs(toolDef.function.parameters)
+          ? normalizeJsonSchema(resolveJsonSchemaRefs(toolDef.function.parameters))
           : undefined,
         serverName,
       });

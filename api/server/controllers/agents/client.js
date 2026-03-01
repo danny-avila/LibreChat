@@ -6,18 +6,23 @@ const {
   Tokenizer,
   checkAccess,
   buildToolSet,
-  logAxiosError,
   sanitizeTitle,
+  logToolError,
+  payloadParser,
   resolveHeaders,
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
+  omitTitleOptions,
   getProviderConfig,
   memoryInstructions,
+  createTokenCounter,
   applyContextToAgent,
+  recordCollectedUsage,
   GenerationJobManager,
   getTransactionsConfig,
   createMemoryProcessor,
+  createMultiAgentMapper,
   filterMalformedContentParts,
 } = require('@librechat/api');
 const {
@@ -25,9 +30,7 @@ const {
   Providers,
   TitleMethod,
   formatMessage,
-  labelContentByAgent,
   formatAgentMessages,
-  getTokenCountForMessage,
   createMetadataAggregator,
 } = require('@librechat/agents');
 const {
@@ -39,11 +42,12 @@ const {
   PermissionTypes,
   isAgentsEndpoint,
   isEphemeralAgentId,
-  bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { updateBalance, bulkInsertTransactions } = require('~/models');
+const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
@@ -51,183 +55,6 @@ const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
-
-const omitTitleOptions = new Set([
-  'stream',
-  'thinking',
-  'streaming',
-  'clientOptions',
-  'thinkingConfig',
-  'thinkingBudget',
-  'includeThoughts',
-  'maxOutputTokens',
-  'additionalModelRequestFields',
-]);
-
-/**
- * @param {ServerRequest} req
- * @param {Agent} agent
- * @param {string} endpoint
- */
-const payloadParser = ({ req, agent, endpoint }) => {
-  if (isAgentsEndpoint(endpoint)) {
-    return { model: undefined };
-  } else if (endpoint === EModelEndpoint.bedrock) {
-    const parsedValues = bedrockInputSchema.parse(agent.model_parameters);
-    if (parsedValues.thinking == null) {
-      parsedValues.thinking = false;
-    }
-    return parsedValues;
-  }
-  return req.body.endpointOption.model_parameters;
-};
-
-function createTokenCounter(encoding) {
-  return function (message) {
-    const countTokens = (text) => Tokenizer.getTokenCount(text, encoding);
-    return getTokenCountForMessage(message, countTokens);
-  };
-}
-
-function logToolError(graph, error, toolId) {
-  logAxiosError({
-    error,
-    message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
-  });
-}
-
-/** Regex pattern to match agent ID suffix (____N) */
-const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
-
-/**
- * Finds the primary agent ID within a set of agent IDs.
- * Primary = no suffix (____N) or lowest suffix number.
- * @param {Set<string>} agentIds
- * @returns {string | null}
- */
-function findPrimaryAgentId(agentIds) {
-  let primaryAgentId = null;
-  let lowestSuffixIndex = Infinity;
-
-  for (const agentId of agentIds) {
-    const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
-    if (!suffixMatch) {
-      return agentId;
-    }
-    const suffixIndex = parseInt(suffixMatch[1], 10);
-    if (suffixIndex < lowestSuffixIndex) {
-      lowestSuffixIndex = suffixIndex;
-      primaryAgentId = agentId;
-    }
-  }
-
-  return primaryAgentId;
-}
-
-/**
- * Creates a mapMethod for getMessagesForConversation that processes agent content.
- * - Strips agentId/groupId metadata from all content
- * - For parallel agents (addedConvo with groupId): filters each group to its primary agent
- * - For handoffs (agentId without groupId): keeps all content from all agents
- * - For multi-agent: applies agent labels to content
- *
- * The key distinction:
- * - Parallel execution (addedConvo): Parts have both agentId AND groupId
- * - Handoffs: Parts only have agentId, no groupId
- *
- * @param {Agent} primaryAgent - Primary agent configuration
- * @param {Map<string, Agent>} [agentConfigs] - Additional agent configurations
- * @returns {(message: TMessage) => TMessage} Map method for processing messages
- */
-function createMultiAgentMapper(primaryAgent, agentConfigs) {
-  const hasMultipleAgents = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
-
-  /** @type {Record<string, string> | null} */
-  let agentNames = null;
-  if (hasMultipleAgents) {
-    agentNames = { [primaryAgent.id]: primaryAgent.name || 'Assistant' };
-    if (agentConfigs) {
-      for (const [agentId, agentConfig] of agentConfigs.entries()) {
-        agentNames[agentId] = agentConfig.name || agentConfig.id;
-      }
-    }
-  }
-
-  return (message) => {
-    if (message.isCreatedByUser || !Array.isArray(message.content)) {
-      return message;
-    }
-
-    // Check for metadata
-    const hasAgentMetadata = message.content.some((part) => part?.agentId || part?.groupId != null);
-    if (!hasAgentMetadata) {
-      return message;
-    }
-
-    try {
-      // Build a map of groupId -> Set of agentIds, to find primary per group
-      /** @type {Map<number, Set<string>>} */
-      const groupAgentMap = new Map();
-
-      for (const part of message.content) {
-        const groupId = part?.groupId;
-        const agentId = part?.agentId;
-        if (groupId != null && agentId) {
-          if (!groupAgentMap.has(groupId)) {
-            groupAgentMap.set(groupId, new Set());
-          }
-          groupAgentMap.get(groupId).add(agentId);
-        }
-      }
-
-      // For each group, find the primary agent
-      /** @type {Map<number, string>} */
-      const groupPrimaryMap = new Map();
-      for (const [groupId, agentIds] of groupAgentMap) {
-        const primary = findPrimaryAgentId(agentIds);
-        if (primary) {
-          groupPrimaryMap.set(groupId, primary);
-        }
-      }
-
-      /** @type {Array<TMessageContentParts>} */
-      const filteredContent = [];
-      /** @type {Record<number, string>} */
-      const agentIdMap = {};
-
-      for (const part of message.content) {
-        const agentId = part?.agentId;
-        const groupId = part?.groupId;
-
-        // Filtering logic:
-        // - No groupId (handoffs): always include
-        // - Has groupId (parallel): only include if it's the primary for that group
-        const isParallelPart = groupId != null;
-        const groupPrimary = isParallelPart ? groupPrimaryMap.get(groupId) : null;
-        const shouldInclude = !isParallelPart || !agentId || agentId === groupPrimary;
-
-        if (shouldInclude) {
-          const newIndex = filteredContent.length;
-          const { agentId: _a, groupId: _g, ...cleanPart } = part;
-          filteredContent.push(cleanPart);
-          if (agentId && hasMultipleAgents) {
-            agentIdMap[newIndex] = agentId;
-          }
-        }
-      }
-
-      const finalContent =
-        Object.keys(agentIdMap).length > 0 && agentNames
-          ? labelContentByAgent(filteredContent, agentIdMap, agentNames)
-          : filteredContent;
-
-      return { ...message, content: finalContent };
-    } catch (error) {
-      logger.error('[AgentClient] Error processing multi-agent message:', error);
-      return message;
-    }
-  };
-}
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -296,14 +123,9 @@ class AgentClient extends BaseClient {
   checkVisionRequest() {}
 
   getSaveOptions() {
-    // TODO:
-    // would need to be override settings; otherwise, model needs to be undefined
-    // model: this.override.model,
-    // instructions: this.override.instructions,
-    // additional_instructions: this.override.additional_instructions,
     let runOptions = {};
     try {
-      runOptions = payloadParser(this.options);
+      runOptions = payloadParser(this.options) ?? {};
     } catch (error) {
       logger.error(
         '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
@@ -314,14 +136,14 @@ class AgentClient extends BaseClient {
     return removeNullishValues(
       Object.assign(
         {
+          spec: this.options.spec,
+          iconURL: this.options.iconURL,
           endpoint: this.options.endpoint,
           agent_id: this.options.agent.id,
           modelLabel: this.options.modelLabel,
-          maxContextTokens: this.options.maxContextTokens,
           resendFiles: this.options.resendFiles,
           imageDetail: this.options.imageDetail,
-          spec: this.options.spec,
-          iconURL: this.options.iconURL,
+          maxContextTokens: this.maxContextTokens,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
@@ -805,82 +627,29 @@ class AgentClient extends BaseClient {
     context = 'message',
     collectedUsage = this.collectedUsage,
   }) {
-    if (!collectedUsage || !collectedUsage.length) {
-      return;
-    }
-    // Use first entry's input_tokens as the base input (represents initial user message context)
-    // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
-    const firstUsage = collectedUsage[0];
-    const input_tokens =
-      (firstUsage?.input_tokens || 0) +
-      (Number(firstUsage?.input_token_details?.cache_creation) ||
-        Number(firstUsage?.cache_creation_input_tokens) ||
-        0) +
-      (Number(firstUsage?.input_token_details?.cache_read) ||
-        Number(firstUsage?.cache_read_input_tokens) ||
-        0);
-
-    // Sum output_tokens directly from all entries - works for both sequential and parallel execution
-    // This avoids the incremental calculation that produced negative values for parallel agents
-    let total_output_tokens = 0;
-
-    for (const usage of collectedUsage) {
-      if (!usage) {
-        continue;
-      }
-
-      // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
-      const cache_creation =
-        Number(usage.input_token_details?.cache_creation) ||
-        Number(usage.cache_creation_input_tokens) ||
-        0;
-      const cache_read =
-        Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
-
-      // Accumulate output tokens for the usage summary
-      total_output_tokens += Number(usage.output_tokens) || 0;
-
-      const txMetadata = {
+    const result = await recordCollectedUsage(
+      {
+        spendTokens,
+        spendStructuredTokens,
+        pricing: { getMultiplier, getCacheMultiplier },
+        bulkWriteOps: { insertMany: bulkInsertTransactions, updateBalance },
+      },
+      {
+        user: this.user ?? this.options.req.user?.id,
+        conversationId: this.conversationId,
+        collectedUsage,
+        model: model ?? this.model ?? this.options.agent.model_parameters.model,
         context,
+        messageId: this.responseMessageId,
         balance,
         transactions,
-        conversationId: this.conversationId,
-        user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
-        model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
-      };
+      },
+    );
 
-      if (cache_creation > 0 || cache_read > 0) {
-        spendStructuredTokens(txMetadata, {
-          promptTokens: {
-            input: usage.input_tokens,
-            write: cache_creation,
-            read: cache_read,
-          },
-          completionTokens: usage.output_tokens,
-        }).catch((err) => {
-          logger.error(
-            '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending structured tokens',
-            err,
-          );
-        });
-        continue;
-      }
-      spendTokens(txMetadata, {
-        promptTokens: usage.input_tokens,
-        completionTokens: usage.output_tokens,
-      }).catch((err) => {
-        logger.error(
-          '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending tokens',
-          err,
-        );
-      });
+    if (result) {
+      this.usage = result;
     }
-
-    this.usage = {
-      input_tokens,
-      output_tokens: total_output_tokens,
-    };
   }
 
   /**
@@ -969,7 +738,7 @@ class AgentClient extends BaseClient {
           },
           user: createSafeUser(this.options.req.user),
         },
-        recursionLimit: agentsEConfig?.recursionLimit ?? 25,
+        recursionLimit: agentsEConfig?.recursionLimit ?? 50,
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
@@ -1072,9 +841,10 @@ class AgentClient extends BaseClient {
         config.signal = null;
       };
 
+      const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
       /** @deprecated Agent Chain */
-      if (config.configurable.hide_sequential_outputs) {
+      if (hideSequentialOutputs) {
         this.contentParts = this.contentParts.filter((part, index) => {
           // Include parts that are either:
           // 1. At or after the finalContentStart index
@@ -1328,6 +1098,7 @@ class AgentClient extends BaseClient {
         model: clientOptions.model,
         balance: balanceConfig,
         transactions: transactionsConfig,
+        messageId: this.responseMessageId,
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
@@ -1366,6 +1137,7 @@ class AgentClient extends BaseClient {
           model,
           context,
           balance,
+          messageId: this.responseMessageId,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
@@ -1384,6 +1156,7 @@ class AgentClient extends BaseClient {
             model,
             balance,
             context: 'reasoning',
+            messageId: this.responseMessageId,
             conversationId: this.conversationId,
             user: this.user ?? this.options.req.user?.id,
             endpointTokenConfig: this.options.endpointTokenConfig,

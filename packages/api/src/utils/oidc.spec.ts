@@ -427,6 +427,35 @@ describe('OpenID Token Utilities', () => {
       expect(result).toContain('User:');
     });
 
+    it('should resolve LIBRECHAT_OPENID_ID_TOKEN and LIBRECHAT_OPENID_ACCESS_TOKEN to different values', () => {
+      const user: Partial<TUser> = {
+        id: 'user-123',
+        provider: 'openid',
+        openidId: 'oidc-sub-456',
+        email: 'test@example.com',
+        name: 'Test User',
+        federatedTokens: {
+          access_token: 'my-access-token',
+          id_token: 'my-id-token',
+          refresh_token: 'my-refresh-token',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        },
+      };
+
+      const tokenInfo = extractOpenIDTokenInfo(user);
+      expect(tokenInfo).not.toBeNull();
+      expect(tokenInfo!.accessToken).toBe('my-access-token');
+      expect(tokenInfo!.idToken).toBe('my-id-token');
+      expect(tokenInfo!.accessToken).not.toBe(tokenInfo!.idToken);
+
+      const input = 'ACCESS={{LIBRECHAT_OPENID_ACCESS_TOKEN}}, ID={{LIBRECHAT_OPENID_ID_TOKEN}}';
+      const result = processOpenIDPlaceholders(input, tokenInfo!);
+
+      expect(result).toBe('ACCESS=my-access-token, ID=my-id-token');
+      // Verify they are not the same value (the reported bug)
+      expect(result).not.toBe('ACCESS=my-access-token, ID=my-access-token');
+    });
+
     it('should handle expired tokens correctly', () => {
       const user: Partial<TUser> = {
         id: 'user-123',

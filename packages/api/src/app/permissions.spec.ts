@@ -776,11 +776,19 @@ describe('updateInterfacePermissions - permissions', () => {
   });
 
   it('should only update permissions that do not exist when no config provided', async () => {
-    // Mock that some permissions already exist
+    // Mock that some permissions already exist (with SHARE/SHARE_PUBLIC as they would be post-#11283)
     mockGetRoleByName.mockResolvedValue({
       permissions: {
-        [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
-        [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.USE]: false,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
       },
     });
 
@@ -892,30 +900,38 @@ describe('updateInterfacePermissions - permissions', () => {
       SystemRoles.USER,
       expectedPermissionsForUser,
       expect.objectContaining({
-        permissions: {
-          [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
-          [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
-        },
+        permissions: expect.objectContaining({
+          [PermissionTypes.PROMPTS]: expect.objectContaining({ [Permissions.USE]: false }),
+          [PermissionTypes.AGENTS]: expect.objectContaining({ [Permissions.USE]: true }),
+        }),
       }),
     );
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       expect.objectContaining({
-        permissions: {
-          [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
-          [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
-        },
+        permissions: expect.objectContaining({
+          [PermissionTypes.PROMPTS]: expect.objectContaining({ [Permissions.USE]: false }),
+          [PermissionTypes.AGENTS]: expect.objectContaining({ [Permissions.USE]: true }),
+        }),
       }),
     );
   });
 
   it('should override existing permissions when explicitly configured', async () => {
-    // Mock that some permissions already exist
+    // Mock that some permissions already exist (with SHARE/SHARE_PUBLIC as they would be post-#11283)
     mockGetRoleByName.mockResolvedValue({
       permissions: {
-        [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
-        [PermissionTypes.AGENTS]: { [Permissions.USE]: false },
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.USE]: false,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: false,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       },
     });
@@ -1340,8 +1356,13 @@ describe('updateInterfacePermissions - permissions', () => {
 
   it('should leave all existing permissions unchanged when nothing is configured', async () => {
     // Mock existing permissions with values that differ from defaults
+    // SHARE/SHARE_PUBLIC included as they would be in a post-#11283 DB document
     const existingUserPermissions = {
-      [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
+      [PermissionTypes.PROMPTS]: {
+        [Permissions.USE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: { [Permissions.USE]: false },
       [PermissionTypes.PEOPLE_PICKER]: {
@@ -1400,10 +1421,14 @@ describe('updateInterfacePermissions - permissions', () => {
   });
 
   it('should only update explicitly configured permissions and leave others unchanged', async () => {
-    // Mock existing permissions
+    // Mock existing permissions (with SHARE/SHARE_PUBLIC as they would be post-#11283)
     mockGetRoleByName.mockResolvedValue({
       permissions: {
-        [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.USE]: false,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
         [PermissionTypes.MEMORIES]: { [Permissions.USE]: false },
         [PermissionTypes.PEOPLE_PICKER]: {
@@ -1729,8 +1754,12 @@ describe('updateInterfacePermissions - permissions', () => {
           [Permissions.UPDATE]: true,
           [Permissions.OPT_OUT]: true,
         },
-        // Other existing permissions
-        [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
+        // Other existing permissions (with SHARE/SHARE_PUBLIC as they would be post-#11283)
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.USE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       },
     });
@@ -2004,5 +2033,71 @@ describe('updateInterfacePermissions - permissions', () => {
     });
     expect(userCall[1][PermissionTypes.PROMPTS]).not.toHaveProperty(Permissions.SHARE);
     expect(userCall[1][PermissionTypes.PROMPTS]).not.toHaveProperty(Permissions.SHARE_PUBLIC);
+  });
+
+  it('should backfill SHARE/SHARE_PUBLIC when missing from an existing permission type (PR #11283 migration)', async () => {
+    // Simulates an existing deployment that has PROMPTS/AGENTS permissions from before PR #11283
+    // introduced SHARE/SHARE_PUBLIC. SHARED_GLOBAL existed previously; after the schema change
+    // the DB document has neither SHARE nor SHARE_PUBLIC set.
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          // SHARE and SHARE_PUBLIC intentionally absent — legacy pre-#11283 document
+        },
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          // SHARE and SHARE_PUBLIC intentionally absent — legacy pre-#11283 document
+        },
+        [PermissionTypes.MCP_SERVERS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: false,
+          // SHARE_PUBLIC intentionally absent — added later
+        },
+      },
+    });
+
+    // Boolean configs — these should NOT override the backfilled values
+    const config = {
+      interface: {
+        agents: true,
+        prompts: true,
+      },
+    };
+    const configDefaults = {
+      interface: { agents: true, prompts: true },
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    // AGENTS: SHARE and SHARE_PUBLIC should be backfilled with USER role defaults
+    expect(userCall[1][PermissionTypes.AGENTS]).toHaveProperty(Permissions.SHARE);
+    expect(userCall[1][PermissionTypes.AGENTS]).toHaveProperty(Permissions.SHARE_PUBLIC);
+    // USER role default for SHARE is false
+    expect(userCall[1][PermissionTypes.AGENTS][Permissions.SHARE]).toBe(false);
+    expect(userCall[1][PermissionTypes.AGENTS][Permissions.SHARE_PUBLIC]).toBe(false);
+
+    // PROMPTS: same backfill behaviour
+    expect(userCall[1][PermissionTypes.PROMPTS]).toHaveProperty(Permissions.SHARE);
+    expect(userCall[1][PermissionTypes.PROMPTS]).toHaveProperty(Permissions.SHARE_PUBLIC);
+    expect(userCall[1][PermissionTypes.PROMPTS][Permissions.SHARE]).toBe(false);
+    expect(userCall[1][PermissionTypes.PROMPTS][Permissions.SHARE_PUBLIC]).toBe(false);
+
+    // MCP_SERVERS: SHARE already exists, only SHARE_PUBLIC should be backfilled
+    expect(userCall[1][PermissionTypes.MCP_SERVERS]).toHaveProperty(Permissions.SHARE_PUBLIC);
+    expect(userCall[1][PermissionTypes.MCP_SERVERS]).not.toHaveProperty(Permissions.SHARE);
   });
 });
