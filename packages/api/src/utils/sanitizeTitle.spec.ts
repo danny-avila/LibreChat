@@ -174,6 +174,23 @@ describe('sanitizeTitle', () => {
     });
   });
 
+  describe('Max Length Truncation', () => {
+    it('should pass through a title exactly at max length unchanged', () => {
+      const input = 'A'.repeat(200);
+      expect(sanitizeTitle(input)).toBe(input);
+    });
+
+    it('should truncate a title over max length with ellipsis', () => {
+      const input = 'A'.repeat(250);
+      expect(sanitizeTitle(input)).toBe('A'.repeat(200) + '...');
+    });
+
+    it('should truncate after think-block removal', () => {
+      const input = '<think>reasoning</think> ' + 'B'.repeat(250);
+      expect(sanitizeTitle(input)).toBe('B'.repeat(200) + '...');
+    });
+  });
+
   describe('Idempotency', () => {
     it('should be idempotent', () => {
       const input = '<think>reasoning</think> My Title';

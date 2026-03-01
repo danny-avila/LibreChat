@@ -193,7 +193,7 @@ function ShareHeader({
       <div className="bg-surface-primary/80 relative mx-auto flex w-full max-w-[60rem] flex-col gap-4 rounded-3xl border border-border-light px-6 py-5 shadow-xl backdrop-blur">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div className="space-y-2">
-            <h1 className="text-4xl font-semibold text-text-primary">{title}</h1>
+            <h1 className="line-clamp-2 text-4xl font-semibold text-text-primary">{title}</h1>
             {formattedDate && (
               <div className="flex items-center gap-2 text-sm text-text-secondary">
                 <CalendarDays className="size-4" aria-hidden="true" />

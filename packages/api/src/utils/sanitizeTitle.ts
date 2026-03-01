@@ -25,6 +25,16 @@ export function sanitizeTitle(rawTitle: string): string {
   // Step 4: Trim leading and trailing whitespace
   const trimmed = normalized.trim();
 
-  // Step 5: Return trimmed result or fallback if empty
-  return trimmed.length > 0 ? trimmed : DEFAULT_FALLBACK;
+  // Step 5: Return fallback if empty
+  if (trimmed.length === 0) {
+    return DEFAULT_FALLBACK;
+  }
+
+  // Step 6: Truncate to max length
+  const MAX_TITLE_LENGTH = 200;
+  if (trimmed.length > MAX_TITLE_LENGTH) {
+    return trimmed.slice(0, MAX_TITLE_LENGTH).trimEnd() + '...';
+  }
+
+  return trimmed;
 }
