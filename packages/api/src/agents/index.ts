@@ -9,6 +9,7 @@ export * from './legacy';
 export * from './memory';
 export * from './migration';
 export * from './openai';
+export * from './transactions';
 export * from './usage';
 export * from './resources';
 export * from './responses';

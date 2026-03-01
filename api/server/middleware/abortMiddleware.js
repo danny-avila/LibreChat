@@ -1,17 +1,19 @@
 const { logger } = require('@librechat/data-schemas');
 const {
-  countTokens,
   isEnabled,
   sendEvent,
+  countTokens,
   GenerationJobManager,
+  recordCollectedUsage,
   sanitizeMessageForTransmit,
 } = require('@librechat/api');
 const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
+const { saveMessage, getConvo, updateBalance, bulkInsertTransactions } = require('~/models');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
+const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
-const { saveMessage, getConvo } = require('~/models');
 const { abortRun } = require('./abortRun');
 
 /**
@@ -40,57 +42,22 @@ async function spendCollectedUsage({
     return;
   }
 
-  const spendPromises = [];
-
-  for (const usage of collectedUsage) {
-    if (!usage) {
-      continue;
-    }
-
-    // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
-    const cache_creation =
-      Number(usage.input_token_details?.cache_creation) ||
-      Number(usage.cache_creation_input_tokens) ||
-      0;
-    const cache_read =
-      Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
-
-    const txMetadata = {
+  await recordCollectedUsage(
+    {
+      spendTokens,
+      spendStructuredTokens,
+      pricing: { getMultiplier, getCacheMultiplier },
+      bulkWriteOps: { insertMany: bulkInsertTransactions, updateBalance },
+    },
+    {
+      user: userId,
+      conversationId,
+      collectedUsage,
       context: 'abort',
       messageId,
-      conversationId,
-      user: userId,
-      model: usage.model ?? fallbackModel,
-    };
-
-    if (cache_creation > 0 || cache_read > 0) {
-      spendPromises.push(
-        spendStructuredTokens(txMetadata, {
-          promptTokens: {
-            input: usage.input_tokens,
-            write: cache_creation,
-            read: cache_read,
-          },
-          completionTokens: usage.output_tokens,
-        }).catch((err) => {
-          logger.error('[abortMiddleware] Error spending structured tokens for abort', err);
-        }),
-      );
-      continue;
-    }
-
-    spendPromises.push(
-      spendTokens(txMetadata, {
-        promptTokens: usage.input_tokens,
-        completionTokens: usage.output_tokens,
-      }).catch((err) => {
-        logger.error('[abortMiddleware] Error spending tokens for abort', err);
-      }),
-    );
-  }
-
-  // Wait for all token spending to complete
-  await Promise.all(spendPromises);
+      model: fallbackModel,
+    },
+  );
 
   // Clear the array to prevent double-spending from the AgentClient finally block.
   // The collectedUsage array is shared by reference with AgentClient.collectedUsage,
@@ -301,4 +268,5 @@ const handleAbortError = async (res, req, error, data) => {
 module.exports = {
   handleAbort,
   handleAbortError,
+  spendCollectedUsage,
 };
