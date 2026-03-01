@@ -830,7 +830,10 @@ export class MCPConnection extends EventEmitter {
     }
 
     this.transport.onmessage = (msg) => {
-      logger.debug(`${this.getLogPrefix()} Transport received: ${JSON.stringify(msg)}`);
+      const { method, id } = msg as { method?: string; id?: number };
+      logger.debug(
+        `${this.getLogPrefix()} Transport received: method=${method ?? 'response'} id=${id}`,
+      );
     };
 
     const originalSend = this.transport.send.bind(this.transport);
@@ -841,7 +844,10 @@ export class MCPConnection extends EventEmitter {
         }
         this.lastPingTime = Date.now();
       }
-      logger.debug(`${this.getLogPrefix()} Transport sending: ${JSON.stringify(msg)}`);
+      const { method, id } = msg as { method?: string; id?: number };
+      logger.debug(
+        `${this.getLogPrefix()} Transport sending: method=${method ?? 'response'} id=${id}`,
+      );
       return originalSend(msg);
     };
   }
