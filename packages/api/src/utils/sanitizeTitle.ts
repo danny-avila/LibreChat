@@ -1,30 +1,35 @@
+/** Max character length for sanitized titles (the output will never exceed this). */
+export const MAX_TITLE_LENGTH = 200;
+export const DEFAULT_TITLE_FALLBACK = 'Untitled Conversation';
+
 /**
- * Sanitizes LLM-generated chat titles by removing <think>...</think> reasoning blocks.
+ * Sanitizes LLM-generated chat titles by removing {@link https://en.wikipedia.org/wiki/Chain-of-thought_prompting <think>}
+ * reasoning blocks, normalizing whitespace, and truncating to {@link MAX_TITLE_LENGTH} characters.
  *
- * This function strips out all reasoning blocks (with optional attributes and newlines)
- * and returns a clean title. If the result is empty, a fallback is returned.
+ * Titles exceeding the limit are truncated at a code-point-safe boundary and suffixed with `...`.
  *
  * @param rawTitle - The raw LLM-generated title string, potentially containing <think> blocks.
- * @returns A sanitized title string, never empty (fallback used if needed).
+ * @returns A sanitized, potentially truncated title string, never empty (fallback used if needed).
  */
 export function sanitizeTitle(rawTitle: string): string {
-  const DEFAULT_FALLBACK = 'Untitled Conversation';
-
-  // Step 1: Input Validation
   if (!rawTitle || typeof rawTitle !== 'string') {
-    return DEFAULT_FALLBACK;
+    return DEFAULT_TITLE_FALLBACK;
   }
 
-  // Step 2: Build and apply the regex to remove all <think>...</think> blocks
   const thinkBlockRegex = /<think\b[^>]*>[\s\S]*?<\/think>/gi;
   const cleaned = rawTitle.replace(thinkBlockRegex, '');
-
-  // Step 3: Normalize whitespace (collapse multiple spaces/newlines to single space)
   const normalized = cleaned.replace(/\s+/g, ' ');
-
-  // Step 4: Trim leading and trailing whitespace
   const trimmed = normalized.trim();
 
-  // Step 5: Return trimmed result or fallback if empty
-  return trimmed.length > 0 ? trimmed : DEFAULT_FALLBACK;
+  if (trimmed.length === 0) {
+    return DEFAULT_TITLE_FALLBACK;
+  }
+
+  const codePoints = [...trimmed];
+  if (codePoints.length > MAX_TITLE_LENGTH) {
+    const truncateAt = MAX_TITLE_LENGTH - 3;
+    return codePoints.slice(0, truncateAt).join('').trimEnd() + '...';
+  }
+
+  return trimmed;
 }
