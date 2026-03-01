@@ -24,7 +24,6 @@ class MockKeyv<T = string> {
     return this.store.get(key);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async set(key: string, value: FlowState<T>, _ttl?: number): Promise<true> {
     this.store.set(key, value);
     return true;
@@ -158,6 +157,59 @@ describe('FlowStateManager', () => {
 
       await expect(flowPromise).rejects.toThrow('failure');
     }, 15000);
+  });
+
+  describe('initFlow', () => {
+    const flowId = 'init-test-flow';
+    const type = 'test-type';
+    const flowKey = `${type}:${flowId}`;
+
+    it('stores a PENDING flow state in the cache', async () => {
+      await flowManager.initFlow(flowId, type, { serverName: 'test' });
+
+      const state = await store.get(flowKey);
+      expect(state).toBeDefined();
+      expect(state!.status).toBe('PENDING');
+      expect(state!.type).toBe(type);
+      expect(state!.metadata).toEqual({ serverName: 'test' });
+      expect(state!.createdAt).toBeGreaterThan(0);
+    });
+
+    it('overwrites an existing flow state', async () => {
+      await store.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: { old: true },
+        createdAt: Date.now() - 10000,
+      });
+
+      await flowManager.initFlow(flowId, type, { new: true });
+
+      const state = await store.get(flowKey);
+      expect(state!.status).toBe('PENDING');
+      expect(state!.metadata).toEqual({ new: true });
+    });
+
+    it('allows createFlow to find and monitor the pre-stored state', async () => {
+      // initFlow stores the PENDING state
+      await flowManager.initFlow(flowId, type, { preStored: true });
+
+      // createFlow should find the existing state and start monitoring
+      const flowPromise = flowManager.createFlow(flowId, type);
+
+      // Complete the flow so the monitor resolves
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await flowManager.completeFlow(flowId, type, 'success');
+
+      const result = await flowPromise;
+      expect(result).toBe('success');
+    }, 15000);
+
+    it('propagates store write failures', async () => {
+      jest.spyOn(store, 'set').mockRejectedValueOnce(new Error('Store write failed'));
+
+      await expect(flowManager.initFlow(flowId, type)).rejects.toThrow('Store write failed');
+    });
   });
 
   describe('deleteFlow', () => {
