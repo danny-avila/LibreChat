@@ -23,7 +23,7 @@ export default function MessagesView({
           }}
         >
           <div className="flex flex-col pb-16 text-sm dark:bg-transparent">
-            {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
+            {(_messagesTree && _messagesTree.length === 0) || _messagesTree === null ? (
               <div className="flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
                 {localize('com_ui_nothing_found')}
               </div>
