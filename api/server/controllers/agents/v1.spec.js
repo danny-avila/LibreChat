@@ -22,7 +22,8 @@ jest.mock('~/server/services/Files/images/avatar', () => ({
   resizeAvatar: jest.fn(),
 }));
 
-jest.mock('~/server/services/Files/S3/crud', () => ({
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   refreshS3Url: jest.fn(),
 }));
 
@@ -72,7 +73,7 @@ const {
   findPubliclyAccessibleResources,
 } = require('~/server/services/PermissionService');
 
-const { refreshS3Url } = require('~/server/services/Files/S3/crud');
+const { refreshS3Url } = require('@librechat/api');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
