@@ -34,8 +34,12 @@ const {
   DEFAULT_BASE_PATH: defaultBasePath,
 } = s3Config;
 
-export const getS3Key = (basePath: string, userId: string, fileName: string): string =>
-  `${basePath}/${userId}/${fileName}`;
+export const getS3Key = (basePath: string, userId: string, fileName: string): string => {
+  if (basePath.includes('/')) {
+    throw new Error(`[getS3Key] basePath must not contain slashes: "${basePath}"`);
+  }
+  return `${basePath}/${userId}/${fileName}`;
+};
 
 export async function getS3URL({
   userId,
@@ -48,7 +52,8 @@ export async function getS3URL({
   const params: GetObjectCommandInput = { Bucket: bucketName, Key: key };
 
   if (customFilename) {
-    params.ResponseContentDisposition = `attachment; filename="${customFilename}"`;
+    const safeFilename = customFilename.replace(/["\r\n]/g, '');
+    params.ResponseContentDisposition = `attachment; filename="${safeFilename}"`;
   }
   if (contentType) {
     params.ResponseContentType = contentType;
@@ -102,7 +107,7 @@ export async function saveURLToS3({
       throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
     }
     const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(new Uint8Array(arrayBuffer));
+    const buffer = Buffer.from(arrayBuffer);
     return await saveBufferToS3({ userId, buffer, fileName, basePath });
   } catch (error) {
     logger.error('[saveURLToS3] Error uploading file from URL to S3:', (error as Error).message);
@@ -195,19 +200,21 @@ export async function deleteFileFromS3(req: ServerRequest, file: MongoFile): Pro
   const userId = req.user.id;
   const key = extractKeyFromS3Url(file.filepath);
 
-  if (!key.includes(userId)) {
+  const keyParts = key.split('/');
+  if (keyParts.length < 2 || keyParts[1] !== userId) {
     const message = `[deleteFileFromS3] User ID mismatch: ${userId} vs ${key}`;
     logger.error(message);
     throw new Error(message);
   }
 
-  await deleteRagFile({ userId, file });
-  const params = { Bucket: bucketName, Key: key };
-
   const s3 = initializeS3();
   if (!s3) {
     throw new Error('[deleteFileFromS3] S3 not initialized');
   }
+
+  const params = { Bucket: bucketName, Key: key };
+
+  await deleteRagFile({ userId, file });
 
   try {
     try {
@@ -219,6 +226,7 @@ export async function deleteFileFromS3(req: ServerRequest, file: MongoFile): Pro
         logger.warn(`[deleteFileFromS3] File does not exist: ${key}`);
         return;
       }
+      throw headErr;
     }
 
     const deleteResult = await s3.send(new DeleteObjectCommand(params));
@@ -268,18 +276,19 @@ export async function uploadFileToS3({
 
     await s3.send(new PutObjectCommand(uploadParams));
     const fileURL = await getS3URL({ userId, fileName, basePath });
+    // NOTE: temp file is intentionally NOT deleted on the success path.
+    // The caller (processAgentFileUpload) reads file.path after this returns
+    // to stream the file to the RAG vector embedding service (POST /embed).
+    // Temp file lifecycle on success is the caller's responsibility.
     return { filepath: fileURL, bytes };
   } catch (error) {
     logger.error('[uploadFileToS3] Error streaming file to S3:', error);
-    try {
-      if (file?.path) {
-        await fs.promises.unlink(file.path);
-      }
-    } catch (unlinkError) {
-      logger.error(
-        '[uploadFileToS3] Error deleting temporary file, likely already deleted:',
-        (unlinkError as Error).message,
-      );
+    if (file?.path) {
+      await fs.promises
+        .unlink(file.path)
+        .catch((e: unknown) =>
+          logger.error('[uploadFileToS3] Failed to delete temp file:', (e as Error).message),
+        );
     }
     throw error;
   }
@@ -296,6 +305,9 @@ export async function getS3FileStream(_req: ServerRequest, filePath: string): Pr
     }
 
     const data = await s3.send(new GetObjectCommand(params));
+    if (!data.Body) {
+      throw new Error(`[getS3FileStream] S3 response body is empty for key: ${Key}`);
+    }
     return data.Body as Readable;
   } catch (error) {
     logger.error('[getS3FileStream] Error retrieving S3 file stream:', error);

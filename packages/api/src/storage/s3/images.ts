@@ -2,8 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 import { logger } from '@librechat/data-schemas';
-import { saveBufferToS3 } from './crud';
-import { s3Config } from './s3Config';
+import type { IUser } from '@librechat/data-schemas';
 import type { FormatEnum } from 'sharp';
 import type {
   UploadImageParams,
@@ -11,6 +10,8 @@ import type {
   ProcessAvatarParams,
   MongoFile,
 } from '../types';
+import { saveBufferToS3 } from './crud';
+import { s3Config } from './s3Config';
 
 const { DEFAULT_BASE_PATH: defaultBasePath } = s3Config;
 
@@ -20,7 +21,7 @@ export interface S3ImageServiceDeps {
     resolution: string,
     endpoint: string,
   ) => Promise<{ buffer: Buffer; width: number; height: number }>;
-  updateUser: (userId: string, update: { avatar: string }) => Promise<void>;
+  updateUser: (userId: string, update: { avatar: string }) => Promise<IUser | null>;
   updateFile: (params: { file_id: string }) => Promise<MongoFile>;
 }
 
@@ -43,9 +44,9 @@ export class S3ImageService {
       throw new Error('[S3ImageService.uploadImageToS3] User not authenticated');
     }
 
+    const inputFilePath = file.path;
     try {
       const appConfig = req.config;
-      const inputFilePath = file.path;
       const inputBuffer = await fs.promises.readFile(inputFilePath);
 
       const {
@@ -78,10 +79,7 @@ export class S3ImageService {
         fileName,
         basePath,
       });
-
-      await fs.promises.unlink(inputFilePath);
       const bytes = Buffer.byteLength(processedBuffer);
-
       return { filepath: downloadURL, bytes, width, height };
     } catch (error) {
       logger.error(
@@ -89,6 +87,15 @@ export class S3ImageService {
         (error as Error).message,
       );
       throw error;
+    } finally {
+      await fs.promises
+        .unlink(inputFilePath)
+        .catch((e: unknown) =>
+          logger.error(
+            '[S3ImageService.uploadImageToS3] Failed to delete temp file:',
+            (e as Error).message,
+          ),
+        );
     }
   }
 

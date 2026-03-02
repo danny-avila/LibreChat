@@ -85,6 +85,13 @@ describe('S3 CRUD', () => {
       const key = getS3Key('files', 'user456', 'folder/subfolder/doc.pdf');
       expect(key).toBe('files/user456/folder/subfolder/doc.pdf');
     });
+
+    it('throws if basePath contains a slash', async () => {
+      const { getS3Key } = await import('../crud');
+      expect(() => getS3Key('a/b', 'user123', 'file.png')).toThrow(
+        '[getS3Key] basePath must not contain slashes: "a/b"',
+      );
+    });
   });
 
   describe('saveBufferToS3', () => {
@@ -355,6 +362,7 @@ describe('S3 CRUD', () => {
       });
       expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload.jpg');
       expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
+      expect(fs.promises.unlink).not.toHaveBeenCalled();
     });
 
     it('handles upload errors and cleans up temp file', async () => {
@@ -381,6 +389,7 @@ describe('S3 CRUD', () => {
         '[uploadFileToS3] Error streaming file to S3:',
         expect.any(Error),
       );
+      expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/upload.jpg');
     });
   });
 
@@ -444,7 +453,6 @@ describe('S3 CRUD', () => {
       const result = needsRefresh('not-a-valid-url', 3600);
       expect(result).toBe(true);
     });
-
   });
 
   describe('getNewS3URL', () => {
