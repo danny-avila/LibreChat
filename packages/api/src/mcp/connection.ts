@@ -1142,6 +1142,10 @@ export class MCPConnection extends EventEmitter {
       if (message.includes('authentication required') || message.includes('unauthorized')) {
         return true;
       }
+      // Check for missing authorization values (e.g., Amazon Ads MCP returns HTTP 400 with this)
+      if (message.includes('no authorization')) {
+        return true;
+      }
     }
 
     return false;
