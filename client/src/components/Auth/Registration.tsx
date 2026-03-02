@@ -16,12 +16,17 @@ const Registration: React.FC = () => {
   const { theme } = useContext(ThemeContext);
   const { startupConfig, startupConfigError, isFetching } = useOutletContext<TLoginLayoutContext>();
 
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const token = queryParams.get('token');
+  const invitedEmail = queryParams.get('email') ?? '';
+
   const {
     watch,
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<TRegisterUser>({ mode: 'onChange' });
+  } = useForm<TRegisterUser>({ mode: 'onChange', defaultValues: { email: invitedEmail } });
   const password = watch('password');
 
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -29,9 +34,6 @@ const Registration: React.FC = () => {
   const [countdown, setCountdown] = useState<number>(3);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
-  const location = useLocation();
-  const queryParams = new URLSearchParams(location.search);
-  const token = queryParams.get('token');
   const validTheme = isDark(theme) ? 'dark' : 'light';
 
   // only require captcha if we have a siteKey
@@ -64,7 +66,13 @@ const Registration: React.FC = () => {
     },
   });
 
-  const renderInput = (id: string, label: TranslationKeys, type: string, validation: object) => (
+  const renderInput = (
+    id: string,
+    label: TranslationKeys,
+    type: string,
+    validation: object,
+    readOnly = false,
+  ) => (
     <div className="mb-4">
       <div className="relative">
         <input
@@ -72,12 +80,13 @@ const Registration: React.FC = () => {
           type={type}
           autoComplete={id}
           aria-label={localize(label)}
+          readOnly={readOnly}
           {...register(
             id as 'name' | 'email' | 'username' | 'password' | 'confirm_password',
             validation,
           )}
           aria-invalid={!!errors[id]}
-          className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none"
+          className={`webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none${readOnly ? ' cursor-not-allowed opacity-70' : ''}`}
           placeholder=" "
           data-testid={id}
         />
@@ -148,21 +157,27 @@ const Registration: React.FC = () => {
                 message: localize('com_auth_username_max_length'),
               },
             })}
-            {renderInput('email', 'com_auth_email', 'email', {
-              required: localize('com_auth_email_required'),
-              minLength: {
-                value: 1,
-                message: localize('com_auth_email_min_length'),
+            {renderInput(
+              'email',
+              'com_auth_email',
+              'email',
+              {
+                required: localize('com_auth_email_required'),
+                minLength: {
+                  value: 1,
+                  message: localize('com_auth_email_min_length'),
+                },
+                maxLength: {
+                  value: 120,
+                  message: localize('com_auth_email_max_length'),
+                },
+                pattern: {
+                  value: /\S+@\S+\.\S+/,
+                  message: localize('com_auth_email_pattern'),
+                },
               },
-              maxLength: {
-                value: 120,
-                message: localize('com_auth_email_max_length'),
-              },
-              pattern: {
-                value: /\S+@\S+\.\S+/,
-                message: localize('com_auth_email_pattern'),
-              },
-            })}
+              Boolean(token && invitedEmail),
+            )}
             {renderInput('password', 'com_auth_password', 'password', {
               required: localize('com_auth_password_required'),
               minLength: {

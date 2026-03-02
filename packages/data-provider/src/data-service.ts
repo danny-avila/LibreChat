@@ -1092,3 +1092,7 @@ export const getAdminUsers = (): Promise<q.TAdminUser[]> => {
 export const inviteUser = (payload: q.TAdminInvitePayload): Promise<{ message: string }> => {
   return request.post(endpoints.adminInviteUser(), payload);
 };
+
+export const deleteAdminUser = (id: string): Promise<{ message: string }> => {
+  return request.delete(endpoints.adminDeleteUser(id));
+};
