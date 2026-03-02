@@ -53,6 +53,7 @@ export const knownOpenAIParams = new Set([
   'truncation',
   'include',
   'previous_response_id',
+  'stored_prompt_id',
   // LangChain specific
   '__includeRawResponse',
   'maxConcurrency',
@@ -150,6 +151,7 @@ export function getOpenAILLMConfig({
     reasoning_summary,
     verbosity,
     web_search,
+    stored_prompt_id,
     frequency_penalty,
     presence_penalty,
     ...modelOptions
@@ -272,6 +274,20 @@ export function getOpenAILLMConfig({
     /** Standard OpenAI web search uses tools API */
     llmConfig.useResponsesApi = true;
     tools.push({ type: 'web_search' });
+  }
+
+  if (stored_prompt_id) {
+    /**
+     * Forward a stored OpenAI Playground prompt by ID.
+     * The Responses API accepts `prompt: { id, variables? }` which causes OpenAI
+     * to hydrate the stored system instructions, file-search vector store, and
+     * any tool definitions configured in the Playground.
+     * We force `useResponsesApi` here because Chat Completions does not support
+     * this parameter.
+     */
+    llmConfig.useResponsesApi = true;
+    modelKwargs.prompt = { id: stored_prompt_id };
+    hasModelKwargs = true;
   }
 
   /**
