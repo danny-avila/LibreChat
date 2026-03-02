@@ -381,6 +381,25 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).toHaveProperty('include_reasoning', true);
     });
 
+    it('should combine web search plugins and reasoning object for OpenRouter', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-3-sonnet',
+          reasoning_effort: ReasoningEffort.high,
+          web_search: true,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+      });
+      expect(result.llmConfig).not.toHaveProperty('include_reasoning');
+      expect(result.llmConfig.modelKwargs).toHaveProperty('plugins', [{ id: 'web' }]);
+    });
+
     it('should disable web search via dropParams', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
@@ -575,7 +594,7 @@ describe('getOpenAILLMConfig', () => {
   });
 
   describe('OpenRouter Configuration', () => {
-    it('should include include_reasoning for OpenRouter', () => {
+    it('should include include_reasoning for OpenRouter when no reasoning_effort set', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
         streaming: true,
@@ -586,6 +605,75 @@ describe('getOpenAILLMConfig', () => {
       });
 
       expect(result.llmConfig).toHaveProperty('include_reasoning', true);
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+    });
+
+    it('should use reasoning object for OpenRouter when reasoning_effort is set', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-3-sonnet',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+      });
+      expect(result.llmConfig).not.toHaveProperty('include_reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('should exclude reasoning_summary from OpenRouter reasoning object', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-3-sonnet',
+          reasoning_effort: ReasoningEffort.high,
+          reasoning_summary: ReasoningSummary.detailed,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+      });
+    });
+
+    it.each([ReasoningEffort.xhigh, ReasoningEffort.minimal, ReasoningEffort.none])(
+      'should support OpenRouter effort level: %s',
+      (effort) => {
+        const result = getOpenAILLMConfig({
+          apiKey: 'test-api-key',
+          streaming: true,
+          useOpenRouter: true,
+          modelOptions: {
+            model: 'openai/o3-mini',
+            reasoning_effort: effort,
+          },
+        });
+
+        expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', { effort });
+        expect(result.llmConfig).not.toHaveProperty('include_reasoning');
+      },
+    );
+
+    it('should fall back to include_reasoning when reasoning_effort is unset (empty string)', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-3-sonnet',
+          reasoning_effort: ReasoningEffort.unset,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('include_reasoning', true);
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
     });
   });
 

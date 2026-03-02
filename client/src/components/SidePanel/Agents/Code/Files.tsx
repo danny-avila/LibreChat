@@ -35,6 +35,7 @@ export default function Files({
   const { abortUpload, handleFileChange } = useFileHandling({
     fileSetter: setFiles,
     additionalMetadata: { agent_id, tool_resource },
+    endpointOverride: EModelEndpoint.agents,
   });
 
   useLazyEffect(

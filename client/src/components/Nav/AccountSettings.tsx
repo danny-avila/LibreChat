@@ -62,10 +62,7 @@ function AccountSettings() {
           </>
         )}
         {/* NJ: Hide "my files", "help & faq", & "settings" (we'll re-enable as we desire)
-        <Menu.MenuItem
-          onClick={() => setShowFiles(true)}
-          className="select-item text-sm"
-        >
+        <Menu.MenuItem onClick={() => setShowFiles(true)} className="select-item text-sm">
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
         </Menu.MenuItem>
@@ -78,10 +75,7 @@ function AccountSettings() {
             {localize('com_nav_help_faq')}
           </Menu.MenuItem>
         )}
-        <Menu.MenuItem
-          onClick={() => setShowSettings(true)}
-          className="select-item text-sm"
-        >
+        <Menu.MenuItem onClick={() => setShowSettings(true)} className="select-item text-sm">
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
         </Menu.MenuItem>
