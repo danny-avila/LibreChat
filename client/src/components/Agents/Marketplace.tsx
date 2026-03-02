@@ -287,7 +287,10 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
               {!isSmallScreen && (
                 <div className="container mx-auto max-w-4xl">
                   <div className={cn('mb-8 text-center', 'mt-12')}>
-                    <h1 className="mb-3 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">
+                    <h1
+                      className="mb-3 text-3xl font-bold tracking-tight md:text-5xl"
+                      style={{ color: '#c9a87c' }}
+                    >
                       {localize('com_agents_marketplace')}
                     </h1>
                     <p className="mx-auto mb-6 max-w-2xl text-lg text-text-secondary">

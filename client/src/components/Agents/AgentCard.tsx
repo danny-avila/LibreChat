@@ -49,7 +49,8 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
           className={cn(
             'group relative flex h-32 gap-5 overflow-hidden rounded-xl',
             'cursor-pointer select-none px-6 py-4',
-            'bg-surface-tertiary transition-colors duration-150 hover:bg-surface-hover',
+            'bg-surface-tertiary transition-all duration-200 hover:bg-surface-hover',
+            'border border-transparent hover:border-[rgba(201,168,124,0.25)]',
             'md:h-36 lg:h-40',
             '[&_*]:cursor-pointer',
             className,
@@ -85,7 +86,10 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
           {/* Content */}
           <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden">
             {/* Agent name */}
-            <Label className="line-clamp-2 text-base font-semibold text-text-primary md:text-lg">
+            <Label
+              className="line-clamp-2 text-base font-semibold md:text-lg"
+              style={{ color: '#c9a87c' }}
+            >
               {agent.name}
             </Label>
 
