@@ -529,10 +529,19 @@ export class MCPOAuthHandler {
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
         if (resourceMetadata?.resource != null && resourceMetadata.resource) {
-          authorizationUrl.searchParams.set('resource', resourceMetadata.resource);
-          logger.debug(
-            `[MCPOAuth] Added resource parameter to authorization URL: ${resourceMetadata.resource}`,
-          );
+          try {
+            const canonicalResource = new URL(resourceMetadata.resource).href;
+            authorizationUrl.searchParams.set('resource', canonicalResource);
+            logger.debug(
+              `[MCPOAuth] Added resource parameter to authorization URL: ${canonicalResource}`,
+            );
+          } catch (error) {
+            logger.error(
+              `[MCPOAuth] Invalid resource URL from metadata for ${serverName}: '${resourceMetadata.resource}'`,
+              error,
+            );
+            throw error;
+          }
         } else {
           logger.warn(
             `[MCPOAuth] Resource metadata missing 'resource' property for ${serverName}. ` +
