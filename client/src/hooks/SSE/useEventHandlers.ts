@@ -1,11 +1,12 @@
 import { useCallback, useRef } from 'react';
 import { v4 } from 'uuid';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   QueryKeys,
   Constants,
+  LocalStorageKeys,
   EndpointURLs,
   ContentTypes,
   tPresetSchema,
@@ -39,8 +40,13 @@ import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useLocalize } from '~/hooks';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
+import {
+  notifyStreamCompletion,
+  suppressStreamCompletionNotification,
+} from './streamCompletionNotification';
 import store from '~/store';
 
 type TSyncData = {
@@ -178,7 +184,9 @@ export default function useEventHandlers({
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
+  const localize = useLocalize();
   const applyAgentTemplate = useApplyAgentTemplate();
+  const notifyOnStreamComplete = useRecoilValue(store.notifyOnStreamComplete);
   const setAbortScroll = useSetRecoilState(store.abortScroll);
   const navigate = useNavigate();
   const location = useLocation();
@@ -431,6 +439,8 @@ export default function useEventHandlers({
   const finalHandler = useCallback(
     (data: TFinalResData, submission: EventSubmission) => {
       const { requestMessage, responseMessage, conversation, runMessages } = data;
+      const isEarlyAbort = data.earlyAbort === true;
+      const isAborted = data.aborted === true;
       const {
         messages,
         conversation: submissionConvo,
@@ -439,15 +449,12 @@ export default function useEventHandlers({
       } = submission;
 
       try {
-        // Handle early abort - aborted during tool loading before any messages saved
-        // Don't update conversation state, just reset UI and stay on new chat
-        if ((data as Record<string, unknown>).earlyAbort) {
+        if (isEarlyAbort) {
           console.log(
             '[finalHandler] Early abort detected - no messages saved, staying on new chat',
           );
           setShowStopButton(false);
           setIsSubmitting(false);
-          // Navigate to new chat if not already there
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
@@ -455,7 +462,6 @@ export default function useEventHandlers({
         }
 
         if (responseMessage?.attachments && responseMessage.attachments.length > 0) {
-          // Process each attachment through the attachmentHandler
           responseMessage.attachments.forEach((attachment) => {
             const attachmentData = {
               ...attachment,
@@ -471,15 +477,37 @@ export default function useEventHandlers({
 
         setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
 
+        const finalResponseText = getAllContentText(responseMessage);
+        const notifyResponseCompletion = () => {
+          const storedAppTitle =
+            typeof localStorage !== 'undefined'
+              ? localStorage.getItem(LocalStorageKeys.APP_TITLE)
+              : null;
+          const appTitle =
+            storedAppTitle ||
+            queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig])?.appTitle ||
+            'LibreChat';
+          notifyStreamCompletion({
+            enabled: notifyOnStreamComplete,
+            title: appTitle,
+            fallbackMessage: localize('com_nav_stream_complete_notification'),
+            responseText: finalResponseText,
+            isAborted,
+            isEarlyAbort,
+          });
+          if (conversation.conversationId) {
+            suppressStreamCompletionNotification(conversation.conversationId, 10_000);
+          }
+        };
+
         const currentMessages = getMessages();
-        /* Early return if messages are empty; i.e., the user navigated away */
         if (!currentMessages || currentMessages.length === 0) {
+          notifyResponseCompletion();
           return;
         }
 
-        /* a11y announcements */
         announcePolite({ message: 'end', isStatus: true });
-        announcePolite({ message: getAllContentText(responseMessage) });
+        announcePolite({ message: finalResponseText });
 
         const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
 
@@ -517,7 +545,6 @@ export default function useEventHandlers({
           return;
         }
 
-        /* Update messages; if assistants endpoint, client doesn't receive responseMessage */
         let finalMessages: TMessage[] = [];
         if (runMessages) {
           finalMessages = [...runMessages];
@@ -538,6 +565,8 @@ export default function useEventHandlers({
             [...currentMessages],
           );
         }
+
+        notifyResponseCompletion();
 
         if (isNewConvo && submissionConvo.conversationId) {
           removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
@@ -598,6 +627,8 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      localize,
+      notifyOnStreamComplete,
     ],
   );
 
