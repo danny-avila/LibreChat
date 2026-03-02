@@ -1,6 +1,5 @@
 import React, { useRef, useCallback, useMemo, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
-import { LayoutGrid } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
@@ -308,7 +307,12 @@ export default function FavoritesList({
               >
                 <div className="flex flex-1 items-center truncate pr-6">
                   <div className="mr-2 h-5 w-5">
-                    <LayoutGrid className="h-5 w-5 text-text-primary" />
+                    <img
+                      src="/assets/karrieremum-logo.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="h-5 w-5"
+                    />
                   </div>
                   <span className="truncate">{localize('com_agents_marketplace')}</span>
                 </div>
