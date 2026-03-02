@@ -3,6 +3,7 @@ import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
 import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote } from 'lucide-react';
 import {
   Permissions,
+  SystemRoles,
   EModelEndpoint,
   PermissionTypes,
   isParamEndpoint,
@@ -19,7 +20,7 @@ import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
-import { useHasAccess, useMCPServerManager } from '~/hooks';
+import { useHasAccess, useAuthContext, useMCPServerManager } from '~/hooks';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -36,6 +37,9 @@ export default function useSideNavLinks({
   interfaceConfig: Partial<TInterfaceConfig>;
   endpointsConfig: TEndpointsConfig;
 }) {
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
+
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.USE,
@@ -141,13 +145,15 @@ export default function useSideNavLinks({
       });
     }
 
-    links.push({
-      title: 'com_sidepanel_attach_files',
-      label: '',
-      icon: AttachmentIcon,
-      id: 'files',
-      Component: FilesPanel,
-    });
+    if (isAdmin) {
+      links.push({
+        title: 'com_sidepanel_attach_files',
+        label: '',
+        icon: AttachmentIcon,
+        id: 'files',
+        Component: FilesPanel,
+      });
+    }
 
     if (hasAccessToBookmarks) {
       links.push({
@@ -196,6 +202,7 @@ export default function useSideNavLinks({
     availableMCPServers,
     hasAccessToUseMCPSettings,
     hasAccessToCreateMCP,
+    isAdmin,
     hidePanel,
   ]);
 

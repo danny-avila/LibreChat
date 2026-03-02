@@ -2,6 +2,7 @@ import React, { useMemo, useCallback } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Permissions,
+  SystemRoles,
   alternateName,
   EModelEndpoint,
   PermissionTypes,
@@ -17,7 +18,7 @@ import type {
 import type { Endpoint } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { mapEndpoints, getIconKey } from '~/utils';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useAuthContext } from '~/hooks';
 import { icons } from './Icons';
 
 export const useEndpoints = ({
@@ -44,6 +45,9 @@ export const useEndpoints = ({
     permission: Permissions.USE,
   });
 
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
+
   const assistants: Assistant[] = useMemo(
     () => Object.values(assistantsMap?.[EModelEndpoint.assistants] ?? {}),
     [assistantsMap],
@@ -63,6 +67,9 @@ export const useEndpoints = ({
       if (endpoints[i] === EModelEndpoint.agents && !hasAgentAccess) {
         continue;
       }
+      if (!isAdmin && endpoints[i] !== EModelEndpoint.agents) {
+        continue;
+      }
       if (includedEndpoints.size > 0 && !includedEndpoints.has(endpoints[i])) {
         continue;
       }
@@ -70,7 +77,7 @@ export const useEndpoints = ({
     }
 
     return result;
-  }, [endpoints, hasAgentAccess, includedEndpoints, interfaceConfig.modelSelect]);
+  }, [endpoints, hasAgentAccess, includedEndpoints, interfaceConfig.modelSelect, isAdmin]);
 
   const endpointRequiresUserKey = useCallback(
     (ep: string) => {
