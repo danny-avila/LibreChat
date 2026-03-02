@@ -11,8 +11,10 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
-const COLLAPSED_WIDTH = 50;
-const TRANSITION_MS = 200;
+const COLLAPSED_WIDTH = 52;
+const EXPANDED_MIN = 360;
+const TRANSITION_MS = 300;
+const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 
 function getInitialActivePanel(): string {
   const saved = localStorage.getItem('side:active-panel');
@@ -29,20 +31,8 @@ function UnifiedSidebar() {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [expanded, setExpanded] = useRecoilState(store.sidebarExpanded);
   const [activeSection, setActiveSection] = useState(getInitialActivePanel);
-  const [sidebarWidth, _setSidebarWidth] = useState(getInitialWidth);
+  const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
   const isResizing = useRef(false);
-  const [isCollapsing, setIsCollapsing] = useState(false);
-
-  useEffect(() => {
-    if (!expanded) {
-      setIsCollapsing(true);
-      const timer = setTimeout(() => setIsCollapsing(false), TRANSITION_MS);
-      return () => clearTimeout(timer);
-    }
-    setIsCollapsing(false);
-  }, [expanded]);
-
-  const showExpanded = expanded || isCollapsing;
 
   const links = useUnifiedSidebarLinks({
     interfaceConfig: defaultInterface,
@@ -76,10 +66,13 @@ function UnifiedSidebar() {
       <>
         <div
           className={cn(
-            'fixed left-0 top-0 z-[110] h-full bg-surface-primary-alt transition-transform duration-200 ease-out',
+            'fixed left-0 top-0 z-[110] h-full bg-surface-primary-alt',
             expanded ? 'translate-x-0' : '-translate-x-full',
           )}
-          style={{ width: 300 }}
+          style={{
+            width: 300,
+            transition: `transform ${TRANSITION_MS}ms ${EASING}`,
+          }}
         >
           <SidePanelProvider>
             <ActivePanelProvider defaultActive={activeSection}>
@@ -105,20 +98,22 @@ function UnifiedSidebar() {
           className="relative flex h-full flex-shrink-0 overflow-hidden"
           style={{
             width: expanded ? sidebarWidth : COLLAPSED_WIDTH,
-            minWidth: expanded ? 360 : COLLAPSED_WIDTH,
+            minWidth: expanded ? EXPANDED_MIN : COLLAPSED_WIDTH,
             maxWidth: expanded ? '40%' : COLLAPSED_WIDTH,
             transition: isResizing.current
               ? 'none'
-              : `width ${TRANSITION_MS}ms ease-out, min-width ${TRANSITION_MS}ms ease-out, max-width ${TRANSITION_MS}ms ease-out`,
+              : `width ${TRANSITION_MS}ms ${EASING}, min-width ${TRANSITION_MS}ms ${EASING}, max-width ${TRANSITION_MS}ms ${EASING}`,
           }}
           aria-label={localize('com_nav_control_panel')}
         >
           <Sidebar
             links={links}
+            expanded={expanded}
             onCollapse={handleCollapse}
-            showExpanded={showExpanded}
-            onResizeStart={(e) => (isResizing.current = true)}
-            setSidebarWidth={_setSidebarWidth}
+            onExpand={handleExpand}
+            onExpandToSection={handleExpandToSection}
+            onResizeStart={() => (isResizing.current = true)}
+            setSidebarWidth={setSidebarWidth}
           />
         </aside>
       </ActivePanelProvider>
