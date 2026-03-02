@@ -536,11 +536,12 @@ export class MCPOAuthHandler {
               `[MCPOAuth] Added resource parameter to authorization URL: ${canonicalResource}`,
             );
           } catch (error) {
+            authorizationUrl.searchParams.set('resource', resourceMetadata.resource);
             logger.error(
-              `[MCPOAuth] Invalid resource URL from metadata for ${serverName}: '${resourceMetadata.resource}'`,
+              `[MCPOAuth] Invalid resource URL from metadata for ${serverName}: ` +
+                `'${resourceMetadata.resource}'. Using raw value as fallback.`,
               error,
             );
-            throw error;
           }
         } else {
           logger.warn(
