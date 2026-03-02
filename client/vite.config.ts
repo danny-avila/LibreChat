@@ -61,8 +61,8 @@ export default defineConfig(({ command }) => ({
       },
       includeAssets: [],
       manifest: {
-        name: 'LibreChat',
-        short_name: 'LibreChat',
+        name: 'NJ AI Assistant',
+        short_name: 'NJAI',
         display: 'standalone',
         background_color: '#000000',
         theme_color: '#009688',
