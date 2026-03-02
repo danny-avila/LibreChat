@@ -2,6 +2,13 @@ const promptTemplates = require('./promptTemplates');
 const createWoodlandFunctionsAgent = require('./createWoodlandFunctionsAgent');
 const WoodlandAISearchCyclopedia = require('../../tools/structured/WoodlandAISearchCyclopedia');
 
+let classifyProcedure = () => ({ safety_level: 'safe', description: '', risk_factors: [] });
+try {
+  ({ classifyProcedure } = require('../../tools/structured/util/proceduralSafety'));
+} catch (_) {
+  // leave safe fallback
+}
+
 const CYCLOPEDIA_HOSTS = [
   'https://cyclopedia.cyclonerake.com/',
   'https://cyclopedia.cyclonerake.com',
@@ -32,7 +39,6 @@ module.exports = async function initializeCyclopediaSupportAgent(params) {
     const cyclopediaTool = agent?.tools?.find((t) => /cyclopedia/i.test(t?.name));
     if (cyclopediaTool && typeof cyclopediaTool.invoke === 'function') {
       const originalInvoke = cyclopediaTool.invoke.bind(cyclopediaTool);
-      const { classifyProcedure } = require('../../tools/structured/util/proceduralSafety');
       cyclopediaTool.invoke = async function (input) {
         const rawQuery = typeof input === 'string' ? input : input?.input || input?.query || '';
         const classification = classifyProcedure(rawQuery);

@@ -73,6 +73,9 @@ const DEFAULT_RAKE_NAME_ALIASES = {
 const MULTI_WORD_BRAND_ALIASES = {
   'john deere': 'John Deere',
   'cub cadet': 'Cub Cadet',
+  'bad boy': 'Bad Boy',
+  'big dog': 'Big Dog',
+  'red ray': 'Red Ray',
   'troy bilt': 'Troy-Bilt',
   'troy-bilt': 'Troy-Bilt',
   'agco allis': 'Agco Allis',
@@ -1029,19 +1032,19 @@ class WoodlandAISearchTractor extends Tool {
       let t = text;
       // Replace whole-word abbreviations only to avoid mid-word corruption
       const replaceWord = (pattern, replacement) => {
-        const re = new RegExp(`(^|\b)${pattern}(\b|$)`, 'gi');
+        const re = new RegExp(`(^|\\b)${pattern}(\\b|$)`, 'gi');
         t = t.replace(re, (m, pre, post) => `${pre}${replacement}${post}`);
       };
       replaceWord('jd', 'john deere');
-      replaceWord('deere', 'john deere'); // unify "Deere" alone to brand form
       replaceWord('cmd', 'commander');
       replaceWord('cmdr', 'commander');
       replaceWord('comm pro', 'commercial pro');
       replaceWord('compro', 'commercial pro');
       // CRS references remain but ensure consistent hyphenation/spaces
       t = t.replace(/\b(crs)\b/gi, 'crs');
-      // Normalize common deck size formats (42in, 42") to "42 in"
-      t = t.replace(/\b(\d{2,3})\s?(?:in|inch|inches|"|”)?\b/gi, '$1 in');
+      // Normalize explicit deck-size formats only (42in, 42 inches, 42") to "42 in"
+      t = t.replace(/\b(\d{2,3})\s*(?:inches?|in)\b/gi, '$1 in');
+      t = t.replace(/\b(\d{2,3})\s*(?:"|”)(?=\s|$)/gi, '$1 in');
       return t;
     };
     const raw = normalizeAbbreviations(rawOriginal);
@@ -1090,11 +1093,39 @@ class WoodlandAISearchTractor extends Tool {
         make = MULTI_WORD_BRAND_ALIASES[brandKey];
         // Remove brand portion and trim
         const remainder = lower.replace(brandKey, ' ').replace(/\s+/g, ' ').trim();
-        // Model candidate: first remaining token sequence with letters/digits/hyphens
-        // e.g., '1616', 'x350', 'ytx24v48'
-        const m = remainder.match(/([a-z0-9][a-z0-9\-]{1,30})(?:\b|$)/i);
-        if (m) {
-          model = m[1].toUpperCase();
+        const tokens = remainder
+          .split(/\s+/)
+          .map((token) => token.replace(/^[^a-z0-9]+|[^a-z0-9\-]+$/gi, ''))
+          .filter(Boolean);
+        const stopwords = new Set([
+          'with',
+          'deck',
+          'inch',
+          'inches',
+          'in',
+          'for',
+          'need',
+          'needs',
+          'what',
+          'which',
+          'my',
+          'and',
+          'to',
+          'is',
+        ]);
+        const modelTokens = [];
+        for (const token of tokens) {
+          const lowToken = token.toLowerCase();
+          if (stopwords.has(lowToken)) {
+            break;
+          }
+          modelTokens.push(token);
+          if (modelTokens.length >= 3) {
+            break;
+          }
+        }
+        if (modelTokens.length > 0) {
+          model = modelTokens.join(' ').toUpperCase();
         }
       } else {
         // Fallback to existing regex approach if no multi-word brand detected

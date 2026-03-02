@@ -447,6 +447,169 @@ class WoodlandEngineHistory extends Tool {
     return Array.from(matches, (match) => match[1]?.replace(/''/g, "'")?.trim()).filter(Boolean);
   }
 
+  _normalizeText(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9.\s-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  _extractHorsepowerToken(value) {
+    const text = this._normalizeText(value);
+    const hpMatch = text.match(/\b(\d+(?:\.\d+)?)\s*(?:hp|horsepower)\b/i);
+    return hpMatch ? hpMatch[1] : '';
+  }
+
+  _buildRequestedSignals(input = {}) {
+    const query = String(input.query || '');
+    const normalizedQuery = this._normalizeText(query);
+    const engineKeywords = ['vanguard', 'intek', 'tecumseh', 'briggs', 'kohler', 'honda', 'subaru'];
+    const engineFromQuery = engineKeywords.find((keyword) =>
+      new RegExp(`\\b${keyword}\\b`, 'i').test(normalizedQuery),
+    );
+    const hpFromQuery = this._extractHorsepowerToken(query);
+    const rakeFromQueryMatch = normalizedQuery.match(
+      /\b(classic|commander(?:\s+pro)?|commercial(?:\s+pro)?|xl|z-10|101|102|103|104|105|106|10)\b/i,
+    );
+    const phaseFromQueryMatch = normalizedQuery.match(/\bphase\s*(i|ii|1|2)\b/i);
+
+    const inferredEngineModel = [engineFromQuery, phaseFromQueryMatch?.[0]].filter(Boolean).join(' ');
+
+    return {
+      engineModel: input.engineModel || inferredEngineModel || '',
+      rakeModel: input.rakeModel || rakeFromQueryMatch?.[1] || '',
+      horsepower: input.horsepower || hpFromQuery || '',
+      filterShape: input.filterShape || '',
+      blowerColor: input.blowerColor || '',
+      airFilter: input.airFilter || '',
+      engineMaintenanceKit: input.engineMaintenanceKit || '',
+      isAttributeLookup:
+        /\b(what\s+models|which\s+models|what\s+years|difference|compare|vs\.?|versus)\b/i.test(
+          normalizedQuery,
+        ),
+    };
+  }
+
+  _scoreDocAgainstSignals(doc, signals = {}) {
+    const field = (name) => this._normalizeText(doc?.[name]);
+    const includes = (haystack, needle) => {
+      const n = this._normalizeText(needle);
+      if (!n) return false;
+      return haystack.includes(n);
+    };
+
+    const engineModel = field('engine_model');
+    const rakeModel = field('rake_model');
+    const horsepower = field('engine_horsepower');
+    const filterShape = field('filter_shape');
+    const blowerColor = field('blower_color');
+    const airFilter = field('air_filter');
+    const maintenanceKit = field('engine_maintenance_kit');
+    const content = this._normalizeText(doc?.content);
+
+    let score = 0;
+    const matched = [];
+
+    if (signals.engineModel) {
+      if (includes(engineModel, signals.engineModel) || includes(content, signals.engineModel)) {
+        score += 3;
+        matched.push('engineModel');
+      }
+    }
+
+    if (signals.rakeModel) {
+      if (includes(rakeModel, signals.rakeModel) || includes(content, signals.rakeModel)) {
+        score += 2;
+        matched.push('rakeModel');
+      }
+    }
+
+    if (signals.horsepower) {
+      const hpNeedle = this._extractHorsepowerToken(signals.horsepower) || this._normalizeText(signals.horsepower);
+      if (hpNeedle && (includes(horsepower, hpNeedle) || includes(content, hpNeedle))) {
+        score += 2;
+        matched.push('horsepower');
+      }
+    }
+
+    if (signals.filterShape && (includes(filterShape, signals.filterShape) || includes(content, signals.filterShape))) {
+      score += 1;
+      matched.push('filterShape');
+    }
+
+    if (signals.blowerColor && (includes(blowerColor, signals.blowerColor) || includes(content, signals.blowerColor))) {
+      score += 1;
+      matched.push('blowerColor');
+    }
+
+    if (signals.airFilter && (includes(airFilter, signals.airFilter) || includes(content, signals.airFilter))) {
+      score += 2;
+      matched.push('airFilter');
+    }
+
+    if (
+      signals.engineMaintenanceKit &&
+      (includes(maintenanceKit, signals.engineMaintenanceKit) ||
+        includes(content, signals.engineMaintenanceKit))
+    ) {
+      score += 2;
+      matched.push('engineMaintenanceKit');
+    }
+
+    return { score, matched };
+  }
+
+  _rankAndFilterResults(results = [], signals = {}) {
+    const signalFields = [
+      'engineModel',
+      'rakeModel',
+      'horsepower',
+      'filterShape',
+      'blowerColor',
+      'airFilter',
+      'engineMaintenanceKit',
+    ];
+    const activeSignalCount = signalFields.filter((field) => this._normalizeText(signals[field])).length;
+
+    const scored = results.map((doc) => {
+      const { score, matched } = this._scoreDocAgainstSignals(doc, signals);
+      return {
+        ...doc,
+        _match_score: score,
+        _matched_signals: matched,
+      };
+    });
+
+    scored.sort((a, b) => {
+      if ((b._match_score || 0) !== (a._match_score || 0)) {
+        return (b._match_score || 0) - (a._match_score || 0);
+      }
+      return (b['@search.score'] || 0) - (a['@search.score'] || 0);
+    });
+
+    if (activeSignalCount === 0) {
+      return {
+        ranked: scored,
+        activeSignalCount,
+        topScore: scored[0]?._match_score || 0,
+        ambiguous: false,
+      };
+    }
+
+    const topScore = scored[0]?._match_score || 0;
+    const filtered = scored.filter((doc) => (doc._match_score || 0) > 0);
+    const secondScore = filtered[1]?._match_score || 0;
+    const ambiguous = filtered.length > 1 && topScore > 0 && topScore - secondScore <= 1;
+
+    return {
+      ranked: filtered.length ? filtered : scored,
+      activeSignalCount,
+      topScore,
+      ambiguous,
+    };
+  }
+
   _useOutputEnvelope() {
     return String(process.env.WOODLAND_TOOL_OUTPUT_ENVELOPE || 'false')
       .toLowerCase()
@@ -610,8 +773,30 @@ class WoodlandEngineHistory extends Tool {
         return this._serializeNeedsReview('NEEDS_HUMAN_REVIEW: No reviewed records found.');
       }
 
-      results.sort((a, b) => (b['@search.score'] || 0) - (a['@search.score'] || 0));
-      return this._serializeSuccess(results, top);
+      const requestedSignals = this._buildRequestedSignals(input);
+      const { ranked, activeSignalCount, topScore, ambiguous } = this._rankAndFilterResults(
+        results,
+        requestedSignals,
+      );
+
+      if (activeSignalCount > 0 && topScore <= 0) {
+        return this._serializeNeedsReview(
+          'NEEDS_HUMAN_REVIEW: No confident engine-history match for the provided model/engine cues.',
+        );
+      }
+
+      if (
+        !requestedSignals.isAttributeLookup &&
+        activeSignalCount >= 2 &&
+        ambiguous &&
+        topScore < 4
+      ) {
+        return this._serializeNeedsReview(
+          'NEEDS_HUMAN_REVIEW: Multiple close engine matches found; please confirm one deciding cue (engine label exact model, horsepower, or rake model/year).',
+        );
+      }
+
+      return this._serializeSuccess(ranked, top);
     } catch (error) {
       logger.error('[woodland-ai-engine-history] Search request failed', error);
       return this._serializeError(error);

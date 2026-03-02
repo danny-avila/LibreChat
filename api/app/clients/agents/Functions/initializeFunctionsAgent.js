@@ -257,6 +257,18 @@ module.exports = async function initializeFunctionsAgent({ tools = [], customNam
     async invoke(payload) {
       const normalizedInput = normalizeInput(payload);
       const toolInput = enrichToolInput(normalizedInput, this.customName);
+
+      if (useTestFallback) {
+        const output = buildFallbackOutput(this.customName, toolInput.query || toolInput.input);
+        return {
+          output,
+          answer: output,
+          text: output,
+          toolInput,
+          selectedTool: null,
+        };
+      }
+
       const preferredToolName =
         toolInput.toolName || toolInput.tool || toolInput.domainTool || toolInput.agentName;
 

@@ -75,7 +75,8 @@ const DEFAULT_INTENT_TOOL_PRIORITIES = {
 const KEYWORD_TOOL_RULES = [
   {
     label: 'catalog_sku_attribute',
-    regex: /\b(sku|blue\s+diamond|liner|part\s*number|replacement\s*liner)\b/i,
+    regex:
+      /\b(sku|blue\s+diamond|liner|part\s*number|replacement\s*liner|impeller|hose|hitch|mda|rubber\s*collar|collector\s*bag|wheel|tire|power\s*unit|vac\s*kit|kit)\b/i,
     tools: ['CatalogPartsAgent'],
     frontLoad: true,
   },
@@ -87,13 +88,19 @@ const KEYWORD_TOOL_RULES = [
   },
   {
     label: 'policy_support',
-    regex: /(warranty|policy|shipping|return|troubleshoot|sop|install|procedure|steps)/i,
+    regex: /(warranty|policy|shipping|return|troubleshoot|sop|install|procedure|steps|manual)/i,
     tools: ['CyclopediaSupportAgent'],
   },
   {
     label: 'pricing_sales',
-    regex: /(price|cost|quote|bundle|finance|compare|upgrade|sales)/i,
+    regex: /(price|cost|quote|finance|compare|upgrade|sales|promotion|promo|discount)/i,
     tools: ['WebsiteProductAgent', 'CatalogPartsAgent'],
+  },
+  {
+    label: 'bundle_or_package_parts',
+    regex: /(bundle|package|what\s*comes\s*with|included|options)/i,
+    tools: ['CatalogPartsAgent', 'WebsiteProductAgent'],
+    frontLoad: true,
   },
   {
     label: 'cases_reference',
@@ -109,10 +116,10 @@ const KEYWORD_TOOL_RULES = [
 ];
 
 const EARLY_EXIT_KEYWORDS = new Map(
-  KEYWORD_TOOL_RULES.filter((rule) => rule.tools?.length === 1).map((rule) => [
-    rule.label,
-    rule.tools[0],
-  ]),
+  KEYWORD_TOOL_RULES
+    .filter((rule) => rule.tools?.length === 1)
+    .filter((rule) => ['cases_reference', 'service_locator'].includes(rule.label))
+    .map((rule) => [rule.label, rule.tools[0]]),
 );
 const PART_NUMBER_REGEX = /\b(part\s*number|sku|replacement\s*part|part\s*#)\b/i;
 
@@ -150,6 +157,20 @@ const resolveDomainTools = (
 
   const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText ?? '');
   if (text) {
+    const fitmentSignal =
+      /(compatible|compatibility|fit|fits|deck|tractor|attachment|mount|hitch|clearance)/i.test(
+        text,
+      );
+    const partSignal =
+      /\b(sku|part\s*number|replacement|impeller|hose|mda|hitch|rubber\s*collar|collector\s*bag|kit|bundle)\b/i.test(
+        text,
+      );
+
+    if (fitmentSignal && partSignal) {
+      addTool('TractorFitmentAgent', { front: true });
+      addTool('CatalogPartsAgent');
+    }
+
     if (PART_NUMBER_REGEX.test(text)) {
       addTool('CatalogPartsAgent', { front: true });
       addTool('CasesReferenceAgent');
@@ -242,6 +263,61 @@ const stripMetadataBlocks = (value) => {
     .trim();
 };
 
+const hasUnsupportedClaims = (text) => {
+  if (typeof text !== 'string' || !text.trim()) {
+    return false;
+  }
+
+  const hasPricing = /\$\s?\d|\b\d+(?:\.\d{1,2})?\s?(?:usd|dollars?)\b/i.test(text);
+  const hasBundleMarketing =
+    /\b(bundle|2\s?-\s?6\s?bundle|6\s?in\s?1|value\s?pack|promo|promotion|discount)\b/i.test(
+      text,
+    );
+  const hasWarrantyTerm =
+    /\b(?:\d+\s?(?:year|yr|month|mo)s?\s+warranty|lifetime\s+warranty)\b/i.test(text);
+  const hasSpecificQtyOrFitment =
+    /\b(?:\d+\s?(?:blade|blades|inch|inches|hp|horsepower)|fits\s+all|all\s+rakes)\b/i.test(
+      text,
+    );
+
+  return hasPricing || hasBundleMarketing || hasWarrantyTerm || hasSpecificQtyOrFitment;
+};
+
+const applyValidationGuardrail = (result, warnings = []) => {
+  if (!result || typeof result !== 'object' || !Array.isArray(warnings) || !warnings.length) {
+    return result;
+  }
+
+  if (!warnings.includes('unsupported_claims_without_citation')) {
+    return result;
+  }
+
+  const safeMessage =
+    'needs human review. I cannot verify pricing, warranty, bundle, or precise fitment claims from the current sources. Please confirm the model/tractor anchors and re-run authoritative tool checks.';
+
+  const existingOutput =
+    (typeof result.output === 'string' && result.output) ||
+    (typeof result.answer === 'string' && result.answer) ||
+    (typeof result.text === 'string' && result.text) ||
+    '';
+
+  if (/needs human review/i.test(existingOutput)) {
+    return result;
+  }
+
+  if (typeof result.output === 'string') {
+    result.output = safeMessage;
+  } else if (typeof result.answer === 'string') {
+    result.answer = safeMessage;
+  } else if (typeof result.text === 'string') {
+    result.text = safeMessage;
+  } else {
+    result.output = safeMessage;
+  }
+
+  return result;
+};
+
 const evaluateCompletenessWarnings = (text, metadata = {}) => {
   const warnings = [];
   const normalizedText = typeof text === 'string' ? text : '';
@@ -269,6 +345,10 @@ const evaluateCompletenessWarnings = (text, metadata = {}) => {
   );
   if (requiresEscalation && !hasEscalationLanguage) {
     warnings.push('missing_escalation_language');
+  }
+
+  if (hasUnsupportedClaims(normalizedText) && !hasUrlLike && !hasUrlUnavailable) {
+    warnings.push('unsupported_claims_without_citation');
   }
 
   return warnings;
@@ -514,6 +594,7 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
           result.validation_warnings = Array.isArray(result.validation_warnings)
             ? Array.from(new Set([...result.validation_warnings, ...warnings]))
             : warnings;
+          applyValidationGuardrail(result, warnings);
         }
       }
     } catch (error) {
@@ -608,10 +689,10 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     // Build enhanced input with validation guidance
     const validationGuidance = [];
 
-    const HARD_BLOCK_THRESHOLD = 0.6; // Define the constant here as it's used within this function.
+    const hardBlockThreshold = Number(HARD_BLOCK_THRESHOLD || 0.5);
 
     if (confidence != null && confidence < 0.7) {
-      const isHardBlock = confidence < HARD_BLOCK_THRESHOLD;
+      const isHardBlock = confidence < hardBlockThreshold;
       validationGuidance.push(isHardBlock ? `[HARD BLOCK: Confidence ${confidence.toFixed(2)} is too low]` : `[Low Confidence Warning: ${confidence.toFixed(2)}]`);
       validationGuidance.push(isHardBlock
         ? 'CRITICAL: Do NOT call domain agents. You MUST ask the clarifying_question provided below.'
@@ -627,7 +708,10 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
       }
     }
 
-    if (clarifyingQuestion && (missingAnchors.length > 0 || (confidence != null && confidence < HARD_BLOCK_THRESHOLD))) {
+    if (
+      clarifyingQuestion &&
+      (missingAnchors.length > 0 || (confidence != null && confidence < hardBlockThreshold))
+    ) {
       validationGuidance.push('[Action Required: Ask clarifying question BEFORE calling domain tools]');
     }
 
@@ -669,6 +753,33 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     const originalMethod = executor[methodName].bind(executor);
     executor[methodName] = async (input, ...args) => {
       const augmented = await injectIntentMetadata(input);
+      const metadata = augmented?.intentMetadata;
+      const confidence =
+        typeof metadata?.confidence === 'number' ? metadata.confidence : Number.POSITIVE_INFINITY;
+      const missingAnchors = Array.isArray(metadata?.missingAnchors) ? metadata.missingAnchors : [];
+      const clarifyingQuestion = metadata?.clarifyingQuestion;
+
+      const hardBlockThreshold = Number(HARD_BLOCK_THRESHOLD || 0.5);
+      const mustClarifyBeforeRouting =
+        !!clarifyingQuestion &&
+        (confidence < hardBlockThreshold || missingAnchors.length > 0);
+
+      if (mustClarifyBeforeRouting) {
+        return {
+          output: clarifyingQuestion,
+          answer: clarifyingQuestion,
+          intent_metadata: {
+            primary_intent: metadata?.primaryIntent || 'unknown',
+            secondary_intents: metadata?.secondaryIntents || [],
+            confidence,
+            missing_anchors: missingAnchors,
+            clarifying_question: clarifyingQuestion,
+            recommended_tools: metadata?.recommendedTools || [],
+          },
+          validation_warnings: ['hard_block_clarification_required'],
+        };
+      }
+
       const recommended = augmented?.intentMetadata?.recommendedTools;
       setActiveTools(recommended || allDomainToolNames);
       let sanitized = augmented;

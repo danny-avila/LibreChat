@@ -417,11 +417,12 @@ class WoodlandProductHistory extends Tool {
       
       // Partial match (contains)
       if (docLower.includes(reqLower) || reqLower.includes(docLower)) {
-        score += weight * 0.7;
+        score += weight * 0.65;
         matches.push(`${attrName}: partial "${requestedValue}" in "${docValue}"`);
         return;
       }
       
+      score -= weight * 0.8;
       mismatches.push(`${attrName}: expected "${requestedValue}", got "${docValue}"`);
     };
     
@@ -434,6 +435,39 @@ class WoodlandProductHistory extends Tool {
     compareAttr(doc.collector_bag, requestedAttrs.collectorBag, 'collector_bag', 2);
     
     return { score, matches, mismatches };
+  }
+
+  _countActiveRequestedAttrs(requestedAttrs = {}) {
+    const hasValue = (value) => {
+      if (value == null) return false;
+      return String(value).trim().length > 0;
+    };
+
+    const independentSignals = [
+      hasValue(requestedAttrs.engineModel),
+      hasValue(requestedAttrs.deckHose),
+      hasValue(requestedAttrs.blowerColor),
+      hasValue(requestedAttrs.bagColor),
+      hasValue(requestedAttrs.bagShape),
+      hasValue(requestedAttrs.collectorBag) &&
+        !hasValue(requestedAttrs.bagColor) &&
+        !hasValue(requestedAttrs.bagShape),
+    ];
+
+    return independentSignals.filter(Boolean).length;
+  }
+
+  _hasConflictLanguage(query = '') {
+    const text = String(query || '').toLowerCase();
+    if (!text) return false;
+    const hasContrast = /\b(but|however|although|while|conflict|mismatch|discrepancy|doesn'?t match|does not match|shows.*should be)\b/i.test(
+      text,
+    );
+    if (!hasContrast) return false;
+    const colors = text.match(WoodlandProductHistory.COLOR_PATTERN) || [];
+    WoodlandProductHistory.COLOR_PATTERN.lastIndex = 0;
+    const uniqueColors = new Set(colors.map((c) => c.toLowerCase()));
+    return uniqueColors.size >= 2 || /\b(black|green|yellow|orange|blue|red)\b.*\b(should be|instead)\b/i.test(text);
   }
 
   /**
@@ -1242,6 +1276,29 @@ class WoodlandProductHistory extends Tool {
       // Add model differentiation info if multiple models have same top score
       const topScore = results[0]?._matchScore || 0;
       const topMatches = results.filter((r) => Math.abs((r._matchScore || 0) - topScore) < 0.1);
+      const secondScore = results[1]?._matchScore || 0;
+      const activeSignalCount = this._countActiveRequestedAttrs(requestedAttrs);
+      const modelCandidates = new Set(topMatches.map((m) => String(m.rake_model || '').trim()).filter(Boolean));
+      const ambiguous = modelCandidates.size > 1 && Math.abs(topScore - secondScore) <= 0.75;
+      const conflictFromQuery = this._hasConflictLanguage(input.query || '');
+
+      if (activeSignalCount >= 3 && topScore <= 0) {
+        return this._serializeNeedsReview(
+          'NEEDS_HUMAN_REVIEW: No confident product-history match for the provided cues. Please confirm rake model, bag shape/color, and engine model from the label.',
+        );
+      }
+
+      if (conflictFromQuery && (topScore < 4 || modelCandidates.size > 1)) {
+        return this._serializeNeedsReview(
+          'NEEDS_HUMAN_REVIEW: Conflicting product cues detected. Please confirm the engine label and send a bag/blower photo so Support can validate the exact configuration.',
+        );
+      }
+
+      if (activeSignalCount >= 3 && ambiguous) {
+        return this._serializeNeedsReview(
+          'NEEDS_HUMAN_REVIEW: Multiple close product-history matches found. Please confirm one deciding cue (exact engine model from label, bag shape/color, or blower opening).',
+        );
+      }
       
       if (topMatches.length > 1) {
         logger.info('[woodland-ai-product-history] Multiple models with same match score', {

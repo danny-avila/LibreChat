@@ -107,7 +107,7 @@ mcpServers:
     env:
       AZURE_SEARCH_ENDPOINT: "${AZURE_AI_SEARCH_SERVICE_ENDPOINT}"
       AZURE_SEARCH_KEY: "${AZURE_AI_SEARCH_API_KEY}"
-      AZURE_SEARCH_INDEX_NAME: "wpp-knowledge-test-encyclopedia"
+      AZURE_SEARCH_INDEX_NAME: "${AZURE_AI_SEARCH_Encyclopedia_Index}"
       AZURE_SEARCH_TOP_K: "5"
       AZURE_SEARCH_MIN_SCORE: "0.65"
       AZURE_SEARCH_USE_SEMANTIC: "true"
