@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { MessageSquare } from 'lucide-react';
 import { getEndpointField } from 'librechat-data-provider';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
@@ -34,9 +34,11 @@ export default function useUnifiedSidebarLinks({
     [keyExpiry.expiresAt, userProvidesKey],
   );
 
+  const hidePanel = useCallback(() => {}, []);
+
   const sideNavLinks = useSideNavLinks({
     endpoint,
-    hidePanel: () => {},
+    hidePanel,
     keyProvided,
     endpointType,
     interfaceConfig,

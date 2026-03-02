@@ -24,7 +24,7 @@ function getInitialActivePanel(): string {
 
 function getInitialWidth(): number {
   const saved = localStorage.getItem('side:width');
-  return saved ? Number(saved) : 320;
+  return saved ? Math.max(Number(saved), EXPANDED_MIN) : EXPANDED_MIN;
 }
 
 function UnifiedSidebar() {
@@ -34,6 +34,7 @@ function UnifiedSidebar() {
   const [activeSection, setActiveSection] = useState(getInitialActivePanel);
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
   const isResizing = useRef(false);
+  const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
 
   const links = useUnifiedSidebarLinks({
     interfaceConfig: defaultInterface,
@@ -65,28 +66,34 @@ function UnifiedSidebar() {
   const handleResizeStart = useCallback(() => {
     isResizing.current = true;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const move = (e: MouseEvent) => {
       const maxWidth = window.innerWidth * 0.4;
       const next = Math.max(EXPANDED_MIN, Math.min(e.clientX, maxWidth));
       setSidebarWidth(next);
     };
 
-    const handleMouseUp = () => {
+    const up = () => {
       isResizing.current = false;
+      resizeHandlers.current = null;
       setSidebarWidth((w) => {
         localStorage.setItem('side:width', String(Math.round(w)));
         return w;
       });
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    resizeHandlers.current = { move, up };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
   }, []);
 
   useEffect(() => {
     return () => {
+      if (resizeHandlers.current) {
+        document.removeEventListener('mousemove', resizeHandlers.current.move);
+        document.removeEventListener('mouseup', resizeHandlers.current.up);
+      }
       isResizing.current = false;
     };
   }, []);

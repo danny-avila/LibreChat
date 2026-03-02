@@ -45,9 +45,9 @@ function ExpandedPanel({
       />
 
       <div className="flex flex-col gap-1 overflow-y-auto">
-        {links.map((link, index) => (
+        {links.map((link) => (
           <TooltipAnchor
-            key={`nav-icon-${index}`}
+            key={link.id}
             description={localize(link.title)}
             side="right"
             render={

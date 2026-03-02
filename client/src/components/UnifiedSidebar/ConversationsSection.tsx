@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
@@ -22,6 +22,7 @@ const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'))
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
   const { isAuthenticated } = useAuthContext();
   useTitleGeneration(isAuthenticated);
 
@@ -36,7 +37,7 @@ const ConversationsSection = memo(() => {
 
   const search = useRecoilValue(store.search);
 
-  const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching, refetch } =
+  const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching } =
     useConversationsInfiniteQuery(
       {
         tags: tags.length === 0 ? undefined : tags,
@@ -74,11 +75,11 @@ const ConversationsSection = memo(() => {
     return data ? data.pages.flatMap((page) => page.conversations) : [];
   }, [data]);
 
-  const toggleNav = useCallback(() => {}, []);
-
-  useEffect(() => {
-    refetch();
-  }, [tags, refetch]);
+  const toggleNav = useCallback(() => {
+    if (isSmallScreen) {
+      setSidebarExpanded(false);
+    }
+  }, [isSmallScreen, setSidebarExpanded]);
 
   const loadMoreConversations = useCallback(() => {
     if (isFetchingNextPage || !computedHasNextPage) {
