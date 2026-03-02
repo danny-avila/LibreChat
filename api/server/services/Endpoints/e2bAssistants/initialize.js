@@ -364,18 +364,12 @@ class E2BClientManager {
     try {
       logger.info(`[E2B] Downloading file ${path} from sandbox ${sandboxData.id} as ${format}`);
       
-      // E2B files.read() returns a Response object
-      const response = await sandboxData.sandbox.files.read(path);
+      // E2B files.read() returns content directly (Uint8Array for 'bytes', string for 'text')
+      // It does NOT return a Response object — pass format via opts
+      const isBuffer = format === 'buffer' || format === 'bytes';
+      const data = await sandboxData.sandbox.files.read(path, { format: isBuffer ? 'bytes' : 'text' });
       
-      // Parse response based on format
-      let content;
-      if (format === 'buffer' || format === 'bytes') {
-        const arrayBuffer = await response.arrayBuffer();
-        content = Buffer.from(arrayBuffer);
-      } else {
-        // Default to text format
-        content = await response.text();
-      }
+      const content = isBuffer ? Buffer.from(data) : data;
       
       logger.info(`[E2B] File downloaded successfully from sandbox ${sandboxData.id}`);
       return content;

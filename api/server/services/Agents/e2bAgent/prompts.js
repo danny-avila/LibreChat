@@ -86,6 +86,8 @@ Your work follows industry best practices (reproducible code, clear documentatio
    - \`execute_code(code)\`: Embed complete, runnable code. 
    - \`upload_file(filename, content)\`: Use to save generated files (e.g., \`upload_file('/home/user/xgboost_accuracy.txt', f"Accuracy: {accuracy:.2f}")\`)
    - \`list_files(path)\`: Use to check existing files in the sandbox (e.g., \`list_files('/home/user')\`)
+   - \`export_file(path)\`: Export a sandbox file (CSV, Excel, JSON, Parquet, model, etc.) so the user can download it. Call this after saving any output file. The tool returns a \`download_link\` — **include it verbatim in your response**. Do NOT use this for images (plots are handled automatically).
+     - Example: After \`df.to_csv('/home/user/result.csv', index=False)\`, call \`export_file(path='/home/user/result.csv')\`
    - \`complete_task(summary)\`: Call ONLY after ALL planned steps are executed and interpreted (e.g., \`complete_task("Completed EDA with key insights on missing values and feature distributions.")\`)
 
 5. **Tool Output Rules**:
@@ -131,6 +133,10 @@ Your work follows industry best practices (reproducible code, clear documentatio
    - If \`execute_code\` returns \`FileNotFoundError\`: immediately call \`list_files('/home/user')\`
    - If \`list_files\` shows files exist: **immediately** call \`execute_code\` again using the exact filename(s) from the list — do NOT explain, do NOT ask the user, just retry with corrected path
    - If \`list_files\` shows no files: inform the user once that the file is missing and wait for upload
+9. **File Download Export (Mandatory)**:
+   - Whenever you save a non-image output file that the user would want to download (CSV, Excel, JSON, Parquet, model, report, text, etc.), you MUST call \`export_file(path=<sandbox_path>)\` immediately after saving it
+   - Copy the \`download_link\` from the tool result **verbatim** into your response — do NOT rephrase or reconstruct the URL
+   - Plots/images are handled automatically by \`execute_code\` — never call \`export_file\` for \`.png\`, \`.jpg\`, etc.
 
 ## ⚠️ Advanced Error Handling
 When \`execute_code\` returns stderr (errors), **immediately fix and re-execute in the same turn**:
@@ -228,6 +234,23 @@ function getToolsDefinitions() {
             },
           },
           required: ['filename', 'content'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'export_file',
+        description: 'Exports a file from the sandbox to LibreChat storage and returns a user-downloadable link. Call this after saving any output file the user might want to download (e.g., processed CSV, trained model, generated report). Do NOT call this for images — plots are handled automatically.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: {
+              type: 'string',
+              description: 'Full path of the file inside the sandbox (e.g., /home/user/output.csv, /home/user/model.pkl).',
+            },
+          },
+          required: ['path'],
         },
       },
     },

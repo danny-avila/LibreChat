@@ -1,3 +1,4 @@
+const nodePath = require('path');
 const codeExecutor = require('~/server/services/Sandbox/codeExecutor');
 const fileHandler = require('~/server/services/Sandbox/fileHandler');
 const { logger } = require('@librechat/data-schemas');
@@ -330,6 +331,92 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
         return { success: false, error: 'File sync failed or file not found' };
       } catch (error) {
         logger.error(`[E2BAgent Tools] Error in upload_file:`, error);
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * 将沙箱中生成的文件导出为用户可下载的链接。
+     * 支持 CSV、Excel、JSON、TXT、Parquet、PDF 及其他数据文件。
+     * @param {string} path - 沙箱中文件的完整路径（如 /home/user/output.csv）
+     */
+    export_file: async ({ path: sandboxPath }) => {
+      try {
+        logger.info(`[E2BAgent Tools] Exporting file from sandbox: ${sandboxPath}`);
+        const filename = nodePath.basename(sandboxPath);
+
+        // MIME type map for common data science file types
+        const mimeTypes = {
+          csv: 'text/csv',
+          tsv: 'text/tab-separated-values',
+          txt: 'text/plain',
+          json: 'application/json',
+          jsonl: 'application/jsonl',
+          xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          xls: 'application/vnd.ms-excel',
+          parquet: 'application/octet-stream',
+          feather: 'application/octet-stream',
+          pkl: 'application/octet-stream',
+          pickle: 'application/octet-stream',
+          pdf: 'application/pdf',
+          html: 'text/html',
+          md: 'text/markdown',
+          zip: 'application/zip',
+          gz: 'application/gzip',
+          pt: 'application/octet-stream',
+          pth: 'application/octet-stream',
+          h5: 'application/octet-stream',
+          hdf5: 'application/octet-stream',
+          joblib: 'application/octet-stream',
+          py: 'text/x-python',
+        };
+        const ext = nodePath.extname(filename).slice(1).toLowerCase();
+        const mimeType = mimeTypes[ext] || 'application/octet-stream';
+
+        const persistedFiles = await fileHandler.persistArtifacts({
+          req,
+          userId,
+          conversationId,
+          artifacts: [{
+            name: filename,
+            path: sandboxPath,
+            type: mimeType,
+          }]
+        });
+
+        if (!persistedFiles || persistedFiles.length === 0) {
+          logger.error(`[E2BAgent Tools] export_file: persistArtifacts returned empty for ${sandboxPath}`);
+          return {
+            success: false,
+            error: `Failed to export "${filename}". Make sure the file exists in the sandbox at the specified path.`,
+          };
+        }
+
+        const file = persistedFiles[0];
+        // Use /files/{userId}/{file_id}/{filename} format so the frontend regex
+        // (?:files|outputs)/${userId}/... matches and triggers useFileDownload hook
+        // (authenticated fetch) instead of opening a bare URL in a new tab.
+        const downloadUrl = `/files/${userId}/${file.file_id}/${file.filename}`;
+        const downloadMarkdown = `[📥 Download ${filename}](${downloadUrl})`;
+
+        logger.info(`[E2BAgent Tools] export_file success: ${filename} → ${downloadUrl}`);
+
+        contextManager.addGeneratedArtifact({
+          type: 'file',
+          name: file.filename,
+          path: downloadUrl,
+          description: `Exported data file: ${filename}`,
+        });
+
+        return {
+          success: true,
+          filename,
+          download_url: downloadUrl,
+          download_link: downloadMarkdown,
+          instruction: `Include exactly this markdown in your response to give the user a download link:\n${downloadMarkdown}`,
+        };
+      } catch (error) {
+        logger.error(`[E2BAgent Tools] Error in export_file:`, error);
         return { success: false, error: error.message };
       }
     },

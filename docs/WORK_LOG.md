@@ -3,6 +3,66 @@
 > 记录 E2B Data Analyst Agent 的每日开发进展、问题解决和关键决策。
 
 
+## 2026-03-02 (周一)
+
+### ✨ 实现文件导出下载功能 (E2B Export)
+**Git Commit**: feat(e2b): Implement export_file tool for sandbox-to-user downloads
+
+### 主要工作
+1. **实现 `export_file` 工具** ⭐⭐⭐
+   - **功能**: 允许 LLM 将沙箱内生成的非图片文件（CSV, Excel, JSON, Parquet, 模型文件等）导出，并向用户提供下载链接。
+   - **技术实现**:
+     - 在 `tools.js` 中新增 `export_file` 工具函数。
+     - 调用 `fileHandler.persistArtifacts()` 将沙箱文件下载并保存到 LibreChat 本地存储。
+     - 生成符合前端下载逻辑的 URL：`/files/{userId}/{file_id}/{filename}`。
+     - 返回 Markdown 格式的下载链接：`[📥 Download filename](URL)`。
+   - **支持格式**: CSV, TSV, TXT, JSON, JSONL, XLSX, XLS, Parquet, Feather, PKL, PDF, HTML, ZIP, GZ, PT/PTH, H5, Joblib, PY。
+
+2. **修复 E2B 二进制文件下载 Bug** 🐛⭐
+   - **问题**: 下载 Parquet/PKL 等二进制文件时报错 `response.arrayBuffer is not a function`。
+   - **原因**: `initialize.js` 误认为 E2B SDK `files.read()` 返回 Fetch `Response` 对象，实际上它直接返回 `Uint8Array` 或 `string`。
+   - **修复**: 
+     - 修改 `initialize.js` 中的 `downloadFile` 方法。
+     - 显式传递 `{ format: 'bytes' }` 给 SDK。
+     - 直接使用 `Buffer.from(data)` 处理返回的 `Uint8Array`。
+   - **效果**: 彻底解决所有非文本文件的沙箱提取失败问题。
+
+3. **解决下载链接 401 Unauthorized 问题** 🛡️
+   - **现象**: 用户点击下载链接跳转到新页面显示 "Unauthorized"。
+   - **原因**: 
+     - 原 URL `/api/files/download/...` 不匹配前端 `MarkdownComponents.tsx` 的正则。
+     - 导致前端未触发 `useFileDownload` hook（带 Auth header 的 fetch）。
+     - 浏览器以普通 GET 请求访问 API，因缺少 JWT Token 被拦截。
+   - **修复**: 
+     - 调整 `tools.js` 返回的 URL 格式为 `/files/{userId}/{file_id}/{filename}`。
+     - 该格式能够命中前端正则，触发带身份验证的下载流程。
+
+4. **系统 Prompt 强化** 📝
+   - **更新内容**:
+     - 在工具调用格式中新增 `export_file(path)` 说明。
+     - 新增第 9 条强制规则：保存非图片输出文件后必须调用 `export_file`。
+     - 明确区分：图片（Plots）自动处理，数据文件需显式调用 `export_file`。
+   - **效果**: LLM 现在能够主动在保存数据后提供下载按钮，极大提升了用户闭环体验。
+
+### 验证结果
+- ✅ Parquet/PKL 二进制文件正常从沙箱持久化。
+- ✅ 前端下载链接正常显示为 "📥 Download ..."。
+- ✅ 点击链接可正常触发带 Token 的下载，无 401 错误。
+- ✅ LLM 会在 `df.to_csv()` 后自动调用 `export_file`。
+
+### 技术细节
+**涉及文件**:
+1. `api/server/services/Agents/e2bAgent/tools.js`
+   - 实现 `export_file` 逻辑及 MIME 类型映射。
+   - 优化下载 URL 路径以适配前端鉴权下载。
+2. `api/server/services/Agents/e2bAgent/prompts.js`
+   - 定义 `export_file` 函数 schema。
+   - 增加强制执行规则 9 和调用示例。
+3. `api/server/services/Endpoints/e2bAssistants/initialize.js`
+   - 修复 `files.read()` 返回值处理逻辑，支持二进制下载。
+
+---
+
 ## 2026-02-09 (周日)
 
 ### 🐛 Loading Dot 消失与 Prompt 优化
