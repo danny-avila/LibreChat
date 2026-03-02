@@ -1525,5 +1525,10 @@
   "com_ui_admin_invite_success": "Invitation sent successfully!",
   "com_ui_admin_invite_error": "Error sending invitation",
   "com_ui_admin_users_list": "Registered Users",
-  "com_ui_admin_no_users": "No users found"
+  "com_ui_admin_no_users": "No users found",
+  "com_ui_admin_delete_user": "Delete user",
+  "com_ui_admin_delete_confirm": "Confirm",
+  "com_ui_admin_delete_cancel": "Cancel",
+  "com_ui_admin_delete_success": "User deleted",
+  "com_ui_admin_delete_error": "Error deleting user"
 }

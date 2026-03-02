@@ -416,3 +416,4 @@ export const graphToken = (scopes: string) =>
 // Admin User Management
 export const adminUsers = () => `${BASE_URL}/api/admin/users`;
 export const adminInviteUser = () => `${BASE_URL}/api/admin/users/invite`;
+export const adminDeleteUser = (id: string) => `${BASE_URL}/api/admin/users/${encodeURIComponent(id)}`;
