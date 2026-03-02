@@ -152,6 +152,35 @@ export function useSocialAccounts() {
     [disconnectMutation]
   );
 
+  // Create post mutation
+  const createPostMutation = useMutation({
+    mutationFn: async (postData: { content: string; integrationIds: string[] }) => {
+      const data = await request.post('/api/social/posts', postData);
+      return data;
+    },
+    onSuccess: (data) => {
+      showToast({
+        message: 'Post published successfully!',
+        status: 'success',
+      });
+    },
+    onError: (error: Error) => {
+      showToast({
+        message: error.message || 'Failed to create post',
+        status: 'error',
+      });
+      throw error;
+    },
+  });
+
+  // Create post handler
+  const createPost = useCallback(
+    async (postData: { content: string; integrationIds: string[] }) => {
+      return await createPostMutation.mutateAsync(postData);
+    },
+    [createPostMutation]
+  );
+
   // Refresh all data
   const refreshAccounts = useCallback(() => {
     refetchAccounts();
@@ -168,6 +197,7 @@ export function useSocialAccounts() {
     isLoading: isLoadingAccounts || isLoadingStatus || isLoadingPlatforms,
     connectingPlatform,
     isDisconnecting: disconnectMutation.isLoading,
+    isCreatingPost: createPostMutation.isLoading,
 
     // Error states
     error: accountsError || platformsError,
@@ -175,6 +205,7 @@ export function useSocialAccounts() {
     // Actions
     connectAccount,
     disconnectAccount,
+    createPost,
     refreshAccounts,
   };
 }

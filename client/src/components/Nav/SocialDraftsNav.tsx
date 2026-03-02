@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, memo } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { socialDraftState } from '~/store/socialDraft';
+import postComposerState from '~/store/postComposer';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getDraftPreview, type SocialDraftRecord } from '~/components/SocialDraft/SocialDraftModal';
 import { Eye } from 'lucide-react';
@@ -12,6 +13,7 @@ const SocialDraftsNav = memo(() => {
   const { token, isAuthenticated } = useAuthContext();
   const localize = useLocalize();
   const setSocialDraftState = useSetRecoilState(socialDraftState);
+  const setPostComposerState = useSetRecoilState(postComposerState);
 
   const showSocialDraft = import.meta.env.VITE_SOCIAL_MEDIA_AUTOMATION === 'true';
   if (!showSocialDraft) return null;
@@ -49,10 +51,22 @@ const SocialDraftsNav = memo(() => {
   }, [fetchDrafts]);
 
   const openDraft = useCallback(
-    (draft: SocialDraftRecord) => {
-      setSocialDraftState({ isOpen: true });
+    (draft: SocialDraftRecord, isApproved: boolean) => {
+      if (isApproved) {
+        // For approved drafts, open PostComposer with content
+        const firstDraft = Object.values(draft.drafts).find((text) => text?.trim());
+        if (firstDraft) {
+          setPostComposerState({
+            isOpen: true,
+            initialContent: firstDraft,
+          });
+        }
+      } else {
+        // For pending drafts, open Social Draft Modal
+        setSocialDraftState({ isOpen: true });
+      }
     },
-    [setSocialDraftState],
+    [setSocialDraftState, setPostComposerState],
   );
 
   if (!isAuthenticated || (pendingDrafts.length === 0 && approvedDrafts.length === 0)) {
@@ -70,7 +84,7 @@ const SocialDraftsNav = memo(() => {
             {pendingDrafts.map((draft) => (
               <button
                 key={draft._id}
-                onClick={() => openDraft(draft)}
+                onClick={() => openDraft(draft, false)}
                 className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-text-primary hover:bg-surface-hover"
                 title={getDraftPreview(draft.drafts)}
               >
@@ -90,7 +104,7 @@ const SocialDraftsNav = memo(() => {
             {approvedDrafts.map((draft) => (
               <button
                 key={draft._id}
-                onClick={() => openDraft(draft)}
+                onClick={() => openDraft(draft, true)}
                 className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-text-primary hover:bg-surface-hover"
                 title={getDraftPreview(draft.drafts)}
               >
