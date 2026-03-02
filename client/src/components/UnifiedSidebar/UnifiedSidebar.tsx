@@ -61,6 +61,35 @@ function UnifiedSidebar() {
     [setExpanded],
   );
 
+  const handleResizeStart = useCallback(() => {
+    isResizing.current = true;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const maxWidth = window.innerWidth * 0.4;
+      const next = Math.max(EXPANDED_MIN, Math.min(e.clientX, maxWidth));
+      setSidebarWidth(next);
+    };
+
+    const handleMouseUp = () => {
+      isResizing.current = false;
+      setSidebarWidth((w) => {
+        localStorage.setItem('side:width', String(Math.round(w)));
+        return w;
+      });
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      isResizing.current = false;
+    };
+  }, []);
+
   if (isSmallScreen) {
     return (
       <>
@@ -112,7 +141,7 @@ function UnifiedSidebar() {
             onCollapse={handleCollapse}
             onExpand={handleExpand}
             onExpandToSection={handleExpandToSection}
-            onResizeStart={() => (isResizing.current = true)}
+            onResizeStart={handleResizeStart}
             setSidebarWidth={setSidebarWidth}
           />
         </aside>
