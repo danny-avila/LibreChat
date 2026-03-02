@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
-import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
+import { useMediaQuery } from '@librechat/client';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
-import { SidePanelProvider, useChatContext } from '~/Providers';
+import { SidePanelProvider } from '~/Providers';
 import { SidePanelGroup } from '~/components/SidePanel';
-import { cn, clearMessagesCache } from '~/utils';
+import { NewChat } from '~/components/Nav';
+import { cn } from '~/utils';
 import CategoryTabs from './CategoryTabs';
 import SearchBar from './SearchBar';
 import AgentGrid from './AgentGrid';
@@ -29,9 +29,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const localize = useLocalize();
   const navigate = useNavigate();
   const { category } = useParams();
-  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { conversation, newConversation } = useChatContext();
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
@@ -177,20 +175,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     }
   };
 
-  /**
-   * Handle new chat button click
-   */
-
-  const handleNewChat = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
-      window.open('/c/new', '_blank');
-      return;
-    }
-    clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
-    newConversation();
-  };
-
   const defaultLayout = useMemo(() => {
     const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
     return typeof resizableLayout === 'string' ? JSON.parse(resizableLayout) : undefined;
@@ -228,21 +212,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
               {/* Simplified header for agents marketplace - only show nav controls when needed */}
               {!isSmallScreen && (
                 <div className="sticky top-0 z-20 flex items-center justify-between bg-surface-secondary p-2 font-semibold text-text-primary md:h-14">
-                  <TooltipAnchor
-                    description={localize('com_ui_new_chat')}
-                    render={
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        data-testid="agents-new-chat-button"
-                        aria-label={localize('com_ui_new_chat')}
-                        className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-active-alt max-md:hidden"
-                        onClick={handleNewChat}
-                      >
-                        <NewChatIcon />
-                      </Button>
-                    }
-                  />
+                  <NewChat className="border border-border-light bg-surface-secondary p-2" />
                 </div>
               )}
               {/* Hero Section - scrolls away */}

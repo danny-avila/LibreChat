@@ -4,9 +4,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, Button, NewChatIcon } from '@librechat/client';
 import { useNewConvo, useLocalize } from '~/hooks';
 import { clearMessagesCache } from '~/utils';
+import { cn } from '~/utils';
 import store from '~/store';
 
-export default function HeaderNewChat() {
+export default function NewChat({ className }: { className?: string }) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
@@ -29,9 +30,11 @@ export default function HeaderNewChat() {
         <Button
           size="icon"
           variant="outline"
-          data-testid="wide-header-new-chat-button"
           aria-label={localize('com_ui_new_chat')}
-          className="rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt max-md:hidden"
+          className={cn(
+            'rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt max-md:hidden',
+            className,
+          )}
           onClick={clickHandler}
         >
           <NewChatIcon />
