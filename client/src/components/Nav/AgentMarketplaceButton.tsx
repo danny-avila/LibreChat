@@ -1,5 +1,4 @@
 import React, { useCallback } from 'react';
-import { LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TooltipAnchor, Button } from '@librechat/client';
 import { useLocalize, useShowMarketplace } from '~/hooks';
@@ -39,7 +38,12 @@ export default function AgentMarketplaceButton({
           className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
           onClick={handleAgentMarketplace}
         >
-          <LayoutGrid className="icon-lg text-text-primary" aria-hidden="true" />
+          <img
+            src="/assets/karrieremum-logo.svg"
+            alt=""
+            aria-hidden="true"
+            className="size-5"
+          />
         </Button>
       }
     />
