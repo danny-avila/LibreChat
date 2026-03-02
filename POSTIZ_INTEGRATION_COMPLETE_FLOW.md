@@ -232,15 +232,6 @@ MAIN_URL=https://postiz.cloud.jamot.pro
 FRONTEND_URL=https://postiz.cloud.jamot.pro
 NEXT_PUBLIC_BACKEND_URL=https://postiz.cloud.jamot.pro/api
 
-# Twitter/X OAuth
-TWITTER_API_KEY=
-TWITTER_API_SECRET=
-
-# LinkedIn OAuth
-LINKEDIN_CLIENT_ID=
-LINKEDIN_CLIENT_SECRET=
-```
-
 ## Testing the Complete Flow
 
 ### Prerequisites:
