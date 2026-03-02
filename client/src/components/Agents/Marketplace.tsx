@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
@@ -10,12 +9,10 @@ import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provide
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import { SidePanelProvider, useChatContext } from '~/Providers';
 import { SidePanelGroup } from '~/components/SidePanel';
-import { OpenSidebar } from '~/components/Chat/Menus';
 import { cn, clearMessagesCache } from '~/utils';
 import CategoryTabs from './CategoryTabs';
 import SearchBar from './SearchBar';
 import AgentGrid from './AgentGrid';
-import store from '~/store';
 
 interface AgentMarketplaceProps {
   className?: string;
@@ -37,7 +34,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const { conversation, newConversation } = useChatContext();
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const [navVisible, setNavVisible] = useRecoilState(store.sidebarExpanded);
 
   // Get URL parameters
   const searchQuery = searchParams.get('q') || '';
@@ -232,31 +228,21 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
               {/* Simplified header for agents marketplace - only show nav controls when needed */}
               {!isSmallScreen && (
                 <div className="sticky top-0 z-20 flex items-center justify-between bg-surface-secondary p-2 font-semibold text-text-primary md:h-14">
-                  <div className="mx-1 flex items-center gap-2">
-                    {!navVisible ? (
-                      <>
-                        <OpenSidebar setNavVisible={setNavVisible} />
-                        <TooltipAnchor
-                          description={localize('com_ui_new_chat')}
-                          render={
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              data-testid="agents-new-chat-button"
-                              aria-label={localize('com_ui_new_chat')}
-                              className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-active-alt max-md:hidden"
-                              onClick={handleNewChat}
-                            >
-                              <NewChatIcon />
-                            </Button>
-                          }
-                        />
-                      </>
-                    ) : (
-                      // Invisible placeholder to maintain height
-                      <div className="h-10 w-10" />
-                    )}
-                  </div>
+                  <TooltipAnchor
+                    description={localize('com_ui_new_chat')}
+                    render={
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        data-testid="agents-new-chat-button"
+                        aria-label={localize('com_ui_new_chat')}
+                        className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-active-alt max-md:hidden"
+                        onClick={handleNewChat}
+                      >
+                        <NewChatIcon />
+                      </Button>
+                    }
+                  />
                 </div>
               )}
               {/* Hero Section - scrolls away */}

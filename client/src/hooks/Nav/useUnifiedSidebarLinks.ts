@@ -4,16 +4,15 @@ import { getEndpointField } from 'librechat-data-provider';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
+import ConversationsSection from '~/components/UnifiedSidebar/ConversationsSection';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useSidePanelContext } from '~/Providers';
 
 export default function useUnifiedSidebarLinks({
   interfaceConfig,
-  ConversationsComponent,
 }: {
   interfaceConfig: Partial<TInterfaceConfig>;
-  ConversationsComponent: React.ComponentType;
 }) {
   const { endpoint } = useSidePanelContext();
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
@@ -50,12 +49,12 @@ export default function useUnifiedSidebarLinks({
       label: '',
       icon: MessageSquare,
       id: 'conversations',
-      Component: ConversationsComponent,
+      Component: ConversationsSection,
     };
 
     const filtered = sideNavLinks.filter((link) => link.id !== 'hide-panel');
     return [conversationLink, ...filtered];
-  }, [sideNavLinks, ConversationsComponent]);
+  }, [sideNavLinks]);
 
   return links;
 }

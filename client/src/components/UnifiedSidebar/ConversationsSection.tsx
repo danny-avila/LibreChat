@@ -107,7 +107,7 @@ const ConversationsSection = memo(() => {
       role="region"
       aria-label={localize('com_ui_chat_history')}
     >
-      <div className="flex items-center gap-0.5 px-1 pb-0.5">
+      <div className="flex items-center gap-0.5">
         {hasAccessToBookmarks && (
           <Suspense fallback={null}>
             <BookmarkNav tags={tags} setTags={setTags} />

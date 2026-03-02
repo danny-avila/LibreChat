@@ -4,7 +4,6 @@ import { getConfigDefaults } from 'librechat-data-provider';
 import { useMediaQuery } from '@librechat/client';
 import { SidePanelProvider, ActivePanelProvider } from '~/Providers';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
-import ConversationsSection from './ConversationsSection';
 import ExpandedPanel from './ExpandedPanel';
 import CollapsedBar from './CollapsedBar';
 import { useLocalize } from '~/hooks';
@@ -47,7 +46,6 @@ function UnifiedSidebar() {
 
   const links = useUnifiedSidebarLinks({
     interfaceConfig: defaultInterface,
-    ConversationsComponent: ConversationsSection,
   });
 
   const handleCollapse = useCallback(() => {
