@@ -1,7 +1,7 @@
 services:
   api:
     container_name: LibreChat
-    image: ghcr.io/<DEIN_GITHUB_USER_ODER_ORG>/librechat-custom:latest
+    image: ghcr.io/chris-schweigler/librechat-custom:latest
     # build: .   <-- RAUS
     ports:
       - '${PORT:-3080}:${PORT:-3080}'
