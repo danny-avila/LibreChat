@@ -7,7 +7,6 @@ services:
       - '${PORT:-3080}:${PORT:-3080}'
     depends_on:
       - mongodb
-      - rag_api
     restart: always
     extra_hosts:
       - 'host.docker.internal:host-gateway'
