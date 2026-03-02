@@ -306,12 +306,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                       {localize('com_agents_marketplace_tagline')}
                     </p>
                     <p
-                      className="mx-auto mb-5 max-w-xl whitespace-pre-line text-base leading-relaxed"
-                      style={{ color: 'rgba(255,255,255,0.55)' }}
-                    >
-                      {localize('com_agents_marketplace_body')}
-                    </p>
-                    <p
                       className="mx-auto mb-6 max-w-2xl text-sm leading-relaxed"
                       style={{ color: 'rgba(255,255,255,0.4)' }}
                     >

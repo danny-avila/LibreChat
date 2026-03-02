@@ -38,6 +38,12 @@ function MessagesViewContent({
     <>
       <div className="relative flex-1 overflow-hidden overflow-y-auto">
         <div className="relative h-full">
+          <img
+            src="/assets/karrieremum-logo.svg"
+            alt=""
+            aria-hidden="true"
+            className="pointer-events-none absolute left-1/2 top-1/2 w-72 -translate-x-1/2 -translate-y-1/2 select-none opacity-[0.04]"
+          />
           <div
             className="scrollbar-gutter-stable"
             onScroll={debouncedHandleScroll}
