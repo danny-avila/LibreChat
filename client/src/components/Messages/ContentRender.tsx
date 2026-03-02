@@ -58,6 +58,7 @@ const ContentRender = memo(
     });
     const fontSize = useAtomValue(fontSizeAtom);
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+    const userChatDirection = useRecoilValue(store.userChatDirection);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const isLast = useMemo(
@@ -95,6 +96,9 @@ const ContentRender = memo(
       return null;
     }
 
+    const isUserMessageRightAligned =
+      msg.isCreatedByUser === true && userChatDirection?.toLowerCase() === 'ltr';
+
     const getChatWidthClass = () => {
       if (maximizeChatSpace) {
         return 'w-full max-w-full md:px-5 lg:px-1 xl:px-5';
@@ -122,6 +126,7 @@ const ContentRender = memo(
           baseClasses.common,
           baseClasses.chat,
           conditionalClasses.focus,
+          isUserMessageRightAligned && 'flex-row-reverse',
           'message-render',
         )}
       >
@@ -138,6 +143,7 @@ const ContentRender = memo(
             'relative flex flex-col',
             hasParallelContent ? 'w-full' : 'w-11/12',
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
+            isUserMessageRightAligned && 'items-end',
           )}
         >
           {!hasParallelContent && (
@@ -165,7 +171,7 @@ const ContentRender = memo(
             {hasNoChildren && effectiveIsSubmitting ? (
               <PlaceholderRow />
             ) : (
-              <SubRow classes="text-xs">
+              <SubRow classes={cn('text-xs', isUserMessageRightAligned && 'justify-end')}>
                 <SiblingSwitch
                   siblingIdx={siblingIdx}
                   siblingCount={siblingCount}
