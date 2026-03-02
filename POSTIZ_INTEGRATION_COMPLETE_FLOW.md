@@ -215,10 +215,10 @@ await PostizService.createPost({
 **LibreChat (`.env`):**
 ```env
 # n8n Integration
-N8N_WEBHOOK_URL=https://n8n-esksoko8wgcg8w00gg880s8k.cloud.jamot.pro
+N8N_WEBHOOK_URL=
 
 # Postiz Integration
-POSTIZ_API_URL=https://postiz.cloud.jamot.pro/api
+POSTIZ_API_URL=
 POSTIZ_API_KEY=your_production_api_key_here
 
 # Feature Flag
@@ -233,12 +233,12 @@ FRONTEND_URL=https://postiz.cloud.jamot.pro
 NEXT_PUBLIC_BACKEND_URL=https://postiz.cloud.jamot.pro/api
 
 # Twitter/X OAuth
-TWITTER_API_KEY=APeURwS7zQvsumO4UdSBLX8wb
-TWITTER_API_SECRET=22SRIwe7EAlcWx9FKMWOLaO04MRjpeLAcFZ6TpWraQ4BAKWSee
+TWITTER_API_KEY=
+TWITTER_API_SECRET=
 
 # LinkedIn OAuth
-LINKEDIN_CLIENT_ID=78frbl66vtlrsi
-LINKEDIN_CLIENT_SECRET=WPL_AP1.V0GFEIN3dqebvVZu.Z4GY6A==
+LINKEDIN_CLIENT_ID=
+LINKEDIN_CLIENT_SECRET=
 ```
 
 ## Testing the Complete Flow
