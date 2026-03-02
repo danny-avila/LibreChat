@@ -1,7 +1,7 @@
 version: 1.0.0
 cache: true
 interface:
-  agents: false
+  agents: true
   runCode: false
   modelSelect: true
   parameters: true
@@ -9,6 +9,7 @@ interface:
   prompts: true
 modelSpecs:
   addedEndpoints:
+    - agents
     - azureOpenAI
     - "Gemini 2.5 Pro"
     - "Gemini 2.5 Flash"
