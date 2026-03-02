@@ -322,6 +322,7 @@ export class MCPConnectionFactory {
             this.userId!,
             config?.oauth_headers ?? {},
             config?.oauth,
+            this.tokenMethods?.findToken,
           );
 
           if (existingFlow) {
@@ -510,6 +511,7 @@ export class MCPConnectionFactory {
         this.userId!,
         this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
+        this.tokenMethods?.findToken,
       );
 
       if (typeof this.oauthStart === 'function') {

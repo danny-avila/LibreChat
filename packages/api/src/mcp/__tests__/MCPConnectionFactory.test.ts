@@ -260,6 +260,7 @@ describe('MCPConnectionFactory', () => {
         'user123',
         {},
         undefined,
+        oauthOptions.tokenMethods.findToken,
       );
       expect(oauthOptions.oauthStart).toHaveBeenCalledWith('https://auth.example.com');
       expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
