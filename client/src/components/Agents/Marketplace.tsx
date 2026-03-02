@@ -286,7 +286,13 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
               {/* Hero Section - scrolls away */}
               {!isSmallScreen && (
                 <div className="container mx-auto max-w-4xl">
-                  <div className={cn('mb-8 text-center', 'mt-12')}>
+                  <div className={cn('relative mb-8 overflow-hidden text-center', 'mt-12')}>
+                    <img
+                      src="/assets/karrieremum-logo.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="pointer-events-none absolute right-0 top-1/2 w-56 -translate-y-1/2 select-none opacity-[0.06]"
+                    />
                     <h1
                       className="mb-4 text-3xl font-bold tracking-tight md:text-5xl"
                       style={{ color: '#c9a87c' }}
