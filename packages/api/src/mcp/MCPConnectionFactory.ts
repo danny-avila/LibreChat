@@ -332,11 +332,10 @@ export class MCPConnectionFactory {
           await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', flowMetadata);
 
           // Start monitoring in background — createFlow will find the existing PENDING state
-          this.flowManager!.createFlow(newFlowId, 'mcp_oauth', flowMetadata, this.signal).catch(
-            (error) => {
-              logger.warn(`${this.logPrefix} OAuth flow monitor ended`, error);
-            },
-          );
+          // written by initFlow above, so metadata arg is unused (pass {} to make that explicit)
+          this.flowManager!.createFlow(newFlowId, 'mcp_oauth', {}, this.signal).catch((error) => {
+            logger.debug(`${this.logPrefix} OAuth flow monitor ended`, error);
+          });
 
           if (this.oauthStart) {
             logger.info(`${this.logPrefix} OAuth flow started, issuing authorization URL`);
@@ -518,6 +517,9 @@ export class MCPConnectionFactory {
         this.serverConfig.oauth,
       );
 
+      // Store flow state BEFORE redirecting so the callback can find it
+      await this.flowManager.initFlow(newFlowId, 'mcp_oauth', flowMetadata as FlowMetadata);
+
       if (typeof this.oauthStart === 'function') {
         logger.info(`${this.logPrefix} OAuth flow started, issued authorization URL to user`);
         await this.oauthStart(authorizationUrl);
@@ -527,13 +529,9 @@ export class MCPConnectionFactory {
         );
       }
 
-      /** Tokens from the new flow */
-      const tokens = await this.flowManager.createFlow(
-        newFlowId,
-        'mcp_oauth',
-        flowMetadata as FlowMetadata,
-        this.signal,
-      );
+      // createFlow will find the existing PENDING state written by initFlow above,
+      // so metadata arg is unused (pass {} to make that explicit)
+      const tokens = await this.flowManager.createFlow(newFlowId, 'mcp_oauth', {}, this.signal);
       if (typeof this.oauthEnd === 'function') {
         await this.oauthEnd();
       }

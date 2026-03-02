@@ -205,6 +205,18 @@ describe('FlowStateManager', () => {
       expect(result).toBe('success');
     }, 15000);
 
+    it('passes the configured TTL to keyv.set', async () => {
+      const setSpy = jest.spyOn(store, 'set');
+
+      await flowManager.initFlow(flowId, type, { serverName: 'test' });
+
+      expect(setSpy).toHaveBeenCalledWith(
+        flowKey,
+        expect.objectContaining({ status: 'PENDING' }),
+        30000,
+      );
+    });
+
     it('propagates store write failures', async () => {
       jest.spyOn(store, 'set').mockRejectedValueOnce(new Error('Store write failed'));
 

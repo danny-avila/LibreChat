@@ -443,16 +443,108 @@ describe('MCPConnectionFactory', () => {
 
       await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
 
-      // Allow microtask queue to flush (catch handler on createFlow)
-      await new Promise((resolve) => process.nextTick(resolve));
+      // Allow the .catch handler on createFlow to execute
+      await Promise.resolve();
 
       // initFlow should have succeeded and redirect should have happened
       expect(mockFlowManager.initFlow).toHaveBeenCalled();
       expect(oauthOptions.oauthStart).toHaveBeenCalledWith('https://auth.example.com');
-      // The background monitor error should be logged as a warning, not silently swallowed
-      expect(mockLogger.warn).toHaveBeenCalledWith(
+      // The background monitor error should be logged, not silently swallowed
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.stringContaining('OAuth flow monitor ended'),
         expect.any(Error),
+      );
+    });
+
+    it('should call initFlow before createFlow in blocking OAuth path (non-returnOnOAuth)', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        oauthEnd: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'random-state',
+          clientInfo: { client_id: 'client123' },
+          metadata: { token_endpoint: 'https://auth.example.com/token' },
+        },
+      };
+
+      const mockTokens: MCPOAuthTokens = {
+        access_token: 'access123',
+        refresh_token: 'refresh123',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      // processMCPEnv must return config with url so handleOAuthRequired proceeds
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockResolvedValue(mockTokens);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      // initFlow must be called BEFORE oauthStart and createFlow
+      expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
+        'flow123',
+        'mcp_oauth',
+        mockFlowData.flowMetadata,
+      );
+      const initCallOrder = mockFlowManager.initFlow.mock.invocationCallOrder[0];
+      const oauthStartCallOrder = (oauthOptions.oauthStart as jest.Mock).mock
+        .invocationCallOrder[0];
+      const createCallOrder = mockFlowManager.createFlow.mock.invocationCallOrder[0];
+      expect(initCallOrder).toBeLessThan(oauthStartCallOrder);
+      expect(initCallOrder).toBeLessThan(createCallOrder);
+
+      // createFlow should receive {} since initFlow already persisted metadata
+      expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
+        'flow123',
+        'mcp_oauth',
+        {},
+        undefined,
       );
     });
 
@@ -534,12 +626,12 @@ describe('MCPConnectionFactory', () => {
         }),
       );
 
+      // createFlow finds the existing PENDING state written by initFlow,
+      // so metadata arg is unused (passed as {})
       expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
         'user123:test-server',
         'mcp_oauth',
-        expect.objectContaining({
-          codeVerifier: 'new-code-verifier-xyz',
-        }),
+        {},
         undefined,
       );
     });
