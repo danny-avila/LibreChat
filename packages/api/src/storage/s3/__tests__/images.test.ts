@@ -1,6 +1,16 @@
+import fs from 'fs';
 import { S3ImageService } from '../images';
 import { saveBufferToS3 } from '../crud';
 import type { S3ImageServiceDeps } from '../images';
+import type { ServerRequest } from '~/types';
+
+jest.mock('fs', () => ({
+  ...jest.requireActual('fs'),
+  promises: {
+    readFile: jest.fn(),
+    unlink: jest.fn().mockResolvedValue(undefined),
+  },
+}));
 
 jest.mock('../crud', () => ({
   saveBufferToS3: jest
@@ -110,6 +120,63 @@ describe('S3ImageService', () => {
     it('requires dependencies to be passed', () => {
       const newService = new S3ImageService(mockDeps);
       expect(newService).toBeInstanceOf(S3ImageService);
+    });
+  });
+
+  describe('uploadImageToS3', () => {
+    const mockReq = {
+      user: { id: 'user123' },
+      config: { imageOutputType: 'webp' },
+    } as unknown as ServerRequest;
+
+    it('deletes temp file on early failure (readFile throws)', async () => {
+      (fs.promises.readFile as jest.Mock).mockRejectedValueOnce(
+        new Error('ENOENT: no such file or directory'),
+      );
+      (fs.promises.unlink as jest.Mock).mockResolvedValueOnce(undefined);
+
+      await expect(
+        service.uploadImageToS3({
+          req: mockReq,
+          file: { path: '/tmp/input.jpg' } as Express.Multer.File,
+          file_id: 'file123',
+          endpoint: 'openai',
+        }),
+      ).rejects.toThrow('ENOENT: no such file or directory');
+
+      expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/input.jpg');
+    });
+
+    it('deletes temp file on resize failure (resizeImageBuffer throws)', async () => {
+      (fs.promises.readFile as jest.Mock).mockResolvedValueOnce(Buffer.from('raw'));
+      (mockDeps.resizeImageBuffer as jest.Mock).mockRejectedValueOnce(new Error('Resize failed'));
+      (fs.promises.unlink as jest.Mock).mockResolvedValueOnce(undefined);
+
+      await expect(
+        service.uploadImageToS3({
+          req: mockReq,
+          file: { path: '/tmp/input.jpg' } as Express.Multer.File,
+          file_id: 'file123',
+          endpoint: 'openai',
+        }),
+      ).rejects.toThrow('Resize failed');
+
+      expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/input.jpg');
+    });
+
+    it('deletes temp file on success', async () => {
+      (fs.promises.readFile as jest.Mock).mockResolvedValueOnce(Buffer.from('raw'));
+      (fs.promises.unlink as jest.Mock).mockResolvedValueOnce(undefined);
+
+      const result = await service.uploadImageToS3({
+        req: mockReq,
+        file: { path: '/tmp/input.webp' } as Express.Multer.File,
+        file_id: 'file123',
+        endpoint: 'openai',
+      });
+
+      expect(result.filepath).toContain('signed=true');
+      expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/input.webp');
     });
   });
 });
