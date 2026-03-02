@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import { Outlet } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { useMediaQuery } from '@librechat/client';
 import type { ChatFormValues } from '~/common';
 import {
   useSearchEnabled,
@@ -9,6 +11,7 @@ import {
   useAgentsMap,
   useFileMap,
 } from '~/hooks';
+import store from '~/store';
 import {
   PromptGroupsProvider,
   AssistantsMapContext,
@@ -26,6 +29,8 @@ import { Banner } from '~/components/Banners';
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const [bannerHeight, setBannerHeight] = useState(0);
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   const { isAuthenticated, logout } = useAuthContext();
 
@@ -76,7 +81,16 @@ export default function Root() {
                 <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
                   <div className="relative z-0 flex h-full w-full overflow-hidden">
                     <UnifiedSidebar />
-                    <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
+                    <div
+                      className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
+                      style={{
+                        transform:
+                          isSmallScreen && sidebarExpanded
+                            ? 'translateX(min(85vw, 380px))'
+                            : 'none',
+                        transition: 'transform 300ms cubic-bezier(0.2, 0, 0, 1)',
+                      }}
+                    >
                       <Outlet />
                     </div>
                   </div>
