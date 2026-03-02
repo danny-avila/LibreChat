@@ -98,7 +98,7 @@ export default function Root() {
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (
             <TermsAndConditionsModal
-              open={showTerms}
+              open={showTerms}    
               onOpenChange={setShowTerms}
               onAccept={handleAcceptTerms}
               onDecline={handleDeclineTerms}

@@ -97,6 +97,7 @@ router.get('/', async function (req, res) {
       interface: appConfig?.interfaceConfig,
       turnstile: appConfig?.turnstileConfig,
       modelSpecs: appConfig?.modelSpecs,
+      floatingButtons: appConfig?.floatingButtons,
       balance: balanceConfig,
       sharedLinksEnabled,
       publicSharedLinksEnabled,
