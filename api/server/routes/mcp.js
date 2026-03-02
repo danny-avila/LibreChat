@@ -43,11 +43,42 @@ const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { findPluginAuthsByKeys } = require('~/models');
 const { getRoleByName } = require('~/models/Role');
+const { Token } = require('~/db/models');
 const { getLogStores } = require('~/cache');
 
 const router = Router();
 
 const OAUTH_CSRF_COOKIE_PATH = '/api/mcp';
+const MCP_OAUTH_TOKEN_TYPES = ['mcp_oauth', 'mcp_oauth_refresh', 'mcp_oauth_client'];
+
+function parseMCPServerNameFromIdentifier(identifier) {
+  if (typeof identifier !== 'string' || !identifier.startsWith('mcp:')) {
+    return null;
+  }
+  return identifier.slice('mcp:'.length).replace(/:(refresh|client)$/, '');
+}
+
+async function getOAuthTokenServerNames(userId) {
+  try {
+    const identifiers = await Token.distinct('identifier', {
+      userId,
+      type: { $in: MCP_OAUTH_TOKEN_TYPES },
+      identifier: /^mcp:/,
+    });
+
+    return new Set(
+      identifiers
+        .map((identifier) => parseMCPServerNameFromIdentifier(identifier))
+        .filter((serverName) => !!serverName),
+    );
+  } catch (error) {
+    logger.error('[MCP OAuth] Failed to retrieve OAuth token server names', {
+      userId,
+      error,
+    });
+    return new Set();
+  }
+}
 
 /**
  * Get all MCP tools available to the user
@@ -515,11 +546,12 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
     );
+    const oauthTokenServerNames = await getOAuthTokenServerNames(user.id);
     const connectionStatus = {};
 
     for (const [serverName, config] of Object.entries(mcpConfig)) {
       try {
-        connectionStatus[serverName] = await getServerConnectionStatus(
+        const serverStatus = await getServerConnectionStatus(
           user.id,
           serverName,
           config,
@@ -527,12 +559,17 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
           userConnections,
           oauthServers,
         );
+        connectionStatus[serverName] = {
+          ...serverStatus,
+          hasOAuthTokens: oauthTokenServerNames.has(serverName),
+        };
       } catch (error) {
         const message = `Failed to get status for server "${serverName}"`;
         logger.error(`[MCP Connection Status] ${message},`, error);
         connectionStatus[serverName] = {
           connectionState: 'error',
           requiresOAuth: oauthServers.has(serverName),
+          hasOAuthTokens: false,
           error: message,
         };
       }
@@ -567,6 +604,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
     );
+    const oauthTokenServerNames = await getOAuthTokenServerNames(user.id);
 
     if (!mcpConfig[serverName]) {
       return res
@@ -588,6 +626,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
       serverName,
       connectionStatus: serverStatus.connectionState,
       requiresOAuth: serverStatus.requiresOAuth,
+      hasOAuthTokens: oauthTokenServerNames.has(serverName),
     });
   } catch (error) {
     if (error.message === 'MCP config not found') {
