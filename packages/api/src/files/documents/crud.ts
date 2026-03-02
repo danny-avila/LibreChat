@@ -1,12 +1,13 @@
 import * as fs from 'fs';
-import { FileSources } from 'librechat-data-provider';
+import { excelMimeTypes, FileSources } from 'librechat-data-provider';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
 
 /**
  * Parses an uploaded document and extracts its text content and metadata.
+ * Handled types must stay in sync with `documentParserMimeTypes` from data-provider.
  *
- * Throws an Error if it fails to parse or no text is found.
+ * @throws {Error} if `file.mimetype` is not handled or no text is found.
  */
 export async function parseDocument({
   file,
@@ -14,19 +15,19 @@ export async function parseDocument({
   file: Express.Multer.File;
 }): Promise<MistralOCRUploadResult> {
   let text: string;
-  switch (file.mimetype) {
-    case 'application/pdf':
-      text = await pdfToText(file);
-      break;
-    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-      text = await wordDocToText(file);
-      break;
-    case 'application/vnd.ms-excel':
-    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-      text = await excelSheetToText(file);
-      break;
-    default:
-      throw new Error(`Unsupported file type in document parser: ${file.mimetype}`);
+  if (file.mimetype === 'application/pdf') {
+    text = await pdfToText(file);
+  } else if (
+    file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ) {
+    text = await wordDocToText(file);
+  } else if (
+    excelMimeTypes.test(file.mimetype) ||
+    file.mimetype === 'application/vnd.oasis.opendocument.spreadsheet'
+  ) {
+    text = await excelSheetToText(file);
+  } else {
+    throw new Error(`Unsupported file type in document parser: ${file.mimetype}`);
   }
 
   if (!text?.trim()) {

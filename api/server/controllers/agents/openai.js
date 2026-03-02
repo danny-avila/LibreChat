@@ -25,6 +25,7 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
@@ -129,7 +130,6 @@ const OpenAIChatCompletionController = async (req, res) => {
   const appConfig = req.config;
   const requestStartTime = Date.now();
 
-  // Validate request
   const validation = validateRequest(req.body);
   if (isChatCompletionValidationFailure(validation)) {
     return sendErrorResponse(res, 400, validation.error);
@@ -150,20 +150,20 @@ const OpenAIChatCompletionController = async (req, res) => {
     );
   }
 
-  // Generate IDs
-  const requestId = `chatcmpl-${nanoid()}`;
+  const responseId = `chatcmpl-${nanoid()}`;
   const conversationId = request.conversation_id ?? nanoid();
   const parentMessageId = request.parent_message_id ?? null;
   const created = Math.floor(Date.now() / 1000);
 
+  /** @type {import('@librechat/api').OpenAIResponseContext} — key must be `requestId` to match the type used by createChunk/buildNonStreamingResponse */
   const context = {
     created,
-    requestId,
+    requestId: responseId,
     model: agentId,
   };
 
   logger.debug(
-    `[OpenAI API] Request ${requestId} started for agent ${agentId}, stream: ${request.stream}`,
+    `[OpenAI API] Response ${responseId} started for agent ${agentId}, stream: ${request.stream}`,
   );
 
   // Set up abort controller
@@ -450,11 +450,11 @@ const OpenAIChatCompletionController = async (req, res) => {
       agents: [primaryConfig],
       messages: formattedMessages,
       indexTokenCountMap,
-      runId: requestId,
+      runId: responseId,
       signal: abortController.signal,
       customHandlers: handlers,
       requestBody: {
-        messageId: requestId,
+        messageId: responseId,
         conversationId,
       },
       user: { id: userId },
@@ -471,6 +471,10 @@ const OpenAIChatCompletionController = async (req, res) => {
         thread_id: conversationId,
         user_id: userId,
         user: createSafeUser(req.user),
+        requestBody: {
+          messageId: responseId,
+          conversationId,
+        },
         ...(userMCPAuthMap != null && { userMCPAuthMap }),
       },
       signal: abortController.signal,
@@ -490,12 +494,18 @@ const OpenAIChatCompletionController = async (req, res) => {
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
     recordCollectedUsage(
-      { spendTokens, spendStructuredTokens },
+      {
+        spendTokens,
+        spendStructuredTokens,
+        pricing: { getMultiplier, getCacheMultiplier },
+        bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+      },
       {
         user: userId,
         conversationId,
         collectedUsage,
         context: 'message',
+        messageId: responseId,
         balance: balanceConfig,
         transactions: transactionsConfig,
         model: primaryConfig.model || agent.model_parameters?.model,
@@ -509,7 +519,7 @@ const OpenAIChatCompletionController = async (req, res) => {
     if (isStreaming) {
       sendFinalChunk(handlerConfig);
       res.end();
-      logger.debug(`[OpenAI API] Request ${requestId} completed in ${duration}ms (streaming)`);
+      logger.debug(`[OpenAI API] Response ${responseId} completed in ${duration}ms (streaming)`);
 
       // Wait for artifact processing after response ends (non-blocking)
       if (artifactPromises.length > 0) {
@@ -548,7 +558,9 @@ const OpenAIChatCompletionController = async (req, res) => {
         usage,
       );
       res.json(response);
-      logger.debug(`[OpenAI API] Request ${requestId} completed in ${duration}ms (non-streaming)`);
+      logger.debug(
+        `[OpenAI API] Response ${responseId} completed in ${duration}ms (non-streaming)`,
+      );
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An error occurred';
