@@ -4,6 +4,7 @@ import { useRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { socialDraftState } from '~/store/socialDraft';
 import { useLocalize, useAuthContext } from '~/hooks';
+import PostComposer from '~/components/Social/PostComposer';
 
 const FUNCTION_NAME = 'Social Media Draft';
 
@@ -70,6 +71,8 @@ export default function SocialDraftModal() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [viewingDraftId, setViewingDraftId] = useState<string | null>(null);
   const [pollingForDraft, setPollingForDraft] = useState(false);
+  const [showPostComposer, setShowPostComposer] = useState(false);
+  const [selectedDraftContent, setSelectedDraftContent] = useState<string>('');
   const pendingCountRef = useRef(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { showToast } = useToastContext();
@@ -126,11 +129,31 @@ export default function SocialDraftModal() {
   const handleApprove = async (draft: SocialDraftRecord, approved: boolean) => {
     if (!token) return;
     setApprovingId(draft._id);
+    
     try {
+      if (approved) {
+        // Get the first non-empty draft content
+        const firstDraft = Object.values(draft.drafts).find((text) => text?.trim());
+        
+        // Open PostComposer immediately (don't wait for API)
+        if (firstDraft) {
+          setSelectedDraftContent(firstDraft);
+          setShowPostComposer(true);
+          close(); // Close the draft modal
+          
+          showToast({
+            message: 'Opening post composer...',
+            status: 'success',
+          });
+        }
+      }
+      
+      // Call approval API in background (don't await)
       const platforms = approved
         ? Object.keys(draft.drafts).filter((k) => draft.drafts[k]?.trim())
         : [];
-      const res = await fetch(`/api/social-drafts/${draft._id}/approve`, {
+      
+      fetch(`/api/social-drafts/${draft._id}/approve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -138,17 +161,27 @@ export default function SocialDraftModal() {
         },
         credentials: 'include',
         body: JSON.stringify({ approved, selectedPlatforms: platforms }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.success) {
+            console.error('Approval API failed:', data.error);
+          }
+          // Refresh pending drafts in background
+          fetchPendingDrafts();
+        })
+        .catch((err) => {
+          console.error('Approval API error:', err);
+        });
+      
+      if (!approved) {
         showToast({
-          message: approved ? 'Draft approved; workflow resumed.' : 'Draft rejected.',
+          message: 'Draft rejected.',
           status: 'success',
         });
         await fetchPendingDrafts();
-      } else {
-        throw new Error(data.error || 'Request failed');
       }
+      
     } catch (err: unknown) {
       showToast({
         message: err instanceof Error ? err.message : 'Approve/reject failed',
@@ -489,6 +522,16 @@ export default function SocialDraftModal() {
           )}
         </div>
       </div>
+
+      {/* Post Composer - Opens after draft approval */}
+      <PostComposer
+        isOpen={showPostComposer}
+        onClose={() => {
+          setShowPostComposer(false);
+          setSelectedDraftContent('');
+        }}
+        initialContent={selectedDraftContent}
+      />
     </div>
   );
 }

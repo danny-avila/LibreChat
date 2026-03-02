@@ -10,6 +10,7 @@ import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } fr
 import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import SocialShareButton from '~/components/Social/SocialShareButton';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
@@ -103,6 +104,8 @@ function ChatView({ index = 0 }: { index?: number }) {
                 </div>
                 {isLandingPage && <Footer />}
               </>
+              {/* Social Media Share Button */}
+              <SocialShareButton />
             </div>
           </Presentation>
         </AddedChatContext.Provider>

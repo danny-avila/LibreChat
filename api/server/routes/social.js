@@ -281,4 +281,48 @@ router.get('/platforms', requireJwtAuth, async (req, res) => {
   res.json({ platforms });
 });
 
+/**
+ * POST /api/social/posts
+ * Create a post on selected social media platforms
+ */
+router.post('/posts', requireJwtAuth, async (req, res) => {
+  try {
+    const { content, integrationIds } = req.body;
+
+    // Validation
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'Post content is required' });
+    }
+
+    if (!integrationIds || !Array.isArray(integrationIds) || integrationIds.length === 0) {
+      return res.status(400).json({ error: 'At least one integration must be selected' });
+    }
+
+    logger.info(`[Social] Creating post for user ${req.user.id} on ${integrationIds.length} platforms`);
+
+    // Create post via Postiz
+    const postData = {
+      content: content.trim(),
+      integrations: integrationIds,
+      // Immediate posting (no scheduling)
+    };
+
+    const result = await PostizService.createPost(postData);
+
+    logger.info(`[Social] Post created successfully:`, result);
+
+    res.json({
+      success: true,
+      message: 'Post published successfully',
+      post: result,
+    });
+  } catch (error) {
+    logger.error('[Social] Failed to create post:', error);
+    res.status(500).json({
+      error: 'Failed to create post',
+      message: error.message,
+    });
+  }
+});
+
 module.exports = router;
