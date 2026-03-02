@@ -49,7 +49,7 @@ describe('LeaderElection with Redis', () => {
   });
 
   describe('Test Case 1: Simulate shutdown of the leader', () => {
-    it('should elect a new leader after the current leader resigns', async () => {
+    it('should allow an instance to re-elect itself after resignation', async () => {
       const instance = new LeaderElection();
       instances.push(instance);
 
