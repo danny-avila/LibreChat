@@ -154,9 +154,10 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
               'relative cursor-pointer select-none whitespace-nowrap px-3 py-2 transition-all duration-200',
               isSmallScreen ? 'min-w-fit flex-shrink-0' : '',
               activeTab === category.value
-                ? 'rounded-t-lg bg-surface-hover text-text-primary'
+                ? 'rounded-t-lg text-white'
                 : 'rounded-lg bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary active:scale-95',
             )}
+            style={activeTab === category.value ? { background: 'rgba(168,26,73,0.15)' } : undefined}
             role="tab"
             aria-selected={activeTab === category.value}
             aria-controls={`tabpanel-${category.value}`}
@@ -168,10 +169,10 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
             })}
           >
             {getCategoryDisplayName(category)}
-            {/* Underline for active tab */}
             {activeTab === category.value && (
               <div
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-text-primary"
+                className="absolute bottom-0 left-0 right-0 h-0.5"
+                style={{ background: '#A81A49' }}
                 aria-hidden="true"
               />
             )}
