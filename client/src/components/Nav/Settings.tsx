@@ -45,7 +45,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       ...(hasAnyPersonalizationFeature ? [SettingsTabValues.PERSONALIZATION] : []),
       SettingsTabValues.DATA,
       ...(startupConfig?.balance?.enabled ? [SettingsTabValues.BALANCE] : []),
-      SettingsTabValues.SOCIAL_ACCOUNTS,
+      ...(import.meta.env.VITE_SOCIAL_MEDIA_AUTOMATION === 'true' ? [SettingsTabValues.SOCIAL_ACCOUNTS] : []),
       SettingsTabValues.ACCOUNT,
     ];
     const currentIndex = tabs.indexOf(activeTab);
@@ -118,11 +118,15 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           },
         ]
       : ([] as { value: SettingsTabValues; icon: React.JSX.Element; label: TranslationKeys }[])),
-    {
-      value: SettingsTabValues.SOCIAL_ACCOUNTS,
-      icon: <Network className="icon-sm" />,
-      label: 'com_nav_setting_social_accounts' as TranslationKeys,
-    },
+    ...(import.meta.env.VITE_SOCIAL_MEDIA_AUTOMATION === 'true'
+      ? [
+          {
+            value: SettingsTabValues.SOCIAL_ACCOUNTS,
+            icon: <Network className="icon-sm" />,
+            label: 'com_nav_setting_social_accounts' as TranslationKeys,
+          },
+        ]
+      : ([] as { value: SettingsTabValues; icon: React.JSX.Element; label: TranslationKeys }[])),
     {
       value: SettingsTabValues.ACCOUNT,
       icon: <UserIcon />,
@@ -255,9 +259,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                         <Balance />
                       </Tabs.Content>
                     )}
-                    <Tabs.Content value={SettingsTabValues.SOCIAL_ACCOUNTS} tabIndex={-1}>
-                      <SocialAccountsSettings />
-                    </Tabs.Content>
+                    {import.meta.env.VITE_SOCIAL_MEDIA_AUTOMATION === 'true' && (
+                      <Tabs.Content value={SettingsTabValues.SOCIAL_ACCOUNTS} tabIndex={-1}>
+                        <SocialAccountsSettings />
+                      </Tabs.Content>
+                    )}
                     <Tabs.Content value={SettingsTabValues.ACCOUNT} tabIndex={-1}>
                       <Account />
                     </Tabs.Content>

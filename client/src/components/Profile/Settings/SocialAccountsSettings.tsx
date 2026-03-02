@@ -262,7 +262,7 @@ export default function SocialAccountsSettings() {
                 To connect social media accounts, OAuth apps must be configured in Postiz first:
               </p>
               <ol className="list-inside list-decimal space-y-1">
-                <li>Open Postiz at <a href="http://localhost:4007" target="_blank" rel="noopener noreferrer" className="underline">http://localhost:4007</a></li>
+                <li>Open Postiz at <a href="https://postiz.cloud.jamot.pro/" target="_blank" rel="noopener noreferrer" className="underline">http://localhost:4007</a></li>
                 <li>Go to Settings → Integrations</li>
                 <li>Configure OAuth apps for each platform (LinkedIn, X, etc.)</li>
                 <li>Add OAuth credentials from each platform's developer portal</li>
