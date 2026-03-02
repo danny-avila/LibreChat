@@ -352,6 +352,81 @@ describe('setupOpenId', () => {
     expect(updateUser).not.toHaveBeenCalled();
   });
 
+  describe('idOnTheSource fallback for non-Microsoft OIDC providers', () => {
+    it('should use oid claim for idOnTheSource when available (Microsoft)', async () => {
+      // Arrange – userinfo with oid claim (Microsoft Entra ID style)
+      const userinfoWithOid = {
+        ...tokenset.claims(),
+        oid: 'microsoft-object-id-12345',
+      };
+
+      // Act
+      const { user } = await validate({ ...tokenset, claims: () => userinfoWithOid });
+
+      // Assert – idOnTheSource should be the oid value
+      expect(createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          idOnTheSource: 'microsoft-object-id-12345',
+        }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('should fallback to sub claim for idOnTheSource when oid is missing (non-Microsoft)', async () => {
+      // Arrange – userinfo without oid claim (Keycloak, Auth0, Okta style)
+      const userinfoWithoutOid = { ...tokenset.claims() };
+      delete userinfoWithoutOid.oid;
+
+      // Act
+      const { user } = await validate({ ...tokenset, claims: () => userinfoWithoutOid });
+
+      // Assert – idOnTheSource should fallback to sub value
+      expect(createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          idOnTheSource: userinfoWithoutOid.sub, // '1234' from the base tokenset
+        }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('should update existing user with idOnTheSource using oid || sub fallback', async () => {
+      // Arrange – existing user without idOnTheSource
+      const existingUser = {
+        _id: 'existingUserId',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'existinguser',
+        name: 'Existing User',
+      };
+      findUser.mockImplementation(async (query) => {
+        if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+          return existingUser;
+        }
+        return null;
+      });
+
+      // userinfo without oid (non-Microsoft provider)
+      const userinfoWithoutOid = { ...tokenset.claims() };
+      delete userinfoWithoutOid.oid;
+
+      // Act
+      await validate({ ...tokenset, claims: () => userinfoWithoutOid });
+
+      // Assert – updateUser should set idOnTheSource to sub
+      expect(updateUser).toHaveBeenCalledWith(
+        existingUser._id,
+        expect.objectContaining({
+          idOnTheSource: userinfoWithoutOid.sub,
+        }),
+      );
+    });
+  });
+
   it('should enforce the required role and reject login if missing', async () => {
     // Arrange – simulate a token without the required role.
     jwtDecode.mockReturnValue({

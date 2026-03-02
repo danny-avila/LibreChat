@@ -6,7 +6,10 @@ const {
   isAdminPanelRedirect,
   generateAdminExchangeCode,
 } = require('@librechat/api');
-const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
+const {
+  syncUserEntraGroupMemberships,
+  syncUserOidcGroupsFromToken,
+} = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const getLogStores = require('~/cache/getLogStores');
 const { checkBan } = require('~/server/middleware');
@@ -55,13 +58,23 @@ function createOAuthHandler(redirectUri = domains.client) {
         return res.redirect(callbackUrl.toString());
       }
 
+      /** Sync groups from OpenID provider (independent of token reuse setting) */
+      /** Both sync functions have their own feature flag checks internally */
+      if (req.user && req.user.provider === 'openid' && req.user.tokenset) {
+        /** Sync Entra ID groups from Microsoft Graph API (if enabled via USE_ENTRA_ID_FOR_PEOPLE_SEARCH) */
+        await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
+
+        /** Sync OIDC groups from JWT token claims (if enabled via OPENID_SYNC_GROUPS_FROM_TOKEN) */
+        await syncUserOidcGroupsFromToken(req.user, req.user.tokenset);
+      }
+
       /** Standard OAuth flow - set cookies and redirect */
+      /** Handle session token management (based on token reuse setting) */
       if (
         req.user &&
-        req.user.provider == 'openid' &&
+        req.user.provider === 'openid' &&
         isEnabled(process.env.OPENID_REUSE_TOKENS) === true
       ) {
-        await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
         setOpenIDAuthTokens(req.user.tokenset, req, res, req.user._id.toString());
       } else {
         await setAuthTokens(req.user._id, res);
