@@ -10,6 +10,7 @@ const {
   getGroupOwners,
 } = require('~/server/services/GraphApiService');
 const { extractGroupsFromToken } = require('~/utils/extractJwtClaims');
+const { Group } = require('~/db/models');
 const {
   findAccessibleResources: findAccessibleResourcesACL,
   getEffectivePermissions: getEffectivePermissionsACL,
