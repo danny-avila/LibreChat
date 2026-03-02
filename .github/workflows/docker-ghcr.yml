@@ -39,3 +39,10 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/librechat-custom:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Trigger Coolify deployment
+        if: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK != '' }}
+        run: |
+          curl --silent --show-error --fail \
+            --request GET \
+            "${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}"
