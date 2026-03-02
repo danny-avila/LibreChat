@@ -1,7 +1,7 @@
 const cookies = require('cookie');
 const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { logoutUser } = require('~/server/services/AuthService');
+const { logoutUser, COOKIE_DOMAIN, SAME_SITE_POLICY } = require('~/server/services/AuthService');
 const { getOpenIdConfig } = require('~/strategies');
 
 const logoutController = async (req, res) => {
@@ -20,11 +20,14 @@ const logoutController = async (req, res) => {
     const logout = await logoutUser(req, refreshToken);
     const { status, message } = logout;
 
-    res.clearCookie('refreshToken');
-    res.clearCookie('openid_access_token');
-    res.clearCookie('openid_id_token');
-    res.clearCookie('openid_user_id');
-    res.clearCookie('token_provider');
+    const cookieOptions = COOKIE_DOMAIN
+      ? { domain: COOKIE_DOMAIN, sameSite: SAME_SITE_POLICY }
+      : undefined;
+    res.clearCookie('refreshToken', cookieOptions);
+    res.clearCookie('openid_access_token', cookieOptions);
+    res.clearCookie('openid_id_token', cookieOptions);
+    res.clearCookie('openid_user_id', cookieOptions);
+    res.clearCookie('token_provider', cookieOptions);
     const response = { message };
     if (
       isOpenIdUser &&

@@ -39,6 +39,51 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+/**
+ * COOKIE_DOMAIN: Optional domain attribute to use when setting auth cookies.
+ *
+ * - Leave unset/empty to omit the `domain` attribute and rely on browser defaults.
+ * - Set to a specific domain (e.g. "app.example.com") to scope cookies to that host.
+ * - Set to a leading dot domain (e.g. ".example.com") to allow cookies to be shared
+ *   across subdomains of the given domain (e.g. "app.example.com", "api.example.com").
+ *
+ * Note: In the cookie-setting logic, configuring a domain that starts with "."
+ * changes the cookie `sameSite` attribute from "strict" to "lax" to support
+ * cross-subdomain flows while maintaining reasonable CSRF protection.
+ */
+const rawCookieDomain = process.env.COOKIE_DOMAIN ?? '';
+const DOMAIN_REGEX = /^\.?(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+
+const COOKIE_DOMAIN = (() => {
+  if (!rawCookieDomain) {
+    logger.info(
+      '[AuthService] cookies will be set without a domain attribute (browser default behavior)',
+    );
+    return '';
+  }
+  if (!DOMAIN_REGEX.test(rawCookieDomain)) {
+    logger.error(
+      '[AuthService] Invalid COOKIE_DOMAIN configured, cookies will be set without a domain attribute',
+      { COOKIE_DOMAIN: rawCookieDomain },
+    );
+    return '';
+  }
+  logger.info(`[AuthService] cookies are set to domain ${rawCookieDomain}`);
+  return rawCookieDomain;
+})();
+
+const SAME_SITE_POLICY = COOKIE_DOMAIN.startsWith('.') ? 'lax' : 'strict';
+const COOKIE_DOMAIN_OPTION = COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {};
+
+/** Builds a cookie options object for auth cookies */
+const buildCookieOptions = (expires) => ({
+  expires: new Date(expires),
+  httpOnly: true,
+  secure: shouldUseSecureCookie(),
+  sameSite: SAME_SITE_POLICY,
+  ...COOKIE_DOMAIN_OPTION,
+});
+
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 
 /**
@@ -92,9 +137,7 @@ const createTokenHash = () => {
 const sendVerificationEmail = async (user) => {
   const [verifyToken, hash] = createTokenHash();
 
-  const verificationLink = `${
-    domains.client
-  }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+  const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
   await sendEmail({
     email: user.email,
     subject: 'Verify your email',
@@ -394,18 +437,9 @@ const setAuthTokens = async (userId, res, _session = null) => {
     const sessionExpiry = math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
     const token = await generateToken(user, sessionExpiry);
 
-    res.cookie('refreshToken', refreshToken, {
-      expires: new Date(refreshTokenExpires),
-      httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
-    });
-    res.cookie('token_provider', 'librechat', {
-      expires: new Date(refreshTokenExpires),
-      httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
-    });
+    const cookieOptions = buildCookieOptions(refreshTokenExpires);
+    res.cookie('refreshToken', refreshToken, cookieOptions);
+    res.cookie('token_provider', 'librechat', cookieOptions);
     return token;
   } catch (error) {
     logger.error('[setAuthTokens] Error in setting authentication tokens:', error);
@@ -471,12 +505,9 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
      * The refresh token is small (opaque string) so it doesn't hit the HTTP/2 header
      * size limits that motivated session storage for the larger access_token/id_token.
      */
-    res.cookie('refreshToken', refreshToken, {
-      expires: expirationDate,
-      httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
-    });
+    const cookieOptions = buildCookieOptions(expirationDate.getTime());
+
+    res.cookie('refreshToken', refreshToken, cookieOptions);
 
     /** Store tokens server-side in session to avoid large cookies */
     if (req.session) {
@@ -488,40 +519,20 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       };
     } else {
       logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');
-      res.cookie('openid_access_token', tokenset.access_token, {
-        expires: expirationDate,
-        httpOnly: true,
-        secure: shouldUseSecureCookie(),
-        sameSite: 'strict',
-      });
+      res.cookie('openid_access_token', tokenset.access_token, cookieOptions);
       if (tokenset.id_token) {
-        res.cookie('openid_id_token', tokenset.id_token, {
-          expires: expirationDate,
-          httpOnly: true,
-          secure: shouldUseSecureCookie(),
-          sameSite: 'strict',
-        });
+        res.cookie('openid_id_token', tokenset.id_token, cookieOptions);
       }
     }
 
     /** Small cookie to indicate token provider (required for auth middleware) */
-    res.cookie('token_provider', 'openid', {
-      expires: expirationDate,
-      httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
-    });
+    res.cookie('token_provider', 'openid', cookieOptions);
     if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
       /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
       const signedUserId = jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET, {
         expiresIn: expiryInMilliseconds / 1000,
       });
-      res.cookie('openid_user_id', signedUserId, {
-        expires: expirationDate,
-        httpOnly: true,
-        secure: shouldUseSecureCookie(),
-        sameSite: 'strict',
-      });
+      res.cookie('openid_user_id', signedUserId, cookieOptions);
     }
     return appAuthToken;
   } catch (error) {
@@ -550,9 +561,7 @@ const resendVerificationEmail = async (req) => {
 
     const [verifyToken, hash] = createTokenHash();
 
-    const verificationLink = `${
-      domains.client
-    }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+    const verificationLink = `${domains.client}/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
 
     await sendEmail({
       email: user.email,
@@ -595,6 +604,9 @@ module.exports = {
   registerUser,
   setAuthTokens,
   resetPassword,
+  COOKIE_DOMAIN,
+  SAME_SITE_POLICY,
+  buildCookieOptions,
   setOpenIDAuthTokens,
   requestPasswordReset,
   resendVerificationEmail,
