@@ -2,6 +2,7 @@ services:
   api:
     container_name: LibreChat
     image: ghcr.io/chris-schweigler/librechat-custom:latest
+    pull_policy: always
     ports:
       - '${PORT:-3080}:${PORT:-3080}'
     restart: always
