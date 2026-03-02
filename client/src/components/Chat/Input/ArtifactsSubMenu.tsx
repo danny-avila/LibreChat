@@ -1,7 +1,7 @@
 import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import { PinIcon } from '@librechat/client';
-import { ChevronRight, WandSparkles } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { ArtifactModes } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -13,6 +13,7 @@ interface ArtifactsSubMenuProps {
   handleArtifactsToggle: () => void;
   handleShadcnToggle: () => void;
   handleCustomToggle: () => void;
+  children?: React.ReactNode;
 }
 
 const ArtifactsSubMenu = React.forwardRef<HTMLDivElement, ArtifactsSubMenuProps>(
@@ -24,6 +25,7 @@ const ArtifactsSubMenu = React.forwardRef<HTMLDivElement, ArtifactsSubMenuProps>
       handleArtifactsToggle,
       handleShadcnToggle,
       handleCustomToggle,
+      children,
       ...props
     },
     ref,
@@ -57,15 +59,11 @@ const ArtifactsSubMenu = React.forwardRef<HTMLDivElement, ArtifactsSubMenuProps>
                     menuStore.show();
                   }
                 }}
-                className="flex w-full cursor-pointer items-center justify-between rounded-lg p-2 hover:bg-surface-hover"
               />
             }
           >
-            <div className="flex items-center gap-2">
-              <WandSparkles className="icon-md" />
-              <span>{localize('com_ui_artifacts')}</span>
-              {isEnabled && <ChevronRight className="ml-auto h-3 w-3" />}
-            </div>
+            {children}
+            {isEnabled && <ChevronRight className="h-3 w-3 flex-shrink-0" />}
             <button
               type="button"
               onClick={(e) => {

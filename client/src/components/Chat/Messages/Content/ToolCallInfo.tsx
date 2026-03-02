@@ -3,6 +3,7 @@ import { useLocalize } from '~/hooks';
 import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import UIResourceCarousel from './UIResourceCarousel';
+import TavilySources from './TavilySources';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 
 function OptimizedCodeBlock({ text, maxHeight = 320 }: { text: string; maxHeight?: number }) {
@@ -64,6 +65,15 @@ export default function ToolCallInfo({
         return attachment[Tools.ui_resources] as UIResource[];
       }) ?? [];
 
+  // Check if this is a Tavily search tool call
+  // Legacy plugin: function_name === 'tavily_search_results_json'
+  // MCP tool: domain includes 'tavily' (e.g., "Internet Search (Tavily)")
+  const isTavilySearch =
+    function_name === 'tavily_search_results_json' ||
+    (domain != null && domain.toLowerCase().includes('tavily'));
+
+  const [showFallback, setShowFallback] = React.useState(false);
+
   return (
     <div className="w-full p-2">
       <div style={{ opacity: 1 }}>
@@ -77,7 +87,11 @@ export default function ToolCallInfo({
               {localize('com_ui_result')}
             </div>
             <div>
-              <OptimizedCodeBlock text={formatText(output)} maxHeight={250} />
+              {isTavilySearch && !showFallback ? (
+                <TavilySources output={output} showFallback={setShowFallback} />
+              ) : (
+                <OptimizedCodeBlock text={formatText(output)} maxHeight={250} />
+              )}
             </div>
             {uiResources.length > 0 && (
               <div className="my-2 text-sm font-medium text-text-primary">

@@ -5,7 +5,7 @@ const { Calculator } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Tools, ImageVisionTool } = require('librechat-data-provider');
-const { getToolkitKey, oaiToolkit, ytToolkit } = require('@librechat/api');
+const { getToolkitKey, oaiToolkit, ytToolkit, sanitizeSchemaMetadata } = require('@librechat/api');
 const { toolkits } = require('~/app/clients/tools/manifest');
 
 /**
@@ -109,9 +109,8 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
 
 /**
  * Formats a `StructuredTool` instance into a format that is compatible
- * with OpenAI's ChatCompletionFunctions. It uses the `zodToJsonSchema`
- * function to convert the schema of the `StructuredTool` into a JSON
- * schema, which is then used as the parameters for the OpenAI function.
+ * with OpenAI's ChatCompletionFunctions. The schema is converted to
+ * JSON Schema and sanitized so providers like Google Gemini accept it.
  *
  * @param {StructuredTool} tool - The StructuredTool to format.
  * @returns {FunctionTool} The OpenAI Assistant Tool.
@@ -122,7 +121,7 @@ function formatToOpenAIAssistantTool(tool) {
     [Tools.function]: {
       name: tool.name,
       description: tool.description,
-      parameters: zodToJsonSchema(tool.schema),
+      parameters: sanitizeSchemaMetadata(zodToJsonSchema(tool.schema)),
     },
   };
 }

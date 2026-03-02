@@ -1,13 +1,7 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
-import {
-  FileSearch,
-  ImageUpIcon,
-  FileType2Icon,
-  FileImageIcon,
-  TerminalSquareIcon,
-} from 'lucide-react';
+import { FileSearch, ImageUpIcon, FileType2Icon, TerminalSquareIcon } from 'lucide-react';
 import {
   EToolResources,
   EModelEndpoint,
@@ -117,14 +111,15 @@ const AttachFileMenu = ({
         isDocumentSupportedProvider(currentProvider)
       ) {
         items.push({
-          label: localize('com_ui_upload_provider'),
+          label: localize('com_ui_upload_image_input'),
+          description: localize('com_ui_upload_image_input_description'),
           onClick: () => {
             setToolResource(undefined);
             onAction(
               (provider || endpoint) === EModelEndpoint.google ? 'google_multimodal' : 'multimodal',
             );
           },
-          icon: <FileImageIcon className="icon-md" />,
+          icon: <ImageUpIcon className="icon-md" />,
         });
       } else {
         items.push({

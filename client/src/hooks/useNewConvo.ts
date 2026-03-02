@@ -116,14 +116,6 @@ const useNewConvo = (index = 0) => {
           : (effectivePreset ?? null);
         const conversationSetup = appliedPreset ?? storedConversation ?? null;
 
-        const isDefaultPresetApplied = Boolean(
-          appliedPreset &&
-            appliedPreset.presetId &&
-            appliedPreset.presetId === defaultPreset?.presetId,
-        );
-
-        const disableParams = _disableParams ?? isDefaultPresetApplied;
-
         if (buildDefaultConversation) {
           let defaultEndpoint = getDefaultEndpoint({
             convoSetup: conversationSetup ?? conversation,
@@ -183,9 +175,14 @@ const useNewConvo = (index = 0) => {
             endpoint: defaultEndpoint,
             models,
           });
+        } else if (appliedPreset) {
+          conversation = {
+            ...conversation,
+            ...appliedPreset,
+          };
         }
 
-        if (disableParams === true) {
+        if (_disableParams === true) {
           conversation.disableParams = true;
         }
 

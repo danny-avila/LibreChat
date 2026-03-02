@@ -7,7 +7,7 @@ import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
-import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
+import { useChatHelpers, useAddedResponse, useSSE, useMCPSelect } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
@@ -34,6 +34,9 @@ function ChatView({ index = 0 }: { index?: number }) {
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
+
+  // Initialize MCP selection for this conversation (including auto-select for new conversations)
+  useMCPSelect({ conversationId });
 
   const fileMap = useFileMapContext();
 

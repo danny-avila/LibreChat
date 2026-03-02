@@ -234,6 +234,7 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
     ...modelSpec.preset,
     spec: modelSpec.name,
     iconURL: getModelSpecIconURL(modelSpec),
+    modelLabel: modelSpec.label ?? null,
   };
 }
 

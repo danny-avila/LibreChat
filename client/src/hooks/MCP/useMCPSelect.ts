@@ -46,6 +46,26 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
     }
   }, [mcpValues, key]);
 
+  // Auto-select MCP servers configured with startup: true for new conversations
+  useEffect(() => {
+    if (mcpValues.length > 0) return; // Already has selections
+    if (!startupConfig?.mcpServers) return; // No MCP servers configured
+
+    // Auto-select for "new" conversations OR for conversations that have never had MCP configured
+    const shouldAutoSelect = key === Constants.NEW_CONVO || ephemeralAgent?.mcp?.length === 0;
+    if (!shouldAutoSelect) return;
+
+    // Get servers configured with startup: true (chatMenu setting only affects UI visibility, not auto-selection)
+    const startupServers = Object.entries(startupConfig.mcpServers)
+      .filter(([, config]) => config.startup === true)
+      .map(([serverName]) => serverName);
+
+    if (startupServers.length > 0) {
+      setMCPValuesRaw(startupServers);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, startupConfig?.mcpServers, setMCPValuesRaw, ephemeralAgent?.mcp?.length]);
+
   /** Stable memoized setter */
   const setMCPValues = useCallback(
     (value: string[]) => {

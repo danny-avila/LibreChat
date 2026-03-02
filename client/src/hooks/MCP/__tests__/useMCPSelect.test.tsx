@@ -605,4 +605,169 @@ describe('useMCPSelect', () => {
       expect(newResult.current.mcpValues).toBeDefined();
     });
   });
+
+  describe('Auto-Select Functionality', () => {
+    const useGetStartupConfig = jest.spyOn(dataProvider, 'useGetStartupConfig');
+
+    it('should auto-select MCP servers with startup: true on new conversations', async () => {
+      // Mock config with a startup server
+      useGetStartupConfig.mockReturnValue({
+        data: {
+          mcpServers: {
+            'Internet Search (Tavily)': {
+              type: 'streamable-http',
+              url: 'https://mcp.tavily.com/mcp/',
+              startup: true,
+              chatMenu: false,
+              requiresOAuth: false,
+            },
+          },
+        },
+      });
+
+      const store = createStore();
+      const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+        <RecoilRoot>
+          <Provider store={store}>{children}</Provider>
+        </RecoilRoot>
+      );
+
+      const { result } = renderHook(() => useMCPSelect({ conversationId: Constants.NEW_CONVO }), {
+        wrapper: Wrapper,
+      });
+
+      // Wait for auto-select to happen
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual(['Internet Search (Tavily)']);
+      });
+    });
+
+    it('should auto-select multiple servers with startup: true', async () => {
+      useGetStartupConfig.mockReturnValue({
+        data: {
+          mcpServers: {
+            'Internet Search (Tavily)': {
+              startup: true,
+              chatMenu: false,
+            },
+            'Another Server': {
+              startup: true,
+              chatMenu: true,
+            },
+          },
+        },
+      });
+
+      const store = createStore();
+      const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+        <RecoilRoot>
+          <Provider store={store}>{children}</Provider>
+        </RecoilRoot>
+      );
+
+      const { result } = renderHook(() => useMCPSelect({}), {
+        wrapper: Wrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpValues).toContain('Internet Search (Tavily)');
+        expect(result.current.mcpValues).toContain('Another Server');
+        expect(result.current.mcpValues).toHaveLength(2);
+      });
+    });
+
+    it('should NOT auto-select servers with startup: false', async () => {
+      useGetStartupConfig.mockReturnValue({
+        data: {
+          mcpServers: {
+            'Manual Server': {
+              startup: false,
+              chatMenu: true,
+            },
+          },
+        },
+      });
+
+      const store = createStore();
+      const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+        <RecoilRoot>
+          <Provider store={store}>{children}</Provider>
+        </RecoilRoot>
+      );
+
+      const { result } = renderHook(() => useMCPSelect({}), {
+        wrapper: Wrapper,
+      });
+
+      // Should remain empty because startup is false
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual([]);
+      });
+    });
+
+    it('should auto-select even when chatMenu: false', async () => {
+      useGetStartupConfig.mockReturnValue({
+        data: {
+          mcpServers: {
+            'Hidden Server': {
+              startup: true,
+              chatMenu: false, // Hidden from UI but should still auto-select
+            },
+          },
+        },
+      });
+
+      const store = createStore();
+      const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+        <RecoilRoot>
+          <Provider store={store}>{children}</Provider>
+        </RecoilRoot>
+      );
+
+      const { result } = renderHook(() => useMCPSelect({}), {
+        wrapper: Wrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual(['Hidden Server']);
+      });
+    });
+
+    it('should not auto-select if conversation already has MCP values', async () => {
+      useGetStartupConfig.mockReturnValue({
+        data: {
+          mcpServers: {
+            'Startup Server': {
+              startup: true,
+            },
+          },
+        },
+      });
+
+      const store = createStore();
+      const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+        <RecoilRoot>
+          <Provider store={store}>{children}</Provider>
+        </RecoilRoot>
+      );
+
+      const { result } = renderHook(() => useMCPSelect({}), {
+        wrapper: Wrapper,
+      });
+
+      // Initially should auto-select
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual(['Startup Server']);
+      });
+    });
+
+    afterEach(() => {
+      // Reset mock to default empty config
+      useGetStartupConfig.mockReturnValue({
+        data: {
+          mcpServers: {},
+        },
+      });
+    });
+  });
 });

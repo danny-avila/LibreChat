@@ -98,7 +98,7 @@ describe('AttachFileMenu', () => {
     // Default mock implementations
     mockUseLocalize.mockReturnValue((key: string) => {
       const translations: Record<string, string> = {
-        com_ui_upload_provider: 'Upload to Provider',
+        com_ui_upload_provider: 'Upload Image',
         com_ui_upload_image_input: 'Upload Image',
         com_ui_upload_ocr_text: 'Upload OCR Text',
         com_ui_upload_file_search: 'Upload for File Search',
@@ -194,12 +194,12 @@ describe('AttachFileMenu', () => {
       const button = screen.getByRole('button', { name: /attach file options/i });
       fireEvent.click(button);
 
-      // With the fix, should show "Upload to Provider" because endpointType is checked first
-      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
-      expect(screen.queryByText('Upload Image')).not.toBeInTheDocument();
+      // With the fix, should show "Upload Image" because endpointType is checked first
+      expect(screen.getByText('Upload Image')).toBeInTheDocument();
+      expect(screen.queryByText('Upload to Provider')).not.toBeInTheDocument();
     });
 
-    it('should show Upload to Provider for custom endpoints with OpenAI endpointType', () => {
+    it('should show Upload Image for custom endpoints with OpenAI endpointType', () => {
       mockUseAgentToolPermissions.mockReturnValue({
         fileSearchAllowedByAgent: false,
         codeAllowedByAgent: false,
@@ -214,7 +214,7 @@ describe('AttachFileMenu', () => {
       const button = screen.getByRole('button', { name: /attach file options/i });
       fireEvent.click(button);
 
-      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+      expect(screen.getByText('Upload Image')).toBeInTheDocument();
     });
 
     it('should show Upload Image when neither endpointType nor provider support documents', () => {
@@ -251,7 +251,7 @@ describe('AttachFileMenu', () => {
       const button = screen.getByRole('button', { name: /attach file options/i });
       fireEvent.click(button);
 
-      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+      expect(screen.getByText('Upload Image')).toBeInTheDocument();
     });
 
     it('should fallback to currentProvider when endpointType is null', () => {
@@ -269,7 +269,7 @@ describe('AttachFileMenu', () => {
       const button = screen.getByRole('button', { name: /attach file options/i });
       fireEvent.click(button);
 
-      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+      expect(screen.getByText('Upload Image')).toBeInTheDocument();
     });
   });
 
@@ -283,7 +283,7 @@ describe('AttachFileMenu', () => {
     ];
 
     supportedProviders.forEach(({ name, endpoint }) => {
-      it(`should show Upload to Provider for ${name}`, () => {
+      it(`should show Upload Image for ${name}`, () => {
         mockUseAgentToolPermissions.mockReturnValue({
           fileSearchAllowedByAgent: false,
           codeAllowedByAgent: false,
@@ -298,7 +298,7 @@ describe('AttachFileMenu', () => {
         const button = screen.getByRole('button', { name: /attach file options/i });
         fireEvent.click(button);
 
-        expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+        expect(screen.getByText('Upload Image')).toBeInTheDocument();
       });
     });
   });
@@ -410,7 +410,7 @@ describe('AttachFileMenu', () => {
       const button = screen.getByRole('button', { name: /attach file options/i });
       fireEvent.click(button);
 
-      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+      expect(screen.getByText('Upload Image')).toBeInTheDocument();
       expect(screen.getByText('Upload OCR Text')).toBeInTheDocument();
       expect(screen.getByText('Upload for File Search')).toBeInTheDocument();
       expect(screen.getByText('Upload Code Files')).toBeInTheDocument();
@@ -527,7 +527,7 @@ describe('AttachFileMenu', () => {
       const button = screen.getByRole('button', { name: /attach file options/i });
       fireEvent.click(button);
 
-      const uploadProviderButton = screen.getByText('Upload to Provider');
+      const uploadProviderButton = screen.getByText('Upload Image');
       expect(uploadProviderButton).toBeInTheDocument();
 
       // Click the upload to provider option
@@ -551,7 +551,7 @@ describe('AttachFileMenu', () => {
       const button = screen.getByRole('button', { name: /attach file options/i });
       fireEvent.click(button);
 
-      const uploadProviderButton = screen.getByText('Upload to Provider');
+      const uploadProviderButton = screen.getByText('Upload Image');
       expect(uploadProviderButton).toBeInTheDocument();
       fireEvent.click(uploadProviderButton);
 
@@ -576,7 +576,7 @@ describe('AttachFileMenu', () => {
       const button = screen.getByRole('button', { name: /attach file options/i });
       fireEvent.click(button);
 
-      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+      expect(screen.getByText('Upload Image')).toBeInTheDocument();
     });
 
     it('should maintain correct priority when both are supported', () => {
@@ -596,7 +596,7 @@ describe('AttachFileMenu', () => {
       fireEvent.click(button);
 
       // Should still work because endpointType (openAI) is supported
-      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+      expect(screen.getByText('Upload Image')).toBeInTheDocument();
     });
   });
 });
