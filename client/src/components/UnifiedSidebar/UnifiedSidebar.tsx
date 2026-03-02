@@ -4,6 +4,7 @@ import { getConfigDefaults } from 'librechat-data-provider';
 import { useMediaQuery } from '@librechat/client';
 import { SidePanelProvider, ActivePanelProvider } from '~/Providers';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
+import SidePanelNav from '~/components/SidePanel/Nav';
 import ExpandedPanel from './ExpandedPanel';
 import { useLocalize } from '~/hooks';
 import Sidebar from './Sidebar';
@@ -95,27 +96,38 @@ function UnifiedSidebar() {
       <>
         <div
           className={cn(
-            'fixed left-0 top-0 z-[110] h-full bg-surface-primary-alt',
+            'fixed left-0 top-0 z-[110] flex h-full bg-surface-primary-alt',
             expanded ? 'translate-x-0' : '-translate-x-full',
           )}
           style={{
-            width: 300,
+            width: 'min(85vw, 380px)',
             transition: `transform ${TRANSITION_MS}ms ${EASING}`,
           }}
         >
           <SidePanelProvider>
             <ActivePanelProvider defaultActive={activeSection}>
               <ExpandedPanel links={links} onCollapse={handleCollapse} />
+              <nav className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt">
+                <SidePanelNav links={links} />
+              </nav>
             </ActivePanelProvider>
           </SidePanelProvider>
         </div>
-        {expanded && (
+        <div
+          className={cn(
+            'fixed inset-0 z-[109] bg-black/50',
+            expanded ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
+          )}
+          style={{ transition: `opacity ${TRANSITION_MS}ms ${EASING}` }}
+          role="presentation"
+        >
           <button
-            className="nav-mask active"
+            className="h-full w-full"
             onClick={handleCollapse}
             aria-label={localize('com_nav_close_sidebar')}
+            tabIndex={expanded ? 0 : -1}
           />
-        )}
+        </div>
       </>
     );
   }
