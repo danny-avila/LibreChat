@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { Ellipsis, PinOff } from 'lucide-react';
 import { DropdownPopup } from '@librechat/client';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { FavoriteModel } from '~/store/favorites';
 import type t from 'librechat-data-provider';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
+import { useAssistantsMapContext } from '~/Providers';
 import { useFavorites, useLocalize } from '~/hooks';
 import { renderAgentAvatar, cn } from '~/utils';
 
@@ -30,6 +32,7 @@ export default function FavoriteItem({
   onRemoveFocus,
 }: FavoriteItemProps) {
   const localize = useLocalize();
+  const assistantsMap = useAssistantsMapContext();
   const { removeFavoriteAgent, removeFavoriteModel } = useFavorites();
   const [isPopoverActive, setIsPopoverActive] = useState(false);
 
@@ -87,7 +90,14 @@ export default function FavoriteItem({
     if (type === 'agent') {
       return (item as t.Agent).name ?? '';
     }
-    return (item as FavoriteModel).model;
+    const model = item as FavoriteModel;
+    if (isAssistantsEndpoint(model.endpoint) && assistantsMap) {
+      const assistant = assistantsMap[model.endpoint as AssistantsEndpoint]?.[model.model];
+      if (assistant?.name) {
+        return assistant.name;
+      }
+    }
+    return model.model;
   };
 
   const name = getName();
