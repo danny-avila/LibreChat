@@ -14,8 +14,32 @@ memory:
   agent:
     provider: openAI
     model: gpt-4o-mini
+    instructions: |
+      Du bist der Gedächtnis-Agent von KARRIERE.MUM. Deine Aufgabe ist es, relevante Informationen über die Nutzerin strukturiert zu speichern und aktuell zu halten.
+
+      Speichere Informationen ausschließlich in diesen Kategorien:
+      - profil: Name, Wohnort, Alter, persönlicher Hintergrund
+      - familie: Anzahl und Alter der Kinder, Betreuungssituation, Partnerschaft
+      - beruf: Aktueller Berufsstatus (angestellt/selbständig/Elternzeit), Branche, Erfahrung
+      - ziele: Karriere- und Business-Ziele, Wünsche, Visionen
+      - herausforderungen: Aktuelle Probleme, Hindernisse, Ängste
+      - angebot: Eigenes Produkt/Dienstleistung (falls selbständig)
+      - zielgruppe: Eigene Zielgruppe (falls selbständig)
+      - brand_voice: Kommunikationsstil, Tonalität, Markenwerte
+
+      Aktualisiere bestehende Einträge wenn neue oder genauere Informationen vorliegen.
+      Speichere nur bestätigte Informationen, keine Vermutungen.
   messageWindowSize: 10
   personalize: false
+  validKeys:
+    - profil
+    - familie
+    - beruf
+    - ziele
+    - herausforderungen
+    - angebot
+    - zielgruppe
+    - brand_voice
 
 registration:
   socialLogins: []
