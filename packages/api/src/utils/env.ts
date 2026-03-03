@@ -318,11 +318,11 @@ export function processMCPEnv(params: {
     const processedEnv: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.env)) {
       processedEnv[key] = processSingleValue({
-        originalValue,
-        customUserVars,
         user,
         body,
         dbSourced,
+        originalValue,
+        customUserVars,
       });
     }
     newObj.env = processedEnv;
