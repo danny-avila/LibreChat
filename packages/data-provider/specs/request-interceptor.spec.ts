@@ -15,8 +15,10 @@ import { setTokenHeader } from '../src/headers-helpers';
 
 /** Mock the axios adapter to simulate responses without HTTP */
 const mockAdapter = jest.fn();
+let originalAdapter: typeof axios.defaults.adapter;
 
 beforeAll(async () => {
+  originalAdapter = axios.defaults.adapter;
   axios.defaults.adapter = mockAdapter;
 
   /** Import triggers interceptor registration */
@@ -25,6 +27,10 @@ beforeAll(async () => {
 
 beforeEach(() => {
   mockAdapter.mockReset();
+});
+
+afterAll(() => {
+  axios.defaults.adapter = originalAdapter;
 });
 
 afterEach(() => {
@@ -88,5 +94,9 @@ describe('axios 401 interceptor — Authorization header guard', () => {
 
     /** More than 1 call means the interceptor attempted refresh */
     expect(mockAdapter.mock.calls.length).toBeGreaterThan(1);
+
+    /** Verify the second call targeted the refresh endpoint */
+    const refreshCall = mockAdapter.mock.calls[1];
+    expect(refreshCall[0].url).toContain('api/auth/refresh');
   });
 });
