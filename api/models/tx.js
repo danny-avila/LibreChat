@@ -332,8 +332,9 @@ const cacheTokenValues = {
   'kimi-k2-0711-preview': { write: 0.6, read: 0.15 },
   'kimi-k2-thinking': { write: 0.6, read: 0.15 },
   'kimi-k2-thinking-turbo': { write: 1.15, read: 0.15 },
-  // Gemini 3.1 models - cache read: $0.20/1M (<=200k), cache write: standard input price
+  // Gemini 3.1 Pro - cache write: $2.00/1M, cache read: $0.20/1M
   'gemini-3.1': { write: 2, read: 0.2 },
+  // Gemini 3.1 Flash-Lite - cache write: $0.25/1M, cache read: $0.025/1M
   'gemini-3.1-flash-lite': { write: 0.25, read: 0.025 },
 };
 
