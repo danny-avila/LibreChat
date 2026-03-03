@@ -48,7 +48,7 @@ describe('EndpointModelItem', () => {
   });
 
   it('renders checkmark when model and endpoint match with no active spec', () => {
-    mockSelectedValues = { endpoint: 'anthropic', model: 'claude-opus-4-6', modelSpec: null };
+    mockSelectedValues = { endpoint: 'anthropic', model: 'claude-opus-4-6', modelSpec: '' };
     render(<EndpointModelItem modelId="claude-opus-4-6" endpoint={baseEndpoint} />);
 
     const menuItem = screen.getByRole('menuitem');
@@ -68,7 +68,7 @@ describe('EndpointModelItem', () => {
   });
 
   it('does NOT render checkmark when model matches but endpoint differs', () => {
-    mockSelectedValues = { endpoint: 'openai', model: 'claude-opus-4-6', modelSpec: null };
+    mockSelectedValues = { endpoint: 'openai', model: 'claude-opus-4-6', modelSpec: '' };
     render(<EndpointModelItem modelId="claude-opus-4-6" endpoint={baseEndpoint} />);
 
     const menuItem = screen.getByRole('menuitem');
@@ -76,7 +76,7 @@ describe('EndpointModelItem', () => {
   });
 
   it('does NOT render checkmark when endpoint matches but model differs', () => {
-    mockSelectedValues = { endpoint: 'anthropic', model: 'claude-sonnet-4-5', modelSpec: null };
+    mockSelectedValues = { endpoint: 'anthropic', model: 'claude-sonnet-4-5', modelSpec: '' };
     render(<EndpointModelItem modelId="claude-opus-4-6" endpoint={baseEndpoint} />);
 
     const menuItem = screen.getByRole('menuitem');
