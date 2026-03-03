@@ -350,6 +350,7 @@ export default function useQueryParams({
     setSearchParams,
     queryClient,
     processSubmission,
+    areSettingsApplied,
   ]);
 
   useEffect(() => {

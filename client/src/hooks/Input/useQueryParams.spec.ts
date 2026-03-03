@@ -220,9 +220,14 @@ describe('useQueryParams', () => {
       handleSubmit: jest.fn((callback) => () => callback({ text: 'test message' })),
     });
 
-    // Mock startup config to allow processing
     (useQueryClient as jest.Mock).mockReturnValue({
-      getQueryData: jest.fn().mockReturnValue({ modelSpecs: { list: [] } }),
+      getQueryData: jest.fn().mockImplementation((key) => {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
+          return { modelSpecs: { list: [] } };
+        }
+        return null;
+      }),
     });
 
     setUrlParams({ q: 'hello world' });
@@ -242,7 +247,10 @@ describe('useQueryParams', () => {
       expect.objectContaining({ shouldValidate: true }),
     );
     const mockSetSearchParams = (useSearchParams as jest.Mock).mock.results[0].value[1];
-    expect(mockSetSearchParams).toHaveBeenCalled();
+    expect(mockSetSearchParams).toHaveBeenCalledWith(
+      expect.any(URLSearchParams),
+      expect.objectContaining({ replace: true }),
+    );
   });
 
   it('should auto-submit message when submit=true and no settings to apply', () => {
@@ -267,9 +275,14 @@ describe('useQueryParams', () => {
       submitMessage: mockSubmitMessage,
     });
 
-    // Mock startup config to allow processing
     (useQueryClient as jest.Mock).mockReturnValue({
-      getQueryData: jest.fn().mockReturnValue({ modelSpecs: { list: [] } }),
+      getQueryData: jest.fn().mockImplementation((key) => {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
+          return { modelSpecs: { list: [] } };
+        }
+        return null;
+      }),
     });
 
     setUrlParams({ q: 'hello world', submit: 'true' });
@@ -457,9 +470,14 @@ describe('useQueryParams', () => {
       submitMessage: mockSubmitMessage,
     });
 
-    // Mock startup config to allow processing
     (useQueryClient as jest.Mock).mockReturnValue({
-      getQueryData: jest.fn().mockReturnValue({ modelSpecs: { list: [] } }),
+      getQueryData: jest.fn().mockImplementation((key) => {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
+          return { modelSpecs: { list: [] } };
+        }
+        return null;
+      }),
     });
 
     setUrlParams({ model: 'gpt-4' }); // No submit=true
@@ -503,9 +521,14 @@ describe('useQueryParams', () => {
       submitMessage: mockSubmitMessage,
     });
 
-    // Mock startup config to allow processing
     (useQueryClient as jest.Mock).mockReturnValue({
-      getQueryData: jest.fn().mockReturnValue({ modelSpecs: { list: [] } }),
+      getQueryData: jest.fn().mockImplementation((key) => {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
+          return { modelSpecs: { list: [] } };
+        }
+        return null;
+      }),
     });
 
     setUrlParams({}); // Empty params
@@ -528,6 +551,9 @@ describe('useQueryParams', () => {
     expect(mockHandleSubmit).not.toHaveBeenCalled();
     expect(mockSubmitMessage).not.toHaveBeenCalled();
     const mockSetSearchParams = (useSearchParams as jest.Mock).mock.results[0].value[1];
-    expect(mockSetSearchParams).toHaveBeenCalled();
+    expect(mockSetSearchParams).toHaveBeenCalledWith(
+      expect.any(URLSearchParams),
+      expect.objectContaining({ replace: true }),
+    );
   });
 });
