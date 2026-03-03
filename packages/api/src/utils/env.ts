@@ -265,7 +265,7 @@ function processSingleValue({
  * @returns - The processed object with environment variables replaced
  */
 export function processMCPEnv(params: {
-  options: Readonly<MCPOptions>;
+  options: Readonly<MCPOptions> & { dbId?: string };
   user?: Partial<IUser>;
   customUserVars?: Record<string, string>;
   body?: RequestBody;
@@ -279,7 +279,7 @@ export function processMCPEnv(params: {
   }
 
   /** Derive dbSourced from explicit param OR from dbId on the options (failsafe for callers that forget the flag) */
-  const dbSourced = params.dbSourced ?? !!(options as Record<string, unknown>).dbId;
+  const dbSourced = params.dbSourced ?? !!options.dbId;
 
   const newObj: MCPOptions = structuredClone(options);
 
