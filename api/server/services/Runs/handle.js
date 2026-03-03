@@ -65,7 +65,7 @@ async function waitForRun({
   thread_id,
   runManager,
   pollIntervalMs = 2000,
-  timeout = 60000 * 3,
+  timeout = Number(process.env.AGENT_RUN_TIMEOUT_MS) || 60000 * 3,
 }) {
   let timeElapsed = 0;
   let run;
