@@ -1,21 +1,27 @@
 import { useMemo, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
 import { MessageSquare } from 'lucide-react';
-import { getEndpointField } from 'librechat-data-provider';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
-import type { TEndpointsConfig, TInterfaceConfig } from 'librechat-data-provider';
+import { getConfigDefaults, getEndpointField } from 'librechat-data-provider';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import ConversationsSection from '~/components/UnifiedSidebar/ConversationsSection';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
-import { useGetEndpointsQuery } from '~/data-provider';
-import { useSidePanelContext } from '~/Providers';
+import store from '~/store';
 
-export default function useUnifiedSidebarLinks({
-  interfaceConfig,
-}: {
-  interfaceConfig: Partial<TInterfaceConfig>;
-}) {
-  const { endpoint } = useSidePanelContext();
+const defaultInterface = getConfigDefaults().interface;
+
+export default function useUnifiedSidebarLinks() {
+  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const endpoint = conversation?.endpoint;
+  const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+
+  const interfaceConfig = useMemo(
+    () => startupConfig?.interface ?? defaultInterface,
+    [startupConfig],
+  );
 
   const endpointType = useMemo(
     () => getEndpointField(endpointsConfig, endpoint, 'type'),

@@ -1,10 +1,10 @@
-import { useRecoilValue } from 'recoil';
 import { useEffect, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useDeleteFilesMutation } from '~/data-provider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
 import { EditorProvider, ArtifactsProvider } from '~/Providers';
+import { useDeleteFilesMutation } from '~/data-provider';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { useSetFilesToDelete } from '~/hooks';
@@ -47,11 +47,6 @@ export default function Presentation({ children }: { children: React.ReactNode }
     mutateAsync({ files });
   }, [mutateAsync]);
 
-  const defaultLayout = useMemo(() => {
-    const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
-    return typeof resizableLayout === 'string' ? JSON.parse(resizableLayout) : undefined;
-  }, []);
-
   const artifactsElement = useMemo(() => {
     if (artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0) {
       return (
@@ -67,7 +62,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
-      <SidePanelGroup defaultLayout={defaultLayout} artifacts={artifactsElement}>
+      <SidePanelGroup artifacts={artifactsElement}>
         <main className="flex h-full flex-col overflow-y-auto" role="main">
           {children}
         </main>

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { useMediaQuery, NewChatIcon } from '@librechat/client';
+import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
-import { useMediaQuery } from '@librechat/client';
 import {
   useLocalize,
   useNewConvo,
@@ -13,9 +14,6 @@ import {
   useLocalStorage,
   useNavScrolling,
 } from '~/hooks';
-import { QueryKeys } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
-import { NewChatIcon } from '@librechat/client';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
 import SearchBar from '~/components/Nav/SearchBar';

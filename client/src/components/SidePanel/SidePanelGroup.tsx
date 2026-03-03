@@ -1,19 +1,15 @@
-import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import throttle from 'lodash/throttle';
 import { ResizablePanel, ResizablePanelGroup, useMediaQuery } from '@librechat/client';
-import type { ImperativePanelHandle } from 'react-resizable-panels';
 import ArtifactsPanel from './ArtifactsPanel';
 import { normalizeLayout } from '~/utils';
 
 interface SidePanelProps {
-  defaultLayout?: number[] | undefined;
-  defaultCollapsed?: boolean;
-  fullPanelCollapse?: boolean;
   artifacts?: React.ReactNode;
   children: React.ReactNode;
 }
 
-const SidePanelGroup = memo(({ defaultLayout = [100], artifacts, children }: SidePanelProps) => {
+const SidePanelGroup = memo(({ artifacts, children }: SidePanelProps) => {
   const [shouldRenderArtifacts, setShouldRenderArtifacts] = useState(artifacts != null);
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
@@ -32,6 +28,8 @@ const SidePanelGroup = memo(({ defaultLayout = [100], artifacts, children }: Sid
       }, 350),
     [],
   );
+
+  useEffect(() => () => throttledSaveLayout.cancel(), [throttledSaveLayout]);
 
   const minSizeMain = useMemo(() => (artifacts != null ? 15 : 30), [artifacts]);
 

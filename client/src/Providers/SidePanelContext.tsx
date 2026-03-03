@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { EModelEndpoint } from 'librechat-data-provider';
-import { useChatContext } from './ChatContext';
+import store from '~/store';
 
 interface SidePanelContextValue {
   endpoint?: EModelEndpoint | null;
@@ -9,7 +10,7 @@ interface SidePanelContextValue {
 const SidePanelContext = createContext<SidePanelContextValue | undefined>(undefined);
 
 export function SidePanelProvider({ children }: { children: React.ReactNode }) {
-  const { conversation } = useChatContext();
+  const conversation = useRecoilValue(store.conversationByIndex(0));
 
   const contextValue = useMemo<SidePanelContextValue>(
     () => ({
@@ -23,5 +24,8 @@ export function SidePanelProvider({ children }: { children: React.ReactNode }) {
 
 export function useSidePanelContext() {
   const context = useContext(SidePanelContext);
-  return context ?? { endpoint: undefined };
+  if (!context) {
+    throw new Error('useSidePanelContext must be used within SidePanelProvider');
+  }
+  return context;
 }

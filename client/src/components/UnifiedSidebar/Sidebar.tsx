@@ -61,7 +61,7 @@ function Sidebar({
         onKeyDown={(e) => {
           if (e.key === 'ArrowLeft') {
             setSidebarWidth((w) => {
-              const next = Math.max(w - 20, 220);
+              const next = Math.max(w - 20, 360);
               localStorage.setItem('side:width', String(next));
               return next;
             });

@@ -8,26 +8,13 @@ import store from '~/store';
 export const CLOSE_SIDEBAR_ID = 'close-sidebar-button';
 export const OPEN_SIDEBAR_ID = 'open-sidebar-button';
 
-export default function OpenSidebar({
-  setNavVisible: _setNavVisible,
-  className,
-}: {
-  setNavVisible?: React.Dispatch<React.SetStateAction<boolean>>;
-  className?: string;
-}) {
+export default function OpenSidebar({ className }: { className?: string }) {
   const localize = useLocalize();
   const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
 
   const handleClick = () => {
     startTransition(() => {
-      if (_setNavVisible) {
-        _setNavVisible((prev) => {
-          localStorage.setItem('navVisible', JSON.stringify(!prev));
-          return !prev;
-        });
-      } else {
-        setSidebarExpanded(true);
-      }
+      setSidebarExpanded(true);
     });
     setTimeout(() => {
       document.getElementById(CLOSE_SIDEBAR_ID)?.focus();

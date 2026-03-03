@@ -554,11 +554,6 @@ export interface ModelItemProps {
   className?: string;
 }
 
-export type ContextType = {
-  navVisible: boolean;
-  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
-};
-
 export interface SwitcherProps {
   endpoint?: t.EModelEndpoint | null;
   endpointKeyProvided: boolean;

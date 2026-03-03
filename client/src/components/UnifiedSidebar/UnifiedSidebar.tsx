@@ -1,17 +1,15 @@
 import { useCallback, useState, useEffect, useRef, memo, startTransition } from 'react';
 import { useRecoilState } from 'recoil';
-import { getConfigDefaults } from 'librechat-data-provider';
 import { useMediaQuery } from '@librechat/client';
-import { SidePanelProvider, ActivePanelProvider } from '~/Providers';
+import { ChatContext, ActivePanelProvider } from '~/Providers';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
 import SidePanelNav from '~/components/SidePanel/Nav';
 import ExpandedPanel from './ExpandedPanel';
-import { useLocalize } from '~/hooks';
+import { useChatHelpers, useLocalize } from '~/hooks';
 import Sidebar from './Sidebar';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const defaultInterface = getConfigDefaults().interface;
 const COLLAPSED_WIDTH = 52;
 const EXPANDED_MIN = 360;
 const TRANSITION_MS = 300;
@@ -33,12 +31,11 @@ function UnifiedSidebar() {
   const [expanded, setExpanded] = useRecoilState(store.sidebarExpanded);
   const [activeSection, setActiveSection] = useState(getInitialActivePanel);
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
-  const isResizing = useRef(false);
+  const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
 
-  const links = useUnifiedSidebarLinks({
-    interfaceConfig: defaultInterface,
-  });
+  const chatHelpers = useChatHelpers(0);
+  const links = useUnifiedSidebarLinks();
 
   const handleCollapse = useCallback(() => {
     startTransition(() => {
@@ -64,16 +61,16 @@ function UnifiedSidebar() {
   );
 
   const handleResizeStart = useCallback(() => {
-    isResizing.current = true;
+    setIsResizing(true);
+    const maxWidth = window.innerWidth * 0.4;
 
     const move = (e: MouseEvent) => {
-      const maxWidth = window.innerWidth * 0.4;
       const next = Math.max(EXPANDED_MIN, Math.min(e.clientX, maxWidth));
       setSidebarWidth(next);
     };
 
     const up = () => {
-      isResizing.current = false;
+      setIsResizing(false);
       resizeHandlers.current = null;
       setSidebarWidth((w) => {
         localStorage.setItem('side:width', String(Math.round(w)));
@@ -94,9 +91,21 @@ function UnifiedSidebar() {
         document.removeEventListener('mousemove', resizeHandlers.current.move);
         document.removeEventListener('mouseup', resizeHandlers.current.up);
       }
-      isResizing.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isSmallScreen || !expanded) {
+      return;
+    }
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCollapse();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isSmallScreen, expanded, handleCollapse]);
 
   if (isSmallScreen) {
     return (
@@ -111,14 +120,14 @@ function UnifiedSidebar() {
             transition: `transform ${TRANSITION_MS}ms ${EASING}`,
           }}
         >
-          <SidePanelProvider>
+          <ChatContext.Provider value={chatHelpers}>
             <ActivePanelProvider defaultActive={activeSection}>
               <ExpandedPanel links={links} onCollapse={handleCollapse} />
               <nav className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt">
                 <SidePanelNav links={links} />
               </nav>
             </ActivePanelProvider>
-          </SidePanelProvider>
+          </ChatContext.Provider>
         </div>
         <div
           className={cn(
@@ -140,7 +149,7 @@ function UnifiedSidebar() {
   }
 
   return (
-    <SidePanelProvider>
+    <ChatContext.Provider value={chatHelpers}>
       <ActivePanelProvider defaultActive={activeSection}>
         <aside
           className="relative flex h-full flex-shrink-0 overflow-hidden"
@@ -148,7 +157,7 @@ function UnifiedSidebar() {
             width: expanded ? sidebarWidth : COLLAPSED_WIDTH,
             minWidth: expanded ? EXPANDED_MIN : COLLAPSED_WIDTH,
             maxWidth: expanded ? '40%' : COLLAPSED_WIDTH,
-            transition: isResizing.current
+            transition: isResizing
               ? 'none'
               : `width ${TRANSITION_MS}ms ${EASING}, min-width ${TRANSITION_MS}ms ${EASING}, max-width ${TRANSITION_MS}ms ${EASING}`,
           }}
@@ -165,7 +174,7 @@ function UnifiedSidebar() {
           />
         </aside>
       </ActivePanelProvider>
-    </SidePanelProvider>
+    </ChatContext.Provider>
   );
 }
 
