@@ -34,11 +34,12 @@ const AuthContextProvider = ({
   authConfig?: TAuthConfig;
   children: ReactNode;
 }) => {
+  const isExternalRedirectRef = useRef(false);
   const [user, setUser] = useRecoilState(store.user);
+  const logoutRedirectRef = useRef<string | undefined>(undefined);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const logoutRedirectRef = useRef<string | undefined>(undefined);
 
   const { data: userRole = null } = useGetRole(SystemRoles.USER, {
     enabled: !!(isAuthenticated && (user?.role ?? '')),
@@ -55,7 +56,6 @@ const AuthContextProvider = ({
         const { token, isAuthenticated, user, redirect } = userContext;
         setUser(user);
         setToken(token);
-        //@ts-ignore - ok for token to be undefined initially
         setTokenHeader(token);
         setIsAuthenticated(isAuthenticated);
 
@@ -106,11 +106,21 @@ const AuthContextProvider = ({
   });
   const logoutUser = useLogoutUserMutation({
     onSuccess: (data) => {
+      if (data.redirect) {
+        /** data.redirect is the IdP's end_session_endpoint URL — an absolute URL generated
+         * server-side from trusted IdP metadata (not user input), so isSafeRedirect is bypassed.
+         * setUserContext is debounced (50ms) and won't fire before page unload, so clear the
+         * axios Authorization header synchronously to prevent in-flight requests. */
+        isExternalRedirectRef.current = true;
+        setTokenHeader(undefined);
+        window.location.replace(data.redirect);
+        return;
+      }
       setUserContext({
         token: undefined,
         isAuthenticated: false,
         user: undefined,
-        redirect: data.redirect ?? '/login',
+        redirect: '/login',
       });
     },
     onError: (error) => {
@@ -146,8 +156,14 @@ const AuthContextProvider = ({
       console.log('Test mode. Skipping silent refresh.');
       return;
     }
+    if (isExternalRedirectRef.current) {
+      return;
+    }
     refreshToken.mutate(undefined, {
       onSuccess: (data: t.TRefreshTokenResponse | undefined) => {
+        if (isExternalRedirectRef.current) {
+          return;
+        }
         const { user, token = '' } = data ?? {};
         if (token) {
           setUserContext({ token, isAuthenticated: true, user });
@@ -160,6 +176,9 @@ const AuthContextProvider = ({
         navigate(buildLoginRedirectUrl());
       },
       onError: (error) => {
+        if (isExternalRedirectRef.current) {
+          return;
+        }
         console.log('refreshToken mutation error:', error);
         if (authConfig?.test === true) {
           return;
@@ -171,6 +190,9 @@ const AuthContextProvider = ({
   }, []);
 
   useEffect(() => {
+    if (isExternalRedirectRef.current) {
+      return;
+    }
     if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
