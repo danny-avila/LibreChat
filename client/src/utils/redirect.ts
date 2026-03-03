@@ -1,3 +1,5 @@
+import { buildLoginRedirectUrl } from 'librechat-data-provider';
+
 const REDIRECT_PARAM = 'redirect_to';
 const SESSION_KEY = 'post_login_redirect_to';
 
@@ -11,22 +13,6 @@ function isSafeRedirect(url: string): boolean {
   }
   const path = url.split('?')[0].split('#')[0];
   return !LOGIN_PATH_RE.test(path);
-}
-
-/**
- * Builds a `/login?redirect_to=...` URL from the given or current location.
- * Returns plain `/login` (no param) when already on a login route to prevent recursive nesting.
- */
-function buildLoginRedirectUrl(pathname?: string, search?: string, hash?: string): string {
-  const p = pathname ?? window.location.pathname;
-  if (LOGIN_PATH_RE.test(p)) {
-    return '/login';
-  }
-  const s = search ?? window.location.search;
-  const h = hash ?? window.location.hash;
-  const currentPath = `${p}${s}${h}`;
-  const encoded = encodeURIComponent(currentPath || '/');
-  return `/login?${REDIRECT_PARAM}=${encoded}`;
 }
 
 /**
