@@ -17,7 +17,7 @@ const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 
 function getInitialActivePanel(): string {
   const saved = localStorage.getItem('side:active-panel');
-  return typeof saved === 'string' ? saved : 'conversations';
+  return saved && saved.length > 0 ? saved : 'conversations';
 }
 
 function getInitialWidth(): number {
