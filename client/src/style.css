@@ -63,14 +63,14 @@
   --markdown-font-size: 1rem;
 
   /* Special colors for New Jersey */
-  --jersey-blue: #0C5295;
+  --jersey-blue: #0c5295;
 }
 html {
   --brand-purple: #ab68ff;
-  --presentation: #FCFCFB; /* Custom for NJ */
-  --text-primary: #1C1D1F; /* Custom for NJ */
-  --text-secondary: #3D4551; /* Custom for NJ */
-  --text-secondary-alt: #1C1D1F; /* Custom for NJ */
+  --presentation: #fcfcfb; /* Custom for NJ */
+  --text-primary: #1c1d1f; /* Custom for NJ */
+  --text-secondary: #3d4551; /* Custom for NJ */
+  --text-secondary-alt: #1c1d1f; /* Custom for NJ */
   --text-tertiary: var(--gray-500);
   --text-warning: var(--amber-500);
   --text-destructive: var(--red-600);
@@ -79,23 +79,23 @@ html {
   --header-hover: var(--gray-50);
   --header-button-hover: var(--gray-50);
   --surface-active: var(--gray-100);
-  --surface-active-alt: #F0F0EC; /* Custom for NJ */
+  --surface-active-alt: #f0f0ec; /* Custom for NJ */
   --surface-hover: var(--gray-200);
   --surface-hover-alt: var(--gray-300);
-  --surface-primary: #FCFCFB; /* Custom for NJ */
-  --surface-primary-alt: #F9F9F7; /* Custom for NJ */
+  --surface-primary: #fcfcfb; /* Custom for NJ */
+  --surface-primary-alt: #f9f9f7; /* Custom for NJ */
   --surface-primary-contrast: var(--gray-100);
   --surface-secondary: var(--gray-50);
   --surface-secondary-alt: var(--gray-200);
-  --surface-tertiary: #F0F0EC; /* Custom for NJ */
+  --surface-tertiary: #f0f0ec; /* Custom for NJ */
   --surface-tertiary-alt: var(--white);
   --surface-dialog: var(--white);
   --surface-submit: var(--green-700);
   --surface-submit-hover: var(--green-800);
   --surface-destructive: var(--red-700);
   --surface-destructive-hover: var(--red-800);
-  --surface-chat: #FFFFFF; /* Custom for NJ */
-  --border-light: #EFEDEC; /* Custom for NJ, #332015 @ .08 opacity */
+  --surface-chat: #ffffff; /* Custom for NJ */
+  --border-light: #efedec; /* Custom for NJ, #332015 @ .08 opacity */
   --border-medium-alt: var(--gray-300);
   --border-medium: var(--gray-300);
   --border-heavy: var(--gray-400);
@@ -2957,7 +2957,7 @@ html {
 }
 
 .flex-box {
-  gap: .5rem !important;
+  gap: 0.5rem !important;
 }
 
 @media screen and (max-width: 620px) {
@@ -2976,8 +2976,8 @@ html {
 }
 
 .usa-icon--size-2 {
-  height: 1.0rem;
-  width: 1.0rem;
+  height: 1rem;
+  width: 1rem;
 }
 
 .usa-icon--size-3 {

@@ -24,6 +24,7 @@ interface DropdownProps {
   mountByState?: boolean;
   unmountOnHide?: boolean;
   finalFocus?: React.RefObject<HTMLElement>;
+  placement?: 'top-start' | 'bottom-start'; // NJ: customized dropwdown so it displays above the chat.
 }
 
 type MenuProps = Omit<
@@ -38,9 +39,15 @@ const DropdownPopup: React.FC<DropdownProps> = ({
   setIsOpen,
   focusLoop,
   mountByState,
+  placement,
   ...props
 }) => {
-  const menu = Ariakit.useMenuStore({ open: isOpen, setOpen: setIsOpen, focusLoop });
+  const menu = Ariakit.useMenuStore({
+    open: isOpen,
+    setOpen: setIsOpen,
+    focusLoop,
+    placement: placement ?? 'bottom-start',
+  });
   if (mountByState) {
     return (
       <Ariakit.MenuProvider store={menu}>
