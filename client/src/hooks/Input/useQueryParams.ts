@@ -51,7 +51,7 @@ const parseQueryValue = (value: string) => {
  * Extracts valid settings based on tQueryParamsSchema and handles special endpoint cases
  * for assistants and agents.
  */
-const processValidSettings = (queryParams: Record<string, string>) => {
+export const processValidSettings = (queryParams: Record<string, string>) => {
   const validSettings = {} as TPreset;
 
   Object.entries(queryParams).forEach(([key, value]) => {
@@ -330,6 +330,10 @@ export default function useQueryParams({
       if (!startupConfig) {
         return;
       }
+      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+      if (!endpointsConfig) {
+        return;
+      }
 
       const { decodedPrompt, validSettings, shouldAutoSubmit } = processQueryParams();
 
@@ -340,20 +344,12 @@ export default function useQueryParams({
       /** Mark processing as complete and clean up as needed */
       const success = () => {
         const paramString = searchParams.toString();
-        const currentParams = new URLSearchParams(paramString);
-        currentParams.delete('prompt');
-        currentParams.delete('q');
-        currentParams.delete('submit');
-
-        setSearchParams(currentParams, { replace: true });
         processedRef.current = true;
         console.log('Parameters processed successfully', paramString);
         clearInterval(intervalId);
 
-        // Only clean URL if there's no pending submission
         if (!pendingSubmitRef.current) {
-          const newUrl = window.location.pathname;
-          window.history.replaceState({}, '', newUrl);
+          setSearchParams(new URLSearchParams(), { replace: true });
         }
       };
 
@@ -401,7 +397,7 @@ export default function useQueryParams({
         submissionHandledRef.current = true;
       }
 
-      if (Object.keys(validSettings).length > 0) {
+      if (Object.keys(validSettings).length > 0 && !areSettingsApplied()) {
         newQueryConvo(validSettings);
       }
 
@@ -424,6 +420,7 @@ export default function useQueryParams({
     setSearchParams,
     queryClient,
     processSubmission,
+    areSettingsApplied,
   ]);
 
   useEffect(() => {
