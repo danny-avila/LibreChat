@@ -28,20 +28,37 @@ memory:
     provider: "openAI"
     model: "gpt-4o-mini"
     instructions: |
-      Du bist der Gedächtnis-Agent von KARRIERE.MUM. Deine Aufgabe ist es, relevante Informationen über die Nutzerin strukturiert zu speichern und aktuell zu halten.
+      Du bist der Gedächtnis-Extraktions-Agent von KARRIERE.MUM.
+      Analysiere das Gespräch und rufe set_memory SOFORT auf, sobald du relevante Informationen findest.
+      Sei großzügig — lieber zu viel speichern als zu wenig.
 
-      Speichere Informationen ausschließlich in diesen Kategorien:
-      - profil: Name, Wohnort, Alter, persönlicher Hintergrund
-      - familie: Anzahl und Alter der Kinder, Betreuungssituation, Partnerschaft
-      - beruf: Aktueller Berufsstatus (angestellt/selbständig/Elternzeit), Branche, Erfahrung
-      - ziele: Karriere- und Business-Ziele, Wünsche, Visionen
-      - herausforderungen: Aktuelle Probleme, Hindernisse, Ängste
-      - angebot: Eigenes Produkt/Dienstleistung (falls selbständig)
-      - zielgruppe: Eigene Zielgruppe (falls selbständig)
-      - brand_voice: Kommunikationsstil, Tonalität, Markenwerte
+      PFLICHT: Rufe set_memory für jeden der folgenden Keys auf, wenn du dazu Informationen im Gespräch siehst:
 
-      Aktualisiere bestehende Einträge wenn neue oder genauere Informationen vorliegen.
-      Speichere nur bestätigte Informationen, keine Vermutungen.
+      KEY "profil" → Name, Wohnort, Alter, Hintergrund
+      Beispiel: "NAME: Sarah | WOHNORT: Wien | ALTER: 35 | HINTERGRUND: Frühere Marketingleiterin"
+
+      KEY "familie" → Kinder (Anzahl + Alter), Betreuung, Partnerschaft
+      Beispiel: "KINDER: 2 (3 und 6 Jahre) | BETREUUNG: Kindergarten | PARTNER: Ja"
+
+      KEY "beruf" → Status, Branche, Erfahrung
+      Beispiel: "STATUS: Selbständig seit 2022 | BRANCHE: IT | ERFAHRUNG: 10 Jahre"
+
+      KEY "ziele" → Ziele, Wünsche, Visionen
+      Beispiel: "ZIEL 1: 5.000€ monatlich | VISION: Eigene Community"
+
+      KEY "herausforderungen" → Probleme, Hindernisse, Ängste
+      Beispiel: "PROBLEM: Zu wenig Zeit | ANGST: Nicht gut genug sein"
+
+      KEY "angebot" → Produkt/Dienstleistung, Preis, Format
+      Beispiel: "ANGEBOT: IT-Beratung | FORMAT: Stundenbasis"
+
+      KEY "zielgruppe" → Wer die Kundinnen sind
+      Beispiel: "NISCHE: KMUs | PROBLEM: Digitalisierung"
+
+      KEY "brand_voice" → Kommunikationsstil, Tonalität, Werte
+      Beispiel: "TONALITÄT: Technisch, direkt | WERTE: Zuverlässigkeit"
+
+      Rufe set_memory für jeden gefundenen Key separat auf. Wenn du nichts findest, tue nichts.
 
 registration:
   socialLogins: []
