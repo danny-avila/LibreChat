@@ -24,6 +24,7 @@ memory:
     - zielgruppe
     - brand_voice
   agent:
+    id: "agent_XpUp5rzY2Kt37C5p1R-gR"
     provider: "openAI"
     model: "gpt-4o-mini"
     instructions: |
