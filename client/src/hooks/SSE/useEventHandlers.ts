@@ -180,6 +180,7 @@ export default function useEventHandlers({
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
+  const setTokenUsageMap = useSetRecoilState(store.tokenUsageMap);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -430,7 +431,7 @@ export default function useEventHandlers({
 
   const finalHandler = useCallback(
     (data: TFinalResData, submission: EventSubmission) => {
-      const { requestMessage, responseMessage, conversation, runMessages } = data;
+      const { requestMessage, responseMessage, conversation, runMessages, tokenUsage } = data;
       const {
         messages,
         conversation: submissionConvo,
@@ -439,6 +440,14 @@ export default function useEventHandlers({
       } = submission;
 
       try {
+        // Store per-agent token usage if present
+        if (tokenUsage && responseMessage?.messageId) {
+          setTokenUsageMap((prev) => ({
+            ...prev,
+            [responseMessage.messageId]: tokenUsage,
+          }));
+        }
+
         // Handle early abort - aborted during tool loading before any messages saved
         // Don't update conversation state, just reset UI and stay on new chat
         if ((data as Record<string, unknown>).earlyAbort) {
@@ -595,6 +604,7 @@ export default function useEventHandlers({
       setConversation,
       setIsSubmitting,
       setShowStopButton,
+      setTokenUsageMap,
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,

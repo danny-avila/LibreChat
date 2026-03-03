@@ -115,6 +115,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   }
 
   const agentConfigs = new Map();
+  /** @type {Map<string, string>} agentId → human-readable name */
+  const agentNameMap = new Map();
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
   const loadTools = createToolLoader(signal, streamId);
@@ -144,6 +146,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getToolFilesByIds: db.getToolFilesByIds,
     },
   );
+
+  agentNameMap.set(primaryConfig.id, primaryAgent.name || primaryConfig.id);
 
   const agent_ids = primaryConfig.agent_ids;
   let userMCPAuthMap = primaryConfig.userMCPAuthMap;
@@ -199,6 +203,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       userMCPAuthMap = config.userMCPAuthMap;
     }
     agentConfigs.set(agentId, config);
+    if (agent.name) {
+      agentNameMap.set(agentId, agent.name);
+    }
     return agent;
   }
 
@@ -338,6 +345,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     sender,
     contentParts,
     agentConfigs,
+    agentNameMap,
     eventHandlers,
     collectedUsage,
     aggregateContent,

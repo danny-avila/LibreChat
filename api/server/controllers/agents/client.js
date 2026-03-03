@@ -246,6 +246,7 @@ class AgentClient extends BaseClient {
 
     const {
       agentConfigs,
+      agentNameMap,
       contentParts,
       collectedUsage,
       artifactPromises,
@@ -254,6 +255,8 @@ class AgentClient extends BaseClient {
     } = options;
 
     this.agentConfigs = agentConfigs;
+    /** @type {Map<string, string>} agentId → human-readable name */
+    this.agentNameMap = agentNameMap;
     this.maxContextTokens = maxContextTokens;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
@@ -887,6 +890,68 @@ class AgentClient extends BaseClient {
    */
   getStreamUsage() {
     return this.usage;
+  }
+
+  /**
+   * Get per-agent token usage breakdown from collected usage data.
+   * Each entry in collectedUsage may have an `agentName` and `model` field
+   * set by ModelEndHandler. Groups by agentName and sums input/output tokens.
+   * @param {Array<UsageMetadata>} [collectedUsage=this.collectedUsage]
+   * @returns {{ agents: Array<{ agentName: string, model: string, input_tokens: number, output_tokens: number, turns: number }>, totals: { input_tokens: number, output_tokens: number } }}
+   */
+  getPerAgentUsage(collectedUsage = this.collectedUsage) {
+    if (!collectedUsage || !collectedUsage.length) {
+      return { agents: [], totals: { input_tokens: 0, output_tokens: 0 } };
+    }
+
+    /** @type {Map<string, { agentName: string, model: string, input_tokens: number, output_tokens: number, turns: number }>} */
+    const agentMap = new Map();
+    let totalInput = 0;
+    let totalOutput = 0;
+
+    for (const usage of collectedUsage) {
+      if (!usage) {
+        continue;
+      }
+
+      const rawName = usage.agentName || 'Unknown Agent';
+      // LangGraph prefixes node names with "agent=" in metadata.name; strip it for lookup
+      const lookupKey = rawName.startsWith('agent=') ? rawName.slice(6) : rawName;
+      const name = this.agentNameMap?.get(lookupKey) || rawName;
+      const model = usage.model || 'unknown';
+      const inputTokens = Number(usage.input_tokens) || 0;
+      const outputTokens = Number(usage.output_tokens) || 0;
+      const cacheCreation =
+        Number(usage.input_token_details?.cache_creation) ||
+        Number(usage.cache_creation_input_tokens) ||
+        0;
+      const cacheRead =
+        Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
+
+      const effectiveInput = inputTokens + cacheCreation + cacheRead;
+      totalInput += effectiveInput;
+      totalOutput += outputTokens;
+
+      if (agentMap.has(name)) {
+        const entry = agentMap.get(name);
+        entry.input_tokens += effectiveInput;
+        entry.output_tokens += outputTokens;
+        entry.turns += 1;
+      } else {
+        agentMap.set(name, {
+          agentName: name,
+          model,
+          input_tokens: effectiveInput,
+          output_tokens: outputTokens,
+          turns: 1,
+        });
+      }
+    }
+
+    return {
+      agents: Array.from(agentMap.values()),
+      totals: { input_tokens: totalInput, output_tokens: totalOutput },
+    };
   }
 
   /**
