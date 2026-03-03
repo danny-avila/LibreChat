@@ -22,7 +22,6 @@ jest.mock('dayjs', () => {
         `Unhandled dayjs().format() call in mock: "${format}". Update the mock in parsers.spec.ts`,
       );
     },
-    day: () => 1,
     toISOString: () => '2024-04-29T16:34:56.000Z',
   });
 
