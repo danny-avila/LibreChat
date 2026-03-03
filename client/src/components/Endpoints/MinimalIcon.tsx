@@ -47,7 +47,10 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
       name: props.modelLabel ?? alternateName[EModelEndpoint.agents],
     },
     [EModelEndpoint.bedrock]: {
+      icon: <AnthropicIcon className="icon-md shrink-0 dark:text-white" />,
+      /* NJ: "Bedrock" means "Anthropic" for us right now
       icon: <BedrockIcon className="icon-xl text-text-primary" />,
+       */
       name: props.modelLabel ?? alternateName[EModelEndpoint.bedrock],
     },
     default: {
