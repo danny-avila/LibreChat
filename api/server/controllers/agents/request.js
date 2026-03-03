@@ -13,6 +13,7 @@ const { disposeClient, clientRegistry, requestDataMap } = require('~/server/clea
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
 const { saveMessage } = require('~/models');
+const { Message } = require('~/db/models');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -280,6 +281,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
         }
 
+        // Compute per-agent token usage breakdown for the UI and persistence
+        const tokenUsage = client.getPerAgentUsage ? client.getPerAgentUsage() : null;
+        const hasTokenUsage = tokenUsage && tokenUsage.agents.length > 0;
+
         // CRITICAL: Save response message BEFORE emitting final event.
         // This prevents race conditions where the client sends a follow-up message
         // before the response is saved to the database, causing orphaned parentMessageIds.
@@ -314,19 +319,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response },
+            ...(hasTokenUsage && { tokenUsage }),
           };
-
-          logger.debug(`[ResumableAgentController] Emitting FINAL event`, {
-            streamId,
-            wasAbortedBeforeComplete,
-            userMessageId: userMessage?.messageId,
-            responseMessageId: response?.messageId,
-            conversationId: conversation?.conversationId,
-          });
 
           GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId);
           await decrementPendingRequest(userId);
+
+          // Persist tokenUsage in MongoDB (fire-and-forget, non-blocking)
+          if (hasTokenUsage) {
+            Message.updateOne(
+              { messageId, user: userId },
+              { $set: { 'metadata.tokenUsage': tokenUsage } },
+            ).catch((err) =>
+              logger.warn('[ResumableAgentController] Failed to persist tokenUsage metadata', err),
+            );
+          }
         } else {
           const finalEvent = {
             final: true,
@@ -334,6 +342,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response, unfinished: true },
+            ...(hasTokenUsage && { tokenUsage }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting ABORTED FINAL event`, {
@@ -651,6 +660,10 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
       delete userMessage.image_urls;
     }
 
+    // Compute per-agent token usage breakdown for the UI and persistence
+    const tokenUsage = client.getPerAgentUsage ? client.getPerAgentUsage() : null;
+    const hasTokenUsage = tokenUsage && tokenUsage.agents.length > 0;
+
     // Only send if not aborted
     if (!job.abortController.signal.aborted) {
       // Create a new response object with minimal copies
@@ -662,6 +675,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
         title: conversation.title,
         requestMessage: sanitizeMessageForTransmit(userMessage),
         responseMessage: finalResponse,
+        ...(hasTokenUsage && { tokenUsage }),
       });
       res.end();
 
@@ -671,6 +685,16 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
           req,
           { ...finalResponse, user: userId },
           { context: 'api/server/controllers/agents/request.js - response end' },
+        );
+      }
+
+      // Persist tokenUsage in MongoDB (fire-and-forget, non-blocking)
+      if (hasTokenUsage) {
+        Message.updateOne(
+          { messageId, user: userId },
+          { $set: { 'metadata.tokenUsage': tokenUsage } },
+        ).catch((err) =>
+          logger.warn('[AgentController] Failed to persist tokenUsage metadata', err),
         );
       }
     }
@@ -691,6 +715,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
         requestMessage: sanitizeMessageForTransmit(userMessage),
         responseMessage: finalResponse,
         error: { message: 'Request was aborted during completion' },
+        ...(hasTokenUsage && { tokenUsage }),
       });
       res.end();
     }

@@ -5,6 +5,7 @@ import { type TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
+import TokenUsage from '~/components/Chat/Messages/Content/TokenUsage';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
@@ -176,6 +177,16 @@ const MessageRender = memo(
                   siblingCount={siblingCount}
                   setSiblingIdx={setSiblingIdx}
                 />
+                {!msg.isCreatedByUser && msg.messageId && (
+                  <TokenUsage
+                    messageId={msg.messageId}
+                    persistedUsage={
+                      (msg.metadata as Record<string, unknown>)?.tokenUsage as
+                        | import('~/common').TTokenUsage
+                        | undefined
+                    }
+                  />
+                )}
                 <HoverButtons
                   index={index}
                   isEditing={edit}

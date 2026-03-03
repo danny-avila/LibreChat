@@ -607,10 +607,27 @@ export type TResData = TBaseResData & {
   responseMessage: t.TMessage;
 };
 
+export type TAgentTokenUsageEntry = {
+  agentName: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  turns: number;
+};
+
+export type TTokenUsage = {
+  agents: TAgentTokenUsageEntry[];
+  totals: {
+    input_tokens: number;
+    output_tokens: number;
+  };
+};
+
 export type TFinalResData = Omit<TBaseResData, 'conversation'> & {
   conversation: Partial<t.TConversation> & Pick<t.TConversation, 'conversationId'>;
   requestMessage?: t.TMessage;
   responseMessage?: t.TMessage;
+  tokenUsage?: TTokenUsage;
 };
 
 export type TVectorStore = {

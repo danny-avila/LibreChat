@@ -1,7 +1,7 @@
 import { atom, selectorFamily } from 'recoil';
 import { TAttachment } from 'librechat-data-provider';
 import { atomWithLocalStorage } from './utils';
-import { BadgeItem } from '~/common';
+import type { BadgeItem, TTokenUsage } from '~/common';
 
 const hideBannerHint = atomWithLocalStorage('hideBannerHint', [] as string[]);
 
@@ -64,6 +64,15 @@ const chatBadges = atomWithLocalStorage<Pick<BadgeItem, 'id'>[]>('chatBadges', [
   // { id: '2' },
 ]);
 
+/**
+ * Stores per-message token usage data. Keyed by response messageId.
+ * Populated from the `tokenUsage` field in the final SSE event.
+ */
+const tokenUsageMap = atom<Record<string, TTokenUsage>>({
+  key: 'tokenUsageMap',
+  default: {},
+});
+
 export default {
   hideBannerHint,
   messageAttachmentsMap,
@@ -71,4 +80,5 @@ export default {
   queriesEnabled,
   isEditingBadges,
   chatBadges,
+  tokenUsageMap,
 };

@@ -91,6 +91,11 @@ class ModelEndHandler {
         usage.model = modelName;
       }
 
+      const agentName = metadata?.name ?? metadata?.langgraph_node ?? undefined;
+      if (agentName) {
+        usage.agentName = agentName;
+      }
+
       this.collectedUsage.push(usage);
       if (!streamingDisabled) {
         return this.finalize(errorMessage);

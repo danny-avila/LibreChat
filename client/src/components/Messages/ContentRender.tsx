@@ -6,6 +6,7 @@ import type { TMessageProps, TMessageIcon } from '~/common';
 import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
+import TokenUsage from '~/components/Chat/Messages/Content/TokenUsage';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
@@ -145,7 +146,7 @@ const ContentRender = memo(
           )}
 
           <div className="flex flex-col gap-1">
-            <div className="flex flex-col flex-grow max-w-full gap-0">
+            <div className="flex max-w-full flex-grow flex-col gap-0">
               <ContentParts
                 edit={edit}
                 isLast={isLast}
@@ -171,6 +172,16 @@ const ContentRender = memo(
                   siblingCount={siblingCount}
                   setSiblingIdx={setSiblingIdx}
                 />
+                {!msg.isCreatedByUser && msg.messageId && (
+                  <TokenUsage
+                    messageId={msg.messageId}
+                    persistedUsage={
+                      (msg.metadata as Record<string, unknown>)?.tokenUsage as
+                        | import('~/common').TTokenUsage
+                        | undefined
+                    }
+                  />
+                )}
                 <HoverButtons
                   index={index}
                   message={msg}
