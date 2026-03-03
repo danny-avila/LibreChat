@@ -1,11 +1,14 @@
+// @ts-ignore - No types for @vitejs/plugin-react
 import react from '@vitejs/plugin-react';
-// @ts-ignore
 import path from 'path';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vite';
+import { createRequire } from 'module';
+import { VitePWA } from 'vite-plugin-pwa';
 import { compression } from 'vite-plugin-compression2';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
-import { VitePWA } from 'vite-plugin-pwa';
+
+const require = createRequire(import.meta.url);
 
 // https://vitejs.dev/config/
 const backendPort = (process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT)) || 3080;
@@ -37,6 +40,23 @@ export default defineConfig(({ command }) => ({
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
   plugins: [
     react(),
+    {
+      name: 'node-polyfills-shims-resolver',
+      resolveId(id) {
+        const shims: Record<string, string> = {
+          'vite-plugin-node-polyfills/shims/process': require.resolve(
+            'vite-plugin-node-polyfills/shims/process',
+          ),
+          'vite-plugin-node-polyfills/shims/buffer': require.resolve(
+            'vite-plugin-node-polyfills/shims/buffer',
+          ),
+          'vite-plugin-node-polyfills/shims/global': require.resolve(
+            'vite-plugin-node-polyfills/shims/global',
+          ),
+        };
+        return shims[id] ?? null;
+      },
+    },
     nodePolyfills(),
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
