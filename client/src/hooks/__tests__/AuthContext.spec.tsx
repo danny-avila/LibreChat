@@ -274,6 +274,132 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     expect(window.location.replace).toHaveBeenCalled();
     expect(mockRefreshMutate).not.toHaveBeenCalled();
   });
+});
+
+describe('AuthContextProvider — silentRefresh post-login redirect', () => {
+  const SESSION_KEY = 'post_login_redirect_to';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('navigates to stored sessionStorage redirect after successful token refresh', () => {
+    jest.useFakeTimers();
+    sessionStorage.setItem(SESSION_KEY, '/c/new?endpoint=bedrock&model=claude-sonnet-4-6');
+
+    renderProviderLive();
+
+    const refreshCall = mockRefreshMutate.mock.calls[0];
+    const refreshOptions = refreshCall[1] as { onSuccess: (data: unknown) => void };
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/c/new?endpoint=bedrock&model=claude-sonnet-4-6', {
+      replace: true,
+    });
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+    jest.useRealTimers();
+  });
+
+  it('navigates to /c/new when no stored redirect exists', () => {
+    jest.useFakeTimers();
+
+    renderProviderLive();
+
+    const refreshCall = mockRefreshMutate.mock.calls[0];
+    const refreshOptions = refreshCall[1] as { onSuccess: (data: unknown) => void };
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/c/new', { replace: true });
+    jest.useRealTimers();
+  });
+
+  it('does not re-trigger silentRefresh after successful redirect', () => {
+    jest.useFakeTimers();
+    sessionStorage.setItem(SESSION_KEY, '/c/abc?endpoint=bedrock');
+
+    renderProviderLive();
+
+    const refreshCall = mockRefreshMutate.mock.calls[0];
+    const refreshOptions = refreshCall[1] as { onSuccess: (data: unknown) => void };
+    mockRefreshMutate.mockClear();
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith('/c/abc?endpoint=bedrock', { replace: true });
+    expect(mockRefreshMutate).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  it('does not navigate to unsafe stored redirect', () => {
+    jest.useFakeTimers();
+    sessionStorage.setItem(SESSION_KEY, 'https://evil.com/steal');
+
+    renderProviderLive();
+
+    const refreshCall = mockRefreshMutate.mock.calls[0];
+    const refreshOptions = refreshCall[1] as { onSuccess: (data: unknown) => void };
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockNavigate).not.toHaveBeenCalledWith('https://evil.com/steal', expect.anything());
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+    jest.useRealTimers();
+  });
+});
+
+describe('AuthContextProvider — logout error handling', () => {
+  const originalLocation = window.location;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...originalLocation,
+        pathname: '/c/some-chat',
+        search: '',
+        hash: '',
+        replace: jest.fn(),
+      },
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      writable: true,
+      configurable: true,
+    });
+  });
 
   it('clears auth state on logout error without external redirect', () => {
     jest.useFakeTimers();
