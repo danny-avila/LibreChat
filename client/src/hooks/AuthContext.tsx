@@ -168,12 +168,11 @@ const AuthContextProvider = ({
         if (token) {
           const storedRedirect = sessionStorage.getItem(SESSION_KEY);
           sessionStorage.removeItem(SESSION_KEY);
-          setUserContext({
-            user,
-            token,
-            isAuthenticated: true,
-            redirect: storedRedirect && isSafeRedirect(storedRedirect) ? storedRedirect : '/c/new',
-          });
+          const currentUrl = `${window.location.pathname}${window.location.search}`;
+          const fallbackRedirect = isSafeRedirect(currentUrl) ? currentUrl : '/c/new';
+          const redirect =
+            storedRedirect && isSafeRedirect(storedRedirect) ? storedRedirect : fallbackRedirect;
+          setUserContext({ user, token, isAuthenticated: true, redirect });
           return;
         }
         console.log('Token is not present. User is not authenticated.');
