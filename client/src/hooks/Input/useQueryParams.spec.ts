@@ -247,10 +247,10 @@ describe('useQueryParams', () => {
       expect.objectContaining({ shouldValidate: true }),
     );
     const mockSetSearchParams = (useSearchParams as jest.Mock).mock.results[0].value[1];
-    expect(mockSetSearchParams).toHaveBeenCalledWith(
-      expect.any(URLSearchParams),
-      expect.objectContaining({ replace: true }),
-    );
+    const [params, options] = mockSetSearchParams.mock.calls[0];
+    expect(params).toBeInstanceOf(URLSearchParams);
+    expect(params.toString()).toBe('');
+    expect(options).toEqual(expect.objectContaining({ replace: true }));
   });
 
   it('should auto-submit message when submit=true and no settings to apply', () => {
@@ -551,9 +551,9 @@ describe('useQueryParams', () => {
     expect(mockHandleSubmit).not.toHaveBeenCalled();
     expect(mockSubmitMessage).not.toHaveBeenCalled();
     const mockSetSearchParams = (useSearchParams as jest.Mock).mock.results[0].value[1];
-    expect(mockSetSearchParams).toHaveBeenCalledWith(
-      expect.any(URLSearchParams),
-      expect.objectContaining({ replace: true }),
-    );
+    const [params, options] = mockSetSearchParams.mock.calls[0];
+    expect(params).toBeInstanceOf(URLSearchParams);
+    expect(params.toString()).toBe('');
+    expect(options).toEqual(expect.objectContaining({ replace: true }));
   });
 });
