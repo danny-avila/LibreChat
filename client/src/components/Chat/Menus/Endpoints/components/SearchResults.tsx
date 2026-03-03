@@ -160,7 +160,9 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   }
 
                   const isModelSelected =
-                    selectedEndpoint === endpoint.value && selectedModel === modelId;
+                    !selectedSpec &&
+                    selectedEndpoint === endpoint.value &&
+                    selectedModel === modelId;
                   return (
                     <MenuItem
                       key={`${endpoint.value}-${modelId}-search-${i}`}
@@ -199,7 +201,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
             );
           } else {
             // Endpoints with no models
-            const isEndpointSelected = selectedEndpoint === endpoint.value;
+            const isEndpointSelected = !selectedSpec && selectedEndpoint === endpoint.value;
             return (
               <MenuItem
                 key={`endpoint-${endpoint.value}-search-item`}

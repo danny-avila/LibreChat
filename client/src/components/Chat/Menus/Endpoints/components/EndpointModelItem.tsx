@@ -11,12 +11,18 @@ import { cn } from '~/utils';
 interface EndpointModelItemProps {
   modelId: string | null;
   endpoint: Endpoint;
-  isSelected: boolean;
 }
 
-export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
+export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps) {
   const localize = useLocalize();
-  const { handleSelectModel } = useModelSelectorContext();
+  const { handleSelectModel, selectedValues } = useModelSelectorContext();
+  const {
+    endpoint: selectedEndpoint,
+    model: selectedModel,
+    modelSpec: selectedSpec,
+  } = selectedValues;
+  const isSelected =
+    !selectedSpec && selectedEndpoint === endpoint.value && selectedModel === modelId;
   const { isFavoriteModel, toggleFavoriteModel, isFavoriteAgent, toggleFavoriteAgent } =
     useFavorites();
 
@@ -147,7 +153,6 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
 export function renderEndpointModels(
   endpoint: Endpoint | null,
   models: Array<{ name: string; isGlobal?: boolean }>,
-  selectedModel: string | null,
   filteredModels?: string[],
   endpointIndex?: number,
 ) {
@@ -161,7 +166,6 @@ export function renderEndpointModels(
           key={`${endpoint.value}${indexSuffix}-${modelId}-${modelIndex}`}
           modelId={modelId}
           endpoint={endpoint}
-          isSelected={selectedModel === modelId}
         />
       ),
   );
