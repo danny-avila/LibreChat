@@ -1,47 +1,30 @@
-import { useLocalize } from '~/hooks';
 import { TStartupConfig } from 'librechat-data-provider';
 
-function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | undefined }) {
-  const localize = useLocalize();
-  if (!startupConfig) {
-    return null;
-  }
-  const privacyPolicy = startupConfig.interface?.privacyPolicy;
-  const termsOfService = startupConfig.interface?.termsOfService;
+const DATENSCHUTZ_URL = 'https://karrieremum.at/datenschutz';
+const IMPRESSUM_URL = 'https://karrieremum.at/impressum';
 
-  const privacyPolicyRender = privacyPolicy?.externalUrl && (
-    <a
-      className="text-sm underline decoration-transparent transition-all duration-200"
-      style={{ color: '#c9a87c' }}
-      href={privacyPolicy.externalUrl}
-      // Removed for WCAG compliance
-      // target={privacyPolicy.openNewTab ? '_blank' : undefined}
-      rel="noreferrer"
-    >
-      {localize('com_ui_privacy_policy')}
-    </a>
-  );
-
-  const termsOfServiceRender = termsOfService?.externalUrl && (
-    <a
-      className="text-sm underline decoration-transparent transition-all duration-200"
-      style={{ color: '#c9a87c' }}
-      href={termsOfService.externalUrl}
-      // Removed for WCAG compliance
-      // target={termsOfService.openNewTab ? '_blank' : undefined}
-      rel="noreferrer"
-    >
-      {localize('com_ui_terms_of_service')}
-    </a>
-  );
-
+function Footer({ startupConfig: _startupConfig }: { startupConfig: TStartupConfig | null | undefined }) {
   return (
-    <div className="align-end m-4 flex justify-center gap-2" role="contentinfo">
-      {privacyPolicyRender}
-      {privacyPolicyRender && termsOfServiceRender && (
-        <div className="border-r-[1px] border-gray-300 dark:border-gray-600" />
-      )}
-      {termsOfServiceRender}
+    <div className="m-4 flex justify-center gap-4" role="contentinfo">
+      <a
+        className="text-sm underline decoration-transparent transition-all duration-200"
+        style={{ color: '#c9a87c' }}
+        href={DATENSCHUTZ_URL}
+        target="_blank"
+        rel="noreferrer"
+      >
+        Datenschutzerklärung
+      </a>
+      <div className="border-r-[1px] border-gray-600" />
+      <a
+        className="text-sm underline decoration-transparent transition-all duration-200"
+        style={{ color: '#c9a87c' }}
+        href={IMPRESSUM_URL}
+        target="_blank"
+        rel="noreferrer"
+      >
+        Impressum
+      </a>
     </div>
   );
 }
