@@ -1,7 +1,7 @@
 version: 1.2.1
 
 interface:
-  customFooter: ""
+  customFooter: "KARRIERE.MUM"
   privacyPolicy:
     externalUrl: "https://karrieremum.at/datenschutz"
     openNewTab: true
