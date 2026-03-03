@@ -11,9 +11,21 @@ interface:
 
 memory:
   disabled: false
+  personalize: true        # ← geändert
+  messageWindowSize: 10
+  tokenLimit: 3000         # ← hinzugefügt (fehlte bei dir)
+  validKeys:
+    - profil
+    - familie
+    - beruf
+    - ziele
+    - herausforderungen
+    - angebot
+    - zielgruppe
+    - brand_voice
   agent:
-    provider: openAI
-    model: gpt-4o-mini
+    provider: "openAI"
+    model: "gpt-4o-mini"
     instructions: |
       Du bist der Gedächtnis-Agent von KARRIERE.MUM. Deine Aufgabe ist es, relevante Informationen über die Nutzerin strukturiert zu speichern und aktuell zu halten.
 
@@ -29,17 +41,6 @@ memory:
 
       Aktualisiere bestehende Einträge wenn neue oder genauere Informationen vorliegen.
       Speichere nur bestätigte Informationen, keine Vermutungen.
-  messageWindowSize: 10
-  personalize: false
-  validKeys:
-    - profil
-    - familie
-    - beruf
-    - ziele
-    - herausforderungen
-    - angebot
-    - zielgruppe
-    - brand_voice
 
 registration:
   socialLogins: []
