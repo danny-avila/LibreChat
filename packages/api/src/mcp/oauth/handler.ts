@@ -277,7 +277,7 @@ export class MCPOAuthHandler {
       redirect_uris: [redirectUri || this.getDefaultRedirectUri()],
       grant_types: ['authorization_code'] as string[],
       response_types: ['code'] as string[],
-      token_endpoint_auth_method: 'client_secret_basic',
+      token_endpoint_auth_method: 'client_secret_post',
       scope: undefined as string | undefined,
       logo_uri: undefined as string | undefined,
       tos_uri: undefined as string | undefined,
@@ -302,20 +302,16 @@ export class MCPOAuthHandler {
 
     const forcedAuthMethod = this.getForcedTokenEndpointAuthMethod(tokenExchangeMethod);
 
+    const supportedAuthMethods = ['client_secret_post', 'client_secret_basic', 'none'];
+
     if (forcedAuthMethod) {
       clientMetadata.token_endpoint_auth_method = forcedAuthMethod;
     } else if (metadata.token_endpoint_auth_methods_supported) {
-      // Prefer client_secret_basic if supported, otherwise use the first supported method
-      if (metadata.token_endpoint_auth_methods_supported.includes('client_secret_basic')) {
-        clientMetadata.token_endpoint_auth_method = 'client_secret_basic';
-      } else if (metadata.token_endpoint_auth_methods_supported.includes('client_secret_post')) {
-        clientMetadata.token_endpoint_auth_method = 'client_secret_post';
-      } else if (metadata.token_endpoint_auth_methods_supported.includes('none')) {
-        clientMetadata.token_endpoint_auth_method = 'none';
-      } else {
-        clientMetadata.token_endpoint_auth_method =
-          metadata.token_endpoint_auth_methods_supported[0];
-      }
+      const serverPreferred = metadata.token_endpoint_auth_methods_supported.find((m) =>
+        supportedAuthMethods.includes(m),
+      );
+      clientMetadata.token_endpoint_auth_method =
+        serverPreferred ?? metadata.token_endpoint_auth_methods_supported[0];
     }
 
     const availableScopes = resourceMetadata?.scopes_supported || metadata.scopes_supported;
