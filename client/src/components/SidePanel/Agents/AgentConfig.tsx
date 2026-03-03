@@ -180,7 +180,7 @@ export default function AgentConfig() {
 
   return (
     <>
-      <div className="h-auto bg-white px-4 pt-3 dark:bg-transparent">
+      <div className="h-auto bg-transparent px-4 pt-3">
         {/* Avatar & Name */}
         <div className="mb-4">
           <AgentAvatar avatar={agent?.['avatar'] ?? null} />
