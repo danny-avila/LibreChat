@@ -84,6 +84,25 @@ function renderProvider() {
   );
 }
 
+/** Renders without test:true so silentRefresh actually runs */
+function renderProviderLive() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RecoilRoot>
+        <MemoryRouter>
+          <AuthContextProvider authConfig={{ loginRedirect: '/login' }}>
+            <TestConsumer />
+          </AuthContextProvider>
+        </MemoryRouter>
+      </RecoilRoot>
+    </QueryClientProvider>,
+  );
+}
+
 describe('AuthContextProvider — login onError redirect handling', () => {
   const originalLocation = window.location;
 
@@ -242,7 +261,7 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
   });
 
   it('does not trigger silentRefresh after OIDC redirect', () => {
-    renderProvider();
+    renderProviderLive();
     mockRefreshMutate.mockClear();
 
     act(() => {
@@ -256,15 +275,19 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     expect(mockRefreshMutate).not.toHaveBeenCalled();
   });
 
-  it('navigates to /login on logout error', () => {
-    renderProvider();
+  it('clears auth state on logout error without external redirect', () => {
+    jest.useFakeTimers();
+    const { getByTestId } = renderProvider();
 
     act(() => {
       mockCapturedLogoutOptions.onError(new Error('Logout failed'));
     });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
 
-    // The debounced setUserContext eventually calls navigate with /login
-    // but we can verify the error handler was called without throwing
     expect(window.location.replace).not.toHaveBeenCalled();
+    expect(getByTestId('consumer').getAttribute('data-authenticated')).toBe('false');
+    jest.useRealTimers();
   });
 });
