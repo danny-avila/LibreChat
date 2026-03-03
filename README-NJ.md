@@ -106,11 +106,19 @@ Prod release happens in two steps:
 1. Create a tag in Github, and wait for it to build and push
 2. Run the infra deploy workflow on the prod environment.
 
-### Create a tag from the newjersey branch
+### Create a new release
 
-Tags are formatted like `release-YYYYMMDD.X`. The `.X` is an optional increment in case multiple tags are cut per day.
+Go to [releases](https://github.com/newjersey/LibreChat/releases) and click "Draft new release."
 
-From the `newjersey` branch, run `git tag <tag>`, then `git push --tags`. This will initiate the tag build and update the `ai-assistant/prod-image-tag` SSM parameter.
+For tag, create a new tag formatted like `release-YYYYMMDD.X`. (The `.X` is an optional increment in case multiple tags are cut per day.)
+
+Target the `newjersey` branch.
+
+Click "generate release notes" to automatically generate some decent notes.
+
+Then click "Publish release."
+
+The new release & tag will initiate the tag build and update the `ai-assistant/prod-image-tag` SSM parameter.
 
 ### Run the infra deploy workflow
 
