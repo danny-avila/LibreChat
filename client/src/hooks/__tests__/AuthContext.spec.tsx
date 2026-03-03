@@ -313,8 +313,12 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
     jest.useRealTimers();
   });
 
-  it('navigates to /c/new when no stored redirect exists', () => {
+  it('navigates to current URL when no stored redirect exists', () => {
     jest.useFakeTimers();
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, pathname: '/c/new', search: '' },
+      writable: true,
+    });
 
     renderProviderLive();
 
@@ -361,8 +365,12 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
     jest.useRealTimers();
   });
 
-  it('falls back to /c/new for unsafe stored redirect', () => {
+  it('falls back to current URL for unsafe stored redirect', () => {
     jest.useFakeTimers();
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, pathname: '/c/new', search: '' },
+      writable: true,
+    });
     sessionStorage.setItem(SESSION_KEY, 'https://evil.com/steal');
 
     renderProviderLive();
