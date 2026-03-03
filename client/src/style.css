@@ -2968,3 +2968,8 @@ html {
 .sharepoint-picker-bg {
   background-color: #f5f5f5;
 }
+
+/* KARRIERE.MUM: Chat message text — always white since theme is always dark */
+.prose.message-content {
+  color: rgba(255, 255, 255, 0.9);
+}
