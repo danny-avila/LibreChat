@@ -1,13 +1,8 @@
+import { Types } from 'mongoose';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
-import {
-  resolveHeaders,
-  resolveNestedObject,
-  processMCPEnv,
-  encodeHeaderValue,
-} from './env';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
-import { Types } from 'mongoose';
+import { resolveHeaders, resolveNestedObject, processMCPEnv, encodeHeaderValue } from './env';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
   return !options.type || options.type === 'stdio';
@@ -43,15 +38,14 @@ describe('encodeHeaderValue', () => {
   });
 
   it('should return empty string for null/undefined coerced to empty string', () => {
-    // TypeScript would prevent these, but testing runtime behavior
-    expect(encodeHeaderValue(null as any)).toBe('');
-    expect(encodeHeaderValue(undefined as any)).toBe('');
+    expect(encodeHeaderValue(null as unknown as string)).toBe('');
+    expect(encodeHeaderValue(undefined as unknown as string)).toBe('');
   });
 
   it('should return empty string for non-string values', () => {
-    expect(encodeHeaderValue(123 as any)).toBe('');
-    expect(encodeHeaderValue(false as any)).toBe('');
-    expect(encodeHeaderValue({} as any)).toBe('');
+    expect(encodeHeaderValue(123 as unknown as string)).toBe('');
+    expect(encodeHeaderValue(false as unknown as string)).toBe('');
+    expect(encodeHeaderValue({} as unknown as string)).toBe('');
   });
 
   it('should pass through ASCII characters (0-127) unchanged', () => {
@@ -1607,6 +1601,367 @@ describe('processMCPEnv', () => {
 
       if (isStreamableHTTPOptions(result)) {
         expect(result.headers?.Authorization).toBeUndefined();
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+  });
+
+  describe('dbSourced flag', () => {
+    beforeEach(() => {
+      process.env.TEST_API_KEY = 'test-api-key-value';
+      process.env.DATABASE_URL = 'mongodb://secret-host:27017/db';
+    });
+
+    afterEach(() => {
+      delete process.env.TEST_API_KEY;
+      delete process.env.DATABASE_URL;
+    });
+
+    it('should resolve customUserVars when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+        },
+      };
+
+      const result = processMCPEnv({
+        options,
+        dbSourced: true,
+        customUserVars: { MCP_API_KEY: 'user-secret-key' },
+      });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer user-secret-key');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should NOT resolve ${ENV_VAR} when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-Leaked': '${DATABASE_URL}',
+          'X-Key': '${TEST_API_KEY}',
+        },
+      };
+
+      const result = processMCPEnv({ options, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Leaked']).toBe('${DATABASE_URL}');
+        expect(result.headers?.['X-Key']).toBe('${TEST_API_KEY}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should NOT resolve {{LIBRECHAT_USER_*}} when dbSourced is true', () => {
+      const user = createTestUser({ id: 'user-123', email: 'test@example.com' });
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+          'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, user, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-User-Id']).toBe('{{LIBRECHAT_USER_ID}}');
+        expect(result.headers?.['X-User-Email']).toBe('{{LIBRECHAT_USER_EMAIL}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should NOT resolve {{LIBRECHAT_OPENID_*}} when dbSourced is true', () => {
+      const user = {
+        ...createTestUser({ id: 'user-123', provider: 'openid' }),
+        federatedTokens: {
+          access_token: 'oidc-access-token',
+          id_token: 'oidc-id-token',
+          refresh_token: 'oidc-refresh-token',
+          token_type: 'Bearer',
+          expires_at: Date.now() + 3600000,
+        },
+      };
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, user, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should NOT resolve {{LIBRECHAT_BODY_*}} when dbSourced is true', () => {
+      const body = {
+        conversationId: 'conv-123',
+        parentMessageId: 'parent-456',
+        messageId: 'msg-789',
+      };
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, body, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Conversation']).toBe('{{LIBRECHAT_BODY_CONVERSATIONID}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should resolve customUserVars but block all other placeholders when dbSourced is true', () => {
+      const user = createTestUser({ id: 'user-123' });
+      const body = { conversationId: 'conv-123', parentMessageId: 'p-1', messageId: 'm-1' };
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: '${DATABASE_URL}',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+          'X-Env-Leak': '${TEST_API_KEY}',
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+          'X-Body': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        },
+      };
+
+      const result = processMCPEnv({
+        options,
+        user,
+        body,
+        dbSourced: true,
+        customUserVars: { MCP_API_KEY: 'user-key-value' },
+      });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer user-key-value');
+        expect(result.headers?.['X-Env-Leak']).toBe('${TEST_API_KEY}');
+        expect(result.headers?.['X-User-Id']).toBe('{{LIBRECHAT_USER_ID}}');
+        expect(result.headers?.['X-Body']).toBe('{{LIBRECHAT_BODY_CONVERSATIONID}}');
+        expect(result.url).toBe('${DATABASE_URL}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should resolve all placeholders when dbSourced is false (default)', () => {
+      const user = createTestUser({ id: 'user-123' });
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+          'X-Env': '${TEST_API_KEY}',
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        },
+      };
+
+      const result = processMCPEnv({
+        options,
+        user,
+        dbSourced: false,
+        customUserVars: { MCP_API_KEY: 'user-key-value' },
+      });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer user-key-value');
+        expect(result.headers?.['X-Env']).toBe('test-api-key-value');
+        expect(result.headers?.['X-User-Id']).toBe('user-123');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should apply dbSourced to env, args, and URL — not just headers', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: ['--key', '${TEST_API_KEY}', '--custom', '{{MY_VAR}}'],
+        env: {
+          SECRET: '${DATABASE_URL}',
+          CUSTOM: '{{MY_VAR}}',
+        },
+      };
+
+      const result = processMCPEnv({
+        options,
+        dbSourced: true,
+        customUserVars: { MY_VAR: 'resolved-value' },
+      });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.SECRET).toBe('${DATABASE_URL}');
+        expect(result.env?.CUSTOM).toBe('resolved-value');
+        expect(result.args?.[1]).toBe('${TEST_API_KEY}');
+        expect(result.args?.[3]).toBe('resolved-value');
+      } else {
+        throw new Error('Expected stdio options');
+      }
+    });
+
+    it('should still apply admin API key header injection when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'admin-managed-key',
+        },
+      };
+
+      const result = processMCPEnv({ options, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer admin-managed-key');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should block env vars in OAuth config when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        oauth: {
+          client_id: '${TEST_API_KEY}',
+          client_secret: '${DATABASE_URL}',
+          token_url: 'https://auth.example.com/token',
+          token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        },
+      };
+
+      const result = processMCPEnv({ options, dbSourced: true });
+
+      const oauth = (result as { oauth?: Record<string, unknown> }).oauth;
+      expect(oauth?.client_id).toBe('${TEST_API_KEY}');
+      expect(oauth?.client_secret).toBe('${DATABASE_URL}');
+    });
+
+    it('should resolve customUserVars in OAuth config when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        oauth: {
+          client_id: '{{MY_CLIENT_ID}}',
+          client_secret: '{{MY_CLIENT_SECRET}}',
+          token_url: 'https://auth.example.com/token',
+          token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        },
+      };
+
+      const result = processMCPEnv({
+        options,
+        dbSourced: true,
+        customUserVars: { MY_CLIENT_ID: 'resolved-client', MY_CLIENT_SECRET: 'resolved-secret' },
+      });
+
+      const oauth = (result as { oauth?: Record<string, unknown> }).oauth;
+      expect(oauth?.client_id).toBe('resolved-client');
+      expect(oauth?.client_secret).toBe('resolved-secret');
+    });
+
+    it('should leave unresolved customUserVars as literal placeholders', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+        },
+      };
+
+      // No customUserVars provided — placeholder should remain
+      const result = processMCPEnv({ options, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer {{MCP_API_KEY}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should not modify the original options when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: '${DATABASE_URL}',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+          'X-Env': '${TEST_API_KEY}',
+        },
+      };
+
+      const originalUrl = options.url;
+      const originalAuth = (options as { headers: Record<string, string> }).headers.Authorization;
+
+      processMCPEnv({
+        options,
+        dbSourced: true,
+        customUserVars: { MCP_API_KEY: 'resolved' },
+      });
+
+      expect(options.url).toBe(originalUrl);
+      expect((options as { headers: Record<string, string> }).headers.Authorization).toBe(
+        originalAuth,
+      );
+    });
+
+    it('should handle empty customUserVars object without errors', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-Key': '${TEST_API_KEY}',
+          'X-Custom': '{{MCP_API_KEY}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, dbSourced: true, customUserVars: {} });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Key']).toBe('${TEST_API_KEY}');
+        expect(result.headers?.['X-Custom']).toBe('{{MCP_API_KEY}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('dbSourced undefined should behave like false (resolve everything)', () => {
+      const user = createTestUser({ id: 'user-abc' });
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-Env': '${TEST_API_KEY}',
+          'X-User': '{{LIBRECHAT_USER_ID}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, user });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Env']).toBe('test-api-key-value');
+        expect(result.headers?.['X-User']).toBe('user-abc');
       } else {
         throw new Error('Expected streamable-http options');
       }

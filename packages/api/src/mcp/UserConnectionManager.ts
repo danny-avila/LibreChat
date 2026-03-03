@@ -115,8 +115,9 @@ export abstract class UserConnectionManager {
     try {
       connection = await MCPConnectionFactory.create(
         {
-          serverName: serverName,
           serverConfig: config,
+          serverName: serverName,
+          dbSourced: !!config.dbId,
           useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
         },
         {

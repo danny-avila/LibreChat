@@ -209,12 +209,15 @@ function processSingleValue({
   user,
   body = undefined,
   isHeader = false,
+  dbSourced = false,
 }: {
   originalValue: string;
   customUserVars?: Record<string, string>;
   user?: Partial<IUser>;
   body?: RequestBody;
   isHeader?: boolean;
+  /** When true, only resolve customUserVars — skip env vars, user/OpenID/body placeholders */
+  dbSourced?: boolean;
 }): string {
   // Type guard: ensure we're working with a string
   if (typeof originalValue !== 'string') {
@@ -230,6 +233,10 @@ function processSingleValue({
       const placeholderRegex = new RegExp(`\\{\\{${escapedVarName}\\}\\}`, 'g');
       value = value.replace(placeholderRegex, varVal);
     }
+  }
+
+  if (dbSourced) {
+    return value;
   }
 
   value = processUserPlaceholders(value, user, isHeader);
@@ -258,16 +265,21 @@ function processSingleValue({
  * @returns - The processed object with environment variables replaced
  */
 export function processMCPEnv(params: {
-  options: Readonly<MCPOptions>;
+  options: Readonly<MCPOptions> & { dbId?: string };
   user?: Partial<IUser>;
   customUserVars?: Record<string, string>;
   body?: RequestBody;
+  /** When true, only resolve customUserVars — skip env vars, user/OpenID/body placeholders (for DB-stored servers) */
+  dbSourced?: boolean;
 }): MCPOptions {
   const { options, user, customUserVars, body } = params;
 
   if (options === null || options === undefined) {
     return options;
   }
+
+  /** Derive dbSourced from explicit param OR from dbId on the options (failsafe for callers that forget the flag) */
+  const dbSourced = params.dbSourced ?? !!options.dbId;
 
   const newObj: MCPOptions = structuredClone(options);
 
@@ -306,7 +318,13 @@ export function processMCPEnv(params: {
   if ('env' in newObj && newObj.env) {
     const processedEnv: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.env)) {
-      processedEnv[key] = processSingleValue({ originalValue, customUserVars, user, body });
+      processedEnv[key] = processSingleValue({
+        user,
+        body,
+        dbSourced,
+        originalValue,
+        customUserVars,
+      });
     }
     newObj.env = processedEnv;
   }
@@ -314,7 +332,9 @@ export function processMCPEnv(params: {
   if ('args' in newObj && newObj.args) {
     const processedArgs: string[] = [];
     for (const originalValue of newObj.args) {
-      processedArgs.push(processSingleValue({ originalValue, customUserVars, user, body }));
+      processedArgs.push(
+        processSingleValue({ originalValue, customUserVars, user, body, dbSourced }),
+      );
     }
     newObj.args = processedArgs;
   }
@@ -325,10 +345,11 @@ export function processMCPEnv(params: {
     const processedHeaders: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.headers)) {
       processedHeaders[key] = processSingleValue({
-        originalValue,
-        customUserVars,
         user,
         body,
+        dbSourced,
+        originalValue,
+        customUserVars,
         isHeader: true, // Important: Enable header encoding
       });
     }
@@ -337,7 +358,13 @@ export function processMCPEnv(params: {
 
   // Process URL if it exists (for WebSocket, SSE, StreamableHTTP types)
   if ('url' in newObj && newObj.url) {
-    newObj.url = processSingleValue({ originalValue: newObj.url, customUserVars, user, body });
+    newObj.url = processSingleValue({
+      user,
+      body,
+      dbSourced,
+      customUserVars,
+      originalValue: newObj.url,
+    });
   }
 
   // Process OAuth configuration if it exists (for all transport types)
@@ -347,7 +374,13 @@ export function processMCPEnv(params: {
       // Only process string values for environment variables
       // token_exchange_method is an enum and shouldn't be processed
       if (typeof originalValue === 'string') {
-        processedOAuth[key] = processSingleValue({ originalValue, customUserVars, user, body });
+        processedOAuth[key] = processSingleValue({
+          user,
+          body,
+          dbSourced,
+          originalValue,
+          customUserVars,
+        });
       } else {
         processedOAuth[key] = originalValue;
       }

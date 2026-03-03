@@ -12,7 +12,6 @@ const {
 const {
   sendEvent,
   getToolkitKey,
-  hasCustomUserVars,
   getUserMCPAuthMap,
   loadToolDefinitions,
   GenerationJobManager,
@@ -481,7 +480,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  if (hasCustomUserVars(req.config)) {
+  if (agent.tools?.some((t) => t.includes(Constants.mcp_delimiter))) {
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: agent.tools,
       userId: req.user.id,
@@ -860,8 +859,7 @@ async function loadAgentTools({
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  //TODO pass config from registry
-  if (hasCustomUserVars(req.config)) {
+  if (agent.tools?.some((t) => t.includes(Constants.mcp_delimiter))) {
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: agent.tools,
       userId: req.user.id,
