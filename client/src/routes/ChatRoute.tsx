@@ -13,8 +13,13 @@ import {
   useLocalize,
 } from '~/hooks';
 import { useGetConvoIdQuery, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
-import { getDefaultModelSpec, getModelSpecPreset, logger, isNotFoundError } from '~/utils';
-import { processValidSettings } from '~/hooks/Input/useQueryParams';
+import {
+  getDefaultModelSpec,
+  getModelSpecPreset,
+  processValidSettings,
+  logger,
+  isNotFoundError,
+} from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
