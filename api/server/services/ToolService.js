@@ -479,11 +479,14 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   }
 
   /** @type {Record<string, Record<string, string>>} */
-  const userMCPAuthMap = await getUserMCPAuthMap({
-    tools: agent.tools,
-    userId: req.user.id,
-    findPluginAuthsByKeys,
-  });
+  let userMCPAuthMap;
+  if (agent.tools?.some((t) => t.includes(Constants.mcp_delimiter))) {
+    userMCPAuthMap = await getUserMCPAuthMap({
+      tools: agent.tools,
+      userId: req.user.id,
+      findPluginAuthsByKeys,
+    });
+  }
 
   const flowsCache = getLogStores(CacheKeys.FLOWS);
   const flowManager = getFlowStateManager(flowsCache);
@@ -855,11 +858,14 @@ async function loadAgentTools({
   }
 
   /** @type {Record<string, Record<string, string>>} */
-  const userMCPAuthMap = await getUserMCPAuthMap({
-    tools: agent.tools,
-    userId: req.user.id,
-    findPluginAuthsByKeys,
-  });
+  let userMCPAuthMap;
+  if (agent.tools?.some((t) => t.includes(Constants.mcp_delimiter))) {
+    userMCPAuthMap = await getUserMCPAuthMap({
+      tools: agent.tools,
+      userId: req.user.id,
+      findPluginAuthsByKeys,
+    });
+  }
 
   const { loadedTools, toolContextMap } = await loadTools({
     agent,
