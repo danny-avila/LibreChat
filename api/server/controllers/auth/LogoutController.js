@@ -34,15 +34,14 @@ const logoutController = async (req, res) => {
       isEnabled(process.env.OPENID_USE_END_SESSION_ENDPOINT) &&
       process.env.OPENID_ISSUER
     ) {
-      const openIdConfig = getOpenIdConfig();
-      if (!openIdConfig) {
-        logger.warn(
-          '[logoutController] OpenID config not found. Please verify that the open id configuration and initialization are correct.',
-        );
-      } else {
-        const endSessionEndpoint = openIdConfig
-          ? openIdConfig.serverMetadata().end_session_endpoint
-          : null;
+      let openIdConfig;
+      try {
+        openIdConfig = getOpenIdConfig();
+      } catch (err) {
+        logger.warn('[logoutController] OpenID config not available:', err.message);
+      }
+      if (openIdConfig) {
+        const endSessionEndpoint = openIdConfig.serverMetadata().end_session_endpoint;
         if (endSessionEndpoint) {
           const endSessionUrl = new URL(endSessionEndpoint);
           /** Redirect back to app's login page after IdP logout */
@@ -58,6 +57,7 @@ const logoutController = async (req, res) => {
           } else {
             logger.warn(
               '[logoutController] Neither id_token_hint nor OPENID_CLIENT_ID is available. ' +
+                'To enable id_token_hint, set OPENID_REUSE_TOKENS=true. ' +
                 'The OIDC end-session request may be rejected by the identity provider.',
             );
           }
