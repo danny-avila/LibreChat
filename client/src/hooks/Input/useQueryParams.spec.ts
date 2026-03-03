@@ -241,7 +241,8 @@ describe('useQueryParams', () => {
       'hello world',
       expect.objectContaining({ shouldValidate: true }),
     );
-    expect(window.history.replaceState).toHaveBeenCalled();
+    const mockSetSearchParams = (useSearchParams as jest.Mock).mock.results[0].value[1];
+    expect(mockSetSearchParams).toHaveBeenCalled();
   });
 
   it('should auto-submit message when submit=true and no settings to apply', () => {
@@ -304,13 +305,14 @@ describe('useQueryParams', () => {
       } as unknown as HTMLTextAreaElement,
     };
 
-    // Mock getQueryData to return array format for startupConfig
+    // Mock getQueryData to return array format for startupConfig and endpoints
     const mockGetQueryData = jest.fn().mockImplementation((key) => {
-      if (Array.isArray(key) && key[0] === 'startupConfig') {
+      const k = Array.isArray(key) ? key[0] : key;
+      if (k === 'startupConfig') {
         return { modelSpecs: { list: [] } };
       }
-      if (key === 'startupConfig') {
-        return { modelSpecs: { list: [] } };
+      if (k === 'endpoints') {
+        return {};
       }
       return null;
     });
@@ -396,14 +398,15 @@ describe('useQueryParams', () => {
       newConversation: mockNewConversation,
     });
 
-    // Mock startup config to allow processing
+    // Mock startup config and endpoints to allow processing
     (useQueryClient as jest.Mock).mockReturnValue({
       getQueryData: jest.fn().mockImplementation((key) => {
-        if (Array.isArray(key) && key[0] === 'startupConfig') {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
           return { modelSpecs: { list: [] } };
         }
-        if (key === 'startupConfig') {
-          return { modelSpecs: { list: [] } };
+        if (k === 'endpoints') {
+          return {};
         }
         return null;
       }),
@@ -524,6 +527,7 @@ describe('useQueryParams', () => {
     expect(mockSetValue).not.toHaveBeenCalled();
     expect(mockHandleSubmit).not.toHaveBeenCalled();
     expect(mockSubmitMessage).not.toHaveBeenCalled();
-    expect(window.history.replaceState).toHaveBeenCalled();
+    const mockSetSearchParams = (useSearchParams as jest.Mock).mock.results[0].value[1];
+    expect(mockSetSearchParams).toHaveBeenCalled();
   });
 });
