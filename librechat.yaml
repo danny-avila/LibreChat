@@ -9,5 +9,13 @@ interface:
     externalUrl: "https://karrieremum.at/impressum"
     openNewTab: true
 
+memory:
+  disabled: false
+  agent:
+    provider: openAI
+    model: gpt-4o-mini
+  messageWindowSize: 10
+  personalize: false
+
 registration:
   socialLogins: []
