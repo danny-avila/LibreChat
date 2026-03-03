@@ -86,7 +86,7 @@ function AuthLayout({
             <img
               src="assets/by_jenny_schweigler.png"
               alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'KARRIERE.MUM' })}
-              className="h-20 w-auto object-contain"
+              className="h-32 w-auto object-contain"
               style={{ opacity: 0.9 }}
             />
           </div>
