@@ -102,7 +102,23 @@ properties:
           - name: MONGO_URI
             secretRef: mongo-connection-string
           - name: OPENID_SCOPE
-            value: openid profile email
+            value: api://1ebba027-b707-42b7-b509-44566c9ecff1/.default openid profile email offline_access
+          - name: OPENID_REUSE_TOKENS
+            value: 'true'
+          - name: USE_ENTRA_ID_FOR_PEOPLE_SEARCH
+            value: 'true'
+          - name: OPENID_GRAPH_SCOPES
+            value: User.Read,People.Read,GroupMember.Read.All
+          - name: OPENID_JWKS_URL_CACHE_ENABLED
+            value: 'true'
+          - name: OPENID_JWKS_URL_CACHE_TIME
+            value: '600000'
+          - name: OPENID_ON_BEHALF_FLOW_FOR_USERINFO_REQUIRED
+            value: 'true'
+          - name: OPENID_ON_BEHALF_FLOW_USERINFO_SCOPE
+            value: user.read
+          - name: OPENID_USE_END_SESSION_ENDPOINT
+            value: 'true'
           - name: OPENID_SESSION_SECRET
             secretRef: openid-session-secret
           - name: OPENID_ISSUER

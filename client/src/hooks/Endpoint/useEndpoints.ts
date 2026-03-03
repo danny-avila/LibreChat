@@ -60,7 +60,7 @@ export const useEndpoints = ({
     }
     const result: EModelEndpoint[] = [];
     for (let i = 0; i < endpoints.length; i++) {
-      if (endpoints[i] === EModelEndpoint.agents && !hasAgentAccess) {
+      if (endpoints[i] === EModelEndpoint.agents && (!hasAgentAccess || !agents?.length)) {
         continue;
       }
       if (includedEndpoints.size > 0 && !includedEndpoints.has(endpoints[i])) {
@@ -70,7 +70,7 @@ export const useEndpoints = ({
     }
 
     return result;
-  }, [endpoints, hasAgentAccess, includedEndpoints, interfaceConfig.modelSelect]);
+  }, [endpoints, hasAgentAccess, includedEndpoints, interfaceConfig.modelSelect, agents]);
 
   const endpointRequiresUserKey = useCallback(
     (ep: string) => {
