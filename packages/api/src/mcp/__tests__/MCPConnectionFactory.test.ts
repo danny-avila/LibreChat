@@ -365,7 +365,12 @@ describe('MCPConnectionFactory', () => {
       const mockFlowData = {
         authorizationUrl: 'https://auth.example.com',
         flowId: 'flow123',
-        flowMetadata: { serverName: 'test-server', userId: 'user123' },
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'state123',
+        },
       };
 
       mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
@@ -426,7 +431,12 @@ describe('MCPConnectionFactory', () => {
       const mockFlowData = {
         authorizationUrl: 'https://auth.example.com',
         flowId: 'flow123',
-        flowMetadata: { serverName: 'test-server', userId: 'user123' },
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'state123',
+        },
       };
 
       mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
@@ -498,7 +508,10 @@ describe('MCPConnectionFactory', () => {
           serverUrl: 'https://api.example.com',
           state: 'random-state',
           clientInfo: { client_id: 'client123' },
-          metadata: { token_endpoint: 'https://auth.example.com/token' },
+          metadata: {
+            token_endpoint: 'https://auth.example.com/token',
+            authorization_endpoint: 'https://auth.example.com/authorize',
+          },
         },
       };
 
