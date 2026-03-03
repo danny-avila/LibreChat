@@ -1682,8 +1682,8 @@ describe('processMCPEnv', () => {
     });
 
     it('should NOT resolve {{LIBRECHAT_OPENID_*}} when dbSourced is true', () => {
-      const baseUser = createTestUser({ id: 'user-123', provider: 'openid' });
-      const user = Object.assign(baseUser, {
+      const user = {
+        ...createTestUser({ id: 'user-123', provider: 'openid' }),
         federatedTokens: {
           access_token: 'oidc-access-token',
           id_token: 'oidc-id-token',
@@ -1691,7 +1691,7 @@ describe('processMCPEnv', () => {
           token_type: 'Bearer',
           expires_at: Date.now() + 3600000,
         },
-      });
+      };
       const options: MCPOptions = {
         type: 'streamable-http',
         url: 'https://api.example.com',
