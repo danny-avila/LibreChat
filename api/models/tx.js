@@ -201,6 +201,7 @@ const tokenValues = Object.assign(
     'gemini-3': { prompt: 2, completion: 12 },
     'gemini-3-pro-image': { prompt: 2, completion: 120 },
     'gemini-3.1': { prompt: 2, completion: 12 },
+    'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
     grok: { prompt: 2.0, completion: 10.0 }, // Base pattern defaults to grok-2
     'grok-beta': { prompt: 5.0, completion: 15.0 },
@@ -333,6 +334,7 @@ const cacheTokenValues = {
   'kimi-k2-thinking-turbo': { write: 1.15, read: 0.15 },
   // Gemini 3.1 models - cache read: $0.20/1M (<=200k), cache write: standard input price
   'gemini-3.1': { write: 2, read: 0.2 },
+  'gemini-3.1-flash-lite': { write: 0.25, read: 0.025 },
 };
 
 /**
