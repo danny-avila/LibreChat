@@ -29,6 +29,8 @@ let mockCapturedLogoutOptions: {
   onError: (...args: unknown[]) => void;
 };
 
+const mockRefreshMutate = jest.fn();
+
 jest.mock('~/data-provider', () => ({
   useLoginUserMutation: jest.fn(
     (options: {
@@ -48,7 +50,7 @@ jest.mock('~/data-provider', () => ({
       return { mutate: jest.fn() };
     },
   ),
-  useRefreshTokenMutation: jest.fn(() => ({ mutate: jest.fn() })),
+  useRefreshTokenMutation: jest.fn(() => ({ mutate: mockRefreshMutate })),
   useGetUserQuery: jest.fn(() => ({
     data: undefined,
     isError: false,
@@ -237,6 +239,21 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     });
 
     expect(window.location.replace).not.toHaveBeenCalled();
+  });
+
+  it('does not trigger silentRefresh after OIDC redirect', () => {
+    renderProvider();
+    mockRefreshMutate.mockClear();
+
+    act(() => {
+      mockCapturedLogoutOptions.onSuccess({
+        message: 'Logout successful',
+        redirect: 'https://idp.example.com/logout?id_token_hint=abc',
+      });
+    });
+
+    expect(window.location.replace).toHaveBeenCalled();
+    expect(mockRefreshMutate).not.toHaveBeenCalled();
   });
 
   it('navigates to /login on logout error', () => {
