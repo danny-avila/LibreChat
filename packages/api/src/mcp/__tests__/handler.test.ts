@@ -19,6 +19,12 @@ jest.mock('@modelcontextprotocol/sdk/client/auth.js', () => ({
   exchangeAuthorization: jest.fn(),
 }));
 
+jest.mock('../../mcp/oauth/tokens', () => ({
+  MCPTokenStorage: {
+    getClientInfoAndMetadata: jest.fn(),
+  },
+}));
+
 import {
   startAuthorization,
   discoverAuthorizationServerMetadata,
@@ -26,6 +32,7 @@ import {
   registerClient,
   exchangeAuthorization,
 } from '@modelcontextprotocol/sdk/client/auth.js';
+import { MCPTokenStorage } from '../../mcp/oauth/tokens';
 import { FlowStateManager } from '../../flow/manager';
 
 const mockStartAuthorization = startAuthorization as jest.MockedFunction<typeof startAuthorization>;
@@ -41,6 +48,10 @@ const mockRegisterClient = registerClient as jest.MockedFunction<typeof register
 const mockExchangeAuthorization = exchangeAuthorization as jest.MockedFunction<
   typeof exchangeAuthorization
 >;
+const mockGetClientInfoAndMetadata =
+  MCPTokenStorage.getClientInfoAndMetadata as jest.MockedFunction<
+    typeof MCPTokenStorage.getClientInfoAndMetadata
+  >;
 
 describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
   const mockServerName = 'test-server';
@@ -990,6 +1001,275 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       expect(discoveryCall).toBeDefined();
       const headers = discoveryCall![1]?.headers as Headers;
       expect(headers.get('foo')).toBe('bar');
+    });
+  });
+
+  describe('Client Registration Reuse', () => {
+    const originalFetch = global.fetch;
+    const mockFetch = jest.fn();
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = mockFetch as unknown as typeof fetch;
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
+      process.env.DOMAIN_SERVER = 'http://localhost:3080';
+    });
+
+    afterAll(() => {
+      global.fetch = originalFetch;
+    });
+
+    const mockFindToken = jest.fn();
+
+    it('should reuse existing client registration when findToken is provided and client exists', async () => {
+      const existingClientInfo = {
+        client_id: 'existing-client-id',
+        client_secret: 'existing-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        token_endpoint_auth_method: 'client_secret_basic',
+      };
+
+      mockGetClientInfoAndMetadata.mockResolvedValueOnce({
+        clientInfo: existingClientInfo,
+        clientMetadata: {},
+      });
+
+      // Mock resource metadata discovery to fail
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      // Mock authorization server metadata discovery
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://example.com',
+        authorization_endpoint: 'https://example.com/authorize',
+        token_endpoint: 'https://example.com/token',
+        registration_endpoint: 'https://example.com/register',
+        response_types_supported: ['code'],
+        jwks_uri: 'https://example.com/.well-known/jwks.json',
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['RS256'],
+      } as AuthorizationServerMetadata);
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://example.com/authorize?client_id=existing-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://example.com/mcp',
+        'user-123',
+        {},
+        undefined,
+        mockFindToken,
+      );
+
+      // Should NOT have called registerClient since we reused the existing one
+      expect(mockRegisterClient).not.toHaveBeenCalled();
+
+      // Should have used the existing client info for startAuthorization
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        'https://example.com/mcp',
+        expect.objectContaining({
+          clientInformation: existingClientInfo,
+        }),
+      );
+
+      expect(result.authorizationUrl).toBeDefined();
+      expect(result.flowId).toBeDefined();
+    });
+
+    it('should register a new client when findToken is provided but no existing registration found', async () => {
+      mockGetClientInfoAndMetadata.mockResolvedValueOnce(null);
+
+      // Mock resource metadata discovery to fail
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      // Mock authorization server metadata discovery
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://example.com',
+        authorization_endpoint: 'https://example.com/authorize',
+        token_endpoint: 'https://example.com/token',
+        registration_endpoint: 'https://example.com/register',
+        response_types_supported: ['code'],
+        jwks_uri: 'https://example.com/.well-known/jwks.json',
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['RS256'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        client_secret: 'new-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://example.com/mcp',
+        'user-123',
+        {},
+        undefined,
+        mockFindToken,
+      );
+
+      // Should have called registerClient since no existing registration was found
+      expect(mockRegisterClient).toHaveBeenCalled();
+    });
+
+    it('should register a new client when findToken is not provided', async () => {
+      // Mock resource metadata discovery to fail
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      // Mock authorization server metadata discovery
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://example.com',
+        authorization_endpoint: 'https://example.com/authorize',
+        token_endpoint: 'https://example.com/token',
+        registration_endpoint: 'https://example.com/register',
+        response_types_supported: ['code'],
+        jwks_uri: 'https://example.com/.well-known/jwks.json',
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['RS256'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        client_secret: 'new-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      // No findToken passed
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://example.com/mcp',
+        'user-123',
+        {},
+        undefined,
+      );
+
+      // Should NOT have tried to look up existing registration
+      expect(mockGetClientInfoAndMetadata).not.toHaveBeenCalled();
+
+      // Should have called registerClient
+      expect(mockRegisterClient).toHaveBeenCalled();
+    });
+
+    it('should fall back to registration when getClientInfoAndMetadata throws', async () => {
+      mockGetClientInfoAndMetadata.mockRejectedValueOnce(new Error('DB error'));
+
+      // Mock resource metadata discovery to fail
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      // Mock authorization server metadata discovery
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://example.com',
+        authorization_endpoint: 'https://example.com/authorize',
+        token_endpoint: 'https://example.com/token',
+        registration_endpoint: 'https://example.com/register',
+        response_types_supported: ['code'],
+        jwks_uri: 'https://example.com/.well-known/jwks.json',
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['RS256'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        client_secret: 'new-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://example.com/mcp',
+        'user-123',
+        {},
+        undefined,
+        mockFindToken,
+      );
+
+      // Should have fallen back to registerClient
+      expect(mockRegisterClient).toHaveBeenCalled();
+    });
+
+    it('should re-register when stored redirect_uri differs from current configuration', async () => {
+      const existingClientInfo = {
+        client_id: 'existing-client-id',
+        client_secret: 'existing-client-secret',
+        redirect_uris: ['http://old-domain.com/api/mcp/test-server/oauth/callback'],
+        token_endpoint_auth_method: 'client_secret_basic',
+      };
+
+      mockGetClientInfoAndMetadata.mockResolvedValueOnce({
+        clientInfo: existingClientInfo,
+        clientMetadata: {},
+      });
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://example.com',
+        authorization_endpoint: 'https://example.com/authorize',
+        token_endpoint: 'https://example.com/token',
+        registration_endpoint: 'https://example.com/register',
+        response_types_supported: ['code'],
+        jwks_uri: 'https://example.com/.well-known/jwks.json',
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['RS256'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        client_secret: 'new-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://example.com/mcp',
+        'user-123',
+        {},
+        undefined,
+        mockFindToken,
+      );
+
+      expect(mockRegisterClient).toHaveBeenCalled();
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        'https://example.com/mcp',
+        expect.objectContaining({
+          clientInformation: expect.objectContaining({
+            client_id: 'new-client-id',
+          }),
+        }),
+      );
     });
   });
 
