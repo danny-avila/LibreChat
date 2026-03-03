@@ -192,9 +192,11 @@ describe('LogoutController', () => {
     });
   });
 
-  describe('OpenID config not found', () => {
-    it('warns and returns no redirect when getOpenIdConfig returns null', async () => {
-      mockGetOpenIdConfig.mockReturnValue(null);
+  describe('OpenID config not available', () => {
+    it('warns and returns no redirect when getOpenIdConfig throws', async () => {
+      mockGetOpenIdConfig.mockImplementation(() => {
+        throw new Error('OpenID configuration has not been initialized');
+      });
       const req = buildReq();
       const res = buildRes();
 
@@ -203,7 +205,8 @@ describe('LogoutController', () => {
       const body = res.send.mock.calls[0][0];
       expect(body.redirect).toBeUndefined();
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('OpenID config not found'),
+        expect.stringContaining('OpenID config not available'),
+        'OpenID configuration has not been initialized',
       );
     });
   });
