@@ -2,8 +2,8 @@
 import React from 'react';
 import { render, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import StartupLayout from '~/routes/Layouts/Startup';
 import { SESSION_KEY } from '~/utils';
-import StartupLayout from '../Layouts/Startup';
 
 if (typeof Request === 'undefined') {
   global.Request = class Request {
