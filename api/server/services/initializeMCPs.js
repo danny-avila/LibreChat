@@ -9,16 +9,17 @@ const { createMCPServersRegistry, createMCPManager } = require('~/config');
 async function initializeMCPs() {
   const appConfig = await getAppConfig();
   const mcpServers = appConfig.mcpConfig;
+  const enableApps = appConfig?.mcpSettings?.apps !== false;
 
   try {
-    createMCPServersRegistry(mongoose, appConfig?.mcpSettings?.allowedDomains);
+    createMCPServersRegistry(mongoose, appConfig?.mcpSettings?.allowedDomains, enableApps);
   } catch (error) {
     logger.error('[MCP] Failed to initialize MCPServersRegistry:', error);
     throw error;
   }
 
   try {
-    const mcpManager = await createMCPManager(mcpServers || {});
+    const mcpManager = await createMCPManager(mcpServers || {}, { enableApps });
 
     if (mcpServers && Object.keys(mcpServers).length > 0) {
       const mcpTools = (await mcpManager.getAppToolFunctions()) || {};

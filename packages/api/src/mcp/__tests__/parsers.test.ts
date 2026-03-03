@@ -1,4 +1,5 @@
 import { formatToolContent } from '../parsers';
+import { Tools } from 'librechat-data-provider';
 import type * as t from '../types';
 
 describe('formatToolContent', () => {
@@ -437,6 +438,41 @@ describe('formatToolContent', () => {
       const [content, artifacts] = formatToolContent(result, 'google');
       expect(content).toEqual([{ type: 'text', text: 'Response with metadata' }]);
       expect(artifacts).toBeUndefined();
+    });
+
+    it('should include mcp_app artifact for empty content when ui metadata is available', () => {
+      const result: t.MCPToolCallResponse = { content: [] };
+
+      const [content, artifacts] = formatToolContent(result, 'openai', {
+        toolUiMeta: { resourceUri: 'ui://calendar/app' },
+        serverName: 'calendar',
+        toolArguments: { eventId: 'abc' },
+      });
+
+      expect(content).toEqual([{ type: 'text', text: '(No response)' }]);
+      expect(artifacts?.[Tools.mcp_app]).toMatchObject({
+        resourceUri: 'ui://calendar/app',
+        serverName: 'calendar',
+        toolArguments: { eventId: 'abc' },
+      });
+    });
+
+    it('should merge mcp_app artifact with other artifacts', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'base64image', mimeType: 'image/png' }],
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const [_content, artifacts] = formatToolContent(result, 'openai', {
+        toolUiMeta: { resourceUri: 'ui://calendar/app' },
+        serverName: 'calendar',
+      });
+
+      expect(artifacts?.content).toBeDefined();
+      expect(artifacts?.[Tools.mcp_app]).toMatchObject({
+        resourceUri: 'ui://calendar/app',
+        serverName: 'calendar',
+      });
     });
   });
 });

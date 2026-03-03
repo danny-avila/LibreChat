@@ -19,10 +19,12 @@ export class ConnectionsRepository {
   protected connections: Map<string, MCPConnection> = new Map();
   protected oauthOpts: t.OAuthConnectionOptions | undefined;
   private readonly ownerId: string | undefined;
+  private readonly enableApps: boolean;
 
-  constructor(ownerId?: string, oauthOpts?: t.OAuthConnectionOptions) {
+  constructor(ownerId?: string, oauthOpts?: t.OAuthConnectionOptions, enableApps: boolean = true) {
     this.ownerId = ownerId;
     this.oauthOpts = oauthOpts;
+    this.enableApps = enableApps;
   }
 
   /** Returns the number of active connections in this repository */
@@ -81,6 +83,7 @@ export class ConnectionsRepository {
         serverName,
         serverConfig,
         useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
+        enableApps: this.enableApps,
       },
       this.oauthOpts,
     );

@@ -92,14 +92,34 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
+  options?: {
+    toolUiMeta?: { resourceUri?: string; visibility?: string[] };
+    serverName?: string;
+    toolArguments?: Record<string, unknown>;
+  },
 ): t.FormattedContentResult {
+  const mcpAppArtifact =
+    options?.toolUiMeta?.resourceUri && options?.serverName
+      ? {
+          [Tools.mcp_app]: {
+            resourceUri: options.toolUiMeta.resourceUri,
+            serverName: options.serverName,
+            toolResult: result,
+            toolArguments: options.toolArguments,
+          },
+        }
+      : undefined;
+
   if (!RECOGNIZED_PROVIDERS.has(provider)) {
     return [parseAsString(result), undefined];
   }
 
   const content = result?.content ?? [];
   if (!content.length) {
-    return [[{ type: 'text', text: '(No response)' }], undefined];
+    if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
+      return [[{ type: 'text', text: '(No response)' }], mcpAppArtifact];
+    }
+    return ['(No response)', mcpAppArtifact];
   }
 
   const formattedContent: t.FormattedContent[] = [];
@@ -208,6 +228,13 @@ UI Resource Markers Available:
     artifacts = {
       ...artifacts,
       [Tools.ui_resources]: { data: uiResources },
+    };
+  }
+
+  if (mcpAppArtifact) {
+    artifacts = {
+      ...(artifacts ?? {}),
+      ...mcpAppArtifact,
     };
   }
 

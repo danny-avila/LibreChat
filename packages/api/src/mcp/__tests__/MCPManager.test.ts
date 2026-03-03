@@ -789,6 +789,84 @@ describe('MCPManager', () => {
         }),
       );
     });
+
+    it('should skip tools/list metadata lookup when call result already has ui metadata', async () => {
+      const serverConfig = createServerConfigWithGraphPlaceholder();
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (mockConnection.client.request as jest.Mock).mockResolvedValue({
+        _meta: {
+          ui: {
+            resourceUri: 'ui://calendar/app',
+          },
+        },
+        content: [{ type: 'text', text: 'Tool result' }],
+        isError: false,
+      });
+      (MCPServerInspector.getAllToolFunctions as jest.Mock).mockResolvedValue({
+        modelTools: {},
+        allTools: {},
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<typeof manager.callTool>[0]['flowManager'],
+      });
+
+      expect(MCPServerInspector.getAllToolFunctions).not.toHaveBeenCalled();
+    });
+
+    it('should skip tools/list metadata lookup when config already contains ui metadata', async () => {
+      const serverConfig = {
+        ...createServerConfigWithGraphPlaceholder(),
+        toolFunctions: {
+          test_tool_mcp_test_server: {
+            type: 'function',
+            function: {
+              name: 'test_tool_mcp_test_server',
+              description: 'test tool',
+              parameters: { type: 'object' },
+            },
+            _meta: {
+              ui: {
+                resourceUri: 'ui://calendar/app',
+              },
+            },
+          },
+        },
+      };
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (mockConnection.client.request as jest.Mock).mockResolvedValue({
+        content: [{ type: 'text', text: 'Tool result' }],
+        isError: false,
+      });
+      (MCPServerInspector.getAllToolFunctions as jest.Mock).mockResolvedValue({
+        modelTools: {},
+        allTools: {},
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<typeof manager.callTool>[0]['flowManager'],
+      });
+
+      expect(MCPServerInspector.getAllToolFunctions).not.toHaveBeenCalled();
+    });
   });
 
   describe('discoverServerTools', () => {

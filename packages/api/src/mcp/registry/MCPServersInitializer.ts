@@ -37,7 +37,10 @@ export class MCPServersInitializer {
     MCPServersInitializer.hasInitializedThisProcess = false;
   }
 
-  public static async initialize(rawConfigs: t.MCPServers): Promise<void> {
+  public static async initialize(
+    rawConfigs: t.MCPServers,
+    options?: { enableApps?: boolean },
+  ): Promise<void> {
     // On first call in this process, always reset and re-initialize
     // This ensures we don't use stale Redis data from previous runs
     const isFirstCallThisProcess = !MCPServersInitializer.hasInitializedThisProcess;
@@ -54,7 +57,7 @@ export class MCPServersInitializer {
       await Promise.allSettled(
         serverNames.map((serverName) =>
           withTimeout(
-            MCPServersInitializer.initializeServer(serverName, rawConfigs[serverName]),
+            MCPServersInitializer.initializeServer(serverName, rawConfigs[serverName], options),
             MCP_INIT_TIMEOUT_MS,
             `${MCPServersInitializer.prefix(serverName)} Server initialization timed out`,
             logger.error,
@@ -65,17 +68,23 @@ export class MCPServersInitializer {
     } else {
       // Followers try again after a delay if not initialized
       await new Promise((resolve) => setTimeout(resolve, 3000));
-      await this.initialize(rawConfigs);
+      await this.initialize(rawConfigs, options);
     }
   }
 
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
-  public static async initializeServer(serverName: string, rawConfig: t.MCPOptions): Promise<void> {
+  public static async initializeServer(
+    serverName: string,
+    rawConfig: t.MCPOptions,
+    options?: { enableApps?: boolean },
+  ): Promise<void> {
     try {
       const result = await MCPServersRegistry.getInstance().addServer(
         serverName,
         rawConfig,
         'CACHE',
+        undefined,
+        options?.enableApps,
       );
       MCPServersInitializer.logParsedConfig(serverName, result.config);
     } catch (error) {

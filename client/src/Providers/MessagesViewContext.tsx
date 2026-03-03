@@ -15,6 +15,8 @@ interface MessagesViewContextValue {
   ask: ReturnType<typeof useChatContext>['ask'];
   regenerate: ReturnType<typeof useChatContext>['regenerate'];
   handleContinue: ReturnType<typeof useChatContext>['handleContinue'];
+  mcpAppModelContext: ReturnType<typeof useChatContext>['mcpAppModelContext'];
+  setMcpAppModelContext: ReturnType<typeof useChatContext>['setMcpAppModelContext'];
 
   /** Message state management */
   index: ReturnType<typeof useChatContext>['index'];
@@ -37,6 +39,8 @@ export function MessagesViewProvider({ children }: { children: React.ReactNode }
     ask,
     index,
     regenerate,
+    mcpAppModelContext,
+    setMcpAppModelContext,
     isSubmitting,
     conversation,
     latestMessage,
@@ -75,8 +79,18 @@ export function MessagesViewProvider({ children }: { children: React.ReactNode }
       getMessages,
       setMessages,
       handleContinue,
+      mcpAppModelContext,
+      setMcpAppModelContext,
     }),
-    [ask, regenerate, handleContinue, getMessages, setMessages],
+    [
+      ask,
+      regenerate,
+      handleContinue,
+      getMessages,
+      setMessages,
+      mcpAppModelContext,
+      setMcpAppModelContext,
+    ],
   );
 
   /** Memoize message state values */

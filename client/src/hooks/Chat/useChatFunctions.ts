@@ -47,6 +47,7 @@ export default function useChatFunctions({
   setMessages,
   isSubmitting,
   latestMessage,
+  mcpAppModelContext,
   setSubmission,
   setLatestMessage,
   conversation: immutableConversation,
@@ -60,6 +61,7 @@ export default function useChatFunctions({
   setMessages: (messages: TMessage[]) => void;
   files?: Map<string, ExtendedFile>;
   setFiles?: SetterOrUpdater<Map<string, ExtendedFile>>;
+  mcpAppModelContext?: Record<string, unknown> | null;
   setSubmission: SetterOrUpdater<TSubmission | null>;
   setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
@@ -332,6 +334,10 @@ export default function useChatFunctions({
       editedContent,
       addedConvo,
     };
+    if (mcpAppModelContext != null) {
+      (submission as TSubmission & { mcpAppModelContext?: Record<string, unknown> }).mcpAppModelContext =
+        mcpAppModelContext;
+    }
 
     if (isRegenerate) {
       setMessages([...submission.messages, initialResponse]);

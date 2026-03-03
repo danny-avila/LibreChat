@@ -56,6 +56,67 @@ const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
+/**
+ * Convert MCP App model-context payload into instruction text that can be merged
+ * into the shared run context for subsequent turns.
+ * @param {unknown} rawContext
+ * @returns {string}
+ */
+function formatMCPAppModelContext(rawContext) {
+  if (!rawContext || typeof rawContext !== 'object') {
+    return '';
+  }
+
+  const context = /** @type {{ content?: unknown[]; structuredContent?: Record<string, unknown> }} */ (
+    rawContext
+  );
+  const lines = [];
+
+  if (Array.isArray(context.content) && context.content.length > 0) {
+    const contentText = context.content
+      .map((block) => {
+        if (!block || typeof block !== 'object') {
+          return '';
+        }
+        const part = /** @type {{ type?: string; text?: string | { value?: string } }} */ (block);
+        if (part.type === 'text') {
+          if (typeof part.text === 'string') {
+            return part.text;
+          }
+          if (part.text && typeof part.text === 'object' && typeof part.text.value === 'string') {
+            return part.text.value;
+          }
+        }
+        try {
+          return JSON.stringify(block);
+        } catch {
+          return '';
+        }
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    if (contentText) {
+      lines.push('# MCP App Context Content');
+      lines.push(contentText);
+    }
+  }
+
+  if (
+    context.structuredContent &&
+    typeof context.structuredContent === 'object' &&
+    Object.keys(context.structuredContent).length > 0
+  ) {
+    lines.push('# MCP App Structured Context');
+    lines.push(JSON.stringify(context.structuredContent, null, 2));
+  }
+
+  if (!lines.length) {
+    return '';
+  }
+
+  return ['# MCP App Model Context (Latest Snapshot)', ...lines].join('\n');
+}
 class AgentClient extends BaseClient {
   constructor(options = {}) {
     super(null, options);
@@ -318,6 +379,12 @@ class AgentClient extends BaseClient {
     if (withoutKeys) {
       const memoryContext = `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
       sharedRunContextParts.push(memoryContext);
+    }
+
+    /** Latest MCP App-provided context snapshot for subsequent turns */
+    const mcpAppModelContext = formatMCPAppModelContext(this.options.req?.body?.mcpAppModelContext);
+    if (mcpAppModelContext) {
+      sharedRunContextParts.push(mcpAppModelContext);
     }
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
