@@ -22,7 +22,7 @@ version: 1.9.8
 # follow Semantic Versioning. They should reflect the version the application is using.
 # It is recommended to use it with quotes.
 
-# renovate: image=ghcr.io/danny-avila/librechat
+# renovate: image=registry.librechat.ai/danny-avila/librechat
 appVersion: "v0.8.3-rc1"
 
 home: https://www.librechat.ai

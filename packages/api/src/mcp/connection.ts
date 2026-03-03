@@ -11,17 +11,17 @@ import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/webso
 import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type {
   RequestInit as UndiciRequestInit,
   RequestInfo as UndiciRequestInfo,
   Response as UndiciResponse,
 } from 'undici';
 import type { MCPOAuthTokens } from './oauth/types';
-import { withTimeout } from '~/utils/promise';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
+import { runOutsideTracing } from '~/utils/tracing';
 import { sanitizeUrlForLogging } from './utils';
+import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
@@ -71,6 +71,17 @@ const FIVE_MINUTES = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT = 60000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
+/** Default body timeout for Streamable HTTP GET SSE streams that idle between server pushes */
+const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
+
+/**
+ * Error message prefixes emitted by the MCP SDK's StreamableHTTPClientTransport
+ * (client/streamableHttp.ts → _handleSseStream / _scheduleReconnection).
+ * These are SDK-internal strings, not part of a public API. If the SDK changes
+ * them, suppression in setupTransportErrorHandlers will silently stop working.
+ */
+const SDK_SSE_STREAM_DISCONNECTED = 'SSE stream disconnected';
+const SDK_SSE_RECONNECT_FAILED = 'Failed to reconnect SSE stream';
 
 /**
  * Headers for SSE connections.
@@ -201,6 +212,21 @@ function extractSSEErrorMessage(error: unknown): {
     };
   }
 
+  /**
+   * "fetch failed" is a generic undici TypeError that occurs when an in-flight HTTP request
+   * is aborted (e.g. after an MCP protocol-level timeout fires). The transport itself is still
+   * functional — only the individual request was lost — so treat this as transient.
+   */
+  if (rawMessage === 'fetch failed') {
+    return {
+      message:
+        'fetch failed (request aborted, likely after a timeout — connection may still be usable)',
+      code,
+      isProxyHint: false,
+      isTransient: true,
+    };
+  }
+
   return {
     message: rawMessage,
     code,
@@ -229,6 +255,7 @@ export class MCPConnection extends EventEmitter {
   private isReconnecting = false;
   private isInitializing = false;
   private reconnectAttempts = 0;
+  private agents: Agent[] = [];
   private readonly userId?: string;
   private lastPingTime: number;
   private lastConnectionCheckAt: number = 0;
@@ -238,6 +265,7 @@ export class MCPConnection extends EventEmitter {
   private readonly useSSRFProtection: boolean;
   iconPath?: string;
   timeout?: number;
+  sseReadTimeout?: number;
   url?: string;
 
   /**
@@ -269,6 +297,7 @@ export class MCPConnection extends EventEmitter {
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
+    this.sseReadTimeout = params.serverConfig.sseReadTimeout;
     this.lastPingTime = Date.now();
     this.createdAt = Date.now(); // Record creation timestamp for staleness detection
     if (params.oauthTokens) {
@@ -297,28 +326,45 @@ export class MCPConnection extends EventEmitter {
    * Factory function to create fetch functions without capturing the entire `this` context.
    * This helps prevent memory leaks by only passing necessary dependencies.
    *
-   * @param getHeaders Function to retrieve request headers
-   * @param timeout Timeout value for the agent (in milliseconds)
-   * @returns A fetch function that merges headers appropriately
+   * When `sseBodyTimeout` is provided, a second Agent is created with a much longer
+   * body timeout for GET requests (the Streamable HTTP SSE stream). POST requests
+   * continue using the normal timeout so they fail fast on real errors.
    */
   private createFetchFunction(
     getHeaders: () => Record<string, string> | null | undefined,
     timeout?: number,
+    sseBodyTimeout?: number,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
     const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
+    const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
+    const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
+    const postAgent = new Agent({
+      bodyTimeout: effectiveTimeout,
+      headersTimeout: effectiveTimeout,
+      ...connectOpts,
+    });
+    this.agents.push(postAgent);
+
+    let getAgent: Agent | undefined;
+    if (sseBodyTimeout != null) {
+      getAgent = new Agent({
+        bodyTimeout: sseBodyTimeout,
+        headersTimeout: effectiveTimeout,
+        ...connectOpts,
+      });
+      this.agents.push(getAgent);
+    }
+
     return function customFetch(
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
     ): Promise<UndiciResponse> {
+      const isGet = (init?.method ?? 'GET').toUpperCase() === 'GET';
+      const dispatcher = isGet && getAgent ? getAgent : postAgent;
+
       const requestHeaders = getHeaders();
-      const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
-      const agent = new Agent({
-        bodyTimeout: effectiveTimeout,
-        headersTimeout: effectiveTimeout,
-        ...(ssrfConnect != null ? { connect: ssrfConnect } : {}),
-      });
       if (!requestHeaders) {
-        return undiciFetch(input, { ...init, dispatcher: agent });
+        return undiciFetch(input, { ...init, dispatcher });
       }
 
       let initHeaders: Record<string, string> = {};
@@ -338,7 +384,7 @@ export class MCPConnection extends EventEmitter {
           ...initHeaders,
           ...requestHeaders,
         },
-        dispatcher: agent,
+        dispatcher,
       });
     };
   }
@@ -418,6 +464,14 @@ export class MCPConnection extends EventEmitter {
            */
           const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
           const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
+          const sseAgent = new Agent({
+            bodyTimeout: sseTimeout,
+            headersTimeout: sseTimeout,
+            keepAliveTimeout: sseTimeout,
+            keepAliveMaxTimeout: sseTimeout * 2,
+            ...(ssrfConnect != null ? { connect: ssrfConnect } : {}),
+          });
+          this.agents.push(sseAgent);
           const transport = new SSEClientTransport(url, {
             requestInit: {
               /** User/OAuth headers override SSE defaults */
@@ -430,17 +484,9 @@ export class MCPConnection extends EventEmitter {
                 const fetchHeaders = new Headers(
                   Object.assign({}, SSE_REQUEST_HEADERS, init?.headers, headers),
                 );
-                const agent = new Agent({
-                  bodyTimeout: sseTimeout,
-                  headersTimeout: sseTimeout,
-                  /** Extended keep-alive for long-lived SSE connections */
-                  keepAliveTimeout: sseTimeout,
-                  keepAliveMaxTimeout: sseTimeout * 2,
-                  ...(ssrfConnect != null ? { connect: ssrfConnect } : {}),
-                });
                 return undiciFetch(url, {
                   ...init,
-                  dispatcher: agent,
+                  dispatcher: sseAgent,
                   headers: fetchHeaders,
                 });
               },
@@ -454,10 +500,6 @@ export class MCPConnection extends EventEmitter {
           transport.onclose = () => {
             logger.info(`${this.getLogPrefix()} SSE transport closed`);
             this.emit('connectionChange', 'disconnected');
-          };
-
-          transport.onmessage = (message) => {
-            logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
 
           this.setupTransportErrorHandlers(transport);
@@ -489,16 +531,13 @@ export class MCPConnection extends EventEmitter {
             fetch: this.createFetchFunction(
               this.getRequestHeaders.bind(this),
               this.timeout,
+              this.sseReadTimeout || DEFAULT_SSE_READ_TIMEOUT,
             ) as unknown as FetchLike,
           });
 
           transport.onclose = () => {
             logger.info(`${this.getLogPrefix()} Streamable-http transport closed`);
             this.emit('connectionChange', 'disconnected');
-          };
-
-          transport.onmessage = (message: JSONRPCMessage) => {
-            logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
 
           this.setupTransportErrorHandlers(transport);
@@ -644,22 +683,26 @@ export class MCPConnection extends EventEmitter {
         if (this.transport) {
           try {
             await this.client.close();
-            this.transport = null;
           } catch (error) {
             logger.warn(`${this.getLogPrefix()} Error closing connection:`, error);
           }
+          this.transport = null;
+          await this.closeAgents();
         }
 
-        this.transport = await this.constructTransport(this.options);
-        this.setupTransportDebugHandlers();
+        this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
+        this.patchTransportSend();
 
         const connectTimeout = this.options.initTimeout ?? 120000;
-        await withTimeout(
-          this.client.connect(this.transport),
-          connectTimeout,
-          `Connection timeout after ${connectTimeout}ms`,
+        await runOutsideTracing(() =>
+          withTimeout(
+            this.client.connect(this.transport!),
+            connectTimeout,
+            `Connection timeout after ${connectTimeout}ms`,
+          ),
         );
 
+        this.setupTransportOnMessageHandler();
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
@@ -773,14 +816,10 @@ export class MCPConnection extends EventEmitter {
     return this.connectPromise;
   }
 
-  private setupTransportDebugHandlers(): void {
+  private patchTransportSend(): void {
     if (!this.transport) {
       return;
     }
-
-    this.transport.onmessage = (msg) => {
-      logger.debug(`${this.getLogPrefix()} Transport received: ${JSON.stringify(msg)}`);
-    };
 
     const originalSend = this.transport.send.bind(this.transport);
     this.transport.send = async (msg) => {
@@ -790,8 +829,28 @@ export class MCPConnection extends EventEmitter {
         }
         this.lastPingTime = Date.now();
       }
-      logger.debug(`${this.getLogPrefix()} Transport sending: ${JSON.stringify(msg)}`);
+      const method = 'method' in msg ? msg.method : undefined;
+      const id = 'id' in msg ? (msg as { id: string | number | null }).id : undefined;
+      logger.debug(
+        `${this.getLogPrefix()} Transport sending: method=${method ?? 'response'} id=${id ?? 'none'}`,
+      );
       return originalSend(msg);
+    };
+  }
+
+  private setupTransportOnMessageHandler(): void {
+    if (!this.transport?.onmessage) {
+      return;
+    }
+
+    const sdkHandler = this.transport.onmessage;
+    this.transport.onmessage = (msg) => {
+      const method = 'method' in msg ? msg.method : undefined;
+      const id = 'id' in msg ? (msg as { id: string | number | null }).id : undefined;
+      logger.debug(
+        `${this.getLogPrefix()} Transport received: method=${method ?? 'response'} id=${id ?? 'none'}`,
+      );
+      sdkHandler(msg);
     };
   }
 
@@ -810,7 +869,26 @@ export class MCPConnection extends EventEmitter {
 
   private setupTransportErrorHandlers(transport: Transport): void {
     transport.onerror = (error) => {
-      // Extract meaningful error information (handles "SSE error: undefined" cases)
+      const rawMessage =
+        error && typeof error === 'object' ? ((error as { message?: string }).message ?? '') : '';
+
+      /**
+       * The MCP SDK's StreamableHTTPClientTransport fires onerror for SSE GET stream
+       * disconnects but also handles reconnection internally via _scheduleReconnection.
+       * Escalating these to a full transport rebuild creates a redundant reconnection
+       * loop. Log at debug level and let the SDK recover the GET stream on its own.
+       *
+       * "Maximum reconnection attempts … exceeded" means the SDK gave up — that one
+       * must fall through so our higher-level reconnection takes over.
+       */
+      if (
+        rawMessage.startsWith(SDK_SSE_STREAM_DISCONNECTED) ||
+        rawMessage.startsWith(SDK_SSE_RECONNECT_FAILED)
+      ) {
+        logger.debug(`${this.getLogPrefix()} SDK SSE stream recovery in progress: ${rawMessage}`);
+        return;
+      }
+
       const {
         message: errorMessage,
         code: errorCode,
@@ -818,10 +896,24 @@ export class MCPConnection extends EventEmitter {
         isTransient,
       } = extractSSEErrorMessage(error);
 
-      // Ignore SSE 404 errors for servers that don't support SSE
-      if (errorCode === 404 && errorMessage.toLowerCase().includes('failed to open sse stream')) {
-        logger.warn(`${this.getLogPrefix()} SSE stream not available (404). Ignoring.`);
-        return;
+      if (errorCode === 404) {
+        const hasSession =
+          'sessionId' in transport &&
+          (transport as { sessionId?: string }).sessionId != null &&
+          (transport as { sessionId?: string }).sessionId !== '';
+
+        if (!hasSession && errorMessage.toLowerCase().includes('failed to open sse stream')) {
+          logger.warn(
+            `${this.getLogPrefix()} SSE stream not available (404), no session. Ignoring.`,
+          );
+          return;
+        }
+
+        if (hasSession) {
+          logger.warn(
+            `${this.getLogPrefix()} 404 with active session — session lost, triggering reconnection.`,
+          );
+        }
       }
 
       // Check if it's an OAuth authentication error
@@ -879,12 +971,24 @@ export class MCPConnection extends EventEmitter {
     };
   }
 
+  private async closeAgents(): Promise<void> {
+    const logPrefix = this.getLogPrefix();
+    const closing = this.agents.map((agent) =>
+      agent.close().catch((err: unknown) => {
+        logger.debug(`${logPrefix} Agent close error (non-fatal):`, err);
+      }),
+    );
+    this.agents = [];
+    await Promise.all(closing);
+  }
+
   public async disconnect(): Promise<void> {
     try {
       if (this.transport) {
         await this.client.close();
         this.transport = null;
       }
+      await this.closeAgents();
       if (this.connectionState === 'disconnected') {
         return;
       }

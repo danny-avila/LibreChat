@@ -207,7 +207,7 @@ const loadTools = async ({
     },
     gemini_image_gen: async (toolContextMap) => {
       const authFields = getAuthFields('gemini_image_gen');
-      const authValues = await loadAuthValues({ userId: user, authFields });
+      const authValues = await loadAuthValues({ userId: user, authFields, throwError: false });
       const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
       const toolContext = buildImageToolContext({
         imageFiles,
@@ -222,7 +222,6 @@ const loadTools = async ({
         isAgent: !!agent,
         req: options.req,
         imageFiles,
-        processFileURL: options.processFileURL,
         userId: user,
         fileStrategy,
       });

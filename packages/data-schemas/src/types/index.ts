@@ -8,6 +8,7 @@ export * from './convo';
 export * from './session';
 export * from './balance';
 export * from './banner';
+export * from './transaction';
 export * from './message';
 export * from './agent';
 export * from './agentApiKey';

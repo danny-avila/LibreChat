@@ -268,6 +268,34 @@ function getFullName(userinfo) {
 }
 
 /**
+ * Resolves the user identifier from OpenID claims.
+ * Configurable via OPENID_EMAIL_CLAIM; defaults to: email -> preferred_username -> upn.
+ *
+ * @param {Object} userinfo - The user information object from OpenID Connect
+ * @returns {string|undefined} The resolved identifier string
+ */
+function getOpenIdEmail(userinfo) {
+  const claimKey = process.env.OPENID_EMAIL_CLAIM?.trim();
+  if (claimKey) {
+    const value = userinfo[claimKey];
+    if (typeof value === 'string' && value) {
+      return value;
+    }
+    if (value !== undefined && value !== null) {
+      logger.warn(
+        `[openidStrategy] OPENID_EMAIL_CLAIM="${claimKey}" resolved to a non-string value (type: ${typeof value}). Falling back to: email -> preferred_username -> upn.`,
+      );
+    } else {
+      logger.warn(
+        `[openidStrategy] OPENID_EMAIL_CLAIM="${claimKey}" not present in userinfo. Falling back to: email -> preferred_username -> upn.`,
+      );
+    }
+  }
+  const fallback = userinfo.email || userinfo.preferred_username || userinfo.upn;
+  return typeof fallback === 'string' ? fallback : undefined;
+}
+
+/**
  * Converts an input into a string suitable for a username.
  * If the input is a string, it will be returned as is.
  * If the input is an array, elements will be joined with underscores.
@@ -379,11 +407,10 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   }
 
   const appConfig = await getAppConfig();
-  /** Azure AD sometimes doesn't return email, use preferred_username as fallback */
-  const email = userinfo.email || userinfo.preferred_username || userinfo.upn;
+  const email = getOpenIdEmail(userinfo);
   if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
     logger.error(
-      `[OpenID Strategy] Authentication blocked - email domain not allowed [Email: ${userinfo.email}]`,
+      `[OpenID Strategy] Authentication blocked - email domain not allowed [Identifier: ${email}]`,
     );
     throw new Error('Email domain not allowed');
   }
@@ -451,7 +478,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       throw new Error(`You must have ${rolesList} role to log in.`);
     }
 
-    const roleValues = Array.isArray(roles) ? roles : [roles];
+    const roleValues = Array.isArray(roles) ? roles : roles.split(/[\s,]+/).filter(Boolean);
 
     if (!requiredRoles.some((role) => roleValues.includes(role))) {
       const rolesList =
@@ -524,13 +551,14 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     }
 
     const adminRoles = get(adminRoleObject, adminRoleParameterPath);
+    let adminRoleValues = [];
+    if (Array.isArray(adminRoles)) {
+      adminRoleValues = adminRoles;
+    } else if (typeof adminRoles === 'string') {
+      adminRoleValues = adminRoles.split(/[\s,]+/).filter(Boolean);
+    }
 
-    if (
-      adminRoles &&
-      (adminRoles === true ||
-        adminRoles === adminRole ||
-        (Array.isArray(adminRoles) && adminRoles.includes(adminRole)))
-    ) {
+    if (adminRoles && (adminRoles === true || adminRoleValues.includes(adminRole))) {
       user.role = SystemRoles.ADMIN;
       logger.info(`[openidStrategy] User ${username} is an admin based on role: ${adminRole}`);
     } else if (user.role === SystemRoles.ADMIN) {
@@ -727,4 +755,5 @@ function getOpenIdConfig() {
 module.exports = {
   setupOpenId,
   getOpenIdConfig,
+  getOpenIdEmail,
 };

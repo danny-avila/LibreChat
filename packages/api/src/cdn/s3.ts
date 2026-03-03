@@ -1,5 +1,6 @@
 import { S3Client } from '@aws-sdk/client-s3';
 import { logger } from '@librechat/data-schemas';
+import { isEnabled } from '~/utils/common';
 
 let s3: S3Client | null = null;
 
@@ -31,8 +32,8 @@ export const initializeS3 = (): S3Client | null => {
 
   const config = {
     region,
-    // Conditionally add the endpoint if it is provided
     ...(endpoint ? { endpoint } : {}),
+    ...(isEnabled(process.env.AWS_FORCE_PATH_STYLE) ? { forcePathStyle: true } : {}),
   };
 
   if (accessKeyId && secretAccessKey) {
