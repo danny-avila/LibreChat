@@ -11,3 +11,7 @@ interface:
 
 registration:
   socialLogins: []
+
+memory:
+  agent:
+    id: "agent_XpUp5rzY2Kt37C5p1R-gR"
