@@ -2968,3 +2968,11 @@ html {
 .sharepoint-picker-bg {
   background-color: #f5f5f5;
 }
+
+/* KARRIERE.MUM: Chat message text readability */
+.dark .message-content {
+  --tw-prose-body: rgba(255, 255, 255, 0.9);
+  --tw-prose-lead: rgba(255, 255, 255, 0.75);
+  --tw-prose-bold: #ffffff;
+  --tw-prose-headings: #ffffff;
+}

@@ -37,7 +37,7 @@ router.post('/invite', async (req, res) => {
     }
 
     const token = await createInvite(email);
-    const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${token}&email=${encodeURIComponent(email)}`;
+    const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${token}&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name || '')}`;
     const appName = process.env.APP_TITLE || 'KARRIERE.MUM AI';
 
     await sendEmail({
@@ -57,6 +57,34 @@ router.post('/invite', async (req, res) => {
   } catch (error) {
     logger.error('[admin/users/invite] Error sending invite', error);
     res.status(500).json({ message: 'Fehler beim Senden der Einladung' });
+  }
+});
+
+router.patch('/:id/role', async (req, res) => {
+  const { id } = req.params;
+  const { role } = req.body;
+
+  if (req.user?.id === id || String(req.user?._id) === id) {
+    return res.status(400).json({ message: 'Du kannst deine eigene Rolle nicht ändern' });
+  }
+
+  if (!['ADMIN', 'USER'].includes(role)) {
+    return res.status(400).json({ message: 'Ungültige Rolle' });
+  }
+
+  try {
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'Benutzer nicht gefunden' });
+    }
+
+    user.role = role;
+    await user.save();
+
+    res.status(200).json({ message: 'Rolle erfolgreich geändert', role });
+  } catch (error) {
+    logger.error('[admin/users/role] Error updating role', error);
+    res.status(500).json({ message: 'Fehler beim Ändern der Rolle' });
   }
 });
 

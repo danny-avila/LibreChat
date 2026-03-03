@@ -72,22 +72,34 @@ export default function NavToggle({
         <span className="" data-state="closed">
           <div
             className="flex h-[72px] w-8 items-center justify-center"
-            style={{ ...transition, opacity: isHovering ? 1 : 0.25 }}
+            style={{
+              ...transition,
+              opacity: isHovering ? 1 : 0.55,
+            }}
           >
-            <div className="flex h-6 w-6 flex-col items-center">
+            <div
+              className="flex h-8 w-5 flex-col items-center justify-center rounded-full"
+              style={{
+                ...transition,
+                background: isHovering ? 'rgba(201,168,124,0.15)' : 'rgba(255,255,255,0.06)',
+                border: isHovering ? '1px solid rgba(201,168,124,0.4)' : '1px solid rgba(255,255,255,0.12)',
+              }}
+            >
               {/* Top bar */}
               <div
-                className="h-3 w-1 rounded-full bg-black dark:bg-white"
+                className="h-3 w-0.5 rounded-full"
                 style={{
                   ...transition,
+                  background: isHovering ? '#c9a87c' : 'rgba(255,255,255,0.7)',
                   transform: `translateY(0.15rem) rotate(${topBarRotation}) translateZ(0px)`,
                 }}
               />
               {/* Bottom bar */}
               <div
-                className="h-3 w-1 rounded-full bg-black dark:bg-white"
+                className="h-3 w-0.5 rounded-full"
                 style={{
                   ...transition,
+                  background: isHovering ? '#c9a87c' : 'rgba(255,255,255,0.7)',
                   transform: `translateY(-0.15rem) rotate(${bottomBarRotation}) translateZ(0px)`,
                 }}
               />
