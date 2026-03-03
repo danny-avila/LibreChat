@@ -272,7 +272,9 @@ export function processMCPEnv(params: {
   /** When true, only resolve customUserVars — skip env vars, user/OpenID/body placeholders (for DB-stored servers) */
   dbSourced?: boolean;
 }): MCPOptions {
-  const { options, user, customUserVars, body, dbSourced } = params;
+  const { options, user, customUserVars, body } = params;
+  /** Derive dbSourced from explicit param OR from dbId on the options (failsafe for callers that forget the flag) */
+  const dbSourced = params.dbSourced ?? !!(options as Record<string, unknown>)?.dbId;
 
   if (options === null || options === undefined) {
     return options;
