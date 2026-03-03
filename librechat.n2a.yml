@@ -148,3 +148,22 @@ endpoints:
       modelDisplayLabel: "Claude Sonnet 4.5"
       # Streaming enabled - Kong translates to OpenAI SSE format
       streamRate: 25
+    - name: "LangGraph Agents"
+      apiKey: "${LANGGRAPH_PROXY_API_KEY}"
+      baseURL: "${LANGGRAPH_PROXY_BASE_URL}"
+      models:
+        default:
+          - langgraph-agent
+        fetch: true
+      titleConvo: true
+      modelDisplayLabel: "LangGraph Agents"
+      streamRate: 25
+      dropParams:
+        - 'stop'
+        - 'frequency_penalty'
+        - 'presence_penalty'
+        - 'top_p'
+      headers:
+        x-librechat-conversation-id: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
+        x-user-access-token: "{{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
+        x-user-id: "{{LIBRECHAT_OPENID_USER_ID}}"
