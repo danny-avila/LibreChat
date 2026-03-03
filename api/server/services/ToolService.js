@@ -12,7 +12,6 @@ const {
 const {
   sendEvent,
   getToolkitKey,
-  hasCustomUserVars,
   getUserMCPAuthMap,
   loadToolDefinitions,
   GenerationJobManager,
@@ -480,14 +479,11 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   }
 
   /** @type {Record<string, Record<string, string>>} */
-  let userMCPAuthMap;
-  if (hasCustomUserVars(req.config)) {
-    userMCPAuthMap = await getUserMCPAuthMap({
-      tools: agent.tools,
-      userId: req.user.id,
-      findPluginAuthsByKeys,
-    });
-  }
+  const userMCPAuthMap = await getUserMCPAuthMap({
+    tools: agent.tools,
+    userId: req.user.id,
+    findPluginAuthsByKeys,
+  });
 
   const flowsCache = getLogStores(CacheKeys.FLOWS);
   const flowManager = getFlowStateManager(flowsCache);
@@ -859,15 +855,11 @@ async function loadAgentTools({
   }
 
   /** @type {Record<string, Record<string, string>>} */
-  let userMCPAuthMap;
-  //TODO pass config from registry
-  if (hasCustomUserVars(req.config)) {
-    userMCPAuthMap = await getUserMCPAuthMap({
-      tools: agent.tools,
-      userId: req.user.id,
-      findPluginAuthsByKeys,
-    });
-  }
+  const userMCPAuthMap = await getUserMCPAuthMap({
+    tools: agent.tools,
+    userId: req.user.id,
+    findPluginAuthsByKeys,
+  });
 
   const { loadedTools, toolContextMap } = await loadTools({
     agent,

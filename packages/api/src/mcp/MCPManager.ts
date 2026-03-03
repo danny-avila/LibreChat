@@ -103,7 +103,13 @@ export class MCPManager extends UserConnectionManager {
     );
 
     const useSSRFProtection = MCPServersRegistry.getInstance().shouldEnableSSRFProtection();
-    const basic: t.BasicConnectionOptions = { serverName, serverConfig, useSSRFProtection };
+    const dbSourced = !!(serverConfig as t.ParsedServerConfig).dbId;
+    const basic: t.BasicConnectionOptions = {
+      dbSourced,
+      serverName,
+      serverConfig,
+      useSSRFProtection,
+    };
 
     if (!useOAuth) {
       const result = await MCPConnectionFactory.discoverTools(basic);
@@ -290,22 +296,21 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
 
-      const rawConfig = (await MCPServersRegistry.getInstance().getServerConfig(
-        serverName,
-        userId,
-      )) as t.MCPOptions;
+      const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
+      const isDbSourced = !!(rawConfig as t.ParsedServerConfig | undefined)?.dbId;
 
-      // Pre-process Graph token placeholders (async) before sync processMCPEnv
-      const graphProcessedConfig = await preProcessGraphTokens(rawConfig, {
+      /** Pre-process Graph token placeholders before processing MCP options */
+      const graphProcessedConfig = await preProcessGraphTokens(rawConfig as t.MCPOptions, {
         user,
         graphTokenResolver,
         scopes: process.env.GRAPH_API_SCOPES,
       });
       const currentOptions = processMCPEnv({
         user,
+        body: requestBody,
+        dbSourced: isDbSourced,
         options: graphProcessedConfig,
         customUserVars: customUserVars,
-        body: requestBody,
       });
       if ('headers' in currentOptions) {
         connection.setRequestHeaders(currentOptions.headers || {});

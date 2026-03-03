@@ -79,7 +79,10 @@ describe('MCPConnectionFactory', () => {
       const connection = await MCPConnectionFactory.create(basicOptions);
 
       expect(connection).toBe(mockConnectionInstance);
-      expect(mockProcessMCPEnv).toHaveBeenCalledWith({ options: mockServerConfig });
+      expect(mockProcessMCPEnv).toHaveBeenCalledWith({
+        options: mockServerConfig,
+        dbSourced: undefined,
+      });
       expect(mockMCPConnection).toHaveBeenCalledWith({
         serverName: 'test-server',
         serverConfig: mockServerConfig,
@@ -121,7 +124,11 @@ describe('MCPConnectionFactory', () => {
       const connection = await MCPConnectionFactory.create(basicOptions, oauthOptions);
 
       expect(connection).toBe(mockConnectionInstance);
-      expect(mockProcessMCPEnv).toHaveBeenCalledWith({ options: mockServerConfig, user: mockUser });
+      expect(mockProcessMCPEnv).toHaveBeenCalledWith({
+        options: mockServerConfig,
+        user: mockUser,
+        dbSourced: undefined,
+      });
       expect(mockMCPConnection).toHaveBeenCalledWith({
         serverName: 'test-server',
         serverConfig: mockServerConfig,
