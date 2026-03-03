@@ -80,6 +80,7 @@ export class ConnectionsRepository {
       {
         serverName,
         serverConfig,
+        dbSourced: !!(serverConfig as t.ParsedServerConfig).dbId,
         useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
       },
       this.oauthOpts,
