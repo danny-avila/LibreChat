@@ -1,14 +1,32 @@
-// @ts-ignore - No types for @vitejs/plugin-react
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import type { Plugin } from 'vite';
 import { defineConfig } from 'vite';
 import { createRequire } from 'module';
 import { VitePWA } from 'vite-plugin-pwa';
 import { compression } from 'vite-plugin-compression2';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
+import type { Plugin } from 'vite';
 
 const require = createRequire(import.meta.url);
+
+/**
+ * vite-plugin-node-polyfills uses @rollup/plugin-inject to replace bare globals (e.g. `process`)
+ * with imports like `import process from 'vite-plugin-node-polyfills/shims/process'`. When the
+ * consuming module (e.g. recoil) is hoisted to the monorepo root, Vite 7's ESM resolver walks up
+ * from there and never finds the shims (installed only in client/node_modules). This map resolves
+ * the shim specifiers to absolute paths via CJS require.resolve anchored to the client directory.
+ */
+const NODE_POLYFILL_SHIMS: Record<string, string> = {
+  'vite-plugin-node-polyfills/shims/process': require.resolve(
+    'vite-plugin-node-polyfills/shims/process',
+  ),
+  'vite-plugin-node-polyfills/shims/buffer': require.resolve(
+    'vite-plugin-node-polyfills/shims/buffer',
+  ),
+  'vite-plugin-node-polyfills/shims/global': require.resolve(
+    'vite-plugin-node-polyfills/shims/global',
+  ),
+};
 
 // https://vitejs.dev/config/
 const backendPort = (process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT)) || 3080;
@@ -43,18 +61,7 @@ export default defineConfig(({ command }) => ({
     {
       name: 'node-polyfills-shims-resolver',
       resolveId(id) {
-        const shims: Record<string, string> = {
-          'vite-plugin-node-polyfills/shims/process': require.resolve(
-            'vite-plugin-node-polyfills/shims/process',
-          ),
-          'vite-plugin-node-polyfills/shims/buffer': require.resolve(
-            'vite-plugin-node-polyfills/shims/buffer',
-          ),
-          'vite-plugin-node-polyfills/shims/global': require.resolve(
-            'vite-plugin-node-polyfills/shims/global',
-          ),
-        };
-        return shims[id] ?? null;
+        return NODE_POLYFILL_SHIMS[id] ?? null;
       },
     },
     nodePolyfills(),
