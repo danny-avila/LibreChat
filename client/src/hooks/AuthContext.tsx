@@ -167,14 +167,12 @@ const AuthContextProvider = ({
         const { user, token = '' } = data ?? {};
         if (token) {
           const storedRedirect = sessionStorage.getItem(SESSION_KEY);
-          if (storedRedirect) {
-            sessionStorage.removeItem(SESSION_KEY);
-          }
+          sessionStorage.removeItem(SESSION_KEY);
           setUserContext({
             user,
             token,
             isAuthenticated: true,
-            redirect: storedRedirect ?? '/c/new',
+            redirect: storedRedirect && isSafeRedirect(storedRedirect) ? storedRedirect : '/c/new',
           });
           return;
         }

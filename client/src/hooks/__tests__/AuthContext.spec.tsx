@@ -7,6 +7,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { TAuthConfig } from '~/common';
 
 import { AuthContextProvider, useAuthContext } from '../AuthContext';
+import { SESSION_KEY } from '~/utils';
 
 const mockNavigate = jest.fn();
 jest.mock('react-router-dom', () => ({
@@ -277,8 +278,6 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
 });
 
 describe('AuthContextProvider — silentRefresh post-login redirect', () => {
-  const SESSION_KEY = 'post_login_redirect_to';
-
   beforeEach(() => {
     jest.clearAllMocks();
     sessionStorage.clear();
@@ -294,8 +293,11 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 
     renderProviderLive();
 
-    const refreshCall = mockRefreshMutate.mock.calls[0];
-    const refreshOptions = refreshCall[1] as { onSuccess: (data: unknown) => void };
+    expect(mockRefreshMutate).toHaveBeenCalledTimes(1);
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
 
     act(() => {
       refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
@@ -316,8 +318,11 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 
     renderProviderLive();
 
-    const refreshCall = mockRefreshMutate.mock.calls[0];
-    const refreshOptions = refreshCall[1] as { onSuccess: (data: unknown) => void };
+    expect(mockRefreshMutate).toHaveBeenCalledTimes(1);
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
 
     act(() => {
       refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
@@ -336,8 +341,11 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 
     renderProviderLive();
 
-    const refreshCall = mockRefreshMutate.mock.calls[0];
-    const refreshOptions = refreshCall[1] as { onSuccess: (data: unknown) => void };
+    expect(mockRefreshMutate).toHaveBeenCalledTimes(1);
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
     mockRefreshMutate.mockClear();
 
     act(() => {
@@ -353,14 +361,17 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
     jest.useRealTimers();
   });
 
-  it('does not navigate to unsafe stored redirect', () => {
+  it('falls back to /c/new for unsafe stored redirect', () => {
     jest.useFakeTimers();
     sessionStorage.setItem(SESSION_KEY, 'https://evil.com/steal');
 
     renderProviderLive();
 
-    const refreshCall = mockRefreshMutate.mock.calls[0];
-    const refreshOptions = refreshCall[1] as { onSuccess: (data: unknown) => void };
+    expect(mockRefreshMutate).toHaveBeenCalledTimes(1);
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
 
     act(() => {
       refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
@@ -369,6 +380,7 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
       jest.advanceTimersByTime(100);
     });
 
+    expect(mockNavigate).toHaveBeenCalledWith('/c/new', { replace: true });
     expect(mockNavigate).not.toHaveBeenCalledWith('https://evil.com/steal', expect.anything());
     expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
     jest.useRealTimers();
