@@ -3,7 +3,7 @@ import { Skeleton } from '@librechat/client';
 
 export default function AgentPanelSkeleton() {
   return (
-    <div className="h-auto bg-white dark:bg-transparent">
+    <div className="h-auto bg-transparent">
       {/* Avatar */}
       <div className="mb-4">
         <div className="flex w-full items-center justify-center gap-4">
