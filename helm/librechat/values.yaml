@@ -118,7 +118,7 @@ librechat-rag-api:
 
 image:
   repository: danny-avila/librechat
-  registry: ghcr.io
+  registry: registry.librechat.ai
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
