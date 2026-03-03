@@ -187,17 +187,37 @@ module.exports = {
 
     if (search) {
       try {
-        const meiliResults = await Conversation.meiliSearch(search, { filter: `user = "${user}"` });
-        const matchingIds = Array.isArray(meiliResults.hits)
-          ? meiliResults.hits.map((result) => result.conversationId)
+        // Use Mongoose model's meiliSearch method which is aliased to searchIndex
+        // and works with all search providers (MeiliSearch, OpenSearch, Typesense)
+        const { Message } = require('~/db/models');
+
+        // Search both conversations (by title) and messages (by content)
+        const [convoResults, messageResults] = await Promise.all([
+          Conversation.meiliSearch(search, { filter: `user = "${user}"` }),
+          Message.meiliSearch(search, { filter: `user = "${user}"` }),
+        ]);
+
+        logger.info(`[getConvosByCursor] Search results - convo hits: ${convoResults?.hits?.length || 0}, message hits: ${messageResults?.hits?.length || 0}`);
+
+        const convoIds = Array.isArray(convoResults?.hits)
+          ? convoResults.hits.map((result) => result.conversationId)
           : [];
+        const messageConvoIds = Array.isArray(messageResults?.hits)
+          ? messageResults.hits.map((result) => result.conversationId)
+          : [];
+
+        // Combine and deduplicate conversation IDs from both searches
+        const matchingIds = [...new Set([...convoIds, ...messageConvoIds])];
+
+        logger.info(`[getConvosByCursor] Total matching conversation IDs: ${matchingIds.length}`);
+
         if (!matchingIds.length) {
           return { conversations: [], nextCursor: null };
         }
         filters.push({ conversationId: { $in: matchingIds } });
       } catch (error) {
-        logger.error('[getConvosByCursor] Error during meiliSearch', error);
-        throw new Error('Error during meiliSearch');
+        logger.error('[getConvosByCursor] Error during search', error);
+        throw new Error('Error during search');
       }
     }
 

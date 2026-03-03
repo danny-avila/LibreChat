@@ -1,0 +1,13 @@
+{{- /* Validation checks — rendered by Helm to catch configuration errors early */ -}}
+
+{{ if hasKey .Values "env" }}
+  {{ fail "The Value env has been renamed and moved to librechat.configEnv. Refer to https://www.librechat.ai/docs/local/helm_chart#migrate for more information" }}
+{{ end }}
+
+{{- $searchBackendCount := 0 }}
+{{- if .Values.meilisearch.enabled }}{{ $searchBackendCount = add $searchBackendCount 1 }}{{- end }}
+{{- if .Values.opensearch.enabled }}{{ $searchBackendCount = add $searchBackendCount 1 }}{{- end }}
+{{- if and (hasKey .Values "typesense") .Values.typesense.enabled }}{{ $searchBackendCount = add $searchBackendCount 1 }}{{- end }}
+{{- if gt (int $searchBackendCount) 1 }}
+  {{ fail "Multiple search backends are enabled. Please enable only one of: meilisearch, opensearch, or typesense." }}
+{{- end }}

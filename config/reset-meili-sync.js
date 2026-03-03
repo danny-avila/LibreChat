@@ -10,14 +10,15 @@ const { batchResetMeiliFlags } = require('~/db/utils');
   await connect();
 
   console.purple('---------------------------------------');
-  console.purple('Reset MeiliSearch Synchronization Flags');
+  console.purple('Reset Search Synchronization Flags');
   console.purple('---------------------------------------');
-  console.yellow('\nThis script will reset the MeiliSearch indexing flags in MongoDB.');
-  console.yellow('Use this when MeiliSearch data has been deleted or corrupted,');
-  console.yellow('and you need to trigger a full re-synchronization.\n');
+  console.yellow('\nThis script will reset the search indexing flags in MongoDB.');
+  console.yellow('Use this when search index data has been deleted or corrupted,');
+  console.yellow('and you need to trigger a full re-synchronization.');
+  console.yellow('Works with MeiliSearch, OpenSearch, and Typesense.\n');
 
   const confirm = await askQuestion(
-    'Are you sure you want to reset all MeiliSearch sync flags? (y/N): ',
+    'Are you sure you want to reset all search sync flags? (y/N): ',
   );
 
   if (confirm.toLowerCase() !== 'y') {
@@ -55,12 +56,12 @@ const { batchResetMeiliFlags } = require('~/db/utils');
       .countDocuments(queryTotal);
 
     console.purple('\n---------------------------------------');
-    console.green('MeiliSearch sync flags have been reset successfully!');
+    console.green('Search sync flags have been reset successfully!');
     console.cyan(`\nDocuments queued for sync:`);
     console.cyan(`Messages: ${totalMessages}`);
     console.cyan(`Conversations: ${totalConversations}`);
     console.yellow('\nThe next time LibreChat starts or performs a sync check,');
-    console.yellow('all data will be re-indexed into MeiliSearch.');
+    console.yellow('all data will be re-indexed into your configured search provider.');
     console.purple('---------------------------------------\n');
 
     // Ask if user wants to see advanced options
@@ -81,7 +82,7 @@ const { batchResetMeiliFlags } = require('~/db/utils');
 
     silentExit(0);
   } catch (error) {
-    console.red('\nError resetting MeiliSearch sync flags:');
+    console.red('\nError resetting search sync flags:');
     console.error(error);
     silentExit(1);
   }
