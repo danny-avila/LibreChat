@@ -2969,7 +2969,17 @@ html {
   background-color: #f5f5f5;
 }
 
-/* KARRIERE.MUM: Chat message text — always white since theme is always dark */
+/* KARRIERE.MUM: Override prose vars since theme is always dark (no .dark class dependency) */
 .prose.message-content {
+  --tw-prose-body: rgba(255, 255, 255, 0.9);
+  --tw-prose-headings: #ffffff;
+  --tw-prose-lead: rgba(255, 255, 255, 0.75);
+  --tw-prose-bold: #ffffff;
+  --tw-prose-counters: rgba(255, 255, 255, 0.7);
+  --tw-prose-bullets: rgba(255, 255, 255, 0.5);
+  --tw-prose-hr: rgba(255, 255, 255, 0.2);
+  --tw-prose-quotes: rgba(255, 255, 255, 0.9);
+  --tw-prose-captions: rgba(255, 255, 255, 0.6);
+  --tw-prose-code: rgba(255, 255, 255, 0.9);
   color: rgba(255, 255, 255, 0.9);
 }
