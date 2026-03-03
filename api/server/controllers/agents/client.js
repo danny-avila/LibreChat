@@ -246,6 +246,7 @@ class AgentClient extends BaseClient {
 
     const {
       agentConfigs,
+      agentNameMap,
       contentParts,
       collectedUsage,
       artifactPromises,
@@ -254,6 +255,8 @@ class AgentClient extends BaseClient {
     } = options;
 
     this.agentConfigs = agentConfigs;
+    /** @type {Map<string, string>} agentId → human-readable name */
+    this.agentNameMap = agentNameMap;
     this.maxContextTokens = maxContextTokens;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
@@ -911,7 +914,10 @@ class AgentClient extends BaseClient {
         continue;
       }
 
-      const name = usage.agentName || 'Unknown Agent';
+      const rawName = usage.agentName || 'Unknown Agent';
+      // LangGraph prefixes node names with "agent=" in metadata.name; strip it for lookup
+      const lookupKey = rawName.startsWith('agent=') ? rawName.slice(6) : rawName;
+      const name = this.agentNameMap?.get(lookupKey) || rawName;
       const model = usage.model || 'unknown';
       const inputTokens = Number(usage.input_tokens) || 0;
       const outputTokens = Number(usage.output_tokens) || 0;
