@@ -744,9 +744,11 @@ const processOpenAIFile = async ({
 }) => {
   const _file = await openai.files.retrieve(file_id);
   const originalName = filename ?? (_file.filename ? path.basename(_file.filename) : undefined);
-  const filepath = `${openai.baseURL}/files/${userId}/${file_id}${
-    originalName ? `/${originalName}` : ''
-  }`;
+  // Use ASCII-safe name in filepath to avoid URL-encoding issues with non-ASCII filenames
+  const fileExt = originalName ? path.extname(originalName) : '';
+  const isAscii = originalName ? /^[ -~]*$/.test(originalName) : false;
+  const safeName = isAscii ? originalName : file_id + fileExt;
+  const filepath = `files/${userId}/${file_id}/${safeName}`;
   const type = mime.getType(originalName ?? file_id);
   const source =
     openai.req.body.endpoint === EModelEndpoint.azureAssistants

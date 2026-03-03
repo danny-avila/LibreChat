@@ -323,9 +323,11 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
     const setHeaders = () => {
       const cleanedFilename = cleanFileName(file.filename);
-      res.setHeader('Content-Disposition', `attachment; filename="${cleanedFilename}"`);
+      const encodedFilename = encodeURIComponent(cleanedFilename);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`);
       res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('X-File-Metadata', JSON.stringify(file));
+      const fileMetaJson = JSON.stringify(file).replace(/[\u0080-\uffff]/g, (ch) => '\\u' + ('0000' + ch.charCodeAt(0).toString(16)).slice(-4));
+      res.setHeader('X-File-Metadata', fileMetaJson);
     };
 
     if (checkOpenAIStorage(file.source)) {

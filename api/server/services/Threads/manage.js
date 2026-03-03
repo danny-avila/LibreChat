@@ -609,12 +609,16 @@ async function processMessages({ openai, client, messages = [] }) {
               unknownType: true,
             });
             if (file && file.filename) {
-              if (!sources.has(file.filename)) {
-                sources.set(file.filename, sources.size + 1);
+              if (file.context === 'assistants_output') {
+                replacementText = file.filepath;
+              } else {
+                if (!sources.has(file.filename)) {
+                  sources.set(file.filename, sources.size + 1);
+                }
+                replacementText = `${uniqueCitationStart}${sources.get(
+                  file.filename,
+                )}${uniqueCitationEnd}`;
               }
-              replacementText = `${uniqueCitationStart}${sources.get(
-                file.filename,
-              )}${uniqueCitationEnd}`;
             }
           }
 
