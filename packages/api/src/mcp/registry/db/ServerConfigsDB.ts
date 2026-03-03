@@ -12,13 +12,14 @@ import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { AccessControlService } from '~/acl/accessControlService';
 
 /**
- * Regex patterns for credential placeholders that should not be allowed in user-provided headers.
- * These placeholders would substitute the CALLING user's credentials, creating a security risk
- * when MCP servers are shared between users (credential exfiltration).
+ * Regex patterns for credential/env placeholders that should not be allowed in user-provided configs.
+ * These would substitute server credentials or the CALLING user's data, creating exfiltration risks
+ * when MCP servers are shared between users.
  *
  * Safe placeholders like {{MCP_API_KEY}} are allowed as they resolve from the user's own plugin auth.
  */
 const DANGEROUS_CREDENTIAL_PATTERNS = [
+  /\$\{[^}]+\}/g,
   /\{\{LIBRECHAT_OPENID_[^}]+\}\}/g,
   /\{\{LIBRECHAT_USER_[^}]+\}\}/g,
   /\{\{LIBRECHAT_GRAPH_[^}]+\}\}/g,
