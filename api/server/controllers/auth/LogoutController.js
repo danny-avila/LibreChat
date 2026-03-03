@@ -8,7 +8,7 @@ const logoutController = async (req, res) => {
   const parsedCookies = req.headers.cookie ? cookies.parse(req.headers.cookie) : {};
   const isOpenIdUser = req.user?.openidId != null && req.user?.provider === 'openid';
 
-  /** For OpenID users, read tokens from session; for others, use cookie */
+  /** For OpenID users, read tokens from session (with cookie fallback) */
   let refreshToken;
   let idToken;
   if (isOpenIdUser && req.session?.openidTokens) {
@@ -53,8 +53,13 @@ const logoutController = async (req, res) => {
           /** Add id_token_hint (preferred) or client_id for OIDC spec compliance */
           if (idToken) {
             endSessionUrl.searchParams.set('id_token_hint', idToken);
-          } else {
+          } else if (process.env.OPENID_CLIENT_ID) {
             endSessionUrl.searchParams.set('client_id', process.env.OPENID_CLIENT_ID);
+          } else {
+            logger.warn(
+              '[logoutController] Neither id_token_hint nor OPENID_CLIENT_ID is available. ' +
+                'The OIDC end-session request may be rejected by the identity provider.',
+            );
           }
 
           response.redirect = endSessionUrl.toString();
