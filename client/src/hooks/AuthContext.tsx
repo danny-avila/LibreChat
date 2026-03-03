@@ -20,7 +20,7 @@ import {
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
-import { isSafeRedirect, buildLoginRedirectUrl, getPostLoginRedirect } from '~/utils';
+import { SESSION_KEY, isSafeRedirect, buildLoginRedirectUrl, getPostLoginRedirect } from '~/utils';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
@@ -166,7 +166,16 @@ const AuthContextProvider = ({
         }
         const { user, token = '' } = data ?? {};
         if (token) {
-          setUserContext({ token, isAuthenticated: true, user });
+          const storedRedirect = sessionStorage.getItem(SESSION_KEY);
+          if (storedRedirect) {
+            sessionStorage.removeItem(SESSION_KEY);
+          }
+          setUserContext({
+            user,
+            token,
+            isAuthenticated: true,
+            redirect: storedRedirect ?? '/c/new',
+          });
           return;
         }
         console.log('Token is not present. User is not authenticated.');
