@@ -1,9 +1,14 @@
-import debounce from 'lodash/debounce';
-import { LocalStorageKeys } from 'librechat-data-provider';
+import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 
-export const clearDraft = debounce((id?: string | null) => {
-  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
-}, 2500);
+export const clearDraft = (id?: string | null) => {
+  if (id) {
+    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);
+    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${id}`);
+  } else {
+    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`);
+    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`);
+  }
+};
 
 export const encodeBase64 = (plainText: string): string => {
   try {
