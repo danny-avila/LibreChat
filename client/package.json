@@ -153,7 +153,7 @@
     "typescript": "^5.3.3",
     "vite": "^7.3.1",
     "vite-plugin-compression2": "^2.2.1",
-    "vite-plugin-node-polyfills": "^0.23.0",
+    "vite-plugin-node-polyfills": "^0.25.0",
     "vite-plugin-pwa": "^1.2.0"
   }
 }
