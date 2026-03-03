@@ -15,7 +15,7 @@ memory:
     provider: openAI
     model: gpt-4o-mini
   messageWindowSize: 10
-  personalize: true
+  personalize: false
 
 registration:
   socialLogins: []
