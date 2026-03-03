@@ -131,7 +131,7 @@
     "lint-staged": "^15.4.3",
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
-    "turbo": "^2.8.7",
+    "turbo": "^2.8.12",
     "typescript-eslint": "^8.24.0"
   },
   "overrides": {
