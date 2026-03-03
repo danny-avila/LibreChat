@@ -99,6 +99,11 @@ if (typeof window !== 'undefined') {
         return Promise.reject(error);
       }
 
+      /** Skip refresh when the Authorization header has been cleared (e.g. during logout) */
+      if (!axios.defaults.headers.common['Authorization']) {
+        return Promise.reject(error);
+      }
+
       if (error.response.status === 401 && !originalRequest._retry) {
         console.warn('401 error, refreshing token');
         originalRequest._retry = true;
