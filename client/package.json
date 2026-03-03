@@ -154,6 +154,6 @@
     "vite": "^6.4.1",
     "vite-plugin-compression2": "^2.2.1",
     "vite-plugin-node-polyfills": "^0.23.0",
-    "vite-plugin-pwa": "^0.21.2"
+    "vite-plugin-pwa": "^1.2.0"
   }
 }
