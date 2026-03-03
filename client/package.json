@@ -130,10 +130,10 @@
     "@types/jest": "^29.5.14",
     "@types/js-cookie": "^3.0.6",
     "@types/lodash": "^4.17.15",
-    "@types/node": "^20.3.0",
+    "@types/node": "^20.19.35",
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^5.1.4",
     "autoprefixer": "^10.4.20",
     "babel-plugin-replace-ts-export-assignment": "^0.0.2",
     "babel-plugin-root-import": "^6.6.0",
@@ -151,9 +151,9 @@
     "postcss-preset-env": "^11.2.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
-    "vite": "^6.4.1",
+    "vite": "^7.3.1",
     "vite-plugin-compression2": "^2.2.1",
-    "vite-plugin-node-polyfills": "^0.23.0",
-    "vite-plugin-pwa": "^0.21.2"
+    "vite-plugin-node-polyfills": "^0.25.0",
+    "vite-plugin-pwa": "^1.2.0"
   }
 }
