@@ -20,13 +20,14 @@ const Registration: React.FC = () => {
   const queryParams = new URLSearchParams(location.search);
   const token = queryParams.get('token');
   const invitedEmail = queryParams.get('email') ?? '';
+  const invitedName = queryParams.get('name') ?? '';
 
   const {
     watch,
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<TRegisterUser>({ mode: 'onChange', defaultValues: { email: invitedEmail } });
+  } = useForm<TRegisterUser>({ mode: 'onChange', defaultValues: { email: invitedEmail, name: invitedName } });
   const password = watch('password');
 
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -146,7 +147,7 @@ const Registration: React.FC = () => {
                 value: 80,
                 message: localize('com_auth_name_max_length'),
               },
-            })}
+            }, Boolean(token && invitedName))}
             {renderInput('username', 'com_auth_username', 'text', {
               minLength: {
                 value: 2,

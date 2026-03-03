@@ -1096,3 +1096,7 @@ export const inviteUser = (payload: q.TAdminInvitePayload): Promise<{ message: s
 export const deleteAdminUser = (id: string): Promise<{ message: string }> => {
   return request.delete(endpoints.adminDeleteUser(id));
 };
+
+export const updateAdminUserRole = (id: string, role: string): Promise<{ message: string; role: string }> => {
+  return request.patch(endpoints.adminUpdateUserRole(id), { role });
+};

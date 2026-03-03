@@ -29,6 +29,23 @@ export const useAdminUsers = (
   );
 };
 
+export const useUpdateUserRole = (): UseMutationResult<
+  { message: string; role: string },
+  unknown,
+  { id: string; role: string }
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    [MutationKeys.updateRole],
+    ({ id, role }: { id: string; role: string }) => dataService.updateAdminUserRole(id, role),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.adminUsers]);
+      },
+    },
+  );
+};
+
 export const useInviteUser = (): UseMutationResult<
   { message: string },
   unknown,
