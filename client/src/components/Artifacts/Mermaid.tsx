@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import mermaid from 'mermaid';
 import { Button } from '@librechat/client';
 import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
-import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { artifactFlowchartConfig } from '~/utils/mermaid';
 
 interface MermaidDiagramProps {
@@ -10,7 +11,6 @@ interface MermaidDiagramProps {
   isDarkMode?: boolean;
 }
 
-/** Note: this is just for testing purposes, don't actually use this component */
 const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content, isDarkMode = true }) => {
   const mermaidRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<ReactZoomPanPinchRef>(null);
@@ -52,26 +52,26 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content, isDarkMode = t
     renderDiagram();
   }, [content, theme]);
 
-  const centerAndFitDiagram = () => {
+  const centerAndFitDiagram = useCallback(() => {
     if (transformRef.current && mermaidRef.current) {
       const { centerView, zoomToElement } = transformRef.current;
       zoomToElement(mermaidRef.current as HTMLElement);
       centerView(1, 0);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (isRendered) {
       centerAndFitDiagram();
     }
-  }, [isRendered]);
+  }, [isRendered, centerAndFitDiagram]);
 
-  const handlePanning = () => {
+  const handlePanning = useCallback(() => {
     if (!transformRef.current) {
       return;
     }
 
-    const { state, instance } = (transformRef.current as ReactZoomPanPinchRef | undefined) ?? {};
+    const { state, instance } = transformRef.current;
     if (!state || !instance) {
       return;
     }
@@ -106,7 +106,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content, isDarkMode = t
     if (newX !== positionX || newY !== positionY) {
       instance.setTransformState(scale, newX, newY);
     }
-  };
+  }, []);
 
   return (
     <div
@@ -117,7 +117,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content, isDarkMode = t
         ref={transformRef}
         initialScale={1}
         minScale={0.1}
-        maxScale={4}
+        maxScale={10}
         limitToBounds={false}
         centerOnInit={true}
         initialPositionY={0}

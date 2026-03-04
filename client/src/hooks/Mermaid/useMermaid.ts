@@ -86,11 +86,12 @@ export const useMermaid = ({
     return {
       startOnLoad: false,
       theme: (customTheme as MermaidConfig['theme']) || defaultTheme,
-      themeVariables: isDarkMode
-        ? { titleColor: '#E0E0E0', edgeLabelBackground: '#1e1e1e' }
-        : undefined,
-      flowchart: inlineFlowchartConfig,
       ...config,
+      ...(isDarkMode
+        ? { themeVariables: { titleColor: '#E0E0E0', edgeLabelBackground: '#1e1e1e' } }
+        : {}),
+      flowchart: { ...inlineFlowchartConfig, ...config?.flowchart, htmlLabels: false },
+      // Security hardening: MUST come after ...config spread to prevent override
       securityLevel: 'strict',
       maxTextSize: config?.maxTextSize ?? 50000,
       maxEdges: config?.maxEdges ?? 500,

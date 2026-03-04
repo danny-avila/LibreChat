@@ -198,6 +198,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
     mermaid.initialize({
       startOnLoad: false,
       theme: "${mermaidTheme}",
+      securityLevel: "strict",
       flowchart: ${JSON.stringify(artifactFlowchartConfig, null, 8)},
     });
 
@@ -251,10 +252,10 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
     navigator.clipboard.writeText(content).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    }).catch(() => {});
   }, [content]);
 
-  const handlePanning = () => {
+  const handlePanning = useCallback(() => {
     if (!transformRef.current) {
       return;
     }
@@ -293,7 +294,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
     if (newX !== positionX || newY !== positionY) {
       instance.setTransformState(scale, newX, newY);
     }
-  };
+  }, []);
 
   return (
     <div style={{ position: "relative", height: "100vh", width: "100vw", cursor: "move", padding: "20px", backgroundColor: "${bgColor}" }}>
