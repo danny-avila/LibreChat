@@ -1,4 +1,18 @@
-import { inlineFlowchartConfig, artifactFlowchartConfig, getMermaidFiles } from '~/utils/mermaid';
+import {
+  fixSubgraphTitleContrast,
+  artifactFlowchartConfig,
+  inlineFlowchartConfig,
+  getMermaidFiles,
+} from '~/utils/mermaid';
+
+const makeSvg = (clusters: string): Element => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(
+    `<svg xmlns="http://www.w3.org/2000/svg">${clusters}</svg>`,
+    'image/svg+xml',
+  );
+  return doc.querySelector('svg')!;
+};
 
 describe('mermaid config', () => {
   describe('flowchart config invariants', () => {
@@ -57,9 +71,84 @@ describe('mermaid config', () => {
       expect(files['/components/ui/MermaidDiagram.tsx']).toContain('"htmlLabels": true');
     });
 
+    it('does not inject custom themeVariables into generated component', () => {
+      const darkFiles = getMermaidFiles(content, true);
+      const lightFiles = getMermaidFiles(content, false);
+      expect(darkFiles['/components/ui/MermaidDiagram.tsx']).not.toContain('themeVariables');
+      expect(lightFiles['/components/ui/MermaidDiagram.tsx']).not.toContain('themeVariables');
+    });
+
     it('handles empty content', () => {
       const files = getMermaidFiles('', true);
       expect(files['diagram.mmd']).toBe('# No mermaid diagram content provided');
+    });
+  });
+
+  describe('fixSubgraphTitleContrast', () => {
+    it('darkens title text on light subgraph backgrounds (fill attribute)', () => {
+      const svg = makeSvg(
+        '<g class="cluster"><rect fill="#FFF9C4"/><g class="cluster-label"><text fill="#E0E0E0">Title</text></g></g>',
+      );
+      fixSubgraphTitleContrast(svg);
+      expect(svg.querySelector('text')!.getAttribute('style')).toContain('fill: #1a1a1a');
+    });
+
+    it('darkens title text on light subgraph backgrounds (inline style fill)', () => {
+      const svg = makeSvg(
+        '<g class="cluster"><rect style="fill: #FFF9C4; stroke: #F9A825"/><g class="cluster-label"><text>Title</text></g></g>',
+      );
+      fixSubgraphTitleContrast(svg);
+      expect(svg.querySelector('text')!.getAttribute('style')).toContain('fill: #1a1a1a');
+    });
+
+    it('lightens title text on dark subgraph backgrounds', () => {
+      const svg = makeSvg(
+        '<g class="cluster"><rect fill="#1f2020"/><g class="cluster-label"><text fill="#222222">Title</text></g></g>',
+      );
+      fixSubgraphTitleContrast(svg);
+      expect(svg.querySelector('text')!.getAttribute('style')).toContain('fill: #f0f0f0');
+    });
+
+    it('leaves title text alone when contrast is already good', () => {
+      const svg = makeSvg(
+        '<g class="cluster"><rect fill="#FFF9C4"/><g class="cluster-label"><text fill="#333333">Title</text></g></g>',
+      );
+      fixSubgraphTitleContrast(svg);
+      expect(svg.querySelector('text')!.getAttribute('style')).toBeNull();
+    });
+
+    it('skips clusters without a rect', () => {
+      const svg = makeSvg(
+        '<g class="cluster"><g class="cluster-label"><text fill="#E0E0E0">Title</text></g></g>',
+      );
+      fixSubgraphTitleContrast(svg);
+      expect(svg.querySelector('text')!.getAttribute('style')).toBeNull();
+    });
+
+    it('skips clusters with non-hex fills', () => {
+      const svg = makeSvg(
+        '<g class="cluster"><rect fill="rgb(255,249,196)"/><g class="cluster-label"><text fill="#E0E0E0">Title</text></g></g>',
+      );
+      fixSubgraphTitleContrast(svg);
+      expect(svg.querySelector('text')!.getAttribute('style')).toBeNull();
+    });
+
+    it('sets dark fill when text has no explicit fill on light backgrounds', () => {
+      const svg = makeSvg(
+        '<g class="cluster"><rect style="fill:#FFF9C4"/><g class="cluster-label"><text>Title</text></g></g>',
+      );
+      fixSubgraphTitleContrast(svg);
+      expect(svg.querySelector('text')!.getAttribute('style')).toContain('fill: #1a1a1a');
+    });
+
+    it('preserves existing text style when appending fill override', () => {
+      const svg = makeSvg(
+        '<g class="cluster"><rect fill="#FFF9C4"/><g class="cluster-label"><text style="font-size: 14px" fill="#E0E0E0">Title</text></g></g>',
+      );
+      fixSubgraphTitleContrast(svg);
+      const style = svg.querySelector('text')!.getAttribute('style')!;
+      expect(style).toContain('font-size: 14px');
+      expect(style).toContain('fill: #1a1a1a');
     });
   });
 });

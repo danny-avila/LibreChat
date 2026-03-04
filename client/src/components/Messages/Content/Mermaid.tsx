@@ -12,6 +12,7 @@ import {
   OGDialogContent,
 } from '@librechat/client';
 import { useLocalize, useDebouncedMermaid } from '~/hooks';
+import { fixSubgraphTitleContrast } from '~/utils/mermaid';
 import MermaidHeader from './MermaidHeader';
 import cn from '~/utils/cn';
 
@@ -180,6 +181,8 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
       if (!svgElement.getAttribute('xmlns')) {
         svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
       }
+
+      fixSubgraphTitleContrast(svgElement);
 
       return {
         processedSvg: new XMLSerializer().serializeToString(doc),

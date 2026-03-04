@@ -57,6 +57,78 @@ const inlineFlowchartConfig = {
 
 export { inlineFlowchartConfig, artifactFlowchartConfig };
 
+/** Perceived luminance (0 = black, 1 = white) via sRGB coefficients */
+const hexLuminance = (hex: string): number => {
+  const h = hex.replace('#', '');
+  if (h.length < 6) {
+    return -1;
+  }
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+};
+
+/**
+ * Fixes subgraph title text contrast in mermaid SVGs rendered with htmlLabels: false.
+ * When a subgraph has an explicit light fill via `style` directives, the title <text>
+ * gets its fill from a CSS rule (.cluster-label text / .cluster text) set to titleColor.
+ * In dark mode, titleColor is light, producing invisible text on light backgrounds.
+ * This walks cluster groups and overrides the text fill attribute when contrast is poor.
+ */
+export const fixSubgraphTitleContrast = (svgElement: Element): void => {
+  const clusters = svgElement.querySelectorAll('g.cluster, g[class*="cluster"]');
+  for (const cluster of clusters) {
+    const rect = cluster.querySelector(':scope > rect, :scope > polygon');
+    if (!rect) {
+      continue;
+    }
+
+    const inlineStyle = rect.getAttribute('style') || '';
+    const attrFill = rect.getAttribute('fill') || '';
+    const styleFillMatch = inlineStyle.match(/fill\s*:\s*(#[0-9a-fA-F]{3,8})/);
+    const hex = styleFillMatch?.[1] ?? (attrFill.startsWith('#') ? attrFill : '');
+    if (!hex) {
+      continue;
+    }
+
+    const bgLum = hexLuminance(hex);
+    if (bgLum < 0) {
+      continue;
+    }
+
+    const textElements = cluster.querySelectorAll(
+      ':scope > g.cluster-label text, :scope > text, :scope > g > text',
+    );
+    for (const textEl of textElements) {
+      const textFill = textEl.getAttribute('fill') || '';
+      const textStyle = textEl.getAttribute('style') || '';
+      const textStyleFill = textStyle.match(/fill\s*:\s*(#[0-9a-fA-F]{3,8})/);
+      const currentHex = textStyleFill?.[1] ?? (textFill.startsWith('#') ? textFill : '');
+
+      const isLightBg = bgLum > 0.5;
+
+      if (!currentHex) {
+        if (isLightBg) {
+          textEl.setAttribute('style', `${textStyle}${textStyle ? '; ' : ''}fill: #1a1a1a`);
+        }
+        continue;
+      }
+
+      const textLum = hexLuminance(currentHex);
+      if (textLum < 0) {
+        continue;
+      }
+
+      if (isLightBg && textLum > 0.5) {
+        textEl.setAttribute('style', `${textStyle}${textStyle ? '; ' : ''}fill: #1a1a1a`);
+      } else if (!isLightBg && textLum < 0.4) {
+        textEl.setAttribute('style', `${textStyle}${textStyle ? '; ' : ''}fill: #f0f0f0`);
+      }
+    }
+  }
+};
+
 const buildMermaidComponent = (
   mermaidTheme: string,
   bgColor: string,

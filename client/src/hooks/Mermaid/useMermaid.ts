@@ -87,15 +87,6 @@ export const useMermaid = ({
       startOnLoad: false,
       theme: (customTheme as MermaidConfig['theme']) || defaultTheme,
       ...config,
-      ...(isDarkMode
-        ? {
-            themeVariables: {
-              ...config?.themeVariables,
-              titleColor: '#E0E0E0',
-              edgeLabelBackground: '#1e1e1e',
-            },
-          }
-        : {}),
       flowchart: { ...inlineFlowchartConfig, ...config?.flowchart, htmlLabels: false },
       // Security hardening: MUST come after ...config spread to prevent override
       securityLevel: 'strict',
