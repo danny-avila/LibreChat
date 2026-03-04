@@ -277,7 +277,7 @@ export class MCPOAuthHandler {
       redirect_uris: [redirectUri || this.getDefaultRedirectUri()],
       grant_types: ['authorization_code'] as string[],
       response_types: ['code'] as string[],
-      token_endpoint_auth_method: 'client_secret_post',
+      token_endpoint_auth_method: 'client_secret_basic',
       scope: undefined as string | undefined,
       logo_uri: undefined as string | undefined,
       tos_uri: undefined as string | undefined,
@@ -818,7 +818,6 @@ export class MCPOAuthHandler {
           });
 
           if (authMethod === 'client_secret_basic') {
-            /** Use Basic auth */
             logger.debug('[MCPOAuth] Using client_secret_basic authentication method');
             const clientAuth = Buffer.from(
               `${metadata.clientInfo.client_id}:${metadata.clientInfo.client_secret}`,
@@ -830,7 +829,6 @@ export class MCPOAuthHandler {
             body.append('client_id', metadata.clientInfo.client_id);
             body.append('client_secret', metadata.clientInfo.client_secret);
           } else {
-            /** No recognized method, default to Basic auth per RFC */
             logger.debug('[MCPOAuth] No recognized auth method, defaulting to client_secret_basic');
             const clientAuth = Buffer.from(
               `${metadata.clientInfo.client_id}:${metadata.clientInfo.client_secret}`,
