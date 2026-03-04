@@ -708,7 +708,7 @@
   "com_ui_agent_version_restore_success": "Version restored successfully",
   "com_ui_agent_version_title": "Version {{versionNumber}}",
   "com_ui_agent_version_unknown_date": "Unknown date",
-  "com_ui_agents": "Agents",
+  "com_ui_agents": "KI-Begleiterinnen",
   "com_ui_agents_allow_create": "Allow creating Agents",
   "com_ui_agents_allow_share": "Allow sharing Agents",
   "com_ui_agents_allow_share_public": "Allow sharing Agents publicly",
