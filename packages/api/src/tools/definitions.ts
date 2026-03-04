@@ -9,9 +9,10 @@ import { Constants, actionDelimiter } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { ToolDefinition } from './classification';
-import { getToolDefinition, toolkitExpansion } from './registry/definitions';
 import { resolveJsonSchemaRefs, normalizeJsonSchema } from '~/mcp/zod';
 import { buildToolClassification } from './classification';
+import { getToolDefinition } from './registry/definitions';
+import { toolkitExpansion } from './toolkits/mapping';
 
 export interface MCPServerTool {
   function?: {
@@ -117,7 +118,7 @@ export async function loadToolDefinitions(
         parameters: registryDef.schema as JsonSchemaType | undefined,
       });
 
-      const extraTools = toolkitExpansion[toolName];
+      const extraTools = toolkitExpansion[toolName as keyof typeof toolkitExpansion];
       if (extraTools) {
         for (const extra of extraTools) {
           const extraDef = getToolDefinition(extra);

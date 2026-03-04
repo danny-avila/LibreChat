@@ -371,8 +371,8 @@ const loadTools = async ({
     }
 
     const toolKey = customConstructors[tool] ? tool : toolkitParent[tool];
-    if (toolKey && customConstructors[toolKey]) {
-      requestedTools[tool] = async () => customConstructors[toolKey](toolContextMap);
+    if (toolKey && customConstructors[toolKey] && !requestedTools[toolKey]) {
+      requestedTools[toolKey] = async () => customConstructors[toolKey](toolContextMap);
       continue;
     }
 
