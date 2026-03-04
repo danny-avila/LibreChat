@@ -145,6 +145,12 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-5-pro-preview')).toBe('gpt-5-pro');
   });
 
+  it('should return "gpt-5.2-pro" for model type of "gpt-5.2-pro"', () => {
+    expect(getValueKey('gpt-5.2-pro')).toBe('gpt-5.2-pro');
+    expect(getValueKey('gpt-5.2-pro-2025-03-01')).toBe('gpt-5.2-pro');
+    expect(getValueKey('openai/gpt-5.2-pro')).toBe('gpt-5.2-pro');
+  });
+
   it('should return "gpt-4o" for model type of "gpt-4o"', () => {
     expect(getValueKey('gpt-4o-2024-08-06')).toBe('gpt-4o');
     expect(getValueKey('gpt-4o-2024-08-06-0718')).toBe('gpt-4o');
@@ -340,6 +346,18 @@ describe('getMultiplier', () => {
     );
     expect(getMultiplier({ model: 'openai/gpt-5-pro', tokenType: 'completion' })).toBe(
       tokenValues['gpt-5-pro'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-5.2-pro', () => {
+    expect(getMultiplier({ model: 'gpt-5.2-pro', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.2-pro'].prompt,
+    );
+    expect(getMultiplier({ model: 'gpt-5.2-pro', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.2-pro'].completion,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5.2-pro', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.2-pro'].prompt,
     );
   });
 
@@ -1346,6 +1364,67 @@ describe('getCacheMultiplier', () => {
     expect(
       getCacheMultiplier({ model: 'unknown-model', cacheType: 'write', endpointTokenConfig }),
     ).toBeNull();
+  });
+
+  it('should return correct cache multipliers for OpenAI models', () => {
+    const openaiCacheModels = [
+      'gpt-4o',
+      'gpt-4o-mini',
+      'gpt-4.1',
+      'gpt-4.1-mini',
+      'gpt-4.1-nano',
+      'gpt-5',
+      'gpt-5.1',
+      'gpt-5.2',
+      'gpt-5.3',
+      'gpt-5-mini',
+      'gpt-5-nano',
+      'o1',
+      'o1-mini',
+      'o3',
+      'o3-mini',
+      'o4-mini',
+    ];
+
+    openaiCacheModels.forEach((model) => {
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(cacheTokenValues[model].write);
+      expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(cacheTokenValues[model].read);
+    });
+  });
+
+  it('should return correct cache multipliers for OpenAI models with prefixes', () => {
+    expect(getCacheMultiplier({ model: 'openai/gpt-5.3', cacheType: 'write' })).toBe(
+      cacheTokenValues['gpt-5.3'].write,
+    );
+    expect(getCacheMultiplier({ model: 'openai/gpt-5.3', cacheType: 'read' })).toBe(
+      cacheTokenValues['gpt-5.3'].read,
+    );
+    expect(getCacheMultiplier({ model: 'gpt-5.3-codex', cacheType: 'read' })).toBe(
+      cacheTokenValues['gpt-5.3'].read,
+    );
+  });
+
+  it('should return null for pro models that do not support caching', () => {
+    expect(getCacheMultiplier({ model: 'gpt-5-pro', cacheType: 'read' })).toBeNull();
+    expect(getCacheMultiplier({ model: 'gpt-5-pro', cacheType: 'write' })).toBeNull();
+    expect(getCacheMultiplier({ model: 'gpt-5.2-pro', cacheType: 'read' })).toBeNull();
+    expect(getCacheMultiplier({ model: 'gpt-5.2-pro', cacheType: 'write' })).toBeNull();
+  });
+
+  it('should have consistent 10% cache read pricing for gpt-5.x models', () => {
+    expect(cacheTokenValues['gpt-5'].read).toBeCloseTo(cacheTokenValues['gpt-5'].write * 0.1, 10);
+    expect(cacheTokenValues['gpt-5.1'].read).toBeCloseTo(
+      cacheTokenValues['gpt-5.1'].write * 0.1,
+      10,
+    );
+    expect(cacheTokenValues['gpt-5.2'].read).toBeCloseTo(
+      cacheTokenValues['gpt-5.2'].write * 0.1,
+      10,
+    );
+    expect(cacheTokenValues['gpt-5.3'].read).toBeCloseTo(
+      cacheTokenValues['gpt-5.3'].write * 0.1,
+      10,
+    );
   });
 
   it('should handle models with "bedrock/" prefix', () => {

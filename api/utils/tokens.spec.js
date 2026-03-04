@@ -503,19 +503,24 @@ describe('getModelMaxTokens', () => {
 
   test('should return correct max output tokens for GPT-5 models', () => {
     const { getModelMaxOutputTokens } = require('@librechat/api');
-    ['gpt-5', 'gpt-5.1', 'gpt-5.2', 'gpt-5.3', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5-pro'].forEach(
-      (model) => {
-        expect(getModelMaxOutputTokens(model)).toBe(
-          maxOutputTokensMap[EModelEndpoint.openAI][model],
-        );
-        expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
-          maxOutputTokensMap[EModelEndpoint.openAI][model],
-        );
-        expect(getModelMaxOutputTokens(model, EModelEndpoint.azureOpenAI)).toBe(
-          maxOutputTokensMap[EModelEndpoint.azureOpenAI][model],
-        );
-      },
-    );
+    [
+      'gpt-5',
+      'gpt-5.1',
+      'gpt-5.2',
+      'gpt-5.3',
+      'gpt-5-mini',
+      'gpt-5-nano',
+      'gpt-5-pro',
+      'gpt-5.2-pro',
+    ].forEach((model) => {
+      expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
+        maxOutputTokensMap[EModelEndpoint.openAI][model],
+      );
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.azureOpenAI)).toBe(
+        maxOutputTokensMap[EModelEndpoint.azureOpenAI][model],
+      );
+    });
   });
 
   test('should return correct max output tokens for GPT-OSS models', () => {
