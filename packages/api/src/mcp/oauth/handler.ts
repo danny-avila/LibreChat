@@ -91,6 +91,9 @@ export class MCPOAuthHandler {
               params.set('client_secret', clientInfo.client_secret);
             }
           } else if (authMethod === 'client_secret_basic') {
+            /** RFC 6749 §2.3.1: credentials MUST NOT appear in both the header and the body. The SDK defaults to body params, so remove them before setting the Basic header. */
+            params.delete('client_id');
+            params.delete('client_secret');
             if (!newHeaders.has('Authorization')) {
               const clientAuth = Buffer.from(
                 `${clientInfo.client_id}:${clientInfo.client_secret}`,
