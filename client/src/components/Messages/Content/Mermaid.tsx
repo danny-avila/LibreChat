@@ -672,7 +672,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
             className={cn(
               'relative overflow-hidden p-4 transition-colors duration-200',
               'rounded-md',
-              showControls ? 'bg-surface-primary-alt' : 'bg-transparent',
+              showControls ? 'bg-surface-primary-alt dark:bg-white/[0.03]' : 'bg-transparent',
               isPanning ? 'cursor-grabbing' : 'cursor-grab',
             )}
             style={{ height: `${calculatedHeight}px` }}
@@ -811,7 +811,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
           className={cn(
             'relative overflow-hidden p-4 transition-colors duration-200',
             'rounded-md',
-            showControls ? 'bg-surface-primary-alt' : 'bg-transparent',
+            showControls ? 'bg-surface-primary-alt dark:bg-white/[0.03]' : 'bg-transparent',
             isPanning ? 'cursor-grabbing' : 'cursor-grab',
           )}
           style={{ height: `${calculatedHeight}px` }}
