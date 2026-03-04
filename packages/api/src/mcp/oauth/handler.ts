@@ -18,6 +18,12 @@ import type {
   MCPOAuthTokens,
   OAuthMetadata,
 } from './types';
+import {
+  resolveTokenEndpointAuthMethod,
+  getForcedTokenEndpointAuthMethod,
+  selectRegistrationAuthMethod,
+  inferClientAuthMethod,
+} from './methods';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 
 /** Type for the OAuth metadata from the SDK */
@@ -26,39 +32,6 @@ type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
 export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
   private static readonly FLOW_TTL = 10 * 60 * 1000; // 10 minutes
-
-  private static getForcedTokenEndpointAuthMethod(
-    tokenExchangeMethod?: TokenExchangeMethodEnum,
-  ): 'client_secret_basic' | 'client_secret_post' | undefined {
-    if (tokenExchangeMethod === TokenExchangeMethodEnum.DefaultPost) {
-      return 'client_secret_post';
-    }
-    if (tokenExchangeMethod === TokenExchangeMethodEnum.BasicAuthHeader) {
-      return 'client_secret_basic';
-    }
-    return undefined;
-  }
-
-  private static resolveTokenEndpointAuthMethod(options: {
-    tokenExchangeMethod?: TokenExchangeMethodEnum;
-    tokenAuthMethods: string[];
-    preferredMethod?: string;
-  }): 'client_secret_basic' | 'client_secret_post' | undefined {
-    const forcedMethod = this.getForcedTokenEndpointAuthMethod(options.tokenExchangeMethod);
-    const preferredMethod = forcedMethod ?? options.preferredMethod;
-
-    if (preferredMethod === 'client_secret_basic' || preferredMethod === 'client_secret_post') {
-      return preferredMethod;
-    }
-
-    if (options.tokenAuthMethods.includes('client_secret_basic')) {
-      return 'client_secret_basic';
-    }
-    if (options.tokenAuthMethods.includes('client_secret_post')) {
-      return 'client_secret_post';
-    }
-    return undefined;
-  }
 
   /**
    * Creates a fetch function with custom headers injected
@@ -95,19 +68,14 @@ export class MCPOAuthHandler {
         newHeaders.set('Content-Type', 'application/x-www-form-urlencoded');
 
         if (clientInfo?.client_id) {
-          let authMethod = clientInfo.token_endpoint_auth_method;
-
-          if (!authMethod) {
-            if (newHeaders.has('Authorization')) {
-              authMethod = 'client_secret_basic';
-            } else if (params.has('client_id') || params.has('client_secret')) {
-              authMethod = 'client_secret_post';
-            } else if (clientInfo.client_secret) {
-              authMethod = 'client_secret_basic';
-            } else {
-              authMethod = 'none';
-            }
-          }
+          const authMethod =
+            clientInfo.token_endpoint_auth_method ??
+            inferClientAuthMethod(
+              newHeaders.has('Authorization'),
+              params.has('client_id'),
+              params.has('client_secret'),
+              !!clientInfo.client_secret,
+            );
 
           if (!clientInfo.client_secret || authMethod === 'none') {
             newHeaders.delete('Authorization');
@@ -300,18 +268,12 @@ export class MCPOAuthHandler {
 
     clientMetadata.response_types = metadata.response_types_supported || ['code'];
 
-    const forcedAuthMethod = this.getForcedTokenEndpointAuthMethod(tokenExchangeMethod);
-
-    const supportedAuthMethods = ['client_secret_post', 'client_secret_basic', 'none'];
-
-    if (forcedAuthMethod) {
-      clientMetadata.token_endpoint_auth_method = forcedAuthMethod;
-    } else if (metadata.token_endpoint_auth_methods_supported) {
-      const serverPreferred = metadata.token_endpoint_auth_methods_supported.find((m) =>
-        supportedAuthMethods.includes(m),
-      );
-      clientMetadata.token_endpoint_auth_method =
-        serverPreferred ?? metadata.token_endpoint_auth_methods_supported[0];
+    const selectedAuthMethod = selectRegistrationAuthMethod(
+      metadata.token_endpoint_auth_methods_supported,
+      tokenExchangeMethod,
+    );
+    if (selectedAuthMethod) {
+      clientMetadata.token_endpoint_auth_method = selectedAuthMethod;
     }
 
     const availableScopes = resourceMetadata?.scopes_supported || metadata.scopes_supported;
@@ -330,6 +292,7 @@ export class MCPOAuthHandler {
       fetchFn: this.createOAuthFetch(oauthHeaders),
     });
 
+    const forcedAuthMethod = getForcedTokenEndpointAuthMethod(tokenExchangeMethod);
     if (forcedAuthMethod) {
       clientInfo.token_endpoint_auth_method = forcedAuthMethod;
     } else if (!clientInfo.token_endpoint_auth_method) {
@@ -397,8 +360,7 @@ export class MCPOAuthHandler {
           // When token_exchange_method is undefined or not DefaultPost, default to using
           // client_secret_basic (Basic Auth header) for token endpoint authentication.
           tokenEndpointAuthMethod =
-            this.getForcedTokenEndpointAuthMethod(config.token_exchange_method) ??
-            'client_secret_basic';
+            getForcedTokenEndpointAuthMethod(config.token_exchange_method) ?? 'client_secret_basic';
         }
 
         let defaultTokenAuthMethods: string[];
@@ -811,7 +773,7 @@ export class MCPOAuthHandler {
         if (metadata.clientInfo.client_secret) {
           /** Default to client_secret_basic if no methods specified (per RFC 8414) */
           const tokenAuthMethods = authMethods ?? ['client_secret_basic'];
-          const authMethod = this.resolveTokenEndpointAuthMethod({
+          const authMethod = resolveTokenEndpointAuthMethod({
             tokenExchangeMethod: config?.token_exchange_method,
             tokenAuthMethods,
             preferredMethod: metadata.clientInfo.token_endpoint_auth_method,
@@ -890,7 +852,7 @@ export class MCPOAuthHandler {
           const tokenAuthMethods = config.token_endpoint_auth_methods_supported ?? [
             'client_secret_basic',
           ];
-          const authMethod = this.resolveTokenEndpointAuthMethod({
+          const authMethod = resolveTokenEndpointAuthMethod({
             tokenExchangeMethod: config.token_exchange_method,
             tokenAuthMethods,
           });
