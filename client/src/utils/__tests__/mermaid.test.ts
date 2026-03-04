@@ -1,5 +1,4 @@
-import { inlineFlowchartConfig, artifactFlowchartConfig } from '~/utils/mermaid';
-import { getMermaidFiles } from '~/utils/mermaid';
+import { inlineFlowchartConfig, artifactFlowchartConfig, getMermaidFiles } from '~/utils/mermaid';
 
 describe('mermaid config', () => {
   describe('flowchart config invariants', () => {
