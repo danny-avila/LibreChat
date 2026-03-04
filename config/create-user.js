@@ -15,6 +15,7 @@ const connect = require('./connect');
 
   if (process.argv.length < 5) {
     console.orange('Usage: npm run create-user <email> <name> <username> [--email-verified=false]');
+    console.orange('       or: npm run create-user <email> <name> <username> [--role=admin]');
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.orange(
       'If you really need to pass in the password, you can do so as the 4th argument (not recommended for security).',
@@ -25,6 +26,7 @@ const connect = require('./connect');
 
   // Parse command line arguments
   let email, password, name, username, emailVerified, provider;
+  let role;
   for (let i = 2; i < process.argv.length; i++) {
     if (process.argv[i].startsWith('--email-verified=')) {
       emailVerified = process.argv[i].split('=')[1].toLowerCase() !== 'false';
@@ -33,6 +35,16 @@ const connect = require('./connect');
 
     if (process.argv[i].startsWith('--provider=')) {
       provider = process.argv[i].split('=')[1];
+      continue;
+    }
+
+    if (process.argv[i].startsWith('--role=')) {
+      role = process.argv[i].split('=')[1];
+      continue;
+    }
+
+    if (process.argv[i] === '--admin') {
+      role = 'admin';
       continue;
     }
 
@@ -102,7 +114,15 @@ or the user will need to attempt logging in to have a verification link sent to 
   const user = { email, password, name, username, confirm_password: password, provider };
   let result;
   try {
-    result = await registerUser(user, { emailVerified });
+    const additionalData = {};
+    if (typeof emailVerified !== 'undefined') {
+      additionalData.emailVerified = emailVerified;
+    }
+    if (role) {
+      additionalData.role = role;
+    }
+
+    result = await registerUser(user, additionalData);
   } catch (error) {
     console.red('Error: ' + error.message);
     silentExit(1);

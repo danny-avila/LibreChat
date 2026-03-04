@@ -300,6 +300,7 @@ if (cluster.isMaster) {
     app.use('/api/actions', routes.actions);
     app.use('/api/keys', routes.keys);
     app.use('/api/user', routes.user);
+    app.use('/api/admin', routes.admin);
     app.use('/api/search', routes.search);
     app.use('/api/messages', routes.messages);
     app.use('/api/convos', routes.convos);

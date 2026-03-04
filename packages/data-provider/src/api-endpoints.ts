@@ -351,6 +351,40 @@ export const userTerms = () => `${BASE_URL}/api/user/terms`;
 export const acceptUserTerms = () => `${BASE_URL}/api/user/terms/accept`;
 export const banner = () => `${BASE_URL}/api/banner`;
 
+// Admin Endpoints
+export const adminUsers = (params?: { page?: number; limit?: number; search?: string }) => {
+  const query = params ? buildQuery(params) : '';
+  return `${BASE_URL}/api/admin/users${query}`;
+};
+export const adminCreateUser = () => `${BASE_URL}/api/admin/users`;
+export const adminUpdateUserRole = (userId: string) =>
+  `${BASE_URL}/api/admin/users/${userId}/role`;
+export const adminUpdateUserGroups = (userId: string) =>
+  `${BASE_URL}/api/admin/users/${userId}/groups`;
+export const adminDeleteUser = (userId: string) => `${BASE_URL}/api/admin/users/${userId}`;
+
+// Admin Group Endpoints
+export const adminGroups = () => `${BASE_URL}/api/admin/groups`;
+export const adminCreateGroup = () => `${BASE_URL}/api/admin/groups`;
+export const adminDeleteGroup = (groupName: string) =>
+  `${BASE_URL}/api/admin/groups/${encodeURIComponent(groupName)}`;
+
+export const adminConversations = (params?: {
+  page?: number;
+  limit?: number;
+  userId?: string;
+  endpoint?: string;
+  search?: string;
+  sortBy?: string;
+  sortDirection?: string;
+}) => {
+  const query = params ? buildQuery(params) : '';
+  return `${BASE_URL}/api/admin/conversations${query}`;
+};
+
+export const adminConversationMessages = (conversationId: string) =>
+  `${BASE_URL}/api/admin/conversations/${conversationId}/messages`;
+
 // Message Feedback
 export const feedback = (conversationId: string, messageId: string) =>
   `${BASE_URL}/api/messages/${conversationId}/${messageId}/feedback`;

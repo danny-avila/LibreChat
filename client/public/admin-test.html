@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AdminUserSelector调试测试</title>
+    <script>
+        // 在页面加载后立即运行诊断
+        window.addEventListener('DOMContentLoaded', function() {
+            console.log('=== AdminUserSelector 调试测试 ===');
+            
+            // 1. 检查当前用户
+            fetch('/api/user')
+                .then(r => r.json())
+                .then(user => {
+                    console.log('1. 当前用户信息:');
+                    console.log('   - Email:', user.email);
+                    console.log('   - Role:', user.role);
+                    console.log('   - 是否为ADMIN:', user.role === 'ADMIN');
+                    
+                    if (user.role !== 'ADMIN') {
+                        document.getElementById('result').innerHTML = `
+                            <div style="color: red; padding: 20px; border: 2px solid red;">
+                                <h2>❌ 问题找到了！</h2>
+                                <p>当前用户不是管理员角色</p>
+                                <p>当前角色: <strong>${user.role}</strong></p>
+                                <p>需要的角色: <strong>ADMIN</strong></p>
+                                <h3>解决方案：</h3>
+                                <p>在服务器上运行以下命令修改用户角色：</p>
+                                <pre style="background: #f0f0f0; padding: 10px;">
+docker-compose exec api node -e "
+const mongoose = require('mongoose');
+const { User } = require('./api/db/models');
+mongoose.connect(process.env.MONGO_URI).then(async () => {
+  const user = await User.findOneAndUpdate(
+    { email: '${user.email}' },
+    { role: 'ADMIN' },
+    { new: true }
+  );
+  console.log('更新成功:', user.email, user.role);
+  process.exit(0);
+});
+"</pre>
+                            </div>
+                        `;
+                    } else {
+                        checkAdminAPI();
+                    }
+                })
+                .catch(err => {
+                    console.error('获取用户信息失败:', err);
+                    document.getElementById('result').innerHTML = `
+                        <div style="color: red; padding: 20px;">
+                            <h2>❌ 错误</h2>
+                            <p>无法获取用户信息: ${err.message}</p>
+                        </div>
+                    `;
+                });
+        });
+        
+        function checkAdminAPI() {
+            // 2. 测试管理员API
+            fetch('/api/admin/users?limit=5')
+                .then(r => {
+                    if (!r.ok) {
+                        throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+                    }
+                    return r.json();
+                })
+                .then(data => {
+                    console.log('2. 用户列表API测试成功:');
+                    console.log('   - 返回用户数:', data.users.length);
+                    console.log('   - 总用户数:', data.pagination.total);
+                    
+                    const usersList = data.users.map(u => 
+                        `<li>${u.name || u.username || '未命名'} (${u.email}) - ${u.role}</li>`
+                    ).join('');
+                    
+                    document.getElementById('result').innerHTML = `
+                        <div style="color: green; padding: 20px; border: 2px solid green;">
+                            <h2>✅ 后端API正常</h2>
+                            <p>用户总数: ${data.pagination.total}</p>
+                            <h3>前5个用户:</h3>
+                            <ul>${usersList}</ul>
+                            <h3>下一步：</h3>
+                            <p>1. 在LibreChat主界面按F12打开开发者工具</p>
+                            <p>2. 切换到Console标签</p>
+                            <p>3. 点击侧边栏的"选择用户查看对话"按钮</p>
+                            <p>4. 查看控制台输出，应该看到以下日志：</p>
+                            <pre style="background: #f0f0f0; padding: 10px;">
+[AdminUserSelector] Component mounted
+[AdminUserSelector] Current user: {...}
+[AdminUserSelector] isAdmin: true
+[AdminUserSelector] Button clicked!
+[AdminUserSelector] Fetching users with search: ""</pre>
+                            <p>5. 如果没有看到这些日志，可能是前端需要重新构建</p>
+                        </div>
+                    `;
+                })
+                .catch(err => {
+                    console.error('3. 用户列表API失败:', err);
+                    document.getElementById('result').innerHTML = `
+                        <div style="color: orange; padding: 20px; border: 2px solid orange;">
+                            <h2>⚠️ API访问失败</h2>
+                            <p>错误: ${err.message}</p>
+                            <p>这可能表示权限问题或后端错误</p>
+                        </div>
+                    `;
+                });
+        }
+    </script>
+</head>
+<body style="font-family: Arial, sans-serif; margin: 40px;">
+    <h1>AdminUserSelector 诊断工具</h1>
+    <p>正在检查...</p>
+    <div id="result"></div>
+</body>
+</html>

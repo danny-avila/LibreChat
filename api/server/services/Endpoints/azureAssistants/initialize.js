@@ -89,7 +89,17 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
 
   if (azureConfig && azureConfig.assistants) {
     const { modelGroupMap, groupMap, assistantModels } = azureConfig;
-    const modelName = req.body.model ?? req.query.model ?? assistantModels[0];
+    
+    // Ensure assistantModels is an array with at least one model
+    if (!assistantModels || assistantModels.length === 0) {
+      throw new Error('No assistant models configured for Azure. Please check your Azure configuration.');
+    }
+    
+    let modelName = req.body?.model ?? req.query?.model ?? assistantModels[0];
+    // If the provided model is not in the modelGroupMap, fall back to the first assistant model
+    if (!modelName || !modelGroupMap[modelName]) {
+      modelName = assistantModels[0];
+    }
     const {
       azureOptions: currentOptions,
       baseURL: azureBaseURL,

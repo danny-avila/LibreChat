@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import type { ContextType } from '~/common';
 import {
   useSearchEnabled,
@@ -20,15 +20,18 @@ import { TermsAndConditionsModal } from '~/components/ui';
 import { Nav, MobileNav } from '~/components/Nav';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
+import { Spinner } from '@librechat/client';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const [bannerHeight, setBannerHeight] = useState(0);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
 
+  const navigate = useNavigate();
   const { isAuthenticated, logout } = useAuthContext();
 
   // Global health check - runs once per authenticated session
@@ -51,6 +54,25 @@ export default function Root() {
     }
   }, [termsData]);
 
+  // Check authentication status with timeout
+  useEffect(() => {
+    // Set a timeout to redirect to login if not authenticated after 3 seconds
+    const timeout = setTimeout(() => {
+      if (!isAuthenticated) {
+        console.log('[Root] Authentication timeout, redirecting to login');
+        navigate('/login');
+      }
+      setIsCheckingAuth(false);
+    }, 3000);
+
+    if (isAuthenticated) {
+      setIsCheckingAuth(false);
+      clearTimeout(timeout);
+    }
+
+    return () => clearTimeout(timeout);
+  }, [isAuthenticated, navigate]);
+
   const handleAcceptTerms = () => {
     setShowTerms(false);
   };
@@ -61,6 +83,17 @@ export default function Root() {
   };
 
   if (!isAuthenticated) {
+    // Show loading spinner while checking authentication
+    if (isCheckingAuth) {
+      return (
+        <div className="flex h-screen w-full items-center justify-center bg-surface-primary">
+          <div className="flex flex-col items-center gap-4">
+            <Spinner className="h-8 w-8" />
+            <p className="text-text-secondary">验证登录状态...</p>
+          </div>
+        </div>
+      );
+    }
     return null;
   }
 

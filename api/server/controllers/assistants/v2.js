@@ -58,11 +58,12 @@ const createAssistant = async (req, res) => {
     assistantData.metadata = {
       author: req.user.id,
       endpoint,
+      role: req.user.role,
     };
 
     const assistant = await openai.beta.assistants.create(assistantData);
 
-    const createData = { user: req.user.id };
+    const createData = { user: req.user.id, role: req.user.role };
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }

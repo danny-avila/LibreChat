@@ -6,3 +6,5 @@ export { default as NavLink } from './NavLink';
 export { default as NewChat } from './NewChat';
 export { default as SearchBar } from './SearchBar';
 export { default as Settings } from './Settings';
+export { default as AdminUserSelector } from './AdminUserSelector';
+export { default as AdminUserConversations } from './AdminUserConversations';

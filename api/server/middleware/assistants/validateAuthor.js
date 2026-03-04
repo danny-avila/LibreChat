@@ -2,7 +2,8 @@ const { SystemRoles } = require('librechat-data-provider');
 const { getAssistant } = require('~/models/Assistant');
 
 /**
- * Checks if the assistant is supported or excluded
+ * Validates that the user is the author of the assistant.
+ * Non-admin users can only modify their own assistants.
  * @param {object} params
  * @param {object} params.req - Express Request
  * @param {object} params.req.body - The request payload.
@@ -12,6 +13,7 @@ const { getAssistant } = require('~/models/Assistant');
  * @returns {Promise<void>}
  */
 const validateAuthor = async ({ req, openai, overrideEndpoint, overrideAssistantId }) => {
+  // Admin users can modify any assistant
   if (req.user.role === SystemRoles.ADMIN) {
     return;
   }
@@ -20,23 +22,27 @@ const validateAuthor = async ({ req, openai, overrideEndpoint, overrideAssistant
   const assistant_id =
     overrideAssistantId ?? req.params.id ?? req.body.assistant_id ?? req.query.assistant_id;
 
+  if (!assistant_id) {
+    throw new Error('Assistant ID is required for validation.');
+  }
+
   const appConfig = req.config;
   /** @type {Partial<TAssistantEndpoint>} */
   const assistantsConfig = appConfig.endpoints?.[endpoint];
-  if (!assistantsConfig) {
+
+  // Only skip author validation if privateAssistants is explicitly set to false
+  // Default behavior (no config or undefined) requires author validation for security
+  if (assistantsConfig?.privateAssistants === false) {
     return;
   }
 
-  // 只有在明确设置 privateAssistants: false 时才跳过作者验证
-  // 默认情况（undefined）和 true 都需要验证作者
-  if (assistantsConfig.privateAssistants === false) {
-    return;
-  }
-
+  // Check if user owns this assistant in the database
   const assistantDoc = await getAssistant({ assistant_id, user: req.user.id });
   if (assistantDoc) {
     return;
   }
+
+  // Fallback: check the assistant's metadata from OpenAI/Azure API
   const assistant = await openai.beta.assistants.retrieve(assistant_id);
   if (req.user.id !== assistant?.metadata?.author) {
     throw new Error(`Assistant ${assistant_id} is not authored by the user.`);
