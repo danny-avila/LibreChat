@@ -11,9 +11,10 @@ interface:
 
 memory:
   disabled: false
-  personalize: true        # ← geändert
-  messageWindowSize: 10
-  tokenLimit: 3000         # ← hinzugefügt (fehlte bei dir)
+  personalize: true
+  messageWindowSize: 8
+  tokenLimit: 3000
+  charLimit: 10000
   validKeys:
     - profil
     - familie
@@ -24,9 +25,13 @@ memory:
     - zielgruppe
     - brand_voice
   agent:
-    id: "agent_XpUp5rzY2Kt37C5p1R-gR"
     provider: "openAI"
-    model: "gpt-4o-mini"
+    model: "gpt-4o"
+    model_parameters:
+      temperature: 0.2
+      max_tokens: 2000
+      top_p: 0.8
+      frequency_penalty: 0.1
     instructions: |
       Du bist der Gedächtnis-Extraktions-Agent von KARRIERE.MUM.
       Analysiere das Gespräch und rufe set_memory SOFORT auf, sobald du relevante Informationen findest.
