@@ -7,6 +7,7 @@ const {
 } = require('@librechat/agents');
 const {
   checkAccess,
+  toolkitParent,
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
@@ -369,8 +370,9 @@ const loadTools = async ({
       continue;
     }
 
-    if (customConstructors[tool]) {
-      requestedTools[tool] = async () => customConstructors[tool](toolContextMap);
+    const toolKey = customConstructors[tool] ? tool : toolkitParent[tool];
+    if (toolKey && customConstructors[toolKey]) {
+      requestedTools[tool] = async () => customConstructors[toolKey](toolContextMap);
       continue;
     }
 
