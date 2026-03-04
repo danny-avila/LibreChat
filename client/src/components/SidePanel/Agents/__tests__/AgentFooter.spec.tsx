@@ -420,7 +420,84 @@ describe('AgentFooter', () => {
       render(<AgentFooter {...defaultProps} />);
       expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
       expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument();
-      // Duplicate button should still show as it doesn't depend on permissions loading
+      expect(screen.queryByTestId('duplicate-button')).not.toBeInTheDocument();
+    });
+
+    test('shows duplicate button for non-owner with EDIT permission', () => {
+      mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.different));
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return {
+            _id: 'agent-db-123',
+            name: 'Test Agent',
+            author: 'user-123',
+            projectIds: ['project-1'],
+            isCollaborative: false,
+          };
+        }
+        if (name === 'id') {
+          return 'agent-123';
+        }
+        return undefined;
+      });
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: (bit: number) => bit === 2,
+        isLoading: false,
+        permissionBits: 2,
+      });
+      render(<AgentFooter {...defaultProps} />);
+      expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
+    });
+
+    test('hides duplicate button for non-owner with only VIEW permission', () => {
+      mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.different));
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return {
+            _id: 'agent-db-123',
+            name: 'Test Agent',
+            author: 'user-123',
+            projectIds: ['project-1'],
+            isCollaborative: false,
+          };
+        }
+        if (name === 'id') {
+          return 'agent-123';
+        }
+        return undefined;
+      });
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: () => false,
+        isLoading: false,
+        permissionBits: 1,
+      });
+      render(<AgentFooter {...defaultProps} />);
+      expect(screen.queryByTestId('duplicate-button')).not.toBeInTheDocument();
+    });
+
+    test('shows duplicate button for admin who is not the author', () => {
+      mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.admin));
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return {
+            _id: 'agent-db-123',
+            name: 'Test Agent',
+            author: 'user-123',
+            projectIds: ['project-1'],
+            isCollaborative: false,
+          };
+        }
+        if (name === 'id') {
+          return 'agent-123';
+        }
+        return undefined;
+      });
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: () => false,
+        isLoading: false,
+        permissionBits: 0,
+      });
+      render(<AgentFooter {...defaultProps} />);
       expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
     });
   });
