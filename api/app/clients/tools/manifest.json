@@ -156,7 +156,6 @@
   {
     "name": "Gemini Image Tools",
     "pluginKey": "gemini_image_gen",
-    "toolkit": true,
     "description": "Generate high-quality images using Google's Gemini Image Models. Supports Gemini API or Vertex AI.",
     "icon": "assets/gemini_image_gen.svg",
     "authConfig": [

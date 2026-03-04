@@ -74,7 +74,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
                 if (!tool) {
                   logger.warn(
-                    `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].join(', ')}`,
+                    `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].map((k) => `"${k}"`).join(', ')}`,
                   );
                   return {
                     toolCallId: tc.id,
