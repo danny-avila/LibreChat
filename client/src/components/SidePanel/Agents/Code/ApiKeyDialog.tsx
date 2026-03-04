@@ -93,7 +93,7 @@ export default function ApiKeyDialog({
             {localize('com_ui_librechat_code_api_key')}
           </a>
 
-          <form onSubmit={handleSubmit(onSubmit)}>
+          <form id="api-key-form" onSubmit={handleSubmit(onSubmit)}>
             <SecretInput
               placeholder={localize('com_ui_enter_api_key')}
               {...register('apiKey', { required: true })}
@@ -117,7 +117,7 @@ export default function ApiKeyDialog({
               {localize('com_ui_revoke')}
             </Button>
           )}
-          <Button variant="submit" onClick={handleSubmit(onSubmit)} className="h-10">
+          <Button type="submit" form="api-key-form" variant="submit" className="h-10">
             {localize('com_ui_save')}
           </Button>
         </OGDialogFooter>

@@ -1,6 +1,3 @@
-export { FILE_TYPE_MAP } from './FileInput';
-export type { FileType } from './FileInput';
-
 export * from './Accordion';
 export * from './AnimatedTabs';
 export * from './AlertDialog';

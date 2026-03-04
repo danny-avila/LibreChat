@@ -111,7 +111,7 @@ export function AvatarMenu({
           data-orientation="vertical"
           onClick={onItemClick}
         >
-          {localize('com_ui_upload_image')}
+          {localize('com_ui_upload_image_input')}
         </div>
         {/* <Popover.Close
           role="menuitem"

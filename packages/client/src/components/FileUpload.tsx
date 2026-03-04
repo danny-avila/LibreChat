@@ -13,10 +13,7 @@ type FileUploadProps = {
    * @example ['image', 'document']
    */
   acceptTypes?: (FileType | string)[];
-  /**
-   * Whether to allow multiple files to be selected
-   * @default true
-   */
+  /** Whether to allow multiple files to be selected (defaults to true, unlike FileInput which defaults to false) */
   multiple?: boolean;
 };
 

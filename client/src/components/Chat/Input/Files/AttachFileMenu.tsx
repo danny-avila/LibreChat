@@ -21,6 +21,7 @@ import {
   EToolResources,
   EModelEndpoint,
   defaultAgentCapabilities,
+  bedrockDocumentExtensions,
   isDocumentSupportedProvider,
 } from 'librechat-data-provider';
 import type { EndpointFileConfig } from 'librechat-data-provider';
@@ -39,7 +40,7 @@ import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
-type FileUploadType = FileType;
+type FileUploadType = FileType | 'image_document_extended';
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -95,7 +96,9 @@ const AttachFileMenu = ({
       return;
     }
     inputRef.current.value = '';
-    if (fileType && fileType in FILE_TYPE_MAP) {
+    if (fileType === 'image_document_extended') {
+      inputRef.current.accept = `image/*,.heif,.heic,${bedrockDocumentExtensions}`;
+    } else if (fileType && fileType in FILE_TYPE_MAP) {
       inputRef.current.accept = FILE_TYPE_MAP[fileType];
     } else {
       inputRef.current.accept = '';

@@ -3,7 +3,6 @@ import * as React from 'react';
 export type FileType =
   | 'image'
   | 'image_document'
-  | 'image_document_extended'
   | 'image_document_video_audio'
   | 'document'
   | 'video'
@@ -27,10 +26,7 @@ export interface FileInputProps
    * @example ['image/png', 'application/pdf']
    */
   acceptTypes?: (FileType | string)[];
-  /**
-   * Whether to allow multiple files to be selected
-   * @default false
-   */
+  /** Whether to allow multiple files to be selected (defaults to false, matching native `<input>`) */
   multiple?: boolean;
 }
 
@@ -44,8 +40,6 @@ const FILE_TYPE_MAP: Record<FileType, string> = {
   video: 'video/*',
   audio: 'audio/*',
   image_document: 'image/*,.heif,.heic,.pdf,application/pdf',
-  image_document_extended:
-    'image/*,.heif,.heic,.pdf,.csv,.doc,.docx,.xls,.xlsx,.html,.htm,.txt,.md,application/pdf,text/csv,application/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/html,text/plain,text/markdown',
   image_document_video_audio: 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*',
   all: '*',
 };
