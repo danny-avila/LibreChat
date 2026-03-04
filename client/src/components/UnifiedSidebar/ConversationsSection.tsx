@@ -110,7 +110,7 @@ const ConversationsSection = memo(() => {
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col overflow-hidden"
+      className="flex h-full min-h-0 flex-col overflow-hidden pt-2"
       role="region"
       aria-label={localize('com_ui_chat_history')}
     >
