@@ -150,9 +150,11 @@ const tokenValues = Object.assign(
     'gpt-5': { prompt: 1.25, completion: 10 },
     'gpt-5.1': { prompt: 1.25, completion: 10 },
     'gpt-5.2': { prompt: 1.75, completion: 14 },
+    'gpt-5.3': { prompt: 1.75, completion: 14 },
     'gpt-5-nano': { prompt: 0.05, completion: 0.4 },
     'gpt-5-mini': { prompt: 0.25, completion: 2 },
     'gpt-5-pro': { prompt: 15, completion: 120 },
+    'gpt-5.2-pro': { prompt: 21, completion: 168 },
     o1: { prompt: 15, completion: 60 },
     'o1-mini': { prompt: 1.1, completion: 4.4 },
     'o1-preview': { prompt: 15, completion: 60 },
@@ -316,6 +318,28 @@ const cacheTokenValues = {
   'claude-opus-4': { write: 18.75, read: 1.5 },
   'claude-opus-4-5': { write: 6.25, read: 0.5 },
   'claude-opus-4-6': { write: 6.25, read: 0.5 },
+  // OpenAI models — cached input discount varies by family:
+  //   gpt-4o (incl. mini), o1 (incl. mini/preview): 50% off
+  //   gpt-4.1 (incl. mini/nano), o3 (incl. mini), o4-mini: 75% off
+  //   gpt-5.x (excl. pro variants): 90% off
+  //   gpt-5-pro, gpt-5.2-pro: no caching
+  'gpt-4o': { write: 2.5, read: 1.25 },
+  'gpt-4o-mini': { write: 0.15, read: 0.075 },
+  'gpt-4.1': { write: 2, read: 0.5 },
+  'gpt-4.1-mini': { write: 0.4, read: 0.1 },
+  'gpt-4.1-nano': { write: 0.1, read: 0.025 },
+  'gpt-5': { write: 1.25, read: 0.125 },
+  'gpt-5.1': { write: 1.25, read: 0.125 },
+  'gpt-5.2': { write: 1.75, read: 0.175 },
+  'gpt-5.3': { write: 1.75, read: 0.175 },
+  'gpt-5-mini': { write: 0.25, read: 0.025 },
+  'gpt-5-nano': { write: 0.05, read: 0.005 },
+  o1: { write: 15, read: 7.5 },
+  'o1-mini': { write: 1.1, read: 0.55 },
+  'o1-preview': { write: 15, read: 7.5 },
+  o3: { write: 2, read: 0.5 },
+  'o3-mini': { write: 1.1, read: 0.275 },
+  'o4-mini': { write: 1.1, read: 0.275 },
   // DeepSeek models - cache hit: $0.028/1M, cache miss: $0.28/1M
   deepseek: { write: 0.28, read: 0.028 },
   'deepseek-chat': { write: 0.28, read: 0.028 },

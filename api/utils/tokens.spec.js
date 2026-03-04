@@ -200,6 +200,20 @@ describe('getModelMaxTokens', () => {
     );
   });
 
+  test('should return correct tokens for gpt-5.3 matches', () => {
+    expect(getModelMaxTokens('gpt-5.3')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5.3']);
+    expect(getModelMaxTokens('gpt-5.3-codex')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5.3']);
+    expect(getModelMaxTokens('openai/gpt-5.3')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.3'],
+    );
+    expect(getModelMaxTokens('gpt-5.3-2025-03-01')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.3'],
+    );
+    expect(getModelMaxTokens('gpt-5.3-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.3'],
+    );
+  });
+
   test('should return correct tokens for Anthropic models', () => {
     const models = [
       'claude-2.1',
@@ -492,7 +506,17 @@ describe('getModelMaxTokens', () => {
 
   test('should return correct max output tokens for GPT-5 models', () => {
     const { getModelMaxOutputTokens } = require('@librechat/api');
-    ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5-pro'].forEach((model) => {
+    const gpt5Models = [
+      'gpt-5',
+      'gpt-5.1',
+      'gpt-5.2',
+      'gpt-5.3',
+      'gpt-5-mini',
+      'gpt-5-nano',
+      'gpt-5-pro',
+      'gpt-5.2-pro',
+    ];
+    for (const model of gpt5Models) {
       expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
       expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
         maxOutputTokensMap[EModelEndpoint.openAI][model],
@@ -500,7 +524,7 @@ describe('getModelMaxTokens', () => {
       expect(getModelMaxOutputTokens(model, EModelEndpoint.azureOpenAI)).toBe(
         maxOutputTokensMap[EModelEndpoint.azureOpenAI][model],
       );
-    });
+    }
   });
 
   test('should return correct max output tokens for GPT-OSS models', () => {
@@ -610,6 +634,12 @@ describe('matchModelName', () => {
     expect(matchModelName('gpt-5-pro-preview')).toBe('gpt-5-pro');
     expect(matchModelName('gpt-5-pro-2025-01-30')).toBe('gpt-5-pro');
     expect(matchModelName('gpt-5-pro-2025-01-30-0130')).toBe('gpt-5-pro');
+  });
+
+  it('should return the closest matching key for gpt-5.3 matches', () => {
+    expect(matchModelName('openai/gpt-5.3')).toBe('gpt-5.3');
+    expect(matchModelName('gpt-5.3-codex')).toBe('gpt-5.3');
+    expect(matchModelName('gpt-5.3-2025-03-01')).toBe('gpt-5.3');
   });
 
   // Tests for Google models
