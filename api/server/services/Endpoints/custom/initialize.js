@@ -1,4 +1,9 @@
-const { isUserProvided, getOpenAIConfig, getCustomEndpointConfig } = require('@librechat/api');
+const {
+  isUserProvided,
+  getOpenAIConfig,
+  getCustomEndpointConfig,
+  resolveHeaders,
+} = require('@librechat/api');
 const {
   CacheKeys,
   ErrorTypes,
@@ -95,7 +100,11 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   }
 
   const customOptions = {
-    headers: endpointConfig.headers,
+    headers: resolveHeaders({
+      headers: endpointConfig.headers,
+      user: req.user,
+      body: req.body,
+    }),
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     customParams: endpointConfig.customParams,
