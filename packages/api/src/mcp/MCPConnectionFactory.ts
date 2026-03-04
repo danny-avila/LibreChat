@@ -6,7 +6,7 @@ import type { MCPOAuthTokens, OAuthMetadata } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
-import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
+import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
 import { sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
@@ -265,6 +265,10 @@ export class MCPConnectionFactory {
       if (tokens) logger.info(`${this.logPrefix} Loaded OAuth tokens`);
       return tokens;
     } catch (error) {
+      if (error instanceof ReauthenticationRequiredError) {
+        logger.info(`${this.logPrefix} ${error.message}, will trigger OAuth flow`);
+        return null;
+      }
       logger.debug(`${this.logPrefix} No existing tokens found or error loading tokens`, error);
       return null;
     }
@@ -495,6 +499,44 @@ export class MCPConnectionFactory {
       const existingFlow = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
 
       if (existingFlow) {
+        if (existingFlow.status === 'PENDING') {
+          logger.debug(
+            `${this.logPrefix} Found PENDING OAuth flow, joining existing flow instead of creating new one`,
+          );
+          const tokens = await this.flowManager.createFlow(flowId, 'mcp_oauth', {}, this.signal);
+          if (typeof this.oauthEnd === 'function') {
+            await this.oauthEnd();
+          }
+          logger.info(
+            `${this.logPrefix} Joined existing OAuth flow completed for ${this.serverName}`,
+          );
+          const clientInfo = (existingFlow.metadata as FlowMetadata)?.clientInfo as
+            | OAuthClientInformation
+            | undefined;
+          const metadata = (existingFlow.metadata as FlowMetadata)?.metadata as
+            | OAuthMetadata
+            | undefined;
+          return { tokens, clientInfo, metadata };
+        }
+
+        if (existingFlow.status === 'COMPLETED') {
+          const { isStale } = await this.flowManager.isFlowStale(flowId, 'mcp_oauth');
+          if (!isStale && existingFlow.result !== undefined) {
+            logger.debug(
+              `${this.logPrefix} Found non-stale COMPLETED OAuth flow, reusing cached tokens`,
+            );
+            return {
+              tokens: existingFlow.result as MCPOAuthTokens | null,
+              clientInfo: (existingFlow.metadata as FlowMetadata)?.clientInfo as
+                | OAuthClientInformation
+                | undefined,
+              metadata: (existingFlow.metadata as FlowMetadata)?.metadata as
+                | OAuthMetadata
+                | undefined,
+            };
+          }
+        }
+
         logger.debug(
           `${this.logPrefix} Found existing OAuth flow (status: ${existingFlow.status}), cleaning up to start fresh`,
         );

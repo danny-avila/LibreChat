@@ -1,10 +1,10 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
-import { MCPConnection } from './connection';
 import type * as t from './types';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
 /**
@@ -21,6 +21,8 @@ export abstract class UserConnectionManager {
   protected userConnections: Map<string, Map<string, MCPConnection>> = new Map();
   /** Last activity timestamp for users (not per server) */
   protected userLastActivity: Map<string, number> = new Map();
+  /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
+  protected pendingConnections: Map<string, Promise<MCPConnection>> = new Map();
 
   /** Updates the last activity timestamp for a user */
   protected updateUserLastActivity(userId: string): void {
@@ -31,29 +33,61 @@ export abstract class UserConnectionManager {
     );
   }
 
-  /** Gets or creates a connection for a specific user */
-  public async getUserConnection({
-    serverName,
-    forceNew,
-    user,
-    flowManager,
-    customUserVars,
-    requestBody,
-    tokenMethods,
-    oauthStart,
-    oauthEnd,
-    signal,
-    returnOnOAuth = false,
-    connectionTimeout,
-  }: {
-    serverName: string;
-    forceNew?: boolean;
-  } & Omit<t.OAuthConnectionOptions, 'useOAuth'>): Promise<MCPConnection> {
+  /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
+  public async getUserConnection(
+    opts: {
+      serverName: string;
+      forceNew?: boolean;
+    } & Omit<t.OAuthConnectionOptions, 'useOAuth'>,
+  ): Promise<MCPConnection> {
+    const { serverName, forceNew, user } = opts;
     const userId = user?.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
     }
 
+    const lockKey = `${userId}:${serverName}`;
+
+    if (!forceNew) {
+      const pending = this.pendingConnections.get(lockKey);
+      if (pending) {
+        logger.debug(`[MCP][User: ${userId}][${serverName}] Joining in-flight connection attempt`);
+        return pending;
+      }
+    }
+
+    const connectionPromise = this.createUserConnectionInternal(opts, userId);
+    this.pendingConnections.set(lockKey, connectionPromise);
+
+    try {
+      return await connectionPromise;
+    } finally {
+      if (this.pendingConnections.get(lockKey) === connectionPromise) {
+        this.pendingConnections.delete(lockKey);
+      }
+    }
+  }
+
+  private async createUserConnectionInternal(
+    {
+      serverName,
+      forceNew,
+      user,
+      flowManager,
+      customUserVars,
+      requestBody,
+      tokenMethods,
+      oauthStart,
+      oauthEnd,
+      signal,
+      returnOnOAuth = false,
+      connectionTimeout,
+    }: {
+      serverName: string;
+      forceNew?: boolean;
+    } & Omit<t.OAuthConnectionOptions, 'useOAuth'>,
+    userId: string,
+  ): Promise<MCPConnection> {
     if (await this.appConnections!.has(serverName)) {
       throw new McpError(
         ErrorCode.InvalidRequest,
@@ -188,6 +222,7 @@ export abstract class UserConnectionManager {
 
   /** Disconnects and removes a specific user connection */
   public async disconnectUserConnection(userId: string, serverName: string): Promise<void> {
+    this.pendingConnections.delete(`${userId}:${serverName}`);
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
     if (connection) {
@@ -215,6 +250,12 @@ export abstract class UserConnectionManager {
         );
       }
       await Promise.allSettled(disconnectPromises);
+      // Clean up any pending connection promises for this user
+      for (const key of this.pendingConnections.keys()) {
+        if (key.startsWith(`${userId}:`)) {
+          this.pendingConnections.delete(key);
+        }
+      }
       // Ensure user activity timestamp is removed
       this.userLastActivity.delete(userId);
       logger.info(`[MCP][User: ${userId}] All connections processed for disconnection.`);

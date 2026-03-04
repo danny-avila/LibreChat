@@ -149,6 +149,7 @@ export class FlowStateManager<T = unknown> {
       let elapsedTime = 0;
       let isCleanedUp = false;
       let intervalId: NodeJS.Timeout | null = null;
+      let missingStateRetried = false;
 
       // Cleanup function to avoid duplicate cleanup
       const cleanup = () => {
@@ -191,13 +192,24 @@ export class FlowStateManager<T = unknown> {
         if (isCleanedUp) return;
 
         try {
-          const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+          let flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
           if (!flowState) {
-            cleanup();
-            logger.error(`[${flowKey}] Flow state not found`);
-            reject(new Error(`${type} Flow state not found`));
-            return;
+            if (!missingStateRetried) {
+              missingStateRetried = true;
+              logger.warn(
+                `[${flowKey}] Flow state not found, retrying once after 500ms (race recovery)`,
+              );
+              await new Promise((r) => setTimeout(r, 500));
+              flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+            }
+
+            if (!flowState) {
+              cleanup();
+              logger.error(`[${flowKey}] Flow state not found after retry`);
+              reject(new Error(`${type} Flow state not found`));
+              return;
+            }
           }
 
           if (signal?.aborted) {
@@ -251,11 +263,20 @@ export class FlowStateManager<T = unknown> {
     const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
     if (!flowState) {
-      logger.warn('[FlowStateManager] Cannot complete flow - flow state not found', {
-        flowId,
+      logger.warn(
+        '[FlowStateManager] Flow state not found during completion — recreating as COMPLETED (race recovery)',
+        { flowId, type },
+      );
+      const recoveredState: FlowState<T> = {
         type,
-      });
-      return false;
+        status: 'COMPLETED',
+        metadata: {},
+        createdAt: Date.now(),
+        result,
+        completedAt: Date.now(),
+      };
+      await this.keyv.set(flowKey, recoveredState, this.ttl);
+      return true;
     }
 
     /** Prevent duplicate completion */
