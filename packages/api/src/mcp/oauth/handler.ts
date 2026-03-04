@@ -103,7 +103,7 @@ export class MCPOAuthHandler {
             } else if (params.has('client_id') || params.has('client_secret')) {
               authMethod = 'client_secret_post';
             } else if (clientInfo.client_secret) {
-              authMethod = 'client_secret_post';
+              authMethod = 'client_secret_basic';
             } else {
               authMethod = 'none';
             }
