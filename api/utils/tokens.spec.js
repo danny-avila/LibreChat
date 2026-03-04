@@ -209,6 +209,9 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('gpt-5.3-2025-03-01')).toBe(
       maxTokensMap[EModelEndpoint.openAI]['gpt-5.3'],
     );
+    expect(getModelMaxTokens('gpt-5.3-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.3'],
+    );
   });
 
   test('should return correct tokens for Anthropic models', () => {
@@ -503,7 +506,7 @@ describe('getModelMaxTokens', () => {
 
   test('should return correct max output tokens for GPT-5 models', () => {
     const { getModelMaxOutputTokens } = require('@librechat/api');
-    [
+    const gpt5Models = [
       'gpt-5',
       'gpt-5.1',
       'gpt-5.2',
@@ -512,7 +515,8 @@ describe('getModelMaxTokens', () => {
       'gpt-5-nano',
       'gpt-5-pro',
       'gpt-5.2-pro',
-    ].forEach((model) => {
+    ];
+    for (const model of gpt5Models) {
       expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
       expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
         maxOutputTokensMap[EModelEndpoint.openAI][model],
@@ -520,7 +524,7 @@ describe('getModelMaxTokens', () => {
       expect(getModelMaxOutputTokens(model, EModelEndpoint.azureOpenAI)).toBe(
         maxOutputTokensMap[EModelEndpoint.azureOpenAI][model],
       );
-    });
+    }
   });
 
   test('should return correct max output tokens for GPT-OSS models', () => {

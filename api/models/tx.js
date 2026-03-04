@@ -318,8 +318,10 @@ const cacheTokenValues = {
   'claude-opus-4-5': { write: 6.25, read: 0.5 },
   'claude-opus-4-6': { write: 6.25, read: 0.5 },
   // OpenAI models — cached input discount varies by family:
-  //   gpt-4o/o1: 50% off, gpt-4.1/o3/o4: 75% off, gpt-5.x: 90% off
-  //   gpt-5-pro/gpt-5.2-pro: no caching available
+  //   gpt-4o (incl. mini), o1 (incl. mini/preview): 50% off
+  //   gpt-4.1 (incl. mini/nano), o3 (incl. mini), o4-mini: 75% off
+  //   gpt-5.x (excl. pro variants): 90% off
+  //   gpt-5-pro, gpt-5.2-pro: no caching
   'gpt-4o': { write: 2.5, read: 1.25 },
   'gpt-4o-mini': { write: 0.15, read: 0.075 },
   'gpt-4.1': { write: 2, read: 0.5 },
@@ -333,6 +335,7 @@ const cacheTokenValues = {
   'gpt-5-nano': { write: 0.05, read: 0.005 },
   o1: { write: 15, read: 7.5 },
   'o1-mini': { write: 1.1, read: 0.55 },
+  'o1-preview': { write: 15, read: 7.5 },
   o3: { write: 2, read: 0.5 },
   'o3-mini': { write: 1.1, read: 0.275 },
   'o4-mini': { write: 1.1, read: 0.275 },
