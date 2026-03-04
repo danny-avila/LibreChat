@@ -12,6 +12,7 @@ import {
   OGDialogContent,
 } from '@librechat/client';
 import { useLocalize, useDebouncedMermaid } from '~/hooks';
+import { fixSubgraphTitleContrast } from '~/utils/mermaid';
 import MermaidHeader from './MermaidHeader';
 import cn from '~/utils/cn';
 
@@ -180,6 +181,8 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
       if (!svgElement.getAttribute('xmlns')) {
         svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
       }
+
+      fixSubgraphTitleContrast(svgElement);
 
       return {
         processedSvg: new XMLSerializer().serializeToString(doc),
@@ -672,7 +675,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
             className={cn(
               'relative overflow-hidden p-4 transition-colors duration-200',
               'rounded-md',
-              showControls ? 'bg-surface-primary-alt' : 'bg-transparent',
+              showControls ? 'bg-surface-primary-alt dark:bg-white/[0.03]' : 'bg-transparent',
               isPanning ? 'cursor-grabbing' : 'cursor-grab',
             )}
             style={{ height: `${calculatedHeight}px` }}
@@ -811,7 +814,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
           className={cn(
             'relative overflow-hidden p-4 transition-colors duration-200',
             'rounded-md',
-            showControls ? 'bg-surface-primary-alt' : 'bg-transparent',
+            showControls ? 'bg-surface-primary-alt dark:bg-white/[0.03]' : 'bg-transparent',
             isPanning ? 'cursor-grabbing' : 'cursor-grab',
           )}
           style={{ height: `${calculatedHeight}px` }}
