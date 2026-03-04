@@ -3,6 +3,8 @@ import {
   CalculatorToolDefinition,
   CodeExecutionToolDefinition,
 } from '@librechat/agents';
+import { geminiToolkit } from '~/tools/toolkits/gemini';
+import { oaiToolkit } from '~/tools/toolkits/oai';
 
 /** Extended JSON Schema type that includes standard validation keywords */
 export type ExtendedJsonSchema = {
@@ -352,128 +354,6 @@ export const fileSearchSchema: ExtendedJsonSchema = {
   required: ['query'],
 };
 
-/** OpenAI Image Generation tool JSON schema */
-export const imageGenOaiSchema: ExtendedJsonSchema = {
-  type: 'object',
-  properties: {
-    prompt: {
-      type: 'string',
-      maxLength: 32000,
-      description: `Describe the image you want in detail. 
-      Be highly specific—break your idea into layers: 
-      (1) main concept and subject,
-      (2) composition and position,
-      (3) lighting and mood,
-      (4) style, medium, or camera details,
-      (5) important features (age, expression, clothing, etc.),
-      (6) background.
-      Use positive, descriptive language and specify what should be included, not what to avoid. 
-      List number and characteristics of people/objects, and mention style/technical requirements (e.g., "DSLR photo, 85mm lens, golden hour").
-      Do not reference any uploaded images—use for new image creation from text only.`,
-    },
-    background: {
-      type: 'string',
-      enum: ['transparent', 'opaque', 'auto'],
-      description:
-        'Sets transparency for the background. Must be one of transparent, opaque or auto (default). When transparent, the output format should be png or webp.',
-    },
-    quality: {
-      type: 'string',
-      enum: ['auto', 'high', 'medium', 'low'],
-      description: 'The quality of the image. One of auto (default), high, medium, or low.',
-    },
-    size: {
-      type: 'string',
-      enum: ['auto', '1024x1024', '1536x1024', '1024x1536'],
-      description:
-        'The size of the generated image. One of 1024x1024, 1536x1024 (landscape), 1024x1536 (portrait), or auto (default).',
-    },
-  },
-  required: ['prompt'],
-};
-
-/** OpenAI Image Edit tool JSON schema */
-export const imageEditOaiSchema: ExtendedJsonSchema = {
-  type: 'object',
-  properties: {
-    image_ids: {
-      type: 'array',
-      items: { type: 'string' },
-      minItems: 1,
-      description: `IDs (image ID strings) of previously generated or uploaded images that should guide the edit.
-
-Guidelines:
-- If the user's request depends on any prior image(s), copy their image IDs into the \`image_ids\` array (in the same order the user refers to them).  
-- Never invent or hallucinate IDs; only use IDs that are still visible in the conversation context.
-- If no earlier image is relevant, omit the field entirely.`,
-    },
-    prompt: {
-      type: 'string',
-      maxLength: 32000,
-      description: `Describe the changes, enhancements, or new ideas to apply to the uploaded image(s).
-      Be highly specific—break your request into layers: 
-      (1) main concept or transformation,
-      (2) specific edits/replacements or composition guidance,
-      (3) desired style, mood, or technique,
-      (4) features/items to keep, change, or add (such as objects, people, clothing, lighting, etc.).
-      Use positive, descriptive language and clarify what should be included or changed, not what to avoid.
-      Always base this prompt on the most recently uploaded reference images.`,
-    },
-    quality: {
-      type: 'string',
-      enum: ['auto', 'high', 'medium', 'low'],
-      description:
-        'The quality of the image. One of auto (default), high, medium, or low. High/medium/low only supported for gpt-image-1.',
-    },
-    size: {
-      type: 'string',
-      enum: ['auto', '1024x1024', '1536x1024', '1024x1536', '256x256', '512x512'],
-      description:
-        'The size of the generated images. For gpt-image-1: auto (default), 1024x1024, 1536x1024, 1024x1536. For dall-e-2: 256x256, 512x512, 1024x1024.',
-    },
-  },
-  required: ['image_ids', 'prompt'],
-};
-
-/** Gemini Image Generation tool JSON schema */
-export const geminiImageGenSchema: ExtendedJsonSchema = {
-  type: 'object',
-  properties: {
-    prompt: {
-      type: 'string',
-      maxLength: 32000,
-      description:
-        'A detailed text description of the desired image, up to 32000 characters. For "editing" requests, describe the changes you want to make to the referenced image. Be specific about composition, style, lighting, and subject matter.',
-    },
-    image_ids: {
-      type: 'array',
-      items: { type: 'string' },
-      description: `Optional array of image IDs to use as visual context for generation.
-
-Guidelines:
-- For "editing" requests: ALWAYS include the image ID being "edited"
-- For new generation with context: Include any relevant reference image IDs
-- If the user's request references any prior images, include their image IDs in this array
-- These images will be used as visual context/inspiration for the new generation
-- Never invent or hallucinate IDs; only use IDs that are visible in the conversation
-- If no images are relevant, omit this field entirely`,
-    },
-    aspectRatio: {
-      type: 'string',
-      enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
-      description:
-        'The aspect ratio of the generated image. Use 16:9 or 3:2 for landscape, 9:16 or 2:3 for portrait, 21:9 for ultra-wide/cinematic, 1:1 for square. Defaults to 1:1 if not specified.',
-    },
-    imageSize: {
-      type: 'string',
-      enum: ['1K', '2K', '4K'],
-      description:
-        'The resolution of the generated image. Use 1K for standard, 2K for high, 4K for maximum quality. Defaults to 1K if not specified.',
-    },
-  },
-  required: ['prompt'],
-};
-
 /** Tool definitions registry - maps tool names to their definitions */
 export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   google: {
@@ -549,56 +429,25 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     responseFormat: 'content_and_artifact',
   },
   image_gen_oai: {
-    name: 'image_gen_oai',
-    description: `Generates high-quality, original images based solely on text, not using any uploaded reference images.
-
-When to use \`image_gen_oai\`:
-- To create entirely new images from detailed text descriptions that do NOT reference any image files.
-
-When NOT to use \`image_gen_oai\`:
-- If the user has uploaded any images and requests modifications, enhancements, or remixing based on those uploads → use \`image_edit_oai\` instead.
-
-Generated image IDs will be returned in the response, so you can refer to them in future requests made to \`image_edit_oai\`.`,
-    schema: imageGenOaiSchema,
+    name: oaiToolkit.image_gen_oai.name,
+    description: oaiToolkit.image_gen_oai.description,
+    schema: oaiToolkit.image_gen_oai.schema,
     toolType: 'builtin',
-    responseFormat: 'content_and_artifact',
+    responseFormat: oaiToolkit.image_gen_oai.responseFormat,
   },
   image_edit_oai: {
-    name: 'image_edit_oai',
-    description: `Generates high-quality, original images based on text and one or more uploaded/referenced images.
-
-When to use \`image_edit_oai\`:
-- The user wants to modify, extend, or remix one **or more** uploaded images, either:
-- Previously generated, or in the current request (both to be included in the \`image_ids\` array).
-- Always when the user refers to uploaded images for editing, enhancement, remixing, style transfer, or combining elements.
-- Any current or existing images are to be used as visual guides.
-- If there are any files in the current request, they are more likely than not expected as references for image edit requests.
-
-When NOT to use \`image_edit_oai\`:
-- Brand-new generations that do not rely on an existing image → use \`image_gen_oai\` instead.
-
-Both generated and referenced image IDs will be returned in the response, so you can refer to them in future requests made to \`image_edit_oai\`.`,
-    schema: imageEditOaiSchema,
+    name: oaiToolkit.image_edit_oai.name,
+    description: oaiToolkit.image_edit_oai.description,
+    schema: oaiToolkit.image_edit_oai.schema,
     toolType: 'builtin',
-    responseFormat: 'content_and_artifact',
+    responseFormat: oaiToolkit.image_edit_oai.responseFormat,
   },
   gemini_image_gen: {
-    name: 'gemini_image_gen',
-    description: `Generates high-quality, original images based on text prompts, with optional image context.
-
-When to use \`gemini_image_gen\`:
-- To create entirely new images from detailed text descriptions
-- To generate images using existing images as context or inspiration
-- When the user requests image generation, creation, or asks to "generate an image"
-- When the user asks to "edit", "modify", "change", or "swap" elements in an image (generates new image with changes)
-
-When NOT to use \`gemini_image_gen\`:
-- For uploading or saving existing images without modification
-
-Generated image IDs will be returned in the response, so you can refer to them in future requests.`,
-    schema: geminiImageGenSchema,
+    name: geminiToolkit.gemini_image_gen.name,
+    description: geminiToolkit.gemini_image_gen.description,
+    schema: geminiToolkit.gemini_image_gen.schema,
     toolType: 'builtin',
-    responseFormat: 'content_and_artifact',
+    responseFormat: geminiToolkit.gemini_image_gen.responseFormat,
   },
 };
 
