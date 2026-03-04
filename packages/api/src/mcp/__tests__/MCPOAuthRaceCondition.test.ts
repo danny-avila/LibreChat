@@ -8,17 +8,11 @@
  * 5. monitorFlow retries once when flow state disappears mid-poll
  */
 
-import { z } from 'zod';
-import * as net from 'net';
 import { Keyv } from 'keyv';
-import * as http from 'http';
-import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { FlowState } from '~/flow/types';
-import type { Socket } from 'net';
+import type { OAuthTestServer } from './helpers/oauthTestServer';
 import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
+import { MockKeyv, createOAuthMCPServer } from './helpers/oauthTestServer';
 import { FlowStateManager } from '~/flow/manager';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -42,177 +36,6 @@ jest.mock('~/mcp/mcpConfig', () => ({
 }));
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
-
-class MockKeyv<T = string> {
-  private store: Map<string, FlowState<T>>;
-
-  constructor() {
-    this.store = new Map();
-  }
-
-  async get(key: string): Promise<FlowState<T> | undefined> {
-    return this.store.get(key);
-  }
-
-  async set(key: string, value: FlowState<T>, _ttl?: number): Promise<true> {
-    this.store.set(key, value);
-    return true;
-  }
-
-  async delete(key: string): Promise<boolean> {
-    return this.store.delete(key);
-  }
-}
-
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address() as net.AddressInfo;
-      srv.close((err) => (err ? reject(err) : resolve(addr.port)));
-    });
-  });
-}
-
-function trackSockets(httpServer: http.Server): () => Promise<void> {
-  const sockets = new Set<Socket>();
-  httpServer.on('connection', (socket: Socket) => {
-    sockets.add(socket);
-    socket.once('close', () => sockets.delete(socket));
-  });
-  return () =>
-    new Promise<void>((resolve) => {
-      for (const socket of sockets) {
-        socket.destroy();
-      }
-      sockets.clear();
-      httpServer.close(() => resolve());
-    });
-}
-
-interface OAuthTestServer {
-  url: string;
-  close: () => Promise<void>;
-  issuedTokens: Set<string>;
-  tokenTTL: number;
-  tokenIssueTimes: Map<string, number>;
-}
-
-async function createOAuthMCPServer(tokenTTLMs = 60000): Promise<OAuthTestServer> {
-  const sessions = new Map<string, StreamableHTTPServerTransport>();
-  const issuedTokens = new Set<string>();
-  const tokenIssueTimes = new Map<string, number>();
-  const authCodes = new Set<string>();
-
-  const httpServer = http.createServer(async (req, res) => {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
-
-    if (url.pathname === '/authorize') {
-      const code = randomUUID();
-      authCodes.add(code);
-      const redirectUri = url.searchParams.get('redirect_uri') ?? '';
-      const state = url.searchParams.get('state') ?? '';
-      res.writeHead(302, { Location: `${redirectUri}?code=${code}&state=${state}` });
-      res.end();
-      return;
-    }
-
-    if (url.pathname === '/token' && req.method === 'POST') {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        chunks.push(chunk as Buffer);
-      }
-      const body = new URLSearchParams(Buffer.concat(chunks).toString());
-      const grantType = body.get('grant_type');
-
-      if (grantType === 'authorization_code') {
-        const code = body.get('code');
-        if (!code || !authCodes.has(code)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'invalid_grant' }));
-          return;
-        }
-        authCodes.delete(code);
-        const accessToken = randomUUID();
-        issuedTokens.add(accessToken);
-        tokenIssueTimes.set(accessToken, Date.now());
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            access_token: accessToken,
-            token_type: 'Bearer',
-            expires_in: Math.ceil(tokenTTLMs / 1000),
-          }),
-        );
-        return;
-      }
-
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'unsupported_grant_type' }));
-      return;
-    }
-
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'invalid_token' }));
-      return;
-    }
-
-    const token = authHeader.slice(7);
-    if (!issuedTokens.has(token)) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'invalid_token' }));
-      return;
-    }
-
-    const issueTime = tokenIssueTimes.get(token) ?? 0;
-    if (Date.now() - issueTime > tokenTTLMs) {
-      issuedTokens.delete(token);
-      tokenIssueTimes.delete(token);
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'invalid_token' }));
-      return;
-    }
-
-    const sid = req.headers['mcp-session-id'] as string | undefined;
-    let transport = sid ? sessions.get(sid) : undefined;
-
-    if (!transport) {
-      transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
-      const mcp = new McpServer({ name: 'oauth-test-server', version: '0.0.1' });
-      mcp.tool('echo', { message: z.string() }, async (args) => ({
-        content: [{ type: 'text' as const, text: `echo: ${args.message}` }],
-      }));
-      await mcp.connect(transport);
-    }
-
-    await transport.handleRequest(req, res);
-
-    if (transport.sessionId && !sessions.has(transport.sessionId)) {
-      sessions.set(transport.sessionId, transport);
-      transport.onclose = () => sessions.delete(transport!.sessionId!);
-    }
-  });
-
-  const destroySockets = trackSockets(httpServer);
-  const port = await getFreePort();
-  await new Promise<void>((resolve) => httpServer.listen(port, '127.0.0.1', resolve));
-
-  return {
-    url: `http://127.0.0.1:${port}/`,
-    issuedTokens,
-    tokenTTL: tokenTTLMs,
-    tokenIssueTimes,
-    close: async () => {
-      const closing = [...sessions.values()].map((t) => t.close().catch(() => undefined));
-      sessions.clear();
-      await Promise.all(closing);
-      await destroySockets();
-    },
-  };
-}
 
 describe('MCP OAuth Race Condition Fixes', () => {
   afterEach(() => {
@@ -545,7 +368,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
     let server: OAuthTestServer;
 
     beforeEach(async () => {
-      server = await createOAuthMCPServer(60000);
+      server = await createOAuthMCPServer({ tokenTTLMs: 60000 });
     });
 
     afterEach(async () => {
@@ -629,7 +452,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
     });
 
     it('should reject expired tokens with 401', async () => {
-      const shortTTLServer = await createOAuthMCPServer(500);
+      const shortTTLServer = await createOAuthMCPServer({ tokenTTLMs: 500 });
 
       try {
         const authRes = await fetch(
