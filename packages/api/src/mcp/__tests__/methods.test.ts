@@ -79,6 +79,18 @@ describe('selectRegistrationAuthMethod', () => {
       ),
     ).toBe('client_secret_basic');
   });
+
+  it('picks first supported credential method from mixed supported/unsupported list', () => {
+    expect(selectRegistrationAuthMethod(['private_key_jwt', 'client_secret_post'])).toBe(
+      'client_secret_post',
+    );
+  });
+
+  it('skips unsupported and none to find credential method deeper in the list', () => {
+    expect(selectRegistrationAuthMethod(['tls_client_auth', 'none', 'client_secret_basic'])).toBe(
+      'client_secret_basic',
+    );
+  });
 });
 
 describe('resolveTokenEndpointAuthMethod', () => {
@@ -131,6 +143,32 @@ describe('resolveTokenEndpointAuthMethod', () => {
         tokenAuthMethods: ['client_secret_basic'],
       }),
     ).toBe('client_secret_basic');
+  });
+
+  it('ignores exotic preferredMethod and falls back to server methods', () => {
+    expect(
+      resolveTokenEndpointAuthMethod({
+        preferredMethod: 'private_key_jwt',
+        tokenAuthMethods: ['client_secret_post'],
+      }),
+    ).toBe('client_secret_post');
+  });
+
+  it('ignores none preferredMethod and falls back to server methods', () => {
+    expect(
+      resolveTokenEndpointAuthMethod({
+        preferredMethod: 'none',
+        tokenAuthMethods: ['client_secret_basic'],
+      }),
+    ).toBe('client_secret_basic');
+  });
+
+  it('returns undefined when tokenAuthMethods is empty', () => {
+    expect(
+      resolveTokenEndpointAuthMethod({
+        tokenAuthMethods: [],
+      }),
+    ).toBeUndefined();
   });
 });
 
