@@ -57,9 +57,12 @@ const inlineFlowchartConfig = {
 
 export { inlineFlowchartConfig, artifactFlowchartConfig };
 
-/** Perceived luminance (0 = black, 1 = white) via sRGB coefficients */
+/** Perceived luminance (0 = black, 1 = white) via BT.601 luma coefficients */
 const hexLuminance = (hex: string): number => {
-  const h = hex.replace('#', '');
+  let h = hex.replace('#', '');
+  if (h.length === 3) {
+    h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  }
   if (h.length < 6) {
     return -1;
   }
@@ -77,7 +80,7 @@ const hexLuminance = (hex: string): number => {
  * This walks cluster groups and overrides the text fill attribute when contrast is poor.
  */
 export const fixSubgraphTitleContrast = (svgElement: Element): void => {
-  const clusters = svgElement.querySelectorAll('g.cluster, g[class*="cluster"]');
+  const clusters = svgElement.querySelectorAll('g.cluster');
   for (const cluster of clusters) {
     const rect = cluster.querySelector(':scope > rect, :scope > polygon');
     if (!rect) {
@@ -105,25 +108,31 @@ export const fixSubgraphTitleContrast = (svgElement: Element): void => {
       const textStyle = textEl.getAttribute('style') || '';
       const textStyleFill = textStyle.match(/fill\s*:\s*(#[0-9a-fA-F]{3,8})/);
       const currentHex = textStyleFill?.[1] ?? (textFill.startsWith('#') ? textFill : '');
-
       const isLightBg = bgLum > 0.5;
 
+      let newFill = '';
       if (!currentHex) {
         if (isLightBg) {
-          textEl.setAttribute('style', `${textStyle}${textStyle ? '; ' : ''}fill: #1a1a1a`);
+          newFill = '#1a1a1a';
         }
-        continue;
+      } else {
+        const textLum = hexLuminance(currentHex);
+        if (textLum < 0) {
+          continue;
+        }
+        if (isLightBg && textLum > 0.5) {
+          newFill = '#1a1a1a';
+        } else if (!isLightBg && textLum < 0.4) {
+          newFill = '#f0f0f0';
+        }
       }
 
-      const textLum = hexLuminance(currentHex);
-      if (textLum < 0) {
-        continue;
-      }
-
-      if (isLightBg && textLum > 0.5) {
-        textEl.setAttribute('style', `${textStyle}${textStyle ? '; ' : ''}fill: #1a1a1a`);
-      } else if (!isLightBg && textLum < 0.4) {
-        textEl.setAttribute('style', `${textStyle}${textStyle ? '; ' : ''}fill: #f0f0f0`);
+      if (newFill) {
+        let sep = '';
+        if (textStyle) {
+          sep = textStyle.trimEnd().endsWith(';') ? ' ' : '; ';
+        }
+        textEl.setAttribute('style', `${textStyle}${sep}fill: ${newFill}`);
       }
     }
   }
@@ -235,12 +244,21 @@ interface MermaidDiagramProps {
   content: string;
 }
 
-const IconButton = ({ onClick, children, title, disabled = false }) => {
+interface IconButtonProps {
+  onClick: () => void;
+  children: React.ReactNode;
+  title: string;
+  disabled?: boolean;
+}
+
+const IconButton = ({ onClick, children, title, disabled = false }: IconButtonProps) => {
   const [hovered, setHovered] = useState(false);
   return (
     <button
+      type="button"
       onClick={onClick}
       title={title}
+      aria-label={title}
       disabled={disabled}
       style={{
         ...(hovered && !disabled ? btnHover : btnBase),

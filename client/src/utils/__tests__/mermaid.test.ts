@@ -150,5 +150,23 @@ describe('mermaid config', () => {
       expect(style).toContain('font-size: 14px');
       expect(style).toContain('fill: #1a1a1a');
     });
+
+    it('handles 3-char hex shorthand fills', () => {
+      const svg = makeSvg(
+        '<g class="cluster"><rect fill="#FFC"/><g class="cluster-label"><text fill="#EEE">Title</text></g></g>',
+      );
+      fixSubgraphTitleContrast(svg);
+      expect(svg.querySelector('text')!.getAttribute('style')).toContain('fill: #1a1a1a');
+    });
+
+    it('avoids double semicolons when existing style has trailing semicolon', () => {
+      const svg = makeSvg(
+        '<g class="cluster"><rect fill="#FFF9C4"/><g class="cluster-label"><text style="font-size: 14px;" fill="#E0E0E0">Title</text></g></g>',
+      );
+      fixSubgraphTitleContrast(svg);
+      const style = svg.querySelector('text')!.getAttribute('style')!;
+      expect(style).not.toContain(';;');
+      expect(style).toContain('fill: #1a1a1a');
+    });
   });
 });
