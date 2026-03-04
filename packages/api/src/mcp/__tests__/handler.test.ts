@@ -1,3 +1,4 @@
+import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { AuthorizationServerMetadata } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { MCPOAuthFlowMetadata, MCPOAuthHandler, MCPOAuthTokens } from '~/mcp/oauth';
@@ -898,7 +899,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
     it('passes headers to client registration', async () => {
       mockRegisterClient.mockImplementation(async (_, options) => {
         await options.fetchFn?.('http://example.com/register', {});
-        return { client_id: 'test', redirect_uris: [] };
+        return { client_id: 'test', redirect_uris: [], logo_uri: undefined, tos_uri: undefined };
       });
 
       await MCPOAuthHandler.initiateOAuthFlow(
@@ -1020,6 +1021,8 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         client_id: 'dynamic-client-id',
         client_secret: 'dynamic-client-secret',
         redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
       });
 
       // Mock startAuthorization to return a successful response
@@ -1133,6 +1136,377 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('registerOAuthClient - Auth Method Selection', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      process.env.DOMAIN_SERVER = 'http://localhost:3080';
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValue(
+        new Error('No resource metadata'),
+      );
+
+      mockStartAuthorization.mockResolvedValue({
+        authorizationUrl: new URL('https://auth.example.com/authorize?client_id=test'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      mockRegisterClient.mockResolvedValue({
+        client_id: 'dynamic-client-id',
+        client_secret: 'dynamic-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
+      });
+    });
+
+    afterEach(() => {
+      delete process.env.DOMAIN_SERVER;
+    });
+
+    it('should respect server preference when server advertises client_secret_post first', async () => {
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic'],
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://auth.example.com',
+        'user-123',
+        {},
+        undefined,
+      );
+
+      expect(mockRegisterClient).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          clientMetadata: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_post',
+          }),
+        }),
+      );
+    });
+
+    it('should respect server preference when server advertises client_secret_basic first', async () => {
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://auth.example.com',
+        'user-123',
+        {},
+        undefined,
+      );
+
+      expect(mockRegisterClient).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          clientMetadata: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_basic',
+          }),
+        }),
+      );
+    });
+
+    it('should select none when server only advertises none', async () => {
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        token_endpoint_auth_methods_supported: ['none'],
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://auth.example.com',
+        'user-123',
+        {},
+        undefined,
+      );
+
+      expect(mockRegisterClient).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          clientMetadata: expect.objectContaining({
+            token_endpoint_auth_method: 'none',
+          }),
+        }),
+      );
+    });
+
+    it('should fall back to server first method when none of our supported methods match', async () => {
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        token_endpoint_auth_methods_supported: ['private_key_jwt', 'tls_client_auth'],
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://auth.example.com',
+        'user-123',
+        {},
+        undefined,
+      );
+
+      expect(mockRegisterClient).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          clientMetadata: expect.objectContaining({
+            token_endpoint_auth_method: 'private_key_jwt',
+          }),
+        }),
+      );
+    });
+
+    it('should default to client_secret_basic when server omits token_endpoint_auth_methods_supported (RFC 8414)', async () => {
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://auth.example.com',
+        'user-123',
+        {},
+        undefined,
+      );
+
+      expect(mockRegisterClient).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          clientMetadata: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_basic',
+          }),
+        }),
+      );
+    });
+
+    it('should let forced token_exchange_method override server preference', async () => {
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        token_endpoint_auth_methods_supported: ['client_secret_basic'],
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://auth.example.com',
+        'user-123',
+        {},
+        { token_exchange_method: TokenExchangeMethodEnum.DefaultPost },
+      );
+
+      expect(mockRegisterClient).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          clientMetadata: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_post',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('createOAuthFetch - Auth Method Fallback', () => {
+    const originalFetch = global.fetch;
+    const mockFetch = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      process.env.DOMAIN_SERVER = 'http://localhost:3080';
+      global.fetch = mockFetch;
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValue(
+        new Error('No resource metadata'),
+      );
+    });
+
+    afterEach(() => {
+      delete process.env.DOMAIN_SERVER;
+      mockFetch.mockClear();
+    });
+
+    afterAll(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('should default to client_secret_basic when clientInfo has secret but no token_endpoint_auth_method (RFC 8414)', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          metadata: {
+            serverName: 'test-server',
+            serverUrl: 'https://auth.example.com',
+            codeVerifier: 'test-verifier',
+            clientInfo: {
+              client_id: 'test-client-id',
+              client_secret: 'test-client-secret',
+            },
+            metadata: {
+              issuer: 'https://auth.example.com',
+              authorization_endpoint: 'https://auth.example.com/authorize',
+              token_endpoint: 'https://auth.example.com/token',
+            },
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlow: jest.fn(),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+
+      mockExchangeAuthorization.mockImplementation(async (_serverUrl, options) => {
+        const tokenParams = new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: 'test-code',
+          code_verifier: 'test-verifier',
+        });
+        await options.fetchFn?.('https://auth.example.com/token', {
+          method: 'POST',
+          body: tokenParams,
+        });
+        return { access_token: 'test-token', token_type: 'Bearer' };
+      });
+
+      await MCPOAuthHandler.completeOAuthFlow(
+        'test-flow-id',
+        'test-auth-code',
+        mockFlowManager,
+        {},
+      );
+
+      const [, fetchInit] = mockFetch.mock.calls[0];
+      const headers = fetchInit?.headers as Headers;
+      const body = fetchInit?.body as string;
+
+      expect(headers.get('Authorization')).toMatch(/^Basic /);
+      expect(body).not.toContain('client_id=');
+    });
+
+    it('should use client_secret_post when clientInfo specifies it', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          metadata: {
+            serverName: 'test-server',
+            serverUrl: 'https://auth.example.com',
+            codeVerifier: 'test-verifier',
+            clientInfo: {
+              client_id: 'test-client-id',
+              client_secret: 'test-client-secret',
+              token_endpoint_auth_method: 'client_secret_post',
+            },
+            metadata: {
+              issuer: 'https://auth.example.com',
+              authorization_endpoint: 'https://auth.example.com/authorize',
+              token_endpoint: 'https://auth.example.com/token',
+            },
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlow: jest.fn(),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+
+      mockExchangeAuthorization.mockImplementation(async (_serverUrl, options) => {
+        const tokenParams = new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: 'test-code',
+          code_verifier: 'test-verifier',
+        });
+        await options.fetchFn?.('https://auth.example.com/token', {
+          method: 'POST',
+          body: tokenParams,
+        });
+        return { access_token: 'test-token', token_type: 'Bearer' };
+      });
+
+      await MCPOAuthHandler.completeOAuthFlow(
+        'test-flow-id',
+        'test-auth-code',
+        mockFlowManager,
+        {},
+      );
+
+      const [, fetchInit] = mockFetch.mock.calls[0];
+      const headers = fetchInit?.headers as Headers;
+      const body = fetchInit?.body as string;
+
+      expect(headers.get('Authorization')).toBeNull();
+      expect(body).toContain('client_id=test-client-id');
+      expect(body).toContain('client_secret=test-client-secret');
+    });
+
+    it('should use none (public client) when clientInfo has no secret', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          metadata: {
+            serverName: 'test-server',
+            serverUrl: 'https://auth.example.com',
+            codeVerifier: 'test-verifier',
+            clientInfo: {
+              client_id: 'test-client-id',
+            },
+            metadata: {
+              issuer: 'https://auth.example.com',
+              authorization_endpoint: 'https://auth.example.com/authorize',
+              token_endpoint: 'https://auth.example.com/token',
+            },
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlow: jest.fn(),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+
+      mockExchangeAuthorization.mockImplementation(async (_serverUrl, options) => {
+        const tokenParams = new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: 'test-code',
+          code_verifier: 'test-verifier',
+        });
+        await options.fetchFn?.('https://auth.example.com/token', {
+          method: 'POST',
+          body: tokenParams,
+        });
+        return { access_token: 'test-token', token_type: 'Bearer' };
+      });
+
+      await MCPOAuthHandler.completeOAuthFlow(
+        'test-flow-id',
+        'test-auth-code',
+        mockFlowManager,
+        {},
+      );
+
+      const [, fetchInit] = mockFetch.mock.calls[0];
+      const headers = fetchInit?.headers as Headers;
+      const body = fetchInit?.body as string;
+
+      expect(headers.get('Authorization')).toBeNull();
+      expect(body).toContain('client_id=test-client-id');
+      expect(body).not.toContain('client_secret=');
     });
   });
 });
