@@ -67,8 +67,6 @@ export default function NewJerseyAboutPage() {
         .
       </p>
 
-      <InfoDivider />
-
       <InfoSectionHeader text="NJ AI Assistant is a State-Approved AI tool" />
       <p className="mb-6">
         The NJ AI Assistant is one of the{' '}
@@ -153,33 +151,31 @@ export default function NewJerseyAboutPage() {
         collaborating with users to understand key needs, and making important decisions along the
         way. These are the principles we use:
       </p>
-      <ul className="mb-6 list-inside list-disc">
+      <ul className="mb-6 list-outside list-disc pl-8">
         <li className="mb-2">
-          <span className="font-bold">Be the safe, go-to AI tool for state employees</span> —
-          integrated into daily work for learning and getting things done, with clear information
-          about state approval and capabilities
+          <b>Be the safe, go-to AI tool for state employees</b> — integrated into daily work for
+          learning and getting things done, with clear information about state approval and
+          capabilities.
         </li>
         <li className="mb-2">
-          <span className="font-bold">Help users learn and practice responsible AI use</span> — make
-          AI accessible at any skill level through practical, bite-sized guidance
+          <b>Help users learn and practice responsible AI use</b> — make AI accessible at any skill
+          level through practical, bite-sized guidance.
         </li>
         <li className="mb-2">
-          <span className="font-bold">Evolve as users and AI technology evolve</span> — stay
-          flexible for human creativity and adapt to new AI capabilities and changing needs
+          <b>Evolve as users and AI technology evolve</b> — stay flexible for human creativity and
+          adapt to new AI capabilities and changing needs.
         </li>
         <li className="mb-2">
-          <span className="font-bold">Communicate clearly, early, and often</span> — share our
-          roadmap and decisions transparently with employees and the public in a friendly, reliable,
-          and accessible way
+          <b>Communicate clearly, early, and often</b> — share our roadmap and decisions
+          transparently with employees and the public in a friendly, reliable, and accessible way.
         </li>
         <li className="mb-2">
-          <span className="font-bold">Empower employees to adopt AI responsibly</span> — build AI
-          knowledge through training and resources with built-in guardrails for accurate,
-          responsible use
+          <b>Empower employees to adopt AI responsibly</b> — build AI knowledge through training and
+          resources with built-in guardrails for accurate, responsible use.
         </li>
         <li className="mb-2">
-          <span className="font-bold">Drive impact for residents and state workers</span> — help
-          employees serve residents more effectively and measure success by real results
+          <b>Drive impact for residents and state workers</b> — help employees serve residents more
+          effectively and measure success by real results.
         </li>
       </ul>
 
