@@ -59,8 +59,9 @@ export class MCPServerInspector {
       if (!this.connection) {
         tempConnection = true;
         this.connection = await MCPConnectionFactory.create({
-          serverName: this.serverName,
           serverConfig: this.config,
+          serverName: this.serverName,
+          dbSourced: !!this.config.dbId,
           useSSRFProtection: this.useSSRFProtection,
         });
       }

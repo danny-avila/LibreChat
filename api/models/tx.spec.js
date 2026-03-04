@@ -52,6 +52,13 @@ describe('getValueKey', () => {
     expect(getValueKey('openai/gpt-5.2')).toBe('gpt-5.2');
   });
 
+  it('should return "gpt-5.3" for model name containing "gpt-5.3"', () => {
+    expect(getValueKey('gpt-5.3')).toBe('gpt-5.3');
+    expect(getValueKey('gpt-5.3-chat-latest')).toBe('gpt-5.3');
+    expect(getValueKey('gpt-5.3-codex')).toBe('gpt-5.3');
+    expect(getValueKey('openai/gpt-5.3')).toBe('gpt-5.3');
+  });
+
   it('should return "gpt-3.5-turbo-1106" for model name containing "gpt-3.5-turbo-1106"', () => {
     expect(getValueKey('gpt-3.5-turbo-1106-some-other-info')).toBe('gpt-3.5-turbo-1106');
     expect(getValueKey('openai/gpt-3.5-turbo-1106')).toBe('gpt-3.5-turbo-1106');
@@ -136,6 +143,12 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-5-pro-0130')).toBe('gpt-5-pro');
     expect(getValueKey('gpt-5-pro-2025-01-30-0130')).toBe('gpt-5-pro');
     expect(getValueKey('gpt-5-pro-preview')).toBe('gpt-5-pro');
+  });
+
+  it('should return "gpt-5.2-pro" for model name containing "gpt-5.2-pro"', () => {
+    expect(getValueKey('gpt-5.2-pro')).toBe('gpt-5.2-pro');
+    expect(getValueKey('gpt-5.2-pro-2025-03-01')).toBe('gpt-5.2-pro');
+    expect(getValueKey('openai/gpt-5.2-pro')).toBe('gpt-5.2-pro');
   });
 
   it('should return "gpt-4o" for model type of "gpt-4o"', () => {
@@ -336,6 +349,18 @@ describe('getMultiplier', () => {
     );
   });
 
+  it('should return the correct multiplier for gpt-5.2-pro', () => {
+    expect(getMultiplier({ model: 'gpt-5.2-pro', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.2-pro'].prompt,
+    );
+    expect(getMultiplier({ model: 'gpt-5.2-pro', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.2-pro'].completion,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5.2-pro', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.2-pro'].prompt,
+    );
+  });
+
   it('should return the correct multiplier for gpt-5.1', () => {
     expect(getMultiplier({ model: 'gpt-5.1', tokenType: 'prompt' })).toBe(
       tokenValues['gpt-5.1'].prompt,
@@ -357,6 +382,21 @@ describe('getMultiplier', () => {
     );
     expect(getMultiplier({ model: 'openai/gpt-5.2', tokenType: 'prompt' })).toBe(
       tokenValues['gpt-5.2'].prompt,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-5.3', () => {
+    expect(getMultiplier({ model: 'gpt-5.3', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.3'].prompt,
+    );
+    expect(getMultiplier({ model: 'gpt-5.3', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.3'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-5.3-codex', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.3'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5.3', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.3'].completion,
     );
   });
 
@@ -1326,6 +1366,62 @@ describe('getCacheMultiplier', () => {
     ).toBeNull();
   });
 
+  it('should return correct cache multipliers for OpenAI models', () => {
+    const openaiCacheModels = [
+      'gpt-4o',
+      'gpt-4o-mini',
+      'gpt-4.1',
+      'gpt-4.1-mini',
+      'gpt-4.1-nano',
+      'gpt-5',
+      'gpt-5.1',
+      'gpt-5.2',
+      'gpt-5.3',
+      'gpt-5-mini',
+      'gpt-5-nano',
+      'o1',
+      'o1-mini',
+      'o1-preview',
+      'o3',
+      'o3-mini',
+      'o4-mini',
+    ];
+
+    for (const model of openaiCacheModels) {
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(cacheTokenValues[model].write);
+      expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(cacheTokenValues[model].read);
+    }
+  });
+
+  it('should return correct cache multipliers for OpenAI dated variants', () => {
+    expect(getCacheMultiplier({ model: 'gpt-4o-2024-08-06', cacheType: 'read' })).toBe(
+      cacheTokenValues['gpt-4o'].read,
+    );
+    expect(getCacheMultiplier({ model: 'gpt-4.1-2026-01-01', cacheType: 'read' })).toBe(
+      cacheTokenValues['gpt-4.1'].read,
+    );
+    expect(getCacheMultiplier({ model: 'gpt-5.3-codex', cacheType: 'read' })).toBe(
+      cacheTokenValues['gpt-5.3'].read,
+    );
+    expect(getCacheMultiplier({ model: 'openai/gpt-5.3', cacheType: 'write' })).toBe(
+      cacheTokenValues['gpt-5.3'].write,
+    );
+  });
+
+  it('should return null for pro models that do not support caching', () => {
+    expect(getCacheMultiplier({ model: 'gpt-5-pro', cacheType: 'read' })).toBeNull();
+    expect(getCacheMultiplier({ model: 'gpt-5-pro', cacheType: 'write' })).toBeNull();
+    expect(getCacheMultiplier({ model: 'gpt-5.2-pro', cacheType: 'read' })).toBeNull();
+    expect(getCacheMultiplier({ model: 'gpt-5.2-pro', cacheType: 'write' })).toBeNull();
+  });
+
+  it('should have consistent 10% cache read pricing for gpt-5.x models', () => {
+    const gpt5CacheModels = ['gpt-5', 'gpt-5.1', 'gpt-5.2', 'gpt-5.3', 'gpt-5-mini', 'gpt-5-nano'];
+    for (const model of gpt5CacheModels) {
+      expect(cacheTokenValues[model].read).toBeCloseTo(cacheTokenValues[model].write * 0.1, 10);
+    }
+  });
+
   it('should handle models with "bedrock/" prefix', () => {
     expect(
       getCacheMultiplier({
@@ -1347,6 +1443,7 @@ describe('Google Model Tests', () => {
     'gemini-3',
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
+    'gemini-3.1-flash-lite-preview',
     'gemini-2.5-pro',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
@@ -1393,6 +1490,7 @@ describe('Google Model Tests', () => {
       'gemini-3': 'gemini-3',
       'gemini-3.1-pro-preview': 'gemini-3.1',
       'gemini-3.1-pro-preview-customtools': 'gemini-3.1',
+      'gemini-3.1-flash-lite-preview': 'gemini-3.1-flash-lite',
       'gemini-2.5-pro': 'gemini-2.5-pro',
       'gemini-2.5-flash': 'gemini-2.5-flash',
       'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
@@ -1477,6 +1575,22 @@ describe('Google Model Tests', () => {
         cacheTokenValues['gemini-3.1'].read,
       );
     });
+  });
+
+  it('should return correct rates for Gemini 3.1 Flash-Lite', () => {
+    const model = 'gemini-3.1-flash-lite-preview';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.1-flash-lite'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.1-flash-lite'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.1-flash-lite'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.1-flash-lite'].read,
+    );
   });
 });
 

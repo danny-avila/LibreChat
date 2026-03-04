@@ -51,9 +51,11 @@ const openAIModels = {
   'gpt-5': 400000,
   'gpt-5.1': 400000,
   'gpt-5.2': 400000,
+  'gpt-5.3': 400000,
   'gpt-5-mini': 400000,
   'gpt-5-nano': 400000,
   'gpt-5-pro': 400000,
+  'gpt-5.2-pro': 400000,
   'gpt-4o': 127500, // -500 from max
   'gpt-4o-mini': 127500, // -500 from max
   'gpt-4o-2024-05-13': 127500, // -500 from max
@@ -107,6 +109,7 @@ const googleModels = {
   'gemini-3': 1000000, // 1M input tokens, 64k output tokens
   'gemini-3-pro-image': 1000000,
   'gemini-3.1': 1000000, // 1M input tokens, 64k output tokens
+  'gemini-3.1-flash-lite': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5-pro': 1000000,
   'gemini-2.5-flash': 1000000,
@@ -388,9 +391,11 @@ export const modelMaxOutputs = {
   'gpt-5': 128000,
   'gpt-5.1': 128000,
   'gpt-5.2': 128000,
+  'gpt-5.3': 128000,
   'gpt-5-mini': 128000,
   'gpt-5-nano': 128000,
   'gpt-5-pro': 128000,
+  'gpt-5.2-pro': 128000,
   'gpt-oss-20b': 131000,
   'gpt-oss-120b': 131000,
   system_default: 32000,

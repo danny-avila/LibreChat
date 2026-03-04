@@ -1,4 +1,8 @@
-const { AgentCapabilities, defaultAgentCapabilities } = require('librechat-data-provider');
+const {
+  Constants,
+  AgentCapabilities,
+  defaultAgentCapabilities,
+} = require('librechat-data-provider');
 
 /**
  * Tests for ToolService capability checking logic.
@@ -116,6 +120,55 @@ describe('ToolService - Capability Checking', () => {
       expect(defaultAgentCapabilities).toContain(AgentCapabilities.tools);
       expect(defaultAgentCapabilities).toContain(AgentCapabilities.chain);
       expect(defaultAgentCapabilities).toContain(AgentCapabilities.ocr);
+    });
+  });
+
+  describe('userMCPAuthMap gating', () => {
+    /**
+     * Simulates the guard condition used in both loadToolDefinitionsWrapper
+     * and loadAgentTools to decide whether getUserMCPAuthMap should be called.
+     */
+    const shouldFetchMCPAuth = (tools) =>
+      tools?.some((t) => t.includes(Constants.mcp_delimiter)) ?? false;
+
+    it('should return true when agent has MCP tools', () => {
+      const tools = ['web_search', `search${Constants.mcp_delimiter}my-mcp-server`, 'calculator'];
+      expect(shouldFetchMCPAuth(tools)).toBe(true);
+    });
+
+    it('should return false when agent has no MCP tools', () => {
+      const tools = ['web_search', 'calculator', 'code_interpreter'];
+      expect(shouldFetchMCPAuth(tools)).toBe(false);
+    });
+
+    it('should return false when tools is empty', () => {
+      expect(shouldFetchMCPAuth([])).toBe(false);
+    });
+
+    it('should return false when tools is undefined', () => {
+      expect(shouldFetchMCPAuth(undefined)).toBe(false);
+    });
+
+    it('should return false when tools is null', () => {
+      expect(shouldFetchMCPAuth(null)).toBe(false);
+    });
+
+    it('should detect MCP tools with different server names', () => {
+      const tools = [
+        `listFiles${Constants.mcp_delimiter}file-server`,
+        `query${Constants.mcp_delimiter}db-server`,
+      ];
+      expect(shouldFetchMCPAuth(tools)).toBe(true);
+    });
+
+    it('should return true even when only one tool is MCP', () => {
+      const tools = [
+        'web_search',
+        'calculator',
+        'code_interpreter',
+        `echo${Constants.mcp_delimiter}test-server`,
+      ];
+      expect(shouldFetchMCPAuth(tools)).toBe(true);
     });
   });
 

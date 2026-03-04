@@ -1,8 +1,8 @@
 import { logger } from '@librechat/data-schemas';
-import { ConnectionsRepository } from '../ConnectionsRepository';
-import { MCPConnectionFactory } from '../MCPConnectionFactory';
-import { MCPConnection } from '../connection';
-import type * as t from '../types';
+import type * as t from '~/mcp/types';
+import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPConnection } from '~/mcp/connection';
 
 // Mock external dependencies
 jest.mock('@librechat/data-schemas', () => ({
@@ -110,6 +110,7 @@ describe('ConnectionsRepository', () => {
           serverName: 'server1',
           serverConfig: mockServerConfigs.server1,
           useSSRFProtection: false,
+          dbSourced: false,
         },
         undefined,
       );
@@ -132,6 +133,7 @@ describe('ConnectionsRepository', () => {
           serverName: 'server1',
           serverConfig: mockServerConfigs.server1,
           useSSRFProtection: false,
+          dbSourced: false,
         },
         undefined,
       );
@@ -171,6 +173,7 @@ describe('ConnectionsRepository', () => {
           serverName: 'server1',
           serverConfig: configWithCachedAt,
           useSSRFProtection: false,
+          dbSourced: false,
         },
         undefined,
       );

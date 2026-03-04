@@ -167,6 +167,8 @@ export interface BasicConnectionOptions {
   serverName: string;
   serverConfig: MCPOptions;
   useSSRFProtection?: boolean;
+  /** When true, only resolve customUserVars in processMCPEnv (for DB-stored servers) */
+  dbSourced?: boolean;
 }
 
 export interface OAuthConnectionOptions {
