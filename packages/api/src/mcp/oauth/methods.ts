@@ -2,11 +2,12 @@ import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 
 type ClientAuthMethod = 'client_secret_basic' | 'client_secret_post' | 'none';
 
-const SUPPORTED_AUTH_METHODS: ClientAuthMethod[] = [
-  'client_secret_post',
+/** Unordered roster of auth methods we can handle — order is irrelevant; server's list controls priority */
+const SUPPORTED_AUTH_METHODS: ReadonlySet<string> = new Set<ClientAuthMethod>([
   'client_secret_basic',
+  'client_secret_post',
   'none',
-];
+]);
 
 /** Maps a user-facing `TokenExchangeMethodEnum` to an OAuth auth method string. */
 export function getForcedTokenEndpointAuthMethod(
@@ -26,8 +27,11 @@ export function getForcedTokenEndpointAuthMethod(
  *
  * Priority:
  * 1. Forced override from `tokenExchangeMethod` config
- * 2. Server's advertised preference (first supported match)
- * 3. Falls through to `defaultMethod` (caller's existing default)
+ * 2. First credential-based method from server's advertised list (skips `none` per RFC 7591 —
+ *    `none` declares a public client, which is incorrect for DCR with a generated secret)
+ * 3. `none` if the server only advertises `none`
+ * 4. Server's first listed method (unsupported exotic method — best-effort)
+ * 5. Falls through to `undefined` (caller keeps its default)
  */
 export function selectRegistrationAuthMethod(
   serverAdvertised: string[] | undefined,
@@ -38,13 +42,18 @@ export function selectRegistrationAuthMethod(
     return forced;
   }
 
-  if (!serverAdvertised) {
+  if (!serverAdvertised?.length) {
     return undefined;
   }
 
-  const serverPreferred = serverAdvertised.find((m) =>
-    SUPPORTED_AUTH_METHODS.includes(m as ClientAuthMethod),
+  const credentialPreferred = serverAdvertised.find(
+    (m) => SUPPORTED_AUTH_METHODS.has(m) && m !== 'none',
   );
+  if (credentialPreferred) {
+    return credentialPreferred;
+  }
+
+  const serverPreferred = serverAdvertised.find((m) => SUPPORTED_AUTH_METHODS.has(m));
   return serverPreferred ?? serverAdvertised[0];
 }
 
