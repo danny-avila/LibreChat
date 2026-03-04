@@ -786,7 +786,6 @@ export class MCPOAuthHandler {
             ).toString('base64');
             headers['Authorization'] = `Basic ${clientAuth}`;
           } else if (authMethod === 'client_secret_post') {
-            /** Use client_secret_post */
             logger.debug('[MCPOAuth] Using client_secret_post authentication method');
             body.append('client_id', metadata.clientInfo.client_id);
             body.append('client_secret', metadata.clientInfo.client_secret);
@@ -858,7 +857,6 @@ export class MCPOAuthHandler {
           });
 
           if (authMethod === 'client_secret_basic') {
-            /** Use Basic auth */
             logger.debug(
               '[MCPOAuth] Using client_secret_basic authentication method (pre-configured)',
             );
@@ -867,14 +865,12 @@ export class MCPOAuthHandler {
             );
             headers['Authorization'] = `Basic ${clientAuth}`;
           } else if (authMethod === 'client_secret_post') {
-            /** Use client_secret_post */
             logger.debug(
               '[MCPOAuth] Using client_secret_post authentication method (pre-configured)',
             );
             body.append('client_id', config.client_id);
             body.append('client_secret', config.client_secret);
           } else {
-            /** No recognized method, default to Basic auth per RFC */
             logger.debug(
               '[MCPOAuth] No recognized auth method, defaulting to client_secret_basic (pre-configured)',
             );
