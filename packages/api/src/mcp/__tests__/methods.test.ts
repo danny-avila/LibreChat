@@ -41,6 +41,16 @@ describe('selectRegistrationAuthMethod', () => {
     expect(selectRegistrationAuthMethod(['none'])).toBe('none');
   });
 
+  it('prefers credential-based method over none when server lists none first', () => {
+    expect(selectRegistrationAuthMethod(['none', 'client_secret_basic'])).toBe(
+      'client_secret_basic',
+    );
+  });
+
+  it('prefers credential-based method over none when server lists none before post', () => {
+    expect(selectRegistrationAuthMethod(['none', 'client_secret_post'])).toBe('client_secret_post');
+  });
+
   it('falls back to server first method when none of our methods match', () => {
     expect(selectRegistrationAuthMethod(['private_key_jwt', 'tls_client_auth'])).toBe(
       'private_key_jwt',
@@ -49,6 +59,10 @@ describe('selectRegistrationAuthMethod', () => {
 
   it('returns undefined when server omits token_endpoint_auth_methods_supported (RFC 8414 default preserved)', () => {
     expect(selectRegistrationAuthMethod(undefined)).toBeUndefined();
+  });
+
+  it('returns undefined for empty token_endpoint_auth_methods_supported (RFC 8414 forbids zero-element arrays)', () => {
+    expect(selectRegistrationAuthMethod([])).toBeUndefined();
   });
 
   it('forced token_exchange_method overrides server preference', () => {
