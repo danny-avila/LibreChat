@@ -362,9 +362,15 @@ describe('AgentFooter', () => {
         }
         return undefined;
       });
+      mockUseHasAccess.mockReturnValue(true);
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: () => false,
+        isLoading: false,
+        permissionBits: 0,
+      });
       render(<AgentFooter {...defaultProps} />);
-      expect(screen.queryByTestId('grant-access-dialog-agent')).toBeInTheDocument(); // Still shows because hasAccess is true
-      expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument(); // Should not show for different author
+      expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument(); // No share permission
+      expect(screen.queryByTestId('duplicate-button')).not.toBeInTheDocument(); // No edit permission
     });
 
     test('adjusts UI based on permissions', () => {
