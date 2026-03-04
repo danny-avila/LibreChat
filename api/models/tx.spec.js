@@ -52,6 +52,13 @@ describe('getValueKey', () => {
     expect(getValueKey('openai/gpt-5.2')).toBe('gpt-5.2');
   });
 
+  it('should return "gpt-5.3" for model name containing "gpt-5.3"', () => {
+    expect(getValueKey('gpt-5.3')).toBe('gpt-5.3');
+    expect(getValueKey('gpt-5.3-chat-latest')).toBe('gpt-5.3');
+    expect(getValueKey('gpt-5.3-codex')).toBe('gpt-5.3');
+    expect(getValueKey('openai/gpt-5.3')).toBe('gpt-5.3');
+  });
+
   it('should return "gpt-3.5-turbo-1106" for model name containing "gpt-3.5-turbo-1106"', () => {
     expect(getValueKey('gpt-3.5-turbo-1106-some-other-info')).toBe('gpt-3.5-turbo-1106');
     expect(getValueKey('openai/gpt-3.5-turbo-1106')).toBe('gpt-3.5-turbo-1106');
@@ -357,6 +364,21 @@ describe('getMultiplier', () => {
     );
     expect(getMultiplier({ model: 'openai/gpt-5.2', tokenType: 'prompt' })).toBe(
       tokenValues['gpt-5.2'].prompt,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-5.3', () => {
+    expect(getMultiplier({ model: 'gpt-5.3', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.3'].prompt,
+    );
+    expect(getMultiplier({ model: 'gpt-5.3', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.3'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-5.3-codex', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.3'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5.3', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.3'].completion,
     );
   });
 

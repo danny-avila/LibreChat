@@ -150,6 +150,7 @@ const tokenValues = Object.assign(
     'gpt-5': { prompt: 1.25, completion: 10 },
     'gpt-5.1': { prompt: 1.25, completion: 10 },
     'gpt-5.2': { prompt: 1.75, completion: 14 },
+    'gpt-5.3': { prompt: 1.75, completion: 14 },
     'gpt-5-nano': { prompt: 0.05, completion: 0.4 },
     'gpt-5-mini': { prompt: 0.25, completion: 2 },
     'gpt-5-pro': { prompt: 15, completion: 120 },
