@@ -980,32 +980,23 @@ export class MCPOAuthHandler {
         ? new URL(metadata.revocationEndpoint)
         : new URL('/revoke', metadata.serverUrl);
 
-    // detect auth method to use
-    const authMethods = metadata.revocationEndpointAuthMethodsSupported ?? [
-      'client_secret_basic', // RFC 8414 (https://datatracker.ietf.org/doc/html/rfc8414)
-    ];
-    const usesBasicAuth = authMethods.includes('client_secret_basic');
-    const usesClientSecretPost = authMethods.includes('client_secret_post');
+    const authMethods = metadata.revocationEndpointAuthMethodsSupported ?? ['client_secret_basic'];
+    const authMethod = resolveTokenEndpointAuthMethod({ tokenAuthMethods: authMethods });
 
-    // init the request headers
     const headers: Record<string, string> = {
       'Content-Type': 'application/x-www-form-urlencoded',
       ...oauthHeaders,
     };
 
-    // init the request body
     const body = new URLSearchParams({ token });
     body.set('token_type_hint', tokenType === 'refresh' ? 'refresh_token' : 'access_token');
 
-    // process auth method
-    if (usesBasicAuth) {
-      // encode the client id and secret and add to the headers
+    if (authMethod === 'client_secret_basic') {
       const credentials = Buffer.from(`${metadata.clientId}:${metadata.clientSecret}`).toString(
         'base64',
       );
       headers['Authorization'] = `Basic ${credentials}`;
-    } else if (usesClientSecretPost) {
-      // add the client id and secret to the body
+    } else if (authMethod === 'client_secret_post') {
       body.set('client_secret', metadata.clientSecret);
       body.set('client_id', metadata.clientId);
     }
