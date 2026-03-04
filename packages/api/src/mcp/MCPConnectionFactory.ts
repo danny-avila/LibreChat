@@ -310,11 +310,22 @@ export class MCPConnectionFactory {
           const existingFlow = await this.flowManager!.getFlowState(flowId, 'mcp_oauth');
 
           if (existingFlow?.status === 'PENDING') {
+            const pendingAge = existingFlow.createdAt
+              ? Date.now() - existingFlow.createdAt
+              : Infinity;
+            const PENDING_STALE_MS = 2 * 60 * 1000;
+
+            if (pendingAge < PENDING_STALE_MS) {
+              logger.debug(
+                `${this.logPrefix} Recent PENDING OAuth flow exists (${Math.round(pendingAge / 1000)}s old), skipping new initiation`,
+              );
+              connection.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
+              return;
+            }
+
             logger.debug(
-              `${this.logPrefix} PENDING OAuth flow already exists, skipping new initiation`,
+              `${this.logPrefix} Found stale PENDING OAuth flow (${Math.round(pendingAge / 1000)}s old), will replace`,
             );
-            connection.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
-            return;
           }
 
           const {
@@ -334,7 +345,8 @@ export class MCPConnectionFactory {
           }
 
           // Store flow state BEFORE redirecting so the callback can find it
-          await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', flowMetadata);
+          const metadataWithUrl = { ...flowMetadata, authorizationUrl };
+          await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
 
           // Start monitoring in background — createFlow will find the existing PENDING state
           // written by initFlow above, so metadata arg is unused (pass {} to make that explicit)
@@ -500,23 +512,44 @@ export class MCPConnectionFactory {
 
       if (existingFlow) {
         if (existingFlow.status === 'PENDING') {
-          logger.debug(
-            `${this.logPrefix} Found PENDING OAuth flow, joining existing flow instead of creating new one`,
-          );
-          const tokens = await this.flowManager.createFlow(flowId, 'mcp_oauth', {}, this.signal);
-          if (typeof this.oauthEnd === 'function') {
-            await this.oauthEnd();
+          const pendingAge = existingFlow.createdAt
+            ? Date.now() - existingFlow.createdAt
+            : Infinity;
+          const PENDING_STALE_MS = 2 * 60 * 1000;
+
+          if (pendingAge < PENDING_STALE_MS) {
+            logger.debug(
+              `${this.logPrefix} Found recent PENDING OAuth flow (${Math.round(pendingAge / 1000)}s old), joining instead of creating new one`,
+            );
+
+            const storedAuthUrl = (existingFlow.metadata as Record<string, unknown>)
+              ?.authorizationUrl as string | undefined;
+            if (storedAuthUrl && typeof this.oauthStart === 'function') {
+              logger.info(
+                `${this.logPrefix} Re-issuing stored authorization URL to caller while joining PENDING flow`,
+              );
+              await this.oauthStart(storedAuthUrl);
+            }
+
+            const tokens = await this.flowManager.createFlow(flowId, 'mcp_oauth', {}, this.signal);
+            if (typeof this.oauthEnd === 'function') {
+              await this.oauthEnd();
+            }
+            logger.info(
+              `${this.logPrefix} Joined existing OAuth flow completed for ${this.serverName}`,
+            );
+            const clientInfo = (existingFlow.metadata as FlowMetadata)?.clientInfo as
+              | OAuthClientInformation
+              | undefined;
+            const metadata = (existingFlow.metadata as FlowMetadata)?.metadata as
+              | OAuthMetadata
+              | undefined;
+            return { tokens, clientInfo, metadata };
           }
-          logger.info(
-            `${this.logPrefix} Joined existing OAuth flow completed for ${this.serverName}`,
+
+          logger.debug(
+            `${this.logPrefix} Found stale PENDING OAuth flow (${Math.round(pendingAge / 1000)}s old), will delete and start fresh`,
           );
-          const clientInfo = (existingFlow.metadata as FlowMetadata)?.clientInfo as
-            | OAuthClientInformation
-            | undefined;
-          const metadata = (existingFlow.metadata as FlowMetadata)?.metadata as
-            | OAuthMetadata
-            | undefined;
-          return { tokens, clientInfo, metadata };
         }
 
         if (existingFlow.status === 'COMPLETED') {
@@ -561,7 +594,8 @@ export class MCPConnectionFactory {
       );
 
       // Store flow state BEFORE redirecting so the callback can find it
-      await this.flowManager.initFlow(newFlowId, 'mcp_oauth', flowMetadata as FlowMetadata);
+      const metadataWithUrl = { ...(flowMetadata as FlowMetadata), authorizationUrl };
+      await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
 
       if (typeof this.oauthStart === 'function') {
         logger.info(`${this.logPrefix} OAuth flow started, issued authorization URL to user`);
