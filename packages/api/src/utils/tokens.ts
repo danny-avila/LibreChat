@@ -5,29 +5,15 @@ import type { EndpointTokenConfig, TokenConfig } from '~/types';
 /**
  * Model Token Configuration Maps
  *
- * IMPORTANT: Key Ordering for Pattern Matching
- * ============================================
- * The `findMatchingPattern` function iterates through object keys in REVERSE order
- * (last-defined keys are checked first) and uses `modelName.includes(key)` for matching.
+ * Pattern Matching
+ * ================
+ * `findMatchingPattern` uses `modelName.includes(key)` and always selects the
+ * **longest** matching key. Key definition order no longer affects correctness —
+ * a more-specific key (e.g., "kimi-k2.5") will always beat a shorter one
+ * (e.g., "kimi") regardless of position.
  *
- * This means:
- * 1. BASE PATTERNS must be defined FIRST (e.g., "kimi", "moonshot")
- * 2. SPECIFIC PATTERNS must be defined AFTER their base patterns (e.g., "kimi-k2", "kimi-k2.5")
- *
- * Example ordering for Kimi models:
- *   kimi: 262144,           // Base pattern - checked last
- *   'kimi-k2': 262144,      // More specific - checked before "kimi"
- *   'kimi-k2.5': 262144,    // Most specific - checked first
- *
- * Why this matters:
- * - Model name "kimi-k2.5" contains both "kimi" and "kimi-k2" as substrings
- * - If "kimi" were checked first, it would incorrectly match "kimi-k2.5"
- * - By defining specific patterns AFTER base patterns, they're checked first in reverse iteration
- *
- * When adding new model families:
- * 1. Define the base/generic pattern first
- * 2. Define increasingly specific patterns after
- * 3. Ensure no pattern is a substring of another that should match differently
+ * For same-length ties, the function iterates in reverse, so last-spread keys
+ * in `aggregateModels` are preferred. OpenAI models are spread last for this reason.
  */
 
 const openAIModels = {
@@ -121,16 +107,6 @@ const googleModels = {
   'gemini-1.5': 1000000,
   'gemini-1.5-flash': 1000000,
   'gemini-1.5-flash-8b': 1000000,
-  'text-bison-32k': 32758, // -10 from max
-  'chat-bison-32k': 32758, // -10 from max
-  'code-bison-32k': 32758, // -10 from max
-  'codechat-bison-32k': 32758,
-  /* Codey, -5 from max: 6144 */
-  'code-': 6139,
-  'codechat-': 6139,
-  /* PaLM2, -5 from max: 8192 */
-  'text-': 8187,
-  'chat-': 8187,
 };
 
 const anthropicModels = {
@@ -353,17 +329,6 @@ const xAIModels = {
 };
 
 const aggregateModels = {
-  ...openAIModels,
-  ...googleModels,
-  ...bedrockModels,
-  ...xAIModels,
-  ...qwenModels,
-  // GPT-OSS
-  'gpt-oss': 131000,
-  'gpt-oss:20b': 131000,
-  'gpt-oss-20b': 131000,
-  'gpt-oss:120b': 131000,
-  'gpt-oss-120b': 131000,
   // GLM models (Zhipu AI)
   glm4: 128000,
   'glm-4': 128000,
@@ -372,6 +337,18 @@ const aggregateModels = {
   'glm-4.5-air': 131000,
   'glm-4.5v': 66000,
   'glm-4.6': 200000,
+  // GPT-OSS
+  'gpt-oss': 131000,
+  'gpt-oss:20b': 131000,
+  'gpt-oss-20b': 131000,
+  'gpt-oss:120b': 131000,
+  'gpt-oss-120b': 131000,
+  ...qwenModels,
+  ...xAIModels,
+  ...googleModels,
+  ...bedrockModels,
+  // OpenAI last — reverse iteration checks last-spread keys first for same-length ties
+  ...openAIModels,
 };
 
 export const maxTokensMap = {
@@ -435,26 +412,28 @@ export const maxOutputTokensMap = {
   [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
 };
 
-/**
- * Finds the first matching pattern in the tokens map.
- * @param {string} modelName
- * @param {Record<string, number> | EndpointTokenConfig} tokensMap
- * @returns {string|null}
- */
+/** Finds the longest matching key in the tokens map via substring match. */
 export function findMatchingPattern(
   modelName: string,
   tokensMap: Record<string, number> | EndpointTokenConfig,
 ): string | null {
   const keys = Object.keys(tokensMap);
   const lowerModelName = modelName.toLowerCase();
+  const nameLength = lowerModelName.length;
+  let bestMatch: string | null = null;
+  let bestLength = 0;
   for (let i = keys.length - 1; i >= 0; i--) {
     const modelKey = keys[i];
-    if (lowerModelName.includes(modelKey)) {
-      return modelKey;
+    if (modelKey.length > bestLength && lowerModelName.includes(modelKey)) {
+      if (modelKey.length === nameLength) {
+        return modelKey;
+      }
+      bestMatch = modelKey;
+      bestLength = modelKey.length;
     }
   }
 
-  return null;
+  return bestMatch;
 }
 
 /**
