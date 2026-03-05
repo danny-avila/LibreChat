@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'async_hooks';
 
 export interface TenantContext {
-  tenantId: string | undefined;
+  tenantId?: string;
 }
 
 /** Sentinel value for deliberate cross-tenant system operations */
@@ -15,6 +15,6 @@ export function getTenantId(): string | undefined {
 }
 
 /** Runs a function in an explicit cross-tenant system context (bypasses tenant filtering) */
-export function runAsSystem<T>(fn: () => Promise<T>): Promise<T> {
+export function runAsSystem<T>(fn: () => T): T {
   return tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, fn);
 }
