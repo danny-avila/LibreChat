@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
@@ -39,31 +39,58 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Restore build cache
-        id: build-cache
+      - name: Restore data-provider build cache
+        id: cache-data-provider
         uses: actions/cache@v4
         with:
-          path: |
-            packages/data-provider/dist
-            packages/data-schemas/dist
-            packages/api/dist
-          key: build-${{ runner.os }}-${{ hashFiles('packages/data-provider/src/**', 'packages/data-schemas/src/**', 'packages/api/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-schemas/tsconfig*.json', 'packages/api/tsconfig*.json', 'packages/data-provider/rollup.config.js', 'packages/data-schemas/rollup.config.js', 'packages/api/server-rollup.config.js', 'packages/data-provider/package.json', 'packages/data-schemas/package.json', 'packages/api/package.json') }}
+          path: packages/data-provider/dist
+          key: build-data-provider-${{ runner.os }}-${{ hashFiles('packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/rollup.config.js', 'packages/data-provider/package.json') }}
 
-      - name: Build packages
-        if: steps.build-cache.outputs.cache-hit != 'true'
-        run: |
-          npm run build:data-provider
-          npm run build:data-schemas
-          npm run build:api
+      - name: Build data-provider
+        if: steps.cache-data-provider.outputs.cache-hit != 'true'
+        run: npm run build:data-provider
 
-      - name: Upload build artifacts
+      - name: Restore data-schemas build cache
+        id: cache-data-schemas
+        uses: actions/cache@v4
+        with:
+          path: packages/data-schemas/dist
+          key: build-data-schemas-${{ runner.os }}-${{ hashFiles('packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/rollup.config.js', 'packages/data-schemas/package.json', 'packages/data-provider/src/**') }}
+
+      - name: Build data-schemas
+        if: steps.cache-data-schemas.outputs.cache-hit != 'true'
+        run: npm run build:data-schemas
+
+      - name: Restore api build cache
+        id: cache-api
+        uses: actions/cache@v4
+        with:
+          path: packages/api/dist
+          key: build-api-${{ runner.os }}-${{ hashFiles('packages/api/src/**', 'packages/api/tsconfig*.json', 'packages/api/server-rollup.config.js', 'packages/api/package.json', 'packages/data-provider/src/**', 'packages/data-schemas/src/**') }}
+
+      - name: Build api
+        if: steps.cache-api.outputs.cache-hit != 'true'
+        run: npm run build:api
+
+      - name: Upload data-provider build
         uses: actions/upload-artifact@v4
         with:
-          name: package-builds
-          path: |
-            packages/data-provider/dist
-            packages/data-schemas/dist
-            packages/api/dist
+          name: build-data-provider
+          path: packages/data-provider/dist
+          retention-days: 1
+
+      - name: Upload data-schemas build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+          retention-days: 1
+
+      - name: Upload api build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-api
+          path: packages/api/dist
           retention-days: 1
 
   circular-deps:
@@ -74,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
@@ -86,7 +113,20 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: package-builds
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download data-schemas build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+
+      - name: Download api build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-api
+          path: packages/api/dist
 
       - name: Detect circular dependencies in @librechat/api build
         run: |
@@ -115,7 +155,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
@@ -124,10 +164,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Download build artifacts
+      - name: Download data-provider build
         uses: actions/download-artifact@v4
         with:
-          name: package-builds
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download data-schemas build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+
+      - name: Download api build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-api
+          path: packages/api/dist
 
       - name: Create empty auth.json file
         run: |
@@ -148,7 +201,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
@@ -157,10 +210,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Download build artifacts
+      - name: Download data-provider build
         uses: actions/download-artifact@v4
         with:
-          name: package-builds
+          name: build-data-provider
+          path: packages/data-provider/dist
 
       - name: Run unit tests
         run: cd packages/data-provider && npm run test:ci
@@ -173,7 +227,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
@@ -182,10 +236,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Download build artifacts
+      - name: Download data-provider build
         uses: actions/download-artifact@v4
         with:
-          name: package-builds
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download data-schemas build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
 
       - name: Run unit tests
         run: cd packages/data-schemas && npm run test:ci
@@ -198,7 +259,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
@@ -207,10 +268,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Download build artifacts
+      - name: Download data-provider build
         uses: actions/download-artifact@v4
         with:
-          name: package-builds
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download data-schemas build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+
+      - name: Download api build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-api
+          path: packages/api/dist
 
       - name: Run unit tests
         run: cd packages/api && npm run test:ci
