@@ -32,6 +32,7 @@ module.exports = {
     '^librechat-data-provider/react-query$':
       '<rootDir>/../node_modules/librechat-data-provider/src/react-query',
   },
+  maxWorkers: '50%',
   restoreMocks: true,
   testResultsProcessor: 'jest-junit',
   coverageReporters: ['text', 'cobertura', 'lcov'],
