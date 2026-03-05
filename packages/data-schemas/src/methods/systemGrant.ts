@@ -6,6 +6,19 @@ import { SystemCapabilities, CapabilityImplications } from '~/systemCapabilities
 import { normalizePrincipalId } from '~/utils/principal';
 import logger from '~/config/winston';
 
+/**
+ * Precomputed reverse map: for each capability, which broader capabilities imply it.
+ * Built once at module load so `hasCapabilityForPrincipals` avoids O(N×M) per call.
+ */
+const reverseImplications: Partial<
+  Record<(typeof SystemCapabilities)[keyof typeof SystemCapabilities], string[]>
+> = {};
+for (const [broad, implied] of Object.entries(CapabilityImplications)) {
+  for (const cap of implied as string[]) {
+    (reverseImplications[cap as keyof typeof reverseImplications] ??= []).push(broad);
+  }
+}
+
 export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   /**
    * Check if any of the given principals holds a specific capability.
@@ -34,14 +47,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       return false;
     }
 
-    /* Expand to include capabilities that imply the requested one, so a
-    MANAGE_USERS grant satisfies a READ_USERS check without a separate grant.
-    */
-    const impliedBy = (
-      Object.entries(CapabilityImplications) as [SystemCapability, SystemCapability[]][]
-    )
-      .filter(([, implied]) => implied.includes(capability))
-      .map(([cap]) => cap);
+    const impliedBy = reverseImplications[capability as keyof typeof reverseImplications] ?? [];
     const capabilityQuery = impliedBy.length ? { $in: [capability, ...impliedBy] } : capability;
 
     const query: Record<string, unknown> = {
@@ -113,7 +119,14 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       ...(session ? { session } : {}),
     };
 
-    return await SystemGrant.findOneAndUpdate(filter, update, options);
+    try {
+      return await SystemGrant.findOneAndUpdate(filter, update, options);
+    } catch (err) {
+      if ((err as { code?: number }).code === 11000) {
+        return (await SystemGrant.findOne(filter).lean()) as ISystemGrant | null;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -186,36 +199,52 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
    * Seed the ADMIN role with all system capabilities (no tenantId — single-instance mode).
    * Idempotent and concurrency-safe: uses bulkWrite with ordered:false so parallel
    * server instances (K8s rolling deploy, PM2 cluster) do not race on E11000.
+   * Retries up to 3 times with exponential backoff on transient failures.
    */
   async function seedSystemGrants(): Promise<void> {
-    try {
-      const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
-      const now = new Date();
-      const ops = Object.values(SystemCapabilities).map((capability) => ({
-        updateOne: {
-          filter: {
-            principalType: PrincipalType.ROLE,
-            principalId: SystemRoles.ADMIN,
-            capability,
-            tenantId: { $exists: false },
-          },
-          update: {
-            $setOnInsert: {
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+        const now = new Date();
+        const ops = Object.values(SystemCapabilities).map((capability) => ({
+          updateOne: {
+            filter: {
               principalType: PrincipalType.ROLE,
               principalId: SystemRoles.ADMIN,
               capability,
-              grantedAt: now,
+              tenantId: { $exists: false },
             },
+            update: {
+              $setOnInsert: {
+                principalType: PrincipalType.ROLE,
+                principalId: SystemRoles.ADMIN,
+                capability,
+                grantedAt: now,
+              },
+            },
+            upsert: true,
           },
-          upsert: true,
-        },
-      }));
-      await SystemGrant.bulkWrite(ops, { ordered: false });
-    } catch (err) {
-      logger.error(
-        '[seedSystemGrants] Failed to seed capabilities — will retry on next restart',
-        err,
-      );
+        }));
+        await SystemGrant.bulkWrite(ops, { ordered: false });
+        return;
+      } catch (err) {
+        if (attempt < maxRetries) {
+          const delay = 1000 * Math.pow(2, attempt - 1);
+          logger.warn(
+            `[seedSystemGrants] Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms`,
+            err,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          logger.error(
+            '[seedSystemGrants] Failed to seed capabilities after all retries. ' +
+              'Admin panel access requires these grants. Manual recovery: ' +
+              'db.systemgrants.insertMany([...]) with ADMIN role grants for each capability.',
+            err,
+          );
+        }
+      }
     }
   }
 

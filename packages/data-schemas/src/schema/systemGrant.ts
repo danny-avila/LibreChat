@@ -1,6 +1,11 @@
 import { Schema } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
+import { SystemCapabilities, SystemCapability } from '~/systemCapabilities';
 import type { ISystemGrant } from '~/types';
+
+const baseCapabilities = new Set<SystemCapability>(Object.values(SystemCapabilities));
+const sectionCapPattern = /^(?:manage|read):configs:\w+$/;
+const assignCapPattern = /^assign:configs:(?:user|group|role)$/;
 
 const systemGrantSchema = new Schema<ISystemGrant>(
   {
@@ -16,6 +21,11 @@ const systemGrantSchema = new Schema<ISystemGrant>(
     capability: {
       type: String,
       required: true,
+      validate: {
+        validator: (v: SystemCapability) =>
+          baseCapabilities.has(v) || sectionCapPattern.test(v) || assignCapPattern.test(v),
+        message: 'Invalid capability string: "{VALUE}"',
+      },
     },
     /**
      * Platform-level grants MUST omit this field entirely — never set it to null.

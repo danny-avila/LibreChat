@@ -71,7 +71,7 @@ describe('canDeleteAccount', () => {
       process.env.ALLOW_ACCOUNT_DELETION = 'false';
     });
 
-    it('allows admin with MANAGE_USERS grant (real DB check)', async () => {
+    it('allows admin with ACCESS_ADMIN grant (real DB check)', async () => {
       const admin = await User.create({
         name: 'Admin',
         email: 'admin@test.com',
@@ -83,7 +83,7 @@ describe('canDeleteAccount', () => {
       await SystemGrant.create({
         principalType: PrincipalType.ROLE,
         principalId: SystemRoles.ADMIN,
-        capability: SystemCapabilities.MANAGE_USERS,
+        capability: SystemCapabilities.ACCESS_ADMIN,
         grantedAt: new Date(),
       });
 
@@ -95,7 +95,7 @@ describe('canDeleteAccount', () => {
       expect(next).toHaveBeenCalled();
     });
 
-    it('blocks regular user without MANAGE_USERS grant', async () => {
+    it('blocks regular user without ACCESS_ADMIN grant', async () => {
       const user = await User.create({
         name: 'Regular',
         email: 'user@test.com',
@@ -114,7 +114,7 @@ describe('canDeleteAccount', () => {
       expect(res.status).toHaveBeenCalledWith(403);
     });
 
-    it('blocks admin role WITHOUT the MANAGE_USERS grant', async () => {
+    it('blocks admin role WITHOUT the ACCESS_ADMIN grant', async () => {
       const admin = await User.create({
         name: 'Admin No Grant',
         email: 'admin2@test.com',
@@ -145,7 +145,7 @@ describe('canDeleteAccount', () => {
       await SystemGrant.create({
         principalType: PrincipalType.USER,
         principalId: user._id,
-        capability: SystemCapabilities.MANAGE_USERS,
+        capability: SystemCapabilities.ACCESS_ADMIN,
         grantedAt: new Date(),
       });
 

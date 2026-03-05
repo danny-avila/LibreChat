@@ -245,7 +245,7 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
   try {
     canManageAssistants = await hasCapability(req.user, SystemCapabilities.MANAGE_ASSISTANTS);
   } catch (err) {
-    logger.debug('[fetchAssistants] capability check failed, denying bypass:', err);
+    logger.warn(`[fetchAssistants] capability check failed, denying bypass: ${err.message}`);
   }
 
   if (canManageAssistants) {

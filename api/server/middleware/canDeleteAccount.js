@@ -21,16 +21,16 @@ const canDeleteAccount = async (req, res, next = () => {}) => {
   if (isEnabled(ALLOW_ACCOUNT_DELETION)) {
     return next();
   }
-  let hasManageUsers = false;
+  let hasAdminAccess = false;
   if (user) {
     try {
-      hasManageUsers = await hasCapability(user, SystemCapabilities.MANAGE_USERS);
+      hasAdminAccess = await hasCapability(user, SystemCapabilities.ACCESS_ADMIN);
     } catch (err) {
-      logger.error('[canDeleteAccount] capability check failed, denying:', err);
+      logger.warn(`[canDeleteAccount] capability check failed, denying: ${err.message}`);
     }
   }
-  if (hasManageUsers) {
-    logger.debug(`[canDeleteAccount] MANAGE_USERS bypass for user ${user.id}`);
+  if (hasAdminAccess) {
+    logger.debug(`[canDeleteAccount] ACCESS_ADMIN bypass for user ${user.id}`);
     return next();
   }
   logger.error(`[User] [Delete Account] [User cannot delete account] [User: ${user?.id}]`);

@@ -78,13 +78,24 @@ describe('systemGrant methods', () => {
       await expect(methods.seedSystemGrants()).resolves.not.toThrow();
     });
 
-    it('logs error and swallows exception when bulkWrite fails', async () => {
+    it('retries on transient failure and succeeds', async () => {
       jest.spyOn(SystemGrant, 'bulkWrite').mockRejectedValueOnce(new Error('disk full'));
 
       await expect(methods.seedSystemGrants()).resolves.not.toThrow();
 
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Attempt 1/3 failed'),
+        expect.any(Error),
+      );
+    });
+
+    it('logs error after all retries exhausted', async () => {
+      jest.spyOn(SystemGrant, 'bulkWrite').mockRejectedValue(new Error('disk full'));
+
+      await expect(methods.seedSystemGrants()).resolves.not.toThrow();
+
       expect(logger.error).toHaveBeenCalledWith(
-        '[seedSystemGrants] Failed to seed capabilities — will retry on next restart',
+        expect.stringContaining('Failed to seed capabilities after all retries'),
         expect.any(Error),
       );
     });

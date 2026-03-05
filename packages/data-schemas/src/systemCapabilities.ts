@@ -103,13 +103,3 @@ export function configCapability(section: ConfigSection): `manage:configs:${Conf
 export function readConfigCapability(section: ConfigSection): `read:configs:${ConfigSection}` {
   return `read:configs:${section}`;
 }
-
-/**
- * Derives a principal-scoped config assignment capability.
- * @example assignConfigCapability('group') → 'assign:configs:group'
- */
-export function assignConfigCapability(
-  target: ConfigAssignTarget,
-): `assign:configs:${ConfigAssignTarget}` {
-  return `assign:configs:${target}`;
-}

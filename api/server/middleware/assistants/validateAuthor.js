@@ -32,7 +32,7 @@ const validateAuthor = async ({ req, openai, overrideEndpoint, overrideAssistant
   try {
     canManageAssistants = await hasCapability(req.user, SystemCapabilities.MANAGE_ASSISTANTS);
   } catch (err) {
-    logger.debug('[validateAuthor] capability check failed, denying bypass:', err);
+    logger.warn(`[validateAuthor] capability check failed, denying bypass: ${err.message}`);
   }
 
   if (canManageAssistants) {

@@ -11,7 +11,12 @@ import { PrincipalType } from 'librechat-data-provider';
 export const normalizePrincipalId = (
   principalId: string | Types.ObjectId,
   principalType: PrincipalType,
-): string | Types.ObjectId =>
-  typeof principalId === 'string' && principalType !== PrincipalType.ROLE
-    ? new Types.ObjectId(principalId)
-    : principalId;
+): string | Types.ObjectId => {
+  if (typeof principalId === 'string' && principalType !== PrincipalType.ROLE) {
+    if (!Types.ObjectId.isValid(principalId)) {
+      throw new TypeError(`Invalid ObjectId string for ${principalType}: "${principalId}"`);
+    }
+    return new Types.ObjectId(principalId);
+  }
+  return principalId;
+};

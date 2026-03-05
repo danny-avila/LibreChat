@@ -334,7 +334,13 @@ const patchPromptGroup = async (req, res) => {
     const { groupId } = req.params;
     const author = req.user.id;
     const filter = { _id: groupId, author };
-    if (await hasCapability(req.user, SystemCapabilities.MANAGE_PROMPTS)) {
+    let canManagePrompts = false;
+    try {
+      canManagePrompts = await hasCapability(req.user, SystemCapabilities.MANAGE_PROMPTS);
+    } catch (err) {
+      logger.warn(`[patchPromptGroup] capability check failed, denying bypass: ${err.message}`);
+    }
+    if (canManagePrompts) {
       logger.debug(`[patchPromptGroup] MANAGE_PROMPTS bypass for user ${req.user.id}`);
       delete filter.author;
     }
@@ -423,7 +429,13 @@ router.get('/', async (req, res) => {
 
     // If no groupId, return user's own prompts
     const query = { author };
-    if (await hasCapability(req.user, SystemCapabilities.READ_PROMPTS)) {
+    let canReadPrompts = false;
+    try {
+      canReadPrompts = await hasCapability(req.user, SystemCapabilities.READ_PROMPTS);
+    } catch (err) {
+      logger.warn(`[GET /prompts] capability check failed, denying bypass: ${err.message}`);
+    }
+    if (canReadPrompts) {
       logger.debug(`[GET /prompts] READ_PROMPTS bypass for user ${req.user.id}`);
       delete query.author;
     }
