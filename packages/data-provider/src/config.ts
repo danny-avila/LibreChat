@@ -922,13 +922,15 @@ export const balanceSchema = z.object({
   refillAmount: z.number().optional().default(10000),
 });
 
-export const floatingButtonsSchema = z.array(z.object({
-  type: z.enum(['link']).optional().default('link'),
-  label: z.string(),
-  url: z.string(),
-  icon: z.string(),
-  newTab: z.boolean().optional().default(true),
-}))
+export const floatingButtonsSchema = z.array(
+  z.object({
+    type: z.enum(['link']).optional().default('link'),
+    label: z.string(),
+    url: z.string(),
+    icon: z.string().optional(),
+    newTab: z.boolean().optional().default(true),
+  }),
+);
 
 export const transactionsSchema = z.object({
   enabled: z.boolean().optional().default(true),
