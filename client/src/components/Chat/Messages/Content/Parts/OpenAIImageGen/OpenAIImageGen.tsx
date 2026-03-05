@@ -46,10 +46,7 @@ export default function OpenAIImageGen({
   }
 
   const attachment = attachments?.[0];
-  const {
-    filepath = null,
-    filename = '',
-  } = (attachment as TFile & TAttachmentMetadata) || {};
+  const { filepath = null, filename = '' } = (attachment as TFile & TAttachmentMetadata) || {};
 
   useEffect(() => {
     if (isSubmitting) {
@@ -115,25 +112,12 @@ export default function OpenAIImageGen({
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
         <ProgressText progress={progress} error={cancelled} toolName={toolName} />
       </div>
-      <div className="relative mb-2 flex w-full justify-start max-w-lg max-h-[45vh]">
-        <div
-          className={`
-            overflow-hidden
-            ${progress < 1 ? 'w-full h-[45vh]' : 'w-auto'}
-          `}
-        >
+      <div className="relative mb-2 flex max-h-[45vh] w-full max-w-lg justify-start">
+        <div className={`overflow-hidden ${progress < 1 ? 'h-[45vh] w-full' : 'w-auto'} `}>
           {progress < 1 ? (
-            <PixelCard
-              variant="default"
-              progress={progress}
-              randomness={0.6}
-            />
+            <PixelCard variant="default" progress={progress} randomness={0.6} />
           ) : (
-            <Image
-              altText={filename}
-              imagePath={filepath ?? ''}
-              args={parsedArgs}
-            />
+            <Image altText={filename} imagePath={filepath ?? ''} args={parsedArgs} />
           )}
         </div>
       </div>

@@ -94,13 +94,13 @@ const Image = ({
           onLoad={handleImageLoad}
           visibleByDefault={true}
           className={cn(
-            'transition-opacity duration-100 w-auto h-auto max-h-[45vh] text-transparent block',
+            'block h-auto max-h-[45vh] w-auto text-transparent transition-opacity duration-100',
             isLoaded ? 'opacity-100' : 'opacity-0',
           )}
           src={absoluteImageUrl}
           placeholder={
             <Skeleton
-              className={cn('w-auto max-h-[45vh]')}
+              className={cn('max-h-[45vh] w-auto')}
               aria-label="Loading image"
               aria-busy="true"
             />
