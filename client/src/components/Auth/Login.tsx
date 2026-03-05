@@ -17,11 +17,6 @@ function Login() {
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  // Determine if auto-redirect should be disabled based on the URL parameter
-  const disableAutoRedirect = searchParams.get('redirect') === 'false';
-
-  // Persist the disable flag locally so that once detected, auto-redirect stays disabled.
-  const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
 
   useEffect(() => {
     const oauthError = searchParams?.get('error');
@@ -36,22 +31,10 @@ function Login() {
     }
   }, [searchParams, setSearchParams, showToast, localize]);
 
-  // Once the disable flag is detected, update local state and remove the parameter from the URL.
-  useEffect(() => {
-    if (disableAutoRedirect) {
-      setIsAutoRedirectDisabled(true);
-      const newParams = new URLSearchParams(searchParams);
-      newParams.delete('redirect');
-      setSearchParams(newParams, { replace: true });
-    }
-  }, [disableAutoRedirect, searchParams, setSearchParams]);
-
-  // Determine whether we should auto-redirect to OpenID.
   const shouldAutoRedirect =
     startupConfig?.openidLoginEnabled &&
     startupConfig?.openidAutoRedirect &&
-    startupConfig?.serverDomain &&
-    !isAutoRedirectDisabled;
+    startupConfig?.serverDomain;
 
   useEffect(() => {
     if (shouldAutoRedirect) {
