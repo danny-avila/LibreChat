@@ -88,7 +88,7 @@ start() {
         echo "  DOMAIN_CLIENT=http://localhost:8080/chat"
         echo "  DOMAIN_SERVER=http://localhost:8080/chat"
         echo ""
-        echo "Then restart the backend: npm run backend:dev"
+        echo "Then restart the backend: npm run backend"
         echo ""
     fi
 
