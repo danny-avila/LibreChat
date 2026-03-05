@@ -85,7 +85,10 @@ export interface CreateMethodsDeps {
   /** Matches a model name to a canonical key. From @librechat/api. */
   matchModelName?: (model: string, endpoint?: string) => string | undefined;
   /** Finds the first key in values whose key is a substring of model. From @librechat/api. */
-  findMatchingPattern?: (model: string, values: Record<string, unknown>) => string | undefined;
+  findMatchingPattern?: (
+    model: string,
+    values: Record<string, number | Record<string, number>>,
+  ) => string | undefined;
   /** Removes all ACL permissions for a resource. From PermissionService. */
   removeAllPermissions?: (params: { resourceType: string; resourceId: unknown }) => Promise<void>;
   /** Returns a cache store for the given key. From getLogStores. */
