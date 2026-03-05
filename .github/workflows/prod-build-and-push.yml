@@ -66,19 +66,21 @@ jobs:
                 github_token: ${{ secrets.CROSS_REPO_PAT }}
                 ref: 'main'
 
-            - name: Update librechat image in YAML
-              uses: mikefarah/yq@master
-              with:
-                cmd: yq -i '.properties.template.containers[] |= select(.name == "conpaichat").image = "${{ env.ACR_HOST }}/paychex/librechat:prod.${{ env.COMMIT_SHA }}"' az_container_app_definitions/prod_container_app_definition.yml
-                
             - name: Azure CLI script
               uses: azure/cli@v2
               with:
                   inlineScript: |
                     az login --service-principal -u ${{secrets.ARC_RUNNER_SP_CLIENT_ID_PROD}} -p ${{secrets.ARC_RUNNER_SP_CLIENT_SECRET_PROD}} --tenant ${{secrets.AZURE_TENANT_ID}}
                     az account set --subscription "${{ secrets.AZURE_PROD_SUBSCRIPTION_ID }}"
-                    az containerapp create \
-                      --name conpaichateastusprod001 \
-                      --resource-group rg-playai-eastus-prod-001 \
-                      --yaml $GITHUB_WORKSPACE/az_container_app_definitions/prod_container_app_definition.yml
+                    az containerapp update \
+                      --name conplayaieastusprod002 \
+                      --resource-group rg-playai-eastus-prod-002 \
+                      --container-name conplayai \
+                      --image ${{ env.ACR_HOST }}/paychex/librechat:prod.${{ env.COMMIT_SHA }}
+                    az containerapp update \
+                      --name conplayaieastusprod002 \
+                      --resource-group rg-playai-eastus-prod-002 \
+                      --container-name conplayairag \
+                      --image ${{ env.ACR_HOST }}/paychex/rag_api:prod.latest \
+                      --output none
                 
