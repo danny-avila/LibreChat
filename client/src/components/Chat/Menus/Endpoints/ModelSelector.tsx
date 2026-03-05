@@ -60,7 +60,18 @@ function ModelSelectorContent() {
       style={{ position: 'relative' }}
     >
       {agentsMap && Object.keys(agentsMap).length > 0 && (
-        <div id="agentUsers" style={{ position: 'absolute', bottom: 0, left: '50%', width: 1, height: 1, overflow: 'hidden' }} aria-hidden="true" />
+        <div
+          id="agentUsers"
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: '50%',
+            width: 1,
+            height: 1,
+            overflow: 'hidden',
+          }}
+          aria-hidden="true"
+        />
       )}
       {selectedIcon && React.isValidElement(selectedIcon) && (
         <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
