@@ -141,7 +141,7 @@ if (typeof window !== 'undefined') {
             return await axios(originalRequest);
           } else {
             processQueue(error, null);
-            window.location.href = endpoints.buildLoginRedirectUrl();
+            window.location.href = endpoints.apiBaseUrl() + endpoints.buildLoginRedirectUrl();
           }
         } catch (err) {
           processQueue(err as AxiosError, null);

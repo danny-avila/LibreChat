@@ -1,16 +1,19 @@
 /**
- * @jest-environment jsdom
+ * @jest-environment @happy-dom/jest-environment
  */
 import axios from 'axios';
 import { setTokenHeader } from '../src/headers-helpers';
 
 /**
  * The response interceptor in request.ts registers at import time when
- * `typeof window !== 'undefined'` (jsdom provides window).
+ * `typeof window !== 'undefined'` (happy-dom provides window).
  *
  * We use axios's built-in request adapter mock to avoid real HTTP calls,
  * and verify the interceptor's behavior by observing whether a 401 triggers
  * a refresh POST or is immediately rejected.
+ *
+ * happy-dom is used instead of jsdom because it allows overriding
+ * window.location via Object.defineProperty, which jsdom 26+ blocks.
  */
 
 const mockAdapter = jest.fn();
@@ -38,6 +41,7 @@ afterEach(() => {
   Object.defineProperty(window, 'location', {
     value: savedLocation,
     writable: true,
+    configurable: true,
   });
 });
 
@@ -45,6 +49,7 @@ function setWindowLocation(overrides: Partial<Location>) {
   Object.defineProperty(window, 'location', {
     value: { ...window.location, ...overrides },
     writable: true,
+    configurable: true,
   });
 }
 
