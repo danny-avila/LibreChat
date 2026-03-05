@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
+import { Globe, ImageIcon, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
 import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon } from '@librechat/client';
 import type { MenuItemProps } from '~/common';
 import {
@@ -29,6 +29,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     webSearch,
     artifacts,
     fileSearch,
+    imageGeneration,
     agentsConfig,
     mcpServerManager,
     codeApiKeyForm,
@@ -37,7 +38,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   } = useBadgeRowContext();
   const { data: startupConfig } = useGetStartupConfig();
 
-  const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
+  const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled, imageGenerationEnabled } =
     useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
   const { setIsDialogOpen: setIsCodeDialogOpen, menuTriggerRef: codeMenuTriggerRef } =
@@ -56,6 +57,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   } = codeInterpreter;
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch;
   const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts;
+  const { isPinned: isImageGenPinned, setIsPinned: setIsImageGenPinned } = imageGeneration;
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
@@ -102,6 +104,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     const newValue = !fileSearch.toggleState;
     fileSearch.debouncedChange({ value: newValue });
   }, [fileSearch]);
+
+  const handleImageGenToggle = useCallback(() => {
+    const newValue = !imageGeneration.toggleState;
+    imageGeneration.debouncedChange({ value: newValue });
+  }, [imageGeneration]);
 
   const handleArtifactsToggle = useCallback(() => {
     const currentState = artifacts.toggleState;
@@ -159,6 +166,38 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           >
             <div className="h-4 w-4">
               <PinIcon unpin={isFileSearchPinned} />
+            </div>
+          </button>
+        </div>
+      ),
+    });
+  }
+
+  if (imageGenerationEnabled) {
+    dropdownItems.push({
+      onClick: handleImageGenToggle,
+      hideOnClick: false,
+      render: (props) => (
+        <div {...props}>
+          <div className="flex items-center gap-2">
+            <ImageIcon className="icon-md" aria-hidden="true" />
+            <span>{localize('com_ui_image_gen')}</span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsImageGenPinned(!isImageGenPinned);
+            }}
+            className={cn(
+              'rounded p-1 transition-all duration-200',
+              'hover:bg-surface-secondary hover:shadow-sm',
+              !isImageGenPinned && 'text-text-secondary hover:text-text-primary',
+            )}
+            aria-label={isImageGenPinned ? 'Unpin' : 'Pin'}
+          >
+            <div className="h-4 w-4">
+              <PinIcon unpin={isImageGenPinned} />
             </div>
           </button>
         </div>

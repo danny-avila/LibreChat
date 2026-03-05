@@ -18,6 +18,7 @@ interface BadgeRowContextType {
   webSearch: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
   fileSearch: ReturnType<typeof useToolToggle>;
+  imageGeneration: ReturnType<typeof useToolToggle>;
   codeInterpreter: ReturnType<typeof useToolToggle>;
   codeApiKeyForm: ReturnType<typeof useCodeApiKeyForm>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
@@ -66,11 +67,13 @@ export default function BadgeRowProvider({
       const webSearchToggleKey = `${LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_}${key}`;
       const fileSearchToggleKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${key}`;
       const artifactsToggleKey = `${LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_}${key}`;
+      const imageGenToggleKey = `${LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_}${key}`;
 
       const codeToggleValue = getTimestampedValue(codeToggleKey);
       const webSearchToggleValue = getTimestampedValue(webSearchToggleKey);
       const fileSearchToggleValue = getTimestampedValue(fileSearchToggleKey);
       const artifactsToggleValue = getTimestampedValue(artifactsToggleKey);
+      const imageGenToggleValue = getTimestampedValue(imageGenToggleKey);
 
       const initialValues: Record<string, any> = {};
 
@@ -106,6 +109,14 @@ export default function BadgeRowProvider({
         }
       }
 
+      if (imageGenToggleValue !== null) {
+        try {
+          initialValues[AgentCapabilities.image_generation] = JSON.parse(imageGenToggleValue);
+        } catch (e) {
+          console.error('Failed to parse image generation toggle value:', e);
+        }
+      }
+
       /**
        * Always set values for all tools (use defaults if not in `localStorage`)
        * If `ephemeralAgent` is `null`, create a new object with just our tool values
@@ -115,6 +126,8 @@ export default function BadgeRowProvider({
         [Tools.web_search]: initialValues[Tools.web_search] ?? false,
         [Tools.file_search]: initialValues[Tools.file_search] ?? false,
         [AgentCapabilities.artifacts]: initialValues[AgentCapabilities.artifacts] ?? false,
+        [AgentCapabilities.image_generation]:
+          initialValues[AgentCapabilities.image_generation] ?? false,
       };
 
       setEphemeralAgent((prev) => ({
@@ -131,6 +144,8 @@ export default function BadgeRowProvider({
             storageKey = webSearchToggleKey;
           } else if (toolKey === Tools.file_search) {
             storageKey = fileSearchToggleKey;
+          } else if (toolKey === AgentCapabilities.image_generation) {
+            storageKey = imageGenToggleKey;
           }
           // Store the value and set timestamp for existing values
           localStorage.setItem(storageKey, JSON.stringify(value));
@@ -186,12 +201,21 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
+  /** Image Generation hook - using capability key */
+  const imageGeneration = useToolToggle({
+    conversationId,
+    toolKey: AgentCapabilities.image_generation,
+    localStorageKey: LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_,
+    isAuthenticated: true,
+  });
+
   const mcpServerManager = useMCPServerManager({ conversationId });
 
   const value: BadgeRowContextType = {
     webSearch,
     artifacts,
     fileSearch,
+    imageGeneration,
     agentsConfig,
     conversationId,
     codeApiKeyForm,

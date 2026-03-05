@@ -10,6 +10,7 @@ interface AgentCapabilitiesResult {
   fileSearchEnabled: boolean;
   webSearchEnabled: boolean;
   codeEnabled: boolean;
+  imageGenerationEnabled: boolean;
 }
 
 export default function useAgentCapabilities(
@@ -55,6 +56,11 @@ export default function useAgentCapabilities(
     [capabilities],
   );
 
+  const imageGenerationEnabled = useMemo(
+    () => capabilities?.includes(AgentCapabilities.image_generation) ?? false,
+    [capabilities],
+  );
+
   return {
     ocrEnabled,
     codeEnabled,
@@ -64,5 +70,6 @@ export default function useAgentCapabilities(
     artifactsEnabled,
     webSearchEnabled,
     fileSearchEnabled,
+    imageGenerationEnabled,
   };
 }
