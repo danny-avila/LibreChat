@@ -3,8 +3,10 @@ import * as Menu from '@ariakit/react/menu';
 import { Ellipsis, PinOff } from 'lucide-react';
 import { DropdownPopup } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
+import type { TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
 import type { FavoriteModel } from '~/store/favorites';
 import type t from 'librechat-data-provider';
+import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { useFavorites, useLocalize } from '~/hooks';
 import { renderAgentAvatar, cn } from '~/utils';
@@ -16,30 +18,44 @@ type Kwargs = {
   spec?: string | null;
 };
 
-type FavoriteItemProps = {
-  item: t.Agent | FavoriteModel;
-  type: 'agent' | 'model';
-  onSelectEndpoint?: (endpoint?: EModelEndpoint | string | null, kwargs?: Kwargs) => void;
+type FavoriteItemBaseProps = {
   onRemoveFocus?: () => void;
 };
 
-export default function FavoriteItem({
-  item,
-  type,
-  onSelectEndpoint,
-  onRemoveFocus,
-}: FavoriteItemProps) {
+type AgentFavoriteProps = FavoriteItemBaseProps & {
+  type: 'agent';
+  item: t.Agent;
+  onSelectEndpoint?: (endpoint?: EModelEndpoint | string | null, kwargs?: Kwargs) => void;
+};
+
+type ModelFavoriteProps = FavoriteItemBaseProps & {
+  type: 'model';
+  item: FavoriteModel;
+  onSelectEndpoint?: (endpoint?: EModelEndpoint | string | null, kwargs?: Kwargs) => void;
+};
+
+type SpecFavoriteProps = FavoriteItemBaseProps & {
+  type: 'spec';
+  item: TModelSpec;
+  onSelectSpec?: (spec: TModelSpec) => void;
+  endpointsConfig?: TEndpointsConfig;
+};
+
+type FavoriteItemProps = AgentFavoriteProps | ModelFavoriteProps | SpecFavoriteProps;
+
+export default function FavoriteItem(props: FavoriteItemProps) {
+  const { type, onRemoveFocus } = props;
   const localize = useLocalize();
-  const { removeFavoriteAgent, removeFavoriteModel } = useFavorites();
+  const { removeFavoriteAgent, removeFavoriteModel, removeFavoriteSpec } = useFavorites();
   const [isPopoverActive, setIsPopoverActive] = useState(false);
 
   const handleSelect = () => {
-    if (type === 'agent') {
-      const agent = item as t.Agent;
-      onSelectEndpoint?.(EModelEndpoint.agents, { agent_id: agent.id });
+    if (props.type === 'agent') {
+      props.onSelectEndpoint?.(EModelEndpoint.agents, { agent_id: props.item.id });
+    } else if (props.type === 'spec') {
+      props.onSelectSpec?.(props.item);
     } else {
-      const model = item as FavoriteModel;
-      onSelectEndpoint?.(model.endpoint, { model: model.model });
+      props.onSelectEndpoint?.(props.item.endpoint, { model: props.item.model });
     }
   };
 
@@ -59,11 +75,12 @@ export default function FavoriteItem({
 
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (type === 'agent') {
-      removeFavoriteAgent((item as t.Agent).id);
+    if (props.type === 'agent') {
+      removeFavoriteAgent(props.item.id);
+    } else if (props.type === 'spec') {
+      removeFavoriteSpec(props.item.name);
     } else {
-      const model = item as FavoriteModel;
-      removeFavoriteModel(model.model, model.endpoint);
+      removeFavoriteModel(props.item.model, props.item.endpoint);
     }
     setIsPopoverActive(false);
     requestAnimationFrame(() => {
@@ -72,26 +89,44 @@ export default function FavoriteItem({
   };
 
   const renderIcon = () => {
-    if (type === 'agent') {
-      return renderAgentAvatar(item as t.Agent, { size: 'icon', className: 'mr-2' });
+    if (props.type === 'agent') {
+      return renderAgentAvatar(props.item, { size: 'icon', className: 'mr-2' });
     }
-    const model = item as FavoriteModel;
+    if (props.type === 'spec') {
+      return (
+        <div className="mr-2 h-5 w-5">
+          <SpecIcon currentSpec={props.item} endpointsConfig={props.endpointsConfig} />
+        </div>
+      );
+    }
     return (
       <div className="mr-2 h-5 w-5">
-        <MinimalIcon endpoint={model.endpoint} size={20} isCreatedByUser={false} />
+        <MinimalIcon endpoint={props.item.endpoint} size={20} isCreatedByUser={false} />
       </div>
     );
   };
 
   const getName = (): string => {
-    if (type === 'agent') {
-      return (item as t.Agent).name ?? '';
+    if (props.type === 'agent') {
+      return props.item.name ?? '';
     }
-    return (item as FavoriteModel).model;
+    if (props.type === 'spec') {
+      return props.item.label;
+    }
+    return props.item.model;
   };
 
   const name = getName();
-  const typeLabel = type === 'agent' ? localize('com_ui_agent') : localize('com_ui_model');
+  const getTypeLabel = () => {
+    if (type === 'agent') {
+      return localize('com_ui_agent');
+    }
+    if (type === 'spec') {
+      return localize('com_ui_model_spec');
+    }
+    return localize('com_ui_model');
+  };
+  const typeLabel = getTypeLabel();
   const ariaLabel = `${name} (${typeLabel})`;
 
   const menuId = React.useId();
