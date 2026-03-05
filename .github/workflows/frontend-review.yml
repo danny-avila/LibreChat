@@ -31,7 +31,14 @@ jobs:
         id: cache-node-modules
         uses: actions/cache@v4
         with:
-          path: node_modules
+          path: |
+            node_modules
+            api/node_modules
+            client/node_modules
+            packages/api/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
@@ -91,7 +98,14 @@ jobs:
         id: cache-node-modules
         uses: actions/cache@v4
         with:
-          path: node_modules
+          path: |
+            node_modules
+            api/node_modules
+            client/node_modules
+            packages/api/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
@@ -131,7 +145,14 @@ jobs:
         id: cache-node-modules
         uses: actions/cache@v4
         with:
-          path: node_modules
+          path: |
+            node_modules
+            api/node_modules
+            client/node_modules
+            packages/api/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
@@ -171,7 +192,14 @@ jobs:
         id: cache-node-modules
         uses: actions/cache@v4
         with:
-          path: node_modules
+          path: |
+            node_modules
+            api/node_modules
+            client/node_modules
+            packages/api/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
