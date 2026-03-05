@@ -21,6 +21,24 @@ import {
   transactionSchema,
   premiumTokenValues,
 } from '@librechat/data-schemas';
+
+function findMatchingPattern(
+  modelName: string,
+  tokensMap: Record<string, number | Record<string, number>>,
+): string | undefined {
+  const keys = Object.keys(tokensMap);
+  const lowerModelName = modelName.toLowerCase();
+  for (let i = keys.length - 1; i >= 0; i--) {
+    if (lowerModelName.includes(keys[i])) {
+      return keys[i];
+    }
+  }
+  return undefined;
+}
+
+function matchModelName(modelName: string): string | undefined {
+  return typeof modelName === 'string' ? modelName : undefined;
+}
 import type { PricingFns, TxMetadata } from './transactions';
 import {
   prepareStructuredTokenSpend,
@@ -49,7 +67,7 @@ beforeAll(async () => {
   await mongoose.connect(mongoServer.getUri());
   Transaction = mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema);
   Balance = mongoose.models.Balance || mongoose.model('Balance', balanceSchema);
-  dbMethods = createMethods(mongoose);
+  dbMethods = createMethods(mongoose, { matchModelName, findMatchingPattern });
   getMultiplier = dbMethods.getMultiplier;
   getCacheMultiplier = dbMethods.getCacheMultiplier;
   pricing = {
