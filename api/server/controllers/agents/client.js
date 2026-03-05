@@ -46,7 +46,6 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { updateBalance, bulkInsertTransactions } = require('~/models');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
@@ -631,7 +630,7 @@ class AgentClient extends BaseClient {
         spendTokens: db.spendTokens,
         spendStructuredTokens: db.spendStructuredTokens,
         pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-        bulkWriteOps: { insertMany: bulkInsertTransactions, updateBalance },
+        bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
       },
       {
         user: this.user ?? this.options.req.user?.id,

@@ -247,8 +247,8 @@ describe('Structured Token Spending Tests', () => {
 
     const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
     const completionMultiplier = getMultiplier({ model, tokenType: 'completion' });
-    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
-    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' }) ?? promptMultiplier;
+    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' }) ?? promptMultiplier;
 
     // Act
     const result = await spendStructuredTokens(txData, tokenUsage);
@@ -256,8 +256,8 @@ describe('Structured Token Spending Tests', () => {
     // Calculate expected costs.
     const expectedPromptCost =
       tokenUsage.promptTokens.input * promptMultiplier +
-      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
-      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
+      tokenUsage.promptTokens.write * writeMultiplier +
+      tokenUsage.promptTokens.read * readMultiplier;
     const expectedCompletionCost = tokenUsage.completionTokens * completionMultiplier;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
     const expectedBalance = initialBalance - expectedTotalCost;
@@ -813,13 +813,18 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const premiumPromptRate = premiumTokenValues[model].prompt;
     const premiumCompletionRate = premiumTokenValues[model].completion;
-    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
-    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+    const promptMultiplier = getMultiplier({
+      model,
+      tokenType: 'prompt',
+      inputTokenCount: totalInput,
+    });
+    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' }) ?? promptMultiplier;
+    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' }) ?? promptMultiplier;
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * premiumPromptRate +
-      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
-      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
+      tokenUsage.promptTokens.write * writeMultiplier +
+      tokenUsage.promptTokens.read * readMultiplier;
     const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
 
@@ -859,13 +864,18 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const standardPromptRate = tokenValues[model].prompt;
     const standardCompletionRate = tokenValues[model].completion;
-    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
-    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+    const promptMultiplier = getMultiplier({
+      model,
+      tokenType: 'prompt',
+      inputTokenCount: totalInput,
+    });
+    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' }) ?? promptMultiplier;
+    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' }) ?? promptMultiplier;
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * standardPromptRate +
-      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
-      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
+      tokenUsage.promptTokens.write * writeMultiplier +
+      tokenUsage.promptTokens.read * readMultiplier;
     const expectedCompletionCost = tokenUsage.completionTokens * standardCompletionRate;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
 
@@ -992,13 +1002,18 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const premiumPromptRate = premiumTokenValues['gemini-3.1'].prompt;
     const premiumCompletionRate = premiumTokenValues['gemini-3.1'].completion;
-    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
-    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+    const promptMultiplier = getMultiplier({
+      model,
+      tokenType: 'prompt',
+      inputTokenCount: totalInput,
+    });
+    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' }) ?? promptMultiplier;
+    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' }) ?? promptMultiplier;
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * premiumPromptRate +
-      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
-      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
+      tokenUsage.promptTokens.write * writeMultiplier +
+      tokenUsage.promptTokens.read * readMultiplier;
     const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
 
