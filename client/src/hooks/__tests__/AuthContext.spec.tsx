@@ -1,3 +1,6 @@
+/**
+ * @jest-environment @happy-dom/jest-environment
+ */
 import React from 'react';
 import { render, act } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
@@ -105,31 +108,17 @@ function renderProviderLive() {
 }
 
 describe('AuthContextProvider — login onError redirect handling', () => {
-  const originalLocation = window.location;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    Object.defineProperty(window, 'location', {
-      value: { ...originalLocation, pathname: '/login', search: '', hash: '' },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/login');
   });
 
   afterEach(() => {
-    Object.defineProperty(window, 'location', {
-      value: originalLocation,
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/');
   });
 
   it('preserves a valid redirect_to param across login failure', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/login', search: '?redirect_to=%2Fc%2Fabc123', hash: '' },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/login?redirect_to=%2Fc%2Fabc123');
 
     renderProvider();
 
@@ -143,11 +132,7 @@ describe('AuthContextProvider — login onError redirect handling', () => {
   });
 
   it('drops redirect_to when it contains an absolute URL (open-redirect prevention)', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/login', search: '?redirect_to=https%3A%2F%2Fevil.com', hash: '' },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/login?redirect_to=https%3A%2F%2Fevil.com');
 
     renderProvider();
 
@@ -159,11 +144,7 @@ describe('AuthContextProvider — login onError redirect handling', () => {
   });
 
   it('drops redirect_to when it points to /login (recursive redirect prevention)', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/login', search: '?redirect_to=%2Flogin', hash: '' },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/login?redirect_to=%2Flogin');
 
     renderProvider();
 
@@ -186,15 +167,7 @@ describe('AuthContextProvider — login onError redirect handling', () => {
 
   it('preserves redirect_to with query params and hash', () => {
     const target = '/c/abc123?model=gpt-4#section';
-    Object.defineProperty(window, 'location', {
-      value: {
-        pathname: '/login',
-        search: `?redirect_to=${encodeURIComponent(target)}`,
-        hash: '',
-      },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', `/login?redirect_to=${encodeURIComponent(target)}`);
 
     renderProvider();
 
@@ -209,33 +182,20 @@ describe('AuthContextProvider — login onError redirect handling', () => {
 });
 
 describe('AuthContextProvider — logout onSuccess/onError handling', () => {
-  const originalLocation = window.location;
   const mockSetTokenHeader = jest.requireMock('librechat-data-provider').setTokenHeader;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    Object.defineProperty(window, 'location', {
-      value: {
-        ...originalLocation,
-        pathname: '/c/some-chat',
-        search: '',
-        hash: '',
-        replace: jest.fn(),
-      },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/c/some-chat');
   });
 
   afterEach(() => {
-    Object.defineProperty(window, 'location', {
-      value: originalLocation,
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/');
   });
 
   it('calls window.location.replace and setTokenHeader(undefined) when redirect is present', () => {
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+
     renderProvider();
 
     act(() => {
@@ -245,23 +205,25 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
       });
     });
 
-    expect(window.location.replace).toHaveBeenCalledWith(
-      'https://idp.example.com/logout?id_token_hint=abc',
-    );
+    expect(replaceSpy).toHaveBeenCalledWith('https://idp.example.com/logout?id_token_hint=abc');
     expect(mockSetTokenHeader).toHaveBeenCalledWith(undefined);
   });
 
   it('does not call window.location.replace when redirect is absent', async () => {
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+
     renderProvider();
 
     act(() => {
       mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
     });
 
-    expect(window.location.replace).not.toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
   });
 
   it('does not trigger silentRefresh after OIDC redirect', () => {
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+
     renderProviderLive();
     mockRefreshMutate.mockClear();
 
@@ -272,7 +234,7 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
       });
     });
 
-    expect(window.location.replace).toHaveBeenCalled();
+    expect(replaceSpy).toHaveBeenCalled();
     expect(mockRefreshMutate).not.toHaveBeenCalled();
   });
 });
@@ -285,6 +247,7 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 
   afterEach(() => {
     sessionStorage.clear();
+    window.history.replaceState({}, '', '/');
   });
 
   it('navigates to stored sessionStorage redirect after successful token refresh', () => {
@@ -315,10 +278,7 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 
   it('navigates to current URL when no stored redirect exists', () => {
     jest.useFakeTimers();
-    Object.defineProperty(window, 'location', {
-      value: { ...window.location, pathname: '/c/new', search: '' },
-      writable: true,
-    });
+    window.history.replaceState({}, '', '/c/new');
 
     renderProviderLive();
 
@@ -367,10 +327,7 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 
   it('falls back to current URL for unsafe stored redirect', () => {
     jest.useFakeTimers();
-    Object.defineProperty(window, 'location', {
-      value: { ...window.location, pathname: '/c/new', search: '' },
-      writable: true,
-    });
+    window.history.replaceState({}, '', '/c/new');
     sessionStorage.setItem(SESSION_KEY, 'https://evil.com/steal');
 
     renderProviderLive();
@@ -396,33 +353,18 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 });
 
 describe('AuthContextProvider — logout error handling', () => {
-  const originalLocation = window.location;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    Object.defineProperty(window, 'location', {
-      value: {
-        ...originalLocation,
-        pathname: '/c/some-chat',
-        search: '',
-        hash: '',
-        replace: jest.fn(),
-      },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/c/some-chat');
   });
 
   afterEach(() => {
-    Object.defineProperty(window, 'location', {
-      value: originalLocation,
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/');
   });
 
   it('clears auth state on logout error without external redirect', () => {
     jest.useFakeTimers();
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
     const { getByTestId } = renderProvider();
 
     act(() => {
@@ -432,7 +374,7 @@ describe('AuthContextProvider — logout error handling', () => {
       jest.advanceTimersByTime(100);
     });
 
-    expect(window.location.replace).not.toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
     expect(getByTestId('consumer').getAttribute('data-authenticated')).toBe('false');
     jest.useRealTimers();
   });
