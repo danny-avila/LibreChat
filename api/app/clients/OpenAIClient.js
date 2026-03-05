@@ -875,6 +875,12 @@ class OpenAIClient extends BaseClient {
         opts.organization = process.env.OPENAI_ORGANIZATION;
       }
 
+      // Resolve dynamic headers (body-dependent placeholders) after conversationId is generated
+      if (this.options.headerTemplates) {
+        const dynamicHeaders = this.resolveDynamicHeaders(this.options.headerTemplates);
+        opts.defaultHeaders = { ...opts.defaultHeaders, ...dynamicHeaders };
+      }
+
       let chatCompletion;
       /** @type {OpenAI} */
       const openai = new OpenAI({
