@@ -36,7 +36,6 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const db = require('~/models');
 
 /** @type {import('@librechat/api').AppConfig | null} */
@@ -514,7 +513,7 @@ const createResponse = async (req, res) => {
         {
           spendTokens: db.spendTokens,
           spendStructuredTokens: db.spendStructuredTokens,
-          pricing: { getMultiplier, getCacheMultiplier },
+          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
           bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
         },
         {
@@ -668,7 +667,7 @@ const createResponse = async (req, res) => {
         {
           spendTokens: db.spendTokens,
           spendStructuredTokens: db.spendStructuredTokens,
-          pricing: { getMultiplier, getCacheMultiplier },
+          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
           bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
         },
         {
