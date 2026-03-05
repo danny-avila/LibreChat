@@ -39,7 +39,7 @@ jobs:
             packages/client/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: node-modules-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -124,7 +124,7 @@ jobs:
             packages/client/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: node-modules-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -195,7 +195,7 @@ jobs:
             packages/client/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: node-modules-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -255,7 +255,7 @@ jobs:
             packages/client/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: node-modules-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -295,7 +295,7 @@ jobs:
             packages/client/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: node-modules-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -341,7 +341,7 @@ jobs:
             packages/client/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: node-modules-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
