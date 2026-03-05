@@ -177,26 +177,14 @@ const formatDate = (dateString: string) => {
  * For other endpoints, content is stored in the `text` field.
  */
 const getMessageText = (message: AdminConversationMessage): string => {
-  // Debug logging
-  console.log('[getMessageText] Processing message:', {
-    messageId: message.messageId,
-    isCreatedByUser: message.isCreatedByUser,
-    hasContent: !!message.content,
-    contentLength: message.content?.length,
-    hasText: !!message.text,
-    content: message.content,
-  });
-
   // First try to get text from the content array (for Assistants/Agents)
   if (message.content && Array.isArray(message.content) && message.content.length > 0) {
     let result = '';
     for (const part of message.content) {
-      console.log('[getMessageText] Processing part:', part);
       if (part.type === 'text') {
         const textPart = part as TextContentPart;
         const textValue =
           typeof textPart.text === 'string' ? textPart.text : textPart.text?.value || '';
-        console.log('[getMessageText] Extracted text value:', textValue);
         if (result.length > 0 && textValue.length > 0) {
           result += ' ';
         }
@@ -211,13 +199,11 @@ const getMessageText = (message: AdminConversationMessage): string => {
       }
     }
     if (result) {
-      console.log('[getMessageText] Final result from content:', result);
       return result;
     }
   }
 
   // Fallback to text field
-  console.log('[getMessageText] Falling back to text field:', message.text);
   return message.text || '';
 };
 
@@ -355,9 +341,7 @@ const MessagesPanel = memo(
                 </div>
                 <div className="whitespace-pre-wrap break-words text-sm text-text-primary">
                   {getMessageText(message) || (
-                    <span className="text-text-secondary italic">
-                      [调试: content={JSON.stringify(message.content)}, text={message.text}]
-                    </span>
+                    <span className="text-text-secondary italic">（无文本内容）</span>
                   )}
                 </div>
               </div>

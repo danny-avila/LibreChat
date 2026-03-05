@@ -93,8 +93,8 @@ const e2bAssistantSchema = new Schema<IE2BAssistantData>(
     e2b_config: {
       type: Object,
       default: {
-        timeout_ms: 300000,
-        max_memory_mb: 2048,
+        timeout_ms: 3600000,
+        max_memory_mb: 10240,
         max_cpu_percent: 80,
       },
     },

@@ -152,8 +152,8 @@ const createAssistant = async (req, res) => {
       model: model || 'gpt-4o', // Default model
       model_parameters: model_parameters || {},
       e2b_config: e2b_config || {
-        timeout_ms: 300000,
-        max_memory_mb: 2048,
+        timeout_ms: 3600000,
+        max_memory_mb: 10240,
         max_cpu_percent: 80,
       },
       code_execution_mode: code_execution_mode || 'interactive',
