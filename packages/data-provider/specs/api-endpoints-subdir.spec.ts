@@ -22,11 +22,11 @@ function loadModuleWithBase(baseHref: string) {
 
   let mod: typeof import('../src/api-endpoints');
   jest.isolateModules(() => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- static import not usable inside isolateModules
     mod = require('../src/api-endpoints');
   });
 
-  proc.browser = undefined;
+  delete proc.browser;
   document.head.removeChild(base);
 
   return mod!;
@@ -90,6 +90,18 @@ describe('buildLoginRedirectUrl — subdirectory deployment (BASE_URL = /chat)',
     const redirectTo = decodeURIComponent(result.split('redirect_to=')[1]);
     expect(redirectTo).toBe('/c/deep?q=hello&submit=true#section');
   });
+
+  it('does not strip base when path shares a prefix but is not a segment match', () => {
+    const result = buildLoginRedirectUrl('/chatroom/c/abc123', '', '');
+    const redirectTo = decodeURIComponent(result.split('redirect_to=')[1]);
+    expect(redirectTo).toBe('/chatroom/c/abc123');
+  });
+
+  it('does not strip base from /chatbot path', () => {
+    const result = buildLoginRedirectUrl('/chatbot', '', '');
+    const redirectTo = decodeURIComponent(result.split('redirect_to=')[1]);
+    expect(redirectTo).toBe('/chatbot');
+  });
 });
 
 describe('buildLoginRedirectUrl — deep subdirectory (BASE_URL = /app/chat)', () => {
@@ -116,5 +128,11 @@ describe('buildLoginRedirectUrl — deep subdirectory (BASE_URL = /app/chat)', (
     const fullUrl = apiBaseUrl() + buildLoginRedirectUrl('/app/chat/c/abc123', '', '');
     expect(fullUrl).toBe('/app/chat/login?redirect_to=%2Fc%2Fabc123');
     expect(fullUrl).not.toContain('/app/chat/app/chat/');
+  });
+
+  it('does not strip from /app/chatroom (segment boundary check)', () => {
+    const result = buildLoginRedirectUrl('/app/chatroom/page', '', '');
+    const redirectTo = decodeURIComponent(result.split('redirect_to=')[1]);
+    expect(redirectTo).toBe('/app/chatroom/page');
   });
 });

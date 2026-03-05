@@ -251,7 +251,13 @@ describe('useAuthRedirect', () => {
       isAuthenticated: false,
     });
 
-    /** Simulate subdirectory deployment with a deep route */
+    /**
+     * Validates that React Router's useLocation() strips the basename before
+     * buildLoginRedirectUrl receives it, so redirect_to never contains
+     * the base prefix. The BASE_URL stripping logic inside buildLoginRedirectUrl
+     * (for callers using window.location.pathname) is tested in
+     * api-endpoints-subdir.spec.ts.
+     */
     const router = createTestRouter('/librechat', '/librechat/c/abc123');
     render(<RouterProvider router={router} />);
 
