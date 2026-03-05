@@ -34,9 +34,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
-          cache: 'npm'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Restore data-provider build cache
@@ -105,12 +112,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
-      - name: Download build artifacts
+      - name: Download data-provider build
         uses: actions/download-artifact@v4
         with:
           name: build-data-provider
@@ -159,10 +168,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Download data-provider build
         uses: actions/download-artifact@v4
@@ -205,10 +216,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Download data-provider build
         uses: actions/download-artifact@v4
@@ -231,10 +244,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Download data-provider build
         uses: actions/download-artifact@v4
@@ -263,10 +278,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Download data-provider build
         uses: actions/download-artifact@v4
