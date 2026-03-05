@@ -245,6 +245,37 @@ describe('useAuthRedirect', () => {
     );
   });
 
+  it('should not include basename in redirect_to param (prevents path doubling)', async () => {
+    (useAuthContext as jest.Mock).mockReturnValue({
+      user: null,
+      isAuthenticated: false,
+    });
+
+    /**
+     * Validates that React Router's useLocation() strips the basename before
+     * buildLoginRedirectUrl receives it, so redirect_to never contains
+     * the base prefix. The BASE_URL stripping logic inside buildLoginRedirectUrl
+     * (for callers using window.location.pathname) is tested in
+     * api-endpoints-subdir.spec.ts.
+     */
+    const router = createTestRouter('/librechat', '/librechat/c/abc123');
+    render(<RouterProvider router={router} />);
+
+    await waitFor(
+      () => {
+        expect(router.state.location.pathname).toBe('/librechat/login');
+        const search = router.state.location.search;
+        const params = new URLSearchParams(search);
+        const redirectTo = decodeURIComponent(params.get('redirect_to')!);
+        /** redirect_to should be /c/abc123, NOT /librechat/c/abc123
+         * because navigate() with basename will re-add the prefix */
+        expect(redirectTo).toBe('/c/abc123');
+        expect(redirectTo).not.toContain('/librechat/');
+      },
+      { timeout: 1000 },
+    );
+  });
+
   it('should not append redirect_to when already on /login', async () => {
     (useAuthContext as jest.Mock).mockReturnValue({
       user: null,
