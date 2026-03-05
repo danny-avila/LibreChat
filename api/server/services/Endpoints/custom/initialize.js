@@ -103,8 +103,10 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     headers: resolveHeaders({
       headers: endpointConfig.headers,
       user: req.user,
-      body: req.body,
     }),
+    // Store unresolved header templates for body-dependent placeholders
+    // These will be resolved later in OpenAIClient after conversationId is generated
+    headerTemplates: endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     customParams: endpointConfig.customParams,

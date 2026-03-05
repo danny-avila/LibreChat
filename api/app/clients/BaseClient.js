@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
+const { resolveHeaders } = require('@librechat/api');
 const {
   countTokens,
   getBalanceConfig,
@@ -75,6 +76,32 @@ class BaseClient {
 
   setOptions() {
     throw new Error("Method 'setOptions' must be implemented.");
+  }
+
+  /**
+   * Resolves dynamic headers that depend on request body fields (conversationId, messageId, etc.)
+   * This is called after conversationId is generated in setMessageOptions
+   * @param {Record<string, string>} [headerTemplates] - Header templates with placeholders to resolve
+   * @returns {Record<string, string>} - Resolved headers
+   */
+  resolveDynamicHeaders(headerTemplates) {
+    if (!headerTemplates || Object.keys(headerTemplates).length === 0) {
+      return {};
+    }
+
+    // Build synthetic body from current client state (like agents endpoint does)
+    const syntheticBody = {
+      conversationId: this.conversationId,
+      parentMessageId: this.parentMessageId,
+      messageId: this.responseMessageId,
+    };
+
+    // Resolve headers with the synthetic body
+    return resolveHeaders({
+      headers: headerTemplates,
+      user: this.options?.req?.user,
+      body: syntheticBody,
+    });
   }
 
   async getCompletion() {
