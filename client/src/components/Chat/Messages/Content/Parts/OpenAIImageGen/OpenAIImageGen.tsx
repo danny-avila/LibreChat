@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { PixelCard } from '@librechat/client';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ProgressText from './ProgressText';
-import { scaleImage } from '~/utils';
 
 export default function OpenAIImageGen({
   initialProgress = 0.1,
@@ -28,8 +27,6 @@ export default function OpenAIImageGen({
 
   const cancelled = (!isSubmitting && initialProgress < 1) || error === true;
 
-  let width: number | undefined;
-  let height: number | undefined;
   let quality: 'low' | 'medium' | 'high' = 'high';
 
   // Parse args if it's a string
@@ -41,61 +38,18 @@ export default function OpenAIImageGen({
     parsedArgs = {};
   }
 
-  try {
-    const argsObj = parsedArgs;
-
-    if (argsObj && typeof argsObj.size === 'string') {
-      const [w, h] = argsObj.size.split('x').map((v: string) => parseInt(v, 10));
-      if (!isNaN(w) && !isNaN(h)) {
-        width = w;
-        height = h;
-      }
-    } else if (argsObj && (typeof argsObj.size !== 'string' || !argsObj.size)) {
-      width = undefined;
-      height = undefined;
+  if (parsedArgs && typeof parsedArgs.quality === 'string') {
+    const q = parsedArgs.quality.toLowerCase();
+    if (q === 'low' || q === 'medium' || q === 'high') {
+      quality = q;
     }
-
-    if (argsObj && typeof argsObj.quality === 'string') {
-      const q = argsObj.quality.toLowerCase();
-      if (q === 'low' || q === 'medium' || q === 'high') {
-        quality = q;
-      }
-    }
-  } catch (e) {
-    width = undefined;
-    height = undefined;
   }
 
-  // Default to 1024x1024 if width and height are still undefined after parsing args and attachment metadata
   const attachment = attachments?.[0];
   const {
-    width: imageWidth,
-    height: imageHeight,
     filepath = null,
     filename = '',
   } = (attachment as TFile & TAttachmentMetadata) || {};
-
-  let origWidth = width ?? imageWidth;
-  let origHeight = height ?? imageHeight;
-
-  if (origWidth === undefined || origHeight === undefined) {
-    origWidth = 1024;
-    origHeight = 1024;
-  }
-
-  const [dimensions, setDimensions] = useState({ width: 'auto', height: 'auto' });
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const updateDimensions = useCallback(() => {
-    if (origWidth && origHeight && containerRef.current) {
-      const scaled = scaleImage({
-        originalWidth: origWidth,
-        originalHeight: origHeight,
-        containerRef,
-      });
-      setDimensions(scaled);
-    }
-  }, [origWidth, origHeight]);
 
   useEffect(() => {
     if (isSubmitting) {
@@ -156,46 +110,31 @@ export default function OpenAIImageGen({
     }
   }, [initialProgress, cancelled]);
 
-  useEffect(() => {
-    updateDimensions();
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateDimensions();
-    });
-
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [updateDimensions]);
-
   return (
     <>
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
         <ProgressText progress={progress} error={cancelled} toolName={toolName} />
       </div>
-      <div className="relative mb-2 flex w-full justify-start">
-        <div ref={containerRef} className="w-full max-w-lg">
-          {dimensions.width !== 'auto' && progress < 1 && (
+      <div className="relative mb-2 flex w-full justify-start max-w-lg max-h-[45vh]">
+        <div
+          className={`
+            overflow-hidden
+            ${progress < 1 ? 'w-full h-[45vh]' : 'w-auto'}
+          `}
+        >
+          {progress < 1 ? (
             <PixelCard
               variant="default"
               progress={progress}
               randomness={0.6}
-              width={dimensions.width}
-              height={dimensions.height}
+            />
+          ) : (
+            <Image
+              altText={filename}
+              imagePath={filepath ?? ''}
+              args={parsedArgs}
             />
           )}
-          <Image
-            altText={filename}
-            imagePath={filepath ?? ''}
-            width={Number(dimensions.width?.split('px')[0])}
-            height={Number(dimensions.height?.split('px')[0])}
-            placeholderDimensions={{ width: dimensions.width, height: dimensions.height }}
-            args={parsedArgs}
-          />
         </div>
       </div>
     </>

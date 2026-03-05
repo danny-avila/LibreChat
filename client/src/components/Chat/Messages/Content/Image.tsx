@@ -2,26 +2,17 @@ import React, { useState, useRef, useMemo } from 'react';
 import { Skeleton } from '@librechat/client';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import { apiBaseUrl } from 'librechat-data-provider';
-import { cn, scaleImage } from '~/utils';
+import { cn } from '~/utils';
 import DialogImage from './DialogImage';
 
 const Image = ({
   imagePath,
   altText,
-  height,
-  width,
-  placeholderDimensions,
   className,
   args,
 }: {
   imagePath: string;
   altText: string;
-  height: number;
-  width: number;
-  placeholderDimensions?: {
-    height?: string;
-    width?: string;
-  };
   className?: string;
   args?: {
     prompt?: string;
@@ -33,7 +24,6 @@ const Image = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const handleImageLoad = () => setIsLoaded(true);
@@ -55,16 +45,6 @@ const Image = ({
     const baseURL = apiBaseUrl();
     return `${baseURL}${imagePath}`;
   }, [imagePath]);
-
-  const { width: scaledWidth, height: scaledHeight } = useMemo(
-    () =>
-      scaleImage({
-        originalWidth: Number(placeholderDimensions?.width?.split('px')[0] ?? width),
-        originalHeight: Number(placeholderDimensions?.height?.split('px')[0] ?? height),
-        containerRef,
-      }),
-    [placeholderDimensions, height, width],
-  );
 
   const downloadImage = async () => {
     try {
@@ -96,7 +76,7 @@ const Image = ({
   };
 
   return (
-    <div ref={containerRef}>
+    <div>
       <button
         ref={triggerRef}
         type="button"
@@ -114,19 +94,13 @@ const Image = ({
           onLoad={handleImageLoad}
           visibleByDefault={true}
           className={cn(
-            'opacity-100 transition-opacity duration-100',
+            'transition-opacity duration-100 w-auto h-auto max-h-[45vh] text-transparent block',
             isLoaded ? 'opacity-100' : 'opacity-0',
           )}
           src={absoluteImageUrl}
-          style={{
-            width: `${scaledWidth}`,
-            height: 'auto',
-            color: 'transparent',
-            display: 'block',
-          }}
           placeholder={
             <Skeleton
-              className={cn('h-auto w-full', `h-[${scaledHeight}] w-[${scaledWidth}]`)}
+              className={cn('w-auto max-h-[45vh]')}
               aria-label="Loading image"
               aria-busy="true"
             />
