@@ -30,6 +30,10 @@ export enum SystemRoles {
    * The default user role
    */
   USER = 'USER',
+  /**
+   * The team member role — same base permissions as USER, but can see TEAM-tagged agents
+   */
+  TEAM = 'TEAM',
 }
 
 export const roleSchema = z.object({
@@ -109,6 +113,10 @@ const defaultRolesSchema = z.object({
     name: z.literal(SystemRoles.USER),
     permissions: permissionsSchema,
   }),
+  [SystemRoles.TEAM]: roleSchema.extend({
+    name: z.literal(SystemRoles.TEAM),
+    permissions: permissionsSchema,
+  }),
 });
 
 export const roleDefaults = defaultRolesSchema.parse({
@@ -179,6 +187,31 @@ export const roleDefaults = defaultRolesSchema.parse({
   },
   [SystemRoles.USER]: {
     name: SystemRoles.USER,
+    permissions: {
+      [PermissionTypes.PROMPTS]: {},
+      [PermissionTypes.BOOKMARKS]: {},
+      [PermissionTypes.MEMORIES]: {},
+      [PermissionTypes.AGENTS]: {},
+      [PermissionTypes.MULTI_CONVO]: {},
+      [PermissionTypes.TEMPORARY_CHAT]: {},
+      [PermissionTypes.RUN_CODE]: {},
+      [PermissionTypes.WEB_SEARCH]: {},
+      [PermissionTypes.PEOPLE_PICKER]: {
+        [Permissions.VIEW_USERS]: false,
+        [Permissions.VIEW_GROUPS]: false,
+        [Permissions.VIEW_ROLES]: false,
+      },
+      [PermissionTypes.MARKETPLACE]: {
+        [Permissions.USE]: false,
+      },
+      [PermissionTypes.FILE_SEARCH]: {},
+      [PermissionTypes.FILE_CITATIONS]: {},
+      [PermissionTypes.MCP_SERVERS]: {},
+      [PermissionTypes.REMOTE_AGENTS]: {},
+    },
+  },
+  [SystemRoles.TEAM]: {
+    name: SystemRoles.TEAM,
     permissions: {
       [PermissionTypes.PROMPTS]: {},
       [PermissionTypes.BOOKMARKS]: {},

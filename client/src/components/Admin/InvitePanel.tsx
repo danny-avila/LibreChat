@@ -1,7 +1,16 @@
 import React, { useState } from 'react';
+import { SystemRoles } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { useAdminUsers, useInviteUser, useDeleteAdminUser, useUpdateUserRole } from '~/data-provider';
 import type { TAdminUser } from 'librechat-data-provider';
+
+const ROLE_STYLES: Record<string, { background: string; color: string }> = {
+  [SystemRoles.ADMIN]: { background: 'rgba(201,168,124,0.18)', color: '#c9a87c' },
+  [SystemRoles.TEAM]: { background: 'rgba(100,160,255,0.15)', color: '#64a0ff' },
+  [SystemRoles.USER]: { background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)' },
+};
+
+const ALL_ROLES = [SystemRoles.ADMIN, SystemRoles.TEAM, SystemRoles.USER];
 
 type UserRowProps = {
   user: TAdminUser;
@@ -16,22 +25,14 @@ type UserRowProps = {
   isUpdatingRole: boolean;
 };
 
-const RoleBadge = ({ role }: { role: string }) =>
-  role === 'ADMIN' ? (
-    <span
-      className="rounded px-2 py-0.5 text-xs font-semibold"
-      style={{ background: 'rgba(201,168,124,0.18)', color: '#c9a87c' }}
-    >
-      ADMIN
-    </span>
-  ) : (
-    <span
-      className="rounded px-2 py-0.5 text-xs font-semibold"
-      style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)' }}
-    >
-      USER
+const RoleBadge = ({ role }: { role: string }) => {
+  const style = ROLE_STYLES[role] ?? ROLE_STYLES[SystemRoles.USER];
+  return (
+    <span className="rounded px-2 py-0.5 text-xs font-semibold" style={style}>
+      {role}
     </span>
   );
+};
 
 const UserRow = ({
   user,
@@ -48,7 +49,8 @@ const UserRow = ({
   const localize = useLocalize();
   const isPendingDelete = confirmDeleteId === user._id;
   const isPendingRole = confirmRoleId === user._id;
-  const newRole = user.role === 'ADMIN' ? 'USER' : 'ADMIN';
+  const availableRoles = ALL_ROLES.filter((r) => r !== user.role);
+  const [selectedNewRole, setSelectedNewRole] = useState(availableRoles[0]);
 
   return (
     <div
@@ -66,11 +68,18 @@ const UserRow = ({
       <div className="ml-4 flex shrink-0 items-center gap-2">
         {isPendingRole ? (
           <div className="flex items-center gap-1.5">
-            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>
-              → <strong style={{ color: newRole === 'ADMIN' ? '#c9a87c' : 'rgba(255,255,255,0.7)' }}>{newRole}</strong>?
-            </span>
+            <select
+              value={selectedNewRole}
+              onChange={(e) => setSelectedNewRole(e.target.value)}
+              className="rounded px-2 py-1 text-xs font-semibold"
+              style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer' }}
+            >
+              {availableRoles.map((r) => (
+                <option key={r} value={r} style={{ background: '#1a1a2e' }}>{r}</option>
+              ))}
+            </select>
             <button
-              onClick={() => onRoleConfirm(user._id, newRole)}
+              onClick={() => onRoleConfirm(user._id, selectedNewRole)}
               disabled={isUpdatingRole}
               className="rounded px-2 py-1 text-xs font-semibold"
               style={{ background: 'rgba(201,168,124,0.25)', color: '#c9a87c', cursor: isUpdatingRole ? 'not-allowed' : 'pointer', opacity: isUpdatingRole ? 0.6 : 1 }}

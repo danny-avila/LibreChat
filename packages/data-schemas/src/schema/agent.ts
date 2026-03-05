@@ -123,6 +123,12 @@ const agentSchema = new Schema<IAgent>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
+    /** Minimum role required to see this agent (USER = all, TEAM = team+, ADMIN = admin only) */
+    minRole: {
+      type: String,
+      enum: ['USER', 'TEAM', 'ADMIN'],
+      default: 'USER',
+    },
   },
   {
     timestamps: true,
