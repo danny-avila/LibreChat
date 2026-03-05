@@ -18,20 +18,20 @@ function loadModuleWithBase(baseHref: string) {
   document.head.appendChild(base);
 
   const proc = process as typeof process & { browser?: boolean };
-  proc.browser = true;
+  const originalBrowser = proc.browser;
 
   let mod: typeof import('../src/api-endpoints');
   try {
+    proc.browser = true;
     jest.isolateModules(() => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports -- static import not usable inside isolateModules
       mod = require('../src/api-endpoints');
     });
+    return mod!;
   } finally {
-    proc.browser = false;
+    proc.browser = originalBrowser;
     document.head.removeChild(base);
   }
-
-  return mod!;
 }
 
 describe('buildLoginRedirectUrl — subdirectory deployment (BASE_URL = /chat)', () => {
