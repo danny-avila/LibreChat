@@ -657,11 +657,13 @@ describe('findMatchingPattern - iteration performance', () => {
 
   test('exact match early-exits with minimal includes() checks', () => {
     const openAIMap = maxTokensMap[EModelEndpoint.openAI];
+    const keys = Object.keys(openAIMap);
+    const lastKey = keys[keys.length - 1];
     includesSpy.mockClear();
-    const result = findMatchingPattern('gpt-5.2-pro', openAIMap);
+    const result = findMatchingPattern(lastKey, openAIMap);
     const exactCalls = includesSpy.mock.calls.length;
 
-    expect(result).toBe('gpt-5.2-pro');
+    expect(result).toBe(lastKey);
     expect(exactCalls).toBe(1);
   });
 
