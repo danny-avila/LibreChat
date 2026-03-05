@@ -19,6 +19,8 @@ export interface GenerationJobMetadata {
   model?: string;
   /** Prompt token count for abort token spending */
   promptTokens?: number;
+  /** Active modelSpec name for per-spec balance spend on abort */
+  spec?: string;
 }
 
 export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted';

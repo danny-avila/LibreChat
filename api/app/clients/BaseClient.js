@@ -138,15 +138,17 @@ class BaseClient {
    * @param {number} promptTokens
    * @param {number} completionTokens
    * @param {string} [messageId]
+   * @param {string} [specName]
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, balance, promptTokens, completionTokens, messageId }) {
+  async recordTokenUsage({ model, balance, promptTokens, completionTokens, messageId, specName }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
       balance,
       messageId,
       promptTokens,
       completionTokens,
+      specName,
     });
   }
 
@@ -700,6 +702,12 @@ class BaseClient {
       balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
+      const specName = this.options.req?.body?.spec;
+      this.specName = specName ?? null;
+      const specBalance =
+        specName != null
+          ? appConfig?.modelSpecs?.list?.find((s) => s.name === specName)?.balance
+          : undefined;
       await checkBalance({
         req: this.options.req,
         res: this.options.res,
@@ -710,6 +718,8 @@ class BaseClient {
           endpoint: this.options.endpoint,
           model: this.modelOptions?.model ?? this.model,
           endpointTokenConfig: this.options.endpointTokenConfig,
+          specName,
+          specBalance,
         },
       });
     }
@@ -800,6 +810,7 @@ class BaseClient {
           /** Note: When using agents, responseMessage.model is the agent ID, not the model */
           model: this.model,
           messageId: this.responseMessageId,
+          specName: this.specName,
         });
       }
 

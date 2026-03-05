@@ -525,6 +525,7 @@ const createResponse = async (req, res) => {
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
+          specName: req.body?.spec,
         },
       ).catch((err) => {
         logger.error('[Responses API] Error recording usage:', err);
@@ -679,6 +680,7 @@ const createResponse = async (req, res) => {
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
+          specName: req.body?.spec,
         },
       ).catch((err) => {
         logger.error('[Responses API] Error recording usage:', err);

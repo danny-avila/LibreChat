@@ -683,4 +683,6 @@ export type TBalanceResponse = {
   refillIntervalUnit?: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
   lastRefill?: Date;
   refillAmount?: number;
+  // Per-modelSpec isolated credit buckets
+  perModelSpecTokenCredits?: Record<string, number>;
 };

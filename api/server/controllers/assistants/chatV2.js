@@ -148,6 +148,11 @@ const chatV2 = async (req, res) => {
       // Count tokens up to the current context window
       promptTokens = Math.min(promptTokens, getModelMaxTokens(model));
 
+      const specName = endpointOption?.spec;
+      const specBalance =
+        specName != null
+          ? appConfig?.modelSpecs?.list?.find((s) => s.name === specName)?.balance
+          : undefined;
       await checkBalance({
         req,
         res,
@@ -156,6 +161,8 @@ const chatV2 = async (req, res) => {
           user: req.user.id,
           tokenType: 'prompt',
           amount: promptTokens,
+          specName,
+          specBalance,
         },
       });
     };
