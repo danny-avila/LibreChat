@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string */
 /**
  * PDFBuilderModal Component
  *
@@ -38,10 +39,11 @@ import type { PDFGeneratedPayload, ErrorPayload } from './types';
 // PDF Builder URL from environment variable
 const PDF_BUILDER_URL =
   import.meta.env.VITE_PDF_BUILDER_URL || 'https://client.dev.scaffad.cloud.jamot.pro/';
+const SCAFFAD_SHOP_ENABLED = import.meta.env.VITE_SCAFFAD_SHOP_ENABLED === 'true';
 
 export function PDFBuilderModal() {
   const [state, setState] = useRecoilState(pdfBuilderState);
-  const { user } = useAuthContext();
+  const { user, token } = useAuthContext();
   const { showToast } = useToastContext();
 
   // Get current theme from theme context
@@ -67,7 +69,12 @@ export function PDFBuilderModal() {
    * Open Scaffad Shop in a new tab using the LibreChat SSO endpoint.
    */
   const handleOpenScaffadShop = () => {
-    window.open('/scaffad/shop', '_blank', 'noopener,noreferrer');
+    if (!token) {
+      window.open('/login', '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const url = `/scaffad/shop?token=${encodeURIComponent(token)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   /**
@@ -171,14 +178,16 @@ export function PDFBuilderModal() {
               </h2>
 
               <div className="flex items-center gap-3">
-                {/* Open Scaffad Shop */}
-                <button
-                  type="button"
-                  onClick={handleOpenScaffadShop}
-                  className="hidden rounded-lg border border-blue-500 px-3 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:border-blue-400 dark:text-blue-300 dark:hover:bg-blue-950/40 md:inline-flex"
-                >
-                  Open Shop
-                </button>
+                {/* Open Scaffad Shop (feature-flagged) */}
+                {SCAFFAD_SHOP_ENABLED && (
+                  <button
+                    type="button"
+                    onClick={handleOpenScaffadShop}
+                    className="hidden rounded-lg border border-blue-500 px-3 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:border-blue-400 dark:text-blue-300 dark:hover:bg-blue-950/40 md:inline-flex"
+                  >
+                    Open Shop
+                  </button>
+                )}
 
                 {/* Close Button */}
                 <button

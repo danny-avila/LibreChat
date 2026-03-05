@@ -1,12 +1,9 @@
 const express = require('express');
-const { requireJwtAuth } = require('../middleware');
+const jwt = require('jsonwebtoken');
 const { issueScaffadShopTicket } = require('../utils/scaffadShopTicket');
 const Profile = require('../models/Profile');
 
 const router = express.Router();
-
-// All routes require a logged-in LibreChat user
-router.use(requireJwtAuth);
 
 /**
  * GET /scaffad/shop
@@ -29,16 +26,51 @@ router.get('/', async (req, res) => {
       });
     }
 
+    // Derive user from JWT passed in ?token=... (LibreChat auth JWT)
+    const rawToken = req.query.token;
+    if (!rawToken) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Missing auth token. Please log in via LibreChat.',
+      });
+    }
+
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      return res.status(500).json({
+        error: 'Config error',
+        message: 'JWT_SECRET is not configured',
+      });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(rawToken, secret);
+    } catch (e) {
+      console.error('[scaffadShop] Invalid auth token:', e.message);
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Invalid auth token',
+      });
+    }
+
+    const user = {
+      id: decoded.id || decoded.sub,
+      email: decoded.email,
+      name: decoded.name || decoded.username || decoded.email,
+      role: decoded.role,
+    };
+
     // Load profile to determine role if available
     let profile = null;
     try {
-      profile = await Profile.findOne({ userId: req.user.id }).lean();
+      profile = await Profile.findOne({ userId: user.id }).lean();
     } catch (e) {
       // Non-fatal: we can still issue a ticket with user.role
-      console.warn('[scaffadShop] Failed to load profile for user', req.user.id, e.message);
+      console.warn('[scaffadShop] Failed to load profile for user', user.id, e.message);
     }
 
-    const ticket = issueScaffadShopTicket(req.user, profile);
+    const ticket = issueScaffadShopTicket(user, profile);
 
     const url = new URL(redirectBase);
     url.searchParams.set('token', ticket);
