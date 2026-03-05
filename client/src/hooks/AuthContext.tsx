@@ -176,7 +176,9 @@ const AuthContextProvider = ({
           const baseUrl = apiBaseUrl();
           const rawPath = window.location.pathname;
           const strippedPath =
-            baseUrl && rawPath.startsWith(baseUrl) ? rawPath.slice(baseUrl.length) || '/' : rawPath;
+            baseUrl && (rawPath === baseUrl || rawPath.startsWith(baseUrl + '/'))
+              ? rawPath.slice(baseUrl.length) || '/'
+              : rawPath;
           const currentUrl = `${strippedPath}${window.location.search}`;
           const fallbackRedirect = isSafeRedirect(currentUrl) ? currentUrl : '/c/new';
           const redirect =

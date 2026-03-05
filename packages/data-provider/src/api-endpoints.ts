@@ -179,8 +179,10 @@ export function buildLoginRedirectUrl(pathname?: string, search?: string, hash?:
   const s = search ?? window.location.search;
   const h = hash ?? window.location.hash;
 
-  const stripBase = BASE_URL && BASE_URL !== '/' ? BASE_URL : '';
-  const stripped = stripBase && p.startsWith(stripBase) ? p.slice(stripBase.length) || '/' : p;
+  const stripped =
+    BASE_URL && (p === BASE_URL || p.startsWith(BASE_URL + '/'))
+      ? p.slice(BASE_URL.length) || '/'
+      : p;
   const currentPath = `${stripped}${s}${h}`;
   const encoded = encodeURIComponent(currentPath || '/');
   return `/login?${REDIRECT_PARAM}=${encoded}`;
