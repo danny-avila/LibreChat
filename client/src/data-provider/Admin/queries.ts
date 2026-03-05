@@ -62,3 +62,20 @@ export const useInviteUser = (): UseMutationResult<
     },
   );
 };
+
+export const useToggleSuspendUser = (): UseMutationResult<
+  { message: string; suspended: boolean },
+  unknown,
+  string
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    [MutationKeys.suspendUser],
+    (id: string) => dataService.toggleSuspendUser(id),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.adminUsers]);
+      },
+    },
+  );
+};

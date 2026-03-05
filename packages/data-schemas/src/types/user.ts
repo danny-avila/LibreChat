@@ -43,6 +43,8 @@ export interface IUser extends Document {
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
+  /** Whether the account is suspended (e.g. due to non-payment) */
+  suspended?: boolean;
 }
 
 export interface BalanceConfig {

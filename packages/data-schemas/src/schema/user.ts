@@ -157,6 +157,12 @@ const userSchema = new Schema<IUser>(
       type: String,
       sparse: true,
     },
+    /** Whether the account is suspended (e.g. due to non-payment) */
+    suspended: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   { timestamps: true },
 );

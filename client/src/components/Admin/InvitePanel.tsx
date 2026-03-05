@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import { SystemRoles } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
-import { useAdminUsers, useInviteUser, useDeleteAdminUser, useUpdateUserRole } from '~/data-provider';
+import {
+  useAdminUsers,
+  useInviteUser,
+  useDeleteAdminUser,
+  useUpdateUserRole,
+  useToggleSuspendUser,
+} from '~/data-provider';
 import type { TAdminUser } from 'librechat-data-provider';
 
 const ROLE_STYLES: Record<string, { background: string; color: string }> = {
@@ -12,6 +18,14 @@ const ROLE_STYLES: Record<string, { background: string; color: string }> = {
 
 const ALL_ROLES = [SystemRoles.ADMIN, SystemRoles.TEAM, SystemRoles.USER];
 
+const formatDate = (iso: string) => {
+  try {
+    return new Date(iso).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch {
+    return '—';
+  }
+};
+
 type UserRowProps = {
   user: TAdminUser;
   confirmDeleteId: string | null;
@@ -20,9 +34,11 @@ type UserRowProps = {
   onDeleteConfirm: (id: string) => void;
   onRoleClick: (id: string) => void;
   onRoleConfirm: (id: string, newRole: string) => void;
+  onSuspendToggle: (id: string) => void;
   onCancel: () => void;
   isDeleting: boolean;
   isUpdatingRole: boolean;
+  isSuspending: boolean;
 };
 
 const RoleBadge = ({ role }: { role: string }) => {
@@ -42,9 +58,11 @@ const UserRow = ({
   onDeleteConfirm,
   onRoleClick,
   onRoleConfirm,
+  onSuspendToggle,
   onCancel,
   isDeleting,
   isUpdatingRole,
+  isSuspending,
 }: UserRowProps) => {
   const localize = useLocalize();
   const isPendingDelete = confirmDeleteId === user._id;
@@ -55,14 +73,28 @@ const UserRow = ({
   return (
     <div
       className="flex items-center justify-between rounded-lg px-4 py-3"
-      style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+      style={{
+        background: user.suspended ? 'rgba(168,26,73,0.06)' : 'rgba(255,255,255,0.03)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        opacity: user.suspended ? 0.75 : 1,
+      }}
     >
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium" style={{ color: 'rgba(255,255,255,0.9)' }}>
-          {user.name || '—'}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-medium" style={{ color: 'rgba(255,255,255,0.9)' }}>
+            {user.name || '—'}
+          </p>
+          {user.suspended && (
+            <span className="rounded px-1.5 py-0.5 text-xs font-semibold" style={{ background: 'rgba(168,26,73,0.3)', color: '#f87171' }}>
+              {localize('com_ui_admin_suspended')}
+            </span>
+          )}
+        </div>
         <p className="truncate text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
           {user.email}
+        </p>
+        <p className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>
+          {localize('com_ui_admin_joined')} {formatDate(user.createdAt)}
         </p>
       </div>
       <div className="ml-4 flex shrink-0 items-center gap-2">
@@ -104,42 +136,75 @@ const UserRow = ({
           </button>
         )}
         {!isPendingRole && (
-          isPendingDelete ? (
-            <div className="flex items-center gap-1.5">
+          <>
+            {/* Suspend / Unsuspend button */}
+            {user.role !== 'ADMIN' && (
               <button
-                onClick={() => onDeleteConfirm(user._id)}
-                disabled={isDeleting}
-                className="rounded px-2 py-1 text-xs font-semibold"
-                style={{ background: '#A81A49', color: '#fff', cursor: isDeleting ? 'not-allowed' : 'pointer', opacity: isDeleting ? 0.6 : 1 }}
-              >
-                {localize('com_ui_admin_delete_confirm')}
-              </button>
-              <button
-                onClick={onCancel}
-                className="rounded px-2 py-1 text-xs font-semibold"
-                style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}
-              >
-                {localize('com_ui_admin_delete_cancel')}
-              </button>
-            </div>
-          ) : (
-            user.role !== 'ADMIN' && (
-              <button
-                onClick={() => onDeleteClick(user._id)}
+                onClick={() => onSuspendToggle(user._id)}
+                disabled={isSuspending}
                 className="rounded p-1.5 transition-colors"
-                style={{ color: 'rgba(255,255,255,0.3)', background: 'transparent' }}
-                aria-label={localize('com_ui_admin_delete_user')}
-                title={localize('com_ui_admin_delete_user')}
+                style={{
+                  color: user.suspended ? '#6ee7b7' : 'rgba(255,100,100,0.6)',
+                  background: 'transparent',
+                  cursor: isSuspending ? 'not-allowed' : 'pointer',
+                  opacity: isSuspending ? 0.6 : 1,
+                }}
+                aria-label={user.suspended ? localize('com_ui_admin_unsuspend_user') : localize('com_ui_admin_suspend_user')}
+                title={user.suspended ? localize('com_ui_admin_unsuspend_user') : localize('com_ui_admin_suspend_user')}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                  <path d="M10 11v6M14 11v6" />
-                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                </svg>
+                {user.suspended ? (
+                  /* Unlock icon */
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                  </svg>
+                ) : (
+                  /* Lock icon */
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                )}
               </button>
-            )
-          )
+            )}
+            {/* Delete button */}
+            {isPendingDelete ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => onDeleteConfirm(user._id)}
+                  disabled={isDeleting}
+                  className="rounded px-2 py-1 text-xs font-semibold"
+                  style={{ background: '#A81A49', color: '#fff', cursor: isDeleting ? 'not-allowed' : 'pointer', opacity: isDeleting ? 0.6 : 1 }}
+                >
+                  {localize('com_ui_admin_delete_confirm')}
+                </button>
+                <button
+                  onClick={onCancel}
+                  className="rounded px-2 py-1 text-xs font-semibold"
+                  style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}
+                >
+                  {localize('com_ui_admin_delete_cancel')}
+                </button>
+              </div>
+            ) : (
+              user.role !== 'ADMIN' && (
+                <button
+                  onClick={() => onDeleteClick(user._id)}
+                  className="rounded p-1.5 transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.3)', background: 'transparent' }}
+                  aria-label={localize('com_ui_admin_delete_user')}
+                  title={localize('com_ui_admin_delete_user')}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                    <path d="M10 11v6M14 11v6" />
+                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                  </svg>
+                </button>
+              )
+            )}
+          </>
         )}
       </div>
     </div>
@@ -159,6 +224,7 @@ export default function InvitePanel() {
   const inviteMutation = useInviteUser();
   const deleteMutation = useDeleteAdminUser();
   const roleMutation = useUpdateUserRole();
+  const suspendMutation = useToggleSuspendUser();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,6 +287,22 @@ export default function InvitePanel() {
         },
       },
     );
+  };
+
+  const handleSuspendToggle = (id: string) => {
+    suspendMutation.mutate(id, {
+      onSuccess: (data) => {
+        setSuccessMsg(data.suspended ? localize('com_ui_admin_suspend_success') : localize('com_ui_admin_unsuspend_success'));
+      },
+      onError: (err: unknown) => {
+        const msg =
+          err &&
+          typeof err === 'object' &&
+          'response' in err &&
+          (err as { response?: { data?: { message?: string } } }).response?.data?.message;
+        setErrorMsg(msg || localize('com_ui_admin_suspend_error'));
+      },
+    });
   };
 
   const handleCancel = () => {
@@ -346,9 +428,11 @@ export default function InvitePanel() {
               onDeleteConfirm={handleConfirmDelete}
               onRoleClick={setConfirmRoleId}
               onRoleConfirm={handleConfirmRole}
+              onSuspendToggle={handleSuspendToggle}
               onCancel={handleCancel}
               isDeleting={deleteMutation.isLoading}
               isUpdatingRole={roleMutation.isLoading}
+              isSuspending={suspendMutation.isLoading}
             />
           ))}
         </div>

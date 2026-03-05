@@ -418,3 +418,4 @@ export const adminUsers = () => `${BASE_URL}/api/admin/users`;
 export const adminInviteUser = () => `${BASE_URL}/api/admin/users/invite`;
 export const adminDeleteUser = (id: string) => `${BASE_URL}/api/admin/users/${encodeURIComponent(id)}`;
 export const adminUpdateUserRole = (id: string) => `${BASE_URL}/api/admin/users/${encodeURIComponent(id)}/role`;
+export const adminSuspendUser = (id: string) => `${BASE_URL}/api/admin/users/${encodeURIComponent(id)}/suspend`;

@@ -99,4 +99,5 @@ export enum MutationKeys {
   verifyTwoFactor = 'verifyTwoFactor',
   updateMemoryPreferences = 'updateMemoryPreferences',
   inviteUser = 'inviteUser',
+  suspendUser = 'suspendUser',
 }
