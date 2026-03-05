@@ -8,7 +8,6 @@
     "packages/*"
   ],
   "scripts": {
-    "prepare": "node config/prepare.js",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "set-balance": "node config/set-balance.js",
