@@ -238,6 +238,73 @@ describe('systemGrant methods', () => {
       });
       expect(count).toBe(2);
     });
+
+    it('handles E11000 race condition — returns existing doc instead of throwing', async () => {
+      const userId = new Types.ObjectId();
+      const params = {
+        principalType: PrincipalType.USER as const,
+        principalId: userId,
+        capability: SystemCapabilities.READ_USERS as SystemCapability,
+      };
+
+      const original = await methods.grantCapability(params);
+
+      // Simulate a race: findOneAndUpdate upserts but hits a duplicate key
+      const model = mongoose.models.SystemGrant;
+      jest
+        .spyOn(model, 'findOneAndUpdate')
+        .mockRejectedValueOnce(
+          Object.assign(new Error('E11000 duplicate key error'), { code: 11000 }),
+        );
+
+      const result = await methods.grantCapability(params);
+      expect(result).toBeTruthy();
+      expect(result!.capability).toBe(SystemCapabilities.READ_USERS);
+      expect(result!.principalId.toString()).toBe(original!.principalId.toString());
+    });
+
+    it('re-throws non-E11000 errors from findOneAndUpdate', async () => {
+      const model = mongoose.models.SystemGrant;
+      jest.spyOn(model, 'findOneAndUpdate').mockRejectedValueOnce(new Error('connection timeout'));
+
+      await expect(
+        methods.grantCapability({
+          principalType: PrincipalType.USER,
+          principalId: new Types.ObjectId(),
+          capability: SystemCapabilities.READ_USERS,
+        }),
+      ).rejects.toThrow('connection timeout');
+    });
+
+    it('throws TypeError for invalid ObjectId string on USER principal', async () => {
+      await expect(
+        methods.grantCapability({
+          principalType: PrincipalType.USER,
+          principalId: 'not-a-valid-objectid',
+          capability: SystemCapabilities.READ_USERS,
+        }),
+      ).rejects.toThrow(TypeError);
+    });
+
+    it('throws TypeError for invalid ObjectId string on GROUP principal', async () => {
+      await expect(
+        methods.grantCapability({
+          principalType: PrincipalType.GROUP,
+          principalId: 'also-invalid',
+          capability: SystemCapabilities.READ_AGENTS,
+        }),
+      ).rejects.toThrow(TypeError);
+    });
+
+    it('accepts any string for ROLE principal without ObjectId validation', async () => {
+      const doc = await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'ANY_STRING_HERE',
+        capability: SystemCapabilities.READ_CONFIGS,
+      });
+      expect(doc).toBeTruthy();
+      expect(doc!.principalId).toBe('ANY_STRING_HERE');
+    });
   });
 
   describe('revokeCapability', () => {
@@ -315,6 +382,16 @@ describe('systemGrant methods', () => {
 
       expect(remaining).toHaveLength(1);
       expect(remaining[0].tenantId).toBe('tenant-2');
+    });
+
+    it('throws TypeError for invalid ObjectId string on USER principal', async () => {
+      await expect(
+        methods.revokeCapability({
+          principalType: PrincipalType.USER,
+          principalId: 'bad-id',
+          capability: SystemCapabilities.READ_USERS,
+        }),
+      ).rejects.toThrow(TypeError);
     });
   });
 
@@ -593,6 +670,15 @@ describe('systemGrant methods', () => {
       expect(grants).toHaveLength(1);
       expect(grants[0].capability).toBe(SystemCapabilities.READ_CONFIGS);
     });
+
+    it('throws TypeError for invalid ObjectId string on USER principal', async () => {
+      await expect(
+        methods.getCapabilitiesForPrincipal({
+          principalType: PrincipalType.USER,
+          principalId: 'not-valid',
+        }),
+      ).rejects.toThrow(TypeError);
+    });
   });
 
   describe('schema validation', () => {
@@ -642,6 +728,34 @@ describe('systemGrant methods', () => {
           principalId: new Types.ObjectId(),
         }),
       ).rejects.toThrow(/capability/);
+    });
+
+    it('rejects invalid capability strings', async () => {
+      await expect(
+        SystemGrant.create({
+          principalType: PrincipalType.USER,
+          principalId: new Types.ObjectId(),
+          capability: 'god:mode',
+        }),
+      ).rejects.toThrow(/Invalid capability string/);
+    });
+
+    it('accepts valid section-level config capabilities', async () => {
+      const doc = await SystemGrant.create({
+        principalType: PrincipalType.USER,
+        principalId: new Types.ObjectId(),
+        capability: 'manage:configs:endpoints',
+      });
+      expect(doc.capability).toBe('manage:configs:endpoints');
+    });
+
+    it('accepts valid assign config capabilities', async () => {
+      const doc = await SystemGrant.create({
+        principalType: PrincipalType.USER,
+        principalId: new Types.ObjectId(),
+        capability: 'assign:configs:group',
+      });
+      expect(doc.capability).toBe('assign:configs:group');
     });
 
     it('enforces unique compound index (principalType + principalId + capability + tenantId)', async () => {
