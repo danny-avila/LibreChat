@@ -14,10 +14,12 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
+  tokenValues,
   CANCEL_RATE,
   createMethods,
   balanceSchema,
   transactionSchema,
+  premiumTokenValues,
 } from '@librechat/data-schemas';
 import type { PricingFns, TxMetadata } from './transactions';
 import {
@@ -25,6 +27,26 @@ import {
   bulkWriteTransactions,
   prepareTokenSpend,
 } from './transactions';
+
+/** Inlined from packages/data-schemas/src/methods/test-helpers.ts — keep in sync */
+function findMatchingPattern(
+  modelName: string,
+  tokensMap: Record<string, number | Record<string, number>>,
+): string | undefined {
+  const keys = Object.keys(tokensMap);
+  const lowerModelName = modelName.toLowerCase();
+  for (let i = keys.length - 1; i >= 0; i--) {
+    if (lowerModelName.includes(keys[i])) {
+      return keys[i];
+    }
+  }
+  return undefined;
+}
+
+/** Inlined from packages/data-schemas/src/methods/test-helpers.ts — keep in sync */
+function matchModelName(modelName: string, _endpoint?: string): string | undefined {
+  return typeof modelName === 'string' ? modelName : undefined;
+}
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -34,29 +56,23 @@ jest.mock('@librechat/data-schemas', () => {
   };
 });
 
-// Real pricing functions from api/models/tx.js — same ones the legacy path uses
-/* eslint-disable @typescript-eslint/no-require-imports */
-const {
-  getMultiplier,
-  getCacheMultiplier,
-  tokenValues,
-  premiumTokenValues,
-} = require('../../../../api/models/tx.js');
-/* eslint-enable @typescript-eslint/no-require-imports */
-
-const pricing: PricingFns = { getMultiplier, getCacheMultiplier };
-
 let mongoServer: MongoMemoryServer;
 let Transaction: mongoose.Model<unknown>;
 let Balance: mongoose.Model<unknown>;
 let dbMethods: ReturnType<typeof createMethods>;
+let pricing: PricingFns;
+let getMultiplier: ReturnType<typeof createMethods>['getMultiplier'];
+let getCacheMultiplier: ReturnType<typeof createMethods>['getCacheMultiplier'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
   Transaction = mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema);
   Balance = mongoose.models.Balance || mongoose.model('Balance', balanceSchema);
-  dbMethods = createMethods(mongoose);
+  dbMethods = createMethods(mongoose, { matchModelName, findMatchingPattern });
+  getMultiplier = dbMethods.getMultiplier;
+  getCacheMultiplier = dbMethods.getCacheMultiplier;
+  pricing = { getMultiplier, getCacheMultiplier };
 });
 
 afterAll(async () => {
@@ -536,8 +552,13 @@ describe('Multi-entry batch parity', () => {
     const premiumCompletionRate = (premiumTokenValues as Record<string, Record<string, number>>)[
       model
     ].completion;
-    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
-    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+    const promptMultiplier = getMultiplier({
+      model,
+      tokenType: 'prompt',
+      inputTokenCount: totalInput,
+    });
+    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' }) ?? promptMultiplier;
+    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' }) ?? promptMultiplier;
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * premiumPromptRate +
