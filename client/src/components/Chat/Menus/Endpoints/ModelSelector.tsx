@@ -55,23 +55,11 @@ function ModelSelectorContent() {
 
   const trigger = (
     <button
-      className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
+      className="relative my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
       aria-label={localize('com_ui_select_model')}
-      style={{ position: 'relative' }}
     >
       {agentsMap && Object.keys(agentsMap).length > 0 && (
-        <div
-          id="agentUsers"
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: '50%',
-            width: 1,
-            height: 1,
-            overflow: 'hidden',
-          }}
-          aria-hidden="true"
-        />
+        <span id="agentUsers" className="sr-only absolute bottom-0 left-1/2" aria-hidden="true" />
       )}
       {selectedIcon && React.isValidElement(selectedIcon) && (
         <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
