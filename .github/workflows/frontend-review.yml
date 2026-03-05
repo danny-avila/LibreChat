@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
+      - name: Use Node.js 20.19
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
@@ -54,7 +54,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/client/dist
-          key: build-client-package-${{ runner.os }}-${{ hashFiles('packages/client/src/**', 'packages/client/tsconfig*.json', 'packages/client/rollup.config.js', 'packages/client/package.json', 'packages/data-provider/src/**') }}
+          key: build-client-package-${{ runner.os }}-${{ hashFiles('packages/client/src/**', 'packages/client/tsconfig*.json', 'packages/client/rollup.config.js', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/rollup.config.js', 'packages/data-provider/package.json') }}
 
       - name: Build client-package
         if: steps.cache-client-package.outputs.cache-hit != 'true'
@@ -65,14 +65,14 @@ jobs:
         with:
           name: build-data-provider
           path: packages/data-provider/dist
-          retention-days: 1
+          retention-days: 2
 
       - name: Upload client-package build
         uses: actions/upload-artifact@v4
         with:
           name: build-client-package
           path: packages/client/dist
-          retention-days: 1
+          retention-days: 2
 
   test-ubuntu:
     name: 'Tests: Ubuntu'
@@ -82,16 +82,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
+      - name: Use Node.js 20.19
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
 
       - name: Restore node_modules cache
+        id: cache-node-modules
         uses: actions/cache@v4
         with:
           path: node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
 
       - name: Download data-provider build
         uses: actions/download-artifact@v4
@@ -117,7 +122,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
+      - name: Use Node.js 20.19
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
@@ -157,16 +162,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
+      - name: Use Node.js 20.19
         uses: actions/setup-node@v4
         with:
           node-version: '20.19'
 
       - name: Restore node_modules cache
+        id: cache-node-modules
         uses: actions/cache@v4
         with:
           path: node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
 
       - name: Download data-provider build
         uses: actions/download-artifact@v4
