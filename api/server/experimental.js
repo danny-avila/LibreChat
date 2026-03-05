@@ -240,6 +240,44 @@ if (cluster.isMaster) {
     }
 
     /** Health check endpoint */
+
+    let serviceBasePath = '';
+    if (process.env.DOMAIN_CLIENT) {
+      try {
+        const clientUrl = new URL(process.env.DOMAIN_CLIENT);
+        const pathname = clientUrl.pathname.endsWith('/')
+          ? clientUrl.pathname.slice(0, -1)
+          : clientUrl.pathname;
+        if (pathname && pathname !== '/') {
+          serviceBasePath = pathname;
+        }
+      } catch (error) {
+        logger.warn('Failed to parse DOMAIN_CLIENT for service base path:', error);
+      }
+    }
+
+    if (serviceBasePath) {
+      logger.info(`Detected service base path "${serviceBasePath}" for API/health routing`);
+      app.use((req, _res, next) => {
+        const isExactBase = req.url === serviceBasePath;
+        const isPrefixed = req.url.startsWith(`${serviceBasePath}/`);
+        if (isExactBase || isPrefixed) {
+          const rewrittenUrl = req.url.slice(serviceBasePath.length) || '/';
+          req.url = rewrittenUrl;
+
+          if (typeof req.originalUrl === 'string') {
+            const isExactOriginal = req.originalUrl === serviceBasePath;
+            const isOriginalPrefixed = req.originalUrl.startsWith(`${serviceBasePath}/`);
+            if (isExactOriginal || isOriginalPrefixed) {
+              req.originalUrl = rewrittenUrl;
+            }
+          }
+        }
+
+        next();
+      });
+    }
+
     app.get('/health', (_req, res) => res.status(200).send('OK'));
 
     /** Middleware */
