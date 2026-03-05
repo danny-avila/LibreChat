@@ -1098,7 +1098,15 @@ describe('Meilisearch Mongoose plugin', () => {
         },
       ]);
 
+      const beforeSync = await messageModel.find({}).lean();
+      for (const doc of beforeSync) {
+        expect(new Date(doc.updatedAt as Date).getTime()).toBe(pastDate.getTime());
+      }
+
       await messageModel.syncWithMeili();
+
+      const indexedCount = await messageModel.countDocuments({ _meiliIndex: true });
+      expect(indexedCount).toBe(2);
 
       const afterSync = await messageModel.find({}).lean();
       for (const doc of afterSync) {
