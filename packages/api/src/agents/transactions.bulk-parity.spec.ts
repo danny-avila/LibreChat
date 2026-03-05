@@ -21,7 +21,14 @@ import {
   transactionSchema,
   premiumTokenValues,
 } from '@librechat/data-schemas';
+import type { PricingFns, TxMetadata } from './transactions';
+import {
+  prepareStructuredTokenSpend,
+  bulkWriteTransactions,
+  prepareTokenSpend,
+} from './transactions';
 
+/** Inlined from packages/data-schemas/src/methods/test-helpers.ts — keep in sync */
 function findMatchingPattern(
   modelName: string,
   tokensMap: Record<string, number | Record<string, number>>,
@@ -36,15 +43,10 @@ function findMatchingPattern(
   return undefined;
 }
 
-function matchModelName(modelName: string): string | undefined {
+/** Inlined from packages/data-schemas/src/methods/test-helpers.ts — keep in sync */
+function matchModelName(modelName: string, _endpoint?: string): string | undefined {
   return typeof modelName === 'string' ? modelName : undefined;
 }
-import type { PricingFns, TxMetadata } from './transactions';
-import {
-  prepareStructuredTokenSpend,
-  bulkWriteTransactions,
-  prepareTokenSpend,
-} from './transactions';
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -70,10 +72,7 @@ beforeAll(async () => {
   dbMethods = createMethods(mongoose, { matchModelName, findMatchingPattern });
   getMultiplier = dbMethods.getMultiplier;
   getCacheMultiplier = dbMethods.getCacheMultiplier;
-  pricing = {
-    getMultiplier: getMultiplier as PricingFns['getMultiplier'],
-    getCacheMultiplier: getCacheMultiplier as PricingFns['getCacheMultiplier'],
-  };
+  pricing = { getMultiplier, getCacheMultiplier };
 });
 
 afterAll(async () => {
@@ -553,13 +552,18 @@ describe('Multi-entry batch parity', () => {
     const premiumCompletionRate = (premiumTokenValues as Record<string, Record<string, number>>)[
       model
     ].completion;
-    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
-    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+    const promptMultiplier = getMultiplier({
+      model,
+      tokenType: 'prompt',
+      inputTokenCount: totalInput,
+    });
+    const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' }) ?? promptMultiplier;
+    const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' }) ?? promptMultiplier;
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * premiumPromptRate +
-      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
-      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
+      tokenUsage.promptTokens.write * writeMultiplier +
+      tokenUsage.promptTokens.read * readMultiplier;
     const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
 

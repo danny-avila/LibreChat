@@ -8,7 +8,6 @@ const {
   recordCollectedUsage,
   sanitizeMessageForTransmit,
 } = require('@librechat/api');
-const { saveMessage, getConvo, updateBalance, bulkInsertTransactions } = require('~/models');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
@@ -46,7 +45,7 @@ async function spendCollectedUsage({
       spendTokens: db.spendTokens,
       spendStructuredTokens: db.spendStructuredTokens,
       pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-      bulkWriteOps: { insertMany: bulkInsertTransactions, updateBalance },
+      bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
     },
     {
       user: userId,
@@ -128,7 +127,7 @@ async function abortMessage(req, res) {
     );
   }
 
-  await saveMessage(
+  await db.saveMessage(
     {
       userId: req?.user?.id,
       isTemporary: req?.body?.isTemporary,
@@ -139,7 +138,7 @@ async function abortMessage(req, res) {
   );
 
   // Get conversation for title
-  const conversation = await getConvo(userId, conversationId);
+  const conversation = await db.getConvo(userId, conversationId);
 
   const finalEvent = {
     title: conversation && !conversation.title ? null : conversation?.title || 'New Chat',

@@ -409,9 +409,15 @@ export function createTransactionMethods(
   }
 
   async function bulkInsertTransactions(docs: TransactionData[]): Promise<void> {
-    const Transaction = mongoose.models.Transaction;
-    if (docs.length) {
+    if (!docs.length) {
+      return;
+    }
+    try {
+      const Transaction = mongoose.models.Transaction;
       await Transaction.insertMany(docs);
+    } catch (error) {
+      logger.error('[bulkInsertTransactions] Error inserting transaction docs:', error);
+      throw error;
     }
   }
 
