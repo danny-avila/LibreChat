@@ -622,6 +622,83 @@ describe('findMatchingPattern - bestLength selection', () => {
     const tokensMap = { 'exact-model': 500, exact: 100 };
     expect(findMatchingPattern('exact-model', tokensMap)).toBe('exact-model');
   });
+
+  test('should return null for empty model name', () => {
+    expect(findMatchingPattern('', { 'gpt-5': 400000 })).toBeNull();
+  });
+
+  test('should prefer last-defined key on same-length ties', () => {
+    const tokensMap = { 'aa-bb': 100, 'cc-dd': 200 };
+    // model name contains both 5-char keys; last-defined wins in reverse iteration
+    expect(findMatchingPattern('aa-bb-cc-dd', tokensMap)).toBe('cc-dd');
+  });
+
+  test('longest match beats short cross-provider pattern even when both present', () => {
+    const tokensMap = { 'gpt-5.2': 400000, 'chat-': 8187 };
+    expect(findMatchingPattern('gpt-5.2-chat-2025-12-11', tokensMap)).toBe('gpt-5.2');
+  });
+
+  test('should match case-insensitively against keys', () => {
+    const tokensMap = { 'GPT-5': 400000 };
+    expect(findMatchingPattern('gpt-5-turbo', tokensMap)).toBe('GPT-5');
+  });
+});
+
+describe('findMatchingPattern - iteration performance', () => {
+  let includesSpy;
+
+  beforeEach(() => {
+    includesSpy = jest.spyOn(String.prototype, 'includes');
+  });
+
+  afterEach(() => {
+    includesSpy.mockRestore();
+  });
+
+  test('exact match early-exits with minimal includes() checks', () => {
+    const openAIMap = maxTokensMap[EModelEndpoint.openAI];
+    includesSpy.mockClear();
+    const result = findMatchingPattern('gpt-5.2-pro', openAIMap);
+    const exactCalls = includesSpy.mock.calls.length;
+
+    expect(result).toBe('gpt-5.2-pro');
+    expect(exactCalls).toBe(1);
+  });
+
+  test('bestLength check skips includes() for shorter keys after a long match', () => {
+    const openAIMap = maxTokensMap[EModelEndpoint.openAI];
+    includesSpy.mockClear();
+    findMatchingPattern('gpt-3.5-turbo-0301-test', openAIMap);
+    const longKeyCalls = includesSpy.mock.calls.length;
+
+    includesSpy.mockClear();
+    findMatchingPattern('gpt-5.3-chat-latest', openAIMap);
+    const shortKeyCalls = includesSpy.mock.calls.length;
+
+    // gpt-3.5-turbo-0301 (20 chars) matches early, then bestLength prunes most keys
+    // gpt-5.3 (7 chars) is short, so fewer keys are pruned by the length check
+    expect(longKeyCalls).toBeLessThan(shortKeyCalls);
+  });
+
+  test('last-defined keys are checked first in reverse iteration', () => {
+    const tokensMap = { first: 100, second: 200, third: 300 };
+    includesSpy.mockClear();
+    const result = findMatchingPattern('third', tokensMap);
+    const calls = includesSpy.mock.calls.length;
+
+    // 'third' is last key, found on first reverse check, exact match exits immediately
+    expect(result).toBe('third');
+    expect(calls).toBe(1);
+  });
+});
+
+describe('deprecated PaLM2/Codey model removal', () => {
+  test('deprecated PaLM2/Codey models no longer have token entries', () => {
+    expect(getModelMaxTokens('text-bison-32k', EModelEndpoint.google)).toBeUndefined();
+    expect(getModelMaxTokens('codechat-bison-32k', EModelEndpoint.google)).toBeUndefined();
+    expect(getModelMaxTokens('code-bison', EModelEndpoint.google)).toBeUndefined();
+    expect(getModelMaxTokens('chat-bison', EModelEndpoint.google)).toBeUndefined();
+  });
 });
 
 describe('matchModelName', () => {
