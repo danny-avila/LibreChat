@@ -24,7 +24,6 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const db = require('~/models');
 
 /**
@@ -495,7 +494,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       {
         spendTokens: db.spendTokens,
         spendStructuredTokens: db.spendStructuredTokens,
-        pricing: { getMultiplier, getCacheMultiplier },
+        pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
         bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
       },
       {
