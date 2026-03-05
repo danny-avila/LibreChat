@@ -174,13 +174,16 @@ const LOGIN_PATH_RE = /(?:^|\/)login(?:\/|$)/;
 export function buildLoginRedirectUrl(pathname?: string, search?: string, hash?: string): string {
   const p = pathname ?? window.location.pathname;
   if (LOGIN_PATH_RE.test(p)) {
-    return `${BASE_URL}/login`;
+    return '/login';
   }
   const s = search ?? window.location.search;
   const h = hash ?? window.location.hash;
-  const currentPath = `${p}${s}${h}`;
+
+  const stripBase = BASE_URL && BASE_URL !== '/' ? BASE_URL : '';
+  const stripped = stripBase && p.startsWith(stripBase) ? p.slice(stripBase.length) || '/' : p;
+  const currentPath = `${stripped}${s}${h}`;
   const encoded = encodeURIComponent(currentPath || '/');
-  return `${BASE_URL}/login?${REDIRECT_PARAM}=${encoded}`;
+  return `/login?${REDIRECT_PARAM}=${encoded}`;
 }
 
 export const resendVerificationEmail = () => `${BASE_URL}/api/user/verify/resend`;

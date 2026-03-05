@@ -18,9 +18,12 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
+const mockApiBaseUrl = jest.fn(() => '');
+
 jest.mock('librechat-data-provider', () => ({
   ...jest.requireActual('librechat-data-provider'),
   setTokenHeader: jest.fn(),
+  apiBaseUrl: () => mockApiBaseUrl(),
 }));
 
 let mockCapturedLoginOptions: {
@@ -348,6 +351,69 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/c/new', { replace: true });
     expect(mockNavigate).not.toHaveBeenCalledWith('https://evil.com/steal', expect.anything());
     expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+    jest.useRealTimers();
+  });
+});
+
+describe('AuthContextProvider — silentRefresh subdirectory deployment', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+    mockApiBaseUrl.mockReturnValue('/chat');
+  });
+
+  afterEach(() => {
+    mockApiBaseUrl.mockReturnValue('');
+    sessionStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('strips base path from window.location.pathname before navigating (prevents /chat/chat doubling)', () => {
+    jest.useFakeTimers();
+    window.history.replaceState({}, '', '/chat/c/abc123?model=gpt-4');
+
+    renderProviderLive();
+
+    expect(mockRefreshMutate).toHaveBeenCalledTimes(1);
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/c/abc123?model=gpt-4', { replace: true });
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      expect.stringContaining('/chat/c/'),
+      expect.anything(),
+    );
+    jest.useRealTimers();
+  });
+
+  it('falls back to root when window.location.pathname equals the base path', () => {
+    jest.useFakeTimers();
+    window.history.replaceState({}, '', '/chat');
+
+    renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
     jest.useRealTimers();
   });
 });
