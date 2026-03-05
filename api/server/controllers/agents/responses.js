@@ -97,6 +97,56 @@ function convertToInternalMessages(input) {
 }
 
 /**
+ * Resolve conversation context from Open Responses request fields.
+ * Priority:
+ * 1) conversation_id (LibreChat extension)
+ * 2) previous_response_id as messageId (OpenAI-style chaining)
+ * 3) previous_response_id as conversationId (legacy LibreChat behavior)
+ * 4) new generated UUID
+ * @param {import('@librechat/api').ResponseRequest} request
+ * @param {string} userId
+ * @returns {Promise<{ conversationId: string; previousMessages: Array }>}
+ */
+async function resolveConversationContext(request, userId) {
+  const requestedConversationId =
+    typeof request?.conversation_id === 'string' && request.conversation_id.trim().length > 0
+      ? request.conversation_id.trim()
+      : null;
+
+  if (requestedConversationId) {
+    const previousMessages = await loadPreviousMessages(requestedConversationId, userId);
+    return { conversationId: requestedConversationId, previousMessages };
+  }
+
+  if (request.previous_response_id) {
+    const previousResponseId = request.previous_response_id;
+    const previousMessage = await db.getMessage({
+      user: userId,
+      messageId: previousResponseId,
+    });
+
+    if (previousMessage?.conversationId) {
+      const previousMessages = await loadPreviousMessages(previousMessage.conversationId, userId);
+      return {
+        conversationId: previousMessage.conversationId,
+        previousMessages,
+      };
+    }
+
+    const previousMessages = await loadPreviousMessages(previousResponseId, userId);
+    return {
+      conversationId: previousResponseId,
+      previousMessages,
+    };
+  }
+
+  return {
+    conversationId: uuidv4(),
+    previousMessages: [],
+  };
+}
+
+/**
  * Load messages from a previous response/conversation
  * @param {string} conversationId - The conversation/response ID
  * @param {string} userId - The user ID
@@ -144,22 +194,24 @@ async function loadPreviousMessages(conversationId, userId) {
  * @returns {Promise<void>}
  */
 async function saveInputMessages(req, conversationId, inputMessages, agentId) {
+  const user = req.user?.id;
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
   for (const msg of inputMessages) {
     if (msg.role === 'user') {
-      await db.saveMessage(
-        req,
-        {
-          messageId: msg.messageId || nanoid(),
-          conversationId,
-          parentMessageId: null,
-          isCreatedByUser: true,
-          text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-          sender: 'User',
-          endpoint: EModelEndpoint.agents,
-          model: agentId,
-        },
-        { context: 'Responses API - save user input' },
-      );
+      await db.recordMessage({
+        user,
+        messageId: msg.messageId || nanoid(),
+        conversationId,
+        parentMessageId: null,
+        isCreatedByUser: true,
+        text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+        sender: 'User',
+        endpoint: EModelEndpoint.agents,
+        model: agentId,
+      });
     }
   }
 }
@@ -174,6 +226,11 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
  * @returns {Promise<void>}
  */
 async function saveResponseOutput(req, conversationId, responseId, response, agentId) {
+  const user = req.user?.id;
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
   // Extract text content from output items
   let responseText = '';
   for (const item of response.output) {
@@ -187,22 +244,19 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
   }
 
   // Save the assistant message
-  await db.saveMessage(
-    req,
-    {
-      messageId: responseId,
-      conversationId,
-      parentMessageId: null,
-      isCreatedByUser: false,
-      text: responseText,
-      sender: 'Agent',
-      endpoint: EModelEndpoint.agents,
-      model: agentId,
-      finish_reason: response.status === 'completed' ? 'stop' : response.status,
-      tokenCount: response.usage?.output_tokens,
-    },
-    { context: 'Responses API - save assistant response' },
-  );
+  await db.recordMessage({
+    user,
+    messageId: responseId,
+    conversationId,
+    parentMessageId: null,
+    isCreatedByUser: false,
+    text: responseText,
+    sender: 'Agent',
+    endpoint: EModelEndpoint.agents,
+    model: agentId,
+    finish_reason: response.status === 'completed' ? 'stop' : response.status,
+    tokenCount: response.usage?.output_tokens,
+  });
 }
 
 /**
@@ -291,9 +345,11 @@ const createResponse = async (req, res) => {
     );
   }
 
+  const userId = req.user?.id ?? 'api-user';
+
   // Generate IDs
   const responseId = generateResponseId();
-  const conversationId = request.previous_response_id ?? uuidv4();
+  const { conversationId, previousMessages } = await resolveConversationContext(request, userId);
   const parentMessageId = null;
 
   // Create response context
@@ -358,14 +414,6 @@ const createResponse = async (req, res) => {
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
     const actuallyStreaming = isStreaming && !streamingDisabled;
-
-    // Load previous messages if previous_response_id is provided
-    let previousMessages = [];
-    if (request.previous_response_id) {
-      const userId = req.user?.id ?? 'api-user';
-      previousMessages = await loadPreviousMessages(request.previous_response_id, userId);
-    }
-
     // Convert input to internal messages
     const inputMessages = convertToInternalMessages(
       typeof request.input === 'string' ? request.input : request.input,
@@ -460,7 +508,6 @@ const createResponse = async (req, res) => {
       };
 
       // Create and run the agent
-      const userId = req.user?.id ?? 'api-user';
       const userMCPAuthMap = primaryConfig.userMCPAuthMap;
 
       const run = await createRun({
@@ -604,7 +651,6 @@ const createResponse = async (req, res) => {
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
       };
 
-      const userId = req.user?.id ?? 'api-user';
       const userMCPAuthMap = primaryConfig.userMCPAuthMap;
 
       const run = await createRun({
@@ -795,9 +841,15 @@ const getResponse = async (req, res) => {
       return sendResponsesErrorResponse(res, 400, 'Response ID is required');
     }
 
-    // The responseId could be either the response ID or the conversation ID
-    // Try to find a conversation with this ID
-    const conversation = await getConvo(userId, responseId);
+    // responseId may be either a conversation ID or a message/response ID
+    let resolvedConversationId = responseId;
+    const message = await db.getMessage({ user: userId, messageId: responseId });
+
+    if (message?.conversationId) {
+      resolvedConversationId = message.conversationId;
+    }
+
+    const conversation = await getConvo(userId, resolvedConversationId);
 
     if (!conversation) {
       return sendResponsesErrorResponse(
@@ -810,7 +862,7 @@ const getResponse = async (req, res) => {
     }
 
     // Load messages for this conversation
-    const messages = await db.getMessages({ conversationId: responseId, user: userId });
+    const messages = await db.getMessages({ conversationId: resolvedConversationId, user: userId });
 
     if (!messages || messages.length === 0) {
       return sendResponsesErrorResponse(
@@ -830,7 +882,7 @@ const getResponse = async (req, res) => {
 
     // Build the response object
     const response = {
-      id: responseId,
+      id: message?.messageId || responseId,
       object: 'response',
       created_at: Math.floor(new Date(conversation.createdAt || Date.now()).getTime() / 1000),
       completed_at: Math.floor(new Date(conversation.updatedAt || Date.now()).getTime() / 1000),

@@ -135,7 +135,8 @@ jest.mock('~/models', () => ({
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn().mockResolvedValue([]),
-  saveMessage: jest.fn().mockResolvedValue({}),
+  getMessage: jest.fn().mockResolvedValue(null),
+  recordMessage: jest.fn().mockResolvedValue({}),
   updateFilesUsage: jest.fn(),
   getUserKeyValues: jest.fn(),
   getUserCodeFiles: jest.fn(),
@@ -267,6 +268,30 @@ describe('createResponse controller', () => {
         }),
         expect.any(Object),
       );
+    });
+  });
+
+
+  describe('response id resolution', () => {
+    it('should resolve previous_response_id as a stored response message id', async () => {
+      req.body = {
+        model: 'agent-123',
+        input: 'Follow up question',
+        previous_response_id: 'resp_prev_1',
+      };
+
+      const api = require('@librechat/api');
+      const models = require('~/models');
+      api.validateResponseRequest.mockReturnValue({ request: req.body });
+      models.getMessage.mockResolvedValue({ messageId: 'resp_prev_1', conversationId: 'conv_1' });
+
+      await createResponse(req, res);
+
+      expect(api.initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'conv_1' }),
+        expect.any(Object),
+      );
+      expect(models.getMessages).toHaveBeenCalledWith({ conversationId: 'conv_1', user: 'user-123' });
     });
   });
 
