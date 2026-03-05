@@ -21,13 +21,15 @@ function loadModuleWithBase(baseHref: string) {
   proc.browser = true;
 
   let mod: typeof import('../src/api-endpoints');
-  jest.isolateModules(() => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- static import not usable inside isolateModules
-    mod = require('../src/api-endpoints');
-  });
-
-  proc.browser = false;
-  document.head.removeChild(base);
+  try {
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- static import not usable inside isolateModules
+      mod = require('../src/api-endpoints');
+    });
+  } finally {
+    proc.browser = false;
+    document.head.removeChild(base);
+  }
 
   return mod!;
 }
