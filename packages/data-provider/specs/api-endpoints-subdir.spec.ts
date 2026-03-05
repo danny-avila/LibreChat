@@ -26,7 +26,7 @@ function loadModuleWithBase(baseHref: string) {
     mod = require('../src/api-endpoints');
   });
 
-  delete proc.browser;
+  proc.browser = false;
   document.head.removeChild(base);
 
   return mod!;
