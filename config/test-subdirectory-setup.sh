@@ -4,14 +4,14 @@
 #
 # Prerequisites:
 #   - nginx installed: sudo apt install nginx
-#   - LibreChat backend running on port 3080
+#   - LibreChat built:  npm run build
+#   - Backend running:  npm run backend (serves built SPA + API on port 3080)
 #
 # Usage:
-#   1. Start the backend:    npm run backend:dev
-#   2. Start the frontend:   npm run frontend:dev   (runs on port 3090)
-#   3. Run this script:      bash test-subdirectory-setup.sh start
-#   4. Open browser:         http://localhost:8080/chat/
-#   5. Cleanup:              bash test-subdirectory-setup.sh stop
+#   1. Build + start:        npm run build && npm run backend
+#   2. Run this script:      bash config/test-subdirectory-setup.sh start
+#   3. Open browser:         http://localhost:8080/chat/
+#   4. Cleanup:              bash config/test-subdirectory-setup.sh stop
 #
 # What to verify:
 #   - Accessing http://localhost:8080/chat/ should redirect to /chat/login
@@ -22,10 +22,11 @@
 
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NGINX_CONF="/tmp/librechat-subdir-test-nginx.conf"
 NGINX_PID="/tmp/librechat-subdir-test-nginx.pid"
 
-ENV_FILE="/home/danny/LibreChat/.env"
+ENV_FILE="${REPO_ROOT}/.env"
 
 write_nginx_conf() {
   cat > "$NGINX_CONF" << 'NGINX'
