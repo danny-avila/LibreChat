@@ -14,10 +14,12 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
+  tokenValues,
   CANCEL_RATE,
   createMethods,
   balanceSchema,
   transactionSchema,
+  premiumTokenValues,
 } from '@librechat/data-schemas';
 import type { PricingFns, TxMetadata } from './transactions';
 import {
@@ -34,22 +36,13 @@ jest.mock('@librechat/data-schemas', () => {
   };
 });
 
-// Real pricing functions from api/models/tx.js — same ones the legacy path uses
-/* eslint-disable @typescript-eslint/no-require-imports */
-const {
-  getMultiplier,
-  getCacheMultiplier,
-  tokenValues,
-  premiumTokenValues,
-} = require('../../../../api/models/tx.js');
-/* eslint-enable @typescript-eslint/no-require-imports */
-
-const pricing: PricingFns = { getMultiplier, getCacheMultiplier };
-
 let mongoServer: MongoMemoryServer;
 let Transaction: mongoose.Model<unknown>;
 let Balance: mongoose.Model<unknown>;
 let dbMethods: ReturnType<typeof createMethods>;
+let pricing: PricingFns;
+let getMultiplier: ReturnType<typeof createMethods>['getMultiplier'];
+let getCacheMultiplier: ReturnType<typeof createMethods>['getCacheMultiplier'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -57,6 +50,12 @@ beforeAll(async () => {
   Transaction = mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema);
   Balance = mongoose.models.Balance || mongoose.model('Balance', balanceSchema);
   dbMethods = createMethods(mongoose);
+  getMultiplier = dbMethods.getMultiplier;
+  getCacheMultiplier = dbMethods.getCacheMultiplier;
+  pricing = {
+    getMultiplier: getMultiplier as PricingFns['getMultiplier'],
+    getCacheMultiplier: getCacheMultiplier as PricingFns['getCacheMultiplier'],
+  };
 });
 
 afterAll(async () => {
@@ -541,8 +540,8 @@ describe('Multi-entry batch parity', () => {
 
     const expectedPromptCost =
       tokenUsage.promptTokens.input * premiumPromptRate +
-      tokenUsage.promptTokens.write * writeMultiplier +
-      tokenUsage.promptTokens.read * readMultiplier;
+      tokenUsage.promptTokens.write * (writeMultiplier ?? 0) +
+      tokenUsage.promptTokens.read * (readMultiplier ?? 0);
     const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
     const expectedTotalCost = expectedPromptCost + expectedCompletionCost;
 

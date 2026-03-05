@@ -1,7 +1,7 @@
 import logger from '~/config/winston';
 import type { FilterQuery, Model, Types } from 'mongoose';
+import type { IBalance, IBalanceUpdate, TransactionData } from '~/types';
 import type { ITransaction } from '~/schema/transaction';
-import type { IBalance, IBalanceUpdate } from '~/types';
 
 const cancelRate = 1.15;
 
@@ -408,7 +408,16 @@ export function createTransactionMethods(
     return Balance.deleteMany(filter);
   }
 
+  async function bulkInsertTransactions(docs: TransactionData[]): Promise<void> {
+    const Transaction = mongoose.models.Transaction;
+    if (docs.length) {
+      await Transaction.insertMany(docs);
+    }
+  }
+
   return {
+    updateBalance,
+    bulkInsertTransactions,
     findBalanceByUser,
     upsertBalanceFields,
     getTransactions,
