@@ -83,14 +83,15 @@ describe('systemGrant methods', () => {
 
       await expect(methods.seedSystemGrants()).resolves.not.toThrow();
 
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Attempt 1/3 failed'),
-        expect.any(Error),
-      );
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Attempt 1/3 failed'));
     });
 
     it('logs error after all retries exhausted', async () => {
-      jest.spyOn(SystemGrant, 'bulkWrite').mockRejectedValue(new Error('disk full'));
+      jest
+        .spyOn(SystemGrant, 'bulkWrite')
+        .mockRejectedValueOnce(new Error('disk full'))
+        .mockRejectedValueOnce(new Error('disk full'))
+        .mockRejectedValueOnce(new Error('disk full'));
 
       await expect(methods.seedSystemGrants()).resolves.not.toThrow();
 

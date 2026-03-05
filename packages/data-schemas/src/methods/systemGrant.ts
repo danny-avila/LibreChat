@@ -232,8 +232,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
         if (attempt < maxRetries) {
           const delay = 1000 * Math.pow(2, attempt - 1);
           logger.warn(
-            `[seedSystemGrants] Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms`,
-            err,
+            `[seedSystemGrants] Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms: ${(err as Error).message ?? String(err)}`,
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
         } else {

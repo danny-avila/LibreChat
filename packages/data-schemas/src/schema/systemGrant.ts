@@ -1,6 +1,7 @@
 import { Schema } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
-import { SystemCapabilities, SystemCapability } from '~/systemCapabilities';
+import { SystemCapabilities } from '~/systemCapabilities';
+import type { SystemCapability } from '~/systemCapabilities';
 import type { ISystemGrant } from '~/types';
 
 const baseCapabilities = new Set<SystemCapability>(Object.values(SystemCapabilities));
