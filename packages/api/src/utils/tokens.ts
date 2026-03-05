@@ -11,14 +11,14 @@ import type { EndpointTokenConfig, TokenConfig } from '~/types';
  * matching key. If a key's length equals the model name's length (exact match), it
  * returns immediately — no further keys are checked.
  *
- * Key definition order does not affect correctness (longest always wins), but it
- * does affect performance: the function iterates in reverse, so keys defined later
- * are checked first. For this reason:
+ * For keys of different lengths, definition order does not affect the result — the
+ * longest match always wins. For **same-length ties**, the function iterates in
+ * reverse, so the last-defined key wins. Key ordering therefore matters for:
  *
- * 1. Within each model map, list **older/legacy models first** and **newer models
- *    last** — newer models are more commonly used and will match earlier.
- * 2. In `aggregateModels`, **OpenAI is spread last** so its keys are preferred
- *    on same-length ties and checked first in the scan.
+ * 1. **Performance**: list older/legacy models first, newer models last — newer
+ *    models are more commonly used and will match earlier in the reverse scan.
+ * 2. **Same-length tie-breaking**: in `aggregateModels`, OpenAI is spread last
+ *    so its keys are preferred when two keys of equal length both match.
  */
 
 const openAIModels = {
@@ -411,17 +411,17 @@ export function findMatchingPattern(
 ): string | null {
   const keys = Object.keys(tokensMap);
   const lowerModelName = modelName.toLowerCase();
-  const nameLength = lowerModelName.length;
   let bestMatch: string | null = null;
   let bestLength = 0;
   for (let i = keys.length - 1; i >= 0; i--) {
-    const modelKey = keys[i];
-    if (modelKey.length > bestLength && lowerModelName.includes(modelKey)) {
-      if (modelKey.length === nameLength) {
-        return modelKey;
+    const key = keys[i];
+    const lowerKey = key.toLowerCase();
+    if (lowerKey.length > bestLength && lowerModelName.includes(lowerKey)) {
+      if (lowerKey.length === lowerModelName.length) {
+        return key;
       }
-      bestMatch = modelKey;
-      bestLength = modelKey.length;
+      bestMatch = key;
+      bestLength = lowerKey.length;
     }
   }
 
