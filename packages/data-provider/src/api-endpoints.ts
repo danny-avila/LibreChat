@@ -184,8 +184,10 @@ export function buildLoginRedirectUrl(pathname?: string, search?: string, hash?:
       ? p.slice(BASE_URL.length) || '/'
       : p;
   const currentPath = `${stripped}${s}${h}`;
-  const encoded = encodeURIComponent(currentPath || '/');
-  return `/login?${REDIRECT_PARAM}=${encoded}`;
+  if (!currentPath || currentPath === '/') {
+    return '/login';
+  }
+  return `/login?${REDIRECT_PARAM}=${encodeURIComponent(currentPath)}`;
 }
 
 export const resendVerificationEmail = () => `${BASE_URL}/api/user/verify/resend`;

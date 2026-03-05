@@ -4,18 +4,8 @@
 import { buildLoginRedirectUrl } from '../src/api-endpoints';
 
 describe('buildLoginRedirectUrl', () => {
-  let savedLocation: Location;
-
-  beforeEach(() => {
-    savedLocation = window.location;
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/c/abc123', search: '?model=gpt-4', hash: '#msg-5' },
-      writable: true,
-    });
-  });
-
   afterEach(() => {
-    Object.defineProperty(window, 'location', { value: savedLocation, writable: true });
+    window.history.replaceState({}, '', '/');
   });
 
   it('builds a login URL from explicit args', () => {
@@ -31,18 +21,16 @@ describe('buildLoginRedirectUrl', () => {
   });
 
   it('falls back to window.location when no args provided', () => {
+    window.history.replaceState({}, '', '/c/abc123?model=gpt-4#msg-5');
     const result = buildLoginRedirectUrl();
     const encoded = result.split('redirect_to=')[1];
     expect(decodeURIComponent(encoded)).toBe('/c/abc123?model=gpt-4#msg-5');
   });
 
-  it('falls back to "/" when all location parts are empty', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '', search: '', hash: '' },
-      writable: true,
-    });
+  it('returns plain /login when all location parts are empty (root)', () => {
+    window.history.replaceState({}, '', '/');
     const result = buildLoginRedirectUrl();
-    expect(result).toBe('/login?redirect_to=%2F');
+    expect(result).toBe('/login');
   });
 
   it('returns plain /login when pathname is /login (prevents recursive redirect)', () => {
@@ -51,10 +39,7 @@ describe('buildLoginRedirectUrl', () => {
   });
 
   it('returns plain /login when window.location is already /login', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/login', search: '?redirect_to=%2Fc%2Fabc', hash: '' },
-      writable: true,
-    });
+    window.history.replaceState({}, '', '/login?redirect_to=%2Fc%2Fabc');
     const result = buildLoginRedirectUrl();
     expect(result).toBe('/login');
   });
@@ -65,10 +50,7 @@ describe('buildLoginRedirectUrl', () => {
   });
 
   it('returns plain /login for basename-prefixed /login (e.g. /librechat/login)', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/librechat/login', search: '?redirect_to=%2Fc%2Fabc', hash: '' },
-      writable: true,
-    });
+    window.history.replaceState({}, '', '/librechat/login?redirect_to=%2Fc%2Fabc');
     const result = buildLoginRedirectUrl();
     expect(result).toBe('/login');
   });
@@ -76,6 +58,12 @@ describe('buildLoginRedirectUrl', () => {
   it('returns plain /login for basename-prefixed /login sub-paths', () => {
     const result = buildLoginRedirectUrl('/librechat/login/2fa', '', '');
     expect(result).toBe('/login');
+  });
+
+  it('returns plain /login for root path (no pointless redirect_to=/)', () => {
+    const result = buildLoginRedirectUrl('/', '', '');
+    expect(result).toBe('/login');
+    expect(result).not.toContain('redirect_to');
   });
 
   it('does NOT match paths where "login" is a substring of a segment', () => {

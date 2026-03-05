@@ -73,10 +73,10 @@ describe('buildLoginRedirectUrl — subdirectory deployment (BASE_URL = /chat)',
     expect(buildLoginRedirectUrl('/chat/login/2fa', '', '')).toBe('/login');
   });
 
-  it('redirect_to falls back to "/" when base prefix is the entire pathname', () => {
+  it('returns plain /login when stripped path is root (no pointless redirect_to=/)', () => {
     const result = buildLoginRedirectUrl('/chat', '', '');
-    const redirectTo = decodeURIComponent(result.split('redirect_to=')[1]);
-    expect(redirectTo).toBe('/');
+    expect(result).toBe('/login');
+    expect(result).not.toContain('redirect_to');
   });
 
   it('composes correct full URL for window.location.href (apiBaseUrl + buildLoginRedirectUrl)', () => {
