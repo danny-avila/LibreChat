@@ -1100,3 +1100,7 @@ export const deleteAdminUser = (id: string): Promise<{ message: string }> => {
 export const updateAdminUserRole = (id: string, role: string): Promise<{ message: string; role: string }> => {
   return request.patch(endpoints.adminUpdateUserRole(id), { role });
 };
+
+export const toggleSuspendUser = (id: string): Promise<{ message: string; suspended: boolean }> => {
+  return request.patch(endpoints.adminSuspendUser(id), {});
+};

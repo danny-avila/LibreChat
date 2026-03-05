@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
   try {
     const users = await User.find(
       {},
-      { name: 1, email: 1, role: 1, createdAt: 1 },
+      { name: 1, email: 1, role: 1, createdAt: 1, suspended: 1 },
     ).sort({ createdAt: -1 });
     res.status(200).json(users);
   } catch (error) {
@@ -85,6 +85,33 @@ router.patch('/:id/role', async (req, res) => {
   } catch (error) {
     logger.error('[admin/users/role] Error updating role', error);
     res.status(500).json({ message: 'Fehler beim Ändern der Rolle' });
+  }
+});
+
+router.patch('/:id/suspend', async (req, res) => {
+  const { id } = req.params;
+
+  if (req.user?.id === id || String(req.user?._id) === id) {
+    return res.status(400).json({ message: 'Du kannst deinen eigenen Account nicht sperren' });
+  }
+
+  try {
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'Benutzer nicht gefunden' });
+    }
+
+    if (user.role === 'ADMIN') {
+      return res.status(403).json({ message: 'Admin-Accounts können nicht gesperrt werden' });
+    }
+
+    user.suspended = !user.suspended;
+    await user.save();
+
+    res.status(200).json({ message: user.suspended ? 'Benutzer gesperrt' : 'Sperre aufgehoben', suspended: user.suspended });
+  } catch (error) {
+    logger.error('[admin/users/suspend] Error toggling suspension', error);
+    res.status(500).json({ message: 'Fehler beim Sperren des Benutzers' });
   }
 });
 

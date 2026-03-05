@@ -219,4 +219,5 @@ export type TAdminUser = {
   name: string;
   role: string;
   createdAt: string;
+  suspended?: boolean;
 };
