@@ -511,6 +511,24 @@ const getListAgentsHandler = async (req, res) => {
       filter.$or = [{ name: regex }, { description: regex }];
     }
 
+    // Filter agents by minimum role requirement
+    const ROLE_HIERARCHY = { USER: 0, TEAM: 1, ADMIN: 2 };
+    const userRoleLevel = ROLE_HIERARCHY[req.user.role] ?? 0;
+    const visibleMinRoles = Object.keys(ROLE_HIERARCHY).filter(
+      (r) => ROLE_HIERARCHY[r] <= userRoleLevel,
+    );
+    filter.$and = [
+      ...(filter.$and || []),
+      {
+        $or: [
+          { minRole: { $exists: false } },
+          { minRole: null },
+          { minRole: '' },
+          { minRole: { $in: visibleMinRoles } },
+        ],
+      },
+    ];
+
     // Get agent IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
       userId,

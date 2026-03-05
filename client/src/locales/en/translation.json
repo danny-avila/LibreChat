@@ -1529,5 +1529,13 @@
   "com_ui_admin_delete_confirm": "Confirm",
   "com_ui_admin_delete_cancel": "Cancel",
   "com_ui_admin_delete_success": "User deleted",
-  "com_ui_admin_delete_error": "Error deleting user"
+  "com_ui_admin_delete_error": "Error deleting user",
+  "com_ui_admin_change_role": "Change role",
+  "com_ui_admin_role_hint": "Click on the role badge to change a user's role",
+  "com_ui_admin_role_changed": "Role updated successfully",
+  "com_ui_admin_role_change_error": "Error updating role",
+  "com_ui_team": "Team",
+  "com_ui_agent_min_role": "Visible for",
+  "com_ui_agent_min_role_user": "All users",
+  "com_ui_agent_min_role_team": "Team only"
 }

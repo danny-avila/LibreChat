@@ -275,6 +275,8 @@ export type Agent = {
   support_contact?: SupportContact;
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;
+  /** Minimum role required to see this agent (USER = all, TEAM = team+, ADMIN = admin only) */
+  minRole?: string;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -300,6 +302,7 @@ export type AgentCreateParams = {
   | 'category'
   | 'support_contact'
   | 'tool_options'
+  | 'minRole'
 >;
 
 export type AgentUpdateParams = {
@@ -327,6 +330,7 @@ export type AgentUpdateParams = {
   | 'category'
   | 'support_contact'
   | 'tool_options'
+  | 'minRole'
 >;
 
 export type AgentListParams = {

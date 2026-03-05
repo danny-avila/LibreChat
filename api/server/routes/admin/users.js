@@ -68,7 +68,7 @@ router.patch('/:id/role', async (req, res) => {
     return res.status(400).json({ message: 'Du kannst deine eigene Rolle nicht ändern' });
   }
 
-  if (!['ADMIN', 'USER'].includes(role)) {
+  if (!['ADMIN', 'USER', 'TEAM'].includes(role)) {
     return res.status(400).json({ message: 'Ungültige Rolle' });
   }
 

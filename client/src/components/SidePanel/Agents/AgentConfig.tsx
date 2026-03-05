@@ -255,6 +255,29 @@ export default function AgentConfig() {
           </label>
           <AgentCategorySelector className="w-full" />
         </div>
+        {/* Min Role */}
+        <div className="mb-4">
+          <label className={labelClass} htmlFor="min-role">
+            {localize('com_ui_agent_min_role')}
+          </label>
+          <Controller
+            name="minRole"
+            control={methods.control}
+            defaultValue="USER"
+            render={({ field }) => (
+              <select
+                id="min-role"
+                className={cn(inputClass, 'cursor-pointer')}
+                value={field.value ?? 'USER'}
+                onChange={field.onChange}
+                aria-label={localize('com_ui_agent_min_role')}
+              >
+                <option value="USER">{localize('com_ui_agent_min_role_user')}</option>
+                <option value="TEAM">{localize('com_ui_agent_min_role_team')}</option>
+              </select>
+            )}
+          />
+        </div>
         {/* Instructions */}
         <Instructions />
         {/* Model and Provider */}
