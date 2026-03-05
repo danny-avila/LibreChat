@@ -11,7 +11,7 @@
  */
 export function findMatchingPattern(
   modelName: string,
-  tokensMap: Record<string, unknown>,
+  tokensMap: Record<string, number | Record<string, number>>,
 ): string | undefined {
   const keys = Object.keys(tokensMap);
   const lowerModelName = modelName.toLowerCase();

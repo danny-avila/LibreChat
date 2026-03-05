@@ -79,11 +79,6 @@ jest.mock('~/server/services/ToolService', () => ({
 
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
 const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
-jest.mock('~/models/tx', () => ({
-  getMultiplier: mockGetMultiplier,
-  getCacheMultiplier: mockGetCacheMultiplier,
-}));
-
 
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
@@ -110,6 +105,8 @@ jest.mock('~/models', () => ({
   bulkInsertTransactions: mockBulkInsertTransactions,
   spendTokens: mockSpendTokens,
   spendStructuredTokens: mockSpendStructuredTokens,
+  getMultiplier: mockGetMultiplier,
+  getCacheMultiplier: mockGetCacheMultiplier,
   getConvoFiles: jest.fn().mockResolvedValue([]),
 }));
 

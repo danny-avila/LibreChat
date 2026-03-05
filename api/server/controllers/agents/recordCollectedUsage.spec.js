@@ -21,14 +21,8 @@ const mockRecordCollectedUsage = jest
 jest.mock('~/models', () => ({
   spendTokens: (...args) => mockSpendTokens(...args),
   spendStructuredTokens: (...args) => mockSpendStructuredTokens(...args),
-}));
-
-jest.mock('~/models/tx', () => ({
   getMultiplier: mockGetMultiplier,
   getCacheMultiplier: mockGetCacheMultiplier,
-}));
-
-jest.mock('~/models', () => ({
   updateBalance: mockUpdateBalance,
   bulkInsertTransactions: mockBulkInsertTransactions,
 }));
