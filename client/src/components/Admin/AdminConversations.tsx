@@ -22,6 +22,7 @@ import {
   Filter,
   X,
 } from 'lucide-react';
+import { request } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -106,27 +107,13 @@ const getAdminConversations = async (params?: {
         .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
         .join('&')
     : '';
-  const res = await fetch(`/api/admin/conversations${query}`, {
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
-  }
-  return res.json();
+  return await request.get<AdminConversationsResponse>(`/api/admin/conversations${query}`);
 };
 
 const getAdminConversationMessages = async (
   conversationId: string,
 ): Promise<AdminConversationMessagesResponse> => {
-  const res = await fetch(`/api/admin/conversations/${conversationId}/messages`, {
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
-  }
-  return res.json();
+  return await request.get<AdminConversationMessagesResponse>(`/api/admin/conversations/${conversationId}/messages`);
 };
 
 // Type definitions for admin users
@@ -161,14 +148,7 @@ const getAdminUsers = async (params?: {
         .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
         .join('&')
     : '';
-  const res = await fetch(`/api/admin/users${query}`, {
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
-  }
-  return res.json();
+  return await request.get<AdminUsersResponse>(`/api/admin/users${query}`);
 };
 
 // Helper functions
@@ -408,7 +388,7 @@ const AdminConversations: React.FC = () => {
   });
 
   // Fetch conversations
-  const { data, isLoading } = useQuery<AdminConversationsResponse>({
+  const { data, isLoading, isError } = useQuery<AdminConversationsResponse>({
     queryKey: [
       'adminConversations',
       page,
@@ -546,13 +526,18 @@ const AdminConversations: React.FC = () => {
             <div className="flex h-full items-center justify-center">
               <Spinner className="h-6 w-6" />
             </div>
-          ) : data?.conversations.length === 0 ? (
+          ) : isError ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-4">
+              <p className="text-sm font-medium text-red-500">加载失败</p>
+              <p className="text-center text-xs text-text-secondary">无法获取对话数据，请检查网络或刷新页面</p>
+            </div>
+          ) : data?.conversations && data.conversations.length === 0 ? (
             <div className="flex h-full items-center justify-center">
               <p className="text-sm text-text-secondary">未找到对话记录</p>
             </div>
-          ) : (
+          ) : data?.conversations ? (
             <div className="divide-y divide-border-light">
-              {data?.conversations.map((conversation) => (
+              {data.conversations.map((conversation) => (
                 <ConversationListItem
                   key={conversation.conversationId}
                   conversation={conversation}
@@ -561,7 +546,7 @@ const AdminConversations: React.FC = () => {
                 />
               ))}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Pagination */}
