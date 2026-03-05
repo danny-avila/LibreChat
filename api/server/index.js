@@ -307,10 +307,11 @@ const startServer = async () => {
     console.error('[ERROR] Scaffad Shop routes error:', e.message);
   }
 
-  // Scaffad Shop Auth Flow B (/auth/scaffad)
+  // Scaffad Shop ticket API (/auth/scaffad and /api/auth/scaffad for proxy-friendly access)
   try {
     const scaffadAuthRoutes = require('./routes/scaffadAuth');
     app.use('/auth/scaffad', scaffadAuthRoutes);
+    app.use('/api/auth/scaffad', scaffadAuthRoutes);
     console.log('[OK] Scaffad Auth routes loaded');
   } catch (e) {
     console.log('[SKIP] Scaffad Auth routes (error loading)');

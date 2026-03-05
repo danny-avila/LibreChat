@@ -38,7 +38,6 @@ const AuthContextProvider = ({
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const logoutRedirectRef = useRef<string | undefined>(undefined);
-  const postLoginRedirectRef = useRef<string | undefined>(undefined);
 
   const { data: userRole = null } = useGetRole(SystemRoles.USER, {
     enabled: !!(isAuthenticated && (user?.role ?? '')),
@@ -129,11 +128,6 @@ const AuthContextProvider = ({
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
 
   const login = (data: t.TLoginUser) => {
-    const params = new URLSearchParams(window.location.search);
-    const redirectParam = params.get('redirect');
-    if (redirectParam) {
-      postLoginRedirectRef.current = decodeURIComponent(redirectParam);
-    }
     loginUser.mutate(data);
   };
 

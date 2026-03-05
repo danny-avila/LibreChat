@@ -270,48 +270,23 @@ Route details:
      <redirect_base>?token=<ticket>
      ```
 
-### 4.3 Flow B — `/auth/scaffad` (Shop → LibreChat → Shop)
+### 4.3 Ticket API — in-shop login 
 
-File: `api/server/routes/scaffadAuth.js`
+So the user can stay on the Scaffad shop and never be redirected to LibreChat, the shop can host its own login page that calls this API.
 
-Mounted in `api/server/index.js`:
+- **Endpoint:** `POST /api/auth/scaffad/ticket` (also available as `POST /auth/scaffad/ticket` if the app is mounted there).
+- **Request:**
+  - `Content-Type: application/json`
+  - Body: `{ "email": "<user-email>", "password": "<password>" }`
+- **Success (200):**
+  - Body: `{ "ticket": "<jwt>" }` — short-lived shop ticket (same format as Flow A). The shop should call its own `POST /api/auth/exchange-ticket` with this `ticket` to establish the shop session, then redirect or navigate to the shop home.
+- **Failure:**
+  - `400` — missing email/password, or two-factor authentication is enabled (message in body).
+  - `401` — invalid email or password.
+  - `500` — server error.
+- **Rate limiting:** Same `loginLimiter` as the main login.
 
-```js
-const scaffadAuthRoutes = require('./routes/scaffadAuth');
-app.use('/auth/scaffad', scaffadAuthRoutes);
-```
-
-Route details:
-
-- Path: `GET /auth/scaffad`
-- Middleware: `optionalJwtAuth` (may or may not be logged in).
-- Expected call from shop:
-
-```text
-https://<librechat-host>/auth/scaffad?redirect_uri=https%3A%2F%2Frenascent.scaffad.com%2F
-```
-
-Behavior:
-
-1. If `redirect_uri` is missing → `400 Bad Request`.
-2. If the user is **not authenticated** in LibreChat:
-   - Redirects to the login page with a `redirect` back to this endpoint:
-
-     ```text
-     /login?redirect=/auth/scaffad%3Fredirect_uri%3D<encoded-redirect-uri>
-     ```
-
-   - After successful login, the SPA should navigate back to `/auth/scaffad?...`, where the next request will see `req.user` set.
-3. If the user **is authenticated** (`req.user` present):
-   - Loads the user’s `Profile` to determine `role` when available.
-   - Issues a ticket via `issueScaffadShopTicket(req.user, profile)`.
-   - Redirects to:
-
-     ```text
-     <redirect_uri>?token=<ticket>
-     ```
-
-This implements **Flow B** from `SCAFFAD_SHOP_INTEGRATION.md`: user starts on the shop, chooses “Continue via LibreChat”, authenticates in LibreChat if needed, and is then sent back to the shop with a `ticket` in the URL.
+**Shop implementation:** On "Continue via LibreChat", show an in-shop login form (email + password). On submit, `fetch('https://<librechat-host>/api/auth/scaffad/ticket', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) })`. If 200, take `ticket` from the response, call the shop's `POST /api/auth/exchange-ticket` with `{ ticket }`, then redirect to the shop home. No redirect to LibreChat.
 
 ### 4.4 Expected shop behavior (PDF Builder / Scaffad repo)
 
@@ -364,11 +339,9 @@ From the **PDF Builder / Scaffad** side, this is what LibreChat now expects and 
   - Response shapes accepted by CEO dashboard:
     - `[...]` or `{ orders: [...] }` or `{ data: [...] }`.
 
-- **Shop SSO (Flow A – ticket in URL)**
-  - LibreChat exposes `GET /scaffad/shop`, which:
-    - Requires a logged‑in LibreChat user.
-    - Issues a short‑lived ticket JWT (claims: `sub`, `email`, `name`, `role`, `exp`).
-    - Redirects to `https://renascent.scaffad.com/?token=<ticket>`.
+- **Shop SSO**
+  - **In-shop login:** LibreChat exposes `POST /api/auth/scaffad/ticket` with body `{ email, password }`. Returns `{ ticket }`. Shop shows its own login form, calls this API, then calls its own `POST /api/auth/exchange-ticket` with the ticket. No redirect to LibreChat.
+  - **From LibreChat:** `GET /scaffad/shop` (requires logged‑in user) issues a ticket and redirects to the shop with `?token=<ticket>`.
   - Shop is responsible for:
     - `POST /api/auth/exchange-ticket` that verifies the ticket with `JWT_SECRET`.
     - Returning its own JWT and logging the user in.
