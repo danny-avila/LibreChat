@@ -115,7 +115,6 @@ const startServer = async () => {
     });
   }
 
-
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   /* Middleware */

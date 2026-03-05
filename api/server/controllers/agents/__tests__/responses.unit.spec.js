@@ -271,7 +271,6 @@ describe('createResponse controller', () => {
     });
   });
 
-
   describe('response id resolution', () => {
     it('should resolve previous_response_id as a stored response message id', async () => {
       req.body = {
@@ -291,7 +290,10 @@ describe('createResponse controller', () => {
         expect.objectContaining({ conversationId: 'conv_1' }),
         expect.any(Object),
       );
-      expect(models.getMessages).toHaveBeenCalledWith({ conversationId: 'conv_1', user: 'user-123' });
+      expect(models.getMessages).toHaveBeenCalledWith({
+        conversationId: 'conv_1',
+        user: 'user-123',
+      });
     });
   });
 
