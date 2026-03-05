@@ -259,7 +259,11 @@ const createMeiliMongooseModel = ({
 
         // Update MongoDB to mark documents as indexed
         const docsIds = documents.map((doc) => doc._id);
-        await this.updateMany({ _id: { $in: docsIds } }, { $set: { _meiliIndex: true } });
+        await this.updateMany(
+          { _id: { $in: docsIds } },
+          { $set: { _meiliIndex: true } },
+          { timestamps: false },
+        );
       } catch (error) {
         logger.error('[processSyncBatch] Error processing batch:', error);
         throw error;
