@@ -297,6 +297,26 @@ const startServer = async () => {
     console.error('[ERROR] Stack:', e.stack);
   }
 
+  // Scaffad Shop SSO entrypoint (non-API, used for redirects)
+  try {
+    const scaffadShopRoutes = require('./routes/scaffadShop');
+    app.use('/scaffad/shop', scaffadShopRoutes);
+    console.log('[OK] Scaffad Shop routes loaded');
+  } catch (e) {
+    console.log('[SKIP] Scaffad Shop routes (error loading)');
+    console.error('[ERROR] Scaffad Shop routes error:', e.message);
+  }
+
+  // Scaffad Shop Auth Flow B (/auth/scaffad)
+  try {
+    const scaffadAuthRoutes = require('./routes/scaffadAuth');
+    app.use('/auth/scaffad', scaffadAuthRoutes);
+    console.log('[OK] Scaffad Auth routes loaded');
+  } catch (e) {
+    console.log('[SKIP] Scaffad Auth routes (error loading)');
+    console.error('[ERROR] Scaffad Auth routes error:', e.message);
+  }
+
   // Audit Admin routes (CEO-only, feature-gated)
   try {
     const FeatureService = require('./services/FeatureService');
