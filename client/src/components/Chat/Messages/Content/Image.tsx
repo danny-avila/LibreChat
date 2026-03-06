@@ -5,6 +5,9 @@ import { apiBaseUrl } from 'librechat-data-provider';
 import { cn } from '~/utils';
 import DialogImage from './DialogImage';
 
+/** Max display height for chat images (Tailwind JIT class) */
+const IMAGE_MAX_H = 'max-h-[45vh]' as const;
+
 const Image = ({
   imagePath,
   altText,
@@ -94,13 +97,14 @@ const Image = ({
           onLoad={handleImageLoad}
           visibleByDefault={true}
           className={cn(
-            'block h-auto max-h-[45vh] w-auto text-transparent transition-opacity duration-100',
+            'block h-auto w-auto max-w-full text-transparent transition-opacity duration-100',
+            IMAGE_MAX_H,
             isLoaded ? 'opacity-100' : 'opacity-0',
           )}
           src={absoluteImageUrl}
           placeholder={
             <Skeleton
-              className={cn('max-h-[45vh] w-auto')}
+              className={cn(IMAGE_MAX_H, 'h-48 w-full max-w-lg')}
               aria-label="Loading image"
               aria-busy="true"
             />

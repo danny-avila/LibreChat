@@ -222,19 +222,8 @@ const Part = memo(function Part({
     }
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];
-    const height = imageFile.height ?? 1920;
-    const width = imageFile.width ?? 1080;
     return (
-      <Image
-        imagePath={imageFile.filepath}
-        height={height}
-        width={width}
-        altText={imageFile.filename ?? 'Uploaded Image'}
-        placeholderDimensions={{
-          height: height + 'px',
-          width: width + 'px',
-        }}
-      />
+      <Image imagePath={imageFile.filepath} altText={imageFile.filename ?? 'Uploaded Image'} />
     );
   }
 

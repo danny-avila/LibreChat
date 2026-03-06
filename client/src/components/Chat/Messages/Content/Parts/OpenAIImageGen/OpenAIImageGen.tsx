@@ -3,6 +3,10 @@ import { PixelCard } from '@librechat/client';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ProgressText from './ProgressText';
+import { cn } from '~/utils';
+
+const IMAGE_MAX_H = 'max-h-[45vh]' as const;
+const IMAGE_FULL_H = 'h-[45vh]' as const;
 
 export default function OpenAIImageGen({
   initialProgress = 0.1,
@@ -112,13 +116,15 @@ export default function OpenAIImageGen({
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
         <ProgressText progress={progress} error={cancelled} toolName={toolName} />
       </div>
-      <div className="relative mb-2 flex max-h-[45vh] w-full max-w-lg justify-start">
-        <div className={`overflow-hidden ${progress < 1 ? 'h-[45vh] w-full' : 'w-auto'} `}>
-          {progress < 1 ? (
-            <PixelCard variant="default" progress={progress} randomness={0.6} />
-          ) : (
-            <Image altText={filename} imagePath={filepath ?? ''} args={parsedArgs} />
-          )}
+      <div className={cn('relative mb-2 flex w-full max-w-lg justify-start', IMAGE_MAX_H)}>
+        <div className={cn('overflow-hidden', progress < 1 ? [IMAGE_FULL_H, 'w-full'] : 'w-auto')}>
+          {progress < 1 && <PixelCard variant="default" progress={progress} randomness={0.6} />}
+          <Image
+            altText={filename}
+            imagePath={filepath ?? ''}
+            args={parsedArgs}
+            className={progress < 1 ? 'invisible absolute' : ''}
+          />
         </div>
       </div>
     </>
