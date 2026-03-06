@@ -1,51 +1,59 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import debounce from 'lodash/debounce';
 import MonacoEditor from '@monaco-editor/react';
+import debounce from 'lodash/debounce';
+import type { Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import type { Artifact } from '~/common';
 import { useMutationState, useCodeState } from '~/Providers/EditorContext';
 import { useArtifactsContext } from '~/Providers';
 import { useEditArtifact } from '~/data-provider';
 
-type Monaco = Parameters<
-  Exclude<React.ComponentProps<typeof MonacoEditor>['beforeMount'], undefined>
->[0];
+const LANG_MAP: Record<string, string> = {
+  javascript: 'javascript',
+  typescript: 'typescript',
+  python: 'python',
+  css: 'css',
+  json: 'json',
+  markdown: 'markdown',
+  html: 'html',
+  xml: 'xml',
+  sql: 'sql',
+  yaml: 'yaml',
+  shell: 'shell',
+  bash: 'shell',
+  tsx: 'typescript',
+  jsx: 'javascript',
+  c: 'c',
+  cpp: 'cpp',
+  java: 'java',
+  go: 'go',
+  rust: 'rust',
+  kotlin: 'kotlin',
+  swift: 'swift',
+  php: 'php',
+  ruby: 'ruby',
+  r: 'r',
+  lua: 'lua',
+  scala: 'scala',
+  perl: 'perl',
+};
+
+const TYPE_MAP: Record<string, string> = {
+  'text/html': 'html',
+  'application/vnd.code-html': 'html',
+  'application/vnd.react': 'typescript',
+  'application/vnd.ant.react': 'typescript',
+  'text/markdown': 'markdown',
+  'text/md': 'markdown',
+  'text/plain': 'plaintext',
+  'application/vnd.mermaid': 'markdown',
+};
 
 function getMonacoLanguage(type?: string, language?: string): string {
-  if (language) {
-    const langMap: Record<string, string> = {
-      javascript: 'javascript',
-      typescript: 'typescript',
-      python: 'python',
-      css: 'css',
-      json: 'json',
-      markdown: 'markdown',
-      html: 'html',
-      xml: 'xml',
-      sql: 'sql',
-      yaml: 'yaml',
-      shell: 'shell',
-      bash: 'shell',
-      tsx: 'typescript',
-      jsx: 'javascript',
-    };
-    if (langMap[language]) {
-      return langMap[language];
-    }
+  if (language && LANG_MAP[language]) {
+    return LANG_MAP[language];
   }
-
-  const typeMap: Record<string, string> = {
-    'text/html': 'html',
-    'application/vnd.code-html': 'html',
-    'application/vnd.react': 'typescript',
-    'application/vnd.ant.react': 'typescript',
-    'text/markdown': 'markdown',
-    'text/md': 'markdown',
-    'text/plain': 'plaintext',
-    'application/vnd.mermaid': 'markdown',
-  };
-
-  return typeMap[type ?? ''] ?? 'html';
+  return TYPE_MAP[type ?? ''] ?? 'plaintext';
 }
 
 export const ArtifactCodeEditor = function ArtifactCodeEditor({
@@ -83,6 +91,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   const setCurrentCodeRef = useRef(setCurrentCode);
   const prevContentRef = useRef(artifact.content ?? '');
   const prevArtifactId = useRef(artifact.id);
+  const prevReadOnly = useRef(readOnly);
 
   artifactRef.current = artifact;
   isMutatingRef.current = isMutating;
@@ -164,7 +173,6 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
     ed.revealLine(model.getLineCount());
   }, [artifact.content, readOnly, monacoRef]);
 
-  /** Reset when switching artifacts */
   useEffect(() => {
     if (artifact.id === prevArtifactId.current) {
       return;
@@ -177,8 +185,6 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
     }
   }, [artifact.id, artifact.content, monacoRef]);
 
-  /** Sync final content when streaming ends */
-  const prevReadOnly = useRef(readOnly);
   useEffect(() => {
     if (prevReadOnly.current && !readOnly && artifact.content) {
       const ed = monacoRef.current;
@@ -190,39 +196,25 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
     prevReadOnly.current = readOnly;
   }, [readOnly, artifact.content, monacoRef]);
 
-  /** Toggle readOnly and disable expensive features during streaming */
-  useEffect(() => {
-    monacoRef.current?.updateOptions({
-      readOnly,
-      renderLineHighlight: readOnly ? 'none' : 'line',
-      cursorStyle: readOnly ? 'underline-thin' : 'line',
-      colorDecorators: !readOnly,
-      occurrencesHighlight: readOnly ? 'off' : 'singleFile',
-      selectionHighlight: !readOnly,
-      renderValidationDecorations: readOnly ? 'off' : 'editable',
-      quickSuggestions: !readOnly,
-      suggestOnTriggerCharacters: !readOnly,
-      parameterHints: { enabled: !readOnly },
-      hover: { enabled: !readOnly },
-      matchBrackets: readOnly ? 'never' : 'always',
-    });
-  }, [readOnly, monacoRef]);
-
   const handleChange = useCallback(
     (value: string | undefined) => {
-      if (!value || readOnly) {
+      if (value === undefined || readOnly) {
         return;
       }
       prevContentRef.current = value;
       setCurrentCode(value);
-      debouncedMutation(value);
+      if (value.length > 0) {
+        debouncedMutation(value);
+      }
     },
     [readOnly, debouncedMutation, setCurrentCode],
   );
 
-  /** Disable all validation — this is an artifact viewer/editor, not an IDE */
+  /**
+   * Disable all validation — this is an artifact viewer/editor, not an IDE.
+   * Note: these are global Monaco settings that affect all editor instances on the page.
+   */
   const handleBeforeMount = useCallback((monaco: Monaco) => {
-    // monaco.languages.typescript is typed as { deprecated: true } but exists at runtime
     const ts = monaco.languages.typescript as unknown as {
       typescriptDefaults: {
         setDiagnosticsOptions: (opts: {
@@ -263,6 +255,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   const handleMount = useCallback(
     (ed: editor.IStandaloneCodeEditor) => {
       monacoRef.current = ed;
+      prevContentRef.current = ed.getModel()?.getValue() ?? artifact.content ?? '';
       if (readOnly) {
         const model = ed.getModel();
         if (model) {
@@ -270,10 +263,50 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
         }
       }
     },
-    [monacoRef, readOnly],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [monacoRef],
   );
 
   const language = getMonacoLanguage(artifact.type, artifact.language);
+
+  const editorOptions = useMemo<editor.IStandaloneEditorConstructionOptions>(
+    () => ({
+      readOnly,
+      minimap: { enabled: false },
+      lineNumbers: 'on',
+      scrollBeyondLastLine: false,
+      fontSize: 13,
+      tabSize: 2,
+      wordWrap: 'on',
+      automaticLayout: true,
+      padding: { top: 8 },
+      renderLineHighlight: readOnly ? 'none' : 'line',
+      cursorStyle: readOnly ? 'underline-thin' : 'line',
+      scrollbar: {
+        vertical: 'visible',
+        horizontal: 'auto',
+        verticalScrollbarSize: 8,
+        horizontalScrollbarSize: 8,
+        useShadows: false,
+        alwaysConsumeMouseWheel: false,
+      },
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
+      overviewRulerBorder: false,
+      folding: false,
+      glyphMargin: false,
+      colorDecorators: !readOnly,
+      occurrencesHighlight: readOnly ? 'off' : 'singleFile',
+      selectionHighlight: !readOnly,
+      renderValidationDecorations: readOnly ? 'off' : 'editable',
+      quickSuggestions: !readOnly,
+      suggestOnTriggerCharacters: !readOnly,
+      parameterHints: { enabled: !readOnly },
+      hover: { enabled: !readOnly },
+      matchBrackets: readOnly ? 'never' : 'always',
+    }),
+    [readOnly],
+  );
 
   if (!artifact.content) {
     return null;
@@ -289,41 +322,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
         onChange={handleChange}
         beforeMount={handleBeforeMount}
         onMount={handleMount}
-        options={{
-          readOnly,
-          minimap: { enabled: false },
-          lineNumbers: 'on',
-          scrollBeyondLastLine: false,
-          fontSize: 13,
-          tabSize: 2,
-          wordWrap: 'on',
-          automaticLayout: true,
-          padding: { top: 8 },
-          renderLineHighlight: readOnly ? 'none' : 'line',
-          cursorStyle: readOnly ? 'underline-thin' : 'line',
-          scrollbar: {
-            vertical: 'visible',
-            horizontal: 'auto',
-            verticalScrollbarSize: 8,
-            horizontalScrollbarSize: 8,
-            useShadows: false,
-            alwaysConsumeMouseWheel: false,
-          },
-          overviewRulerLanes: 0,
-          hideCursorInOverviewRuler: true,
-          overviewRulerBorder: false,
-          folding: false,
-          glyphMargin: false,
-          colorDecorators: !readOnly,
-          occurrencesHighlight: readOnly ? 'off' : 'singleFile',
-          selectionHighlight: !readOnly,
-          renderValidationDecorations: readOnly ? 'off' : 'editable',
-          quickSuggestions: !readOnly,
-          suggestOnTriggerCharacters: !readOnly,
-          parameterHints: { enabled: !readOnly },
-          hover: { enabled: !readOnly },
-          matchBrackets: readOnly ? 'never' : 'always',
-        }}
+        options={editorOptions}
       />
     </div>
   );
