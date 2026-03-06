@@ -1,13 +1,15 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TagManager from 'react-gtm-module';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { ChangelogModal, CURRENT_VERSION } from './ChangelogModal';
 
 export default function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
   const localize = useLocalize();
+  const [changelogOpen, setChangelogOpen] = useState(false);
 
   const privacyPolicy = config?.interface?.privacyPolicy;
   const termsOfService = config?.interface?.termsOfService;
@@ -28,9 +30,9 @@ export default function Footer({ className }: { className?: string }) {
     typeof config?.customFooter === 'string'
       ? config.customFooter
       : '[LibreChat ' +
-        Constants.VERSION +
-        '](https://librechat.ai) - ' +
-        localize('com_ui_latest_footer')
+      Constants.VERSION +
+      '](https://librechat.ai) - ' +
+      localize('com_ui_latest_footer')
   ).split('|');
 
   useEffect(() => {
@@ -67,9 +69,38 @@ export default function Footer({ className }: { className?: string }) {
     </React.Fragment>
   ));
 
-  const footerElements = [...mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
-    Boolean,
+  // Version badge — renders inline in the footer row after the other links
+  const versionBadgeRender = (
+    <button
+      id="changelog-version-btn"
+      onClick={() => setChangelogOpen(true)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        padding: '1px 8px',
+        borderRadius: '9999px',
+        border: '1px solid rgba(128,128,128,0.35)',
+        background: 'rgba(128,128,128,0.12)',
+        fontSize: '11px',
+        fontWeight: 600,
+        color: 'inherit',
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        lineHeight: '1.4',
+      }}
+      aria-label="View changelog"
+    >
+      {CURRENT_VERSION}
+    </button>
   );
+
+  const footerElements = [
+    ...mainContentRender,
+    privacyPolicyRender,
+    termsOfServiceRender,
+    versionBadgeRender,
+  ].filter(Boolean);
 
   return (
     <div className="relative w-full">
@@ -95,6 +126,8 @@ export default function Footer({ className }: { className?: string }) {
           );
         })}
       </div>
+
+      <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </div>
   );
 }
