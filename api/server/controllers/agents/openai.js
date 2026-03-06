@@ -470,6 +470,8 @@ const OpenAIChatCompletionController = async (req, res) => {
       configurable: {
         thread_id: conversationId,
         user_id: userId,
+        agent_id: agent.id,
+        agent_name: agent.name,
         user: createSafeUser(req.user),
         requestBody: {
           messageId: responseId,

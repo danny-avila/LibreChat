@@ -731,6 +731,8 @@ class AgentClient extends BaseClient {
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
+          agent_id: this.options.agent.id,
+          agent_name: this.options.agent.name,
           requestBody: {
             messageId: this.responseMessageId,
             conversationId: this.conversationId,
