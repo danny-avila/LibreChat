@@ -397,6 +397,108 @@ describe('OAuthReconnectTracker', () => {
     });
   });
 
+  describe('cooldown-based retry', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should return true from isFailed within first cooldown period (5 min)', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      tracker.setFailed(userId, serverName);
+      expect(tracker.isFailed(userId, serverName)).toBe(true);
+
+      // Still within 5 min cooldown
+      jest.advanceTimersByTime(4 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(true);
+    });
+
+    it('should return false from isFailed after first cooldown elapses (5 min)', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      tracker.setFailed(userId, serverName);
+      expect(tracker.isFailed(userId, serverName)).toBe(true);
+
+      // Advance past 5 min cooldown
+      jest.advanceTimersByTime(5 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(false);
+    });
+
+    it('should use progressive cooldown schedule (5m, 10m, 20m, 30m)', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      // First failure: 5 min cooldown
+      tracker.setFailed(userId, serverName);
+      jest.advanceTimersByTime(5 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(false);
+
+      // Second failure: 10 min cooldown
+      tracker.setFailed(userId, serverName);
+      jest.advanceTimersByTime(9 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(true);
+      jest.advanceTimersByTime(1 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(false);
+
+      // Third failure: 20 min cooldown
+      tracker.setFailed(userId, serverName);
+      jest.advanceTimersByTime(19 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(true);
+      jest.advanceTimersByTime(1 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(false);
+
+      // Fourth failure: 30 min cooldown
+      tracker.setFailed(userId, serverName);
+      jest.advanceTimersByTime(29 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(true);
+      jest.advanceTimersByTime(1 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(false);
+    });
+
+    it('should cap cooldown at 30 min for attempts beyond 4', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      // Simulate 5 failures
+      for (let i = 0; i < 5; i++) {
+        tracker.setFailed(userId, serverName);
+        jest.advanceTimersByTime(30 * 60 * 1000); // advance past max cooldown
+      }
+
+      // 6th failure should still use 30 min cooldown (capped)
+      tracker.setFailed(userId, serverName);
+      jest.advanceTimersByTime(29 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(true);
+      jest.advanceTimersByTime(1 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(false);
+    });
+
+    it('should fully reset metadata on removeFailed', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      // Build up attempts
+      tracker.setFailed(userId, serverName);
+      tracker.setFailed(userId, serverName);
+      tracker.setFailed(userId, serverName);
+
+      // Remove should reset everything
+      tracker.removeFailed(userId, serverName);
+      expect(tracker.isFailed(userId, serverName)).toBe(false);
+
+      // New failure should start from attempt 1 (5 min cooldown)
+      tracker.setFailed(userId, serverName);
+      jest.advanceTimersByTime(5 * 60 * 1000);
+      expect(tracker.isFailed(userId, serverName)).toBe(false);
+    });
+  });
+
   describe('timestamp tracking edge cases', () => {
     beforeEach(() => {
       jest.useFakeTimers();

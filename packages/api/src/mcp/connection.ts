@@ -71,6 +71,25 @@ const FIVE_MINUTES = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT = 60000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
+const DEFAULT_INIT_TIMEOUT = 30000;
+
+interface CircuitBreakerState {
+  cycleCount: number;
+  cycleWindowStart: number;
+  cooldownUntil: number;
+  failedRounds: number;
+  failedWindowStart: number;
+  failedBackoffUntil: number;
+}
+
+const CB_MAX_CYCLES = 5;
+const CB_CYCLE_WINDOW_MS = 60_000;
+const CB_CYCLE_COOLDOWN_MS = 30_000;
+
+const CB_MAX_FAILED_ROUNDS = 3;
+const CB_FAILED_WINDOW_MS = 120_000;
+const CB_BASE_BACKOFF_MS = 30_000;
+const CB_MAX_BACKOFF_MS = 300_000;
 /** Default body timeout for Streamable HTTP GET SSE streams that idle between server pushes */
 const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
 
@@ -273,6 +292,92 @@ export class MCPConnection extends EventEmitter {
    * Used to detect if connection is stale compared to updated config.
    */
   public readonly createdAt: number;
+
+  private static circuitBreakers: Map<string, CircuitBreakerState> = new Map();
+
+  public static clearCooldown(serverName: string): void {
+    MCPConnection.circuitBreakers.delete(serverName);
+    logger.debug(`[MCP][${serverName}] Circuit breaker state cleared`);
+  }
+
+  private getCircuitBreaker(): CircuitBreakerState {
+    let cb = MCPConnection.circuitBreakers.get(this.serverName);
+    if (!cb) {
+      cb = {
+        cycleCount: 0,
+        cycleWindowStart: Date.now(),
+        cooldownUntil: 0,
+        failedRounds: 0,
+        failedWindowStart: Date.now(),
+        failedBackoffUntil: 0,
+      };
+      MCPConnection.circuitBreakers.set(this.serverName, cb);
+    }
+    return cb;
+  }
+
+  private isCircuitOpen(): boolean {
+    const cb = this.getCircuitBreaker();
+    const now = Date.now();
+    if (now < cb.cooldownUntil) {
+      logger.warn(
+        `${this.getLogPrefix()} Circuit breaker: cycle cooldown active until ${new Date(cb.cooldownUntil).toISOString()}`,
+      );
+      return true;
+    }
+    if (now < cb.failedBackoffUntil) {
+      logger.warn(
+        `${this.getLogPrefix()} Circuit breaker: failure backoff active until ${new Date(cb.failedBackoffUntil).toISOString()}`,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  private recordCycle(): void {
+    const cb = this.getCircuitBreaker();
+    const now = Date.now();
+    if (now - cb.cycleWindowStart > CB_CYCLE_WINDOW_MS) {
+      cb.cycleCount = 0;
+      cb.cycleWindowStart = now;
+    }
+    cb.cycleCount++;
+    if (cb.cycleCount >= CB_MAX_CYCLES) {
+      cb.cooldownUntil = now + CB_CYCLE_COOLDOWN_MS;
+      cb.cycleCount = 0;
+      cb.cycleWindowStart = now;
+      logger.warn(
+        `${this.getLogPrefix()} Circuit breaker: too many cycles, cooling down for ${CB_CYCLE_COOLDOWN_MS}ms`,
+      );
+    }
+  }
+
+  private recordFailedRound(): void {
+    const cb = this.getCircuitBreaker();
+    const now = Date.now();
+    if (now - cb.failedWindowStart > CB_FAILED_WINDOW_MS) {
+      cb.failedRounds = 0;
+      cb.failedWindowStart = now;
+    }
+    cb.failedRounds++;
+    if (cb.failedRounds >= CB_MAX_FAILED_ROUNDS) {
+      const backoff = Math.min(
+        CB_BASE_BACKOFF_MS * Math.pow(2, cb.failedRounds - CB_MAX_FAILED_ROUNDS),
+        CB_MAX_BACKOFF_MS,
+      );
+      cb.failedBackoffUntil = now + backoff;
+      logger.warn(
+        `${this.getLogPrefix()} Circuit breaker: too many failures, backing off for ${backoff}ms`,
+      );
+    }
+  }
+
+  private resetFailedRounds(): void {
+    const cb = this.getCircuitBreaker();
+    cb.failedRounds = 0;
+    cb.failedWindowStart = Date.now();
+    cb.failedBackoffUntil = 0;
+  }
 
   setRequestHeaders(headers: Record<string, string> | null): void {
     if (!headers) {
@@ -676,6 +781,12 @@ export class MCPConnection extends EventEmitter {
       return;
     }
 
+    if (this.isCircuitOpen()) {
+      this.connectionState = 'error';
+      this.emit('connectionChange', 'error');
+      throw new Error(`${this.getLogPrefix()} Circuit breaker is open, connection attempt blocked`);
+    }
+
     this.emit('connectionChange', 'connecting');
 
     this.connectPromise = (async () => {
@@ -693,7 +804,7 @@ export class MCPConnection extends EventEmitter {
         this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
         this.patchTransportSend();
 
-        const connectTimeout = this.options.initTimeout ?? 120000;
+        const connectTimeout = this.options.initTimeout ?? DEFAULT_INIT_TIMEOUT;
         await runOutsideTracing(() =>
           withTimeout(
             this.client.connect(this.transport!),
@@ -706,6 +817,7 @@ export class MCPConnection extends EventEmitter {
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
+        this.resetFailedRounds();
       } catch (error) {
         // Check if it's a rate limit error - stop immediately to avoid making it worse
         if (this.isRateLimitError(error)) {
@@ -807,6 +919,7 @@ export class MCPConnection extends EventEmitter {
 
         this.connectionState = 'error';
         this.emit('connectionChange', 'error');
+        this.recordFailedRound();
         throw error;
       } finally {
         this.connectPromise = null;
@@ -856,7 +969,8 @@ export class MCPConnection extends EventEmitter {
 
   async connect(): Promise<void> {
     try {
-      await this.disconnect();
+      // preserve cycle tracking across reconnects so the circuit breaker can detect rapid cycling
+      await this.disconnect(false);
       await this.connectClient();
       if (!(await this.isConnected())) {
         throw new Error('Connection not established');
@@ -896,7 +1010,7 @@ export class MCPConnection extends EventEmitter {
         isTransient,
       } = extractSSEErrorMessage(error);
 
-      if (errorCode === 404) {
+      if (errorCode === 400 || errorCode === 404 || errorCode === 405) {
         const hasSession =
           'sessionId' in transport &&
           (transport as { sessionId?: string }).sessionId != null &&
@@ -904,14 +1018,14 @@ export class MCPConnection extends EventEmitter {
 
         if (!hasSession && errorMessage.toLowerCase().includes('failed to open sse stream')) {
           logger.warn(
-            `${this.getLogPrefix()} SSE stream not available (404), no session. Ignoring.`,
+            `${this.getLogPrefix()} SSE stream not available (${errorCode}), no session. Ignoring.`,
           );
           return;
         }
 
         if (hasSession) {
           logger.warn(
-            `${this.getLogPrefix()} 404 with active session — session lost, triggering reconnection.`,
+            `${this.getLogPrefix()} ${errorCode} with active session — session lost, triggering reconnection.`,
           );
         }
       }
@@ -982,7 +1096,7 @@ export class MCPConnection extends EventEmitter {
     await Promise.all(closing);
   }
 
-  public async disconnect(): Promise<void> {
+  public async disconnect(resetCycleTracking = true): Promise<void> {
     try {
       if (this.transport) {
         await this.client.close();
@@ -996,6 +1110,9 @@ export class MCPConnection extends EventEmitter {
       this.emit('connectionChange', 'disconnected');
     } finally {
       this.connectPromise = null;
+      if (!resetCycleTracking) {
+        this.recordCycle();
+      }
     }
   }
 

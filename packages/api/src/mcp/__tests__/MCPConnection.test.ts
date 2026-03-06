@@ -559,3 +559,256 @@ describe('extractSSEErrorMessage', () => {
     });
   });
 });
+
+/**
+ * Tests for circuit breaker logic.
+ *
+ * Uses standalone implementations that mirror the static/private circuit breaker
+ * methods in MCPConnection. Same approach as the error detection tests above.
+ */
+describe('MCPConnection Circuit Breaker', () => {
+  /** 5 cycles within 60s triggers a 30s cooldown */
+  const CB_MAX_CYCLES = 5;
+  const CB_CYCLE_WINDOW_MS = 60_000;
+  const CB_CYCLE_COOLDOWN_MS = 30_000;
+
+  /** 3 failed rounds within 120s triggers exponential backoff (30s - 300s) */
+  const CB_MAX_FAILED_ROUNDS = 3;
+  const CB_FAILED_WINDOW_MS = 120_000;
+  const CB_BASE_BACKOFF_MS = 30_000;
+  const CB_MAX_BACKOFF_MS = 300_000;
+
+  interface CircuitBreakerState {
+    cycleCount: number;
+    cycleWindowStart: number;
+    cooldownUntil: number;
+    failedRounds: number;
+    failedWindowStart: number;
+    failedBackoffUntil: number;
+  }
+
+  function createCB(): CircuitBreakerState {
+    return {
+      cycleCount: 0,
+      cycleWindowStart: Date.now(),
+      cooldownUntil: 0,
+      failedRounds: 0,
+      failedWindowStart: Date.now(),
+      failedBackoffUntil: 0,
+    };
+  }
+
+  function isCircuitOpen(cb: CircuitBreakerState): boolean {
+    const now = Date.now();
+    return now < cb.cooldownUntil || now < cb.failedBackoffUntil;
+  }
+
+  function recordCycle(cb: CircuitBreakerState): void {
+    const now = Date.now();
+    if (now - cb.cycleWindowStart > CB_CYCLE_WINDOW_MS) {
+      cb.cycleCount = 0;
+      cb.cycleWindowStart = now;
+    }
+    cb.cycleCount++;
+    if (cb.cycleCount >= CB_MAX_CYCLES) {
+      cb.cooldownUntil = now + CB_CYCLE_COOLDOWN_MS;
+      cb.cycleCount = 0;
+      cb.cycleWindowStart = now;
+    }
+  }
+
+  function recordFailedRound(cb: CircuitBreakerState): void {
+    const now = Date.now();
+    if (now - cb.failedWindowStart > CB_FAILED_WINDOW_MS) {
+      cb.failedRounds = 0;
+      cb.failedWindowStart = now;
+    }
+    cb.failedRounds++;
+    if (cb.failedRounds >= CB_MAX_FAILED_ROUNDS) {
+      const backoff = Math.min(
+        CB_BASE_BACKOFF_MS * Math.pow(2, cb.failedRounds - CB_MAX_FAILED_ROUNDS),
+        CB_MAX_BACKOFF_MS,
+      );
+      cb.failedBackoffUntil = now + backoff;
+    }
+  }
+
+  function resetFailedRounds(cb: CircuitBreakerState): void {
+    cb.failedRounds = 0;
+    cb.failedWindowStart = Date.now();
+    cb.failedBackoffUntil = 0;
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  describe('cycle tracking', () => {
+    it('should not trigger cooldown for fewer than 5 cycles', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      const cb = createCB();
+      for (let i = 0; i < CB_MAX_CYCLES - 1; i++) {
+        recordCycle(cb);
+      }
+      expect(isCircuitOpen(cb)).toBe(false);
+    });
+
+    it('should trigger 30s cooldown after 5 cycles within 60s', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      const cb = createCB();
+      for (let i = 0; i < CB_MAX_CYCLES; i++) {
+        recordCycle(cb);
+      }
+      expect(isCircuitOpen(cb)).toBe(true);
+
+      // Still open after 29s
+      jest.advanceTimersByTime(29_000);
+      expect(isCircuitOpen(cb)).toBe(true);
+
+      // Closed after 30s
+      jest.advanceTimersByTime(1_000);
+      expect(isCircuitOpen(cb)).toBe(false);
+    });
+
+    it('should reset cycle count when window expires', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      const cb = createCB();
+      for (let i = 0; i < CB_MAX_CYCLES - 1; i++) {
+        recordCycle(cb);
+      }
+
+      // Advance past the 60s window
+      jest.advanceTimersByTime(CB_CYCLE_WINDOW_MS + 1);
+
+      // This should start a new window, not trigger cooldown
+      recordCycle(cb);
+      expect(isCircuitOpen(cb)).toBe(false);
+    });
+  });
+
+  describe('failed round tracking', () => {
+    it('should not trigger backoff for fewer than 3 failures', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      const cb = createCB();
+      for (let i = 0; i < CB_MAX_FAILED_ROUNDS - 1; i++) {
+        recordFailedRound(cb);
+      }
+      expect(isCircuitOpen(cb)).toBe(false);
+    });
+
+    it('should trigger 30s backoff after 3 failures within 120s', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      const cb = createCB();
+      for (let i = 0; i < CB_MAX_FAILED_ROUNDS; i++) {
+        recordFailedRound(cb);
+      }
+      expect(isCircuitOpen(cb)).toBe(true);
+
+      jest.advanceTimersByTime(CB_BASE_BACKOFF_MS);
+      expect(isCircuitOpen(cb)).toBe(false);
+    });
+
+    it('should use exponential backoff based on failure count', () => {
+      jest.setSystemTime(Date.now());
+
+      const cb = createCB();
+
+      // Rapid failures within the 120s window to accumulate failedRounds
+      // 3 failures = 30s backoff (30s * 2^0)
+      for (let i = 0; i < 3; i++) {
+        recordFailedRound(cb);
+      }
+      expect(cb.failedBackoffUntil - Date.now()).toBe(30_000);
+
+      // 4th failure (still within 120s window) = 60s backoff (30s * 2^1)
+      recordFailedRound(cb);
+      expect(cb.failedBackoffUntil - Date.now()).toBe(60_000);
+
+      // 5th failure = 120s backoff (30s * 2^2)
+      recordFailedRound(cb);
+      expect(cb.failedBackoffUntil - Date.now()).toBe(120_000);
+
+      // 6th failure = 240s backoff (30s * 2^3)
+      recordFailedRound(cb);
+      expect(cb.failedBackoffUntil - Date.now()).toBe(240_000);
+
+      // 7th failure = capped at 300s (30s * 2^4 = 480s > 300s)
+      recordFailedRound(cb);
+      expect(cb.failedBackoffUntil - Date.now()).toBe(300_000);
+    });
+
+    it('should reset failed window when window expires', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      const cb = createCB();
+      recordFailedRound(cb);
+      recordFailedRound(cb);
+
+      // Advance past the 120s window
+      jest.advanceTimersByTime(CB_FAILED_WINDOW_MS + 1);
+
+      // This should start a new window
+      recordFailedRound(cb);
+      expect(isCircuitOpen(cb)).toBe(false); // Only 1 failure in new window
+    });
+  });
+
+  describe('resetFailedRounds', () => {
+    it('should clear failed round state on successful connection', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      const cb = createCB();
+      for (let i = 0; i < CB_MAX_FAILED_ROUNDS; i++) {
+        recordFailedRound(cb);
+      }
+      expect(isCircuitOpen(cb)).toBe(true);
+
+      resetFailedRounds(cb);
+      expect(isCircuitOpen(cb)).toBe(false);
+      expect(cb.failedRounds).toBe(0);
+      expect(cb.failedBackoffUntil).toBe(0);
+    });
+  });
+
+  describe('clearCooldown (registry deletion)', () => {
+    it('should allow connections after clearing circuit breaker state', () => {
+      const now = Date.now();
+      jest.setSystemTime(now);
+
+      const registry = new Map<string, CircuitBreakerState>();
+      const serverName = 'test-server';
+
+      const cb = createCB();
+      registry.set(serverName, cb);
+
+      // Trigger cooldown
+      for (let i = 0; i < CB_MAX_CYCLES; i++) {
+        recordCycle(cb);
+      }
+      expect(isCircuitOpen(cb)).toBe(true);
+
+      // Clear cooldown (simulates MCPConnection.clearCooldown)
+      registry.delete(serverName);
+
+      // New CB should be open
+      const newCb = createCB();
+      expect(isCircuitOpen(newCb)).toBe(false);
+    });
+  });
+});
