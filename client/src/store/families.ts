@@ -151,6 +151,30 @@ const allConversationsSelector = selector({
   },
 });
 
+const conversationIdByIndex = selectorFamily<string | null, string | number>({
+  key: 'conversationIdByIndex',
+  get:
+    (index: string | number) =>
+    ({ get }) =>
+      get(conversationByIndex(index))?.conversationId ?? null,
+});
+
+const conversationEndpointByIndex = selectorFamily<string | null, string | number>({
+  key: 'conversationEndpointByIndex',
+  get:
+    (index: string | number) =>
+    ({ get }) =>
+      get(conversationByIndex(index))?.endpoint ?? null,
+});
+
+const conversationMessagesCountByIndex = selectorFamily<number, string | number>({
+  key: 'conversationMessagesCountByIndex',
+  get:
+    (index: string | number) =>
+    ({ get }) =>
+      get(conversationByIndex(index))?.messages?.length ?? 0,
+});
+
 const presetByIndex = atomFamily<TPreset | null, string | number>({
   key: 'presetByIndex',
   default: null,
@@ -411,6 +435,9 @@ export default {
   messagesSiblingIdxFamily,
   anySubmittingSelector,
   allConversationsSelector,
+  conversationIdByIndex,
+  conversationEndpointByIndex,
+  conversationMessagesCountByIndex,
   conversationByKeySelector,
   useClearConvoState,
   useCreateConversationAtom,

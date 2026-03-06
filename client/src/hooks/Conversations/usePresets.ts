@@ -4,9 +4,9 @@ import { useToastContext } from '@librechat/client';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState, useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { useCreatePresetMutation, useGetModelsQuery } from 'librechat-data-provider/react-query';
-import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
+import type { TPreset, TEndpointsConfig, TConversation } from 'librechat-data-provider';
 import {
   useUpdatePresetMutation,
   useDeletePresetMutation,
@@ -17,11 +17,10 @@ import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { NotificationSeverity } from '~/common';
 import useNewConvo from '~/hooks/useNewConvo';
-import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
-export default function usePresets() {
+export default function usePresets(index = 0) {
   const localize = useLocalize();
   const hasLoaded = useRef(false);
   const queryClient = useQueryClient();
@@ -35,7 +34,17 @@ export default function usePresets() {
   const setPresetModalVisible = useSetRecoilState(store.presetModalVisible);
   const [_defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const presetsQuery = useGetPresetsQuery({ enabled: !!user && isAuthenticated });
-  const { preset, conversation, index, setPreset } = useChatContext();
+  const preset = useRecoilValue(store.presetByIndex(index));
+  const setPreset = useSetRecoilState(store.presetByIndex(index));
+  const conversationId = useRecoilValue(store.conversationIdByIndex(index));
+  const getConversation = useRecoilCallback(
+    ({ snapshot }) =>
+      () =>
+        snapshot
+          .getLoadable(store.conversationByKeySelector(index))
+          .getValue() as TConversation | null,
+    [index],
+  );
   const { data: modelsData } = useGetModelsQuery();
   const { newConversation } = useNewConvo(index);
 
@@ -60,13 +69,13 @@ export default function usePresets() {
       return;
     }
     setDefaultPreset(defaultPreset);
-    if (!conversation?.conversationId || conversation.conversationId === 'new') {
+    if (!conversationId || conversationId === 'new') {
       newConversation({ preset: defaultPreset, modelsData, disableParams: true });
     }
     hasLoaded.current = true;
     // dependencies are stable and only needed once
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetsQuery.data, user, modelsData]);
+  }, [presetsQuery.data, user, modelsData, conversationId]);
 
   const setPresets = useCallback(
     (presets: TPreset[]) => {
@@ -164,6 +173,7 @@ export default function usePresets() {
       return;
     }
 
+    const conversation = getConversation();
     const newPreset = removeUnavailableTools(_newPreset, availableTools);
 
     const toastTitle = newPreset.title

@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { EModelEndpoint, TConversation } from 'librechat-data-provider';
-import { useChatContext } from '~/Providers/ChatContext';
+import { useNewConvo } from '~/hooks';
+import store from '~/store';
 
 interface ModelSelectorChatContextValue {
   endpoint?: EModelEndpoint | null;
@@ -9,7 +11,7 @@ interface ModelSelectorChatContextValue {
   agent_id?: string | null;
   assistant_id?: string | null;
   conversation: TConversation | null;
-  newConversation: ReturnType<typeof useChatContext>['newConversation'];
+  newConversation: ReturnType<typeof useNewConvo>['newConversation'];
 }
 
 const ModelSelectorChatContext = createContext<ModelSelectorChatContextValue | undefined>(
@@ -17,7 +19,8 @@ const ModelSelectorChatContext = createContext<ModelSelectorChatContextValue | u
 );
 
 export function ModelSelectorChatProvider({ children }: { children: React.ReactNode }) {
-  const { conversation, newConversation } = useChatContext();
+  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const { newConversation } = useNewConvo();
 
   /** Context value only created when relevant conversation properties change */
   const contextValue = useMemo<ModelSelectorChatContextValue>(
