@@ -36,7 +36,7 @@ export default function ArtifactTabs({
 
   const content = artifact.content ?? '';
   const contentRef = useRef<HTMLDivElement>(null);
-  useAutoScroll({ ref: contentRef, content, isSubmitting });
+  useAutoScroll({ ref: contentRef, editorRef, content, isSubmitting });
 
   const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
 

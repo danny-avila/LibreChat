@@ -1,17 +1,22 @@
-// hooks/useAutoScroll.ts
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { CodeEditorRef } from '@codesandbox/sandpack-react';
 
 interface UseAutoScrollProps {
   ref: React.RefObject<HTMLElement>;
+  editorRef?: React.RefObject<CodeEditorRef>;
   content: string;
   isSubmitting: boolean;
 }
 
-export const useAutoScroll = ({ ref, content, isSubmitting }: UseAutoScrollProps) => {
+export const useAutoScroll = ({ ref, editorRef, content, isSubmitting }: UseAutoScrollProps) => {
   const [userScrolled, setUserScrolled] = useState(false);
 
+  const getScrollContainer = useCallback(() => {
+    return editorRef?.current?.getCodemirror()?.scrollDOM ?? ref.current;
+  }, [editorRef, ref]);
+
   useEffect(() => {
-    const scrollContainer = ref.current;
+    const scrollContainer = getScrollContainer();
     if (!scrollContainer) {
       return;
     }
@@ -32,16 +37,16 @@ export const useAutoScroll = ({ ref, content, isSubmitting }: UseAutoScrollProps
     return () => {
       scrollContainer.removeEventListener('scroll', handleScroll);
     };
-  }, [ref]);
+  }, [getScrollContainer]);
 
   useEffect(() => {
-    const scrollContainer = ref.current;
+    const scrollContainer = getScrollContainer();
     if (!scrollContainer || !isSubmitting || userScrolled) {
       return;
     }
 
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
-  }, [content, isSubmitting, userScrolled, ref]);
+  }, [content, isSubmitting, userScrolled, getScrollContainer]);
 
   return { userScrolled };
 };

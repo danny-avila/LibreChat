@@ -29,6 +29,18 @@ const CodeEditor = memo(
     editorRef: React.MutableRefObject<CodeEditorRef>;
   }) => {
     const { sandpack } = useSandpack();
+
+    /** Sync streaming content into Sandpack without re-mounting the provider */
+    useEffect(() => {
+      if (!artifact.content) {
+        return;
+      }
+      const filePath = '/' + fileKey;
+      const current = (sandpack.files[filePath] as SandpackBundlerFile | undefined)?.code;
+      if (current !== artifact.content) {
+        sandpack.updateFile(filePath, artifact.content);
+      }
+    }, [artifact.content, fileKey, sandpack]);
     const [currentUpdate, setCurrentUpdate] = useState<string | null>(null);
     const { isMutating, setIsMutating } = useMutationState();
     const { setCurrentCode } = useCodeState();
@@ -185,17 +197,32 @@ export const ArtifactCodeEditor = function ({
     setReadOnly((externalReadOnly ?? false) || (isSubmitting ?? false));
   }, [isSubmitting, externalReadOnly]);
 
-  if (Object.keys(files).length === 0) {
+  /**
+   * Stable files for StyledProvider — only updates when the artifact identity changes,
+   * not on every streaming content update. Content is synced via sandpack.updateFile()
+   * inside CodeEditor to avoid re-mounting the entire Sandpack provider.
+   */
+  const stableFiles = useRef(files);
+  const prevArtifactId = useRef(artifact.id);
+  if (artifact.id !== prevArtifactId.current) {
+    stableFiles.current = files;
+    prevArtifactId.current = artifact.id;
+  }
+
+  const mergedFiles = useMemo(
+    () => ({ ...stableFiles.current, ...sharedFiles }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [artifact.id],
+  );
+
+  if (Object.keys(stableFiles.current).length === 0) {
     return null;
   }
 
   return (
     <StyledProvider
       theme="dark"
-      files={{
-        ...files,
-        ...sharedFiles,
-      }}
+      files={mergedFiles}
       options={options}
       {...sharedProps}
       template={template}
