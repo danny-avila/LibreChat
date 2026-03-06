@@ -6,7 +6,6 @@ import type { TMessage } from 'librechat-data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import { useAbortStreamMutation } from '~/data-provider';
-import { useAuthContext } from '~/hooks/AuthContext';
 import useNewConvo from '~/hooks/useNewConvo';
 import store from '~/store';
 
@@ -17,7 +16,6 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const [filesLoading, setFilesLoading] = useState(false);
 
   const queryClient = useQueryClient();
-  const { isAuthenticated: _isAuthenticated } = useAuthContext();
   const abortMutation = useAbortStreamMutation();
 
   const { newConversation } = useNewConvo(index);

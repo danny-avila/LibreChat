@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef } from 'react';
-import { useRecoilCallback, useRecoilValue } from 'recoil';
-import type { ConvoGenerator } from '~/common';
+import { useRecoilValue } from 'recoil';
 import type { EModelEndpoint, TConversation } from 'librechat-data-provider';
-import { useNewConvo } from '~/hooks';
+import type { ConvoGenerator } from '~/common';
+import { useGetConversation, useNewConvo } from '~/hooks';
 import store from '~/store';
 
 interface ModelSelectorChatContextValue {
@@ -20,6 +20,7 @@ const ModelSelectorChatContext = createContext<ModelSelectorChatContextValue | u
 );
 
 export function ModelSelectorChatProvider({ children }: { children: React.ReactNode }) {
+  const getConversation = useGetConversation(0);
   const { newConversation: nextNewConversation } = useNewConvo();
 
   const spec = useRecoilValue(store.conversationSpecByIndex(0));
@@ -32,13 +33,6 @@ export function ModelSelectorChatProvider({ children }: { children: React.ReactN
   newConversationRef.current = nextNewConversation;
   const newConversation = useCallback<ConvoGenerator>(
     (params) => newConversationRef.current(params),
-    [],
-  );
-
-  const getConversation = useRecoilCallback(
-    ({ snapshot }) =>
-      () =>
-        snapshot.getLoadable(store.conversationByKeySelector(0)).getValue() as TConversation | null,
     [],
   );
 

@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { useRecoilCallback } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
@@ -9,10 +8,10 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TConversation, TPreset, Agent } from 'librechat-data-provider';
+import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useNewConvo from '~/hooks/useNewConvo';
-import store from '~/store';
 import { logger } from '~/utils';
 
 export default function useSelectAgent() {
@@ -20,12 +19,7 @@ export default function useSelectAgent() {
   const agentsMap = useAgentsMapContext();
   const getDefaultConversation = useDefaultConvo();
   const { newConversation } = useNewConvo();
-  const getConversation = useRecoilCallback(
-    ({ snapshot }) =>
-      async (): Promise<TConversation | null> =>
-        snapshot.getPromise(store.conversationByIndex(0)),
-    [],
-  );
+  const getConversation = useGetConversation(0);
 
   const updateConversation = useCallback(
     async (agent: Partial<Agent>, template: Partial<TPreset | TConversation>) => {

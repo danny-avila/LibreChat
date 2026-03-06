@@ -173,14 +173,6 @@ const conversationEndpointByIndex = selectorFamily<EModelEndpoint | null, string
       get(conversationByIndex(index))?.endpoint ?? null,
 });
 
-const conversationMessagesCountByIndex = selectorFamily<number, string | number>({
-  key: 'conversationMessagesCountByIndex',
-  get:
-    (index: string | number) =>
-    ({ get }) =>
-      get(conversationByIndex(index))?.messages?.length ?? 0,
-});
-
 const conversationModelByIndex = selectorFamily<string | null, string | number>({
   key: 'conversationModelByIndex',
   get:
@@ -344,15 +336,7 @@ function useCreateConversationAtom(key: string | number) {
 }
 
 function useSetConversationAtom(key: string | number) {
-  const [keys, setKeys] = useRecoilState(conversationKeysAtom);
-  const setConversation = useSetRecoilState(conversationByIndex(key));
-
-  useEffect(() => {
-    if (!keys.includes(key)) {
-      setKeys([...keys, key]);
-    }
-  }, [key, keys, setKeys]);
-
+  const { setConversation } = useCreateConversationAtom(key);
   return { setConversation };
 }
 
@@ -488,7 +472,6 @@ export default {
   allConversationsSelector,
   conversationIdByIndex,
   conversationEndpointByIndex,
-  conversationMessagesCountByIndex,
   conversationModelByIndex,
   conversationSpecByIndex,
   conversationAgentIdByIndex,

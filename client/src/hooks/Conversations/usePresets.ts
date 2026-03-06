@@ -4,15 +4,16 @@ import { useToastContext } from '@librechat/client';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRecoilState, useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
+import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
 import { useCreatePresetMutation, useGetModelsQuery } from 'librechat-data-provider/react-query';
-import type { TPreset, TEndpointsConfig, TConversation } from 'librechat-data-provider';
+import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
 import {
   useUpdatePresetMutation,
   useDeletePresetMutation,
   useGetPresetsQuery,
 } from '~/data-provider';
 import { cleanupPreset, removeUnavailableTools, getConvoSwitchLogic } from '~/utils';
+import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { NotificationSeverity } from '~/common';
@@ -25,6 +26,7 @@ export default function usePresets(index = 0) {
   const hasLoaded = useRef(false);
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
+  const getConversation = useGetConversation(index);
   const { user, isAuthenticated } = useAuthContext();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [presetToDelete, setPresetToDelete] = useState<TPreset | null>(null);
@@ -37,14 +39,6 @@ export default function usePresets(index = 0) {
   const preset = useRecoilValue(store.presetByIndex(index));
   const setPreset = useSetRecoilState(store.presetByIndex(index));
   const conversationId = useRecoilValue(store.conversationIdByIndex(index));
-  const getConversation = useRecoilCallback(
-    ({ snapshot }) =>
-      () =>
-        snapshot
-          .getLoadable(store.conversationByKeySelector(index))
-          .getValue() as TConversation | null,
-    [index],
-  );
   const { data: modelsData } = useGetModelsQuery();
   const { newConversation } = useNewConvo(index);
 
