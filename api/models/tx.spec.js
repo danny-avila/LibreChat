@@ -1452,6 +1452,8 @@ describe('getCacheMultiplier', () => {
     expect(getCacheMultiplier({ model: 'gpt-5-pro', cacheType: 'write' })).toBeNull();
     expect(getCacheMultiplier({ model: 'gpt-5.2-pro', cacheType: 'read' })).toBeNull();
     expect(getCacheMultiplier({ model: 'gpt-5.2-pro', cacheType: 'write' })).toBeNull();
+    expect(getCacheMultiplier({ model: 'gpt-5.4-pro', cacheType: 'read' })).toBeNull();
+    expect(getCacheMultiplier({ model: 'gpt-5.4-pro', cacheType: 'write' })).toBeNull();
   });
 
   it('should have consistent 10% cache read pricing for gpt-5.x models', () => {

@@ -222,7 +222,13 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('openai/gpt-5.4')).toBe(
       maxTokensMap[EModelEndpoint.openAI]['gpt-5.4'],
     );
+  });
+
+  test('should return correct tokens for gpt-5.4-pro matches', () => {
     expect(getModelMaxTokens('gpt-5.4-pro')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.4-pro'],
+    );
+    expect(getModelMaxTokens('openai/gpt-5.4-pro')).toBe(
       maxTokensMap[EModelEndpoint.openAI]['gpt-5.4-pro'],
     );
   });
