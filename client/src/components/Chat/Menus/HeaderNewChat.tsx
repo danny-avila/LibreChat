@@ -2,7 +2,7 @@ import { QueryKeys } from 'librechat-data-provider';
 import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, Button, NewChatIcon } from '@librechat/client';
-import { useLocalize, useNewConvo } from '~/hooks';
+import { useNewConvo, useLocalize } from '~/hooks';
 import { clearMessagesCache } from '~/utils';
 import store from '~/store';
 

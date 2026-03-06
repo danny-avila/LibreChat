@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useCombobox } from '@librechat/client';
 import { AutoSizer, List } from 'react-virtualized';
 import { EModelEndpoint } from 'librechat-data-provider';
@@ -42,7 +42,9 @@ export default function Mention({
     endpointsConfig,
     assistantListMap,
   } = useMentions({ assistantMap: assistantsMap || {}, includeAssistants });
-  const getConversation = useCallback(() => conversation, [conversation]);
+  const conversationRef = useRef(conversation);
+  conversationRef.current = conversation;
+  const getConversation = useRef(() => conversationRef.current).current;
   const { onSelectMention } = useSelectMention({
     presets,
     modelSpecs,
