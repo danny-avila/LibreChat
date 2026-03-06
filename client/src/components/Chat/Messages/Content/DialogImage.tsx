@@ -365,7 +365,7 @@ export default function DialogImage({
                   ref={imageRef}
                   src={src}
                   alt="Image"
-                  decoding="sync"
+                  decoding="async"
                   className="block max-h-[85vh] object-contain"
                   style={{
                     maxWidth: getImageMaxWidth(),

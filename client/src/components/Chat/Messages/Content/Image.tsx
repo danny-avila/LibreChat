@@ -6,14 +6,22 @@ import { cn } from '~/utils';
 
 /** Max display height for chat images (Tailwind JIT class) */
 export const IMAGE_MAX_H = 'max-h-[45vh]' as const;
+/** Matches the `max-w-lg` Tailwind class on the wrapper button (32rem = 512px at 16px base) */
+const IMAGE_MAX_W_PX = 512;
 
 /** Caches image dimensions by src so remounts can reserve space */
 const dimensionCache = new Map<string, { width: number; height: number }>();
 /** Tracks URLs that have been fully painted — skip skeleton on remount */
 const paintedUrls = new Set<string>();
 
+/** Test-only: resets module-level caches */
+export function _resetImageCaches(): void {
+  dimensionCache.clear();
+  paintedUrls.clear();
+}
+
 function computeHeightStyle(w: number, h: number): React.CSSProperties {
-  return { height: `min(45vh, ${(h / w) * 100}vw, ${(h / w) * 512}px)` };
+  return { height: `min(45vh, ${(h / w) * 100}vw, ${(h / w) * IMAGE_MAX_W_PX}px)` };
 }
 
 const Image = ({
@@ -84,9 +92,12 @@ const Image = ({
     }
   };
 
-  if (width && height && absoluteImageUrl) {
-    dimensionCache.set(absoluteImageUrl, { width, height });
-  }
+  useMemo(() => {
+    if (width && height && absoluteImageUrl) {
+      dimensionCache.set(absoluteImageUrl, { width, height });
+    }
+  }, [absoluteImageUrl, width, height]);
+
   const dims = width && height ? { width, height } : dimensionCache.get(absoluteImageUrl);
   const hasDimensions = !!(dims?.width && dims?.height);
   const heightStyle = hasDimensions ? computeHeightStyle(dims.width, dims.height) : undefined;

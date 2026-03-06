@@ -11,3 +11,16 @@ export function cachePreview(fileId: string, previewUrl: string): void {
 export function getCachedPreview(fileId: string): string | undefined {
   return previewCache.get(fileId);
 }
+
+export function deletePreview(fileId: string): void {
+  const url = previewCache.get(fileId);
+  if (url) {
+    URL.revokeObjectURL(url);
+    previewCache.delete(fileId);
+  }
+}
+
+export function clearPreviewCache(): void {
+  previewCache.forEach((url) => URL.revokeObjectURL(url));
+  previewCache.clear();
+}

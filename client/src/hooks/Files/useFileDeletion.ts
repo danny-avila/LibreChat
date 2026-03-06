@@ -5,6 +5,7 @@ import type * as t from 'librechat-data-provider';
 import type { UseMutateAsyncFunction } from '@tanstack/react-query';
 import type { ExtendedFile, GenericSetter } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
+import { deletePreview } from '~/utils/previewCache';
 
 type FileMapSetter = GenericSetter<Map<string, ExtendedFile>>;
 
@@ -86,6 +87,11 @@ const useFileDeletion = ({
           setFilesToDelete(files);
           return updatedFiles;
         });
+      }
+
+      deletePreview(file_id);
+      if (temp_file_id) {
+        deletePreview(temp_file_id);
       }
 
       if (attached) {
