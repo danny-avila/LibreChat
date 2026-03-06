@@ -10,6 +10,8 @@ import { createFileMethods, type FileMethods } from './file';
 import { createMemoryMethods, type MemoryMethods } from './memory';
 /* Agent Categories */
 import { createAgentCategoryMethods, type AgentCategoryMethods } from './agentCategory';
+/* Agent API Keys */
+import { createAgentApiKeyMethods, type AgentApiKeyMethods } from './agentApiKey';
 /* MCP Servers */
 import { createMCPServerMethods, type MCPServerMethods } from './mcpServer';
 /* Plugin Auth */
@@ -19,6 +21,7 @@ import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
 import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
 import { createAclEntryMethods, type AclEntryMethods } from './aclEntry';
 import { createShareMethods, type ShareMethods } from './share';
+import { createTransactionMethods, type TransactionMethods } from './transaction';
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -28,12 +31,14 @@ export type AllMethods = UserMethods &
   FileMethods &
   MemoryMethods &
   AgentCategoryMethods &
+  AgentApiKeyMethods &
   MCPServerMethods &
   UserGroupMethods &
   AclEntryMethods &
   ShareMethods &
   AccessRoleMethods &
-  PluginAuthMethods;
+  PluginAuthMethods &
+  TransactionMethods;
 
 /**
  * Creates all database methods for all collections
@@ -49,12 +54,14 @@ export function createMethods(mongoose: typeof import('mongoose')): AllMethods {
     ...createFileMethods(mongoose),
     ...createMemoryMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
+    ...createAgentApiKeyMethods(mongoose),
     ...createMCPServerMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
     ...createUserGroupMethods(mongoose),
     ...createAclEntryMethods(mongoose),
     ...createShareMethods(mongoose),
     ...createPluginAuthMethods(mongoose),
+    ...createTransactionMethods(mongoose),
   };
 }
 
@@ -67,10 +74,12 @@ export type {
   FileMethods,
   MemoryMethods,
   AgentCategoryMethods,
+  AgentApiKeyMethods,
   MCPServerMethods,
   UserGroupMethods,
   AclEntryMethods,
   ShareMethods,
   AccessRoleMethods,
   PluginAuthMethods,
+  TransactionMethods,
 };

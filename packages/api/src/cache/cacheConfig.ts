@@ -27,9 +27,14 @@ const USE_REDIS_STREAMS =
 
 // Comma-separated list of cache namespaces that should be forced to use in-memory storage
 // even when Redis is enabled. This allows selective performance optimization for specific caches.
-const FORCED_IN_MEMORY_CACHE_NAMESPACES = process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES
-  ? process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES.split(',').map((key) => key.trim())
-  : [];
+// Defaults to CONFIG_STORE,APP_CONFIG so YAML-derived config stays per-container.
+// Set to empty string to force all namespaces through Redis.
+const FORCED_IN_MEMORY_CACHE_NAMESPACES =
+  process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES !== undefined
+    ? process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES.split(',')
+        .map((key) => key.trim())
+        .filter(Boolean)
+    : [CacheKeys.CONFIG_STORE, CacheKeys.APP_CONFIG];
 
 // Validate against CacheKeys enum
 if (FORCED_IN_MEMORY_CACHE_NAMESPACES.length > 0) {

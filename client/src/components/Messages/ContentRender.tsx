@@ -22,176 +22,175 @@ type ContentRenderProps = {
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
 >;
 
-const ContentRender = memo(
-  ({
+const ContentRender = memo(function ContentRender({
+  message: msg,
+  siblingIdx,
+  siblingCount,
+  setSiblingIdx,
+  currentEditId,
+  setCurrentEditId,
+  isSubmitting = false,
+}: ContentRenderProps) {
+  const localize = useLocalize();
+  const { attachments, searchResults } = useAttachments({
+    messageId: msg?.messageId,
+    attachments: msg?.attachments,
+  });
+  const {
+    edit,
+    index,
+    agent,
+    assistant,
+    enterEdit,
+    conversation,
+    messageLabel,
+    handleContinue,
+    handleFeedback,
+    latestMessageId,
+    copyToClipboard,
+    regenerateMessage,
+    latestMessageDepth,
+  } = useMessageActions({
     message: msg,
-    siblingIdx,
-    siblingCount,
-    setSiblingIdx,
+    searchResults,
     currentEditId,
     setCurrentEditId,
-    isSubmitting = false,
-  }: ContentRenderProps) => {
-    const localize = useLocalize();
-    const { attachments, searchResults } = useAttachments({
-      messageId: msg?.messageId,
-      attachments: msg?.attachments,
-    });
-    const {
-      edit,
-      index,
-      agent,
-      assistant,
-      enterEdit,
-      conversation,
+  });
+  const fontSize = useAtomValue(fontSizeAtom);
+  const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+
+  const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
+  const isLast = useMemo(
+    () => !(msg?.children?.length ?? 0) && (msg?.depth === latestMessageDepth || msg?.depth === -1),
+    [msg?.children, msg?.depth, latestMessageDepth],
+  );
+  const hasNoChildren = !(msg?.children?.length ?? 0);
+  const isLatestMessage = msg?.messageId === latestMessageId;
+  /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
+  const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+
+  const iconData: TMessageIcon = useMemo(
+    () => ({
+      endpoint: msg?.endpoint ?? conversation?.endpoint,
+      model: msg?.model ?? conversation?.model,
+      iconURL: msg?.iconURL,
+      modelLabel: messageLabel,
+      isCreatedByUser: msg?.isCreatedByUser,
+    }),
+    [
       messageLabel,
-      latestMessage,
-      handleContinue,
-      handleFeedback,
-      copyToClipboard,
-      regenerateMessage,
-    } = useMessageActions({
-      message: msg,
-      searchResults,
-      currentEditId,
-      setCurrentEditId,
-    });
-    const fontSize = useAtomValue(fontSizeAtom);
-    const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+      conversation?.endpoint,
+      conversation?.model,
+      msg?.model,
+      msg?.iconURL,
+      msg?.endpoint,
+      msg?.isCreatedByUser,
+    ],
+  );
 
-    const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
-    const isLast = useMemo(
-      () =>
-        !(msg?.children?.length ?? 0) && (msg?.depth === latestMessage?.depth || msg?.depth === -1),
-      [msg?.children, msg?.depth, latestMessage?.depth],
-    );
-    const hasNoChildren = !(msg?.children?.length ?? 0);
-    const isLatestMessage = msg?.messageId === latestMessage?.messageId;
-    /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
-    const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+  const { hasParallelContent } = useContentMetadata(msg);
 
-    const iconData: TMessageIcon = useMemo(
-      () => ({
-        endpoint: msg?.endpoint ?? conversation?.endpoint,
-        model: msg?.model ?? conversation?.model,
-        iconURL: msg?.iconURL,
-        modelLabel: messageLabel,
-        isCreatedByUser: msg?.isCreatedByUser,
-      }),
-      [
-        messageLabel,
-        conversation?.endpoint,
-        conversation?.model,
-        msg?.model,
-        msg?.iconURL,
-        msg?.endpoint,
-        msg?.isCreatedByUser,
-      ],
-    );
+  if (!msg) {
+    return null;
+  }
 
-    const { hasParallelContent } = useContentMetadata(msg);
-
-    if (!msg) {
-      return null;
+  const getChatWidthClass = () => {
+    if (maximizeChatSpace) {
+      return 'w-full max-w-full md:px-5 lg:px-1 xl:px-5';
     }
+    if (hasParallelContent) {
+      return 'md:max-w-[58rem] xl:max-w-[70rem]';
+    }
+    return 'md:max-w-[47rem] xl:max-w-[55rem]';
+  };
 
-    const getChatWidthClass = () => {
-      if (maximizeChatSpace) {
-        return 'w-full max-w-full md:px-5 lg:px-1 xl:px-5';
-      }
-      if (hasParallelContent) {
-        return 'md:max-w-[58rem] xl:max-w-[70rem]';
-      }
-      return 'md:max-w-[47rem] xl:max-w-[55rem]';
-    };
+  const baseClasses = {
+    common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu ',
+    chat: getChatWidthClass(),
+  };
 
-    const baseClasses = {
-      common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu ',
-      chat: getChatWidthClass(),
-    };
+  const conditionalClasses = {
+    focus: 'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
+  };
 
-    const conditionalClasses = {
-      focus: 'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
-    };
+  return (
+    <div
+      id={msg.messageId}
+      aria-label={getMessageAriaLabel(msg, localize)}
+      className={cn(
+        baseClasses.common,
+        baseClasses.chat,
+        conditionalClasses.focus,
+        'message-render',
+      )}
+    >
+      {!hasParallelContent && (
+        <div className="relative flex flex-shrink-0 flex-col items-center">
+          <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+            <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
+          </div>
+        </div>
+      )}
 
-    return (
       <div
-        id={msg.messageId}
-        aria-label={getMessageAriaLabel(msg, localize)}
         className={cn(
-          baseClasses.common,
-          baseClasses.chat,
-          conditionalClasses.focus,
-          'message-render',
+          'relative flex flex-col',
+          hasParallelContent ? 'w-full' : 'w-11/12',
+          msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
         )}
       >
         {!hasParallelContent && (
-          <div className="relative flex flex-shrink-0 flex-col items-center">
-            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-              <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
-            </div>
-          </div>
+          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
         )}
 
-        <div
-          className={cn(
-            'relative flex flex-col',
-            hasParallelContent ? 'w-full' : 'w-11/12',
-            msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
-          )}
-        >
-          {!hasParallelContent && (
-            <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
-          )}
-
-          <div className="flex flex-col gap-1">
-            <div className="flex max-w-full flex-grow flex-col gap-0">
-              <ContentParts
-                edit={edit}
-                isLast={isLast}
-                enterEdit={enterEdit}
-                siblingIdx={siblingIdx}
-                messageId={msg.messageId}
-                attachments={attachments}
-                searchResults={searchResults}
-                setSiblingIdx={setSiblingIdx}
-                isLatestMessage={isLatestMessage}
-                isSubmitting={effectiveIsSubmitting}
-                isCreatedByUser={msg.isCreatedByUser}
-                conversationId={conversation?.conversationId}
-                content={msg.content as Array<TMessageContentParts | undefined>}
-              />
-            </div>
-            {hasNoChildren && effectiveIsSubmitting ? (
-              <PlaceholderRow />
-            ) : (
-              <SubRow classes="text-xs">
-                <SiblingSwitch
-                  siblingIdx={siblingIdx}
-                  siblingCount={siblingCount}
-                  setSiblingIdx={setSiblingIdx}
-                />
-                <HoverButtons
-                  index={index}
-                  message={msg}
-                  isEditing={edit}
-                  enterEdit={enterEdit}
-                  isSubmitting={isSubmitting}
-                  conversation={conversation ?? null}
-                  regenerate={handleRegenerateMessage}
-                  copyToClipboard={copyToClipboard}
-                  handleContinue={handleContinue}
-                  latestMessage={latestMessage}
-                  handleFeedback={handleFeedback}
-                  isLast={isLast}
-                />
-              </SubRow>
-            )}
+        <div className="flex flex-col gap-1">
+          <div className="flex max-w-full flex-grow flex-col gap-0">
+            <ContentParts
+              edit={edit}
+              isLast={isLast}
+              enterEdit={enterEdit}
+              siblingIdx={siblingIdx}
+              messageId={msg.messageId}
+              attachments={attachments}
+              searchResults={searchResults}
+              setSiblingIdx={setSiblingIdx}
+              isLatestMessage={isLatestMessage}
+              isSubmitting={effectiveIsSubmitting}
+              isCreatedByUser={msg.isCreatedByUser}
+              conversationId={conversation?.conversationId}
+              content={msg.content as Array<TMessageContentParts | undefined>}
+            />
           </div>
+          {hasNoChildren && effectiveIsSubmitting ? (
+            <PlaceholderRow />
+          ) : (
+            <SubRow classes="text-xs">
+              <SiblingSwitch
+                siblingIdx={siblingIdx}
+                siblingCount={siblingCount}
+                setSiblingIdx={setSiblingIdx}
+              />
+              <HoverButtons
+                index={index}
+                message={msg}
+                isEditing={edit}
+                enterEdit={enterEdit}
+                isSubmitting={isSubmitting}
+                conversation={conversation ?? null}
+                regenerate={handleRegenerateMessage}
+                copyToClipboard={copyToClipboard}
+                handleContinue={handleContinue}
+                latestMessageId={latestMessageId}
+                handleFeedback={handleFeedback}
+                isLast={isLast}
+              />
+            </SubRow>
+          )}
         </div>
       </div>
-    );
-  },
-);
+    </div>
+  );
+});
+ContentRender.displayName = 'ContentRender';
 
 export default ContentRender;

@@ -3,7 +3,7 @@ const path = require('path');
 const axios = require('axios');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
-const { getFirebaseStorage } = require('@librechat/api');
+const { getFirebaseStorage, deleteRagFile } = require('@librechat/api');
 const { ref, uploadBytes, getDownloadURL, deleteObject } = require('firebase/storage');
 const { getBufferMetadata } = require('~/server/utils');
 
@@ -167,27 +167,7 @@ function extractFirebaseFilePath(urlString) {
  *          Throws an error if there is an issue with deletion.
  */
 const deleteFirebaseFile = async (req, file) => {
-  if (file.embedded && process.env.RAG_API_URL) {
-    const jwtToken = req.headers.authorization.split(' ')[1];
-    try {
-      await axios.delete(`${process.env.RAG_API_URL}/documents`, {
-        headers: {
-          Authorization: `Bearer ${jwtToken}`,
-          'Content-Type': 'application/json',
-          accept: 'application/json',
-        },
-        data: [file.file_id],
-      });
-    } catch (error) {
-      if (error.response?.status === 404) {
-        logger.warn(
-          `[deleteFirebaseFile] Document ${file.file_id} not found in RAG API, may have been deleted already`,
-        );
-      } else {
-        logger.error('[deleteFirebaseFile] Error deleting document from RAG API:', error);
-      }
-    }
-  }
+  await deleteRagFile({ userId: req.user.id, file });
 
   const fileName = extractFirebaseFilePath(file.filepath);
   if (!fileName.includes(req.user.id)) {

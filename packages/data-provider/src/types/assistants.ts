@@ -206,6 +206,38 @@ export type SupportContact = {
   email?: string;
 };
 
+/**
+ * Specifies who can invoke a tool.
+ * - 'direct': LLM can call directly
+ * - 'code_execution': Only callable via programmatic tool calling (PTC)
+ */
+export type AllowedCaller = 'direct' | 'code_execution';
+
+/**
+ * Per-tool configuration options stored at the agent level.
+ * Keyed by tool_id (e.g., "search_mcp_github").
+ */
+export type ToolOptions = {
+  /**
+   * If true, the tool uses deferred loading (discoverable via tool search).
+   * @default false
+   */
+  defer_loading?: boolean;
+  /**
+   * Specifies who can invoke this tool.
+   * - 'direct': LLM can call directly (default behavior)
+   * - 'code_execution': Only callable via PTC sandbox
+   * @default ['direct']
+   */
+  allowed_callers?: AllowedCaller[];
+};
+
+/**
+ * Map of tool_id to its configuration options.
+ * Used to customize tool behavior per agent.
+ */
+export type AgentToolOptions = Record<string, ToolOptions>;
+
 export type Agent = {
   _id?: string;
   id: string;
@@ -241,6 +273,8 @@ export type Agent = {
   version?: number;
   category?: string;
   support_contact?: SupportContact;
+  /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
+  tool_options?: AgentToolOptions;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -265,6 +299,7 @@ export type AgentCreateParams = {
   | 'recursion_limit'
   | 'category'
   | 'support_contact'
+  | 'tool_options'
 >;
 
 export type AgentUpdateParams = {
@@ -291,6 +326,7 @@ export type AgentUpdateParams = {
   | 'recursion_limit'
   | 'category'
   | 'support_contact'
+  | 'tool_options'
 >;
 
 export type AgentListParams = {

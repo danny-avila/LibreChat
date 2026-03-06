@@ -1,25 +1,32 @@
 import React, { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { Constants } from 'librechat-data-provider';
+import { ChevronDown, Clock, Code2 } from 'lucide-react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import {
   Label,
-  ESide,
   Checkbox,
   OGDialog,
   Accordion,
   TrashIcon,
-  InfoHoverCard,
+  TooltipAnchor,
   AccordionItem,
   OGDialogTrigger,
   AccordionContent,
   OGDialogTemplate,
 } from '@librechat/client';
 import type { AgentForm, MCPServerInfo } from '~/common';
-import { useLocalize, useMCPServerManager, useRemoveMCPTool } from '~/hooks';
+import {
+  useAgentCapabilities,
+  useMCPServerManager,
+  useGetAgentsConfig,
+  useMCPToolOptions,
+  useRemoveMCPTool,
+  useLocalize,
+} from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
+import MCPToolItem from './MCPToolItem';
 import { cn } from '~/utils';
 
 export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) {
@@ -27,6 +34,21 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
   const { removeTool } = useRemoveMCPTool();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
+  const { agentsConfig } = useGetAgentsConfig();
+  const { deferredToolsEnabled, programmaticToolsEnabled } = useAgentCapabilities(
+    agentsConfig?.capabilities,
+  );
+
+  const {
+    isToolDeferred,
+    isToolProgrammatic,
+    toggleToolDefer,
+    toggleToolProgrammatic,
+    areAllToolsDeferred,
+    areAllToolsProgrammatic,
+    toggleDeferAll,
+    toggleProgrammaticAll,
+  } = useMCPToolOptions();
 
   const [isFocused, setIsFocused] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
@@ -37,32 +59,38 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
   }
 
   const currentServerName = serverInfo.serverName;
+  const tools = serverInfo.tools || [];
 
   const getSelectedTools = () => {
-    if (!serverInfo?.tools) return [];
     const formTools = getValues('tools') || [];
-    return serverInfo.tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
+    return tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
   };
 
   const updateFormTools = (newSelectedTools: string[]) => {
     const currentTools = getValues('tools') || [];
-    const otherTools = currentTools.filter(
-      (t: string) => !serverInfo?.tools?.some((st) => st.tool_id === t),
-    );
+    const otherTools = currentTools.filter((t: string) => !tools.some((st) => st.tool_id === t));
     setValue('tools', [...otherTools, ...newSelectedTools]);
+  };
+
+  const toggleToolSelect = (toolId: string) => {
+    const selectedTools = getSelectedTools();
+    const newSelectedTools = selectedTools.includes(toolId)
+      ? selectedTools.filter((t) => t !== toolId)
+      : [...selectedTools, toolId];
+    updateFormTools(newSelectedTools);
   };
 
   const selectedTools = getSelectedTools();
   const isExpanded = accordionValue === currentServerName;
+  const allDeferred = areAllToolsDeferred(tools);
+  const allProgrammatic = areAllToolsProgrammatic(tools);
 
   const statusIconProps = getServerStatusIconProps(currentServerName);
   const configDialogProps = getConfigDialogProps();
 
   const statusIcon = statusIconProps && (
     <div
-      onClick={(e) => {
-        e.stopPropagation();
-      }}
+      onClick={(e) => e.stopPropagation()}
       className="cursor-pointer rounded p-0.5 hover:bg-surface-secondary"
     >
       <MCPServerStatusIcon {...statusIconProps} />
@@ -87,14 +115,7 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
             <AccordionPrimitive.Header asChild>
               <div
                 className="flex grow cursor-pointer select-none items-center gap-1 rounded bg-transparent p-0 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
-                onClick={() =>
-                  setAccordionValue((prev) => {
-                    if (prev) {
-                      return '';
-                    }
-                    return currentServerName;
-                  })
-                }
+                onClick={() => setAccordionValue((prev) => (prev ? '' : currentServerName))}
               >
                 {statusIcon && <div className="flex items-center">{statusIcon}</div>}
 
@@ -134,18 +155,15 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                           <Checkbox
                             id={`select-all-${currentServerName}`}
                             checked={
-                              selectedTools.length === serverInfo.tools?.length &&
-                              selectedTools.length > 0
+                              selectedTools.length === tools.length && selectedTools.length > 0
                             }
                             onCheckedChange={(checked) => {
-                              if (serverInfo.tools) {
-                                const newSelectedTools = checked
-                                  ? serverInfo.tools.map((t) => t.tool_id)
-                                  : [
-                                      `${Constants.mcp_server}${Constants.mcp_delimiter}${currentServerName}`,
-                                    ];
-                                updateFormTools(newSelectedTools);
-                              }
+                              const newSelectedTools = checked
+                                ? tools.map((t) => t.tool_id)
+                                : [
+                                    `${Constants.mcp_server}${Constants.mcp_delimiter}${currentServerName}`,
+                                  ];
+                              updateFormTools(newSelectedTools);
                             }}
                             className={cn(
                               'h-4 w-4 rounded border border-border-medium transition-all duration-200 hover:border-border-heavy',
@@ -162,22 +180,100 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                             }}
                             tabIndex={isExpanded ? 0 : -1}
                             aria-label={
-                              selectedTools.length === serverInfo.tools?.length &&
-                              selectedTools.length > 0
+                              selectedTools.length === tools.length && selectedTools.length > 0
                                 ? localize('com_ui_deselect_all')
                                 : localize('com_ui_select_all')
                             }
                           />
                         </div>
 
+                        {deferredToolsEnabled && (
+                          <TooltipAnchor
+                            description={
+                              allDeferred
+                                ? localize('com_ui_mcp_undefer_all')
+                                : localize('com_ui_mcp_defer_all')
+                            }
+                            side="top"
+                            role="button"
+                            tabIndex={isExpanded ? 0 : -1}
+                            aria-label={
+                              allDeferred
+                                ? localize('com_ui_mcp_undefer_all')
+                                : localize('com_ui_mcp_defer_all')
+                            }
+                            aria-pressed={allDeferred}
+                            className={cn(
+                              'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
+                              'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                              isExpanded ? 'visible' : 'pointer-events-none invisible',
+                              allDeferred
+                                ? 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30'
+                                : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleDeferAll(tools);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleDeferAll(tools);
+                              }
+                            }}
+                          >
+                            <Clock className={cn('h-4 w-4', allDeferred && 'fill-amber-500/30')} />
+                          </TooltipAnchor>
+                        )}
+
+                        {programmaticToolsEnabled && (
+                          <TooltipAnchor
+                            description={
+                              allProgrammatic
+                                ? localize('com_ui_mcp_unprogrammatic_all')
+                                : localize('com_ui_mcp_programmatic_all')
+                            }
+                            side="top"
+                            role="button"
+                            tabIndex={isExpanded ? 0 : -1}
+                            aria-label={
+                              allProgrammatic
+                                ? localize('com_ui_mcp_unprogrammatic_all')
+                                : localize('com_ui_mcp_programmatic_all')
+                            }
+                            aria-pressed={allProgrammatic}
+                            className={cn(
+                              'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
+                              'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                              isExpanded ? 'visible' : 'pointer-events-none invisible',
+                              allProgrammatic
+                                ? 'bg-violet-500/20 text-violet-500 hover:bg-violet-500/30'
+                                : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleProgrammaticAll(tools);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleProgrammaticAll(tools);
+                              }
+                            }}
+                          >
+                            <Code2
+                              className={cn('h-4 w-4', allProgrammatic && 'fill-violet-500/30')}
+                            />
+                          </TooltipAnchor>
+                        )}
+
                         <div className="flex items-center gap-1">
-                          {/* Caret button for accordion */}
                           <AccordionPrimitive.Trigger asChild>
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                              }}
+                              onClick={(e) => e.stopPropagation()}
                               className={cn(
                                 'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 hover:bg-surface-active-alt focus:translate-x-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
                                 isExpanded && 'bg-surface-active-alt',
@@ -207,10 +303,7 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                           <OGDialogTrigger asChild>
                             <button
                               type="button"
-                              className={cn(
-                                'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
-                                'hover:bg-surface-active-alt focus:translate-x-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-                              )}
+                              className="flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 hover:bg-surface-active-alt focus:translate-x-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
                               onClick={(e) => e.stopPropagation()}
                               aria-label={`Delete ${currentServerName}`}
                               tabIndex={0}
@@ -230,51 +323,19 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
 
           <AccordionContent className="relative ml-1 pt-1 before:absolute before:bottom-2 before:left-0 before:top-0 before:w-0.5 before:bg-border-medium">
             <div className="space-y-1">
-              {serverInfo.tools?.map((subTool) => (
-                <label
-                  key={subTool.tool_id}
-                  htmlFor={subTool.tool_id}
-                  className={cn(
-                    'group/item border-token-border-light hover:bg-token-surface-secondary flex cursor-pointer items-center rounded-lg border p-2',
-                    'ml-2 mr-1 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
-                  )}
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    e.stopPropagation();
-                  }}
-                >
-                  <Checkbox
-                    id={subTool.tool_id}
-                    checked={selectedTools.includes(subTool.tool_id)}
-                    onCheckedChange={(_checked) => {
-                      const newSelectedTools = selectedTools.includes(subTool.tool_id)
-                        ? selectedTools.filter((t) => t !== subTool.tool_id)
-                        : [...selectedTools, subTool.tool_id];
-                      updateFormTools(newSelectedTools);
-                    }}
-                    onKeyDown={(e) => {
-                      e.stopPropagation();
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        const checkbox = e.currentTarget as HTMLButtonElement;
-                        checkbox.click();
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className={cn(
-                      'relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-border-medium transition-[border-color] duration-200 hover:border-border-heavy focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
-                    )}
-                    aria-label={subTool.metadata.name}
-                  />
-                  <span className="text-token-text-primary select-none">
-                    {subTool.metadata.name}
-                  </span>
-                  {subTool.metadata.description && (
-                    <div className="ml-auto flex items-center opacity-0 transition-opacity duration-200 group-focus-within/item:opacity-100 group-hover/item:opacity-100">
-                      <InfoHoverCard side={ESide.Left} text={subTool.metadata.description} />
-                    </div>
-                  )}
-                </label>
+              {tools.map((tool) => (
+                <MCPToolItem
+                  key={tool.tool_id}
+                  tool={tool}
+                  isSelected={selectedTools.includes(tool.tool_id)}
+                  isDeferred={deferredToolsEnabled && isToolDeferred(tool.tool_id)}
+                  isProgrammatic={programmaticToolsEnabled && isToolProgrammatic(tool.tool_id)}
+                  deferredToolsEnabled={deferredToolsEnabled}
+                  programmaticToolsEnabled={programmaticToolsEnabled}
+                  onToggleSelect={() => toggleToolSelect(tool.tool_id)}
+                  onToggleDefer={() => toggleToolDefer(tool.tool_id)}
+                  onToggleProgrammatic={() => toggleToolProgrammatic(tool.tool_id)}
+                />
               ))}
             </div>
           </AccordionContent>

@@ -1,6 +1,14 @@
 import { atom } from 'jotai';
 import { atomFamily, atomWithStorage } from 'jotai/utils';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import { createTabIsolatedStorage } from './jotai-utils';
+
+/**
+ * Tab-isolated storage for MCP values — prevents cross-tab sync so that
+ * each tab's MCP server selections are independent (especially for new chats
+ * which all share the same `LAST_MCP_new` localStorage key).
+ */
+const mcpTabIsolatedStorage = createTabIsolatedStorage<string[]>();
 
 /**
  * Creates a storage atom for MCP values per conversation
@@ -10,7 +18,7 @@ export const mcpValuesAtomFamily = atomFamily((conversationId: string | null) =>
   const key = conversationId ?? Constants.NEW_CONVO;
   const storageKey = `${LocalStorageKeys.LAST_MCP_}${key}`;
 
-  return atomWithStorage<string[]>(storageKey, [], undefined, { getOnInit: true });
+  return atomWithStorage<string[]>(storageKey, [], mcpTabIsolatedStorage, { getOnInit: true });
 });
 
 /**

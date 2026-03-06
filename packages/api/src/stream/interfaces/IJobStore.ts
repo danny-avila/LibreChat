@@ -286,7 +286,7 @@ export interface IJobStore {
  * Implementations can use EventEmitter, Redis Pub/Sub, etc.
  */
 export interface IEventTransport {
-  /** Subscribe to events for a stream */
+  /** Subscribe to events for a stream. `ready` resolves once the transport can receive messages. */
   subscribe(
     streamId: string,
     handlers: {
@@ -294,16 +294,16 @@ export interface IEventTransport {
       onDone?: (event: unknown) => void;
       onError?: (error: string) => void;
     },
-  ): { unsubscribe: () => void };
+  ): { unsubscribe: () => void; ready?: Promise<void> };
 
-  /** Publish a chunk event */
-  emitChunk(streamId: string, event: unknown): void;
+  /** Publish a chunk event - returns Promise in Redis mode for ordered delivery */
+  emitChunk(streamId: string, event: unknown): void | Promise<void>;
 
-  /** Publish a done event */
-  emitDone(streamId: string, event: unknown): void;
+  /** Publish a done event - returns Promise in Redis mode for ordered delivery */
+  emitDone(streamId: string, event: unknown): void | Promise<void>;
 
-  /** Publish an error event */
-  emitError(streamId: string, error: string): void;
+  /** Publish an error event - returns Promise in Redis mode for ordered delivery */
+  emitError(streamId: string, error: string): void | Promise<void>;
 
   /**
    * Publish an abort signal to all replicas (Redis mode).
@@ -328,6 +328,12 @@ export interface IEventTransport {
 
   /** Listen for all subscribers leaving */
   onAllSubscribersLeft(streamId: string, callback: () => void): void;
+
+  /** Reset publish sequence counter for a stream (used during full stream cleanup) */
+  resetSequence?(streamId: string): void;
+
+  /** Advance subscriber reorder buffer to match publisher sequence (cross-replica safe: doesn't reset publisher counter) */
+  syncReorderBuffer?(streamId: string): void;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;
