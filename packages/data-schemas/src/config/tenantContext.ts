@@ -7,6 +7,11 @@ export interface TenantContext {
 /** Sentinel value for deliberate cross-tenant system operations */
 export const SYSTEM_TENANT_ID = '__SYSTEM__';
 
+/**
+ * AsyncLocalStorage instance for propagating tenant context.
+ * Callbacks passed to `tenantStorage.run()` must be `async` for the context to propagate
+ * through Mongoose query execution. Sync callbacks returning a Mongoose thenable will lose context.
+ */
 export const tenantStorage = new AsyncLocalStorage<TenantContext>();
 
 /** Returns the current tenant ID from async context, or undefined if none is set */

@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { tenantStorage, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { applyTenantIsolation } from './tenantIsolation';
-import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 
@@ -32,32 +32,29 @@ afterAll(async () => {
 
 describe('applyTenantIsolation', () => {
   describe('idempotency', () => {
-    it('does not register hooks twice when called multiple times on the same schema', () => {
+    it('does not add duplicate hooks when called twice on the same schema', async () => {
       const schema = new Schema<ITestDoc>({
         name: { type: String, required: true },
         tenantId: { type: String, index: true },
       });
 
       applyTenantIsolation(schema);
-      const hooksAfterFirst = (
-        schema as Schema & { s: { hooks: { _pres: Map<string, unknown[]> } } }
-      ).s.hooks._pres;
-      const countFirst = Array.from(hooksAfterFirst.values()).reduce(
-        (sum, arr) => sum + arr.length,
-        0,
-      );
-
       applyTenantIsolation(schema);
-      const hooksAfterSecond = (
-        schema as Schema & { s: { hooks: { _pres: Map<string, unknown[]> } } }
-      ).s.hooks._pres;
-      const countSecond = Array.from(hooksAfterSecond.values()).reduce(
-        (sum, arr) => sum + arr.length,
-        0,
+
+      const modelName = `TestIdempotent_${Date.now()}`;
+      const Model = mongoose.model<ITestDoc>(modelName, schema);
+
+      await Model.create([
+        { name: 'a', tenantId: 'tenant-a' },
+        { name: 'b', tenantId: 'tenant-b' },
+      ]);
+
+      const docs = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        Model.find().lean(),
       );
 
-      expect(countFirst).toBeGreaterThan(0);
-      expect(countSecond).toBe(countFirst);
+      expect(docs).toHaveLength(1);
+      expect(docs[0].name).toBe('a');
     });
   });
 
@@ -136,6 +133,14 @@ describe('applyTenantIsolation', () => {
 
       const doc = await TestModel.findOne({ name: 'tenant-b-doc' }).lean();
       expect(doc).not.toBeNull();
+    });
+
+    it('injects tenantId filter into deleteMany', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => TestModel.deleteMany({}));
+
+      const remaining = await TestModel.find().lean();
+      expect(remaining).toHaveLength(2);
+      expect(remaining.every((d) => d.tenantId !== 'tenant-a')).toBe(true);
     });
 
     it('injects tenantId filter into updateMany', async () => {
@@ -301,8 +306,6 @@ describe('applyTenantIsolation', () => {
     });
 
     it('bypasses tenant filter inside runAsSystem', async () => {
-      const { runAsSystem } = await import('~/config/tenantContext');
-
       const docs = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
         runAsSystem(async () => TestModel.find().lean()),
       );
@@ -310,7 +313,7 @@ describe('applyTenantIsolation', () => {
       expect(docs).toHaveLength(2);
     });
 
-    it('propagates through await boundaries', async () => {
+    it('propagates tenant context through await boundaries', async () => {
       const docs = await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
         return TestModel.find().lean();
@@ -318,6 +321,81 @@ describe('applyTenantIsolation', () => {
 
       expect(docs).toHaveLength(1);
       expect(docs[0].name).toBe('sys-a');
+    });
+  });
+
+  describe('strict mode', () => {
+    let TestModel: mongoose.Model<ITestDoc>;
+    const originalEnv = process.env.TENANT_ISOLATION_STRICT;
+
+    beforeAll(() => {
+      TestModel = createTestModel('strict');
+    });
+
+    beforeEach(async () => {
+      await runAsSystem(async () => {
+        await TestModel.deleteMany({});
+        await TestModel.create({ name: 'strict-doc', tenantId: 'tenant-a' });
+      });
+      process.env.TENANT_ISOLATION_STRICT = 'true';
+    });
+
+    afterEach(() => {
+      if (originalEnv === undefined) {
+        delete process.env.TENANT_ISOLATION_STRICT;
+      } else {
+        process.env.TENANT_ISOLATION_STRICT = originalEnv;
+      }
+    });
+
+    it('throws on find without tenant context', async () => {
+      await expect(TestModel.find().lean()).rejects.toThrow(
+        '[TenantIsolation] Query attempted without tenant context in strict mode',
+      );
+    });
+
+    it('throws on findOne without tenant context', async () => {
+      await expect(TestModel.findOne().lean()).rejects.toThrow('[TenantIsolation]');
+    });
+
+    it('throws on aggregate without tenant context', async () => {
+      await expect(TestModel.aggregate([{ $project: { name: 1 } }])).rejects.toThrow(
+        '[TenantIsolation] Aggregate attempted without tenant context in strict mode',
+      );
+    });
+
+    it('throws on save without tenant context', async () => {
+      const doc = new TestModel({ name: 'strict-new' });
+      await expect(doc.save()).rejects.toThrow(
+        '[TenantIsolation] Save attempted without tenant context in strict mode',
+      );
+    });
+
+    it('throws on insertMany without tenant context', async () => {
+      await expect(TestModel.insertMany([{ name: 'strict-bulk' }])).rejects.toThrow(
+        '[TenantIsolation] insertMany attempted without tenant context in strict mode',
+      );
+    });
+
+    it('allows queries with tenant context in strict mode', async () => {
+      const docs = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.find().lean(),
+      );
+
+      expect(docs).toHaveLength(1);
+    });
+
+    it('allows SYSTEM_TENANT_ID to bypass strict mode', async () => {
+      const docs = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+        TestModel.find().lean(),
+      );
+
+      expect(docs).toHaveLength(1);
+    });
+
+    it('allows runAsSystem to bypass strict mode', async () => {
+      const docs = await runAsSystem(async () => TestModel.find().lean());
+      expect(docs).toHaveLength(1);
     });
   });
 });

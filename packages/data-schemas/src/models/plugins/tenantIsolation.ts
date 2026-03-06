@@ -1,7 +1,9 @@
 import type { Schema, Query, Aggregate } from 'mongoose';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 
-const STRICT = process.env.TENANT_ISOLATION_STRICT === 'true';
+function isStrict(): boolean {
+  return process.env.TENANT_ISOLATION_STRICT === 'true';
+}
 
 if (
   process.env.TENANT_ISOLATION_STRICT &&
@@ -34,7 +36,7 @@ export function applyTenantIsolation(schema: Schema): void {
   const queryMiddleware = function (this: Query<unknown, unknown>) {
     const tenantId = getTenantId();
 
-    if (!tenantId && STRICT) {
+    if (!tenantId && isStrict()) {
       throw new Error('[TenantIsolation] Query attempted without tenant context in strict mode');
     }
 
@@ -60,7 +62,7 @@ export function applyTenantIsolation(schema: Schema): void {
   schema.pre('aggregate', function (this: Aggregate<unknown>) {
     const tenantId = getTenantId();
 
-    if (!tenantId && STRICT) {
+    if (!tenantId && isStrict()) {
       throw new Error(
         '[TenantIsolation] Aggregate attempted without tenant context in strict mode',
       );
@@ -76,7 +78,7 @@ export function applyTenantIsolation(schema: Schema): void {
   schema.pre('save', function () {
     const tenantId = getTenantId();
 
-    if (!tenantId && STRICT) {
+    if (!tenantId && isStrict()) {
       throw new Error('[TenantIsolation] Save attempted without tenant context in strict mode');
     }
 
@@ -88,7 +90,7 @@ export function applyTenantIsolation(schema: Schema): void {
   schema.pre('insertMany', function (next, docs) {
     const tenantId = getTenantId();
 
-    if (!tenantId && STRICT) {
+    if (!tenantId && isStrict()) {
       next(
         new Error('[TenantIsolation] insertMany attempted without tenant context in strict mode'),
       );
