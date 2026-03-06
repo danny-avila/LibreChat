@@ -12,13 +12,14 @@ import {
 import type { TPreset } from 'librechat-data-provider';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
-import { useGetEndpointsQuery } from '~/data-provider';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { componentMapping } from './components';
 import { useChatContext } from '~/Providers';
 import { logger } from '~/utils';
 
 export default function Parameters() {
   const localize = useLocalize();
+  const { data: startupConfig } = useGetStartupConfig();
   const { conversation, setConversation } = useChatContext();
   const { setOption } = useSetIndexOptions();
 
@@ -42,13 +43,14 @@ export default function Parameters() {
     const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model);
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
+    const isWebSearchEnabled = !startupConfig?.endpointsToWebSearchFromParamSidePanel?.includes(conversation?.endpoint);
     const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
     return defaultParams
-      .filter((param) => param != null)
+      .filter((param) => param != null && (isWebSearchEnabled || param.key !== 'web_search'))
       .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
-  }, [endpointType, endpointsConfig, model, provider]);
+  }, [endpointType, endpointsConfig, model, provider, startupConfig]);
 
   useEffect(() => {
     if (!parameters) {

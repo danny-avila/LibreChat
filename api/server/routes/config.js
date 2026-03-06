@@ -1,7 +1,7 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, getBalanceConfig } = require('@librechat/api');
-const { Constants, CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
+const { Constants, CacheKeys, defaultSocialLogins, paramEndpoints } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
 const { getProjectByName } = require('~/models/Project');
@@ -32,6 +32,35 @@ router.get('/', async function (req, res) {
     return;
   }
 
+  const getEndpointsWithDropParam = (param) => (endpoints) => {
+    const result = [];
+    Object.keys(endpoints)
+      .filter((endpointName) => paramEndpoints.has(endpointName) && endpointName !== 'agents')
+      .forEach((endpointName) => {
+        const endpointConfig = endpoints[endpointName];
+        if (Array.isArray(endpointConfig)) {
+          // For array endpoints (like 'custom'), check if any item has the param in dropParams
+          endpointConfig.forEach((endpoint) => {
+            if (
+              endpoint &&
+              Array.isArray(endpoint.dropParams) &&
+              endpoint.dropParams.includes(param) &&
+              typeof endpoint.name === 'string'
+            ) {
+              result.push(endpoint.name);
+            }
+          });
+        } else if (
+          endpointConfig &&
+          Array.isArray(endpointConfig.dropParams) &&
+          endpointConfig.dropParams.includes(param)
+        ) {
+          result.push(endpointName);
+        }
+      });
+    return result;
+  };
+
   const isBirthday = () => {
     const today = new Date();
     return today.getMonth() === 1 && today.getDate() === 11;
@@ -43,6 +72,8 @@ router.get('/', async function (req, res) {
 
   try {
     const appConfig = await getAppConfig({ role: req.user?.role });
+    
+    const endpointsToWebSearchFromParamSidePanel = getEndpointsWithDropParam('web_search')(appConfig.endpoints);
 
     const isOpenIdEnabled =
       !!process.env.OPENID_CLIENT_ID &&
@@ -61,6 +92,7 @@ router.get('/', async function (req, res) {
     /** @type {TStartupConfig} */
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
+      endpointsToWebSearchFromParamSidePanel: endpointsToWebSearchFromParamSidePanel,
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       facebookLoginEnabled:
