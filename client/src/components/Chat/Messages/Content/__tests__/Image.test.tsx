@@ -1,9 +1,13 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import Image from '../Image';
+import Image, { _resetImageCaches } from '../Image';
 
 jest.mock('~/utils', () => ({
-  cn: (...classes: any[]) => classes.flat(Infinity).filter(Boolean).join(' '),
+  cn: (...classes: (string | boolean | undefined | null)[]) =>
+    classes
+      .flat(Infinity)
+      .filter((c): c is string => typeof c === 'string' && c.length > 0)
+      .join(' '),
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -29,6 +33,7 @@ describe('Image', () => {
   };
 
   beforeEach(() => {
+    _resetImageCaches();
     jest.clearAllMocks();
   });
 
@@ -138,7 +143,7 @@ describe('Image', () => {
     });
 
     it('dialog is always mounted (not gated by load state)', () => {
-      const { container } = render(<Image {...defaultProps} />);
+      render(<Image {...defaultProps} />);
       // DialogImage mock returns null when isOpen=false, but the component is in the tree
       // Clicking should immediately show it
       fireEvent.click(screen.getByRole('button'));
