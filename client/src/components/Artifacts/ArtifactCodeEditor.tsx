@@ -112,7 +112,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
             ? true
             : code != null && code.trim() !== currentUpdateRef.current.trim();
 
-        if (art.content && isNotOriginal && isNotRepeated && art.index != null) {
+        if (art.content != null && isNotOriginal && isNotRepeated && art.index != null) {
           setCurrentCodeRef.current(code);
           editArtifactRef.current.mutate({
             index: art.index,
@@ -180,13 +180,13 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
     prevArtifactId.current = artifact.id;
     prevContentRef.current = artifact.content ?? '';
     const ed = monacoRef.current;
-    if (ed && artifact.content) {
+    if (ed && artifact.content != null) {
       ed.getModel()?.setValue(artifact.content);
     }
   }, [artifact.id, artifact.content, monacoRef]);
 
   useEffect(() => {
-    if (prevReadOnly.current && !readOnly && artifact.content) {
+    if (prevReadOnly.current && !readOnly && artifact.content != null) {
       const ed = monacoRef.current;
       if (ed) {
         ed.getModel()?.setValue(artifact.content);
