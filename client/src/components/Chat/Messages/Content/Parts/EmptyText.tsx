@@ -1,5 +1,6 @@
 import { memo } from 'react';
 
+/** Streaming cursor placeholder — no bottom margin to match Container's structure and prevent CLS */
 const EmptyTextPart = memo(() => {
   return (
     <div className="text-message flex min-h-[20px] flex-col items-start gap-3 overflow-visible">

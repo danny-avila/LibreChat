@@ -112,12 +112,14 @@ export default function FileRow({
           )
           .uniqueFiles.map((file: ExtendedFile, index: number) => {
             const handleDelete = () => {
-              showToast({
-                message: localize('com_ui_deleting_file'),
-                status: 'info',
-              });
               if (abortUpload && file.progress < 1) {
                 abortUpload();
+              }
+              if (file.progress >= 1) {
+                showToast({
+                  message: localize('com_ui_deleting_file'),
+                  status: 'info',
+                });
               }
               deleteFile({ file, setFiles });
             };

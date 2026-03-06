@@ -9,9 +9,9 @@ import {
 import { memo } from 'react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
 import { OpenAIImageGen, EmptyText, Reasoning, ExecuteCode, AgentUpdate, Text } from './Parts';
-import { getCachedPreview } from '~/utils/previewCache';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
+import { getCachedPreview } from '~/utils';
 import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';

@@ -536,8 +536,9 @@ export default function useEventHandlers({
           );
           for (let i = 0; i < finalMessages.length; i++) {
             const msg = finalMessages[i];
-            if ((!msg.files || msg.files.length === 0) && currentMsgMap.has(msg.messageId)) {
-              finalMessages[i] = { ...msg, files: currentMsgMap.get(msg.messageId) };
+            const preservedFiles = currentMsgMap.get(msg.messageId);
+            if ((!msg.files || msg.files.length === 0) && preservedFiles) {
+              finalMessages[i] = { ...msg, files: preservedFiles };
             }
           }
         }

@@ -1,7 +1,7 @@
 import { useMemo, memo } from 'react';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
-import { getCachedPreview } from '~/utils/previewCache';
+import { getCachedPreview } from '~/utils';
 import Image from './Image';
 
 const Files = ({ message }: { message?: TMessage }) => {
