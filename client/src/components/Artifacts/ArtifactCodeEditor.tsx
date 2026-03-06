@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import MonacoEditor from '@monaco-editor/react';
 import debounce from 'lodash/debounce';
+import MonacoEditor from '@monaco-editor/react';
 import type { Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import type { Artifact } from '~/common';
@@ -213,26 +213,29 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   /**
    * Disable all validation — this is an artifact viewer/editor, not an IDE.
    * Note: these are global Monaco settings that affect all editor instances on the page.
+   * The `as unknown` cast is required because monaco-editor v0.55 types `.languages.typescript`
+   * as `{ deprecated: true }` while the runtime API is fully functional.
    */
   const handleBeforeMount = useCallback((monaco: Monaco) => {
-    const ts = monaco.languages.typescript as unknown as {
+    const { typescriptDefaults, javascriptDefaults, JsxEmit } = monaco.languages
+      .typescript as unknown as {
       typescriptDefaults: {
-        setDiagnosticsOptions: (opts: {
+        setDiagnosticsOptions: (o: {
           noSemanticValidation: boolean;
           noSyntaxValidation: boolean;
         }) => void;
-        setCompilerOptions: (opts: {
+        setCompilerOptions: (o: {
           allowNonTsExtensions: boolean;
           allowJs: boolean;
           jsx: number;
         }) => void;
       };
       javascriptDefaults: {
-        setDiagnosticsOptions: (opts: {
+        setDiagnosticsOptions: (o: {
           noSemanticValidation: boolean;
           noSyntaxValidation: boolean;
         }) => void;
-        setCompilerOptions: (opts: {
+        setCompilerOptions: (o: {
           allowNonTsExtensions: boolean;
           allowJs: boolean;
           jsx: number;
@@ -241,15 +244,11 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
       JsxEmit: { React: number };
     };
     const diagnosticsOff = { noSemanticValidation: true, noSyntaxValidation: true };
-    const compilerBase = {
-      allowNonTsExtensions: true,
-      allowJs: true,
-      jsx: ts.JsxEmit.React,
-    };
-    ts.typescriptDefaults.setDiagnosticsOptions(diagnosticsOff);
-    ts.javascriptDefaults.setDiagnosticsOptions(diagnosticsOff);
-    ts.typescriptDefaults.setCompilerOptions(compilerBase);
-    ts.javascriptDefaults.setCompilerOptions(compilerBase);
+    const compilerBase = { allowNonTsExtensions: true, allowJs: true, jsx: JsxEmit.React };
+    typescriptDefaults.setDiagnosticsOptions(diagnosticsOff);
+    javascriptDefaults.setDiagnosticsOptions(diagnosticsOff);
+    typescriptDefaults.setCompilerOptions(compilerBase);
+    javascriptDefaults.setCompilerOptions(compilerBase);
   }, []);
 
   const handleMount = useCallback(
