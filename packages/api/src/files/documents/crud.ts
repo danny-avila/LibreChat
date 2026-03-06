@@ -68,15 +68,17 @@ async function pdfToText(file: Express.Multer.File): Promise<string> {
 /** Parses Word document, returns text inside. */
 async function wordDocToText(file: Express.Multer.File): Promise<string> {
   const { extractRawText } = await import('mammoth');
-  const rawText = await extractRawText({ path: file.path });
+  const rawText = await extractRawText({ buffer: await fs.promises.readFile(file.path) });
   return rawText.value;
 }
 
 /** Parses Excel sheet, returns text inside. */
 async function excelSheetToText(file: Express.Multer.File): Promise<string> {
+  // xlsx CDN build (0.20.x) does not bind fs internally when dynamically imported;
+  // readFile() fails with "Cannot access file". read() takes a pre-loaded Buffer instead.
   const { read, utils } = await import('xlsx');
   const data = await fs.promises.readFile(file.path);
-  const workbook = read(data);
+  const workbook = read(data, { type: 'buffer' });
 
   let text = '';
   for (const sheetName of workbook.SheetNames) {
