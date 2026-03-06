@@ -214,6 +214,19 @@ describe('getModelMaxTokens', () => {
     );
   });
 
+  test('should return correct tokens for gpt-5.4 matches', () => {
+    expect(getModelMaxTokens('gpt-5.4')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5.4']);
+    expect(getModelMaxTokens('gpt-5.4-thinking')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.4'],
+    );
+    expect(getModelMaxTokens('openai/gpt-5.4')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.4'],
+    );
+    expect(getModelMaxTokens('gpt-5.4-pro')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.4-pro'],
+    );
+  });
+
   test('should return correct tokens for Anthropic models', () => {
     const models = [
       'claude-2.1',
@@ -495,6 +508,8 @@ describe('getModelMaxTokens', () => {
       'gpt-5.1',
       'gpt-5.2',
       'gpt-5.3',
+      'gpt-5.4',
+      'gpt-5.4-pro',
       'gpt-5-mini',
       'gpt-5-nano',
       'gpt-5-pro',
@@ -802,6 +817,12 @@ describe('matchModelName', () => {
     expect(matchModelName('openai/gpt-5.3')).toBe('gpt-5.3');
     expect(matchModelName('gpt-5.3-codex')).toBe('gpt-5.3');
     expect(matchModelName('gpt-5.3-2025-03-01')).toBe('gpt-5.3');
+  });
+
+  it('should return the closest matching key for gpt-5.4 matches', () => {
+    expect(matchModelName('openai/gpt-5.4')).toBe('gpt-5.4');
+    expect(matchModelName('gpt-5.4-thinking')).toBe('gpt-5.4');
+    expect(matchModelName('gpt-5.4-pro')).toBe('gpt-5.4-pro');
   });
 
   it('should return the input model name if no match is found - Google models', () => {

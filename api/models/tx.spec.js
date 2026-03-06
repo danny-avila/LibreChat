@@ -59,6 +59,17 @@ describe('getValueKey', () => {
     expect(getValueKey('openai/gpt-5.3')).toBe('gpt-5.3');
   });
 
+  it('should return "gpt-5.4" for model name containing "gpt-5.4"', () => {
+    expect(getValueKey('gpt-5.4')).toBe('gpt-5.4');
+    expect(getValueKey('gpt-5.4-thinking')).toBe('gpt-5.4');
+    expect(getValueKey('openai/gpt-5.4')).toBe('gpt-5.4');
+  });
+
+  it('should return "gpt-5.4-pro" for model name containing "gpt-5.4-pro"', () => {
+    expect(getValueKey('gpt-5.4-pro')).toBe('gpt-5.4-pro');
+    expect(getValueKey('openai/gpt-5.4-pro')).toBe('gpt-5.4-pro');
+  });
+
   it('should return "gpt-3.5-turbo-1106" for model name containing "gpt-3.5-turbo-1106"', () => {
     expect(getValueKey('gpt-3.5-turbo-1106-some-other-info')).toBe('gpt-3.5-turbo-1106');
     expect(getValueKey('openai/gpt-3.5-turbo-1106')).toBe('gpt-3.5-turbo-1106');
@@ -397,6 +408,33 @@ describe('getMultiplier', () => {
     );
     expect(getMultiplier({ model: 'openai/gpt-5.3', tokenType: 'completion' })).toBe(
       tokenValues['gpt-5.3'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-5.4', () => {
+    expect(getMultiplier({ model: 'gpt-5.4', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.4'].prompt,
+    );
+    expect(getMultiplier({ model: 'gpt-5.4', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.4'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-5.4-thinking', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.4'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5.4', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.4'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-5.4-pro', () => {
+    expect(getMultiplier({ model: 'gpt-5.4-pro', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.4-pro'].prompt,
+    );
+    expect(getMultiplier({ model: 'gpt-5.4-pro', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.4-pro'].completion,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5.4-pro', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5.4-pro'].prompt,
     );
   });
 
@@ -1377,6 +1415,7 @@ describe('getCacheMultiplier', () => {
       'gpt-5.1',
       'gpt-5.2',
       'gpt-5.3',
+      'gpt-5.4',
       'gpt-5-mini',
       'gpt-5-nano',
       'o1',
@@ -1416,7 +1455,15 @@ describe('getCacheMultiplier', () => {
   });
 
   it('should have consistent 10% cache read pricing for gpt-5.x models', () => {
-    const gpt5CacheModels = ['gpt-5', 'gpt-5.1', 'gpt-5.2', 'gpt-5.3', 'gpt-5-mini', 'gpt-5-nano'];
+    const gpt5CacheModels = [
+      'gpt-5',
+      'gpt-5.1',
+      'gpt-5.2',
+      'gpt-5.3',
+      'gpt-5.4',
+      'gpt-5-mini',
+      'gpt-5-nano',
+    ];
     for (const model of gpt5CacheModels) {
       expect(cacheTokenValues[model].read).toBeCloseTo(cacheTokenValues[model].write * 0.1, 10);
     }
