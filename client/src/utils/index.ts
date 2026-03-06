@@ -24,6 +24,7 @@ export * from './resources';
 export * from './roles';
 export * from './localStorage';
 export * from './promptGroups';
+export * from './previewCache';
 export * from './email';
 export * from './share';
 export * from './timestamps';

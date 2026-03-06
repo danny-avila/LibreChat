@@ -3,11 +3,7 @@ import { render, screen } from '@testing-library/react';
 import OpenAIImageGen from '../Parts/OpenAIImageGen/OpenAIImageGen';
 
 jest.mock('~/utils', () => ({
-  cn: (...classes: unknown[]) =>
-    classes
-      .flat(Infinity)
-      .filter((c) => typeof c === 'string' && c.length > 0)
-      .join(' '),
+  cn: (...classes: any[]) => classes.flat(Infinity).filter(Boolean).join(' '),
 }));
 
 jest.mock('~/hooks', () => ({

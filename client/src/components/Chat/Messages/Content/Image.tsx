@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
+import { Skeleton } from '@librechat/client';
 import { apiBaseUrl } from 'librechat-data-provider';
 import DialogImage from './DialogImage';
 import { cn } from '~/utils';
@@ -6,11 +7,22 @@ import { cn } from '~/utils';
 /** Max display height for chat images (Tailwind JIT class) */
 export const IMAGE_MAX_H = 'max-h-[45vh]' as const;
 
+/** Caches image dimensions by src so remounts can reserve space */
+const dimensionCache = new Map<string, { width: number; height: number }>();
+/** Tracks URLs that have been fully painted — skip skeleton on remount */
+const paintedUrls = new Set<string>();
+
+function computeHeightStyle(w: number, h: number): React.CSSProperties {
+  return { height: `min(45vh, ${(h / w) * 100}vw, ${(h / w) * 512}px)` };
+}
+
 const Image = ({
   imagePath,
   altText,
   className,
   args,
+  width,
+  height,
 }: {
   imagePath: string;
   altText: string;
@@ -22,12 +34,12 @@ const Image = ({
     style?: string;
     [key: string]: unknown;
   };
+  width?: number;
+  height?: number;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  // Fix image path to include base path for subdirectory deployments
   const absoluteImageUrl = useMemo(() => {
     if (!imagePath) return imagePath;
 
@@ -72,6 +84,14 @@ const Image = ({
     }
   };
 
+  if (width && height && absoluteImageUrl) {
+    dimensionCache.set(absoluteImageUrl, { width, height });
+  }
+  const dims = width && height ? { width, height } : dimensionCache.get(absoluteImageUrl);
+  const hasDimensions = !!(dims?.width && dims?.height);
+  const heightStyle = hasDimensions ? computeHeightStyle(dims.width, dims.height) : undefined;
+  const showSkeleton = hasDimensions && !paintedUrls.has(absoluteImageUrl);
+
   return (
     <div>
       <button
@@ -81,29 +101,33 @@ const Image = ({
         aria-haspopup="dialog"
         onClick={() => setIsOpen(true)}
         className={cn(
-          'relative mt-1 flex h-auto w-full max-w-lg cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-border-light text-text-secondary-alt shadow-md transition-shadow',
+          'relative mt-1 w-full max-w-lg cursor-pointer overflow-hidden rounded-lg border border-border-light text-text-secondary-alt shadow-md transition-shadow',
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary',
           className,
         )}
+        style={heightStyle}
       >
+        {showSkeleton && <Skeleton className="absolute inset-0" aria-hidden="true" />}
         <img
           alt={altText}
           src={absoluteImageUrl}
-          decoding="async"
-          onLoad={() => setIsLoaded(true)}
-          className={cn('block h-auto w-auto max-w-full text-transparent', IMAGE_MAX_H)}
+          onLoad={() => paintedUrls.add(absoluteImageUrl)}
+          className={cn(
+            'relative block text-transparent',
+            hasDimensions
+              ? 'size-full object-contain'
+              : cn('h-auto w-auto max-w-full', IMAGE_MAX_H),
+          )}
         />
       </button>
-      {isLoaded && (
-        <DialogImage
-          isOpen={isOpen}
-          onOpenChange={setIsOpen}
-          src={absoluteImageUrl}
-          downloadImage={downloadImage}
-          args={args}
-          triggerRef={triggerRef}
-        />
-      )}
+      <DialogImage
+        isOpen={isOpen}
+        onOpenChange={setIsOpen}
+        src={absoluteImageUrl}
+        downloadImage={downloadImage}
+        args={args}
+        triggerRef={triggerRef}
+      />
     </div>
   );
 };

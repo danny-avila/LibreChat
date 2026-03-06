@@ -3,15 +3,17 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import Image from '../Image';
 
 jest.mock('~/utils', () => ({
-  cn: (...classes: unknown[]) =>
-    classes
-      .flat(Infinity)
-      .filter((c) => typeof c === 'string' && c.length > 0)
-      .join(' '),
+  cn: (...classes: any[]) => classes.flat(Infinity).filter(Boolean).join(' '),
 }));
 
 jest.mock('librechat-data-provider', () => ({
   apiBaseUrl: () => '',
+}));
+
+jest.mock('@librechat/client', () => ({
+  Skeleton: ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+    <div data-testid="skeleton" className={className} {...props} />
+  ),
 }));
 
 jest.mock('../DialogImage', () => ({
@@ -30,7 +32,7 @@ describe('Image', () => {
     jest.clearAllMocks();
   });
 
-  describe('rendering', () => {
+  describe('rendering without dimensions', () => {
     it('renders with max-h-[45vh] height constraint', () => {
       render(<Image {...defaultProps} />);
       const img = screen.getByRole('img');
@@ -50,12 +52,60 @@ describe('Image', () => {
       expect(img.className).toContain('h-auto');
     });
 
-    it('uses async decoding for non-blocking paint', () => {
+    it('does not show skeleton without dimensions', () => {
       render(<Image {...defaultProps} />);
-      const img = screen.getByRole('img');
-      expect(img).toHaveAttribute('decoding', 'async');
+      expect(screen.queryByTestId('skeleton')).not.toBeInTheDocument();
     });
 
+    it('does not apply heightStyle without dimensions', () => {
+      render(<Image {...defaultProps} />);
+      const button = screen.getByRole('button');
+      expect(button.style.height).toBeFalsy();
+    });
+  });
+
+  describe('rendering with dimensions', () => {
+    it('shows skeleton behind image', () => {
+      render(<Image {...defaultProps} width={1024} height={1792} />);
+      expect(screen.getByTestId('skeleton')).toBeInTheDocument();
+    });
+
+    it('applies computed heightStyle to button', () => {
+      render(<Image {...defaultProps} width={1024} height={1792} />);
+      const button = screen.getByRole('button');
+      expect(button.style.height).toBeTruthy();
+      expect(button.style.height).toContain('min(45vh');
+    });
+
+    it('uses size-full object-contain on image when dimensions provided', () => {
+      render(<Image {...defaultProps} width={768} height={916} />);
+      const img = screen.getByRole('img');
+      expect(img.className).toContain('size-full');
+      expect(img.className).toContain('object-contain');
+    });
+
+    it('skeleton is absolute inset-0', () => {
+      render(<Image {...defaultProps} width={512} height={512} />);
+      const skeleton = screen.getByTestId('skeleton');
+      expect(skeleton.className).toContain('absolute');
+      expect(skeleton.className).toContain('inset-0');
+    });
+
+    it('marks URL as painted on load and skips skeleton on rerender', () => {
+      const { rerender } = render(<Image {...defaultProps} width={512} height={512} />);
+      const img = screen.getByRole('img');
+
+      expect(screen.getByTestId('skeleton')).toBeInTheDocument();
+
+      fireEvent.load(img);
+
+      // Rerender same component — skeleton should not show (URL painted)
+      rerender(<Image {...defaultProps} width={512} height={512} />);
+      expect(screen.queryByTestId('skeleton')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('common behavior', () => {
     it('applies custom className to the button wrapper', () => {
       render(<Image {...defaultProps} className="mb-4" />);
       const button = screen.getByRole('button');
@@ -68,21 +118,17 @@ describe('Image', () => {
       expect(img).toHaveAttribute('alt', 'Test image');
     });
 
-    it('renders image immediately without opacity transition', () => {
+    it('has correct accessibility attributes on button', () => {
       render(<Image {...defaultProps} />);
-      const img = screen.getByRole('img');
-      expect(img.className).not.toContain('opacity-0');
-      expect(img.className).not.toContain('transition-opacity');
+      const button = screen.getByRole('button');
+      expect(button).toHaveAttribute('aria-label', 'View Test image in dialog');
+      expect(button).toHaveAttribute('aria-haspopup', 'dialog');
     });
   });
 
   describe('dialog interaction', () => {
-    it('opens dialog on button click after image loads', () => {
+    it('opens dialog on button click', () => {
       render(<Image {...defaultProps} />);
-
-      const img = screen.getByRole('img');
-      fireEvent.load(img);
-
       expect(screen.queryByTestId('dialog-image')).not.toBeInTheDocument();
 
       const button = screen.getByRole('button');
@@ -91,20 +137,12 @@ describe('Image', () => {
       expect(screen.getByTestId('dialog-image')).toBeInTheDocument();
     });
 
-    it('does not render dialog before image loads', () => {
-      render(<Image {...defaultProps} />);
-
-      const button = screen.getByRole('button');
-      fireEvent.click(button);
-
-      expect(screen.queryByTestId('dialog-image')).not.toBeInTheDocument();
-    });
-
-    it('has correct accessibility attributes on button', () => {
-      render(<Image {...defaultProps} />);
-      const button = screen.getByRole('button');
-      expect(button).toHaveAttribute('aria-label', 'View Test image in dialog');
-      expect(button).toHaveAttribute('aria-haspopup', 'dialog');
+    it('dialog is always mounted (not gated by load state)', () => {
+      const { container } = render(<Image {...defaultProps} />);
+      // DialogImage mock returns null when isOpen=false, but the component is in the tree
+      // Clicking should immediately show it
+      fireEvent.click(screen.getByRole('button'));
+      expect(screen.getByTestId('dialog-image')).toBeInTheDocument();
     });
   });
 
