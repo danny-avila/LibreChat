@@ -50,7 +50,12 @@ export default function OpenAIImageGen({
   }
 
   const attachment = attachments?.[0];
-  const { filepath = null, filename = '' } = (attachment as TFile & TAttachmentMetadata) || {};
+  const {
+    filepath = null,
+    filename = '',
+    width: imgWidth,
+    height: imgHeight,
+  } = (attachment as TFile & TAttachmentMetadata) || {};
 
   useEffect(() => {
     if (isSubmitting) {
@@ -120,9 +125,11 @@ export default function OpenAIImageGen({
         <div className={cn('overflow-hidden', progress < 1 ? [IMAGE_FULL_H, 'w-full'] : 'w-auto')}>
           {progress < 1 && <PixelCard variant="default" progress={progress} randomness={0.6} />}
           <Image
+            width={imgWidth}
+            args={parsedArgs}
+            height={imgHeight}
             altText={filename}
             imagePath={filepath ?? ''}
-            args={parsedArgs}
             className={progress < 1 ? 'invisible absolute' : ''}
           />
         </div>
