@@ -4,7 +4,6 @@ import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
 import type { editor } from 'monaco-editor';
 import type { Artifact } from '~/common';
 import { useCodeState } from '~/Providers/EditorContext';
-import { useArtifactsContext } from '~/Providers';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
 import { useGetStartupConfig } from '~/data-provider';
@@ -19,7 +18,6 @@ export default function ArtifactTabs({
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
   isSharedConvo?: boolean;
 }) {
-  const { isSubmitting } = useArtifactsContext();
   const { currentCode, setCurrentCode } = useCodeState();
   const { data: startupConfig } = useGetStartupConfig();
   const monacoRef = useRef<editor.IStandaloneCodeEditor | null>(null);
@@ -31,24 +29,6 @@ export default function ArtifactTabs({
     }
     lastIdRef.current = artifact.id;
   }, [setCurrentCode, artifact.id]);
-
-  /** Auto-scroll Monaco editor to bottom during streaming */
-  const content = artifact.content ?? '';
-  useEffect(() => {
-    if (!isSubmitting) {
-      return;
-    }
-    const editor = monacoRef.current;
-    if (!editor) {
-      return;
-    }
-    const model = editor.getModel();
-    if (!model) {
-      return;
-    }
-    const lastLine = model.getLineCount();
-    editor.revealLine(lastLine);
-  }, [content, isSubmitting]);
 
   const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
 
@@ -63,7 +43,11 @@ export default function ArtifactTabs({
         <ArtifactCodeEditor artifact={artifact} monacoRef={monacoRef} readOnly={isSharedConvo} />
       </Tabs.Content>
 
-      <Tabs.Content value="preview" className="h-full w-full flex-grow overflow-auto" tabIndex={-1}>
+      <Tabs.Content
+        value="preview"
+        className="h-full w-full flex-grow overflow-hidden"
+        tabIndex={-1}
+      >
         <ArtifactPreview
           files={files}
           fileKey={fileKey}
