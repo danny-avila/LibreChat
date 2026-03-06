@@ -1,3 +1,4 @@
+import { Globe } from 'lucide-react';
 import { Spinner } from '@librechat/client';
 import { useWatch, useFormContext } from 'react-hook-form';
 import {
@@ -44,13 +45,21 @@ export default function AgentFooter({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.SHARE,
   });
+  const hasAccessToShareRemoteAgents = useHasAccess({
+    permissionType: PermissionTypes.REMOTE_AGENTS,
+    permission: Permissions.SHARE,
+  });
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
     ResourceType.AGENT,
     agent?._id || '',
   );
+  const { hasPermission: hasRemoteAgentPermission, isLoading: remotePermissionsLoading } =
+    useResourcePermissions(ResourceType.REMOTE_AGENT, agent?._id || '');
 
   const canShareThisAgent = hasPermission(PermissionBits.SHARE);
+  const canEditThisAgent = hasPermission(PermissionBits.EDIT);
   const canDeleteThisAgent = hasPermission(PermissionBits.DELETE);
+  const canShareRemoteAgent = hasRemoteAgentPermission(PermissionBits.SHARE);
   const isSaving = createMutation.isLoading || updateMutation.isLoading || isAvatarUploading;
   const renderSaveButton = () => {
     if (isSaving) {
@@ -91,7 +100,27 @@ export default function AgentFooter({
               resourceType={ResourceType.AGENT}
             />
           )}
-        {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
+        {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN || canShareRemoteAgent) &&
+          hasAccessToShareRemoteAgents &&
+          !remotePermissionsLoading &&
+          agent?._id && (
+            <GenericGrantAccessDialog
+              resourceDbId={agent?._id}
+              resourceId={agent_id}
+              resourceName={agent?.name ?? ''}
+              resourceType={ResourceType.REMOTE_AGENT}
+            >
+              <button
+                type="button"
+                className="btn btn-neutral border-token-border-light h-9 px-3"
+                title={localize('com_ui_remote_access')}
+              >
+                <Globe className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </GenericGrantAccessDialog>
+          )}
+        {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN || canEditThisAgent) &&
+          !permissionsLoading && <DuplicateAgent agent_id={agent_id} />}
         {/* Submit Button */}
         <button
           className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"

@@ -336,6 +336,69 @@ describe('OAuthReconnectionManager', () => {
     });
   });
 
+  describe('reconnection staggering', () => {
+    let reconnectionTracker: OAuthReconnectionTracker;
+
+    beforeEach(async () => {
+      jest.useFakeTimers();
+      reconnectionTracker = new OAuthReconnectionTracker();
+      reconnectionManager = await OAuthReconnectionManager.createInstance(
+        flowManager,
+        tokenMethods,
+        reconnectionTracker,
+      );
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should stagger reconnection attempts for multiple servers', async () => {
+      const userId = 'user-123';
+      const oauthServers = new Set(['server1', 'server2', 'server3']);
+      (mockRegistryInstance.getOAuthServers as jest.Mock).mockResolvedValue(oauthServers);
+
+      // All servers have valid tokens and are not connected
+      tokenMethods.findToken.mockImplementation(async ({ identifier }) => {
+        return {
+          userId,
+          identifier,
+          expiresAt: new Date(Date.now() + 3600000),
+        } as unknown as MCPOAuthTokens;
+      });
+
+      const mockNewConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        disconnect: jest.fn(),
+      };
+      mockMCPManager.getUserConnection.mockResolvedValue(
+        mockNewConnection as unknown as MCPConnection,
+      );
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(
+        {} as unknown as MCPOptions,
+      );
+
+      await reconnectionManager.reconnectServers(userId);
+
+      // Only the first server should have been attempted immediately
+      expect(mockMCPManager.getUserConnection).toHaveBeenCalledTimes(1);
+      expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'server1' }),
+      );
+
+      // After advancing all timers, all servers should have been attempted
+      await jest.runAllTimersAsync();
+
+      expect(mockMCPManager.getUserConnection).toHaveBeenCalledTimes(3);
+      expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'server2' }),
+      );
+      expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'server3' }),
+      );
+    });
+  });
+
   describe('reconnection timeout behavior', () => {
     let reconnectionTracker: OAuthReconnectionTracker;
 

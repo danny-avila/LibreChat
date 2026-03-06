@@ -14,6 +14,7 @@ import {
   LocalStorageKeys,
   isEphemeralAgentId,
   isAssistantsEndpoint,
+  getDefaultParamsEndpoint,
 } from 'librechat-data-provider';
 import type {
   TPreset,
@@ -47,7 +48,7 @@ const useNewConvo = (index = 0) => {
   const applyModelSpecEffects = useApplyModelSpecEffects();
   const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
-  const { setConversation } = store.useCreateConversationAtom(index);
+  const { setConversation } = store.useSetConversationAtom(index);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const saveBadgesState = useRecoilValue<boolean>(store.saveBadgesState);
   const clearAllLatestMessages = store.useClearLatestMessages(`useNewConvo ${index}`);
@@ -191,11 +192,13 @@ const useNewConvo = (index = 0) => {
           }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
+          const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, defaultEndpoint);
           conversation = buildDefaultConvo({
             conversation,
             lastConversationSetup: activePreset as TConversation,
             endpoint: defaultEndpoint,
             models,
+            defaultParamsEndpoint,
           });
         }
 

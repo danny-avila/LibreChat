@@ -106,6 +106,47 @@ describe('Conversation Operations', () => {
       expect(result.conversationId).toBe(newConversationId);
     });
 
+    it('should not create a conversation when noUpsert is true and conversation does not exist', async () => {
+      const nonExistentId = uuidv4();
+      const result = await saveConvo(
+        mockReq,
+        { conversationId: nonExistentId, title: 'Ghost Title' },
+        { noUpsert: true },
+      );
+
+      expect(result).toBeNull();
+
+      const dbConvo = await Conversation.findOne({ conversationId: nonExistentId });
+      expect(dbConvo).toBeNull();
+    });
+
+    it('should update an existing conversation when noUpsert is true', async () => {
+      await saveConvo(mockReq, mockConversationData);
+
+      const result = await saveConvo(
+        mockReq,
+        { conversationId: mockConversationData.conversationId, title: 'Updated Title' },
+        { noUpsert: true },
+      );
+
+      expect(result).not.toBeNull();
+      expect(result.title).toBe('Updated Title');
+      expect(result.conversationId).toBe(mockConversationData.conversationId);
+    });
+
+    it('should still upsert by default when noUpsert is not provided', async () => {
+      const newId = uuidv4();
+      const result = await saveConvo(mockReq, {
+        conversationId: newId,
+        title: 'New Conversation',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result.conversationId).toBe(newId);
+      expect(result.title).toBe('New Conversation');
+    });
+
     it('should handle unsetFields metadata', async () => {
       const metadata = {
         unsetFields: { someField: 1 },
@@ -122,7 +163,6 @@ describe('Conversation Operations', () => {
 
   describe('isTemporary conversation handling', () => {
     it('should save a conversation with expiredAt when isTemporary is true', async () => {
-      // Mock app config with 24 hour retention
       mockReq.config.interfaceConfig.temporaryChatRetention = 24;
 
       mockReq.body = { isTemporary: true };
@@ -135,7 +175,6 @@ describe('Conversation Operations', () => {
       expect(result.expiredAt).toBeDefined();
       expect(result.expiredAt).toBeInstanceOf(Date);
 
-      // Verify expiredAt is approximately 24 hours in the future
       const expectedExpirationTime = new Date(beforeSave.getTime() + 24 * 60 * 60 * 1000);
       const actualExpirationTime = new Date(result.expiredAt);
 
@@ -157,7 +196,6 @@ describe('Conversation Operations', () => {
     });
 
     it('should save a conversation without expiredAt when isTemporary is not provided', async () => {
-      // No isTemporary in body
       mockReq.body = {};
 
       const result = await saveConvo(mockReq, mockConversationData);
@@ -167,7 +205,6 @@ describe('Conversation Operations', () => {
     });
 
     it('should use custom retention period from config', async () => {
-      // Mock app config with 48 hour retention
       mockReq.config.interfaceConfig.temporaryChatRetention = 48;
 
       mockReq.body = { isTemporary: true };

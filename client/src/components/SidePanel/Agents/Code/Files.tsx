@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AttachmentIcon } from '@librechat/client';
 import {
@@ -9,15 +9,15 @@ import {
   getEndpointFileConfig,
 } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
-import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
+import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { useLocalize, useLazyEffect } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
-import { useChatContext } from '~/Providers';
 import { isEphemeralAgent } from '~/common';
 
 const tool_resource = EToolResources.execute_code;
 
-export default function Files({
+function Files({
   agent_id,
   files: _files,
 }: {
@@ -25,17 +25,21 @@ export default function Files({
   files?: [string, ExtendedFile][];
 }) {
   const localize = useLocalize();
-  const { setFilesLoading } = useChatContext();
   const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
+  const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
-  const { abortUpload, handleFileChange } = useFileHandling({
-    fileSetter: setFiles,
-    additionalMetadata: { agent_id, tool_resource },
-  });
+  const { abortUpload, handleFileChange } = useFileHandlingNoChatContext(
+    {
+      fileSetter: setFiles,
+      additionalMetadata: { agent_id, tool_resource },
+      endpointOverride: EModelEndpoint.agents,
+    },
+    fileHandlingState,
+  );
 
   useLazyEffect(
     () => {
@@ -80,7 +84,6 @@ export default function Files({
           agent_id={agent_id}
           abortUpload={abortUpload}
           tool_resource={tool_resource}
-          setFilesLoading={setFilesLoading}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
         />
         <div>
@@ -109,3 +112,8 @@ export default function Files({
     </div>
   );
 }
+
+const MemoizedFiles = memo(Files);
+MemoizedFiles.displayName = 'Files';
+
+export default MemoizedFiles;

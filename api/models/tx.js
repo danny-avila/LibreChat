@@ -2,9 +2,26 @@ const { matchModelName, findMatchingPattern } = require('@librechat/api');
 const defaultRate = 6;
 
 /**
+ * Token Pricing Configuration
+ *
+ * Pattern Matching
+ * ================
+ * `findMatchingPattern` (from @librechat/api) uses `modelName.includes(key)` and selects
+ * the LONGEST matching key. If a key's length equals the model name's length (exact match),
+ * it returns immediately. Definition order does NOT affect correctness.
+ *
+ * Key ordering matters only for:
+ *   1. Performance: list older/less common models first so newer/common models
+ *      are found earlier in the reverse scan.
+ *   2. Same-length tie-breaking: the last-defined key wins on equal-length matches.
+ *
+ * This applies to BOTH `tokenValues` and `cacheTokenValues` objects.
+ */
+
+/**
  * AWS Bedrock pricing
  * source: https://aws.amazon.com/bedrock/pricing/
- * */
+ */
 const bedrockValues = {
   // Basic llama2 patterns (base defaults to smallest variant)
   llama2: { prompt: 0.75, completion: 1.0 },
@@ -80,6 +97,11 @@ const bedrockValues = {
   'nova-pro': { prompt: 0.8, completion: 3.2 },
   'nova-premier': { prompt: 2.5, completion: 12.5 },
   'deepseek.r1': { prompt: 1.35, completion: 5.4 },
+  // Moonshot/Kimi models on Bedrock
+  'moonshot.kimi': { prompt: 0.6, completion: 2.5 },
+  'moonshot.kimi-k2': { prompt: 0.6, completion: 2.5 },
+  'moonshot.kimi-k2.5': { prompt: 0.6, completion: 3.0 },
+  'moonshot.kimi-k2-thinking': { prompt: 0.6, completion: 2.5 },
 };
 
 /**
@@ -115,9 +137,14 @@ const tokenValues = Object.assign(
     'gpt-5': { prompt: 1.25, completion: 10 },
     'gpt-5.1': { prompt: 1.25, completion: 10 },
     'gpt-5.2': { prompt: 1.75, completion: 14 },
+    'gpt-5.3': { prompt: 1.75, completion: 14 },
+    'gpt-5.4': { prompt: 2.5, completion: 15 },
+    // TODO: gpt-5.4-pro pricing not yet officially published — verify before release
+    'gpt-5.4-pro': { prompt: 5, completion: 30 },
     'gpt-5-nano': { prompt: 0.05, completion: 0.4 },
     'gpt-5-mini': { prompt: 0.25, completion: 2 },
     'gpt-5-pro': { prompt: 15, completion: 120 },
+    'gpt-5.2-pro': { prompt: 21, completion: 168 },
     o1: { prompt: 15, completion: 60 },
     'o1-mini': { prompt: 1.1, completion: 4.4 },
     'o1-preview': { prompt: 15, completion: 60 },
@@ -139,7 +166,9 @@ const tokenValues = Object.assign(
     'claude-haiku-4-5': { prompt: 1, completion: 5 },
     'claude-opus-4': { prompt: 15, completion: 75 },
     'claude-opus-4-5': { prompt: 5, completion: 25 },
+    'claude-opus-4-6': { prompt: 5, completion: 25 },
     'claude-sonnet-4': { prompt: 3, completion: 15 },
+    'claude-sonnet-4-6': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
     'command-r-plus': { prompt: 3, completion: 15 },
     'command-text': { prompt: 1.5, completion: 2.0 },
@@ -163,6 +192,8 @@ const tokenValues = Object.assign(
     'gemini-2.5-flash-image': { prompt: 0.15, completion: 30 },
     'gemini-3': { prompt: 2, completion: 12 },
     'gemini-3-pro-image': { prompt: 2, completion: 120 },
+    'gemini-3.1': { prompt: 2, completion: 12 },
+    'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
     grok: { prompt: 2.0, completion: 10.0 }, // Base pattern defaults to grok-2
     'grok-beta': { prompt: 5.0, completion: 15.0 },
@@ -189,7 +220,31 @@ const tokenValues = Object.assign(
     'pixtral-large': { prompt: 2.0, completion: 6.0 },
     'mistral-large': { prompt: 2.0, completion: 6.0 },
     'mixtral-8x22b': { prompt: 0.65, completion: 0.65 },
-    kimi: { prompt: 0.14, completion: 2.49 }, // Base pattern (using kimi-k2 pricing)
+    // Moonshot/Kimi models (base patterns first, specific patterns last for correct matching)
+    kimi: { prompt: 0.6, completion: 2.5 }, // Base pattern
+    moonshot: { prompt: 2.0, completion: 5.0 }, // Base pattern (using 128k pricing)
+    'kimi-latest': { prompt: 0.2, completion: 2.0 }, // Uses 8k/32k/128k pricing dynamically
+    'kimi-k2': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2.5': { prompt: 0.6, completion: 3.0 },
+    'kimi-k2-turbo': { prompt: 1.15, completion: 8.0 },
+    'kimi-k2-turbo-preview': { prompt: 1.15, completion: 8.0 },
+    'kimi-k2-0905': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2-0905-preview': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2-0711': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2-0711-preview': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2-thinking': { prompt: 0.6, completion: 2.5 },
+    'kimi-k2-thinking-turbo': { prompt: 1.15, completion: 8.0 },
+    'moonshot-v1': { prompt: 2.0, completion: 5.0 },
+    'moonshot-v1-auto': { prompt: 2.0, completion: 5.0 },
+    'moonshot-v1-8k': { prompt: 0.2, completion: 2.0 },
+    'moonshot-v1-8k-vision': { prompt: 0.2, completion: 2.0 },
+    'moonshot-v1-8k-vision-preview': { prompt: 0.2, completion: 2.0 },
+    'moonshot-v1-32k': { prompt: 1.0, completion: 3.0 },
+    'moonshot-v1-32k-vision': { prompt: 1.0, completion: 3.0 },
+    'moonshot-v1-32k-vision-preview': { prompt: 1.0, completion: 3.0 },
+    'moonshot-v1-128k': { prompt: 2.0, completion: 5.0 },
+    'moonshot-v1-128k-vision': { prompt: 2.0, completion: 5.0 },
+    'moonshot-v1-128k-vision-preview': { prompt: 2.0, completion: 5.0 },
     // GPT-OSS models (specific sizes)
     'gpt-oss:20b': { prompt: 0.05, completion: 0.2 },
     'gpt-oss-20b': { prompt: 0.05, completion: 0.2 },
@@ -249,12 +304,64 @@ const cacheTokenValues = {
   'claude-3-haiku': { write: 0.3, read: 0.03 },
   'claude-haiku-4-5': { write: 1.25, read: 0.1 },
   'claude-sonnet-4': { write: 3.75, read: 0.3 },
+  'claude-sonnet-4-6': { write: 3.75, read: 0.3 },
   'claude-opus-4': { write: 18.75, read: 1.5 },
   'claude-opus-4-5': { write: 6.25, read: 0.5 },
+  'claude-opus-4-6': { write: 6.25, read: 0.5 },
+  // OpenAI models — cached input discount varies by family:
+  //   gpt-4o (incl. mini), o1 (incl. mini/preview): 50% off
+  //   gpt-4.1 (incl. mini/nano), o3 (incl. mini), o4-mini: 75% off
+  //   gpt-5.x (excl. pro variants): 90% off
+  //   gpt-5-pro, gpt-5.2-pro, gpt-5.4-pro: no caching
+  'gpt-4o': { write: 2.5, read: 1.25 },
+  'gpt-4o-mini': { write: 0.15, read: 0.075 },
+  'gpt-4.1': { write: 2, read: 0.5 },
+  'gpt-4.1-mini': { write: 0.4, read: 0.1 },
+  'gpt-4.1-nano': { write: 0.1, read: 0.025 },
+  'gpt-5': { write: 1.25, read: 0.125 },
+  'gpt-5.1': { write: 1.25, read: 0.125 },
+  'gpt-5.2': { write: 1.75, read: 0.175 },
+  'gpt-5.3': { write: 1.75, read: 0.175 },
+  'gpt-5.4': { write: 2.5, read: 0.25 },
+  'gpt-5-mini': { write: 0.25, read: 0.025 },
+  'gpt-5-nano': { write: 0.05, read: 0.005 },
+  o1: { write: 15, read: 7.5 },
+  'o1-mini': { write: 1.1, read: 0.55 },
+  'o1-preview': { write: 15, read: 7.5 },
+  o3: { write: 2, read: 0.5 },
+  'o3-mini': { write: 1.1, read: 0.275 },
+  'o4-mini': { write: 1.1, read: 0.275 },
   // DeepSeek models - cache hit: $0.028/1M, cache miss: $0.28/1M
   deepseek: { write: 0.28, read: 0.028 },
   'deepseek-chat': { write: 0.28, read: 0.028 },
   'deepseek-reasoner': { write: 0.28, read: 0.028 },
+  // Moonshot/Kimi models - cache hit: $0.15/1M (k2) or $0.10/1M (k2.5), cache miss: $0.60/1M
+  kimi: { write: 0.6, read: 0.15 },
+  'kimi-k2': { write: 0.6, read: 0.15 },
+  'kimi-k2.5': { write: 0.6, read: 0.1 },
+  'kimi-k2-turbo': { write: 1.15, read: 0.15 },
+  'kimi-k2-turbo-preview': { write: 1.15, read: 0.15 },
+  'kimi-k2-0905': { write: 0.6, read: 0.15 },
+  'kimi-k2-0905-preview': { write: 0.6, read: 0.15 },
+  'kimi-k2-0711': { write: 0.6, read: 0.15 },
+  'kimi-k2-0711-preview': { write: 0.6, read: 0.15 },
+  'kimi-k2-thinking': { write: 0.6, read: 0.15 },
+  'kimi-k2-thinking-turbo': { write: 1.15, read: 0.15 },
+  // Gemini 3.1 Pro - cache write: $2.00/1M, cache read: $0.20/1M
+  'gemini-3.1': { write: 2, read: 0.2 },
+  // Gemini 3.1 Flash-Lite - cache write: $0.25/1M, cache read: $0.025/1M
+  'gemini-3.1-flash-lite': { write: 0.25, read: 0.025 },
+};
+
+/**
+ * Premium (tiered) pricing for models whose rates change based on prompt size.
+ * Each entry specifies the token threshold and the rates that apply above it.
+ * @type {Object.<string, {threshold: number, prompt: number, completion: number}>}
+ */
+const premiumTokenValues = {
+  'claude-opus-4-6': { threshold: 200000, prompt: 10, completion: 37.5 },
+  'claude-sonnet-4-6': { threshold: 200000, prompt: 6, completion: 22.5 },
+  'gemini-3.1': { threshold: 200000, prompt: 4, completion: 18 },
 };
 
 /**
@@ -313,15 +420,27 @@ const getValueKey = (model, endpoint) => {
  * @param {string} [params.model] - The model name to derive the value key from if not provided.
  * @param {string} [params.endpoint] - The endpoint name to derive the value key from if not provided.
  * @param {EndpointTokenConfig} [params.endpointTokenConfig] - The token configuration for the endpoint.
+ * @param {number} [params.inputTokenCount] - Total input token count for tiered pricing.
  * @returns {number} The multiplier for the given parameters, or a default value if not found.
  */
-const getMultiplier = ({ valueKey, tokenType, model, endpoint, endpointTokenConfig }) => {
+const getMultiplier = ({
+  model,
+  valueKey,
+  endpoint,
+  tokenType,
+  inputTokenCount,
+  endpointTokenConfig,
+}) => {
   if (endpointTokenConfig) {
     return endpointTokenConfig?.[model]?.[tokenType] ?? defaultRate;
   }
 
   if (valueKey && tokenType) {
-    return tokenValues[valueKey][tokenType] ?? defaultRate;
+    const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
+    if (premiumRate != null) {
+      return premiumRate;
+    }
+    return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
   }
 
   if (!tokenType || !model) {
@@ -333,8 +452,31 @@ const getMultiplier = ({ valueKey, tokenType, model, endpoint, endpointTokenConf
     return defaultRate;
   }
 
-  // If we got this far, and values[tokenType] is undefined somehow, return a rough average of default multipliers
+  const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
+  if (premiumRate != null) {
+    return premiumRate;
+  }
+
   return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
+};
+
+/**
+ * Checks if premium (tiered) pricing applies and returns the premium rate.
+ * Each model defines its own threshold in `premiumTokenValues`.
+ * @param {string} valueKey
+ * @param {string} tokenType
+ * @param {number} [inputTokenCount]
+ * @returns {number|null}
+ */
+const getPremiumRate = (valueKey, tokenType, inputTokenCount) => {
+  if (inputTokenCount == null) {
+    return null;
+  }
+  const premiumEntry = premiumTokenValues[valueKey];
+  if (!premiumEntry || inputTokenCount <= premiumEntry.threshold) {
+    return null;
+  }
+  return premiumEntry[tokenType] ?? null;
 };
 
 /**
@@ -373,8 +515,10 @@ const getCacheMultiplier = ({ valueKey, cacheType, model, endpoint, endpointToke
 
 module.exports = {
   tokenValues,
+  premiumTokenValues,
   getValueKey,
   getMultiplier,
+  getPremiumRate,
   getCacheMultiplier,
   defaultRate,
   cacheTokenValues,

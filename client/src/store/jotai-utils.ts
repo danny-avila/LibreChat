@@ -1,5 +1,6 @@
 import { atom } from 'jotai';
 import { atomWithStorage } from 'jotai/utils';
+import type { SyncStorage } from 'jotai/vanilla/utils/atomWithStorage';
 
 /**
  * Create a simple atom with localStorage persistence
@@ -40,6 +41,68 @@ export function createStorageAtomWithEffect<T>(
       }
     },
   );
+}
+
+/**
+ * Create a SyncStorage adapter that reads/writes to localStorage but does NOT
+ * subscribe to browser `storage` events. This prevents cross-tab synchronization
+ * for atoms where each tab should maintain independent state.
+ *
+ * Use this for atoms that represent per-tab working state (e.g., favorites toggle,
+ * MCP server selections) rather than user preferences.
+ */
+export function createTabIsolatedStorage<Value>(): SyncStorage<Value> {
+  return {
+    getItem(key: string, initialValue: Value): Value {
+      if (typeof window === 'undefined') {
+        return initialValue;
+      }
+      try {
+        const stored = localStorage.getItem(key);
+        if (stored === null) {
+          return initialValue;
+        }
+        return JSON.parse(stored) as Value;
+      } catch {
+        return initialValue;
+      }
+    },
+    setItem(key: string, newValue: Value): void {
+      if (typeof window === 'undefined') {
+        return;
+      }
+      try {
+        localStorage.setItem(key, JSON.stringify(newValue));
+      } catch {
+        // quota exceeded or other write error — silently ignore
+      }
+    },
+    removeItem(key: string): void {
+      if (typeof window === 'undefined') {
+        return;
+      }
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        // silently ignore
+      }
+    },
+    // subscribe intentionally omitted — prevents cross-tab sync via storage events
+  };
+}
+
+/**
+ * Create an atom with localStorage persistence that does NOT sync across tabs.
+ * Parallels `createStorageAtom` but uses tab-isolated storage.
+ *
+ * @param key - localStorage key
+ * @param defaultValue - default value if no saved value exists
+ * @returns Jotai atom with localStorage persistence, isolated per tab
+ */
+export function createTabIsolatedAtom<T>(key: string, defaultValue: T) {
+  return atomWithStorage<T>(key, defaultValue, createTabIsolatedStorage<T>(), {
+    getOnInit: true,
+  });
 }
 
 /**

@@ -9,6 +9,40 @@ const LIMIT_CONCURRENT_MESSAGES = process.env.LIMIT_CONCURRENT_MESSAGES;
 const CONCURRENT_MESSAGE_MAX = math(process.env.CONCURRENT_MESSAGE_MAX, 2);
 const CONCURRENT_VIOLATION_SCORE = math(process.env.CONCURRENT_VIOLATION_SCORE, 1);
 
+/**
+ * Lua script for atomic check-and-increment.
+ * Increments the key, sets TTL, and if over limit decrements back.
+ * Returns positive count if allowed, negative count if rejected.
+ * Single round-trip, fully atomic — eliminates the INCR/check/DECR race window.
+ */
+const CHECK_AND_INCREMENT_SCRIPT = `
+local key = KEYS[1]
+local limit = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local current = redis.call('INCR', key)
+redis.call('EXPIRE', key, ttl)
+if current > limit then
+  redis.call('DECR', key)
+  return -current
+end
+return current
+`;
+
+/**
+ * Lua script for atomic decrement-and-cleanup.
+ * Decrements the key and deletes it if the count reaches zero or below.
+ * Eliminates the DECR-then-DEL race window.
+ */
+const DECREMENT_SCRIPT = `
+local key = KEYS[1]
+local current = redis.call('DECR', key)
+if current <= 0 then
+  redis.call('DEL', key)
+  return 0
+end
+return current
+`;
+
 /** Lazily initialized cache for pending requests (used only for in-memory fallback) */
 let pendingReqCache: ReturnType<typeof standardCache> | null = null;
 
@@ -80,36 +114,28 @@ export async function checkAndIncrementPendingRequest(
     return { allowed: true, pendingRequests: 0, limit };
   }
 
-  // Use atomic Redis INCR when available to prevent race conditions
+  // Use atomic Lua script when Redis is available to prevent race conditions.
+  // A single EVAL round-trip atomically increments, checks, and decrements if over-limit.
   if (USE_REDIS && ioredisClient) {
     const key = buildKey(userId);
     try {
-      // Pipeline ensures INCR and EXPIRE execute atomically in one round-trip
-      // This prevents edge cases where crash between operations leaves key without TTL
-      const pipeline = ioredisClient.pipeline();
-      pipeline.incr(key);
-      pipeline.expire(key, 60);
-      const results = await pipeline.exec();
+      const result = (await ioredisClient.eval(
+        CHECK_AND_INCREMENT_SCRIPT,
+        1,
+        key,
+        limit,
+        60,
+      )) as number;
 
-      if (!results || results[0][0]) {
-        throw new Error('Pipeline execution failed');
+      if (result < 0) {
+        // Negative return means over-limit (absolute value is the count before decrement)
+        const count = -result;
+        logger.debug(`[concurrency] User ${userId} exceeded concurrent limit: ${count}/${limit}`);
+        return { allowed: false, pendingRequests: count, limit };
       }
 
-      const newCount = results[0][1] as number;
-
-      if (newCount > limit) {
-        // Over limit - decrement back and reject
-        await ioredisClient.decr(key);
-        logger.debug(
-          `[concurrency] User ${userId} exceeded concurrent limit: ${newCount}/${limit}`,
-        );
-        return { allowed: false, pendingRequests: newCount, limit };
-      }
-
-      logger.debug(
-        `[concurrency] User ${userId} incremented pending requests: ${newCount}/${limit}`,
-      );
-      return { allowed: true, pendingRequests: newCount, limit };
+      logger.debug(`[concurrency] User ${userId} incremented pending requests: ${result}/${limit}`);
+      return { allowed: true, pendingRequests: result, limit };
     } catch (error) {
       logger.error('[concurrency] Redis atomic increment failed:', error);
       // On Redis error, allow the request to proceed (fail-open)
@@ -164,18 +190,12 @@ export async function decrementPendingRequest(userId: string): Promise<void> {
       return;
     }
 
-    // Use atomic Redis DECR when available
+    // Use atomic Lua script to decrement and clean up zero/negative keys in one round-trip
     if (USE_REDIS && ioredisClient) {
       const key = buildKey(userId);
       try {
-        const newCount = await ioredisClient.decr(key);
-        if (newCount < 0) {
-          // Counter went negative - reset to 0 and delete
-          await ioredisClient.del(key);
-          logger.debug(`[concurrency] User ${userId} pending requests cleared (was negative)`);
-        } else if (newCount === 0) {
-          // Clean up zero-value keys
-          await ioredisClient.del(key);
+        const newCount = (await ioredisClient.eval(DECREMENT_SCRIPT, 1, key)) as number;
+        if (newCount === 0) {
           logger.debug(`[concurrency] User ${userId} pending requests cleared`);
         } else {
           logger.debug(`[concurrency] User ${userId} decremented pending requests: ${newCount}`);

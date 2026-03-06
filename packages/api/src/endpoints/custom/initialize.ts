@@ -31,7 +31,6 @@ function buildCustomOptions(
     customParams: endpointConfig.customParams,
     titleConvo: endpointConfig.titleConvo,
     titleModel: endpointConfig.titleModel,
-    forcePrompt: endpointConfig.forcePrompt,
     summaryModel: endpointConfig.summaryModel,
     modelDisplayLabel: endpointConfig.modelDisplayLabel,
     titleMethod: endpointConfig.titleMethod ?? 'completion',

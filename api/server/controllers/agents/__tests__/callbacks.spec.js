@@ -16,13 +16,10 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/agents', () => ({
-  EnvVar: { CODE_API_KEY: 'CODE_API_KEY' },
-  Providers: { GOOGLE: 'google' },
-  GraphEvents: {},
+  ...jest.requireActual('@librechat/agents'),
   getMessageId: jest.fn(),
   ToolEndHandler: jest.fn(),
   handleToolCalls: jest.fn(),
-  ChatModelStreamHandler: jest.fn(),
 }));
 
 jest.mock('~/server/services/Files/Citations', () => ({
