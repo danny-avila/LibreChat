@@ -115,8 +115,9 @@ export abstract class UserConnectionManager {
     try {
       connection = await MCPConnectionFactory.create(
         {
-          serverName: serverName,
           serverConfig: config,
+          serverName: serverName,
+          dbSourced: !!config.dbId,
           useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
         },
         {
@@ -236,5 +237,24 @@ export abstract class UserConnectionManager {
         );
       }
     }
+  }
+
+  /** Returns counts of tracked users and connections for diagnostics */
+  public getConnectionStats(): {
+    trackedUsers: number;
+    totalConnections: number;
+    activityEntries: number;
+    appConnectionCount: number;
+  } {
+    let totalConnections = 0;
+    for (const serverMap of this.userConnections.values()) {
+      totalConnections += serverMap.size;
+    }
+    return {
+      trackedUsers: this.userConnections.size,
+      totalConnections,
+      activityEntries: this.userLastActivity.size,
+      appConnectionCount: this.appConnections?.getConnectionCount() ?? 0,
+    };
   }
 }

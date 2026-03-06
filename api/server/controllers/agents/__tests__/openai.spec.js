@@ -30,9 +30,6 @@ jest.mock('@librechat/agents', () => ({
     messages: [],
     indexTokenCountMap: {},
   }),
-  ChatModelStreamHandler: jest.fn().mockImplementation(() => ({
-    handle: jest.fn(),
-  })),
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -85,6 +82,13 @@ jest.mock('~/models/spendTokens', () => ({
   spendStructuredTokens: mockSpendStructuredTokens,
 }));
 
+const mockGetMultiplier = jest.fn().mockReturnValue(1);
+const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
+jest.mock('~/models/tx', () => ({
+  getMultiplier: mockGetMultiplier,
+  getCacheMultiplier: mockGetCacheMultiplier,
+}));
+
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
 }));
@@ -106,6 +110,8 @@ jest.mock('~/models/Agent', () => ({
   getAgents: jest.fn().mockResolvedValue([]),
 }));
 
+const mockUpdateBalance = jest.fn().mockResolvedValue({});
+const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
 jest.mock('~/models', () => ({
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
@@ -115,6 +121,8 @@ jest.mock('~/models', () => ({
   getUserCodeFiles: jest.fn(),
   getToolFilesByIds: jest.fn(),
   getCodeGeneratedFiles: jest.fn(),
+  updateBalance: mockUpdateBalance,
+  bulkInsertTransactions: mockBulkInsertTransactions,
 }));
 
 describe('OpenAIChatCompletionController', () => {
@@ -158,7 +166,15 @@ describe('OpenAIChatCompletionController', () => {
 
       expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
-        { spendTokens: mockSpendTokens, spendStructuredTokens: mockSpendStructuredTokens },
+        {
+          spendTokens: mockSpendTokens,
+          spendStructuredTokens: mockSpendStructuredTokens,
+          pricing: { getMultiplier: mockGetMultiplier, getCacheMultiplier: mockGetCacheMultiplier },
+          bulkWriteOps: {
+            insertMany: mockBulkInsertTransactions,
+            updateBalance: mockUpdateBalance,
+          },
+        },
         expect.objectContaining({
           user: 'user-123',
           conversationId: expect.any(String),
@@ -185,12 +201,18 @@ describe('OpenAIChatCompletionController', () => {
       );
     });
 
-    it('should pass spendTokens and spendStructuredTokens as dependencies', async () => {
+    it('should pass spendTokens, spendStructuredTokens, pricing, and bulkWriteOps as dependencies', async () => {
       await OpenAIChatCompletionController(req, res);
 
       const [deps] = mockRecordCollectedUsage.mock.calls[0];
       expect(deps).toHaveProperty('spendTokens', mockSpendTokens);
       expect(deps).toHaveProperty('spendStructuredTokens', mockSpendStructuredTokens);
+      expect(deps).toHaveProperty('pricing');
+      expect(deps.pricing).toHaveProperty('getMultiplier', mockGetMultiplier);
+      expect(deps.pricing).toHaveProperty('getCacheMultiplier', mockGetCacheMultiplier);
+      expect(deps).toHaveProperty('bulkWriteOps');
+      expect(deps.bulkWriteOps).toHaveProperty('insertMany', mockBulkInsertTransactions);
+      expect(deps.bulkWriteOps).toHaveProperty('updateBalance', mockUpdateBalance);
     });
 
     it('should include model from primaryConfig in recordCollectedUsage params', async () => {

@@ -97,6 +97,8 @@ export default function useChatFunctions({
   ) => {
     setShowStopButton(false);
     resetLatestMultiMessage();
+
+    text = text.trim();
     if (!!isSubmitting || text === '') {
       return;
     }
@@ -134,7 +136,6 @@ export default function useChatFunctions({
 
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
-    text = text.trim();
     const intermediateId = overrideUserMessageId ?? v4();
     parentMessageId = parentMessageId ?? latestMessage?.messageId ?? Constants.NO_PARENT;
 

@@ -223,10 +223,20 @@ export function getOpenAILLMConfig({
   }
 
   if (useOpenRouter) {
-    llmConfig.include_reasoning = true;
-  }
-
-  if (
+    if (hasReasoningParams({ reasoning_effort })) {
+      /**
+       * OpenRouter uses a `reasoning` object — `summary` is not supported.
+       * ChatOpenRouter treats `reasoning` and `include_reasoning` as mutually exclusive:
+       * `include_reasoning` is legacy compat that maps to `{ enabled: true }` only when
+       * no `reasoning` object is present, so we intentionally omit it here.
+       */
+      modelKwargs.reasoning = { effort: reasoning_effort };
+      hasModelKwargs = true;
+    } else {
+      /** No explicit effort; fall back to legacy `include_reasoning` for reasoning token inclusion */
+      llmConfig.include_reasoning = true;
+    }
+  } else if (
     hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
     (llmConfig.useResponsesApi === true ||
       (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))

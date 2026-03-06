@@ -257,9 +257,15 @@ const createMeiliMongooseModel = ({
         // Add documents to MeiliSearch
         await index.addDocumentsInBatches(formattedDocs);
 
-        // Update MongoDB to mark documents as indexed
+        // Update MongoDB to mark documents as indexed.
+        // { timestamps: false } prevents Mongoose from touching updatedAt, preserving
+        // original conversation/message timestamps (fixes sidebar chronological sort).
         const docsIds = documents.map((doc) => doc._id);
-        await this.updateMany({ _id: { $in: docsIds } }, { $set: { _meiliIndex: true } });
+        await this.updateMany(
+          { _id: { $in: docsIds } },
+          { $set: { _meiliIndex: true } },
+          { timestamps: false },
+        );
       } catch (error) {
         logger.error('[processSyncBatch] Error processing batch:', error);
         throw error;

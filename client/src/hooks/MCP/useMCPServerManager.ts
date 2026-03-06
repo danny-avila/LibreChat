@@ -433,33 +433,6 @@ export function useMCPServerManager({
     [startupConfig?.interface?.mcpServers?.placeholder, localize],
   );
 
-  const batchToggleServers = useCallback(
-    (serverNames: string[]) => {
-      const connectedServers: string[] = [];
-      const disconnectedServers: string[] = [];
-
-      serverNames.forEach((serverName) => {
-        if (isInitializing(serverName)) {
-          return;
-        }
-
-        const serverStatus = connectionStatus?.[serverName];
-        if (serverStatus?.connectionState === 'connected') {
-          connectedServers.push(serverName);
-        } else {
-          disconnectedServers.push(serverName);
-        }
-      });
-
-      setMCPValues(connectedServers);
-
-      disconnectedServers.forEach((serverName) => {
-        initializeServer(serverName);
-      });
-    },
-    [connectionStatus, setMCPValues, initializeServer, isInitializing],
-  );
-
   const toggleServerSelection = useCallback(
     (serverName: string) => {
       if (isInitializing(serverName)) {
@@ -473,15 +446,10 @@ export function useMCPServerManager({
         const filteredValues = currentValues.filter((name) => name !== serverName);
         setMCPValues(filteredValues);
       } else {
-        const serverStatus = connectionStatus?.[serverName];
-        if (serverStatus?.connectionState === 'connected') {
-          setMCPValues([...currentValues, serverName]);
-        } else {
-          initializeServer(serverName);
-        }
+        setMCPValues([...currentValues, serverName]);
       }
     },
-    [mcpValues, setMCPValues, connectionStatus, initializeServer, isInitializing],
+    [mcpValues, setMCPValues, isInitializing],
   );
 
   const handleConfigSave = useCallback(
@@ -677,7 +645,6 @@ export function useMCPServerManager({
     isPinned,
     setIsPinned,
     placeholderText,
-    batchToggleServers,
     toggleServerSelection,
     localize,
 

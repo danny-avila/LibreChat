@@ -9,19 +9,20 @@ import {
   TerminalSquareIcon,
 } from 'lucide-react';
 import {
-  Providers,
-  EToolResources,
-  EModelEndpoint,
-  defaultAgentCapabilities,
-  isDocumentSupportedProvider,
-} from 'librechat-data-provider';
-import {
   FileUpload,
   TooltipAnchor,
   DropdownPopup,
   AttachmentIcon,
   SharePointIcon,
 } from '@librechat/client';
+import {
+  Providers,
+  EToolResources,
+  EModelEndpoint,
+  defaultAgentCapabilities,
+  bedrockDocumentExtensions,
+  isDocumentSupportedProvider,
+} from 'librechat-data-provider';
 import type { EndpointFileConfig } from 'librechat-data-provider';
 import {
   useAgentToolPermissions,
@@ -38,7 +39,12 @@ import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 import { useVisionModel } from '~/hooks';
 
-type FileUploadType = 'image' | 'document' | 'image_document' | 'image_document_video_audio';
+type FileUploadType =
+  | 'image'
+  | 'document'
+  | 'image_document'
+  | 'image_document_extended'
+  | 'image_document_video_audio';
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -100,6 +106,8 @@ const AttachFileMenu = ({
       inputRef.current.accept = '.pdf,application/pdf';
     } else if (fileType === 'image_document') {
       inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf';
+    } else if (fileType === 'image_document_extended') {
+      inputRef.current.accept = `image/*,.heif,.heic,${bedrockDocumentExtensions}`;
     } else if (fileType === 'image_document_video_audio') {
       inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
     } else {
@@ -139,6 +147,11 @@ const AttachFileMenu = ({
                 currentProvider === Providers.OPENROUTER
               ) {
                 fileType = 'image_document_video_audio';
+              } else if (
+                currentProvider === Providers.BEDROCK ||
+                endpointType === EModelEndpoint.bedrock
+              ) {
+                fileType = 'image_document_extended';
               }
               onAction(fileType);
             },

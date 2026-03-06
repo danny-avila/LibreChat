@@ -1,13 +1,8 @@
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
+const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
-const {
-  Callback,
-  ToolEndHandler,
-  formatAgentMessages,
-  ChatModelStreamHandler,
-} = require('@librechat/agents');
 const {
   createRun,
   buildToolSet,
@@ -43,6 +38,7 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
@@ -410,9 +406,6 @@ const createResponse = async (req, res) => {
       // Collect usage for balance tracking
       const collectedUsage = [];
 
-      // Built-in handler for processing raw model stream chunks
-      const chatModelStreamHandler = new ChatModelStreamHandler();
-
       // Artifact promises for processing tool outputs
       /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
       const artifactPromises = [];
@@ -443,11 +436,6 @@ const createResponse = async (req, res) => {
 
       // Combine handlers
       const handlers = {
-        on_chat_model_stream: {
-          handle: async (event, data, metadata, graph) => {
-            await chatModelStreamHandler.handle(event, data, metadata, graph);
-          },
-        },
         on_message_delta: responsesHandlers.on_message_delta,
         on_reasoning_delta: responsesHandlers.on_reasoning_delta,
         on_run_step: responsesHandlers.on_run_step,
@@ -499,6 +487,10 @@ const createResponse = async (req, res) => {
           thread_id: conversationId,
           user_id: userId,
           user: createSafeUser(req.user),
+          requestBody: {
+            messageId: responseId,
+            conversationId,
+          },
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
         signal: abortController.signal,
@@ -518,12 +510,18 @@ const createResponse = async (req, res) => {
       const balanceConfig = getBalanceConfig(req.config);
       const transactionsConfig = getTransactionsConfig(req.config);
       recordCollectedUsage(
-        { spendTokens, spendStructuredTokens },
+        {
+          spendTokens,
+          spendStructuredTokens,
+          pricing: { getMultiplier, getCacheMultiplier },
+          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+        },
         {
           user: userId,
           conversationId,
           collectedUsage,
           context: 'message',
+          messageId: responseId,
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
@@ -570,8 +568,6 @@ const createResponse = async (req, res) => {
     } else {
       const aggregatorHandlers = createAggregatorEventHandlers(aggregator);
 
-      const chatModelStreamHandler = new ChatModelStreamHandler();
-
       // Collect usage for balance tracking
       const collectedUsage = [];
 
@@ -596,11 +592,6 @@ const createResponse = async (req, res) => {
       };
 
       const handlers = {
-        on_chat_model_stream: {
-          handle: async (event, data, metadata, graph) => {
-            await chatModelStreamHandler.handle(event, data, metadata, graph);
-          },
-        },
         on_message_delta: aggregatorHandlers.on_message_delta,
         on_reasoning_delta: aggregatorHandlers.on_reasoning_delta,
         on_run_step: aggregatorHandlers.on_run_step,
@@ -650,6 +641,10 @@ const createResponse = async (req, res) => {
           thread_id: conversationId,
           user_id: userId,
           user: createSafeUser(req.user),
+          requestBody: {
+            messageId: responseId,
+            conversationId,
+          },
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
         signal: abortController.signal,
@@ -669,12 +664,18 @@ const createResponse = async (req, res) => {
       const balanceConfig = getBalanceConfig(req.config);
       const transactionsConfig = getTransactionsConfig(req.config);
       recordCollectedUsage(
-        { spendTokens, spendStructuredTokens },
+        {
+          spendTokens,
+          spendStructuredTokens,
+          pricing: { getMultiplier, getCacheMultiplier },
+          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+        },
         {
           user: userId,
           conversationId,
           collectedUsage,
           context: 'message',
+          messageId: responseId,
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
@@ -727,7 +728,13 @@ const createResponse = async (req, res) => {
       writeDone(res);
       res.end();
     } else {
-      sendResponsesErrorResponse(res, 500, errorMessage, 'server_error');
+      // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
+      const statusCode =
+        typeof error?.status === 'number' && error.status >= 400 && error.status < 600
+          ? error.status
+          : 500;
+      const errorType = statusCode >= 400 && statusCode < 500 ? 'invalid_request' : 'server_error';
+      sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);
     }
   }
 };

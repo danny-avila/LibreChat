@@ -12,15 +12,18 @@ import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { AccessControlService } from '~/acl/accessControlService';
 
 /**
- * Regex patterns for credential placeholders that should not be allowed in user-provided headers.
- * These placeholders would substitute the CALLING user's credentials, creating a security risk
- * when MCP servers are shared between users (credential exfiltration).
+ * Regex patterns for credential/env placeholders that should not be allowed in user-provided configs.
+ * These would substitute server credentials or the CALLING user's data, creating exfiltration risks
+ * when MCP servers are shared between users.
  *
  * Safe placeholders like {{MCP_API_KEY}} are allowed as they resolve from the user's own plugin auth.
  */
 const DANGEROUS_CREDENTIAL_PATTERNS = [
+  /\$\{[^}]+\}/g,
   /\{\{LIBRECHAT_OPENID_[^}]+\}\}/g,
   /\{\{LIBRECHAT_USER_[^}]+\}\}/g,
+  /\{\{LIBRECHAT_GRAPH_[^}]+\}\}/g,
+  /\{\{LIBRECHAT_BODY_[^}]+\}\}/g,
 ];
 
 /**
@@ -457,7 +460,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     };
 
     // Remove key field since it's user-provided (destructure to omit, not set to undefined)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     const { key: _removed, ...apiKeyWithoutKey } = result.apiKey!;
     result.apiKey = apiKeyWithoutKey;
 
@@ -521,7 +524,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           '[ServerConfigsDB.decryptConfig] Failed to decrypt apiKey.key, returning config without key',
           error,
         );
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
         const { key: _removedKey, ...apiKeyWithoutKey } = result.apiKey;
         result.apiKey = apiKeyWithoutKey;
       }
@@ -542,7 +545,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           '[ServerConfigsDB.decryptConfig] Failed to decrypt client_secret, returning config without secret',
           error,
         );
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
         const { client_secret: _removed, ...oauthWithoutSecret } = oauthConfig;
         result = {
           ...result,

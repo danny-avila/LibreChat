@@ -1,9 +1,9 @@
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
-import { detectOAuthRequirement } from '~/mcp/oauth';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { createMockConnection } from './mcpConnectionsMock.helper';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { detectOAuthRequirement } from '~/mcp/oauth';
 
 // Mock external dependencies
 jest.mock('../../oauth/detectOAuth');
@@ -277,6 +277,7 @@ describe('MCPServerInspector', () => {
         serverName: 'test_server',
         serverConfig: expect.objectContaining({ type: 'stdio', command: 'node' }),
         useSSRFProtection: true,
+        dbSourced: false,
       });
 
       // Verify temporary connection was disconnected

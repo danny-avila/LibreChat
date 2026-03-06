@@ -7,6 +7,7 @@ const {
 } = require('@librechat/agents');
 const {
   checkAccess,
+  toolkitParent,
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
@@ -207,7 +208,7 @@ const loadTools = async ({
     },
     gemini_image_gen: async (toolContextMap) => {
       const authFields = getAuthFields('gemini_image_gen');
-      const authValues = await loadAuthValues({ userId: user, authFields });
+      const authValues = await loadAuthValues({ userId: user, authFields, throwError: false });
       const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
       const toolContext = buildImageToolContext({
         imageFiles,
@@ -222,7 +223,6 @@ const loadTools = async ({
         isAgent: !!agent,
         req: options.req,
         imageFiles,
-        processFileURL: options.processFileURL,
         userId: user,
         fileStrategy,
       });
@@ -370,8 +370,16 @@ const loadTools = async ({
       continue;
     }
 
-    if (customConstructors[tool]) {
-      requestedTools[tool] = async () => customConstructors[tool](toolContextMap);
+    const toolKey = customConstructors[tool] ? tool : toolkitParent[tool];
+    if (toolKey && customConstructors[toolKey]) {
+      if (!requestedTools[toolKey]) {
+        let cached;
+        requestedTools[toolKey] = async () => {
+          cached ??= customConstructors[toolKey](toolContextMap);
+          return cached;
+        };
+      }
+      requestedTools[tool] = requestedTools[toolKey];
       continue;
     }
 

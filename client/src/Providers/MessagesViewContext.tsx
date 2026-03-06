@@ -18,7 +18,8 @@ interface MessagesViewContextValue {
 
   /** Message state management */
   index: ReturnType<typeof useChatContext>['index'];
-  latestMessage: ReturnType<typeof useChatContext>['latestMessage'];
+  latestMessageId: ReturnType<typeof useChatContext>['latestMessageId'];
+  latestMessageDepth: ReturnType<typeof useChatContext>['latestMessageDepth'];
   setLatestMessage: ReturnType<typeof useChatContext>['setLatestMessage'];
   getMessages: ReturnType<typeof useChatContext>['getMessages'];
   setMessages: ReturnType<typeof useChatContext>['setMessages'];
@@ -39,7 +40,8 @@ export function MessagesViewProvider({ children }: { children: React.ReactNode }
     regenerate,
     isSubmitting,
     conversation,
-    latestMessage,
+    latestMessageId,
+    latestMessageDepth,
     setAbortScroll,
     handleContinue,
     setLatestMessage,
@@ -83,10 +85,11 @@ export function MessagesViewProvider({ children }: { children: React.ReactNode }
   const messageState = useMemo(
     () => ({
       index,
-      latestMessage,
+      latestMessageId,
+      latestMessageDepth,
       setLatestMessage,
     }),
-    [index, latestMessage, setLatestMessage],
+    [index, latestMessageId, latestMessageDepth, setLatestMessage],
   );
 
   /** Combine all values into final context value */
@@ -139,9 +142,9 @@ export function useMessagesOperations() {
 
 /** Hook for components that only need message state */
 export function useMessagesState() {
-  const { index, latestMessage, setLatestMessage } = useMessagesViewContext();
+  const { index, latestMessageId, latestMessageDepth, setLatestMessage } = useMessagesViewContext();
   return useMemo(
-    () => ({ index, latestMessage, setLatestMessage }),
-    [index, latestMessage, setLatestMessage],
+    () => ({ index, latestMessageId, latestMessageDepth, setLatestMessage }),
+    [index, latestMessageId, latestMessageDepth, setLatestMessage],
   );
 }

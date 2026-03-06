@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
-import { useChatContext } from './ChatContext';
 import { getLatestText } from '~/utils';
+import store from '~/store';
 
 export interface ArtifactsContextValue {
   isSubmitting: boolean;
@@ -18,27 +19,28 @@ interface ArtifactsProviderProps {
 }
 
 export function ArtifactsProvider({ children, value }: ArtifactsProviderProps) {
-  const { isSubmitting, latestMessage, conversation } = useChatContext();
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
+  const latestMessage = useRecoilValue(store.latestMessageFamily(0));
+  const conversationId = useRecoilValue(store.conversationIdByIndex(0));
 
   const chatLatestMessageText = useMemo(() => {
     return getLatestText({
-      messageId: latestMessage?.messageId ?? null,
       text: latestMessage?.text ?? null,
       content: latestMessage?.content ?? null,
+      messageId: latestMessage?.messageId ?? null,
     } as TMessage);
   }, [latestMessage?.messageId, latestMessage?.text, latestMessage?.content]);
 
   const defaultContextValue = useMemo<ArtifactsContextValue>(
     () => ({
       isSubmitting,
+      conversationId: conversationId ?? null,
       latestMessageText: chatLatestMessageText,
       latestMessageId: latestMessage?.messageId ?? null,
-      conversationId: conversation?.conversationId ?? null,
     }),
-    [isSubmitting, chatLatestMessageText, latestMessage?.messageId, conversation?.conversationId],
+    [isSubmitting, chatLatestMessageText, latestMessage?.messageId, conversationId],
   );
 
-  /** Context value only created when relevant values change */
   const contextValue = useMemo<ArtifactsContextValue>(
     () => (value ? { ...defaultContextValue, ...value } : defaultContextValue),
     [defaultContextValue, value],

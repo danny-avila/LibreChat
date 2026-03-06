@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { useFormContext } from 'react-hook-form';
@@ -11,16 +11,16 @@ import {
   getEndpointFileConfig,
 } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
-import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
 import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
-import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
+import { useLocalize, useLazyEffect } from '~/hooks';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import FileSearchCheckbox from './FileSearchCheckbox';
-import { useChatContext } from '~/Providers';
 import { isEphemeralAgent } from '~/common';
+import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
+import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 
-export default function FileSearch({
+function FileSearch({
   agent_id,
   files: _files,
 }: {
@@ -28,10 +28,10 @@ export default function FileSearch({
   files?: [string, ExtendedFile][];
 }) {
   const localize = useLocalize();
-  const { setFilesLoading } = useChatContext();
   const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
+  const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
 
@@ -42,15 +42,24 @@ export default function FileSearch({
     select: (data) => mergeFileConfig(data),
   });
 
-  const { handleFileChange } = useFileHandling({
-    additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-    fileSetter: setFiles,
-  });
+  const { handleFileChange } = useFileHandlingNoChatContext(
+    {
+      additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
+      endpointOverride: EModelEndpoint.agents,
+      fileSetter: setFiles,
+    },
+    fileHandlingState,
+  );
 
-  const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-    fileSetter: setFiles,
-  });
+  const { handleSharePointFiles, isProcessing, downloadProgress } =
+    useSharePointFileHandlingNoChatContext(
+      {
+        additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
+        endpointOverride: EModelEndpoint.agents,
+        fileSetter: setFiles,
+      },
+      fileHandlingState,
+    );
 
   useLazyEffect(
     () => {
@@ -141,7 +150,6 @@ export default function FileSearch({
         <FileRow
           files={files}
           setFiles={setFiles}
-          setFilesLoading={setFilesLoading}
           agent_id={agent_id}
           tool_resource={EToolResources.file_search}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
@@ -201,3 +209,8 @@ export default function FileSearch({
     </div>
   );
 }
+
+const MemoizedFileSearch = memo(FileSearch);
+MemoizedFileSearch.displayName = 'FileSearch';
+
+export default MemoizedFileSearch;

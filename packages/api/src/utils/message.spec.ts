@@ -1,5 +1,10 @@
 import { Constants } from 'librechat-data-provider';
-import { sanitizeFileForTransmit, sanitizeMessageForTransmit, getThreadData } from './message';
+import {
+  sanitizeMessageForTransmit,
+  sanitizeFileForTransmit,
+  buildMessageFiles,
+  getThreadData,
+} from './message';
 
 /** Cast to string for type compatibility with ThreadMessage */
 const NO_PARENT = Constants.NO_PARENT as string;
@@ -125,47 +130,107 @@ describe('sanitizeMessageForTransmit', () => {
   });
 });
 
+describe('buildMessageFiles', () => {
+  const baseAttachment = {
+    file_id: 'file-1',
+    filename: 'test.png',
+    filepath: '/uploads/test.png',
+    type: 'image/png',
+    bytes: 512,
+    object: 'file' as const,
+    user: 'user-1',
+    embedded: false,
+    usage: 0,
+    text: 'big ocr text',
+    _id: 'mongo-id',
+  };
+
+  it('returns sanitized files matching request file IDs', () => {
+    const result = buildMessageFiles([{ file_id: 'file-1' }], [baseAttachment]);
+    expect(result).toHaveLength(1);
+    expect(result?.[0].file_id).toBe('file-1');
+    expect(result?.[0]).not.toHaveProperty('text');
+    expect(result?.[0]).not.toHaveProperty('_id');
+  });
+
+  it('returns undefined when no attachments match request IDs', () => {
+    const result = buildMessageFiles([{ file_id: 'file-nomatch' }], [baseAttachment]);
+    expect(result).toEqual([]);
+  });
+
+  it('returns undefined for empty attachments array', () => {
+    const result = buildMessageFiles([{ file_id: 'file-1' }], []);
+    expect(result).toEqual([]);
+  });
+
+  it('returns undefined for empty request files array', () => {
+    const result = buildMessageFiles([], [baseAttachment]);
+    expect(result).toEqual([]);
+  });
+
+  it('filters out undefined file_id entries in request files (no set poisoning)', () => {
+    const undefinedAttachment = { ...baseAttachment, file_id: undefined as unknown as string };
+    const result = buildMessageFiles(
+      [{ file_id: undefined }, { file_id: 'file-1' }],
+      [undefinedAttachment, baseAttachment],
+    );
+    expect(result).toHaveLength(1);
+    expect(result?.[0].file_id).toBe('file-1');
+  });
+
+  it('returns only attachments whose file_id is in the request set', () => {
+    const attachment2 = { ...baseAttachment, file_id: 'file-2', filename: 'b.png' };
+    const result = buildMessageFiles([{ file_id: 'file-1' }], [baseAttachment, attachment2]);
+    expect(result).toHaveLength(1);
+    expect(result?.[0].file_id).toBe('file-1');
+  });
+
+  it('does not mutate original attachment objects', () => {
+    buildMessageFiles([{ file_id: 'file-1' }], [baseAttachment]);
+    expect(baseAttachment.text).toBe('big ocr text');
+    expect(baseAttachment._id).toBe('mongo-id');
+  });
+});
+
 describe('getThreadData', () => {
-  describe('edge cases - empty and null inputs', () => {
-    it('should return empty result for empty messages array', () => {
-      const result = getThreadData([], 'parent-123');
+  it('should return empty result for empty messages array', () => {
+    const result = getThreadData([], 'parent-123');
 
-      expect(result.messageIds).toEqual([]);
-      expect(result.fileIds).toEqual([]);
-    });
+    expect(result.messageIds).toEqual([]);
+    expect(result.fileIds).toEqual([]);
+  });
 
-    it('should return empty result for null parentMessageId', () => {
-      const messages = [
-        { messageId: 'msg-1', parentMessageId: null },
-        { messageId: 'msg-2', parentMessageId: 'msg-1' },
-      ];
+  it('should return empty result for null parentMessageId', () => {
+    const messages = [
+      { messageId: 'msg-1', parentMessageId: null },
+      { messageId: 'msg-2', parentMessageId: 'msg-1' },
+    ];
 
-      const result = getThreadData(messages, null);
+    const result = getThreadData(messages, null);
 
-      expect(result.messageIds).toEqual([]);
-      expect(result.fileIds).toEqual([]);
-    });
+    expect(result.messageIds).toEqual([]);
+    expect(result.fileIds).toEqual([]);
+  });
 
-    it('should return empty result for undefined parentMessageId', () => {
-      const messages = [{ messageId: 'msg-1', parentMessageId: null }];
+  it('should return empty result for undefined parentMessageId', () => {
+    const messages = [{ messageId: 'msg-1', parentMessageId: null }];
 
-      const result = getThreadData(messages, undefined);
+    const result = getThreadData(messages, undefined);
 
-      expect(result.messageIds).toEqual([]);
-      expect(result.fileIds).toEqual([]);
-    });
+    expect(result.messageIds).toEqual([]);
+    expect(result.fileIds).toEqual([]);
+  });
 
-    it('should return empty result when parentMessageId not found in messages', () => {
-      const messages = [
-        { messageId: 'msg-1', parentMessageId: null },
-        { messageId: 'msg-2', parentMessageId: 'msg-1' },
-      ];
+  it('should return empty result when parentMessageId not found in messages', () => {
+    const messages = [
+      { messageId: 'msg-1', parentMessageId: null },
+      { messageId: 'msg-2', parentMessageId: 'msg-1' },
+    ];
 
-      const result = getThreadData(messages, 'non-existent');
+    const result = getThreadData(messages, 'non-existent');
 
-      expect(result.messageIds).toEqual([]);
-      expect(result.fileIds).toEqual([]);
-    });
+    expect(result.messageIds).toEqual([]);
+    expect(result.fileIds).toEqual([]);
   });
 
   describe('thread traversal', () => {
