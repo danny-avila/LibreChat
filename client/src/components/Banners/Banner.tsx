@@ -47,7 +47,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
         )}
         dangerouslySetInnerHTML={{ __html: banner.message }}
       ></div>
-      {!banner.persistable && (
+      {/* {!banner.persistable && (
         <Button
           size="icon"
           variant="ghost"
@@ -57,7 +57,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
         >
           <XIcon className="mx-auto h-4 w-4 text-text-primary" aria-hidden="true" />
         </Button>
-      )}
+      )} */}
     </div>
   );
 };
