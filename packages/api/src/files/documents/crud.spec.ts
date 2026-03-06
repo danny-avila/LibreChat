@@ -121,4 +121,28 @@ describe('Document Parser', () => {
 
     await expect(parseDocument({ file })).rejects.toThrow('No text found in document');
   });
+
+  test('parseDocument() parses empty xlsx with only sheet name', async () => {
+    const file = {
+      originalname: 'empty.xlsx',
+      path: path.join(__dirname, 'empty.xlsx'),
+      mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    } as Express.Multer.File;
+
+    const document = await parseDocument({ file });
+
+    expect(document).toEqual({
+      bytes: 8,
+      filename: 'empty.xlsx',
+      filepath: 'document_parser',
+      images: [],
+      text: 'Empty:\n\n',
+    });
+  });
+
+  test('xlsx exports read and utils as named imports', async () => {
+    const { read, utils } = await import('xlsx');
+    expect(typeof read).toBe('function');
+    expect(typeof utils?.sheet_to_csv).toBe('function');
+  });
 });
