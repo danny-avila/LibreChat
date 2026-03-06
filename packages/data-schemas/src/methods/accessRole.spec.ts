@@ -203,6 +203,9 @@ describe('AccessRole Model Tests', () => {
           AccessRoleIds.MCPSERVER_EDITOR,
           AccessRoleIds.MCPSERVER_OWNER,
           AccessRoleIds.MCPSERVER_VIEWER,
+          AccessRoleIds.REMOTE_AGENT_EDITOR,
+          AccessRoleIds.REMOTE_AGENT_OWNER,
+          AccessRoleIds.REMOTE_AGENT_VIEWER,
         ].sort(),
       );
 

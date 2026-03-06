@@ -55,6 +55,7 @@ const banViolation = async (req, res, errorMessage) => {
 
   res.clearCookie('refreshToken');
   res.clearCookie('openid_access_token');
+  res.clearCookie('openid_id_token');
   res.clearCookie('openid_user_id');
   res.clearCookie('token_provider');
 

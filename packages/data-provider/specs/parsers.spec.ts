@@ -1,26 +1,30 @@
-import { replaceSpecialVars, parseCompactConvo } from '../src/parsers';
+import { replaceSpecialVars, parseConvo, parseCompactConvo, parseTextParts } from '../src/parsers';
 import { specialVariables } from '../src/config';
 import { EModelEndpoint } from '../src/schemas';
+import { ContentTypes } from '../src/types/runs';
+import type { TMessageContentParts } from '../src/types/assistants';
 import type { TUser, TConversation } from '../src/types';
 
 // Mock dayjs module with consistent date/time values regardless of environment
 jest.mock('dayjs', () => {
-  // Create a mock implementation that returns fixed values
   const mockDayjs = () => ({
     format: (format: string) => {
       if (format === 'YYYY-MM-DD') {
         return '2024-04-29';
       }
-      if (format === 'YYYY-MM-DD HH:mm:ss') {
-        return '2024-04-29 12:34:56';
+      if (format === 'YYYY-MM-DD HH:mm:ss Z') {
+        return '2024-04-29 12:34:56 -04:00';
       }
-      return format; // fallback
+      if (format === 'dddd') {
+        return 'Monday';
+      }
+      throw new Error(
+        `Unhandled dayjs().format() call in mock: "${format}". Update the mock in parsers.spec.ts`,
+      );
     },
-    day: () => 1, // 1 = Monday
     toISOString: () => '2024-04-29T16:34:56.000Z',
   });
 
-  // Add any static methods needed
   mockDayjs.extend = jest.fn();
 
   return mockDayjs;
@@ -45,13 +49,12 @@ describe('replaceSpecialVars', () => {
 
   test('should replace {{current_date}} with the current date', () => {
     const result = replaceSpecialVars({ text: 'Today is {{current_date}}' });
-    // dayjs().day() returns 1 for Monday (April 29, 2024 is a Monday)
-    expect(result).toBe('Today is 2024-04-29 (1)');
+    expect(result).toBe('Today is 2024-04-29 (Monday)');
   });
 
   test('should replace {{current_datetime}} with the current datetime', () => {
     const result = replaceSpecialVars({ text: 'Now is {{current_datetime}}' });
-    expect(result).toBe('Now is 2024-04-29 12:34:56 (1)');
+    expect(result).toBe('Now is 2024-04-29 12:34:56 -04:00 (Monday)');
   });
 
   test('should replace {{iso_datetime}} with the ISO datetime', () => {
@@ -88,7 +91,7 @@ describe('replaceSpecialVars', () => {
       user: mockUser,
     });
     expect(result).toBe(
-      'Hello Test User! Today is 2024-04-29 (1) and the time is 2024-04-29 12:34:56 (1). ISO: 2024-04-29T16:34:56.000Z',
+      'Hello Test User! Today is 2024-04-29 (Monday) and the time is 2024-04-29 12:34:56 -04:00 (Monday). ISO: 2024-04-29T16:34:56.000Z',
     );
   });
 
@@ -97,7 +100,7 @@ describe('replaceSpecialVars', () => {
       text: 'Date: {{CURRENT_DATE}}, User: {{Current_User}}',
       user: mockUser,
     });
-    expect(result).toBe('Date: 2024-04-29 (1), User: Test User');
+    expect(result).toBe('Date: 2024-04-29 (Monday), User: Test User');
   });
 
   test('should confirm all specialVariables from config.ts get parsed', () => {
@@ -118,8 +121,8 @@ describe('replaceSpecialVars', () => {
     });
 
     // Verify the expected replacements
-    expect(result).toContain('2024-04-29 (1)'); // current_date
-    expect(result).toContain('2024-04-29 12:34:56 (1)'); // current_datetime
+    expect(result).toContain('2024-04-29 (Monday)'); // current_date
+    expect(result).toContain('2024-04-29 12:34:56 -04:00 (Monday)'); // current_datetime
     expect(result).toContain('2024-04-29T16:34:56.000Z'); // iso_datetime
     expect(result).toContain('Test User'); // current_user
   });
@@ -141,7 +144,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('gpt-4');
     });
 
@@ -159,7 +162,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.agent_id).toBe('agent_123');
     });
 
@@ -177,7 +180,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('claude-3-opus');
     });
 
@@ -195,7 +198,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('gemini-pro');
     });
 
@@ -213,7 +216,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.assistant_id).toBe('asst_123');
     });
 
@@ -234,7 +237,7 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('gpt-4');
       expect(result?.temperature).toBe(0.7);
       expect(result?.top_p).toBe(0.9);
@@ -254,8 +257,345 @@ describe('parseCompactConvo', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.iconURL).toBeUndefined();
+      expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('gpt-4');
     });
+  });
+});
+
+describe('parseConvo - defaultParamsEndpoint', () => {
+  test('should strip maxOutputTokens for custom endpoint without defaultParamsEndpoint', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+      maxContextTokens: 50000,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.maxContextTokens).toBe(50000);
+    expect(result?.maxOutputTokens).toBeUndefined();
+  });
+
+  test('should preserve maxOutputTokens when defaultParamsEndpoint is anthropic', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+      topP: 0.9,
+      topK: 40,
+      maxContextTokens: 50000,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.anthropic,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.model).toBe('anthropic/claude-opus-4.5');
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.maxOutputTokens).toBe(8192);
+    expect(result?.topP).toBe(0.9);
+    expect(result?.topK).toBe(40);
+    expect(result?.maxContextTokens).toBe(50000);
+  });
+
+  test('should strip OpenAI-specific fields when defaultParamsEndpoint is anthropic', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      temperature: 0.7,
+      max_tokens: 4096,
+      top_p: 0.9,
+      presence_penalty: 0.5,
+      frequency_penalty: 0.3,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.anthropic,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.max_tokens).toBeUndefined();
+    expect(result?.top_p).toBeUndefined();
+    expect(result?.presence_penalty).toBeUndefined();
+    expect(result?.frequency_penalty).toBeUndefined();
+  });
+
+  test('should preserve max_tokens when defaultParamsEndpoint is not set (OpenAI default)', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gpt-4o',
+      temperature: 0.7,
+      max_tokens: 4096,
+      top_p: 0.9,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.max_tokens).toBe(4096);
+    expect(result?.top_p).toBe(0.9);
+  });
+
+  test('should preserve Google-specific fields when defaultParamsEndpoint is google', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gemini-pro',
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+      topP: 0.9,
+      topK: 40,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.google,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.maxOutputTokens).toBe(8192);
+    expect(result?.topP).toBe(0.9);
+    expect(result?.topK).toBe(40);
+  });
+
+  test('should not strip fields from non-custom endpoints that already have a schema', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gpt-4o',
+      temperature: 0.7,
+      max_tokens: 4096,
+      top_p: 0.9,
+    };
+
+    const result = parseConvo({
+      endpoint: EModelEndpoint.openAI,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.anthropic,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.max_tokens).toBe(4096);
+    expect(result?.top_p).toBe(0.9);
+  });
+
+  test('should not carry bedrock region to custom endpoint without defaultParamsEndpoint', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gpt-4o',
+      temperature: 0.7,
+      region: 'us-east-1',
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.region).toBeUndefined();
+  });
+
+  test('should fall back to endpointType schema when defaultParamsEndpoint is invalid', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gpt-4o',
+      temperature: 0.7,
+      max_tokens: 4096,
+      maxOutputTokens: 8192,
+    };
+
+    const result = parseConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: 'nonexistent_endpoint',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.max_tokens).toBe(4096);
+    expect(result?.maxOutputTokens).toBeUndefined();
+  });
+});
+
+describe('parseCompactConvo - defaultParamsEndpoint', () => {
+  test('should strip maxOutputTokens for custom endpoint without defaultParamsEndpoint', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+    };
+
+    const result = parseCompactConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.maxOutputTokens).toBeUndefined();
+  });
+
+  test('should preserve maxOutputTokens when defaultParamsEndpoint is anthropic', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+      topP: 0.9,
+      maxContextTokens: 50000,
+    };
+
+    const result = parseCompactConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.anthropic,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.maxOutputTokens).toBe(8192);
+    expect(result?.topP).toBe(0.9);
+    expect(result?.maxContextTokens).toBe(50000);
+  });
+
+  test('should strip iconURL even when defaultParamsEndpoint is set', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-opus-4.5',
+      iconURL: 'https://malicious.com/track.png',
+      maxOutputTokens: 8192,
+    };
+
+    const result = parseCompactConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: EModelEndpoint.anthropic,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.['iconURL']).toBeUndefined();
+    expect(result?.maxOutputTokens).toBe(8192);
+  });
+
+  test('should fall back to endpointType when defaultParamsEndpoint is null', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'gpt-4o',
+      max_tokens: 4096,
+      maxOutputTokens: 8192,
+    };
+
+    const result = parseCompactConvo({
+      endpoint: 'MyCustomEndpoint' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: null,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.max_tokens).toBe(4096);
+    expect(result?.maxOutputTokens).toBeUndefined();
+  });
+});
+
+describe('parseTextParts', () => {
+  test('should concatenate text parts', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'Hello' },
+      { type: ContentTypes.TEXT, text: 'World' },
+    ];
+    expect(parseTextParts(parts)).toBe('Hello World');
+  });
+
+  test('should handle text parts with object-style text values', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: { value: 'structured text' } },
+    ];
+    expect(parseTextParts(parts)).toBe('structured text');
+  });
+
+  test('should include think parts by default', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'Answer:' },
+      { type: ContentTypes.THINK, think: 'reasoning step' },
+    ];
+    expect(parseTextParts(parts)).toBe('Answer: reasoning step');
+  });
+
+  test('should skip think parts when skipReasoning is true', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.THINK, think: 'internal reasoning' },
+      { type: ContentTypes.TEXT, text: 'visible answer' },
+    ];
+    expect(parseTextParts(parts, true)).toBe('visible answer');
+  });
+
+  test('should skip non-text/think part types', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'before' },
+      { type: ContentTypes.IMAGE_FILE } as TMessageContentParts,
+      { type: ContentTypes.TEXT, text: 'after' },
+    ];
+    expect(parseTextParts(parts)).toBe('before after');
+  });
+
+  test('should handle undefined elements in the content parts array', () => {
+    const parts: Array<TMessageContentParts | undefined> = [
+      { type: ContentTypes.TEXT, text: 'first' },
+      undefined,
+      { type: ContentTypes.TEXT, text: 'third' },
+    ];
+    expect(parseTextParts(parts)).toBe('first third');
+  });
+
+  test('should handle multiple consecutive undefined elements', () => {
+    const parts: Array<TMessageContentParts | undefined> = [
+      undefined,
+      undefined,
+      { type: ContentTypes.TEXT, text: 'only text' },
+      undefined,
+    ];
+    expect(parseTextParts(parts)).toBe('only text');
+  });
+
+  test('should handle an array of all undefined elements', () => {
+    const parts: Array<TMessageContentParts | undefined> = [undefined, undefined, undefined];
+    expect(parseTextParts(parts)).toBe('');
+  });
+
+  test('should handle parts with missing type property', () => {
+    const parts: Array<TMessageContentParts | undefined> = [
+      { text: 'no type field' } as unknown as TMessageContentParts,
+      { type: ContentTypes.TEXT, text: 'valid' },
+    ];
+    expect(parseTextParts(parts)).toBe('valid');
+  });
+
+  test('should return empty string for empty array', () => {
+    expect(parseTextParts([])).toBe('');
+  });
+
+  test('should not add extra spaces when parts already have spacing', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'Hello ' },
+      { type: ContentTypes.TEXT, text: 'World' },
+    ];
+    expect(parseTextParts(parts)).toBe('Hello World');
   });
 });

@@ -162,8 +162,8 @@ const createMeiliMongooseModel = ({
 
     /**
      * Synchronizes data between the MongoDB collection and the MeiliSearch index by
-     * incrementally indexing only documents where `expiredAt` is `null` and `_meiliIndex` is `false`
-     * (i.e., non-expired documents that have not yet been indexed).
+     * incrementally indexing only documents where `expiredAt` is `null` and `_meiliIndex` is not `true`
+     * (i.e., non-expired documents that have not yet been indexed, including those with missing or null `_meiliIndex`).
      * */
     static async syncWithMeili(this: SchemaWithMeiliMethods): Promise<void> {
       const startTime = Date.now();
@@ -196,7 +196,7 @@ const createMeiliMongooseModel = ({
       while (hasMore) {
         const query: FilterQuery<unknown> = {
           expiredAt: null,
-          _meiliIndex: false,
+          _meiliIndex: { $ne: true },
         };
 
         try {
@@ -257,9 +257,15 @@ const createMeiliMongooseModel = ({
         // Add documents to MeiliSearch
         await index.addDocumentsInBatches(formattedDocs);
 
-        // Update MongoDB to mark documents as indexed
+        // Update MongoDB to mark documents as indexed.
+        // { timestamps: false } prevents Mongoose from touching updatedAt, preserving
+        // original conversation/message timestamps (fixes sidebar chronological sort).
         const docsIds = documents.map((doc) => doc._id);
-        await this.updateMany({ _id: { $in: docsIds } }, { $set: { _meiliIndex: true } });
+        await this.updateMany(
+          { _id: { $in: docsIds } },
+          { $set: { _meiliIndex: true } },
+          { timestamps: false },
+        );
       } catch (error) {
         logger.error('[processSyncBatch] Error processing batch:', error);
         throw error;

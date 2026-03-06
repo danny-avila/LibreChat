@@ -18,7 +18,10 @@ type TCodeProps = {
   children: React.ReactNode;
 };
 
-export const code: React.ElementType = memo(({ className, children }: TCodeProps) => {
+export const code: React.ElementType = memo(function MarkdownCode({
+  className,
+  children,
+}: TCodeProps) {
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,
     permission: Permissions.USE,
@@ -62,8 +65,12 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
     );
   }
 });
+code.displayName = 'MarkdownCode';
 
-export const codeNoExecution: React.ElementType = memo(({ className, children }: TCodeProps) => {
+export const codeNoExecution: React.ElementType = memo(function MarkdownCodeNoExecution({
+  className,
+  children,
+}: TCodeProps) {
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
 
@@ -82,13 +89,14 @@ export const codeNoExecution: React.ElementType = memo(({ className, children }:
     return <CodeBlock lang={lang ?? 'text'} codeChildren={children} allowExecution={false} />;
   }
 });
+codeNoExecution.displayName = 'MarkdownCodeNoExecution';
 
 type TAnchorProps = {
   href: string;
   children: React.ReactNode;
 };
 
-export const a: React.ElementType = memo(({ href, children }: TAnchorProps) => {
+export const a: React.ElementType = memo(function MarkdownAnchor({ href, children }: TAnchorProps) {
   const user = useRecoilValue(store.user);
   const { showToast } = useToastContext();
   const localize = useLocalize();
@@ -111,7 +119,7 @@ export const a: React.ElementType = memo(({ href, children }: TAnchorProps) => {
   }, [user?.id, href]);
 
   const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id);
-  const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_new' };
+  const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_blank' };
 
   if (!file_id || !filename) {
     return (
@@ -163,14 +171,16 @@ export const a: React.ElementType = memo(({ href, children }: TAnchorProps) => {
     </a>
   );
 });
+a.displayName = 'MarkdownAnchor';
 
 type TParagraphProps = {
   children: React.ReactNode;
 };
 
-export const p: React.ElementType = memo(({ children }: TParagraphProps) => {
+export const p: React.ElementType = memo(function MarkdownParagraph({ children }: TParagraphProps) {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
+p.displayName = 'MarkdownParagraph';
 
 type TImageProps = {
   src?: string;
@@ -180,7 +190,13 @@ type TImageProps = {
   style?: React.CSSProperties;
 };
 
-export const img: React.ElementType = memo(({ src, alt, title, className, style }: TImageProps) => {
+export const img: React.ElementType = memo(function MarkdownImage({
+  src,
+  alt,
+  title,
+  className,
+  style,
+}: TImageProps) {
   // Get the base URL from the API endpoints
   const baseURL = apiBaseUrl();
 
@@ -199,3 +215,4 @@ export const img: React.ElementType = memo(({ src, alt, title, className, style 
 
   return <img src={fixedSrc} alt={alt} title={title} className={className} style={style} />;
 });
+img.displayName = 'MarkdownImage';

@@ -1,13 +1,20 @@
 import React, { useRef, useCallback, useMemo, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
 import { LayoutGrid } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
+import { useRecoilValue } from 'recoil';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
-import { useFavorites, useLocalize, useShowMarketplace, useNewConvo } from '~/hooks';
+import type { AgentQueryResult } from '~/common';
+import {
+  useGetConversation,
+  useShowMarketplace,
+  useFavorites,
+  useLocalize,
+  useNewConvo,
+} from '~/hooks';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
@@ -121,20 +128,20 @@ export default function FavoritesList({
   const navigate = useNavigate();
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
+  const getConversation = useGetConversation(0);
   const { favorites, reorderFavorites, isLoading: isFavoritesLoading } = useFavorites();
   const showAgentMarketplace = useShowMarketplace();
 
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();
   const agentsMap = useAgentsMapContext();
-  const conversation = useRecoilValue(store.conversationByIndex(0));
   const { data: endpointsConfig = {} as t.TEndpointsConfig } = useGetEndpointsQuery();
 
   const { onSelectEndpoint } = useSelectMention({
     modelSpecs: [],
-    conversation,
     assistantsMap,
     endpointsConfig,
+    getConversation,
     newConversation,
     returnHandlers: true,
   });
@@ -184,7 +191,20 @@ export default function FavoritesList({
   const missingAgentQueries = useQueries({
     queries: missingAgentIds.map((agentId) => ({
       queryKey: [QueryKeys.agent, agentId],
-      queryFn: () => dataService.getAgentById({ agent_id: agentId }),
+      queryFn: async (): Promise<AgentQueryResult> => {
+        try {
+          const agent = await dataService.getAgentById({ agent_id: agentId });
+          return { found: true, agent };
+        } catch (error) {
+          if (error && typeof error === 'object' && 'response' in error) {
+            const axiosError = error as { response?: { status?: number } };
+            if (axiosError.response?.status === 404) {
+              return { found: false };
+            }
+          }
+          throw error;
+        }
+      },
       staleTime: 1000 * 60 * 5,
       enabled: missingAgentIds.length > 0,
     })),
@@ -201,8 +221,8 @@ export default function FavoritesList({
       }
     }
     missingAgentQueries.forEach((query) => {
-      if (query.data) {
-        combined[query.data.id] = query.data;
+      if (query.data?.found) {
+        combined[query.data.agent.id] = query.data.agent;
       }
     });
     return combined;

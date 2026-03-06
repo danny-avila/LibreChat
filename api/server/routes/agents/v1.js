@@ -117,7 +117,7 @@ router.post(
   '/:id/duplicate',
   checkAgentCreate,
   canAccessAgentResource({
-    requiredPermission: PermissionBits.VIEW,
+    requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
   }),
   v1.duplicateAgent,

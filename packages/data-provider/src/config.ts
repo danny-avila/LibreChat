@@ -122,7 +122,6 @@ export const azureBaseSchema = z.object({
   assistants: z.boolean().optional(),
   addParams: z.record(z.any()).optional(),
   dropParams: z.array(z.string()).optional(),
-  forcePrompt: z.boolean().optional(),
   version: z.string().optional(),
   baseURL: z.string().optional(),
   additionalHeaders: z.record(z.any()).optional(),
@@ -176,7 +175,9 @@ export enum Capabilities {
 
 export enum AgentCapabilities {
   hide_sequential_outputs = 'hide_sequential_outputs',
+  programmatic_tools = 'programmatic_tools',
   end_after_tools = 'end_after_tools',
+  deferred_tools = 'deferred_tools',
   execute_code = 'execute_code',
   file_search = 'file_search',
   web_search = 'web_search',
@@ -212,6 +213,8 @@ export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
 export const bedrockEndpointSchema = baseEndpointSchema.merge(
   z.object({
     availableRegions: z.array(z.string()).optional(),
+    models: z.array(z.string()).optional(),
+    inferenceProfiles: z.record(z.string(), z.string()).optional(),
   }),
 );
 
@@ -260,6 +263,9 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const defaultAgentCapabilities = [
+  // Commented as requires latest Code Interpreter API
+  // AgentCapabilities.programmatic_tools,
+  AgentCapabilities.deferred_tools,
   AgentCapabilities.execute_code,
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,
@@ -316,7 +322,6 @@ export const endpointSchema = baseEndpointSchema.merge(
     summarize: z.boolean().optional(),
     summaryModel: z.string().optional(),
     iconURL: z.string().optional(),
-    forcePrompt: z.boolean().optional(),
     modelDisplayLabel: z.string().optional(),
     headers: z.record(z.any()).optional(),
     addParams: z.record(z.any()).optional(),
@@ -625,6 +630,7 @@ export const interfaceSchema = z
         z.boolean(),
         z.object({
           use: z.boolean().optional(),
+          create: z.boolean().optional(),
           share: z.boolean().optional(),
           public: z.boolean().optional(),
         }),
@@ -635,6 +641,7 @@ export const interfaceSchema = z
         z.boolean(),
         z.object({
           use: z.boolean().optional(),
+          create: z.boolean().optional(),
           share: z.boolean().optional(),
           public: z.boolean().optional(),
         }),
@@ -658,6 +665,14 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    remoteAgents: z
+      .object({
+        use: z.boolean().optional(),
+        create: z.boolean().optional(),
+        share: z.boolean().optional(),
+        public: z.boolean().optional(),
+      })
+      .optional(),
   })
   .default({
     endpointsMenu: true,
@@ -670,11 +685,13 @@ export const interfaceSchema = z
     memories: true,
     prompts: {
       use: true,
+      create: true,
       share: false,
       public: false,
     },
     agents: {
       use: true,
+      create: true,
       share: false,
       public: false,
     },
@@ -697,6 +714,12 @@ export const interfaceSchema = z
     },
     fileSearch: true,
     fileCitations: true,
+    remoteAgents: {
+      use: false,
+      create: false,
+      share: false,
+      public: false,
+    },
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -799,6 +822,7 @@ export enum OCRStrategy {
   CUSTOM_OCR = 'custom_ocr',
   AZURE_MISTRAL_OCR = 'azure_mistral_ocr',
   VERTEXAI_MISTRAL_OCR = 'vertexai_mistral_ocr',
+  DOCUMENT_PARSER = 'document_parser',
 }
 
 export enum SearchCategories {
@@ -983,7 +1007,7 @@ export const configSchema = z.object({
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.agents]: agentsEndpointSchema.optional(),
       [EModelEndpoint.custom]: customEndpointsSchema.optional(),
-      [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
+      [EModelEndpoint.bedrock]: bedrockEndpointSchema.optional(),
     })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
@@ -1027,6 +1051,7 @@ export enum KnownEndpoints {
   cohere = 'cohere',
   fireworks = 'fireworks',
   deepseek = 'deepseek',
+  moonshot = 'moonshot',
   groq = 'groq',
   helicone = 'helicone',
   huggingface = 'huggingface',
@@ -1071,12 +1096,17 @@ export const alternateName = {
   [EModelEndpoint.bedrock]: 'AWS Bedrock',
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',
+  [KnownEndpoints.moonshot]: 'Moonshot',
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
   [KnownEndpoints.helicone]: 'Helicone',
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.4',
+  // TODO: gpt-5.4-thinking may have separate reasoning token pricing — verify before release
+  'gpt-5.4-thinking',
+  'gpt-5.4-pro',
   'gpt-5.1',
   'gpt-5.1-chat-latest',
   'gpt-5.1-codex',
@@ -1110,6 +1140,8 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
   'claude-sonnet-4-5',
   'claude-sonnet-4-5-20250929',
   'claude-haiku-4-5',
@@ -1127,31 +1159,17 @@ const sharedAnthropicModels = [
   'claude-3-5-sonnet-20241022',
   'claude-3-5-sonnet-20240620',
   'claude-3-5-sonnet-latest',
-  'claude-3-opus-20240229',
-  'claude-3-sonnet-20240229',
-  'claude-3-haiku-20240307',
-  'claude-2.1',
-  'claude-2',
-  'claude-1.2',
-  'claude-1',
-  'claude-1-100k',
-  'claude-instant-1',
-  'claude-instant-1-100k',
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-sonnet-4-6',
+  'anthropic.claude-opus-4-6-v1',
   'anthropic.claude-sonnet-4-5-20250929-v1:0',
   'anthropic.claude-haiku-4-5-20251001-v1:0',
   'anthropic.claude-opus-4-1-20250805-v1:0',
   'anthropic.claude-3-5-sonnet-20241022-v2:0',
   'anthropic.claude-3-5-sonnet-20240620-v1:0',
   'anthropic.claude-3-5-haiku-20241022-v1:0',
-  'anthropic.claude-3-haiku-20240307-v1:0',
-  'anthropic.claude-3-opus-20240229-v1:0',
-  'anthropic.claude-3-sonnet-20240229-v1:0',
-  'anthropic.claude-v2',
-  'anthropic.claude-v2:1',
-  'anthropic.claude-instant-v1',
   // 'cohere.command-text-v14', // no conversation history
   // 'cohere.command-light-text-v14', // no conversation history
   'cohere.command-r-v1:0',
@@ -1181,6 +1199,13 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 3.1 Models
+    'gemini-3.1-pro-preview',
+    'gemini-3.1-pro-preview-customtools',
+    'gemini-3.1-flash-lite-preview',
+    // Gemini 3 Models
+    'gemini-3-pro-preview',
+    'gemini-3-flash-preview',
     // Gemini 2.5 Models
     'gemini-2.5-pro',
     'gemini-2.5-flash',
@@ -1257,6 +1282,7 @@ export const visionModels = [
   'o4-mini',
   'o3',
   'o1',
+  'gpt-5',
   'gpt-4.1',
   'gpt-4.5',
   'llava',
@@ -1356,6 +1382,10 @@ export enum CacheKeys {
    */
   CONFIG_STORE = 'CONFIG_STORE',
   /**
+   * Key for the tool cache namespace (plugins, MCP tools, tool definitions).
+   */
+  TOOL_CACHE = 'TOOL_CACHE',
+  /**
    * Key for the roles cache.
    */
   ROLES = 'ROLES',
@@ -1436,6 +1466,10 @@ export enum CacheKeys {
    * Key for SAML session.
    */
   SAML_SESSION = 'SAML_SESSION',
+  /**
+   * Key for admin panel OAuth exchange codes (one-time-use, short TTL).
+   */
+  ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
 }
 
 /**
@@ -1704,9 +1738,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.2',
+  VERSION = 'v0.8.3-rc2',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.3',
+  CONFIG_VERSION = '1.3.5',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -1741,6 +1775,8 @@ export enum Constants {
   mcp_all = 'sys__all__sys',
   /** Unique value to indicate clearing MCP servers from UI state. For frontend use only. */
   mcp_clear = 'sys__clear__sys',
+  /** Key suffix for non-spec user default tool storage */
+  spec_defaults_key = '__defaults__',
   /**
    * Unique value to indicate the MCP tool was added to an agent.
    * This helps inform the UI if the mcp server was previously added.
@@ -1752,6 +1788,8 @@ export enum Constants {
   LC_TRANSFER_TO_ = 'lc_transfer_to_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
+  /** Programmatic Tool Calling tool name */
+  PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_code',
 }
 
 export enum LocalStorageKeys {
@@ -1890,4 +1928,15 @@ export function getEndpointField<
     return undefined;
   }
   return config[property];
+}
+
+/** Resolves the `defaultParamsEndpoint` for a given endpoint from its custom params config */
+export function getDefaultParamsEndpoint(
+  endpointsConfig: TEndpointsConfig | undefined | null,
+  endpoint: string | null | undefined,
+): string | undefined {
+  if (!endpointsConfig || !endpoint) {
+    return undefined;
+  }
+  return endpointsConfig[endpoint]?.customParams?.defaultParamsEndpoint;
 }

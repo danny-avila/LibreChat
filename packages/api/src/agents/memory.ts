@@ -475,13 +475,21 @@ ${memory ?? 'No existing memories'}`;
     };
     const content = await run.processStream(inputs, config);
     if (content) {
-      logger.debug('Memory Agent processed memory successfully', content);
+      logger.debug('[MemoryAgent] Processed successfully', {
+        userId,
+        conversationId,
+        messageId,
+        provider: llmConfig?.provider,
+      });
     } else {
-      logger.warn('Memory Agent processed memory but returned no content');
+      logger.debug('[MemoryAgent] Returned no content', { userId, conversationId, messageId });
     }
     return await Promise.all(artifactPromises);
   } catch (error) {
-    logger.error('Memory Agent failed to process memory', error);
+    logger.error(
+      `[MemoryAgent] Failed to process memory | userId: ${userId} | conversationId: ${conversationId} | messageId: ${messageId}`,
+      { error },
+    );
   }
 }
 

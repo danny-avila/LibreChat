@@ -44,6 +44,10 @@ export interface ThinkingConfigEnabled {
   type: 'enabled';
 }
 
+export interface ThinkingConfigAdaptive {
+  type: 'adaptive';
+}
+
 /**
  * Configuration for enabling Claude's extended thinking.
  *
@@ -55,7 +59,10 @@ export interface ThinkingConfigEnabled {
  * [extended thinking](https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking)
  * for details.
  */
-export type ThinkingConfigParam = ThinkingConfigEnabled | ThinkingConfigDisabled;
+export type ThinkingConfigParam =
+  | ThinkingConfigEnabled
+  | ThinkingConfigDisabled
+  | ThinkingConfigAdaptive;
 
 export type AnthropicModelOptions = Partial<Omit<AnthropicParameters, 'thinking'>> & {
   thinking?: AnthropicParameters['thinking'] | null;

@@ -1,10 +1,10 @@
 import React from 'react';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import UninitializedMCPTool from './UninitializedMCPTool';
 import UnconfiguredMCPTool from './UnconfiguredMCPTool';
-import { useAgentPanelContext } from '~/Providers';
 import { useHasAccess, useLocalize } from '~/hooks';
+import { useAgentPanelContext } from '~/Providers';
 import MCPTool from './MCPTool';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 
 export default function MCPTools({
   agentId,
@@ -46,7 +46,7 @@ export default function MCPTools({
               return null;
             }
 
-            if (serverInfo.isConnected) {
+            if (serverInfo?.tools?.length && serverInfo.tools.length > 0) {
               return (
                 <MCPTool key={`${serverInfo.serverName}-${agentId}`} serverInfo={serverInfo} />
               );
