@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AttachmentIcon } from '@librechat/client';
 import {
@@ -9,8 +9,9 @@ import {
   getEndpointFileConfig,
 } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
-import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
+import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { useLocalize, useLazyEffect } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
 import { isEphemeralAgent } from '~/common';
 
@@ -27,14 +28,22 @@ function Files({
   const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
+  const setFilesLoading = useCallback((_value: boolean | ((prev: boolean) => boolean)) => {}, []);
+  const fileHandlingState = useMemo(
+    () => ({ files, setFiles, setFilesLoading, conversation: null }),
+    [files, setFilesLoading],
+  );
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
-  const { abortUpload, handleFileChange } = useFileHandling({
-    fileSetter: setFiles,
-    additionalMetadata: { agent_id, tool_resource },
-    endpointOverride: EModelEndpoint.agents,
-  });
+  const { abortUpload, handleFileChange } = useFileHandlingNoChatContext(
+    {
+      fileSetter: setFiles,
+      additionalMetadata: { agent_id, tool_resource },
+      endpointOverride: EModelEndpoint.agents,
+    },
+    fileHandlingState,
+  );
 
   useLazyEffect(
     () => {

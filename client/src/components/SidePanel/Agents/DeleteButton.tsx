@@ -1,6 +1,7 @@
 import { memo } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useFormContext } from 'react-hook-form';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { tConvoUpdateSchema } from 'librechat-data-provider';
 import {
   Label,
   Button,
@@ -10,12 +11,12 @@ import {
   OGDialogTrigger,
   OGDialogTemplate,
 } from '@librechat/client';
-import type { Agent, AgentCreateParams } from 'librechat-data-provider';
+import type { Agent, AgentCreateParams, TConversation } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { logger, getDefaultAgentFormValues } from '~/utils';
-import { useLocalize, useSetIndexOptions } from '~/hooks';
 import { useDeleteAgentMutation } from '~/data-provider';
 import { isEphemeralAgent } from '~/common';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 function DeleteButton({
@@ -30,8 +31,21 @@ function DeleteButton({
   const localize = useLocalize();
   const { reset } = useFormContext();
   const { showToast } = useToastContext();
-  const { setOption } = useSetIndexOptions();
+  const setConversation = useSetRecoilState(store.conversationByIndex(0));
   const conversationAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
+
+  const setConversationOption = (key: 'agent_id' | 'model', value: string) => {
+    setConversation((prevState) => {
+      if (!prevState) {
+        return prevState;
+      }
+
+      return tConvoUpdateSchema.parse({
+        ...prevState,
+        [key]: value,
+      }) as TConversation;
+    });
+  };
 
   const deleteAgent = useDeleteAgentMutation({
     onSuccess: (_, vars, context) => {
@@ -54,12 +68,14 @@ function DeleteButton({
       if (!firstAgent) {
         setCurrentAgentId(undefined);
         reset(getDefaultAgentFormValues());
-        return setOption('agent_id')('');
+        setConversationOption('agent_id', '');
+        return;
       }
 
       if (vars.agent_id === conversationAgentId) {
-        setOption('model')('');
-        return setOption('agent_id')(firstAgent.id);
+        setConversationOption('model', '');
+        setConversationOption('agent_id', firstAgent.id);
+        return;
       }
 
       const currentAgent = updatedList.find((agent) => agent.id === conversationAgentId);
