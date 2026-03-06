@@ -29,7 +29,6 @@ export * from './share';
 export * from './timestamps';
 export { default as cn } from './cn';
 export { default as logger } from './logger';
-export { default as scaleImage } from './scaleImage';
 export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
 export { default as buildDefaultConvo } from './buildDefaultConvo';
