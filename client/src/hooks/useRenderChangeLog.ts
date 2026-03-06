@@ -1,16 +1,34 @@
 import { useEffect, useRef } from 'react';
 
-type RenderLogValues = Record<string, unknown>;
-
 type DebugWindow = Window & {
   __LC_RENDER_DEBUG__?: boolean;
 };
 
-/** Logs which tracked values changed between renders when debug flag is enabled. */
-export default function useRenderChangeLog(name: string, values: RenderLogValues) {
-  const previousValuesRef = useRef<RenderLogValues | null>(null);
+/**
+ * Development-only hook that logs which tracked values changed between renders.
+ *
+ * Enable by setting `window.__LC_RENDER_DEBUG__ = true` in the browser console.
+ * Automatically no-ops in production builds.
+ *
+ * @example
+ * ```ts
+ * useRenderChangeLog('MessageRender', { messageId, isLast, depth });
+ * ```
+ */
+export default function useRenderChangeLog(
+  name: string,
+  values: Record<string, string | number | boolean | null | undefined>,
+) {
+  const previousValuesRef = useRef<Record<
+    string,
+    string | number | boolean | null | undefined
+  > | null>(null);
 
   useEffect(() => {
+    if (process.env.NODE_ENV === 'production') {
+      return;
+    }
+
     if (typeof window === 'undefined' || !(window as DebugWindow).__LC_RENDER_DEBUG__) {
       previousValuesRef.current = values;
       return;
