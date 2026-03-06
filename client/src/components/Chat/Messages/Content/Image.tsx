@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Skeleton } from '@librechat/client';
 import { apiBaseUrl } from 'librechat-data-provider';
 import DialogImage from './DialogImage';
@@ -92,7 +92,7 @@ const Image = ({
     }
   };
 
-  useMemo(() => {
+  useEffect(() => {
     if (width && height && absoluteImageUrl) {
       dimensionCache.set(absoluteImageUrl, { width, height });
     }
