@@ -4,11 +4,11 @@ import { useRecoilValue } from 'recoil';
 import { type TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
+import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { cn, getMessageAriaLabel } from '~/utils';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -87,6 +87,17 @@ const MessageRender = memo(
     );
 
     const { hasParallelContent } = useContentMetadata(msg);
+    const messageId = msg?.messageId ?? '';
+    const messageContextValue = useMemo(
+      () => ({
+        messageId,
+        isLatestMessage,
+        isExpanded: false as const,
+        isSubmitting: effectiveIsSubmitting,
+        conversationId: conversation?.conversationId,
+      }),
+      [messageId, conversation?.conversationId, effectiveIsSubmitting, isLatestMessage],
+    );
 
     if (!msg) {
       return null;
@@ -143,15 +154,7 @@ const MessageRender = memo(
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
-              <MessageContext.Provider
-                value={{
-                  messageId: msg.messageId,
-                  conversationId: conversation?.conversationId,
-                  isExpanded: false,
-                  isSubmitting: effectiveIsSubmitting,
-                  isLatestMessage,
-                }}
-              >
+              <MessageContext.Provider value={messageContextValue}>
                 <MessageContent
                   ask={ask}
                   edit={edit}
