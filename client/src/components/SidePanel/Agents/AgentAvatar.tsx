@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { memo, useCallback, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { mergeFileConfig, fileConfig as defaultFileConfig } from 'librechat-data-provider';
@@ -99,4 +99,10 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
   );
 }
 
-export default Avatar;
+const MemoizedAvatar = memo(
+  Avatar,
+  (prevProps, nextProps) => prevProps.avatar?.filepath === nextProps.avatar?.filepath,
+);
+MemoizedAvatar.displayName = 'Avatar';
+
+export default MemoizedAvatar;

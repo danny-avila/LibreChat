@@ -42,8 +42,8 @@ export default function useTextarea({
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
 
-  const { index, conversation, isSubmitting, filesLoading, latestMessage, setFilesLoading } =
-    useChatContext();
+  const { index, conversation, isSubmitting, filesLoading, setFilesLoading } = useChatContext();
+  const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
   const { endpoint = '' } = conversation || {};

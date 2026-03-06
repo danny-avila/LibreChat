@@ -1,12 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
-import { useGetMessagesByConvoId, useAbortStreamMutation } from '~/data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
-import { useAuthContext } from '~/hooks/AuthContext';
+import { useAbortStreamMutation } from '~/data-provider';
 import useNewConvo from '~/hooks/useNewConvo';
 import store from '~/store';
 
@@ -17,7 +16,6 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const [filesLoading, setFilesLoading] = useState(false);
 
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAuthContext();
   const abortMutation = useAbortStreamMutation();
 
   const { newConversation } = useNewConvo(index);
@@ -29,15 +27,15 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   Falling back to conversationId (Recoil) only if paramId is not available */
   const queryParam = paramId === 'new' ? paramId : (paramId ?? conversationId ?? '');
 
-  /* Messages: here simply to fetch, don't export and use `getMessages()` instead */
-
-  const { data: _messages } = useGetMessagesByConvoId(queryParam, {
-    enabled: isAuthenticated,
-  });
-
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
   const [latestMessage, setLatestMessage] = useRecoilState(store.latestMessageFamily(index));
+
+  const latestMessageId = latestMessage?.messageId;
+  const latestMessageDepth = latestMessage?.depth;
+  const latestMessageRef = useRef(latestMessage);
+  latestMessageRef.current = latestMessage;
+
   const setSiblingIdx = useSetRecoilState(
     store.messagesSiblingIdxFamily(latestMessage?.parentMessageId ?? null),
   );
@@ -77,7 +75,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
 
-  const { ask, regenerate } = useChatFunctions({
+  const { ask: _ask, regenerate: _regenerate } = useChatFunctions({
     index,
     files,
     setFiles,
@@ -90,8 +88,20 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     setLatestMessage,
   });
 
-  const continueGeneration = () => {
-    if (!latestMessage) {
+  const askRef = useRef(_ask);
+  askRef.current = _ask;
+  const ask: typeof _ask = useCallback((...args) => askRef.current(...args), []);
+
+  const regenerateRef = useRef(_regenerate);
+  regenerateRef.current = _regenerate;
+  const regenerate: typeof _regenerate = useCallback(
+    (...args) => regenerateRef.current(...args),
+    [],
+  );
+
+  const continueGeneration = useCallback(() => {
+    const currentLatest = latestMessageRef.current;
+    if (!currentLatest) {
       console.error('Failed to regenerate the message: latestMessage not found.');
       return;
     }
@@ -99,7 +109,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     const messages = getMessages();
 
     const parentMessage = messages?.find(
-      (element) => element.messageId == latestMessage.parentMessageId,
+      (element) => element.messageId == currentLatest.parentMessageId,
     );
 
     if (parentMessage && parentMessage.isCreatedByUser) {
@@ -109,7 +119,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         'Failed to regenerate the message: parentMessage not found, or not created by user.',
       );
     }
-  };
+  }, [getMessages, ask]);
 
   /**
    * Stop generation - for non-assistants endpoints, calls abort endpoint first.
@@ -153,64 +163,107 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     }
   }, [conversationId, endpoint, endpointType, abortMutation, clearAllSubmissions, queryClient]);
 
-  const handleStopGenerating = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    stopGenerating();
-  };
+  const handleStopGenerating = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      stopGenerating();
+    },
+    [stopGenerating],
+  );
 
-  const handleRegenerate = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    const parentMessageId = latestMessage?.parentMessageId ?? '';
-    if (!parentMessageId) {
-      console.error('Failed to regenerate the message: parentMessageId not found.');
-      return;
-    }
-    regenerate({ parentMessageId });
-  };
+  const handleRegenerate = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      const parentMessageId = latestMessageRef.current?.parentMessageId ?? '';
+      if (!parentMessageId) {
+        console.error('Failed to regenerate the message: parentMessageId not found.');
+        return;
+      }
+      regenerate({ parentMessageId });
+    },
+    [regenerate],
+  );
 
-  const handleContinue = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    continueGeneration();
-    setSiblingIdx(0);
-  };
+  const handleContinue = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      continueGeneration();
+      setSiblingIdx(0);
+    },
+    [continueGeneration, setSiblingIdx],
+  );
 
   const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
   const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
 
-  return {
-    newConversation,
-    conversation,
-    setConversation,
-    // getConvos,
-    // setConvos,
-    isSubmitting,
-    setIsSubmitting,
-    getMessages,
-    setMessages,
-    setSiblingIdx,
-    latestMessage,
-    setLatestMessage,
-    resetLatestMessage,
-    ask,
-    index,
-    regenerate,
-    stopGenerating,
-    handleStopGenerating,
-    handleRegenerate,
-    handleContinue,
-    showPopover,
-    setShowPopover,
-    abortScroll,
-    setAbortScroll,
-    preset,
-    setPreset,
-    optionSettings,
-    setOptionSettings,
-    files,
-    setFiles,
-    filesLoading,
-    setFilesLoading,
-  };
+  return useMemo(
+    () => ({
+      newConversation,
+      conversation,
+      setConversation,
+      isSubmitting,
+      setIsSubmitting,
+      getMessages,
+      setMessages,
+      setSiblingIdx,
+      latestMessageId,
+      latestMessageDepth,
+      setLatestMessage,
+      resetLatestMessage,
+      ask,
+      index,
+      regenerate,
+      stopGenerating,
+      handleStopGenerating,
+      handleRegenerate,
+      handleContinue,
+      showPopover,
+      setShowPopover,
+      abortScroll,
+      setAbortScroll,
+      preset,
+      setPreset,
+      optionSettings,
+      setOptionSettings,
+      files,
+      setFiles,
+      filesLoading,
+      setFilesLoading,
+    }),
+    [
+      newConversation,
+      conversation,
+      setConversation,
+      isSubmitting,
+      setIsSubmitting,
+      getMessages,
+      setMessages,
+      setSiblingIdx,
+      latestMessageId,
+      latestMessageDepth,
+      setLatestMessage,
+      resetLatestMessage,
+      ask,
+      index,
+      regenerate,
+      stopGenerating,
+      handleStopGenerating,
+      handleRegenerate,
+      handleContinue,
+      showPopover,
+      setShowPopover,
+      abortScroll,
+      setAbortScroll,
+      preset,
+      setPreset,
+      optionSettings,
+      setOptionSettings,
+      files,
+      setFiles,
+      filesLoading,
+      setFilesLoading,
+    ],
+  );
 }

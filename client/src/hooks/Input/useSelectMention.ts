@@ -22,19 +22,19 @@ import store from '~/store';
 export default function useSelectMention({
   presets,
   modelSpecs,
-  conversation,
   assistantsMap,
   returnHandlers,
   endpointsConfig,
+  getConversation,
   newConversation,
 }: {
-  conversation: TConversation | null;
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
+  returnHandlers?: boolean;
   assistantsMap?: TAssistantsMap;
   newConversation: ConvoGenerator;
   endpointsConfig: TEndpointsConfig;
-  returnHandlers?: boolean;
+  getConversation: () => TConversation | null;
 }) {
   const getDefaultConversation = useDefaultConvo();
   const modularChat = useRecoilValue(store.modularChat);
@@ -45,6 +45,8 @@ export default function useSelectMention({
       if (!spec) {
         return;
       }
+
+      const conversation = getConversation();
       const { preset } = spec;
       preset.iconURL = getModelSpecIconURL(spec);
       preset.spec = spec.name;
@@ -110,7 +112,7 @@ export default function useSelectMention({
       });
     },
     [
-      conversation,
+      getConversation,
       getDefaultConversation,
       modularChat,
       newConversation,
@@ -132,6 +134,8 @@ export default function useSelectMention({
       if (!newEndpoint) {
         return;
       }
+
+      const conversation = getConversation();
 
       const {
         shouldSwitch,
@@ -202,7 +206,7 @@ export default function useSelectMention({
         keepAddedConvos: isNewModular,
       });
     },
-    [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
+    [getConversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
   );
 
   const onSelectPreset = useCallback(
@@ -210,6 +214,8 @@ export default function useSelectMention({
       if (!_newPreset) {
         return;
       }
+
+      const conversation = getConversation();
 
       const newPreset = removeUnavailableTools(_newPreset, availableTools);
       const newEndpoint = newPreset.endpoint ?? '';
@@ -266,7 +272,7 @@ export default function useSelectMention({
     },
     [
       modularChat,
-      conversation,
+      getConversation,
       availableTools,
       newConversation,
       endpointsConfig,

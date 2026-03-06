@@ -32,7 +32,7 @@ export default function Message(props: TMessageProps) {
     handleScroll,
     conversation,
     isSubmitting,
-    latestMessage,
+    latestMessageId,
     handleContinue,
     copyToClipboard,
     regenerateMessage,
@@ -142,7 +142,7 @@ export default function Message(props: TMessageProps) {
                     setSiblingIdx={setSiblingIdx}
                     isCreatedByUser={message.isCreatedByUser}
                     conversationId={conversation?.conversationId}
-                    isLatestMessage={messageId === latestMessage?.messageId}
+                    isLatestMessage={messageId === latestMessageId}
                     content={message.content as Array<TMessageContentParts | undefined>}
                   />
                 </div>
@@ -165,7 +165,7 @@ export default function Message(props: TMessageProps) {
                       regenerate={() => regenerateMessage()}
                       copyToClipboard={copyToClipboard}
                       handleContinue={handleContinue}
-                      latestMessage={latestMessage}
+                      latestMessageId={latestMessageId}
                       isLast={isLast}
                     />
                   </SubRow>

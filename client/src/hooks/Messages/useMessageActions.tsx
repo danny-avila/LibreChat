@@ -31,8 +31,16 @@ export default function useMessageActions(props: TMessageActions) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
   const { message, currentEditId, setCurrentEditId, searchResults } = props;
 
-  const { ask, index, regenerate, isSubmitting, conversation, latestMessage, handleContinue } =
-    useChatContext();
+  const {
+    ask,
+    index,
+    regenerate,
+    isSubmitting,
+    conversation,
+    latestMessageId,
+    latestMessageDepth,
+    handleContinue,
+  } = useChatContext();
 
   const getAddedConvo = useGetAddedConvo();
 
@@ -154,10 +162,11 @@ export default function useMessageActions(props: TMessageActions) {
     enterEdit,
     conversation,
     messageLabel,
-    latestMessage,
     handleFeedback,
     handleContinue,
     copyToClipboard,
+    latestMessageId,
     regenerateMessage,
+    latestMessageDepth,
   };
 }

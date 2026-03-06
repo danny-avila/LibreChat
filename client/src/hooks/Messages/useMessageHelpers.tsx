@@ -17,9 +17,9 @@ export default function useMessageHelpers(props: TMessageProps) {
     regenerate,
     isSubmitting,
     conversation,
-    latestMessage,
     setAbortScroll,
     handleContinue,
+    latestMessageId,
     setLatestMessage,
   } = useMessagesViewContext();
   const agentsMap = useAgentsMapContext();
@@ -141,8 +141,8 @@ export default function useMessageHelpers(props: TMessageProps) {
     conversation,
     isSubmitting,
     handleScroll,
-    latestMessage,
     handleContinue,
+    latestMessageId,
     copyToClipboard,
     regenerateMessage,
   };

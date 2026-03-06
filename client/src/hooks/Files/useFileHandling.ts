@@ -15,6 +15,7 @@ import {
 import debounce from 'lodash/debounce';
 import type { EModelEndpoint, TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
+import type { TConversation } from 'librechat-data-provider';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
@@ -33,14 +34,24 @@ type UseFileHandling = {
   endpointOverride?: EModelEndpoint;
 };
 
-const useFileHandling = (params?: UseFileHandling) => {
+export type FileHandlingState = {
+  files: Map<string, ExtendedFile>;
+  setFiles: FileSetter;
+  setFilesLoading?: React.Dispatch<React.SetStateAction<boolean>>;
+  conversation?: TConversation | null;
+};
+
+const noop = () => {};
+
+const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: FileHandlingState) => {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
-  const { files, setFiles, setFilesLoading, conversation } = useChatContext();
+  const { files, setFiles, conversation } = fileState;
+  const setFilesLoading = fileState.setFilesLoading ?? noop;
   const setEphemeralAgent = useSetRecoilState(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );
@@ -441,6 +452,22 @@ const useFileHandling = (params?: UseFileHandling) => {
     setFiles,
     files,
   };
+};
+
+export const useFileHandlingNoChatContext = (
+  params: UseFileHandling | undefined,
+  fileState: FileHandlingState,
+) => useFileHandlingCore(params, fileState);
+
+const useFileHandling = (params?: UseFileHandling) => {
+  const { files, setFiles, setFilesLoading, conversation } = useChatContext();
+
+  return useFileHandlingCore(params, {
+    files,
+    setFiles,
+    conversation,
+    setFilesLoading,
+  });
 };
 
 export default useFileHandling;
