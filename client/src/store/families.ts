@@ -343,6 +343,19 @@ function useCreateConversationAtom(key: string | number) {
   return { hasSetConversation, conversation, setConversation };
 }
 
+function useSetConversationAtom(key: string | number) {
+  const [keys, setKeys] = useRecoilState(conversationKeysAtom);
+  const setConversation = useSetRecoilState(conversationByIndex(key));
+
+  useEffect(() => {
+    if (!keys.includes(key)) {
+      setKeys([...keys, key]);
+    }
+  }, [key, keys, setKeys]);
+
+  return { setConversation };
+}
+
 function useClearConvoState() {
   /** Clears all active conversations. Pass `true` to skip the first or root conversation */
   const clearAllConversations = useRecoilCallback(
@@ -483,6 +496,7 @@ export default {
   conversationByKeySelector,
   useClearConvoState,
   useCreateConversationAtom,
+  useSetConversationAtom,
   showMentionPopoverFamily,
   globalAudioURLFamily,
   activeRunFamily,
