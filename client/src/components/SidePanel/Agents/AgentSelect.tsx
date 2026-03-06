@@ -230,7 +230,7 @@ const MemoizedAgentSelect = memo(
   AgentSelect,
   (prevProps, nextProps) =>
     prevProps.selectedAgentId === nextProps.selectedAgentId &&
-    prevProps.agentQuery.data?.id === nextProps.agentQuery.data?.id &&
+    prevProps.agentQuery.data === nextProps.agentQuery.data &&
     prevProps.agentQuery.isSuccess === nextProps.agentQuery.isSuccess &&
     prevProps.createMutation.data?.id === nextProps.createMutation.data?.id &&
     prevProps.createMutation.isLoading === nextProps.createMutation.isLoading,

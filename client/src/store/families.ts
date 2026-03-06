@@ -6,7 +6,6 @@ import {
   atomFamily,
   DefaultValue,
   selectorFamily,
-  useRecoilState,
   useRecoilValue,
   useSetRecoilState,
   useRecoilCallback,
@@ -322,15 +321,18 @@ const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
 
 function useCreateConversationAtom(key: string | number) {
   const hasSetConversation = useSetConvoContext();
-  const [keys, setKeys] = useRecoilState(conversationKeysAtom);
-  const setConversation = useSetRecoilState(conversationByIndex(key));
+  const setKeys = useSetRecoilState(conversationKeysAtom);
   const conversation = useRecoilValue(conversationByIndex(key));
+  const setConversation = useSetRecoilState(conversationByIndex(key));
 
   useEffect(() => {
-    if (!keys.includes(key)) {
-      setKeys([...keys, key]);
-    }
-  }, [key, keys, setKeys]);
+    setKeys((prevKeys) => {
+      if (prevKeys.includes(key)) {
+        return prevKeys;
+      }
+      return [...prevKeys, key];
+    });
+  }, [key, setKeys]);
 
   return { hasSetConversation, conversation, setConversation };
 }
