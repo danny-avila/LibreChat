@@ -1,12 +1,10 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Skeleton } from '@librechat/client';
-import { LazyLoadImage } from 'react-lazy-load-image-component';
 import { apiBaseUrl } from 'librechat-data-provider';
-import { cn } from '~/utils';
 import DialogImage from './DialogImage';
+import { cn } from '~/utils';
 
 /** Max display height for chat images (Tailwind JIT class) */
-const IMAGE_MAX_H = 'max-h-[45vh]' as const;
+export const IMAGE_MAX_H = 'max-h-[45vh]' as const;
 
 const Image = ({
   imagePath,
@@ -29,13 +27,10 @@ const Image = ({
   const [isLoaded, setIsLoaded] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const handleImageLoad = () => setIsLoaded(true);
-
   // Fix image path to include base path for subdirectory deployments
   const absoluteImageUrl = useMemo(() => {
     if (!imagePath) return imagePath;
 
-    // If it's already an absolute URL or doesn't start with /images/, return as is
     if (
       imagePath.startsWith('http') ||
       imagePath.startsWith('data:') ||
@@ -44,7 +39,6 @@ const Image = ({
       return imagePath;
     }
 
-    // Get the base URL and prepend it to the image path
     const baseURL = apiBaseUrl();
     return `${baseURL}${imagePath}`;
   }, [imagePath]);
@@ -92,23 +86,12 @@ const Image = ({
           className,
         )}
       >
-        <LazyLoadImage
+        <img
           alt={altText}
-          onLoad={handleImageLoad}
-          visibleByDefault={true}
-          className={cn(
-            'block h-auto w-auto max-w-full text-transparent transition-opacity duration-100',
-            IMAGE_MAX_H,
-            isLoaded ? 'opacity-100' : 'opacity-0',
-          )}
           src={absoluteImageUrl}
-          placeholder={
-            <Skeleton
-              className={cn(IMAGE_MAX_H, 'h-48 w-full max-w-lg')}
-              aria-label="Loading image"
-              aria-busy="true"
-            />
-          }
+          decoding="async"
+          onLoad={() => setIsLoaded(true)}
+          className={cn('block h-auto w-auto max-w-full text-transparent', IMAGE_MAX_H)}
         />
       </button>
       {isLoaded && (
