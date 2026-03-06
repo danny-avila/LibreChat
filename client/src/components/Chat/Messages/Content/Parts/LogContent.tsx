@@ -12,11 +12,7 @@ interface LogContentProps {
   attachments?: TAttachment[];
 }
 
-type ImageAttachment = TFile &
-  TAttachmentMetadata & {
-    height: number;
-    width: number;
-  };
+type ImageAttachment = TFile & TAttachmentMetadata;
 
 const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, attachments }) => {
   const localize = useLocalize();
@@ -35,12 +31,8 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
     const nonImageAtts: TAttachment[] = [];
 
     attachments?.forEach((attachment) => {
-      const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
-      const isImage =
-        imageExtRegex.test(attachment.filename ?? '') &&
-        width != null &&
-        height != null &&
-        filepath != null;
+      const { filepath = null } = attachment as TFile & TAttachmentMetadata;
+      const isImage = imageExtRegex.test(attachment.filename ?? '') && filepath != null;
       if (isImage) {
         imageAtts.push(attachment as ImageAttachment);
       } else {
@@ -100,8 +92,12 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
           ))}
         </div>
       )}
-      {imageAttachments?.map((attachment, index) => (
-        <Image key={index} altText={attachment.filename} imagePath={attachment.filepath} />
+      {imageAttachments?.map((attachment) => (
+        <Image
+          key={attachment.filepath}
+          altText={attachment.filename}
+          imagePath={attachment.filepath}
+        />
       ))}
     </>
   );
