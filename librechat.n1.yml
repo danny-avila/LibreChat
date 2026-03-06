@@ -166,3 +166,5 @@ endpoints:
         x-librechat-conversation-id: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
         x-user-access-token: "{{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
         x-user-id: "{{LIBRECHAT_OPENID_USER_ID}}"
+        x-message-id: "{{LIBRECHAT_BODY_MESSAGEID}}"
+        x-parent-message-id: "{{LIBRECHAT_BODY_PARENTMESSAGEID}}"
