@@ -7,6 +7,10 @@ import { useMutationState, useCodeState } from '~/Providers/EditorContext';
 import { useArtifactsContext } from '~/Providers';
 import { useEditArtifact } from '~/data-provider';
 
+type Monaco = Parameters<
+  Exclude<React.ComponentProps<typeof MonacoEditor>['beforeMount'], undefined>
+>[0];
+
 function getMonacoLanguage(type?: string, language?: string): string {
   if (language) {
     const langMap: Record<string, string> = {
@@ -34,6 +38,7 @@ function getMonacoLanguage(type?: string, language?: string): string {
     'text/html': 'html',
     'application/vnd.code-html': 'html',
     'application/vnd.react': 'typescript',
+    'application/vnd.ant.react': 'typescript',
     'text/markdown': 'markdown',
     'text/md': 'markdown',
     'text/plain': 'plaintext',
@@ -215,6 +220,46 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
     [readOnly, debouncedMutation, setCurrentCode],
   );
 
+  /** Disable all validation — this is an artifact viewer/editor, not an IDE */
+  const handleBeforeMount = useCallback((monaco: Monaco) => {
+    // monaco.languages.typescript is typed as { deprecated: true } but exists at runtime
+    const ts = monaco.languages.typescript as unknown as {
+      typescriptDefaults: {
+        setDiagnosticsOptions: (opts: {
+          noSemanticValidation: boolean;
+          noSyntaxValidation: boolean;
+        }) => void;
+        setCompilerOptions: (opts: {
+          allowNonTsExtensions: boolean;
+          allowJs: boolean;
+          jsx: number;
+        }) => void;
+      };
+      javascriptDefaults: {
+        setDiagnosticsOptions: (opts: {
+          noSemanticValidation: boolean;
+          noSyntaxValidation: boolean;
+        }) => void;
+        setCompilerOptions: (opts: {
+          allowNonTsExtensions: boolean;
+          allowJs: boolean;
+          jsx: number;
+        }) => void;
+      };
+      JsxEmit: { React: number };
+    };
+    const diagnosticsOff = { noSemanticValidation: true, noSyntaxValidation: true };
+    const compilerBase = {
+      allowNonTsExtensions: true,
+      allowJs: true,
+      jsx: ts.JsxEmit.React,
+    };
+    ts.typescriptDefaults.setDiagnosticsOptions(diagnosticsOff);
+    ts.javascriptDefaults.setDiagnosticsOptions(diagnosticsOff);
+    ts.typescriptDefaults.setCompilerOptions(compilerBase);
+    ts.javascriptDefaults.setCompilerOptions(compilerBase);
+  }, []);
+
   const handleMount = useCallback(
     (ed: editor.IStandaloneCodeEditor) => {
       monacoRef.current = ed;
@@ -242,6 +287,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
         theme="vs-dark"
         defaultValue={artifact.content}
         onChange={handleChange}
+        beforeMount={handleBeforeMount}
         onMount={handleMount}
         options={{
           readOnly,
