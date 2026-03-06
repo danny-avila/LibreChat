@@ -58,6 +58,9 @@ function ModelSelectorContent() {
       className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
       aria-label={localize('com_ui_select_model')}
     >
+      {agentsMap && Object.keys(agentsMap).length > 0 && (
+        <span id="agentUsers" className="sr-only" aria-hidden="true" />
+      )}
       {selectedIcon && React.isValidElement(selectedIcon) && (
         <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
           {selectedIcon}
