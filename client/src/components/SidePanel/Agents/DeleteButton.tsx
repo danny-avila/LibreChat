@@ -1,7 +1,6 @@
 import { memo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { tConvoUpdateSchema } from 'librechat-data-provider';
 import {
   Label,
   Button,
@@ -11,7 +10,7 @@ import {
   OGDialogTrigger,
   OGDialogTemplate,
 } from '@librechat/client';
-import type { Agent, AgentCreateParams, TConversation } from 'librechat-data-provider';
+import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { logger, getDefaultAgentFormValues } from '~/utils';
 import { useDeleteAgentMutation } from '~/data-provider';
@@ -34,19 +33,6 @@ function DeleteButton({
   const setConversation = useSetRecoilState(store.conversationByIndex(0));
   const conversationAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
 
-  const setConversationOption = (key: 'agent_id' | 'model', value: string) => {
-    setConversation((prevState) => {
-      if (!prevState) {
-        return prevState;
-      }
-
-      return tConvoUpdateSchema.parse({
-        ...prevState,
-        [key]: value,
-      }) as TConversation;
-    });
-  };
-
   const deleteAgent = useDeleteAgentMutation({
     onSuccess: (_, vars, context) => {
       const updatedList = context as Agent[] | undefined;
@@ -68,13 +54,12 @@ function DeleteButton({
       if (!firstAgent) {
         setCurrentAgentId(undefined);
         reset(getDefaultAgentFormValues());
-        setConversationOption('agent_id', '');
+        setConversation((prev) => (prev ? { ...prev, agent_id: '' } : prev));
         return;
       }
 
       if (vars.agent_id === conversationAgentId) {
-        setConversationOption('model', '');
-        setConversationOption('agent_id', firstAgent.id);
+        setConversation((prev) => (prev ? { ...prev, model: '', agent_id: firstAgent.id } : prev));
         return;
       }
 

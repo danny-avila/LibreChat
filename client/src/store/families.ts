@@ -370,15 +370,7 @@ function useClearConvoState() {
   return clearAllConversations;
 }
 
-const conversationByKeySelector = selectorFamily({
-  key: 'conversationByKeySelector',
-  get:
-    (index: string | number) =>
-    ({ get }) => {
-      const conversation = get(conversationByIndex(index));
-      return conversation;
-    },
-});
+const conversationByKeySelector = conversationByIndex;
 
 function useClearSubmissionState() {
   const clearAllSubmissions = useRecoilCallback(
