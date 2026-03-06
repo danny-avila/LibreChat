@@ -13,29 +13,30 @@ type ResolvedAvatar = { type: 'image'; src: string } | { type: 'fallback' };
  * Invalidated when `user.avatar` changes (e.g., settings upload).
  * Tracks failed image URLs so they fall back to SVG permanently for the session.
  */
-const avatarCache = new Map<string, { avatar: string; resolved: ResolvedAvatar }>();
+const avatarCache = new Map<
+  string,
+  { avatar: string; avatarSrc: string; resolved: ResolvedAvatar }
+>();
 const failedUrls = new Set<string>();
 
-function resolveAvatar(
-  userId: string,
-  userAvatar: string,
-  username: string,
-  avatarSrc: string,
-): ResolvedAvatar {
+function resolveAvatar(userId: string, userAvatar: string, avatarSrc: string): ResolvedAvatar {
+  if (!userId) {
+    const imgSrc = userAvatar || avatarSrc;
+    return imgSrc && !failedUrls.has(imgSrc)
+      ? { type: 'image', src: imgSrc }
+      : { type: 'fallback' };
+  }
+
   const cached = avatarCache.get(userId);
-  if (cached && cached.avatar === userAvatar) {
+  if (cached && cached.avatar === userAvatar && cached.avatarSrc === avatarSrc) {
     return cached.resolved;
   }
 
   const imgSrc = userAvatar || avatarSrc;
-  let resolved: ResolvedAvatar;
-  if (imgSrc && !failedUrls.has(imgSrc)) {
-    resolved = { type: 'image', src: imgSrc };
-  } else {
-    resolved = { type: 'fallback' };
-  }
+  const resolved: ResolvedAvatar =
+    imgSrc && !failedUrls.has(imgSrc) ? { type: 'image', src: imgSrc } : { type: 'fallback' };
 
-  avatarCache.set(userId, { avatar: userAvatar, resolved });
+  avatarCache.set(userId, { avatar: userAvatar, avatarSrc, resolved });
   return resolved;
 }
 
@@ -60,13 +61,11 @@ type UserAvatarProps = {
 
 const UserAvatar = memo(
   ({ size, avatar, avatarSrc, userId, username, className }: UserAvatarProps) => {
-    const [resolved, setResolved] = React.useState(() =>
-      resolveAvatar(userId, avatar, username, avatarSrc),
-    );
+    const [resolved, setResolved] = React.useState(() => resolveAvatar(userId, avatar, avatarSrc));
 
     React.useEffect(() => {
-      setResolved(resolveAvatar(userId, avatar, username, avatarSrc));
-    }, [userId, avatar, username, avatarSrc]);
+      setResolved(resolveAvatar(userId, avatar, avatarSrc));
+    }, [userId, avatar, avatarSrc]);
 
     return (
       <div
