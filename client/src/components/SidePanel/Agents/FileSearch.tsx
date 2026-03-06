@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { useFormContext } from 'react-hook-form';
@@ -17,10 +17,9 @@ import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import FileSearchCheckbox from './FileSearchCheckbox';
-import { useChatContext } from '~/Providers';
 import { isEphemeralAgent } from '~/common';
 
-export default function FileSearch({
+function FileSearch({
   agent_id,
   files: _files,
 }: {
@@ -28,7 +27,6 @@ export default function FileSearch({
   files?: [string, ExtendedFile][];
 }) {
   const localize = useLocalize();
-  const { setFilesLoading } = useChatContext();
   const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
@@ -143,7 +141,6 @@ export default function FileSearch({
         <FileRow
           files={files}
           setFiles={setFiles}
-          setFilesLoading={setFilesLoading}
           agent_id={agent_id}
           tool_resource={EToolResources.file_search}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
@@ -203,3 +200,8 @@ export default function FileSearch({
     </div>
   );
 }
+
+const MemoizedFileSearch = memo(FileSearch);
+MemoizedFileSearch.displayName = 'FileSearch';
+
+export default MemoizedFileSearch;

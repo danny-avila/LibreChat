@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import {
@@ -23,9 +23,8 @@ import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { ESide, isEphemeralAgent } from '~/common';
-import { useChatContext } from '~/Providers';
 
-export default function FileContext({
+function FileContext({
   agent_id,
   files: _files,
 }: {
@@ -33,7 +32,6 @@ export default function FileContext({
   files?: [string, ExtendedFile][];
 }) {
   const localize = useLocalize();
-  const { setFilesLoading } = useChatContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
   const [isPopoverActive, setIsPopoverActive] = useState(false);
@@ -138,7 +136,6 @@ export default function FileContext({
         <FileRow
           files={files}
           setFiles={setFiles}
-          setFilesLoading={setFilesLoading}
           agent_id={agent_id}
           tool_resource={EToolResources.context}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
@@ -199,3 +196,8 @@ export default function FileContext({
     </div>
   );
 }
+
+const MemoizedFileContext = memo(FileContext);
+MemoizedFileContext.displayName = 'FileContext';
+
+export default MemoizedFileContext;

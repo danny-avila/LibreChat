@@ -24,7 +24,7 @@ export default function FileRow({
   files: Map<string, ExtendedFile> | undefined;
   abortUpload?: () => void;
   setFiles: React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
-  setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  setFilesLoading?: React.Dispatch<React.SetStateAction<boolean>>;
   fileFilter?: (file: ExtendedFile) => boolean;
   assistant_id?: string;
   agent_id?: string;
@@ -58,6 +58,7 @@ export default function FileRow({
   const { deleteFile } = useFileDeletion({ mutateAsync, agent_id, assistant_id, tool_resource });
 
   useEffect(() => {
+    if (!setFilesLoading) return;
     if (files.length === 0) {
       setFilesLoading(false);
       return;
