@@ -30,9 +30,13 @@ const CodeEditor = memo(
   }) => {
     const { sandpack } = useSandpack();
 
-    /** Sync streaming content into Sandpack without re-mounting the provider */
+    /**
+     * Sync streaming content into Sandpack without re-mounting the provider.
+     * Only runs when readOnly (i.e., during streaming) — when the user is
+     * editing, Sandpack manages its own file state via CodeMirror.
+     */
     useEffect(() => {
-      if (!artifact.content) {
+      if (!readOnly || !artifact.content) {
         return;
       }
       const filePath = '/' + fileKey;
@@ -40,7 +44,7 @@ const CodeEditor = memo(
       if (current !== artifact.content) {
         sandpack.updateFile(filePath, artifact.content);
       }
-    }, [artifact.content, fileKey, sandpack]);
+    }, [artifact.content, fileKey, sandpack, readOnly]);
     const [currentUpdate, setCurrentUpdate] = useState<string | null>(null);
     const { isMutating, setIsMutating } = useMutationState();
     const { setCurrentCode } = useCodeState();
