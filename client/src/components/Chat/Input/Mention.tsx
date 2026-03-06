@@ -2,11 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { useCombobox } from '@librechat/client';
 import { AutoSizer, List } from 'react-virtualized';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
 import type { MentionOption, ConvoGenerator } from '~/common';
 import type { SetterOrUpdater } from 'recoil';
+import { useGetConversation, useLocalize, TranslationKeys } from '~/hooks';
 import useSelectMention from '~/hooks/Input/useSelectMention';
-import { useLocalize, TranslationKeys } from '~/hooks';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
 import { removeCharIfLast } from '~/utils';
@@ -15,7 +14,6 @@ import MentionItem from './MentionItem';
 const ROW_HEIGHT = 44;
 
 export default function Mention({
-  conversation,
   setShowMentionPopover,
   newConversation,
   textAreaRef,
@@ -23,7 +21,6 @@ export default function Mention({
   placeholder = 'com_ui_mention',
   includeAssistants = true,
 }: {
-  conversation: TConversation | null;
   setShowMentionPopover: SetterOrUpdater<boolean>;
   newConversation: ConvoGenerator;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
@@ -32,6 +29,7 @@ export default function Mention({
   includeAssistants?: boolean;
 }) {
   const localize = useLocalize();
+  const getConversation = useGetConversation(0);
   const assistantsMap = useAssistantsMapContext();
   const {
     options,
@@ -42,9 +40,6 @@ export default function Mention({
     endpointsConfig,
     assistantListMap,
   } = useMentions({ assistantMap: assistantsMap || {}, includeAssistants });
-  const conversationRef = useRef(conversation);
-  conversationRef.current = conversation;
-  const getConversation = useRef(() => conversationRef.current).current;
   const { onSelectMention } = useSelectMention({
     presets,
     modelSpecs,
