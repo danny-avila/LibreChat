@@ -1,237 +1,229 @@
-import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
+import React, { useMemo, useState, useEffect, useRef, memo, useCallback } from 'react';
+import MonacoEditor from '@monaco-editor/react';
 import debounce from 'lodash/debounce';
-import { KeyBinding } from '@codemirror/view';
-import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
-import {
-  useSandpack,
-  SandpackCodeEditor,
-  SandpackProvider as StyledProvider,
-} from '@codesandbox/sandpack-react';
-import type { SandpackProviderProps } from '@codesandbox/sandpack-react/unstyled';
-import type { SandpackBundlerFile } from '@codesandbox/sandpack-client';
-import type { CodeEditorRef } from '@codesandbox/sandpack-react';
-import type { ArtifactFiles, Artifact } from '~/common';
-import { useEditArtifact, useGetStartupConfig } from '~/data-provider';
+import type { editor } from 'monaco-editor';
+import type { Artifact } from '~/common';
+import { useEditArtifact } from '~/data-provider';
 import { useMutationState, useCodeState } from '~/Providers/EditorContext';
 import { useArtifactsContext } from '~/Providers';
-import { sharedFiles, sharedOptions } from '~/utils/artifacts';
 
-const CodeEditor = memo(
-  ({
-    fileKey,
-    readOnly,
-    artifact,
-    editorRef,
-  }: {
-    fileKey: string;
-    readOnly?: boolean;
-    artifact: Artifact;
-    editorRef: React.MutableRefObject<CodeEditorRef>;
-  }) => {
-    const { sandpack } = useSandpack();
+/** Map artifact type/language to Monaco language identifier */
+function getMonacoLanguage(type?: string, language?: string): string {
+  if (language) {
+    const langMap: Record<string, string> = {
+      javascript: 'javascript',
+      typescript: 'typescript',
+      python: 'python',
+      css: 'css',
+      json: 'json',
+      markdown: 'markdown',
+      html: 'html',
+      xml: 'xml',
+      sql: 'sql',
+      yaml: 'yaml',
+      shell: 'shell',
+      bash: 'shell',
+      tsx: 'typescript',
+      jsx: 'javascript',
+    };
+    if (langMap[language]) {
+      return langMap[language];
+    }
+  }
 
-    /**
-     * Sync streaming content into Sandpack without re-mounting the provider.
-     * Only runs when readOnly (i.e., during streaming) — when the user is
-     * editing, Sandpack manages its own file state via CodeMirror.
-     */
-    useEffect(() => {
-      if (!readOnly || !artifact.content) {
+  const typeMap: Record<string, string> = {
+    'text/html': 'html',
+    'application/vnd.code-html': 'html',
+    'application/vnd.react': 'typescript',
+    'text/markdown': 'markdown',
+    'text/md': 'markdown',
+    'text/plain': 'plaintext',
+    'application/vnd.mermaid': 'markdown',
+  };
+
+  return typeMap[type ?? ''] ?? 'html';
+}
+
+const CodeEditor = memo(function CodeEditor({
+  content,
+  readOnly,
+  artifact,
+  monacoRef,
+  onContentChange,
+}: {
+  content: string;
+  readOnly: boolean;
+  artifact: Artifact;
+  monacoRef: React.MutableRefObject<editor.IStandaloneCodeEditor | null>;
+  onContentChange: (code: string) => void;
+}) {
+  const [currentUpdate, setCurrentUpdate] = useState<string | null>(null);
+  const { isMutating, setIsMutating } = useMutationState();
+  const { setCurrentCode } = useCodeState();
+  const editArtifact = useEditArtifact({
+    onMutate: (vars) => {
+      setIsMutating(true);
+      setCurrentUpdate(vars.updated);
+    },
+    onSuccess: () => {
+      setIsMutating(false);
+      setCurrentUpdate(null);
+    },
+    onError: () => {
+      setIsMutating(false);
+    },
+  });
+
+  const artifactRef = useRef(artifact);
+  const isMutatingRef = useRef(isMutating);
+  const currentUpdateRef = useRef(currentUpdate);
+  const editArtifactRef = useRef(editArtifact);
+  const setCurrentCodeRef = useRef(setCurrentCode);
+
+  artifactRef.current = artifact;
+  isMutatingRef.current = isMutating;
+  currentUpdateRef.current = currentUpdate;
+  editArtifactRef.current = editArtifact;
+  setCurrentCodeRef.current = setCurrentCode;
+
+  const debouncedMutation = useMemo(
+    () =>
+      debounce((code: string) => {
+        if (readOnly || isMutatingRef.current || artifactRef.current.index == null) {
+          return;
+        }
+
+        const art = artifactRef.current;
+        const isNotOriginal = code && art.content != null && code.trim() !== art.content.trim();
+        const isNotRepeated =
+          currentUpdateRef.current == null
+            ? true
+            : code != null && code.trim() !== currentUpdateRef.current.trim();
+
+        if (art.content && isNotOriginal && isNotRepeated && art.index != null) {
+          setCurrentCodeRef.current(code);
+          editArtifactRef.current.mutate({
+            index: art.index,
+            messageId: art.messageId ?? '',
+            original: art.content,
+            updated: code,
+          });
+        }
+      }, 500),
+    [readOnly],
+  );
+
+  useEffect(() => {
+    return () => {
+      debouncedMutation.cancel();
+    };
+  }, [artifact.id, debouncedMutation]);
+
+  const handleChange = useCallback(
+    (value: string | undefined) => {
+      if (!value || readOnly) {
         return;
       }
-      const filePath = '/' + fileKey;
-      const current = (sandpack.files[filePath] as SandpackBundlerFile | undefined)?.code;
-      if (current !== artifact.content) {
-        sandpack.updateFile(filePath, artifact.content);
-      }
-    }, [artifact.content, fileKey, sandpack, readOnly]);
-    const [currentUpdate, setCurrentUpdate] = useState<string | null>(null);
-    const { isMutating, setIsMutating } = useMutationState();
-    const { setCurrentCode } = useCodeState();
-    const editArtifact = useEditArtifact({
-      onMutate: (vars) => {
-        setIsMutating(true);
-        setCurrentUpdate(vars.updated);
-      },
-      onSuccess: () => {
-        setIsMutating(false);
-        setCurrentUpdate(null);
-      },
-      onError: () => {
-        setIsMutating(false);
-      },
-    });
+      onContentChange(value);
+      debouncedMutation(value);
+    },
+    [readOnly, debouncedMutation, onContentChange],
+  );
 
-    /**
-     * Create stable debounced mutation that doesn't depend on changing callbacks
-     * Use refs to always access the latest values without recreating the debounce
-     */
-    const artifactRef = useRef(artifact);
-    const isMutatingRef = useRef(isMutating);
-    const currentUpdateRef = useRef(currentUpdate);
-    const editArtifactRef = useRef(editArtifact);
-    const setCurrentCodeRef = useRef(setCurrentCode);
+  const handleMount = useCallback(
+    (editor: editor.IStandaloneCodeEditor) => {
+      monacoRef.current = editor;
+    },
+    [monacoRef],
+  );
 
-    useEffect(() => {
-      artifactRef.current = artifact;
-    }, [artifact]);
+  const language = getMonacoLanguage(artifact.type, artifact.language);
 
-    useEffect(() => {
-      isMutatingRef.current = isMutating;
-    }, [isMutating]);
+  return (
+    <MonacoEditor
+      height="100%"
+      language={language}
+      theme="vs-dark"
+      value={content}
+      onChange={handleChange}
+      onMount={handleMount}
+      options={{
+        readOnly,
+        minimap: { enabled: false },
+        lineNumbers: 'on',
+        scrollBeyondLastLine: false,
+        fontSize: 13,
+        tabSize: 2,
+        wordWrap: 'on',
+        automaticLayout: true,
+        padding: { top: 8 },
+        renderLineHighlight: readOnly ? 'none' : 'line',
+        cursorStyle: readOnly ? 'underline-thin' : 'line',
+      }}
+    />
+  );
+});
 
-    useEffect(() => {
-      currentUpdateRef.current = currentUpdate;
-    }, [currentUpdate]);
-
-    useEffect(() => {
-      editArtifactRef.current = editArtifact;
-    }, [editArtifact]);
-
-    useEffect(() => {
-      setCurrentCodeRef.current = setCurrentCode;
-    }, [setCurrentCode]);
-
-    /**
-     * Create debounced mutation once - never recreate it
-     * All values are accessed via refs so they're always current
-     */
-    const debouncedMutation = useMemo(
-      () =>
-        debounce((code: string) => {
-          if (readOnly) {
-            return;
-          }
-          if (isMutatingRef.current) {
-            return;
-          }
-          if (artifactRef.current.index == null) {
-            return;
-          }
-
-          const artifact = artifactRef.current;
-          const artifactIndex = artifact.index;
-          const isNotOriginal =
-            code && artifact.content != null && code.trim() !== artifact.content.trim();
-          const isNotRepeated =
-            currentUpdateRef.current == null
-              ? true
-              : code != null && code.trim() !== currentUpdateRef.current.trim();
-
-          if (artifact.content && isNotOriginal && isNotRepeated && artifactIndex != null) {
-            setCurrentCodeRef.current(code);
-            editArtifactRef.current.mutate({
-              index: artifactIndex,
-              messageId: artifact.messageId ?? '',
-              original: artifact.content,
-              updated: code,
-            });
-          }
-        }, 500),
-      [readOnly],
-    );
-
-    /**
-     * Listen to Sandpack file changes and trigger debounced mutation
-     */
-    useEffect(() => {
-      const currentCode = (sandpack.files['/' + fileKey] as SandpackBundlerFile | undefined)?.code;
-      if (currentCode) {
-        debouncedMutation(currentCode);
-      }
-    }, [sandpack.files, fileKey, debouncedMutation]);
-
-    /**
-     * Cleanup: cancel pending mutations when component unmounts or artifact changes
-     */
-    useEffect(() => {
-      return () => {
-        debouncedMutation.cancel();
-      };
-    }, [artifact.id, debouncedMutation]);
-
-    return (
-      <SandpackCodeEditor
-        ref={editorRef}
-        showTabs={false}
-        showRunButton={false}
-        showLineNumbers={true}
-        showInlineErrors={true}
-        readOnly={readOnly === true}
-        extensions={[autocompletion()]}
-        extensionsKeymap={Array.from<KeyBinding>(completionKeymap)}
-        className="hljs language-javascript bg-black"
-      />
-    );
-  },
-);
-
-export const ArtifactCodeEditor = function ({
-  files,
-  fileKey,
-  template,
+export const ArtifactCodeEditor = function ArtifactCodeEditor({
   artifact,
-  editorRef,
-  sharedProps,
+  monacoRef,
   readOnly: externalReadOnly,
 }: {
-  fileKey: string;
   artifact: Artifact;
-  files: ArtifactFiles;
-  template: SandpackProviderProps['template'];
-  sharedProps: Partial<SandpackProviderProps>;
-  editorRef: React.MutableRefObject<CodeEditorRef>;
+  monacoRef: React.MutableRefObject<editor.IStandaloneCodeEditor | null>;
   readOnly?: boolean;
 }) {
-  const { data: config } = useGetStartupConfig();
   const { isSubmitting } = useArtifactsContext();
-  const options: typeof sharedOptions = useMemo(() => {
-    if (!config) {
-      return sharedOptions;
-    }
-    return {
-      ...sharedOptions,
-      activeFile: '/' + fileKey,
-      bundlerURL: template === 'static' ? config.staticBundlerURL : config.bundlerURL,
-    };
-  }, [config, template, fileKey]);
-  const initialReadOnly = (externalReadOnly ?? false) || (isSubmitting ?? false);
-  const [readOnly, setReadOnly] = useState(initialReadOnly);
-  useEffect(() => {
-    setReadOnly((externalReadOnly ?? false) || (isSubmitting ?? false));
-  }, [isSubmitting, externalReadOnly]);
+  const readOnly = (externalReadOnly ?? false) || isSubmitting;
+  const { setCurrentCode } = useCodeState();
 
-  /**
-   * Stable files for StyledProvider — only updates when the artifact identity changes,
-   * not on every streaming content update. Content is synced via sandpack.updateFile()
-   * inside CodeEditor to avoid re-mounting the entire Sandpack provider.
-   */
-  const stableFiles = useRef(files);
+  const [editorContent, setEditorContent] = useState(artifact.content ?? '');
   const prevArtifactId = useRef(artifact.id);
+
+  /** Reset editor content when switching artifacts */
   if (artifact.id !== prevArtifactId.current) {
-    stableFiles.current = files;
+    setEditorContent(artifact.content ?? '');
     prevArtifactId.current = artifact.id;
   }
 
-  const mergedFiles = useMemo(
-    () => ({ ...stableFiles.current, ...sharedFiles }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [artifact.id],
+  /** Sync streaming content into editor during generation */
+  useEffect(() => {
+    if (!readOnly || !artifact.content) {
+      return;
+    }
+    setEditorContent(artifact.content);
+  }, [artifact.content, readOnly]);
+
+  /** When streaming ends, sync final content */
+  const prevReadOnly = useRef(readOnly);
+  useEffect(() => {
+    if (prevReadOnly.current && !readOnly && artifact.content) {
+      setEditorContent(artifact.content);
+    }
+    prevReadOnly.current = readOnly;
+  }, [readOnly, artifact.content]);
+
+  const onContentChange = useCallback(
+    (code: string) => {
+      setEditorContent(code);
+      setCurrentCode(code);
+    },
+    [setCurrentCode],
   );
 
-  if (Object.keys(stableFiles.current).length === 0) {
+  if (!artifact.content) {
     return null;
   }
 
   return (
-    <StyledProvider
-      theme="dark"
-      files={mergedFiles}
-      options={options}
-      {...sharedProps}
-      template={template}
-    >
-      <CodeEditor fileKey={fileKey} artifact={artifact} editorRef={editorRef} readOnly={readOnly} />
-    </StyledProvider>
+    <div className="h-full w-full bg-[#1e1e1e]">
+      <CodeEditor
+        content={editorContent}
+        readOnly={readOnly}
+        artifact={artifact}
+        monacoRef={monacoRef}
+        onContentChange={onContentChange}
+      />
+    </div>
   );
 };

@@ -3,7 +3,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { Code, Play, RefreshCw, X } from 'lucide-react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
-import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
+import type { SandpackPreviewRef } from '@codesandbox/sandpack-react';
 import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
@@ -22,7 +22,6 @@ export default function Artifacts() {
   const { isMutating } = useMutationState();
   const { isSharedConvo } = useShareContext();
   const isMobile = useMediaQuery('(max-width: 868px)');
-  const editorRef = useRef<CodeEditorRef>();
   const previewRef = useRef<SandpackPreviewRef>();
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -297,7 +296,6 @@ export default function Artifacts() {
             <div className="absolute inset-0 flex flex-col">
               <ArtifactTabs
                 artifact={currentArtifact}
-                editorRef={editorRef as React.MutableRefObject<CodeEditorRef>}
                 previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
                 isSharedConvo={isSharedConvo}
               />
