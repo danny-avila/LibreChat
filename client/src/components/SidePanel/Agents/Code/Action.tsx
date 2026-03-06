@@ -14,6 +14,7 @@ import type { AgentForm } from '~/common';
 import { useLocalize, useCodeApiKeyForm } from '~/hooks';
 import ApiKeyDialog from './ApiKeyDialog';
 import { ESide } from '~/common';
+import { cn } from '~/utils';
 
 export default function Action({ authType = '', isToolAuthenticated = false }) {
   const localize = useLocalize();
@@ -73,7 +74,10 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
           <label
             id="execute-code-label"
             htmlFor="execute-code-checkbox"
-            className="form-check-label text-token-text-primary cursor-pointer"
+            className={cn(
+              'form-check-label text-token-text-primary',
+              (runCodeIsEnabled || isToolAuthenticated) && 'cursor-pointer',
+            )}
           >
             {localize('com_ui_run_code')}
           </label>

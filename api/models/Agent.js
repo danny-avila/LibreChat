@@ -589,10 +589,16 @@ const deleteAgent = async (searchParameter) => {
   const agent = await Agent.findOneAndDelete(searchParameter);
   if (agent) {
     await removeAgentFromAllProjects(agent.id);
-    await removeAllPermissions({
-      resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
-    });
+    await Promise.all([
+      removeAllPermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+      }),
+      removeAllPermissions({
+        resourceType: ResourceType.REMOTE_AGENT,
+        resourceId: agent._id,
+      }),
+    ]);
     try {
       await Agent.updateMany({ 'edges.to': agent.id }, { $pull: { edges: { to: agent.id } } });
     } catch (error) {
@@ -631,7 +637,7 @@ const deleteUserAgents = async (userId) => {
     }
 
     await AclEntry.deleteMany({
-      resourceType: ResourceType.AGENT,
+      resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
       resourceId: { $in: agentObjectIds },
     });
 

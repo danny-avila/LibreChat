@@ -1,7 +1,7 @@
-import { Plus } from 'lucide-react';
 import React, { useMemo, useCallback, useRef, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { Button, useToastContext } from '@librechat/client';
-import { useWatch, useForm, FormProvider, type FieldNamesMarkedBoolean } from 'react-hook-form';
+import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
@@ -11,8 +11,10 @@ import {
   PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { AgentForm, StringOption } from '~/common';
+import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { Agent } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks/useLocalize';
+import type { AgentForm, StringOption } from '~/common';
 import {
   useCreateAgentMutation,
   useUpdateAgentMutation,
@@ -36,8 +38,8 @@ import ModelPanel from './ModelPanel';
 function getUpdateToastMessage(
   noVersionChange: boolean,
   avatarActionState: AgentForm['avatar_action'],
-  name: string | undefined,
-  localize: (key: string, vars?: Record<string, unknown> | Array<string | number>) => string,
+  name: string | null | undefined,
+  localize: (key: TranslationKeys, vars?: Record<string, unknown>) => string,
 ): string | null {
   // If only avatar upload is pending (separate endpoint), suppress the no-changes toast.
   if (noVersionChange && avatarActionState === 'upload') {
@@ -72,6 +74,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     recursion_limit,
     category,
     support_contact,
+    tool_options,
     avatar_action: avatarActionState,
   } = data;
 
@@ -97,6 +100,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       recursion_limit,
       category,
       support_contact,
+      tool_options,
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,
@@ -545,7 +549,7 @@ export default function AgentPanel() {
           <AgentFooter
             createMutation={create}
             updateMutation={update}
-            isAvatarUploading={isAvatarUploadInFlight || uploadAvatarMutation.isPending}
+            isAvatarUploading={isAvatarUploadInFlight || uploadAvatarMutation.isLoading}
             activePanel={activePanel}
             setActivePanel={setActivePanel}
             setCurrentAgentId={setCurrentAgentId}

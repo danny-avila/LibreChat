@@ -26,7 +26,7 @@ async function batchResetMeiliFlags(collection) {
   try {
     while (hasMore) {
       const docs = await collection
-        .find({ expiredAt: null, _meiliIndex: true }, { projection: { _id: 1 } })
+        .find({ expiredAt: null, _meiliIndex: { $ne: false } }, { projection: { _id: 1 } })
         .limit(BATCH_SIZE)
         .toArray();
 

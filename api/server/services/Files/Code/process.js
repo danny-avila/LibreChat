@@ -6,27 +6,68 @@ const { getCodeBaseURL } = require('@librechat/agents');
 const { logAxiosError, getBasePath } = require('@librechat/api');
 const {
   Tools,
+  megabyte,
+  fileConfig,
   FileContext,
   FileSources,
   imageExtRegex,
+  inferMimeType,
   EToolResources,
+  EModelEndpoint,
+  mergeFileConfig,
+  getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
-const { createFile, getFiles, updateFile } = require('~/models');
+const { determineFileType } = require('~/server/utils');
 
 /**
- * Process OpenAI image files, convert to target format, save and return file metadata.
+ * Creates a fallback download URL response when file cannot be processed locally.
+ * Used when: file exceeds size limit, storage strategy unavailable, or download error occurs.
+ * @param {Object} params - The parameters.
+ * @param {string} params.name - The filename.
+ * @param {string} params.session_id - The code execution session ID.
+ * @param {string} params.id - The file ID from the code environment.
+ * @param {string} params.conversationId - The current conversation ID.
+ * @param {string} params.toolCallId - The tool call ID that generated the file.
+ * @param {string} params.messageId - The current message ID.
+ * @param {number} params.expiresAt - Expiration timestamp (24 hours from creation).
+ * @returns {Object} Fallback response with download URL.
+ */
+const createDownloadFallback = ({
+  id,
+  name,
+  messageId,
+  expiresAt,
+  session_id,
+  toolCallId,
+  conversationId,
+}) => {
+  const basePath = getBasePath();
+  return {
+    filename: name,
+    filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
+    expiresAt,
+    conversationId,
+    toolCallId,
+    messageId,
+  };
+};
+
+/**
+ * Process code execution output files - downloads and saves both images and non-image files.
+ * All files are saved to local storage with fileIdentifier metadata for code env re-upload.
  * @param {ServerRequest} params.req - The Express request object.
- * @param {string} params.id - The file ID.
+ * @param {string} params.id - The file ID from the code environment.
  * @param {string} params.name - The filename.
  * @param {string} params.apiKey - The code execution API key.
  * @param {string} params.toolCallId - The tool call ID that generated the file.
  * @param {string} params.session_id - The code execution session ID.
  * @param {string} params.conversationId - The current conversation ID.
  * @param {string} params.messageId - The current message ID.
- * @returns {Promise<MongoFile & { messageId: string, toolCallId: string } | { filename: string; filepath: string; expiresAt: number; conversationId: string; toolCallId: string; messageId: string } | undefined>} The file metadata or undefined if an error occurs.
+ * @returns {Promise<MongoFile & { messageId: string, toolCallId: string } | undefined>} The file metadata or undefined if an error occurs.
  */
 const processCodeOutput = async ({
   req,
@@ -41,19 +82,15 @@ const processCodeOutput = async ({
   const appConfig = req.config;
   const currentDate = new Date();
   const baseURL = getCodeBaseURL();
-  const basePath = getBasePath();
-  const fileExt = path.extname(name);
-  if (!fileExt || !imageExtRegex.test(name)) {
-    return {
-      filename: name,
-      filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
-      /** Note: expires 24 hours after creation */
-      expiresAt: currentDate.getTime() + 86400000,
-      conversationId,
-      toolCallId,
-      messageId,
-    };
-  }
+  const fileExt = path.extname(name).toLowerCase();
+  const isImage = fileExt && imageExtRegex.test(name);
+
+  const mergedFileConfig = mergeFileConfig(appConfig.fileConfig);
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig: mergedFileConfig,
+    endpoint: EModelEndpoint.agents,
+  });
+  const fileSizeLimit = endpointFileConfig.fileSizeLimit ?? mergedFileConfig.serverFileSizeLimit;
 
   try {
     const formattedDate = currentDate.toISOString();
@@ -70,28 +107,142 @@ const processCodeOutput = async ({
 
     const buffer = Buffer.from(response.data, 'binary');
 
-    const file_id = v4();
-    const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
-    const file = {
-      ..._file,
-      file_id,
-      usage: 1,
+    // Enforce file size limit
+    if (buffer.length > fileSizeLimit) {
+      logger.warn(
+        `[processCodeOutput] File "${name}" (${(buffer.length / megabyte).toFixed(2)} MB) exceeds size limit of ${(fileSizeLimit / megabyte).toFixed(2)} MB, falling back to download URL`,
+      );
+      return createDownloadFallback({
+        id,
+        name,
+        messageId,
+        toolCallId,
+        session_id,
+        conversationId,
+        expiresAt: currentDate.getTime() + 86400000,
+      });
+    }
+
+    const fileIdentifier = `${session_id}/${id}`;
+
+    /**
+     * Atomically claim a file_id for this (filename, conversationId, context) tuple.
+     * Uses $setOnInsert so concurrent calls for the same filename converge on
+     * a single record instead of creating duplicates (TOCTOU race fix).
+     */
+    const newFileId = v4();
+    const claimed = await claimCodeFile({
       filename: name,
       conversationId,
+      file_id: newFileId,
       user: req.user.id,
-      type: `image/${appConfig.imageOutputType}`,
-      createdAt: formattedDate,
+    });
+    const file_id = claimed.file_id;
+    const isUpdate = file_id !== newFileId;
+
+    if (isUpdate) {
+      logger.debug(
+        `[processCodeOutput] Updating existing file "${name}" (${file_id}) instead of creating duplicate`,
+      );
+    }
+
+    if (isImage) {
+      const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
+      const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
+      const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
+      const file = {
+        ..._file,
+        filepath,
+        file_id,
+        messageId,
+        usage,
+        filename: name,
+        conversationId,
+        user: req.user.id,
+        type: `image/${appConfig.imageOutputType}`,
+        createdAt: isUpdate ? claimed.createdAt : formattedDate,
+        updatedAt: formattedDate,
+        source: appConfig.fileStrategy,
+        context: FileContext.execute_code,
+        metadata: { fileIdentifier },
+      };
+      await createFile(file, true);
+      return Object.assign(file, { messageId, toolCallId });
+    }
+
+    const { saveBuffer } = getStrategyFunctions(appConfig.fileStrategy);
+    if (!saveBuffer) {
+      logger.warn(
+        `[processCodeOutput] saveBuffer not available for strategy ${appConfig.fileStrategy}, falling back to download URL`,
+      );
+      return createDownloadFallback({
+        id,
+        name,
+        messageId,
+        toolCallId,
+        session_id,
+        conversationId,
+        expiresAt: currentDate.getTime() + 86400000,
+      });
+    }
+
+    const detectedType = await determineFileType(buffer, true);
+    const mimeType = detectedType?.mime || inferMimeType(name, '') || 'application/octet-stream';
+
+    /** Check MIME type support - for code-generated files, we're lenient but log unsupported types */
+    const isSupportedMimeType = fileConfig.checkType(
+      mimeType,
+      endpointFileConfig.supportedMimeTypes,
+    );
+    if (!isSupportedMimeType) {
+      logger.warn(
+        `[processCodeOutput] File "${name}" has unsupported MIME type "${mimeType}", proceeding with storage but may not be usable as tool resource`,
+      );
+    }
+
+    const fileName = `${file_id}__${name}`;
+    const filepath = await saveBuffer({
+      userId: req.user.id,
+      buffer,
+      fileName,
+      basePath: 'uploads',
+    });
+
+    const file = {
+      file_id,
+      filepath,
+      messageId,
+      object: 'file',
+      filename: name,
+      type: mimeType,
+      conversationId,
+      user: req.user.id,
+      bytes: buffer.length,
       updatedAt: formattedDate,
+      metadata: { fileIdentifier },
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
+      usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
+      createdAt: isUpdate ? claimed.createdAt : formattedDate,
     };
-    createFile(file, true);
-    /** Note: `messageId` & `toolCallId` are not part of file DB schema; message object records associated file ID */
+
+    await createFile(file, true);
     return Object.assign(file, { messageId, toolCallId });
   } catch (error) {
     logAxiosError({
-      message: 'Error downloading code environment file',
+      message: 'Error downloading/processing code environment file',
       error,
+    });
+
+    // Fallback for download errors - return download URL so user can still manually download
+    return createDownloadFallback({
+      id,
+      name,
+      messageId,
+      toolCallId,
+      session_id,
+      conversationId,
+      expiresAt: currentDate.getTime() + 86400000,
     });
   }
 };
@@ -204,9 +355,16 @@ const primeFiles = async (options, apiKey) => {
         if (!toolContext) {
           toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
         }
-        toolContext += `\n\t- /mnt/data/${file.filename}${
-          agentResourceIds.has(file.file_id) ? '' : ' (just attached by user)'
-        }`;
+
+        let fileSuffix = '';
+        if (!agentResourceIds.has(file.file_id)) {
+          fileSuffix =
+            file.context === FileContext.execute_code
+              ? ' (from previous code execution)'
+              : ' (attached by user)';
+        }
+
+        toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}`;
         files.push({
           id,
           session_id,

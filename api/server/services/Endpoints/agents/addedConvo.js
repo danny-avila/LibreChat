@@ -31,6 +31,7 @@ setGetAgent(getAgent);
  * @param {Function} params.loadTools - Function to load agent tools
  * @param {Array} params.requestFiles - Request files
  * @param {string} params.conversationId - The conversation ID
+ * @param {string} [params.parentMessageId] - The parent message ID for thread filtering
  * @param {Set} params.allowedProviders - Set of allowed providers
  * @param {Map} params.agentConfigs - Map of agent configs to add to
  * @param {string} params.primaryAgentId - The primary agent ID
@@ -46,6 +47,7 @@ const processAddedConvo = async ({
   loadTools,
   requestFiles,
   conversationId,
+  parentMessageId,
   allowedProviders,
   agentConfigs,
   primaryAgentId,
@@ -53,15 +55,15 @@ const processAddedConvo = async ({
   userMCPAuthMap,
 }) => {
   const addedConvo = endpointOption.addedConvo;
-  logger.debug('[processAddedConvo] Called with addedConvo:', {
-    hasAddedConvo: addedConvo != null,
-    addedConvoEndpoint: addedConvo?.endpoint,
-    addedConvoModel: addedConvo?.model,
-    addedConvoAgentId: addedConvo?.agent_id,
-  });
   if (addedConvo == null) {
     return { userMCPAuthMap };
   }
+
+  logger.debug('[processAddedConvo] Processing added conversation', {
+    model: addedConvo.model,
+    agentId: addedConvo.agent_id,
+    endpoint: addedConvo.endpoint,
+  });
 
   try {
     const addedAgent = await loadAddedAgent({ req, conversation: addedConvo, primaryAgent });
@@ -91,6 +93,7 @@ const processAddedConvo = async ({
         loadTools,
         requestFiles,
         conversationId,
+        parentMessageId,
         agent: addedAgent,
         endpointOption,
         allowedProviders,
@@ -99,9 +102,12 @@ const processAddedConvo = async ({
         getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
+        getMessages: db.getMessages,
         updateFilesUsage: db.updateFilesUsage,
+        getUserCodeFiles: db.getUserCodeFiles,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
+        getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       },
     );
 

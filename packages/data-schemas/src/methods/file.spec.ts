@@ -130,7 +130,7 @@ describe('File Methods', () => {
 
       const files = await fileMethods.getFiles({ user: userId });
       expect(files).toHaveLength(3);
-      expect(files.map((f) => f.file_id)).toEqual(expect.arrayContaining(fileIds));
+      expect(files!.map((f) => f.file_id)).toEqual(expect.arrayContaining(fileIds));
     });
 
     it('should exclude text field by default', async () => {
@@ -149,7 +149,7 @@ describe('File Methods', () => {
 
       const files = await fileMethods.getFiles({ file_id: fileId });
       expect(files).toHaveLength(1);
-      expect(files[0].text).toBeUndefined();
+      expect(files![0].text).toBeUndefined();
     });
   });
 
@@ -207,7 +207,7 @@ describe('File Methods', () => {
       expect(files[0].file_id).toBe(contextFileId);
     });
 
-    it('should retrieve files for execute_code tool', async () => {
+    it('should not retrieve execute_code files (handled by getCodeGeneratedFiles)', async () => {
       const userId = new mongoose.Types.ObjectId();
       const codeFileId = uuidv4();
 
@@ -218,14 +218,16 @@ describe('File Methods', () => {
         filepath: '/uploads/code.py',
         type: 'text/x-python',
         bytes: 100,
+        context: FileContext.execute_code,
         metadata: { fileIdentifier: 'some-identifier' },
       });
 
+      // execute_code files are explicitly excluded from getToolFilesByIds
+      // They are retrieved via getCodeGeneratedFiles and getUserCodeFiles instead
       const toolSet = new Set([EToolResources.execute_code]);
       const files = await fileMethods.getToolFilesByIds([codeFileId], toolSet);
 
-      expect(files).toHaveLength(1);
-      expect(files[0].file_id).toBe(codeFileId);
+      expect(files).toHaveLength(0);
     });
   });
 
@@ -490,7 +492,7 @@ describe('File Methods', () => {
 
       const remaining = await fileMethods.getFiles({});
       expect(remaining).toHaveLength(1);
-      expect(remaining[0].user?.toString()).toBe(otherUserId.toString());
+      expect(remaining![0].user?.toString()).toBe(otherUserId.toString());
     });
   });
 

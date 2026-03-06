@@ -1,4 +1,8 @@
+import { Constants } from 'librechat-data-provider';
 import type { TFile, TMessage } from 'librechat-data-provider';
+
+/** Minimal shape for request file entries (from `req.body.files`) */
+type RequestFile = { file_id?: string };
 
 /** Fields to strip from files before client transmission */
 const FILE_STRIP_FIELDS = ['text', '_id', '__v'] as const;
@@ -29,6 +33,27 @@ export function sanitizeFileForTransmit<T extends Partial<TFile>>(
     delete sanitized[field as keyof typeof sanitized];
   }
   return sanitized;
+}
+
+/** Filters attachments to those whose `file_id` appears in `requestFiles`, then sanitizes each. */
+export function buildMessageFiles<T extends Partial<TFile>>(
+  requestFiles: RequestFile[],
+  attachments: T[],
+): Omit<T, (typeof FILE_STRIP_FIELDS)[number]>[] {
+  const requestFileIds = new Set<string>();
+  for (const f of requestFiles) {
+    if (f.file_id) {
+      requestFileIds.add(f.file_id);
+    }
+  }
+
+  const files: Omit<T, (typeof FILE_STRIP_FIELDS)[number]>[] = [];
+  for (const attachment of attachments) {
+    if (attachment.file_id != null && requestFileIds.has(attachment.file_id)) {
+      files.push(sanitizeFileForTransmit(attachment));
+    }
+  }
+  return files;
 }
 
 /**
@@ -65,4 +90,75 @@ export function sanitizeMessageForTransmit<T extends Partial<TMessage>>(
   }
 
   return sanitized;
+}
+
+/** Minimal message shape for thread traversal */
+type ThreadMessage = {
+  messageId: string;
+  parentMessageId?: string | null;
+  files?: Array<{ file_id?: string }>;
+};
+
+/** Result of thread data extraction */
+export type ThreadData = {
+  messageIds: string[];
+  fileIds: string[];
+};
+
+/**
+ * Extracts thread message IDs and file IDs in a single O(n) pass.
+ * Builds a Map for O(1) lookups, then traverses the thread collecting both IDs.
+ *
+ * @param messages - All messages in the conversation (should be queried with select for efficiency)
+ * @param parentMessageId - The ID of the parent message to start traversal from
+ * @returns Object containing messageIds and fileIds arrays
+ */
+export function getThreadData(
+  messages: ThreadMessage[],
+  parentMessageId: string | null | undefined,
+): ThreadData {
+  const result: ThreadData = { messageIds: [], fileIds: [] };
+
+  if (!messages || messages.length === 0 || !parentMessageId) {
+    return result;
+  }
+
+  /** Build Map for O(1) lookups instead of O(n) .find() calls */
+  const messageMap = new Map<string, ThreadMessage>();
+  for (const msg of messages) {
+    messageMap.set(msg.messageId, msg);
+  }
+
+  const fileIdSet = new Set<string>();
+  const visitedIds = new Set<string>();
+  let currentId: string | null | undefined = parentMessageId;
+
+  /** Single traversal: collect message IDs and file IDs together */
+  while (currentId) {
+    if (visitedIds.has(currentId)) {
+      break;
+    }
+    visitedIds.add(currentId);
+
+    const message = messageMap.get(currentId);
+    if (!message) {
+      break;
+    }
+
+    result.messageIds.push(message.messageId);
+
+    /** Collect file IDs from this message */
+    if (message.files) {
+      for (const file of message.files) {
+        if (file.file_id) {
+          fileIdSet.add(file.file_id);
+        }
+      }
+    }
+
+    currentId = message.parentMessageId === Constants.NO_PARENT ? null : message.parentMessageId;
+  }
+
+  result.fileIds = Array.from(fileIdSet);
+  return result;
 }

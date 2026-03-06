@@ -89,6 +89,24 @@ export class FlowStateManager<T = unknown> {
   }
 
   /**
+   * Stores initial PENDING flow state without starting the monitor loop.
+   * Use this when you need to guarantee the state is persisted before
+   * performing an action (e.g., an OAuth redirect), then call createFlow()
+   * separately to start monitoring for completion.
+   */
+  async initFlow(flowId: string, type: string, metadata: FlowMetadata = {}): Promise<void> {
+    const flowKey = this.getFlowKey(flowId, type);
+    const initialState: FlowState = {
+      type,
+      status: 'PENDING',
+      metadata,
+      createdAt: Date.now(),
+    };
+    logger.debug(`[${flowKey}] Storing initial flow state`);
+    await this.keyv.set(flowKey, initialState, this.ttl);
+  }
+
+  /**
    * Creates a new flow and waits for its completion
    */
   async createFlow(

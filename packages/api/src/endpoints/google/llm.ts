@@ -150,6 +150,7 @@ export function getGoogleConfig(
 
   const {
     web_search,
+    thinkingLevel,
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
     ...modelOptions
@@ -196,19 +197,48 @@ export function getGoogleConfig(
     );
   }
 
-  const shouldEnableThinking =
-    thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
+  const modelName = (modelOptions?.model ?? '') as string;
 
-  if (shouldEnableThinking && provider === Providers.GOOGLE) {
-    (llmConfig as GoogleClientOptions).thinkingConfig = {
-      thinkingBudget: thinking ? thinkingBudget : googleSettings.thinkingBudget.default,
-      includeThoughts: Boolean(thinking),
+  /**
+   * Gemini 3+ uses a qualitative `thinkingLevel` ('minimal'|'low'|'medium'|'high')
+   * instead of the numeric `thinkingBudget` used by Gemini 2.5 and earlier.
+   * When `thinking` is enabled (default: true), we always send `thinkingConfig`
+   * with `includeThoughts: true`. The `thinkingBudget` param is ignored for Gemini 3+.
+   *
+   * For Vertex AI, top-level `includeThoughts` is still required because
+   * `@langchain/google-common`'s `formatGenerationConfig` reads it separately
+   * from `thinkingConfig` — they serve different purposes in the request pipeline.
+   */
+  const isGemini3Plus = /gemini-([3-9]|\d{2,})/i.test(modelName);
+
+  if (isGemini3Plus && thinking) {
+    const thinkingConfig: { includeThoughts: boolean; thinkingLevel?: string } = {
+      includeThoughts: true,
     };
-  } else if (shouldEnableThinking && provider === Providers.VERTEXAI) {
-    (llmConfig as VertexAIClientOptions).thinkingBudget = thinking
-      ? thinkingBudget
-      : googleSettings.thinkingBudget.default;
-    (llmConfig as VertexAIClientOptions).includeThoughts = Boolean(thinking);
+    if (thinkingLevel) {
+      thinkingConfig.thinkingLevel = thinkingLevel as string;
+    }
+    if (provider === Providers.GOOGLE) {
+      (llmConfig as GoogleClientOptions).thinkingConfig = thinkingConfig;
+    } else if (provider === Providers.VERTEXAI) {
+      (llmConfig as Record<string, unknown>).thinkingConfig = thinkingConfig;
+      (llmConfig as VertexAIClientOptions).includeThoughts = true;
+    }
+  } else if (!isGemini3Plus) {
+    const shouldEnableThinking =
+      thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
+
+    if (shouldEnableThinking && provider === Providers.GOOGLE) {
+      (llmConfig as GoogleClientOptions).thinkingConfig = {
+        thinkingBudget: thinking ? thinkingBudget : googleSettings.thinkingBudget.default,
+        includeThoughts: Boolean(thinking),
+      };
+    } else if (shouldEnableThinking && provider === Providers.VERTEXAI) {
+      (llmConfig as VertexAIClientOptions).thinkingBudget = thinking
+        ? thinkingBudget
+        : googleSettings.thinkingBudget.default;
+      (llmConfig as VertexAIClientOptions).includeThoughts = Boolean(thinking);
+    }
   }
 
   /*

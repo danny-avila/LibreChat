@@ -16,7 +16,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
 
   const themeIcons: Record<ThemeType, JSX.Element> = {
     system: <Monitor aria-hidden="true" />,
-    dark: <Moon color="white" aria-hidden="true" />,
+    dark: <Moon aria-hidden="true" />,
     light: <Sun aria-hidden="true" />,
   };
 
@@ -35,7 +35,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
 
   return (
     <button
-      className="flex items-center gap-2 rounded-lg p-2 transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 dark:focus-visible:ring-0"
+      className="flex items-center gap-2 rounded-lg p-2 text-text-primary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 dark:focus-visible:ring-0"
       aria-label={localize('com_ui_toggle_theme')}
       aria-keyshortcuts="Ctrl+Shift+T"
       onClick={(e) => {
@@ -76,13 +76,6 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }) => {
     },
     [setTheme, localize],
   );
-
-  useEffect(() => {
-    if (theme === 'system') {
-      const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setTheme(prefersDarkScheme ? 'dark' : 'light');
-    }
-  }, [theme, setTheme]);
 
   useEffect(() => {
     if (announcement) {

@@ -98,7 +98,7 @@ router.get('/gen_title/:conversationId', async (req, res) => {
 
 router.delete('/', async (req, res) => {
   let filter = {};
-  const { conversationId, source, thread_id, endpoint } = req.body.arg;
+  const { conversationId, source, thread_id, endpoint } = req.body?.arg ?? {};
 
   // Prevent deletion of all conversations
   if (!conversationId && !source && !thread_id && !endpoint) {
@@ -160,7 +160,7 @@ router.delete('/all', async (req, res) => {
  * @returns {object} 200 - The updated conversation object.
  */
 router.post('/archive', validateConvoAccess, async (req, res) => {
-  const { conversationId, isArchived } = req.body.arg ?? {};
+  const { conversationId, isArchived } = req.body?.arg ?? {};
 
   if (!conversationId) {
     return res.status(400).json({ error: 'conversationId is required' });
@@ -194,7 +194,7 @@ const MAX_CONVO_TITLE_LENGTH = 1024;
  * @returns {object} 201 - The updated conversation object.
  */
 router.post('/update', validateConvoAccess, async (req, res) => {
-  const { conversationId, title } = req.body.arg ?? {};
+  const { conversationId, title } = req.body?.arg ?? {};
 
   if (!conversationId) {
     return res.status(400).json({ error: 'conversationId is required' });

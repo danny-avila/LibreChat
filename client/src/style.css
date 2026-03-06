@@ -70,6 +70,7 @@ html {
   --text-secondary-alt: var(--gray-500);
   --text-tertiary: var(--gray-500);
   --text-warning: var(--amber-500);
+  --text-destructive: var(--red-600);
   --ring-primary: var(--gray-500);
   --header-primary: var(--white);
   --header-hover: var(--gray-50);
@@ -96,6 +97,7 @@ html {
   --border-medium: var(--gray-300);
   --border-heavy: var(--gray-400);
   --border-xheavy: var(--gray-500);
+  --border-destructive: var(--red-600);
   /* These are test styles */
 
   --background: 0 0% 100%;
@@ -131,6 +133,7 @@ html {
   --text-secondary-alt: var(--gray-400);
   --text-tertiary: var(--gray-500);
   --text-warning: var(--amber-500);
+  --text-destructive: var(--red-600);
   --header-primary: var(--gray-700);
   --header-hover: var(--gray-600);
   --header-button-hover: var(--gray-700);
@@ -156,6 +159,7 @@ html {
   --border-medium: var(--gray-600);
   --border-heavy: var(--gray-500);
   --border-xheavy: var(--gray-400);
+  --border-destructive: var(--red-500);
   /* These are test styles */
 
   --background: 0 0% 7%;

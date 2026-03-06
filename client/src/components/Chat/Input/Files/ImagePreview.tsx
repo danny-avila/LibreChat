@@ -158,11 +158,11 @@ const ImagePreview = ({
       <DialogPrimitive.Root open={isModalOpen} onOpenChange={handleOpenChange}>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay
-            className="fixed inset-0 z-[100] bg-black/90"
+            className="fixed inset-0 z-[250] bg-black/90"
             onClick={handleBackgroundClick}
           />
           <DialogPrimitive.Content
-            className="fixed inset-0 z-[100] flex items-center justify-center outline-none"
+            className="fixed inset-0 z-[250] flex items-center justify-center outline-none"
             onOpenAutoFocus={(e) => {
               e.preventDefault();
               closeButtonRef.current?.focus();

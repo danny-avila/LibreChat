@@ -128,7 +128,6 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
       const groupName = modelGroupMap[modelName].group;
       clientOptions.addParams = azureConfig.groupMap[groupName].addParams;
       clientOptions.dropParams = azureConfig.groupMap[groupName].dropParams;
-      clientOptions.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
 
       clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
       clientOptions.headers = opts.defaultHeaders;

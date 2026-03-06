@@ -120,7 +120,9 @@ export const limiterCache = (prefix: string): RedisStore | undefined => {
   if (!cacheConfig.USE_REDIS) {
     return undefined;
   }
-  // TODO: The prefix is not actually applied. Also needs to account for global prefix.
+  // Note: The `prefix` is applied by RedisStore internally to its key operations.
+  // The global REDIS_KEY_PREFIX is applied by ioredisClient's keyPrefix setting.
+  // Combined key format: `{REDIS_KEY_PREFIX}::{prefix}{identifier}`
   prefix = prefix.endsWith(':') ? prefix : `${prefix}:`;
 
   try {
