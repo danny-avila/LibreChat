@@ -74,8 +74,9 @@ async function wordDocToText(file: Express.Multer.File): Promise<string> {
 
 /** Parses Excel sheet, returns text inside. */
 async function excelSheetToText(file: Express.Multer.File): Promise<string> {
-  const { readFile, utils } = await import('xlsx');
-  const workbook = readFile(file.path);
+  const { read, utils } = await import('xlsx');
+  const data = await fs.promises.readFile(file.path);
+  const workbook = read(data);
 
   let text = '';
   for (const sheetName of workbook.SheetNames) {
