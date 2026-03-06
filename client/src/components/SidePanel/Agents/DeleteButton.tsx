@@ -142,6 +142,7 @@ const MemoizedDeleteButton = memo(
   DeleteButton,
   (prevProps, nextProps) =>
     prevProps.agent_id === nextProps.agent_id &&
+    prevProps.setCurrentAgentId === nextProps.setCurrentAgentId &&
     prevProps.createMutation.data?.id === nextProps.createMutation.data?.id &&
     prevProps.createMutation.isLoading === nextProps.createMutation.isLoading,
 );
