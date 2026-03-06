@@ -537,7 +537,7 @@ export default function useEventHandlers({
           for (let i = 0; i < finalMessages.length; i++) {
             const msg = finalMessages[i];
             const preservedFiles = currentMsgMap.get(msg.messageId);
-            if ((!msg.files || msg.files.length === 0) && preservedFiles) {
+            if (msg.files == null && preservedFiles) {
               finalMessages[i] = { ...msg, files: preservedFiles };
             }
           }

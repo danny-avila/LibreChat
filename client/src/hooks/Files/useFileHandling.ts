@@ -16,7 +16,7 @@ import debounce from 'lodash/debounce';
 import type { EModelEndpoint, TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import type { TConversation } from 'librechat-data-provider';
-import { logger, validateFiles, cachePreview, getCachedPreview } from '~/utils';
+import { logger, validateFiles, cachePreview, getCachedPreview, removePreviewEntry } from '~/utils';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
@@ -133,6 +133,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           const cachedBlob = getCachedPreview(data.temp_file_id);
           if (cachedBlob && data.file_id !== data.temp_file_id) {
             cachePreview(data.file_id, cachedBlob);
+            removePreviewEntry(data.temp_file_id);
           }
           updateFileById(
             data.temp_file_id,
