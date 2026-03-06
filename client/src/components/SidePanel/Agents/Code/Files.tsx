@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AttachmentIcon } from '@librechat/client';
 import {
@@ -28,11 +28,7 @@ function Files({
   const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
-  const setFilesLoading = useCallback((_value: boolean | ((prev: boolean) => boolean)) => {}, []);
-  const fileHandlingState = useMemo(
-    () => ({ files, setFiles, setFilesLoading, conversation: null }),
-    [files, setFilesLoading],
-  );
+  const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });

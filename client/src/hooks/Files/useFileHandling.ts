@@ -37,9 +37,11 @@ type UseFileHandling = {
 export type FileHandlingState = {
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
-  setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  setFilesLoading?: React.Dispatch<React.SetStateAction<boolean>>;
   conversation?: TConversation | null;
 };
+
+const noop = () => {};
 
 const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: FileHandlingState) => {
   const localize = useLocalize();
@@ -48,7 +50,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const [errors, setErrors] = useState<string[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
-  const { files, setFiles, setFilesLoading, conversation } = fileState;
+  const { files, setFiles, conversation } = fileState;
+  const setFilesLoading = fileState.setFilesLoading ?? noop;
   const setEphemeralAgent = useSetRecoilState(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );

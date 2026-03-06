@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { useFormContext } from 'react-hook-form';
@@ -31,11 +31,7 @@ function FileSearch({
   const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
-  const setFilesLoading = useCallback((_value: boolean | ((prev: boolean) => boolean)) => {}, []);
-  const fileHandlingState = useMemo(
-    () => ({ files, setFiles, setFilesLoading, conversation: null }),
-    [files, setFilesLoading],
-  );
+  const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
 
