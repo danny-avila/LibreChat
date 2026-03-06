@@ -1,15 +1,21 @@
 import React, { useRef, useCallback, useMemo, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
 import { LayoutGrid } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
+import { useRecoilValue } from 'recoil';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
-import { useFavorites, useLocalize, useShowMarketplace, useNewConvo } from '~/hooks';
-import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import type { AgentQueryResult } from '~/common';
+import {
+  useGetConversation,
+  useShowMarketplace,
+  useFavorites,
+  useLocalize,
+  useNewConvo,
+} from '~/hooks';
+import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
 import FavoriteItem from './FavoriteItem';
@@ -122,20 +128,20 @@ export default function FavoritesList({
   const navigate = useNavigate();
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
+  const getConversation = useGetConversation(0);
   const { favorites, reorderFavorites, isLoading: isFavoritesLoading } = useFavorites();
   const showAgentMarketplace = useShowMarketplace();
 
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();
   const agentsMap = useAgentsMapContext();
-  const conversation = useRecoilValue(store.conversationByIndex(0));
   const { data: endpointsConfig = {} as t.TEndpointsConfig } = useGetEndpointsQuery();
 
   const { onSelectEndpoint } = useSelectMention({
     modelSpecs: [],
-    conversation,
     assistantsMap,
     endpointsConfig,
+    getConversation,
     newConversation,
     returnHandlers: true,
   });
