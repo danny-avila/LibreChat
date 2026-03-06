@@ -4,31 +4,18 @@ const defaultRate = 6;
 /**
  * Token Pricing Configuration
  *
- * IMPORTANT: Key Ordering for Pattern Matching
- * ============================================
- * The `findMatchingPattern` function iterates through object keys in REVERSE order
- * (last-defined keys are checked first) and uses `modelName.includes(key)` for matching.
+ * Pattern Matching
+ * ================
+ * `findMatchingPattern` (from @librechat/api) uses `modelName.includes(key)` and selects
+ * the LONGEST matching key. If a key's length equals the model name's length (exact match),
+ * it returns immediately. Definition order does NOT affect correctness.
  *
- * This means:
- * 1. BASE PATTERNS must be defined FIRST (e.g., "kimi", "moonshot")
- * 2. SPECIFIC PATTERNS must be defined AFTER their base patterns (e.g., "kimi-k2", "kimi-k2.5")
- *
- * Example ordering for Kimi models:
- *   kimi: { prompt: 0.6, completion: 2.5 },       // Base pattern - checked last
- *   'kimi-k2': { prompt: 0.6, completion: 2.5 },  // More specific - checked before "kimi"
- *   'kimi-k2.5': { prompt: 0.6, completion: 3.0 }, // Most specific - checked first
- *
- * Why this matters:
- * - Model name "kimi-k2.5" contains both "kimi" and "kimi-k2" as substrings
- * - If "kimi" were checked first, it would incorrectly match and return wrong pricing
- * - By defining specific patterns AFTER base patterns, they're checked first in reverse iteration
+ * Key ordering matters only for:
+ *   1. Performance: list older/less common models first so newer/common models
+ *      are found earlier in the reverse scan.
+ *   2. Same-length tie-breaking: the last-defined key wins on equal-length matches.
  *
  * This applies to BOTH `tokenValues` and `cacheTokenValues` objects.
- *
- * When adding new model families:
- * 1. Define the base/generic pattern first
- * 2. Define increasingly specific patterns after
- * 3. Ensure no pattern is a substring of another that should match differently
  */
 
 /**
@@ -151,6 +138,9 @@ const tokenValues = Object.assign(
     'gpt-5.1': { prompt: 1.25, completion: 10 },
     'gpt-5.2': { prompt: 1.75, completion: 14 },
     'gpt-5.3': { prompt: 1.75, completion: 14 },
+    'gpt-5.4': { prompt: 2.5, completion: 15 },
+    // TODO: gpt-5.4-pro pricing not yet officially published — verify before release
+    'gpt-5.4-pro': { prompt: 5, completion: 30 },
     'gpt-5-nano': { prompt: 0.05, completion: 0.4 },
     'gpt-5-mini': { prompt: 0.25, completion: 2 },
     'gpt-5-pro': { prompt: 15, completion: 120 },
@@ -322,7 +312,7 @@ const cacheTokenValues = {
   //   gpt-4o (incl. mini), o1 (incl. mini/preview): 50% off
   //   gpt-4.1 (incl. mini/nano), o3 (incl. mini), o4-mini: 75% off
   //   gpt-5.x (excl. pro variants): 90% off
-  //   gpt-5-pro, gpt-5.2-pro: no caching
+  //   gpt-5-pro, gpt-5.2-pro, gpt-5.4-pro: no caching
   'gpt-4o': { write: 2.5, read: 1.25 },
   'gpt-4o-mini': { write: 0.15, read: 0.075 },
   'gpt-4.1': { write: 2, read: 0.5 },
@@ -332,6 +322,7 @@ const cacheTokenValues = {
   'gpt-5.1': { write: 1.25, read: 0.125 },
   'gpt-5.2': { write: 1.75, read: 0.175 },
   'gpt-5.3': { write: 1.75, read: 0.175 },
+  'gpt-5.4': { write: 2.5, read: 0.25 },
   'gpt-5-mini': { write: 0.25, read: 0.025 },
   'gpt-5-nano': { write: 0.05, read: 0.005 },
   o1: { write: 15, read: 7.5 },

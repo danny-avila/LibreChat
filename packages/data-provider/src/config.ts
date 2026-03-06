@@ -1101,6 +1101,10 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.4',
+  // TODO: gpt-5.4-thinking may have separate reasoning token pricing — verify before release
+  'gpt-5.4-thinking',
+  'gpt-5.4-pro',
   'gpt-5.1',
   'gpt-5.1-chat-latest',
   'gpt-5.1-codex',
@@ -1276,6 +1280,7 @@ export const visionModels = [
   'o4-mini',
   'o3',
   'o1',
+  'gpt-5',
   'gpt-4.1',
   'gpt-4.5',
   'llava',
