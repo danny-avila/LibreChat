@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import { useChatContext } from './ChatContext';
 import { getLatestText } from '~/utils';
+import store from '~/store';
 
 export interface ArtifactsContextValue {
   isSubmitting: boolean;
@@ -18,7 +20,8 @@ interface ArtifactsProviderProps {
 }
 
 export function ArtifactsProvider({ children, value }: ArtifactsProviderProps) {
-  const { isSubmitting, latestMessage, conversation } = useChatContext();
+  const { isSubmitting, conversation, index } = useChatContext();
+  const latestMessage = useRecoilValue(store.latestMessageFamily(index));
 
   const chatLatestMessageText = useMemo(() => {
     return getLatestText({

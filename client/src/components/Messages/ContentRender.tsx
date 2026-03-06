@@ -45,11 +45,12 @@ const ContentRender = memo(
       enterEdit,
       conversation,
       messageLabel,
-      latestMessage,
       handleContinue,
       handleFeedback,
+      latestMessageId,
       copyToClipboard,
       regenerateMessage,
+      latestMessageDepth,
     } = useMessageActions({
       message: msg,
       searchResults,
@@ -62,11 +63,11 @@ const ContentRender = memo(
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const isLast = useMemo(
       () =>
-        !(msg?.children?.length ?? 0) && (msg?.depth === latestMessage?.depth || msg?.depth === -1),
-      [msg?.children, msg?.depth, latestMessage?.depth],
+        !(msg?.children?.length ?? 0) && (msg?.depth === latestMessageDepth || msg?.depth === -1),
+      [msg?.children, msg?.depth, latestMessageDepth],
     );
     const hasNoChildren = !(msg?.children?.length ?? 0);
-    const isLatestMessage = msg?.messageId === latestMessage?.messageId;
+    const isLatestMessage = msg?.messageId === latestMessageId;
     /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
     const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
@@ -181,7 +182,7 @@ const ContentRender = memo(
                   regenerate={handleRegenerateMessage}
                   copyToClipboard={copyToClipboard}
                   handleContinue={handleContinue}
-                  latestMessage={latestMessage}
+                  latestMessageId={latestMessageId}
                   handleFeedback={handleFeedback}
                   isLast={isLast}
                 />
