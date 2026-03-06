@@ -106,7 +106,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
           return;
         }
         const art = artifactRef.current;
-        const isNotOriginal = code && art.content != null && code.trim() !== art.content.trim();
+        const isNotOriginal = art.content != null && code.trim() !== art.content.trim();
         const isNotRepeated =
           currentUpdateRef.current == null
             ? true
