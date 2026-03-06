@@ -216,14 +216,24 @@ describe('applyTenantIsolation', () => {
       expect(doc.tenantId).toBe('tenant-x');
     });
 
-    it('does not overwrite existing tenantId on save', async () => {
+    it('does not overwrite existing tenantId on save when it matches context', async () => {
       const doc = await tenantStorage.run({ tenantId: 'tenant-x' }, async () => {
-        const d = new TestModel({ name: 'existing', tenantId: 'tenant-original' });
+        const d = new TestModel({ name: 'existing', tenantId: 'tenant-x' });
         await d.save();
         return d;
       });
 
-      expect(doc.tenantId).toBe('tenant-original');
+      expect(doc.tenantId).toBe('tenant-x');
+    });
+
+    it('allows mismatched tenantId on save in non-strict mode', async () => {
+      const doc = await tenantStorage.run({ tenantId: 'tenant-x' }, async () => {
+        const d = new TestModel({ name: 'mismatch', tenantId: 'tenant-other' });
+        await d.save();
+        return d;
+      });
+
+      expect(doc.tenantId).toBe('tenant-other');
     });
 
     it('does not set tenantId for SYSTEM_TENANT_ID', async () => {
@@ -266,12 +276,20 @@ describe('applyTenantIsolation', () => {
       }
     });
 
-    it('does not overwrite existing tenantId in insertMany', async () => {
+    it('does not overwrite existing tenantId in insertMany when it matches', async () => {
       const docs = await tenantStorage.run({ tenantId: 'tenant-bulk' }, async () =>
-        TestModel.insertMany([{ name: 'pre-set', tenantId: 'tenant-original' }]),
+        TestModel.insertMany([{ name: 'pre-set', tenantId: 'tenant-bulk' }]),
       );
 
-      expect(docs[0].tenantId).toBe('tenant-original');
+      expect(docs[0].tenantId).toBe('tenant-bulk');
+    });
+
+    it('allows mismatched tenantId in insertMany in non-strict mode', async () => {
+      const docs = await tenantStorage.run({ tenantId: 'tenant-bulk' }, async () =>
+        TestModel.insertMany([{ name: 'mismatch', tenantId: 'tenant-other' }]),
+      );
+
+      expect(docs[0].tenantId).toBe('tenant-other');
     });
 
     it('does not hang when no tenant context is set (non-strict)', async () => {
@@ -287,6 +305,87 @@ describe('applyTenantIsolation', () => {
       );
 
       expect(docs[0].tenantId).toBeUndefined();
+    });
+  });
+
+  describe('update mutation guard', () => {
+    let TestModel: mongoose.Model<ITestDoc>;
+
+    beforeAll(() => {
+      TestModel = createTestModel('mutation');
+    });
+
+    beforeEach(async () => {
+      await TestModel.deleteMany({});
+      await TestModel.create({ name: 'guarded', tenantId: 'tenant-a' });
+    });
+
+    it('blocks $set of tenantId via findOneAndUpdate', async () => {
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          TestModel.findOneAndUpdate({ name: 'guarded' }, { $set: { tenantId: 'tenant-b' } }),
+        ),
+      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
+    });
+
+    it('blocks $unset of tenantId via updateOne', async () => {
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          TestModel.updateOne({ name: 'guarded' }, { $unset: { tenantId: 1 } }),
+        ),
+      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
+    });
+
+    it('blocks top-level tenantId in update payload', async () => {
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          TestModel.updateOne({ name: 'guarded' }, { tenantId: 'tenant-b' } as Record<
+            string,
+            string
+          >),
+        ),
+      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
+    });
+
+    it('blocks $setOnInsert of tenantId via updateMany', async () => {
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          TestModel.updateMany({}, { $setOnInsert: { tenantId: 'tenant-b' } }),
+        ),
+      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
+    });
+
+    it('allows updates that do not touch tenantId', async () => {
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOneAndUpdate(
+          { name: 'guarded' },
+          { $set: { name: 'updated' } },
+          { new: true },
+        ).lean(),
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.name).toBe('updated');
+      expect(result!.tenantId).toBe('tenant-a');
+    });
+
+    it('allows SYSTEM_TENANT_ID to modify tenantId', async () => {
+      const result = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+        TestModel.findOneAndUpdate(
+          { name: 'guarded' },
+          { $set: { tenantId: 'tenant-b' } },
+          { new: true },
+        ).lean(),
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.tenantId).toBe('tenant-b');
+    });
+
+    it('blocks tenantId mutation even without tenant context', async () => {
+      await expect(
+        TestModel.updateOne({ name: 'guarded' }, { $set: { tenantId: 'tenant-b' } }),
+      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
     });
   });
 
@@ -312,6 +411,22 @@ describe('applyTenantIsolation', () => {
 
       expect(docs).toHaveLength(2);
     });
+  });
+
+  describe('async context propagation', () => {
+    let TestModel: mongoose.Model<ITestDoc>;
+
+    beforeAll(() => {
+      TestModel = createTestModel('asyncCtx');
+    });
+
+    beforeEach(async () => {
+      await TestModel.deleteMany({});
+      await TestModel.create([
+        { name: 'ctx-a', tenantId: 'tenant-a' },
+        { name: 'ctx-b', tenantId: 'tenant-b' },
+      ]);
+    });
 
     it('propagates tenant context through await boundaries', async () => {
       const docs = await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
@@ -320,7 +435,7 @@ describe('applyTenantIsolation', () => {
       });
 
       expect(docs).toHaveLength(1);
-      expect(docs[0].name).toBe('sys-a');
+      expect(docs[0].name).toBe('ctx-a');
     });
   });
 
@@ -374,6 +489,27 @@ describe('applyTenantIsolation', () => {
     it('throws on insertMany without tenant context', async () => {
       await expect(TestModel.insertMany([{ name: 'strict-bulk' }])).rejects.toThrow(
         '[TenantIsolation] insertMany attempted without tenant context in strict mode',
+      );
+    });
+
+    it('throws on save with mismatched tenantId', async () => {
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+          const d = new TestModel({ name: 'mismatch', tenantId: 'tenant-b' });
+          await d.save();
+        }),
+      ).rejects.toThrow(
+        '[TenantIsolation] Document tenantId does not match current tenant context',
+      );
+    });
+
+    it('throws on insertMany with mismatched tenantId', async () => {
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          TestModel.insertMany([{ name: 'mismatch', tenantId: 'tenant-b' }]),
+        ),
+      ).rejects.toThrow(
+        '[TenantIsolation] Document tenantId does not match current tenant context',
       );
     });
 
