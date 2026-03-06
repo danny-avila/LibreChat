@@ -130,12 +130,13 @@ export default function FavoritesList({
   const agentsMap = useAgentsMapContext();
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const { data: endpointsConfig = {} as t.TEndpointsConfig } = useGetEndpointsQuery();
+  const getConversation = useCallback(() => conversation, [conversation]);
 
   const { onSelectEndpoint } = useSelectMention({
     modelSpecs: [],
-    conversation,
     assistantsMap,
     endpointsConfig,
+    getConversation,
     newConversation,
     returnHandlers: true,
   });

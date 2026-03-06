@@ -12,7 +12,13 @@ import {
   useRecoilCallback,
 } from 'recoil';
 import { LocalStorageKeys, isEphemeralAgentId, Constants } from 'librechat-data-provider';
-import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
+import type {
+  EModelEndpoint,
+  TConversation,
+  TSubmission,
+  TMessage,
+  TPreset,
+} from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import {
   clearModelForNonEphemeralAgent,
@@ -159,7 +165,7 @@ const conversationIdByIndex = selectorFamily<string | null, string | number>({
       get(conversationByIndex(index))?.conversationId ?? null,
 });
 
-const conversationEndpointByIndex = selectorFamily<string | null, string | number>({
+const conversationEndpointByIndex = selectorFamily<EModelEndpoint | null, string | number>({
   key: 'conversationEndpointByIndex',
   get:
     (index: string | number) =>
@@ -173,6 +179,38 @@ const conversationMessagesCountByIndex = selectorFamily<number, string | number>
     (index: string | number) =>
     ({ get }) =>
       get(conversationByIndex(index))?.messages?.length ?? 0,
+});
+
+const conversationModelByIndex = selectorFamily<string | null, string | number>({
+  key: 'conversationModelByIndex',
+  get:
+    (index: string | number) =>
+    ({ get }) =>
+      get(conversationByIndex(index))?.model ?? null,
+});
+
+const conversationSpecByIndex = selectorFamily<string | null, string | number>({
+  key: 'conversationSpecByIndex',
+  get:
+    (index: string | number) =>
+    ({ get }) =>
+      get(conversationByIndex(index))?.spec ?? null,
+});
+
+const conversationAgentIdByIndex = selectorFamily<string | null, string | number>({
+  key: 'conversationAgentIdByIndex',
+  get:
+    (index: string | number) =>
+    ({ get }) =>
+      get(conversationByIndex(index))?.agent_id ?? null,
+});
+
+const conversationAssistantIdByIndex = selectorFamily<string | null, string | number>({
+  key: 'conversationAssistantIdByIndex',
+  get:
+    (index: string | number) =>
+    ({ get }) =>
+      get(conversationByIndex(index))?.assistant_id ?? null,
 });
 
 const presetByIndex = atomFamily<TPreset | null, string | number>({
@@ -438,6 +476,10 @@ export default {
   conversationIdByIndex,
   conversationEndpointByIndex,
   conversationMessagesCountByIndex,
+  conversationModelByIndex,
+  conversationSpecByIndex,
+  conversationAgentIdByIndex,
+  conversationAssistantIdByIndex,
   conversationByKeySelector,
   useClearConvoState,
   useCreateConversationAtom,
