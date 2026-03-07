@@ -129,7 +129,7 @@ export default function Message(props: TMessageProps) {
                 </h2>
               )}
               <div className="flex flex-col gap-1">
-                <div className="flex max-w-full flex-grow flex-col gap-0">
+                <div className="flex min-h-[20px] max-w-full flex-grow flex-col gap-0">
                   <ContentParts
                     edit={edit}
                     isLast={isLast}
@@ -147,7 +147,7 @@ export default function Message(props: TMessageProps) {
                   />
                 </div>
                 {isLast && isSubmitting ? (
-                  <div className="mt-1 h-[27px] bg-transparent" />
+                  <div className="mt-1 h-[31px] bg-transparent" />
                 ) : (
                   <SubRow classes="text-xs">
                     <SiblingSwitch
