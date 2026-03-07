@@ -53,6 +53,7 @@ export interface IPreset extends Document {
   web_search?: boolean;
   disableStreaming?: boolean;
   fileTokenLimit?: number;
+  tenantId?: string;
 }
 
 const presetSchema: Schema<IPreset> = new Schema(
@@ -79,6 +80,10 @@ const presetSchema: Schema<IPreset> = new Schema(
       type: Number,
     },
     ...conversationPreset,
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   { timestamps: true },
 );

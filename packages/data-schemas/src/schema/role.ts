@@ -72,10 +72,16 @@ const rolePermissionsSchema = new Schema(
 );
 
 const roleSchema: Schema<IRole> = new Schema({
-  name: { type: String, required: true, unique: true, index: true },
+  name: { type: String, required: true, index: true },
   permissions: {
     type: rolePermissionsSchema,
   },
+  tenantId: {
+    type: String,
+    index: true,
+  },
 });
+
+roleSchema.index({ name: 1, tenantId: 1 }, { unique: true });
 
 export default roleSchema;

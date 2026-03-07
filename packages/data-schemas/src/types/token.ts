@@ -9,6 +9,7 @@ export interface IToken extends Document {
   createdAt: Date;
   expiresAt: Date;
   metadata?: Map<string, unknown>;
+  tenantId?: string;
 }
 
 export interface TokenCreateData {

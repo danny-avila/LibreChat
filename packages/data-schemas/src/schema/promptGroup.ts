@@ -53,6 +53,10 @@ const promptGroupSchema = new Schema<IPromptGroupDocument>(
         `Command cannot be longer than ${Constants.COMMANDS_MAX_LENGTH} characters`,
       ],
     }, // Casting here bypasses the type error for the command field.
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,
