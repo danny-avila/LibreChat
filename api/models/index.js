@@ -13,6 +13,7 @@ const seedDatabase = async () => {
   await methods.initializeRoles();
   await methods.seedDefaultRoles();
   await methods.ensureDefaultCategories();
+  await methods.seedSystemGrants();
 };
 
 module.exports = {

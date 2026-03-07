@@ -14,6 +14,7 @@ const {
   checkOpenAIStorage,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   filterFile,
   processFileUpload,
@@ -28,6 +29,7 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { cleanFileName } = require('~/server/utils/files');
+const { hasCapability } = require('~/server/middleware');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
 const db = require('~/models');
@@ -379,15 +381,24 @@ router.post('/', async (req, res) => {
       return await processFileUpload({ req, res, metadata });
     }
 
-    const denied = await verifyAgentUploadPermission({
-      req,
-      res,
-      metadata,
-      getAgent: db.getAgent,
-      checkPermission,
-    });
-    if (denied) {
-      return;
+    let skipUploadAuth = false;
+    try {
+      skipUploadAuth = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
+    } catch (err) {
+      logger.warn(`[/files] capability check failed, denying bypass: ${err.message}`);
+    }
+
+    if (!skipUploadAuth) {
+      const denied = await verifyAgentUploadPermission({
+        req,
+        res,
+        metadata,
+        getAgent: db.getAgent,
+        checkPermission,
+      });
+      if (denied) {
+        return;
+      }
     }
 
     return await processAgentFileUpload({ req, res, metadata });

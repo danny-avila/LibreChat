@@ -25,6 +25,7 @@ import { createToolCallModel } from './toolCall';
 import { createMemoryModel } from './memory';
 import { createAccessRoleModel } from './accessRole';
 import { createAclEntryModel } from './aclEntry';
+import { createSystemGrantModel } from './systemGrant';
 import { createGroupModel } from './group';
 
 /**
@@ -59,6 +60,7 @@ export function createModels(mongoose: typeof import('mongoose')) {
     MemoryEntry: createMemoryModel(mongoose),
     AccessRole: createAccessRoleModel(mongoose),
     AclEntry: createAclEntryModel(mongoose),
+    SystemGrant: createSystemGrantModel(mongoose),
     Group: createGroupModel(mongoose),
   };
 }

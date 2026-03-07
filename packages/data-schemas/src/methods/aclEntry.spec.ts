@@ -959,4 +959,285 @@ describe('AclEntry Model Tests', () => {
       expect(permissionsMap.get(resource2.toString())).toBe(PermissionBits.EDIT);
     });
   });
+
+  describe('deleteAclEntries', () => {
+    test('should delete entries matching the filter', async () => {
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.MCPSERVER,
+        resourceId,
+        PermissionBits.EDIT,
+        grantedById,
+      );
+
+      const result = await methods.deleteAclEntries({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+      });
+
+      expect(result.deletedCount).toBe(1);
+      const remaining = await AclEntry.countDocuments({ principalId: userId });
+      expect(remaining).toBe(1);
+    });
+
+    test('should delete all entries when filter matches multiple', async () => {
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        new mongoose.Types.ObjectId(),
+        PermissionBits.VIEW,
+        grantedById,
+      );
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        new mongoose.Types.ObjectId(),
+        PermissionBits.EDIT,
+        grantedById,
+      );
+
+      const result = await methods.deleteAclEntries({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+      });
+
+      expect(result.deletedCount).toBe(2);
+    });
+
+    test('should return zero deletedCount when no match', async () => {
+      const result = await methods.deleteAclEntries({
+        principalId: new mongoose.Types.ObjectId(),
+      });
+      expect(result.deletedCount).toBe(0);
+    });
+  });
+
+  describe('bulkWriteAclEntries', () => {
+    test('should perform bulk inserts', async () => {
+      const res1 = new mongoose.Types.ObjectId();
+      const res2 = new mongoose.Types.ObjectId();
+
+      const result = await methods.bulkWriteAclEntries([
+        {
+          insertOne: {
+            document: {
+              principalType: PrincipalType.USER,
+              principalId: userId,
+              principalModel: PrincipalModel.USER,
+              resourceType: ResourceType.AGENT,
+              resourceId: res1,
+              permBits: PermissionBits.VIEW,
+              grantedBy: grantedById,
+              grantedAt: new Date(),
+            },
+          },
+        },
+        {
+          insertOne: {
+            document: {
+              principalType: PrincipalType.USER,
+              principalId: userId,
+              principalModel: PrincipalModel.USER,
+              resourceType: ResourceType.AGENT,
+              resourceId: res2,
+              permBits: PermissionBits.EDIT,
+              grantedBy: grantedById,
+              grantedAt: new Date(),
+            },
+          },
+        },
+      ]);
+
+      expect(result.insertedCount).toBe(2);
+      const entries = await AclEntry.countDocuments({ principalId: userId });
+      expect(entries).toBe(2);
+    });
+
+    test('should perform bulk updates', async () => {
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      await methods.bulkWriteAclEntries([
+        {
+          updateOne: {
+            filter: {
+              principalType: PrincipalType.USER,
+              principalId: userId,
+              resourceId,
+            },
+            update: { $set: { permBits: PermissionBits.VIEW | PermissionBits.EDIT } },
+          },
+        },
+      ]);
+
+      const entry = await AclEntry.findOne({ principalId: userId, resourceId }).lean();
+      expect(entry?.permBits).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
+    });
+  });
+
+  describe('findPublicResourceIds', () => {
+    test('should find resources with public VIEW access', async () => {
+      const publicRes1 = new mongoose.Types.ObjectId();
+      const publicRes2 = new mongoose.Types.ObjectId();
+      const privateRes = new mongoose.Types.ObjectId();
+
+      await methods.grantPermission(
+        PrincipalType.PUBLIC,
+        null,
+        ResourceType.AGENT,
+        publicRes1,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+      await methods.grantPermission(
+        PrincipalType.PUBLIC,
+        null,
+        ResourceType.AGENT,
+        publicRes2,
+        PermissionBits.VIEW | PermissionBits.EDIT,
+        grantedById,
+      );
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        privateRes,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      const publicIds = await methods.findPublicResourceIds(
+        ResourceType.AGENT,
+        PermissionBits.VIEW,
+      );
+
+      expect(publicIds).toHaveLength(2);
+      const idStrings = publicIds.map((id) => id.toString()).sort();
+      expect(idStrings).toEqual([publicRes1.toString(), publicRes2.toString()].sort());
+    });
+
+    test('should filter by required permission bits', async () => {
+      const viewOnly = new mongoose.Types.ObjectId();
+      const viewEdit = new mongoose.Types.ObjectId();
+
+      await methods.grantPermission(
+        PrincipalType.PUBLIC,
+        null,
+        ResourceType.AGENT,
+        viewOnly,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+      await methods.grantPermission(
+        PrincipalType.PUBLIC,
+        null,
+        ResourceType.AGENT,
+        viewEdit,
+        PermissionBits.VIEW | PermissionBits.EDIT,
+        grantedById,
+      );
+
+      const editableIds = await methods.findPublicResourceIds(
+        ResourceType.AGENT,
+        PermissionBits.EDIT,
+      );
+
+      expect(editableIds).toHaveLength(1);
+      expect(editableIds[0].toString()).toBe(viewEdit.toString());
+    });
+
+    test('should return empty array when no public resources exist', async () => {
+      const ids = await methods.findPublicResourceIds(ResourceType.AGENT, PermissionBits.VIEW);
+      expect(ids).toEqual([]);
+    });
+
+    test('should filter by resource type', async () => {
+      const agentRes = new mongoose.Types.ObjectId();
+      const mcpRes = new mongoose.Types.ObjectId();
+
+      await methods.grantPermission(
+        PrincipalType.PUBLIC,
+        null,
+        ResourceType.AGENT,
+        agentRes,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+      await methods.grantPermission(
+        PrincipalType.PUBLIC,
+        null,
+        ResourceType.MCPSERVER,
+        mcpRes,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      const agentIds = await methods.findPublicResourceIds(ResourceType.AGENT, PermissionBits.VIEW);
+      expect(agentIds).toHaveLength(1);
+      expect(agentIds[0].toString()).toBe(agentRes.toString());
+    });
+  });
+
+  describe('aggregateAclEntries', () => {
+    test('should run an aggregation pipeline and return results', async () => {
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+      await methods.grantPermission(
+        PrincipalType.GROUP,
+        groupId,
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.EDIT,
+        grantedById,
+      );
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.MCPSERVER,
+        new mongoose.Types.ObjectId(),
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      const results = await methods.aggregateAclEntries([
+        { $group: { _id: '$resourceType', count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]);
+
+      expect(results).toHaveLength(2);
+      const agentResult = results.find((r: { _id: string }) => r._id === ResourceType.AGENT);
+      expect(agentResult.count).toBe(2);
+    });
+
+    test('should return empty array for non-matching pipeline', async () => {
+      const results = await methods.aggregateAclEntries([
+        { $match: { principalType: 'nonexistent' } },
+      ]);
+      expect(results).toEqual([]);
+    });
+  });
 });

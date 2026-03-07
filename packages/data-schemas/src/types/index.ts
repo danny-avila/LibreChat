@@ -26,6 +26,7 @@ export * from './prompts';
 /* Access Control */
 export * from './accessRole';
 export * from './aclEntry';
+export * from './systemGrant';
 export * from './group';
 /* Web */
 export * from './web';
