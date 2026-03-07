@@ -1,7 +1,7 @@
 import type * as t from '~/types';
-import messageSchema from '~/schema/message';
-import mongoMeili from '~/models/plugins/mongoMeili';
 import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import mongoMeili from '~/models/plugins/mongoMeili';
+import messageSchema from '~/schema/message';
 
 export function createMessageModel(mongoose: typeof import('mongoose')) {
   applyTenantIsolation(messageSchema);
