@@ -59,8 +59,8 @@ function isPrivateIPv4(a: number, b: number, c: number): boolean {
   return false;
 }
 
-/** Extracts embedded IPv4 from Teredo (2001:0:), 6to4 (2002:), and NAT64 (64:ff9b::) addresses */
-function extractEmbeddedIPv4(ipv6: string): boolean {
+/** Checks if an IPv6 address embeds a private IPv4 via 6to4, NAT64, or Teredo */
+function hasPrivateEmbeddedIPv4(ipv6: string): boolean {
   const segments = ipv6.split(':').filter((s) => s !== '');
 
   if (ipv6.startsWith('2002:') && segments.length >= 3) {
@@ -71,13 +71,25 @@ function extractEmbeddedIPv4(ipv6: string): boolean {
     }
   }
 
-  if (ipv6.startsWith('64:ff9b::') || ipv6.startsWith('2001::')) {
+  if (ipv6.startsWith('64:ff9b::')) {
     const lastTwo = segments.slice(-2);
     if (lastTwo.length === 2) {
       const hi = parseInt(lastTwo[0], 16);
       const lo = parseInt(lastTwo[1], 16);
       if (!isNaN(hi) && !isNaN(lo)) {
         return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
+      }
+    }
+  }
+
+  // RFC 4380: Teredo stores external IPv4 as bitwise complement in last 32 bits
+  if (ipv6.startsWith('2001::')) {
+    const lastTwo = segments.slice(-2);
+    if (lastTwo.length === 2) {
+      const hi = parseInt(lastTwo[0], 16);
+      const lo = parseInt(lastTwo[1], 16);
+      if (!isNaN(hi) && !isNaN(lo)) {
+        return isPrivateIPv4((~hi >> 8) & 0xff, ~hi & 0xff, (~lo >> 8) & 0xff);
       }
     }
   }
@@ -124,7 +136,7 @@ export function isPrivateIP(ip: string): boolean {
     return true;
   }
 
-  if (extractEmbeddedIPv4(normalized) === true) {
+  if (hasPrivateEmbeddedIPv4(normalized)) {
     return true;
   }
 
@@ -132,10 +144,10 @@ export function isPrivateIP(ip: string): boolean {
 }
 
 /**
- * Resolves a hostname via DNS and checks if any resolved address is a private/reserved IP.
- * Detects DNS-based SSRF bypasses (e.g., nip.io wildcard DNS, attacker-controlled nameservers).
- * Fails open: returns false if DNS resolution fails, since hostname-only checks still apply
- * and the actual HTTP request would also fail.
+ * Checks if a hostname resolves to a private/reserved IP address.
+ * Directly validates literal IPv4 and IPv6 addresses without DNS lookup.
+ * For hostnames, resolves via DNS and checks all returned addresses.
+ * Fails open on DNS errors (returns false), since the HTTP request would also fail.
  */
 export async function resolveHostnameSSRF(hostname: string): Promise<boolean> {
   const normalizedHost = hostname.toLowerCase().trim();

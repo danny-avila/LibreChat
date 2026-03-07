@@ -153,8 +153,9 @@ describe('isSSRFTarget', () => {
       expect(isSSRFTarget('169.254.0.1')).toBe(true);
     });
 
-    it('should block 0.0.0.0', () => {
+    it('should block 0.0.0.0/8 (current network)', () => {
       expect(isSSRFTarget('0.0.0.0')).toBe(true);
+      expect(isSSRFTarget('0.1.2.3')).toBe(true);
     });
 
     it('should allow public IPs', () => {
@@ -367,9 +368,19 @@ describe('isPrivateIP - IPv4-mapped IPv6 hex-normalized form (CVE-style SSRF byp
     expect(isPrivateIP('64:ff9b::a9fe:a9fe')).toBe(true);
   });
 
-  it('should detect Teredo addresses embedding private IPv4 (2001::XXXX:XXXX)', () => {
-    expect(isPrivateIP('2001::7f00:1')).toBe(true);
-    expect(isPrivateIP('2001::a9fe:a9fe')).toBe(true);
+  it('should detect Teredo addresses with complement-encoded private IPv4 (RFC 4380)', () => {
+    // Teredo stores external IPv4 as bitwise complement in last 32 bits
+    // 127.0.0.1 → complement: 0x80ff:0xfffe
+    expect(isPrivateIP('2001::80ff:fffe')).toBe(true);
+    // 169.254.169.254 → complement: 0x5601:0x5601
+    expect(isPrivateIP('2001::5601:5601')).toBe(true);
+    // 10.0.0.1 → complement: 0xf5ff:0xfffe
+    expect(isPrivateIP('2001::f5ff:fffe')).toBe(true);
+  });
+
+  it('should allow Teredo addresses with complement-encoded public IPv4', () => {
+    // 8.8.8.8 → complement: 0xf7f7:0xf7f7
+    expect(isPrivateIP('2001::f7f7:f7f7')).toBe(false);
   });
 
   it('should confirm URL parser produces the hex form that bypasses dotted regex', () => {
@@ -485,6 +496,14 @@ describe('resolveHostnameSSRF', () => {
     expect(await resolveHostnameSSRF('2001:db8::1')).toBe(false);
     expect(await resolveHostnameSSRF('::ffff:808:808')).toBe(false);
     expect(mockedLookup).not.toHaveBeenCalled();
+  });
+
+  it('should detect private IPv6 addresses returned from DNS lookup', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '::1', family: 6 }] as never);
+    expect(await resolveHostnameSSRF('ipv6-loopback.example.com')).toBe(true);
+
+    mockedLookup.mockResolvedValueOnce([{ address: 'fc00::1', family: 6 }] as never);
+    expect(await resolveHostnameSSRF('ula.example.com')).toBe(true);
   });
 
   it('should fail open on DNS resolution failure', async () => {
@@ -1121,6 +1140,17 @@ describe('isMCPDomainAllowed', () => {
     it('should allow MCP server targeting public IP via IPv6-mapped address', async () => {
       const config = { url: 'http://[::ffff:8.8.8.8]/mcp' };
       expect(await isMCPDomainAllowed(config, null)).toBe(true);
+    });
+
+    it('should block MCP server targeting 6to4 embedded private IPv4', async () => {
+      expect(await isMCPDomainAllowed({ url: 'http://[2002:7f00:1::]/mcp' }, null)).toBe(false);
+      expect(await isMCPDomainAllowed({ url: 'ws://[2002:a9fe:a9fe::]/mcp' }, null)).toBe(false);
+    });
+
+    it('should block MCP server targeting NAT64 embedded private IPv4', async () => {
+      expect(await isMCPDomainAllowed({ url: 'http://[64:ff9b::127.0.0.1]/mcp' }, null)).toBe(
+        false,
+      );
     });
   });
 });
