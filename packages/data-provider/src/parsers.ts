@@ -269,7 +269,9 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   }
 
   if (endpoint === EModelEndpoint.custom || endpointType === EModelEndpoint.custom) {
-    if (modelLabel) {
+    if (modelDisplayLabel) {
+      return modelDisplayLabel;
+    } else if (modelLabel) {
       return modelLabel;
     } else if (chatGptLabel) {
       return chatGptLabel;
@@ -282,8 +284,6 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
     } else if (model && model.includes('gpt-')) {
       const gptVersion = extractGPTVersion(model);
       return gptVersion || 'GPT';
-    } else if (modelDisplayLabel) {
-      return modelDisplayLabel;
     }
 
     return 'AI';

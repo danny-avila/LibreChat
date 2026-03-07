@@ -181,6 +181,16 @@ export const getDisplayValue = ({
   }
 
   if (selectedValues.model && selectedValues.endpoint) {
+    // Try to find a matching modelSpec by endpoint+model
+    const matchingSpec = modelSpecs.find(
+      (s) =>
+        s.preset?.endpoint === selectedValues.endpoint &&
+        s.preset?.model === selectedValues.model,
+    );
+    if (matchingSpec) {
+      return matchingSpec.label || matchingSpec.name;
+    }
+
     const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
     if (!endpoint) {
       return localize('com_ui_select_model');

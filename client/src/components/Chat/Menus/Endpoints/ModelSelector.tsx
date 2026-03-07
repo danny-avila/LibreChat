@@ -10,11 +10,14 @@ import {
 } from './components';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
+import { useGetStartupConfig } from '~/data-provider';
 import DialogManager from './DialogManager';
 import { useLocalize } from '~/hooks';
 
 function ModelSelectorContent() {
   const localize = useLocalize();
+  const { data: startupConfig } = useGetStartupConfig();
+  const enforceSpecs = startupConfig?.modelSpecs?.enforce === true;
 
   const {
     // LibreChat
@@ -94,10 +97,9 @@ function ModelSelectorContent() {
               modelSpecs?.filter((spec) => !spec.group) || [],
               selectedValues.modelSpec || '',
             )}
-            {/* Render endpoints (will include grouped specs matching endpoint names) */}
-            {renderEndpoints(mappedEndpoints ?? [])}
-            {/* Render custom groups (specs with group field not matching any endpoint) */}
-            {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
+            {/* When modelSpecs.enforce is true, hide raw endpoints and custom groups */}
+            {!enforceSpecs && renderEndpoints(mappedEndpoints ?? [])}
+            {!enforceSpecs && renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
           </>
         )}
       </Menu>

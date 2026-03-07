@@ -187,6 +187,8 @@ router.get('/', async function (req, res) {
 
     if (typeof process.env.CUSTOM_FOOTER === 'string') {
       payload.customFooter = process.env.CUSTOM_FOOTER;
+    } else if (typeof appConfig?.customFooter === 'string') {
+      payload.customFooter = appConfig.customFooter;
     }
 
     await cache.set(CacheKeys.STARTUP_CONFIG, payload);
