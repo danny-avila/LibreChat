@@ -1,7 +1,7 @@
-import convoSchema from '~/schema/convo';
-import mongoMeili from '~/models/plugins/mongoMeili';
-import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
 import type * as t from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import mongoMeili from '~/models/plugins/mongoMeili';
+import convoSchema from '~/schema/convo';
 
 export function createConversationModel(mongoose: typeof import('mongoose')) {
   applyTenantIsolation(convoSchema);

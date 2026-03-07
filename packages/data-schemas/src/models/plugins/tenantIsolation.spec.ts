@@ -407,13 +407,28 @@ describe('applyTenantIsolation', () => {
       ).rejects.toThrow('[TenantIsolation] Modifying tenantId via replacement is not allowed');
     });
 
-    it('allows replaceOne without tenantId in replacement', async () => {
+    it('stamps tenantId into replacement when absent from replacement document', async () => {
       await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
         TestModel.replaceOne({ name: 'guarded' }, { name: 'replaced-ok' }),
       );
 
-      const doc = await TestModel.findOne({ name: 'replaced-ok' }).lean();
+      const doc = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOne({ name: 'replaced-ok' }).lean(),
+      );
       expect(doc).not.toBeNull();
+      expect(doc!.tenantId).toBe('tenant-a');
+    });
+
+    it('allows replacement with matching tenantId', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.replaceOne({ name: 'guarded' }, { name: 'replaced-match', tenantId: 'tenant-a' }),
+      );
+
+      const doc = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOne({ name: 'replaced-match' }).lean(),
+      );
+      expect(doc).not.toBeNull();
+      expect(doc!.tenantId).toBe('tenant-a');
     });
 
     it('allows SYSTEM_TENANT_ID to replace with tenantId', async () => {
@@ -572,6 +587,74 @@ describe('applyTenantIsolation', () => {
     it('allows runAsSystem to bypass strict mode', async () => {
       const docs = await runAsSystem(async () => TestModel.find().lean());
       expect(docs).toHaveLength(1);
+    });
+  });
+
+  describe('multi-tenant unique constraints', () => {
+    let UniqueModel: mongoose.Model<ITestDoc>;
+
+    beforeAll(async () => {
+      const schema = new Schema<ITestDoc>({
+        name: { type: String, required: true },
+        tenantId: { type: String, index: true },
+      });
+      schema.index({ name: 1, tenantId: 1 }, { unique: true });
+      applyTenantIsolation(schema);
+      UniqueModel = mongoose.model<ITestDoc>(`TestUnique_${Date.now()}`, schema);
+      await UniqueModel.ensureIndexes();
+    });
+
+    afterAll(async () => {
+      await UniqueModel.deleteMany({});
+    });
+
+    it('allows same name in different tenants', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await UniqueModel.create({ name: 'shared-name' });
+      });
+      await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+        await UniqueModel.create({ name: 'shared-name' });
+      });
+
+      const docA = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        UniqueModel.findOne({ name: 'shared-name' }).lean(),
+      );
+      const docB = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+        UniqueModel.findOne({ name: 'shared-name' }).lean(),
+      );
+
+      expect(docA).not.toBeNull();
+      expect(docB).not.toBeNull();
+      expect(docA!.tenantId).toBe('tenant-a');
+      expect(docB!.tenantId).toBe('tenant-b');
+    });
+
+    it('rejects duplicate name within the same tenant', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-dup' }, async () => {
+        await UniqueModel.create({ name: 'unique-within-tenant' });
+      });
+
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-dup' }, async () =>
+          UniqueModel.create({ name: 'unique-within-tenant' }),
+        ),
+      ).rejects.toThrow(/E11000|duplicate key/);
+    });
+
+    it('tenant-scoped query returns only the correct document', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-x' }, async () => {
+        await UniqueModel.create({ name: 'scoped-doc' });
+      });
+      await tenantStorage.run({ tenantId: 'tenant-y' }, async () => {
+        await UniqueModel.create({ name: 'scoped-doc' });
+      });
+
+      const results = await tenantStorage.run({ tenantId: 'tenant-x' }, async () =>
+        UniqueModel.find({ name: 'scoped-doc' }).lean(),
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0].tenantId).toBe('tenant-x');
     });
   });
 });
