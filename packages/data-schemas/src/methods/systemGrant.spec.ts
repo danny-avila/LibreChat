@@ -679,6 +679,19 @@ describe('systemGrant methods', () => {
       expect(grants[0].capability).toBe(SystemCapabilities.READ_CONFIGS);
     });
 
+    it('includes platform-level grants when called with a tenantId', async () => {
+      await methods.seedSystemGrants();
+
+      const grants = await methods.getCapabilitiesForPrincipal({
+        principalType: PrincipalType.ROLE,
+        principalId: SystemRoles.ADMIN,
+        tenantId: 'acme',
+      });
+
+      expect(grants.some((g) => g.capability === SystemCapabilities.ACCESS_ADMIN)).toBe(true);
+      expect(grants).toHaveLength(Object.values(SystemCapabilities).length);
+    });
+
     it('throws TypeError for invalid ObjectId string on USER principal', async () => {
       await expect(
         methods.getCapabilitiesForPrincipal({

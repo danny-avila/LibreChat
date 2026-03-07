@@ -186,7 +186,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     };
 
     if (tenantId != null) {
-      filter.tenantId = tenantId;
+      filter.$or = [{ tenantId }, { tenantId: { $exists: false } }];
     } else {
       filter.tenantId = { $exists: false };
     }
