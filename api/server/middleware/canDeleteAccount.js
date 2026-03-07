@@ -23,7 +23,13 @@ const canDeleteAccount = async (req, res, next = () => {}) => {
   let hasAdminAccess = false;
   if (user) {
     try {
-      hasAdminAccess = await hasCapability(user, SystemCapabilities.ACCESS_ADMIN);
+      const id = user.id ?? user._id?.toString();
+      if (id) {
+        hasAdminAccess = await hasCapability(
+          { id, role: user.role ?? '', tenantId: user.tenantId },
+          SystemCapabilities.ACCESS_ADMIN,
+        );
+      }
     } catch (err) {
       logger.warn(`[canDeleteAccount] capability check failed, denying: ${err.message}`);
     }
