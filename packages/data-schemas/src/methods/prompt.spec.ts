@@ -582,8 +582,6 @@ describe('Prompt ACL Permissions', () => {
       await methods.deletePrompt({
         promptId: testPromptId,
         groupId: testPromptGroup._id,
-        author: testUsers.owner._id,
-        role: SystemRoles.USER,
       });
 
       // Verify ACL entries are removed

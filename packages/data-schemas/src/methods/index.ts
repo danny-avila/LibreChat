@@ -20,6 +20,7 @@ import { createPluginAuthMethods, type PluginAuthMethods } from './pluginAuth';
 import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
 import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
 import { createAclEntryMethods, type AclEntryMethods } from './aclEntry';
+import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
 import { createShareMethods, type ShareMethods } from './share';
 /* Tier 1 — Simple CRUD */
 import { createActionMethods, type ActionMethods } from './action';
@@ -62,6 +63,7 @@ export type AllMethods = UserMethods &
   MCPServerMethods &
   UserGroupMethods &
   AclEntryMethods &
+  SystemGrantMethods &
   ShareMethods &
   AccessRoleMethods &
   PluginAuthMethods &
@@ -133,6 +135,8 @@ export function createMethods(
   // ACL entry methods (used internally for removeAllPermissions)
   const aclEntryMethods = createAclEntryMethods(mongoose);
 
+  const systemGrantMethods = createSystemGrantMethods(mongoose);
+
   // Internal removeAllPermissions: use deleteAclEntries from aclEntryMethods
   // instead of requiring it as an external dep from PermissionService
   const removeAllPermissions =
@@ -172,6 +176,7 @@ export function createMethods(
     ...createAccessRoleMethods(mongoose),
     ...createUserGroupMethods(mongoose),
     ...aclEntryMethods,
+    ...systemGrantMethods,
     ...createShareMethods(mongoose),
     ...createPluginAuthMethods(mongoose),
     /* Tier 1 */
@@ -208,6 +213,7 @@ export type {
   MCPServerMethods,
   UserGroupMethods,
   AclEntryMethods,
+  SystemGrantMethods,
   ShareMethods,
   AccessRoleMethods,
   PluginAuthMethods,
