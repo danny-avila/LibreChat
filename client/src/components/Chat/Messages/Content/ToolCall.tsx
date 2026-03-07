@@ -9,6 +9,7 @@ import {
 } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
+import { useMCPIconMap } from '~/hooks/MCP';
 import { ToolIcon, getToolIconType } from './ToolOutput';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
@@ -64,6 +65,8 @@ export default function ToolCall({
   }, [name]);
 
   const toolIconType = useMemo(() => getToolIconType(name), [name]);
+  const mcpIconMap = useMCPIconMap();
+  const mcpIconUrl = isMCPToolCall ? mcpIconMap.get(mcpServerName) : undefined;
 
   const actionId = useMemo(() => {
     if (isMCPToolCall || !auth) {
@@ -170,7 +173,13 @@ export default function ToolCall({
             !cancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
           }
           finishedText={getFinishedText()}
-          icon={<ToolIcon type={toolIconType} isAnimating={progress < 1 && !cancelled} />}
+          icon={
+            <ToolIcon
+              type={toolIconType}
+              iconUrl={mcpIconUrl}
+              isAnimating={progress < 1 && !cancelled}
+            />
+          }
           hasInput={hasInfo}
           isExpanded={showInfo}
           error={cancelled}
