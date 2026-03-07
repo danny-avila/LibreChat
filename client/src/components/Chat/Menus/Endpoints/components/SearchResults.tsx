@@ -1,8 +1,10 @@
 import React, { Fragment } from 'react';
-import { EarthIcon } from 'lucide-react';
+import { EarthIcon, LockIcon } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
+import { useAuthContext } from '~/hooks';
+import { isModelAllowedForPlan } from '~/utils/planModels';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import SpecIcon from './SpecIcon';
@@ -22,6 +24,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
     handleSelectEndpoint,
     endpointsConfig,
   } = useModelSelectorContext();
+  const { user } = useAuthContext();
 
   const {
     modelSpec: selectedSpec,
@@ -135,6 +138,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                 </div>
                 {filteredModels.map((model) => {
                   const modelId = model.name;
+                  const isLocked = !isModelAllowedForPlan(user?.plan, modelId);
 
                   let isGlobal = false;
                   let modelName = modelId;
@@ -157,8 +161,10 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   return (
                     <MenuItem
                       key={`${endpoint.value}-${modelId}-search-${i}`}
-                      onClick={() => handleSelectModel(endpoint, modelId)}
-                      className="flex w-full cursor-pointer items-center justify-start rounded-lg px-3 py-2 pl-6 text-sm"
+                      onClick={() => !isLocked && handleSelectModel(endpoint, modelId)}
+                      className={`flex w-full items-center justify-start rounded-lg px-3 py-2 pl-6 text-sm ${
+                        isLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                      }`}
                     >
                       <div className="flex items-center gap-2">
                         {endpoint.modelIcons?.[modelId] && (
@@ -172,7 +178,13 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                         )}
                         <span>{modelName}</span>
                       </div>
-                      {isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}
+                      {isLocked && (
+                        <span className="ml-auto flex flex-shrink-0 items-center gap-1 text-xs text-yellow-500">
+                          <LockIcon className="size-3" />
+                          Upgrade
+                        </span>
+                      )}
+                      {!isLocked && isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}
                       {selectedEndpoint === endpoint.value && selectedModel === modelId && (
                         <svg
                           width="16"
