@@ -364,7 +364,7 @@ export class MCPConnection extends EventEmitter {
 
       const requestHeaders = getHeaders();
       if (!requestHeaders) {
-        return undiciFetch(input, { ...init, dispatcher });
+        return undiciFetch(input, { ...init, redirect: 'manual', dispatcher });
       }
 
       let initHeaders: Record<string, string> = {};
@@ -380,6 +380,7 @@ export class MCPConnection extends EventEmitter {
 
       return undiciFetch(input, {
         ...init,
+        redirect: 'manual',
         headers: {
           ...initHeaders,
           ...requestHeaders,
@@ -431,6 +432,13 @@ export class MCPConnection extends EventEmitter {
           }
           this.url = options.url;
           if (this.useSSRFProtection) {
+            /**
+             * SSRF pre-check: validate hostname before WebSocket connect.
+             * Note: WebSocketClientTransport does its own DNS resolution, creating a small
+             * TOCTOU window for DNS rebinding. This is an SDK limitation — the transport
+             * accepts only a URL with no custom DNS lookup hook. The connect-time SSRF-safe
+             * agents used for SSE/StreamableHTTP cannot be applied here.
+             */
             const wsHostname = new URL(options.url).hostname;
             const isSSRF = await resolveHostnameSSRF(wsHostname);
             if (isSSRF) {
@@ -486,6 +494,7 @@ export class MCPConnection extends EventEmitter {
                 );
                 return undiciFetch(url, {
                   ...init,
+                  redirect: 'manual',
                   dispatcher: sseAgent,
                   headers: fetchHeaders,
                 });
