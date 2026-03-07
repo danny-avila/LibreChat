@@ -21,6 +21,7 @@ import {
 } from '~/hooks';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
+import ModelSelector from '~/components/Chat/Menus/Endpoints/ModelSelector';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
 import { cn, removeFocusRings } from '~/utils';
@@ -353,6 +354,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 }
               />
               <div className="mx-auto flex" />
+              <div className="flex items-center">
+                <ModelSelector startupConfig={startupConfig} />
+              </div>
               {SpeechToText && (
                 <AudioRecorder
                   methods={methods}

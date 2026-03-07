@@ -60,20 +60,18 @@ function ModelSelectorContent() {
 
   const trigger = (
     <button
-      className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
+      className="my-1 flex h-8 items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
       aria-label={localize('com_ui_select_model')}
     >
-      {selectedIcon && React.isValidElement(selectedIcon) && (
-        <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
-          {selectedIcon}
-        </div>
-      )}
-      <span className="flex-grow truncate text-left">{selectedDisplayValue}</span>
+      <span className="truncate max-w-[150px]">{selectedDisplayValue}</span>
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" className="flex-shrink-0 opacity-60">
+        <path d="M2.5 4L5 6.5L7.5 4" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
     </button>
   );
 
   return (
-    <div className="relative flex w-full max-w-md flex-col items-center gap-2">
+    <div className="relative flex flex-col items-center gap-2">
       <Menu
         values={selectedValues}
         onValuesChange={(values: Record<string, any>) => {

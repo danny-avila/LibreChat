@@ -1,0 +1,129 @@
+# Bizu Chat Configuration
+version: 1.2.1
+
+cache: true
+
+# Custom footer branding
+customFooter: '[Bizu](https://bizu.chat) - Seu assistente de IA.'
+
+# Custom interface — simplified for Bizu
+interface:
+  customWelcome: 'Bem-vindo ao Bizu! Seu assistente de IA.'
+  # Disable features not needed for v1
+  agents: false
+  presets: false
+  prompts: false
+  bookmarks: false
+  multiConvo: false
+  fileSearch: false
+  endpointsMenu: false
+  sidePanel: true
+  modelSelect: true
+  parameters: true
+  fileCitations: false
+  runCode: false
+  webSearch: true
+  marketplace:
+    use: false
+
+  # Privacy & Terms
+  privacyPolicy:
+    externalUrl: 'https://bizu.chat/privacidade'
+    openNewTab: true
+  termsOfService:
+    externalUrl: 'https://bizu.chat/termos'
+    openNewTab: true
+    modalAcceptance: true
+    modalTitle: 'Termos de Uso do Bizu'
+    modalContent: |
+      # Termos de Uso do Bizu
+
+      *Data de vigência: Março de 2026*
+
+      Bem-vindo ao Bizu, sua plataforma de assistente de IA. Ao utilizar nossos serviços, você concorda com estes termos.
+
+      ## 1. Uso do Serviço
+      O Bizu é uma plataforma de chat com inteligência artificial. Você se compromete a usar o serviço de forma ética e legal.
+
+      ## 2. Dados do Usuário
+      Coletamos informações necessárias para fornecer o serviço, como nome, e-mail e dados de uso. Consulte nossa Política de Privacidade para mais detalhes.
+
+      ## 3. Limitações
+      O Bizu utiliza modelos de IA que podem gerar respostas imprecisas. Não nos responsabilizamos pelo conteúdo gerado pela IA.
+
+      ## 4. Alterações
+      Reservamo-nos o direito de modificar estes termos a qualquer momento, notificando os usuários por e-mail.
+
+      Ao usar o Bizu, você reconhece que leu e concorda com estes Termos de Uso.
+
+balance:
+  enabled: true
+  startBalance: 100000
+  autoRefillEnabled: true
+  refillIntervalValue: 30
+  refillIntervalUnit: 'days'
+  refillAmount: 100000
+
+registration:
+  socialLogins: []
+
+# Model specs — friendly names, enforce to hide raw endpoint selector
+modelSpecs:
+  enforce: true
+  prioritize: true
+  list:
+    - name: 'deepseek-v3'
+      label: 'DeepSeek V3'
+      description: 'Modelo rápido e versátil para uso geral'
+      default: true
+      preset:
+        endpoint: 'OpenRouter'
+        model: 'deepseek/deepseek-chat-v3-0324'
+    - name: 'deepseek-r1'
+      label: 'DeepSeek R1'
+      description: 'Modelo com raciocínio avançado'
+      preset:
+        endpoint: 'OpenRouter'
+        model: 'deepseek/deepseek-r1'
+    - name: 'deepseek-r1-0528'
+      label: 'DeepSeek R1 (0528)'
+      description: 'Versão mais recente do modelo de raciocínio'
+      preset:
+        endpoint: 'OpenRouter'
+        model: 'deepseek/deepseek-r1-0528'
+    - name: 'qwen3-235b'
+      label: 'Qwen 3 235B'
+      description: 'Modelo grande e poderoso da Alibaba'
+      preset:
+        endpoint: 'OpenRouter'
+        model: 'qwen/qwen3-235b-a22b'
+    - name: 'qwen3-30b'
+      label: 'Qwen 3 30B'
+      description: 'Modelo compacto e eficiente da Alibaba'
+      preset:
+        endpoint: 'OpenRouter'
+        model: 'qwen/qwen3-30b-a3b'
+
+# Models via OpenRouter
+endpoints:
+  # Restrict agent capabilities to hide Code Interpreter & Artifacts from tools menu
+  agents:
+    disableBuilder: true
+    capabilities:
+      - web_search
+  custom:
+    - name: 'OpenRouter'
+      apiKey: '${OPENROUTER_KEY}'
+      baseURL: 'https://openrouter.ai/api/v1'
+      models:
+        default:
+          - 'deepseek/deepseek-chat-v3-0324'
+          - 'deepseek/deepseek-r1'
+          - 'deepseek/deepseek-r1-0528'
+          - 'qwen/qwen3-235b-a22b'
+          - 'qwen/qwen3-30b-a3b'
+        fetch: false
+      titleConvo: true
+      titleModel: 'deepseek/deepseek-chat-v3-0324'
+      dropParams: ['stop']
+      modelDisplayLabel: 'Bizu'
