@@ -28,7 +28,6 @@ const SUPERSEDED_INDEXES: Record<string, string[]> = {
   messages: ['messageId_1_user_1'],
   agentcategories: ['value_1'],
   accessroles: ['accessRoleId_1'],
-  categories: ['label_1', 'value_1'],
   conversationtags: ['tag_1_user_1'],
   mcpservers: ['serverName_1'],
   files: ['filename_1_conversationId_1_context_1'],

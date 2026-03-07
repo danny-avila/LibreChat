@@ -70,11 +70,6 @@ describe('dropSupersededTenantIndexes', () => {
         .collection('accessroles')
         .createIndex({ accessRoleId: 1 }, { unique: true, name: 'accessRoleId_1' });
 
-      await db.createCollection('categories');
-      const categories = db.collection('categories');
-      await categories.createIndex({ label: 1 }, { unique: true, name: 'label_1' });
-      await categories.createIndex({ value: 1 }, { unique: true, name: 'value_1' });
-
       await db.createCollection('conversationtags');
       await db
         .collection('conversationtags')
@@ -269,7 +264,6 @@ describe('dropSupersededTenantIndexes', () => {
         'messages',
         'agentcategories',
         'accessroles',
-        'categories',
         'conversationtags',
         'mcpservers',
         'files',
