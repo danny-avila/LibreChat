@@ -244,6 +244,13 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * @param session - Optional MongoDB session for transactions
    * @returns Array of principal objects with type and id
    */
+  /**
+   * TODO(#12091): This method has no tenantId parameter — it returns ALL group
+   * memberships for a user regardless of tenant. In multi-tenant mode, group
+   * principals from other tenants will be included in capability checks, which
+   * could grant cross-tenant capabilities. Add tenantId filtering here when
+   * tenant isolation is activated.
+   */
   async function getUserPrincipals(
     params: {
       userId: string | Types.ObjectId;
