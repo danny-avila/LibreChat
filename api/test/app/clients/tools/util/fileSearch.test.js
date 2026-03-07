@@ -1,11 +1,11 @@
 const axios = require('axios');
 
 jest.mock('axios');
-jest.mock('@librechat/api', () => ({
+jest.mock('@bizu/api', () => ({
   generateShortLivedToken: jest.fn(),
 }));
 
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@bizu/data-schemas', () => ({
   logger: {
     warn: jest.fn(),
     error: jest.fn(),
@@ -22,7 +22,7 @@ jest.mock('~/server/services/Files/permissions', () => ({
 }));
 
 const { createFileSearchTool } = require('~/app/clients/tools/util/fileSearch');
-const { generateShortLivedToken } = require('@librechat/api');
+const { generateShortLivedToken } = require('@bizu/api');
 
 describe('fileSearch.js - tuple return validation', () => {
   beforeEach(() => {

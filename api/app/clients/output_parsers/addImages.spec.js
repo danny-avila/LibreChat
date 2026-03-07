@@ -152,25 +152,25 @@ describe('addImages', () => {
     });
 
     it('should prepend base path to image URLs when DOMAIN_CLIENT is set', () => {
-      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/bizu';
       intermediateSteps.push({ observation: '![desc](/images/test.png)' });
       addImages(intermediateSteps, responseMessage);
-      expect(responseMessage.text).toBe('\n![desc](/librechat/images/test.png)');
+      expect(responseMessage.text).toBe('\n![desc](/bizu/images/test.png)');
     });
 
     it('should not prepend base path when image URL already has base path', () => {
-      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
-      intermediateSteps.push({ observation: '![desc](/librechat/images/test.png)' });
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/bizu';
+      intermediateSteps.push({ observation: '![desc](/bizu/images/test.png)' });
       addImages(intermediateSteps, responseMessage);
-      expect(responseMessage.text).toBe('\n![desc](/librechat/images/test.png)');
+      expect(responseMessage.text).toBe('\n![desc](/bizu/images/test.png)');
     });
 
     it('should correct erroneous URLs with base path', () => {
-      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/bizu';
       responseMessage.text = '![desc](sandbox:/images/test.png)';
       intermediateSteps.push({ observation: '![desc](/images/test.png)' });
       addImages(intermediateSteps, responseMessage);
-      expect(responseMessage.text).toBe('![desc](/librechat/images/test.png)');
+      expect(responseMessage.text).toBe('![desc](/bizu/images/test.png)');
     });
 
     it('should handle empty base path (root deployment)', () => {
@@ -188,31 +188,31 @@ describe('addImages', () => {
     });
 
     it('should handle observation without image path match', () => {
-      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/bizu';
       intermediateSteps.push({ observation: '![desc](not-an-image-path)' });
       addImages(intermediateSteps, responseMessage);
       expect(responseMessage.text).toBe('\n![desc](not-an-image-path)');
     });
 
     it('should handle nested subdirectories in base path', () => {
-      process.env.DOMAIN_CLIENT = 'http://localhost:3080/apps/librechat';
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/apps/bizu';
       intermediateSteps.push({ observation: '![desc](/images/test.png)' });
       addImages(intermediateSteps, responseMessage);
-      expect(responseMessage.text).toBe('\n![desc](/apps/librechat/images/test.png)');
+      expect(responseMessage.text).toBe('\n![desc](/apps/bizu/images/test.png)');
     });
 
     it('should handle multiple observations with mixed base path scenarios', () => {
-      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/bizu';
       intermediateSteps.push({ observation: '![desc1](/images/test1.png)' });
-      intermediateSteps.push({ observation: '![desc2](/librechat/images/test2.png)' });
+      intermediateSteps.push({ observation: '![desc2](/bizu/images/test2.png)' });
       addImages(intermediateSteps, responseMessage);
       expect(responseMessage.text).toBe(
-        '\n![desc1](/librechat/images/test1.png)\n![desc2](/librechat/images/test2.png)',
+        '\n![desc1](/bizu/images/test1.png)\n![desc2](/bizu/images/test2.png)',
       );
     });
 
     it('should handle complex markdown with base path', () => {
-      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/bizu';
       const complexMarkdown = `
         # Document Title
         ![image1](/images/image1.png)
@@ -221,18 +221,18 @@ describe('addImages', () => {
       `;
       intermediateSteps.push({ observation: complexMarkdown });
       addImages(intermediateSteps, responseMessage);
-      expect(responseMessage.text).toBe('\n![image1](/librechat/images/image1.png)');
+      expect(responseMessage.text).toBe('\n![image1](/bizu/images/image1.png)');
     });
 
     it('should handle URLs that are already absolute', () => {
-      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/bizu';
       intermediateSteps.push({ observation: '![desc](https://example.com/image.png)' });
       addImages(intermediateSteps, responseMessage);
       expect(responseMessage.text).toBe('\n![desc](https://example.com/image.png)');
     });
 
     it('should handle data URLs', () => {
-      process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
+      process.env.DOMAIN_CLIENT = 'http://localhost:3080/bizu';
       intermediateSteps.push({
         observation:
           '![desc](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==)',

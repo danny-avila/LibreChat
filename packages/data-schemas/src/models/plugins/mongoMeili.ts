@@ -101,7 +101,7 @@ const getSyncConfig = () => ({
 });
 
 /**
- * Local implementation of parseTextParts to avoid dependency on librechat-data-provider
+ * Local implementation of parseTextParts to avoid dependency on bizu-data-provider
  * Extracts text content from an array of content items
  */
 const parseTextParts = (content: ContentItem[]): string => {

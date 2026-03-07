@@ -1,13 +1,13 @@
 const { Router } = require('express');
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, Constants } = require('librechat-data-provider');
+const { logger } = require('@bizu/data-schemas');
+const { CacheKeys, Constants } = require('bizu-data-provider');
 const {
   createSafeUser,
   MCPOAuthHandler,
   MCPTokenStorage,
   getUserMCPAuthMap,
   mcpServersRegistry,
-} = require('@librechat/api');
+} = require('@bizu/api');
 const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
@@ -23,7 +23,7 @@ const router = Router();
 
 /**
  * Get all MCP tools available to the user
- * Returns only MCP tools, completely decoupled from regular LibreChat tools
+ * Returns only MCP tools, completely decoupled from regular Bizu tools
  */
 router.get('/tools', requireJwtAuth, async (req, res) => {
   return getMCPTools(req, res);

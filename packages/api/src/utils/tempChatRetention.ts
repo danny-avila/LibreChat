@@ -1,5 +1,5 @@
-import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '@librechat/data-schemas';
+import { logger } from '@bizu/data-schemas';
+import type { AppConfig } from '@bizu/data-schemas';
 
 /**
  * Default retention period for temporary chats in hours

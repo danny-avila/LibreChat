@@ -3,7 +3,7 @@ import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { Link } from 'react-router-dom';
 import { TrashIcon, MessageSquare, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
+import type { SharedLinkItem, SharedLinksListParams } from 'bizu-data-provider';
 import {
   OGDialog,
   useToastContext,
@@ -17,7 +17,7 @@ import {
   Spinner,
   Button,
   Label,
-} from '@librechat/client';
+} from '@bizu/client';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';

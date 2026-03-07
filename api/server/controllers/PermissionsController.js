@@ -1,10 +1,10 @@
 /**
- * @import { TUpdateResourcePermissionsRequest, TUpdateResourcePermissionsResponse } from 'librechat-data-provider'
+ * @import { TUpdateResourcePermissionsRequest, TUpdateResourcePermissionsResponse } from 'bizu-data-provider'
  */
 
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
-const { ResourceType, PrincipalType } = require('librechat-data-provider');
+const { logger } = require('@bizu/data-schemas');
+const { ResourceType, PrincipalType } = require('bizu-data-provider');
 const {
   bulkUpdateResourcePermissions,
   ensureGroupPrincipalExists,

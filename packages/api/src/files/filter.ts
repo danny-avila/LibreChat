@@ -1,5 +1,5 @@
-import { getEndpointFileConfig, mergeFileConfig, fileConfig } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
+import { getEndpointFileConfig, mergeFileConfig, fileConfig } from 'bizu-data-provider';
+import type { IMongoFile } from '@bizu/data-schemas';
 import type { ServerRequest } from '~/types';
 
 /**

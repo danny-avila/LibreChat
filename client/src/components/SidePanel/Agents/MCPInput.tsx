@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
-import { Label, Checkbox, Spinner, useToastContext } from '@librechat/client';
-import type { MCP } from 'librechat-data-provider';
+import { Label, Checkbox, Spinner, useToastContext } from '@bizu/client';
+import type { MCP } from 'bizu-data-provider';
 import MCPAuth from '~/components/SidePanel/Builder/MCPAuth';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
 import { MCPForm } from '~/common/types';

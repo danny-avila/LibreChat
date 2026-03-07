@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { SearchResultData } from 'librechat-data-provider';
+import type { SearchResultData } from 'bizu-data-provider';
 
 type SearchContext = {
   searchResults?: { [key: string]: SearchResultData };

@@ -1,5 +1,5 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@bizu/data-schemas');
 const { DynamicStructuredTool } = require('@langchain/core/tools');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const {
@@ -15,7 +15,7 @@ const {
   getTransactionsConfig,
   createMemoryProcessor,
   filterMalformedContentParts,
-} = require('@librechat/api');
+} = require('@bizu/api');
 const {
   Callback,
   Providers,
@@ -37,7 +37,7 @@ const {
   AgentCapabilities,
   bedrockInputSchema,
   removeNullishValues,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
@@ -571,7 +571,7 @@ class AgentClient extends BaseClient {
       agent.model_parameters,
     );
 
-    /** @type {import('@librechat/api').MemoryConfig} */
+    /** @type {import('@bizu/api').MemoryConfig} */
     const config = {
       validKeys: memoryConfig.validKeys,
       instructions: agent.instructions,

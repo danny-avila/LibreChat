@@ -1,7 +1,7 @@
 import { useState, useMemo, memo, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown } from 'lucide-react';
-import { Clipboard, CheckMark } from '@librechat/client';
+import { Clipboard, CheckMark } from '@bizu/client';
 import type { MouseEvent, FC } from 'react';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';

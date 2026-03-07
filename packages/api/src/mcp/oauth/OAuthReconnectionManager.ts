@@ -1,5 +1,5 @@
-import { logger } from '@librechat/data-schemas';
-import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import { logger } from '@bizu/data-schemas';
+import type { TokenMethods, IUser } from '@bizu/data-schemas';
 import type { MCPOAuthTokens } from './types';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
 import { FlowStateManager } from '~/flow/manager';

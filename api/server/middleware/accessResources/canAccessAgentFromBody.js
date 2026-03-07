@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { Constants, isAgentsEndpoint, ResourceType } = require('librechat-data-provider');
+const { logger } = require('@bizu/data-schemas');
+const { Constants, isAgentsEndpoint, ResourceType } = require('bizu-data-provider');
 const { canAccessResource } = require('./canAccessResource');
 const { getAgent } = require('~/models/Agent');
 

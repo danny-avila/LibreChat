@@ -1,16 +1,11 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@bizu/data-schemas');
 const {
   EnvVar,
   Calculator,
   createSearchTool,
   createCodeExecutionTool,
 } = require('@librechat/agents');
-const {
-  checkAccess,
-  createSafeUser,
-  mcpToolPattern,
-  loadWebSearchAuth,
-} = require('@librechat/api');
+const { checkAccess, createSafeUser, mcpToolPattern, loadWebSearchAuth } = require('@bizu/api');
 const {
   Tools,
   Constants,
@@ -18,7 +13,7 @@ const {
   EToolResources,
   PermissionTypes,
   replaceSpecialVars,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const {
   availableTools,
   manifestToolMap,

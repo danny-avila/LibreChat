@@ -5,9 +5,7 @@
  * Higher plans inherit all models from lower plans.
  */
 const planModels = {
-  free: [
-    'deepseek/deepseek-chat-v3-0324',
-  ],
+  free: ['deepseek/deepseek-chat-v3-0324'],
   basic_cn: [
     'deepseek/deepseek-chat-v3-0324',
     'deepseek/deepseek-r1',

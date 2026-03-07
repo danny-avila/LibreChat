@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { EModelEndpoint, Constants } from 'librechat-data-provider';
+import { EModelEndpoint, Constants } from 'bizu-data-provider';
 import { ChevronDown } from 'lucide-react';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'bizu-data-provider';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';

@@ -3,9 +3,9 @@ import { useRecoilState } from 'recoil';
 import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
-import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
-import type t from 'librechat-data-provider';
+import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@bizu/client';
+import { PermissionTypes, Permissions, QueryKeys } from 'bizu-data-provider';
+import type t from 'bizu-data-provider';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
@@ -63,7 +63,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const [selectedAgent, setSelectedAgent] = useState<t.Agent | null>(null);
 
   // Set page title
-  useDocumentTitle(`${localize('com_agents_marketplace')} | LibreChat`);
+  useDocumentTitle(`${localize('com_agents_marketplace')} | Bizu`);
 
   // Ensure right sidebar is always visible in marketplace
   useEffect(() => {

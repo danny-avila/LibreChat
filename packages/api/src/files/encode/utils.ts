@@ -1,7 +1,7 @@
 import getStream from 'get-stream';
 import { Providers } from '@librechat/agents';
-import { FileSources, mergeFileConfig, getEndpointFileConfig } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
+import { FileSources, mergeFileConfig, getEndpointFileConfig } from 'bizu-data-provider';
+import type { IMongoFile } from '@bizu/data-schemas';
 import type { ServerRequest, StrategyFunctions, ProcessedFile } from '~/types';
 
 /**

@@ -1,5 +1,5 @@
-const { isEnabled } = require('@librechat/api');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { isEnabled } = require('@bizu/api');
+const { EModelEndpoint } = require('bizu-data-provider');
 const {
   validateConvoAccess,
   messageUserLimiter,

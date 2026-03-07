@@ -2,9 +2,9 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { createMethods } = require('@librechat/data-schemas');
+const { createMethods } = require('@bizu/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
+const { AccessRoleIds, ResourceType, PrincipalType } = require('bizu-data-provider');
 const { createAgent } = require('~/models/Agent');
 const { createFile } = require('~/models/File');
 
@@ -55,7 +55,7 @@ describe('File Routes - Agent Files Endpoint', () => {
     await mongoose.connect(mongoUri);
 
     // Initialize all models using createModels
-    const { createModels } = require('@librechat/data-schemas');
+    const { createModels } = require('@bizu/data-schemas');
     const models = createModels(mongoose);
 
     // Track which models we're adding

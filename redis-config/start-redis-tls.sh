@@ -10,4 +10,4 @@ if pgrep -f "redis-server.*tls" > /dev/null; then
 fi
 
 # Start Redis with TLS config
-redis-server /Users/theotr/WebstormProjects/LibreChat/redis-cluster/redis-tls.conf
+redis-server /Users/theotr/WebstormProjects/Bizu/redis-cluster/redis-tls.conf

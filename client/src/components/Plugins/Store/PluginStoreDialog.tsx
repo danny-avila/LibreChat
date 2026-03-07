@@ -1,8 +1,8 @@
 import { Search, X } from 'lucide-react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { useState, useEffect, useCallback } from 'react';
-import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
-import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
+import { useAvailablePluginsQuery } from 'bizu-data-provider/react-query';
+import type { TError, TPlugin, TPluginAction } from 'bizu-data-provider';
 import type { TPluginStoreDialogProps } from '~/common/types';
 import {
   usePluginDialogHelpers,
@@ -187,8 +187,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                     value={searchValue}
                     onChange={handleSearch}
                     placeholder={localize('com_nav_plugin_search')}
-                    className="
-                    text-token-text-primary flex rounded-md border border-border-heavy bg-surface-tertiary py-2 pl-10 pr-2"
+                    className="text-token-text-primary flex rounded-md border border-border-heavy bg-surface-tertiary py-2 pl-10 pr-2"
                   />
                 </div>
               </div>

@@ -1,4 +1,4 @@
-const { CohereConstants } = require('librechat-data-provider');
+const { CohereConstants } = require('bizu-data-provider');
 
 /**
  * Extracts a valid OpenAI baseURL from a given string, matching "url/v1," followed by an optional suffix.

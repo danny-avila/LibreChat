@@ -8,8 +8,8 @@ import {
   Label,
   OGDialogTemplate,
   useToastContext,
-} from '@librechat/client';
-import type { TSharedLinkGetResponse } from 'librechat-data-provider';
+} from '@bizu/client';
+import type { TSharedLinkGetResponse } from 'bizu-data-provider';
 import {
   useCreateSharedLinkMutation,
   useUpdateSharedLinkMutation,

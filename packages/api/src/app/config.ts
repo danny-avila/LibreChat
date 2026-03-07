@@ -1,11 +1,7 @@
-import { logger } from '@librechat/data-schemas';
-import {
-  EModelEndpoint,
-  removeNullishValues,
-  normalizeEndpointName,
-} from 'librechat-data-provider';
-import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'librechat-data-provider';
-import type { AppConfig } from '@librechat/data-schemas';
+import { logger } from '@bizu/data-schemas';
+import { EModelEndpoint, removeNullishValues, normalizeEndpointName } from 'bizu-data-provider';
+import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'bizu-data-provider';
+import type { AppConfig } from '@bizu/data-schemas';
 import { isEnabled } from '~/utils';
 
 /**

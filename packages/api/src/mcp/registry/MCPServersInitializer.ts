@@ -1,7 +1,7 @@
 import { registryStatusCache as statusCache } from './cache/RegistryStatusCache';
 import { isLeader } from '~/cluster';
 import { withTimeout } from '~/utils';
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@bizu/data-schemas';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ParsedServerConfig } from '~/mcp/types';
 import { sanitizeUrlForLogging } from '~/mcp/utils';

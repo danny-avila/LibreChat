@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys } from 'librechat-data-provider';
-import type { BatchFile, TFile } from 'librechat-data-provider';
+import { QueryKeys } from 'bizu-data-provider';
+import type { BatchFile, TFile } from 'bizu-data-provider';
 import { useDeleteFilesMutation } from '~/data-provider';
 import useFileDeletion from './useFileDeletion';
 

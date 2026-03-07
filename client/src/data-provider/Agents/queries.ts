@@ -1,11 +1,11 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, dataService, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
+import { QueryKeys, dataService, EModelEndpoint, PermissionBits } from 'bizu-data-provider';
 import type {
   QueryObserverResult,
   UseQueryOptions,
   UseInfiniteQueryOptions,
 } from '@tanstack/react-query';
-import type t from 'librechat-data-provider';
+import type t from 'bizu-data-provider';
 import { isEphemeralAgent } from '~/common';
 
 /**

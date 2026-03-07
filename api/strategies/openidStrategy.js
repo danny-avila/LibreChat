@@ -5,8 +5,8 @@ const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { hashToken, logger } = require('@librechat/data-schemas');
-const { CacheKeys, ErrorTypes } = require('librechat-data-provider');
+const { hashToken, logger } = require('@bizu/data-schemas');
+const { CacheKeys, ErrorTypes } = require('bizu-data-provider');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const {
   isEnabled,
@@ -15,7 +15,7 @@ const {
   findOpenIDUser,
   getBalanceConfig,
   isEmailDomainAllowed,
-} = require('@librechat/api');
+} = require('@bizu/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');

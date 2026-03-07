@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useMemo } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
-import type { MCP, Action, TPlugin } from 'librechat-data-provider';
+import { EModelEndpoint } from 'bizu-data-provider';
+import type { MCP, Action, TPlugin } from 'bizu-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
 import {
   useAvailableToolsQuery,

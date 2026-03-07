@@ -1,7 +1,7 @@
 import debounce from 'lodash/debounce';
 import React, { createContext, useContext, useState, useMemo } from 'react';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'bizu-data-provider';
+import type * as t from 'bizu-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import {
   useAgentDefaultPermissionLevel,
@@ -21,7 +21,7 @@ type ModelSelectorContextType = {
   selectedValues: SelectedValues;
   endpointSearchValues: Record<string, string>;
   searchResults: (t.TModelSpec | Endpoint)[] | null;
-  // LibreChat
+  // Bizu
   modelSpecs: t.TModelSpec[];
   mappedEndpoints: Endpoint[];
   agentsMap: t.TAgentsMap | undefined;
@@ -136,9 +136,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     if (!searchValue) {
       return null;
     }
-    const allItems = enforceSpecs
-      ? [...modelSpecs]
-      : [...modelSpecs, ...mappedEndpoints];
+    const allItems = enforceSpecs ? [...modelSpecs] : [...modelSpecs, ...mappedEndpoints];
     return filterItems(allItems, searchValue, agentsMap, assistantsMap || {});
   }, [searchValue, modelSpecs, mappedEndpoints, agentsMap, assistantsMap, enforceSpecs]);
 
@@ -211,7 +209,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     searchResults,
     selectedValues,
     endpointSearchValues,
-    // LibreChat
+    // Bizu
     agentsMap,
     modelSpecs,
     assistantsMap,

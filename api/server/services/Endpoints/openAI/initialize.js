@@ -1,11 +1,11 @@
-const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
+const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('bizu-data-provider');
 const {
   isEnabled,
   resolveHeaders,
   isUserProvided,
   getOpenAIConfig,
   getAzureCredentials,
-} = require('@librechat/api');
+} = require('@bizu/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 

@@ -1,5 +1,5 @@
-import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
-import type { TEndpointsConfig, TConfig } from 'librechat-data-provider';
+import { EModelEndpoint, getEndpointField } from 'bizu-data-provider';
+import type { TEndpointsConfig, TConfig } from 'bizu-data-provider';
 import { getAvailableEndpoints, getEndpointsFilter, mapEndpoints } from './endpoints';
 
 const mockEndpointsConfig: TEndpointsConfig = {

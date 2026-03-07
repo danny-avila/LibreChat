@@ -20,7 +20,7 @@ function ModelSelectorContent() {
   const enforceSpecs = startupConfig?.modelSpecs?.enforce === true;
 
   const {
-    // LibreChat
+    // Bizu
     agentsMap,
     modelSpecs,
     mappedEndpoints,
@@ -66,9 +66,22 @@ function ModelSelectorContent() {
       className="my-1 flex h-8 items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
       aria-label={localize('com_ui_select_model')}
     >
-      <span className="truncate max-w-[150px]">{selectedDisplayValue}</span>
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" className="flex-shrink-0 opacity-60">
-        <path d="M2.5 4L5 6.5L7.5 4" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+      <span className="max-w-[150px] truncate">{selectedDisplayValue}</span>
+      <svg
+        width="10"
+        height="10"
+        viewBox="0 0 10 10"
+        fill="currentColor"
+        className="flex-shrink-0 opacity-60"
+      >
+        <path
+          d="M2.5 4L5 6.5L7.5 4"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     </button>
   );

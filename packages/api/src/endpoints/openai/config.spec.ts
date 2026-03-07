@@ -1,9 +1,4 @@
-import {
-  Verbosity,
-  EModelEndpoint,
-  ReasoningEffort,
-  ReasoningSummary,
-} from 'librechat-data-provider';
+import { Verbosity, EModelEndpoint, ReasoningEffort, ReasoningSummary } from 'bizu-data-provider';
 import type { RequestInit } from 'undici';
 import type { OpenAIParameters, AzureOptions } from '~/types';
 import { getOpenAIConfig } from './config';
@@ -195,8 +190,8 @@ describe('getOpenAIConfig', () => {
 
     expect(result.configOptions?.baseURL).toBe(reverseProxyUrl);
     expect(result.configOptions?.defaultHeaders).toMatchObject({
-      'HTTP-Referer': 'https://librechat.ai',
-      'X-Title': 'LibreChat',
+      'HTTP-Referer': 'https://bizu.ai',
+      'X-Title': 'Bizu',
     });
     expect(result.llmConfig.include_reasoning).toBe(true);
     expect(result.provider).toBe('openrouter');
@@ -891,8 +886,8 @@ describe('getOpenAIConfig', () => {
       });
 
       expect(result.configOptions?.defaultHeaders).toEqual({
-        'HTTP-Referer': 'https://librechat.ai',
-        'X-Title': 'LibreChat',
+        'HTTP-Referer': 'https://bizu.ai',
+        'X-Title': 'Bizu',
         'X-Custom-Header': 'custom-value',
         Authorization: 'Bearer custom-token',
       });
@@ -1385,8 +1380,8 @@ describe('getOpenAIConfig', () => {
           apiKey: 'user_provided',
           baseURL: baseURL,
           headers: {
-            'X-Custom-Provider': 'LibreChat',
-            'User-Agent': 'LibreChat/1.0',
+            'X-Custom-Provider': 'Bizu',
+            'User-Agent': 'Bizu/1.0',
           },
           addParams: {
             custom_parameter: 'custom_value',
@@ -1458,8 +1453,8 @@ describe('getOpenAIConfig', () => {
         const clientOptions = {
           reverseProxyUrl: baseURL,
           headers: {
-            'HTTP-Referer': 'https://librechat.ai',
-            'X-Title': 'LibreChat',
+            'HTTP-Referer': 'https://bizu.ai',
+            'X-Title': 'Bizu',
             Authorization: `Bearer ${apiKey}`,
           },
           addParams: {
@@ -1495,8 +1490,8 @@ describe('getOpenAIConfig', () => {
           repetition_penalty: 1.1,
         });
         expect(result.configOptions?.defaultHeaders).toMatchObject({
-          'HTTP-Referer': 'https://librechat.ai',
-          'X-Title': 'LibreChat',
+          'HTTP-Referer': 'https://bizu.ai',
+          'X-Title': 'Bizu',
           Authorization: `Bearer ${apiKey}`,
         });
         expect(result.provider).toBe('openrouter');

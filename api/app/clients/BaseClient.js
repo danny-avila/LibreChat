@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@bizu/data-schemas');
 const {
   countTokens,
   getBalanceConfig,
@@ -8,7 +8,7 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
-} = require('@librechat/api');
+} = require('@bizu/api');
 const {
   Constants,
   ErrorTypes,
@@ -19,7 +19,7 @@ const {
   isParamEndpoint,
   isAgentsEndpoint,
   supportsBalanceCheck,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { checkBalance } = require('~/models/balanceMethods');
@@ -69,7 +69,7 @@ class BaseClient {
     this.fetchedConvo;
     /** @type {TMessage[]} */
     this.currentMessages = [];
-    /** @type {import('librechat-data-provider').VisionModes | undefined} */
+    /** @type {import('bizu-data-provider').VisionModes | undefined} */
     this.visionMode;
   }
 

@@ -1,9 +1,9 @@
 import { useParams } from 'react-router-dom';
 import { useEffect, useCallback } from 'react';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'bizu-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'bizu-data-provider';
 import { useCustomAudioRef, MediaSourceAppender, usePauseGlobalAudio } from '~/hooks/Audio';
 import { getLatestText, logger } from '~/utils';
 import { useAuthContext } from '~/hooks';
@@ -39,7 +39,7 @@ export default function StreamAudio({ index = 0 }) {
   const { pauseGlobalAudio } = usePauseGlobalAudio();
 
   const { conversationId: paramId } = useParams();
-  const queryParam = paramId === 'new' ? paramId : latestMessage?.conversationId ?? paramId ?? '';
+  const queryParam = paramId === 'new' ? paramId : (latestMessage?.conversationId ?? paramId ?? '');
 
   const queryClient = useQueryClient();
   const getMessages = useCallback(

@@ -1,12 +1,7 @@
 const { ObjectId } = require('mongodb');
-const { escapeRegExp } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
-const {
-  Constants,
-  SystemRoles,
-  ResourceType,
-  SystemCategories,
-} = require('librechat-data-provider');
+const { escapeRegExp } = require('@bizu/api');
+const { logger } = require('@bizu/data-schemas');
+const { Constants, SystemRoles, ResourceType, SystemCategories } = require('bizu-data-provider');
 const {
   removeGroupFromAllProjects,
   removeGroupIdsFromProject,

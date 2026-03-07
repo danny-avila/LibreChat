@@ -6,9 +6,9 @@ import {
   ResourceType,
   PermissionBits,
   PermissionTypes,
-} from 'librechat-data-provider';
-import { Button } from '@librechat/client';
-import type { TPromptGroup } from 'librechat-data-provider';
+} from 'bizu-data-provider';
+import { Button } from '@bizu/client';
+import type { TPromptGroup } from 'bizu-data-provider';
 import { useAuthContext, useHasAccess, useResourcePermissions } from '~/hooks';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
 

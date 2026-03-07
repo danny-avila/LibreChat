@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { ConversationListResponse } from 'librechat-data-provider';
+import { useMediaQuery } from '@bizu/client';
+import { PermissionTypes, Permissions } from 'bizu-data-provider';
+import type { ConversationListResponse } from 'bizu-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import {
   useLocalize,

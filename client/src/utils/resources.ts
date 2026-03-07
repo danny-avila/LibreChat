@@ -1,4 +1,4 @@
-import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
+import { AccessRoleIds, ResourceType } from 'bizu-data-provider';
 
 export interface ResourceConfig {
   resourceType: ResourceType;

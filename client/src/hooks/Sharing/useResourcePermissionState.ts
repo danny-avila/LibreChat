@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import {
   useGetResourcePermissionsQuery,
   useUpdateResourcePermissionsMutation,
-} from 'librechat-data-provider/react-query';
-import type { TPrincipal, ResourceType, AccessRoleIds } from 'librechat-data-provider';
+} from 'bizu-data-provider/react-query';
+import type { TPrincipal, ResourceType, AccessRoleIds } from 'bizu-data-provider';
 import { getResourceConfig } from '~/utils';
 
 /**

@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { Tool } = require('@langchain/core/tools');
 const { Calculator } = require('@librechat/agents');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@bizu/data-schemas');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { Tools, ImageVisionTool } = require('librechat-data-provider');
-const { getToolkitKey, oaiToolkit, ytToolkit } = require('@librechat/api');
+const { Tools, ImageVisionTool } = require('bizu-data-provider');
+const { getToolkitKey, oaiToolkit, ytToolkit } = require('@bizu/api');
 const { toolkits } = require('~/app/clients/tools/manifest');
 
 /**

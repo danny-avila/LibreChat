@@ -1,5 +1,5 @@
-const { isEnabled } = require('@librechat/api');
-const { EModelEndpoint, CacheKeys, Constants, googleSettings } = require('librechat-data-provider');
+const { isEnabled } = require('@bizu/api');
+const { EModelEndpoint, CacheKeys, Constants, googleSettings } = require('bizu-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const initializeClient = require('./initialize');
 const { saveConvo } = require('~/models');

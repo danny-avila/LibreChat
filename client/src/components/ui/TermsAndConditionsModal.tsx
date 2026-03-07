@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { OGDialog, DialogTemplate, useToastContext } from '@librechat/client';
-import type { TTermsOfService } from 'librechat-data-provider';
+import { OGDialog, DialogTemplate, useToastContext } from '@bizu/client';
+import type { TTermsOfService } from 'bizu-data-provider';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import { useAcceptTermsMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';

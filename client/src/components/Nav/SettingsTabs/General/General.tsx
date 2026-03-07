@@ -1,5 +1,5 @@
 import React, { useContext, useCallback } from 'react';
-import { Dropdown, ThemeContext } from '@librechat/client';
+import { Dropdown, ThemeContext } from '@bizu/client';
 import ArchivedChats from './ArchivedChats';
 import ToggleSwitch from '../ToggleSwitch';
 import { useLocalize } from '~/hooks';

@@ -82,8 +82,8 @@ jest.mock('~/utils', () => ({
 }));
 
 // Mock the tQueryParamsSchema
-jest.mock('librechat-data-provider', () => ({
-  ...jest.requireActual('librechat-data-provider'),
+jest.mock('bizu-data-provider', () => ({
+  ...jest.requireActual('bizu-data-provider'),
   tQueryParamsSchema: {
     shape: {
       model: { parse: jest.fn((value) => value) },

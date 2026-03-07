@@ -8,18 +8,16 @@ export const resources = {
   'pt-BR': { translation: translationPt_BR },
 } as const;
 
-i18n
-  .use(initReactI18next)
-  .init({
-    // Single-language app (PT-BR only) to simplify Bizu UX and copies
-    fallbackLng: 'pt-BR',
-    supportedLngs: ['pt-BR'],
-    fallbackNS: 'translation',
-    ns: ['translation'],
-    debug: false,
-    defaultNS,
-    resources,
-    interpolation: { escapeValue: false },
-  });
+i18n.use(initReactI18next).init({
+  // Single-language app (PT-BR only) to simplify Bizu UX and copies
+  fallbackLng: 'pt-BR',
+  supportedLngs: ['pt-BR'],
+  fallbackNS: 'translation',
+  ns: ['translation'],
+  debug: false,
+  defaultNS,
+  resources,
+  interpolation: { escapeValue: false },
+});
 
 export default i18n;

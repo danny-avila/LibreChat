@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { TConversation, TEndpointOption, TPreset } from 'librechat-data-provider';
+import type { TConversation, TEndpointOption, TPreset } from 'bizu-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import { useGetEndpointsQuery } from '~/data-provider';

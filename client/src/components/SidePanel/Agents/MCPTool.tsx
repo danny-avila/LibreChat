@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { Constants } from 'librechat-data-provider';
+import { Constants } from 'bizu-data-provider';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import {
   Label,
@@ -15,7 +15,7 @@ import {
   OGDialogTrigger,
   AccordionContent,
   OGDialogTemplate,
-} from '@librechat/client';
+} from '@bizu/client';
 import type { AgentForm, MCPServerInfo } from '~/common';
 import { useLocalize, useMCPServerManager, useRemoveMCPTool } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';

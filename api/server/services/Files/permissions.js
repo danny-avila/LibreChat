@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { PermissionBits, ResourceType } = require('librechat-data-provider');
+const { logger } = require('@bizu/data-schemas');
+const { PermissionBits, ResourceType } = require('bizu-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { getAgent } = require('~/models/Agent');
 

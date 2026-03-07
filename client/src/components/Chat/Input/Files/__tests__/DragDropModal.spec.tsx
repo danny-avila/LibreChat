@@ -1,8 +1,4 @@
-import {
-  EModelEndpoint,
-  isDocumentSupportedProvider,
-  inferMimeType,
-} from 'librechat-data-provider';
+import { EModelEndpoint, isDocumentSupportedProvider, inferMimeType } from 'bizu-data-provider';
 
 describe('DragDropModal - Provider Detection', () => {
   describe('endpointType priority over currentProvider', () => {

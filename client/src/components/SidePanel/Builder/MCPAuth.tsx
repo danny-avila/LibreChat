@@ -1,10 +1,6 @@
 import { useEffect } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
-import {
-  AuthorizationTypeEnum,
-  TokenExchangeMethodEnum,
-  AuthTypeEnum,
-} from 'librechat-data-provider';
+import { AuthorizationTypeEnum, TokenExchangeMethodEnum, AuthTypeEnum } from 'bizu-data-provider';
 import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
 
 export default function MCPAuth() {

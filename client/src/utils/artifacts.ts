@@ -1,5 +1,5 @@
 import dedent from 'dedent';
-import { shadcnComponents } from 'librechat-data-provider';
+import { shadcnComponents } from 'bizu-data-provider';
 import type {
   SandpackProviderProps,
   SandpackPredefinedTemplate,

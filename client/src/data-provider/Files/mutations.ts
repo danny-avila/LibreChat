@@ -1,5 +1,5 @@
-import { useToastContext } from '@librechat/client';
-import { EToolResources } from 'librechat-data-provider';
+import { useToastContext } from '@bizu/client';
+import { EToolResources } from 'bizu-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
@@ -7,8 +7,8 @@ import {
   MutationKeys,
   defaultOrderQuery,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
+} from 'bizu-data-provider';
+import type * as t from 'bizu-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { useLocalize } from '~/hooks';
 

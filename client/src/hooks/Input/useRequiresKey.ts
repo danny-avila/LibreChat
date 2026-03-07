@@ -1,4 +1,4 @@
-import { getEndpointField } from 'librechat-data-provider';
+import { getEndpointField } from 'bizu-data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
 import { useGetEndpointsQuery } from '~/data-provider';
 import useUserKey from './useUserKey';

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import { EModelEndpoint } from 'bizu-data-provider';
+import type { TMessage } from 'bizu-data-provider';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';

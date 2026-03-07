@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { useMediaQuery } from '@librechat/client';
+import { useMediaQuery } from '@bizu/client';
 import { useOutletContext } from 'react-router-dom';
-import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { getConfigDefaults, PermissionTypes, Permissions } from 'bizu-data-provider';
 import type { ContextType } from '~/common';
 import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
 import { useGetStartupConfig } from '~/data-provider';

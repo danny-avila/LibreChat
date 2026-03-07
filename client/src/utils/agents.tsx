@@ -1,6 +1,6 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
-import type t from 'librechat-data-provider';
+import type t from 'bizu-data-provider';
 
 /**
  * Extracts the avatar URL from an agent's avatar property

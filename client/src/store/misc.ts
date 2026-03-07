@@ -1,5 +1,5 @@
 import { atom } from 'recoil';
-import { TAttachment } from 'librechat-data-provider';
+import { TAttachment } from 'bizu-data-provider';
 import { atomWithLocalStorage } from './utils';
 import { BadgeItem } from '~/common';
 

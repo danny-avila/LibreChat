@@ -1,5 +1,5 @@
 import { useRecoilState } from 'recoil';
-import { Dropdown } from '@librechat/client';
+import { Dropdown } from '@bizu/client';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 

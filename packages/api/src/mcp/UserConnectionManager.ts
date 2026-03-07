@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@bizu/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { mcpServersRegistry as serversRegistry } from '~/mcp/registry/MCPServersRegistry';
@@ -11,7 +11,7 @@ import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
  * Only meant to be extended by MCPManager.
  * Much of the logic was move here from the old MCPManager to make it more manageable.
  * User connections will soon be ephemeral and not cached anymore:
- * https://github.com/danny-avila/LibreChat/discussions/8790
+ * https://github.com/danny-avila/Bizu/discussions/8790
  */
 export abstract class UserConnectionManager {
   // Connections shared by all users.

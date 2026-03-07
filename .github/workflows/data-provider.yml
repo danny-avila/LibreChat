@@ -1,4 +1,4 @@
-name: Publish `librechat-data-provider` to NPM
+name: Publish `bizu-data-provider` to NPM
 
 on:
   push:

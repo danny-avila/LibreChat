@@ -1,7 +1,8 @@
+/* eslint-disable i18next/no-literal-string */
 import React from 'react';
 import { FileIcon, PlusIcon } from 'lucide-react';
-import { Button, DotsIcon, TrashIcon } from '@librechat/client';
-import type { TFile } from 'librechat-data-provider';
+import { Button, DotsIcon, TrashIcon } from '@bizu/client';
+import type { TFile } from 'bizu-data-provider';
 import { useNavigate } from 'react-router-dom';
 
 type FileListItemProps = {

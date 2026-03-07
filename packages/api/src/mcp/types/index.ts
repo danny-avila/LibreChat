@@ -7,9 +7,9 @@ import {
   StdioOptionsSchema,
   WebSocketOptionsSchema,
   StreamableHTTPOptionsSchema,
-} from 'librechat-data-provider';
-import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
-import type { TokenMethods, JsonSchemaType, IUser } from '@librechat/data-schemas';
+} from 'bizu-data-provider';
+import type { SearchResultData, UIResource, TPlugin } from 'bizu-data-provider';
+import type { TokenMethods, JsonSchemaType, IUser } from '@bizu/data-schemas';
 import type * as t from '@modelcontextprotocol/sdk/types.js';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';

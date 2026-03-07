@@ -1,6 +1,6 @@
 # Bizu
 
-Bizu é um fork simplificado do LibreChat, focado em PT-BR e em uma experiência de chat rápida e utilitária para usuários sensíveis a preço, usando modelos via OpenRouter.
+Bizu é um fork simplificado do Bizu, focado em PT-BR e em uma experiência de chat rápida e utilitária para usuários sensíveis a preço, usando modelos via OpenRouter.
 
 ## Escopo atual
 - Chat básico com streaming e busca na web.
@@ -12,11 +12,11 @@ Bizu é um fork simplificado do LibreChat, focado em PT-BR e em uma experiência
 - Automação/infra de OSS e contêineres (GitHub Actions, Helm, Docker/Compose, redis cluster, e2e Playwright).
 - Licença e changelog do projeto original.
 - Idiomas não PT-BR.
-- Exemplos/artefatos de deploy do LibreChat que não fazem parte do Bizu.
+- Exemplos/artefatos de deploy do Bizu que não fazem parte do Bizu.
 
 ## Estrutura do repositório
 - `packages/*`: stack principal a ser usada no Bizu.
-- `api/` e `client/`: legado do LibreChat, mantido apenas como referência (não ativo na fase atual).
+- `api/` e `client/`: legado do Bizu, mantido apenas como referência (não ativo na fase atual).
 
 ## Próximos passos
 - Fase 2: esconder agentes, imagens, arquivos, presets e áudio na UI.

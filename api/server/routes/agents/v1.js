@@ -1,6 +1,6 @@
 const express = require('express');
-const { generateCheckAccess } = require('@librechat/api');
-const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
+const { generateCheckAccess } = require('@bizu/api');
+const { PermissionTypes, Permissions, PermissionBits } = require('bizu-data-provider');
 const { requireJwtAuth, configMiddleware, canAccessAgentResource } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
 const { getRoleByName } = require('~/models/Role');

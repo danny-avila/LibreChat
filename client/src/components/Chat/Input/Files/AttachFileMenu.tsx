@@ -13,15 +13,15 @@ import {
   EModelEndpoint,
   defaultAgentCapabilities,
   isDocumentSupportedProvider,
-} from 'librechat-data-provider';
+} from 'bizu-data-provider';
 import {
   FileUpload,
   TooltipAnchor,
   DropdownPopup,
   AttachmentIcon,
   SharePointIcon,
-} from '@librechat/client';
-import type { EndpointFileConfig } from 'librechat-data-provider';
+} from '@bizu/client';
+import type { EndpointFileConfig } from 'bizu-data-provider';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,

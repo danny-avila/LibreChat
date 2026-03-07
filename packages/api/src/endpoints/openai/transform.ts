@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'bizu-data-provider';
 import type { GoogleAIToolType } from '@langchain/google-common';
 import type { ClientOptions } from '@librechat/agents';
 import type * as t from '~/types';

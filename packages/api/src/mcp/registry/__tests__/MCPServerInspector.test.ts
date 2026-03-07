@@ -271,7 +271,7 @@ describe('MCPServerInspector', () => {
   });
 
   describe('getToolFunctions()', () => {
-    it('should convert MCP tools to LibreChat tool functions format', async () => {
+    it('should convert MCP tools to Bizu tool functions format', async () => {
       mockConnection.client.listTools = jest.fn().mockResolvedValue({
         tools: [
           {

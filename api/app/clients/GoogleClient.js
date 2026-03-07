@@ -1,10 +1,10 @@
 const { google } = require('googleapis');
 const { sleep } = require('@librechat/agents');
-const { logger } = require('@librechat/data-schemas');
-const { getModelMaxTokens } = require('@librechat/api');
+const { logger } = require('@bizu/data-schemas');
+const { getModelMaxTokens } = require('@bizu/api');
 const { concat } = require('@langchain/core/utils/stream');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
-const { Tokenizer, getSafetySettings } = require('@librechat/api');
+const { Tokenizer, getSafetySettings } = require('@bizu/api');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
 const { HumanMessage, SystemMessage } = require('@langchain/core/messages');
@@ -21,7 +21,7 @@ const {
   ErrorTypes,
   Constants,
   AuthKeys,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const { spendTokens } = require('~/models/spendTokens');
 const {

@@ -1,5 +1,5 @@
-const { isEnabled } = require('@librechat/api');
-const { CacheKeys } = require('librechat-data-provider');
+const { isEnabled } = require('@bizu/api');
+const { CacheKeys } = require('bizu-data-provider');
 const { saveConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 

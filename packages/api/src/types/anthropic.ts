@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Dispatcher } from 'undici';
-import { anthropicSchema } from 'librechat-data-provider';
+import { anthropicSchema } from 'bizu-data-provider';
 import type { AnthropicClientOptions } from '@librechat/agents';
 import type { LLMConfigResult } from './openai';
 

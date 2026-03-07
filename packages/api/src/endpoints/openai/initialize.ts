@@ -1,4 +1,4 @@
-import { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } from 'librechat-data-provider';
+import { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } from 'bizu-data-provider';
 import type {
   InitializeOpenAIOptionsParams,
   OpenAIConfigOptions,

@@ -1,7 +1,7 @@
 import { memo, useState, useRef, useMemo, useCallback, KeyboardEvent } from 'react';
 import { EarthIcon, Pen } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { PermissionBits, type TPromptGroup } from 'librechat-data-provider';
+import { PermissionBits, type TPromptGroup } from 'bizu-data-provider';
 import {
   Input,
   Label,
@@ -10,7 +10,7 @@ import {
   OGDialogTrigger,
   OGDialogTemplate,
   TrashIcon,
-} from '@librechat/client';
+} from '@bizu/client';
 import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { useLocalize, useResourcePermissions } from '~/hooks';

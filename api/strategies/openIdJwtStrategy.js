@@ -1,10 +1,10 @@
 const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@bizu/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { SystemRoles } = require('librechat-data-provider');
+const { SystemRoles } = require('bizu-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const { isEnabled, findOpenIDUser } = require('@librechat/api');
+const { isEnabled, findOpenIDUser } = require('@bizu/api');
 const { updateUser, findUser } = require('~/models');
 
 /**
@@ -44,7 +44,7 @@ const openIdJwtLogin = (openIdConfig) => {
       passReqToCallback: true,
     },
     /**
-     * @param {import('@librechat/api').ServerRequest} req
+     * @param {import('@bizu/api').ServerRequest} req
      * @param {import('openid-client').IDToken} payload
      * @param {import('passport-jwt').VerifyCallback} done
      */

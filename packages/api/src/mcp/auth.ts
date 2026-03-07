@@ -1,6 +1,6 @@
-import { logger } from '@librechat/data-schemas';
-import { Constants } from 'librechat-data-provider';
-import type { PluginAuthMethods } from '@librechat/data-schemas';
+import { logger } from '@bizu/data-schemas';
+import { Constants } from 'bizu-data-provider';
+import type { PluginAuthMethods } from '@bizu/data-schemas';
 import type { GenericTool } from '@librechat/agents';
 import { getPluginAuthMap } from '~/agents/auth';
 

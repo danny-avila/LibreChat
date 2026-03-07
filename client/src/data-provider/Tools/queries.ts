@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
+import { Constants, QueryKeys, dataService } from 'bizu-data-provider';
 import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
-import type t from 'librechat-data-provider';
+import type t from 'bizu-data-provider';
 
 export const useVerifyAgentToolAuth = (
   params: t.VerifyToolAuthParams,

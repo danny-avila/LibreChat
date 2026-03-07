@@ -8,8 +8,8 @@ import {
   getEndpointField,
   isAssistantsEndpoint,
   getEndpointFileConfig,
-} from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+} from 'bizu-data-provider';
+import type { TConversation } from 'bizu-data-provider';
 import { useGetFileConfig, useGetEndpointsQuery } from '~/data-provider';
 import AttachFileMenu from './AttachFileMenu';
 import AttachFile from './AttachFile';

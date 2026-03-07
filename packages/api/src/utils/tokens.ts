@@ -1,5 +1,5 @@
 import z from 'zod';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'bizu-data-provider';
 
 /** Configuration object mapping model keys to their respective prompt, completion rates, and context limit
  *

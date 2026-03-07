@@ -1,5 +1,5 @@
 const Anthropic = require('@anthropic-ai/sdk');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@bizu/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   Constants,
@@ -9,7 +9,7 @@ const {
   anthropicSettings,
   getResponseSender,
   validateVisionModel,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const { sleep, SplitStreamHandler: _Handler, addCacheControl } = require('@librechat/agents');
 const {
   Tokenizer,
@@ -21,7 +21,7 @@ const {
   checkPromptCacheSupport,
   getModelMaxOutputTokens,
   createStreamEventHandlers,
-} = require('@librechat/api');
+} = require('@bizu/api');
 const {
   truncateText,
   formatMessage,
@@ -254,7 +254,7 @@ class AnthropicClient extends BaseClient {
   }
 
   /**
-   * Get Token Count for LibreChat Message
+   * Get Token Count for Bizu Message
    * @param {TMessage} responseMessage
    * @returns {number}
    */

@@ -5,7 +5,7 @@ import {
   TConversation,
   tConvoUpdateSchema,
   EModelEndpoint,
-} from 'librechat-data-provider';
+} from 'bizu-data-provider';
 import type { TSetExample, TSetOption, TSetOptionsPayload } from '~/common';
 import usePresetIndexOptions from './usePresetIndexOptions';
 import { useChatContext } from '~/Providers/ChatContext';

@@ -1,11 +1,4 @@
-import {
-  TextPaths,
-  FilePaths,
-  CodePaths,
-  AudioPaths,
-  VideoPaths,
-  SheetPaths,
-} from '@librechat/client';
+import { TextPaths, FilePaths, CodePaths, AudioPaths, VideoPaths, SheetPaths } from '@bizu/client';
 import {
   megabyte,
   QueryKeys,
@@ -13,8 +6,8 @@ import {
   excelMimeTypes,
   EToolResources,
   fileConfig as defaultFileConfig,
-} from 'librechat-data-provider';
-import type { TFile, EndpointFileConfig, FileConfig } from 'librechat-data-provider';
+} from 'bizu-data-provider';
+import type { TFile, EndpointFileConfig, FileConfig } from 'bizu-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ExtendedFile } from '~/common';
 

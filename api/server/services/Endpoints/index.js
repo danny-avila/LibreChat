@@ -1,6 +1,6 @@
 const { Providers } = require('@librechat/agents');
-const { EModelEndpoint } = require('librechat-data-provider');
-const { getCustomEndpointConfig } = require('@librechat/api');
+const { EModelEndpoint } = require('bizu-data-provider');
+const { getCustomEndpointConfig } = require('@bizu/api');
 const initAnthropic = require('~/server/services/Endpoints/anthropic/initialize');
 const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');

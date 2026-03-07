@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { TooltipAnchor } from '@librechat/client';
+import { TooltipAnchor } from '@bizu/client';
 import { MessageCircleDashed } from 'lucide-react';
 import { useRecoilState, useRecoilCallback } from 'recoil';
 import { useChatContext } from '~/Providers';

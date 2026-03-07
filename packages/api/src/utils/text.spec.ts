@@ -1,7 +1,7 @@
 import { processTextWithTokenLimit, TokenCountFn } from './text';
 import Tokenizer, { countTokens } from './tokenizer';
 
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@bizu/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
     warn: jest.fn(),
@@ -713,7 +713,7 @@ describe('processTextWithTokenLimit', () => {
     });
   });
 
-  describe('using countTokens async function from @librechat/api', () => {
+  describe('using countTokens async function from @bizu/api', () => {
     beforeEach(() => {
       Tokenizer.freeAndResetAllEncoders();
     });

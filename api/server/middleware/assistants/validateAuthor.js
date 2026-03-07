@@ -1,4 +1,4 @@
-const { SystemRoles } = require('librechat-data-provider');
+const { SystemRoles } = require('bizu-data-provider');
 const { getAssistant } = require('~/models/Assistant');
 
 /**

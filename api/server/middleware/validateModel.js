@@ -1,5 +1,5 @@
-const { handleError } = require('@librechat/api');
-const { ViolationTypes } = require('librechat-data-provider');
+const { handleError } = require('@bizu/api');
+const { ViolationTypes } = require('bizu-data-provider');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { isModelAllowedForPlan } = require('~/server/services/Config/planModels');
 const { logViolation } = require('~/cache');

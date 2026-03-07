@@ -1,7 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { Close } from '@radix-ui/react-popover';
 import { Flipper, Flipped } from 'react-flip-toolkit';
-import { getEndpointField } from 'librechat-data-provider';
+import { getEndpointField } from 'bizu-data-provider';
 import {
   Dialog,
   Label,
@@ -10,8 +10,8 @@ import {
   TrashIcon,
   DialogTrigger,
   DialogTemplate,
-} from '@librechat/client';
-import type { TPreset } from 'librechat-data-provider';
+} from '@bizu/client';
+import type { TPreset } from 'bizu-data-provider';
 import type { FC } from 'react';
 import FileUpload from '~/components/Chat/Input/Files/FileUpload';
 import { useGetEndpointsQuery } from '~/data-provider';

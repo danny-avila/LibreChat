@@ -1,16 +1,16 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@bizu/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
   validateAgentModel,
   getCustomEndpointConfig,
   createSequentialChainEdges,
-} = require('@librechat/api');
+} = require('@bizu/api');
 const {
   Constants,
   EModelEndpoint,
   isAgentsEndpoint,
   getResponseSender,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const {
   createToolEndCallback,
   getDefaultHandlers,

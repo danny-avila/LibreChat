@@ -1,6 +1,6 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@bizu/data-schemas');
 const {
   Providers,
   StepTypes,
@@ -12,20 +12,20 @@ const {
   MCPOAuthHandler,
   normalizeServerName,
   convertWithResolvedRefs,
-} = require('@librechat/api');
+} = require('@bizu/api');
 const {
   Time,
   CacheKeys,
   Constants,
   ContentTypes,
   isAssistantsEndpoint,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
-const { mcpServersRegistry } = require('@librechat/api');
+const { mcpServersRegistry } = require('@bizu/api');
 
 /**
  * @param {object} params
@@ -443,7 +443,7 @@ async function getMCPSetupData(userId) {
   }
 
   const mcpManager = getMCPManager(userId);
-  /** @type {Map<string, import('@librechat/api').MCPConnection>} */
+  /** @type {Map<string, import('@bizu/api').MCPConnection>} */
   let appConnections = new Map();
   try {
     appConnections = (await mcpManager.appConnections?.getAll()) || new Map();

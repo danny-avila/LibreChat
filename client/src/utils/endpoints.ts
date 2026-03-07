@@ -7,8 +7,8 @@ import {
   getEndpointField,
   isAgentsEndpoint,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
+} from 'bizu-data-provider';
+import type * as t from 'bizu-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';
 
 export const getEntityName = ({

@@ -1,12 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import {
-  Button,
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSeparator,
-  InputOTPSlot,
-} from '@librechat/client';
+import { Button, InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from '@bizu/client';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import { useLocalize } from '~/hooks';
 

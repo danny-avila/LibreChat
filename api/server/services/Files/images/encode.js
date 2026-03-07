@@ -1,6 +1,6 @@
 const axios = require('axios');
-const { logger } = require('@librechat/data-schemas');
-const { logAxiosError, validateImage } = require('@librechat/api');
+const { logger } = require('@bizu/data-schemas');
+const { logAxiosError, validateImage } = require('@bizu/api');
 const {
   FileSources,
   VisionModes,
@@ -9,7 +9,7 @@ const {
   EModelEndpoint,
   mergeFileConfig,
   getEndpointFileConfig,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 
 /**

@@ -1,6 +1,6 @@
 import React from 'react';
 import { RefreshCw } from 'lucide-react';
-import { Button, Spinner } from '@librechat/client';
+import { Button, Spinner } from '@bizu/client';
 import { useLocalize, useMCPServerManager, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 

@@ -1,9 +1,5 @@
-const { isUserProvided } = require('@librechat/api');
-const {
-  EModelEndpoint,
-  extractEnvVariable,
-  normalizeEndpointName,
-} = require('librechat-data-provider');
+const { isUserProvided } = require('@bizu/api');
+const { EModelEndpoint, extractEnvVariable, normalizeEndpointName } = require('bizu-data-provider');
 const { fetchModels } = require('~/server/services/ModelService');
 const { getAppConfig } = require('./app');
 

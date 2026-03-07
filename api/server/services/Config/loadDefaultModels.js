@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { logger } = require('@bizu/data-schemas');
+const { EModelEndpoint } = require('bizu-data-provider');
 const {
   getAnthropicModels,
   getBedrockModels,

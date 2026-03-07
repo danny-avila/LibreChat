@@ -1,11 +1,11 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
-import { TextareaAutosize } from '@librechat/client';
-import { ContentTypes } from 'librechat-data-provider';
+import { TextareaAutosize } from '@bizu/client';
+import { ContentTypes } from 'bizu-data-provider';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Lightbulb, MessageSquare } from 'lucide-react';
-import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
-import type { Agents } from 'librechat-data-provider';
+import { useUpdateMessageContentMutation } from 'bizu-data-provider/react-query';
+import type { Agents } from 'bizu-data-provider';
 import type { TEditProps } from '~/common';
 import { useMessagesOperations, useMessagesConversation, useAddedChatContext } from '~/Providers';
 import Container from '~/components/Chat/Messages/Content/Container';

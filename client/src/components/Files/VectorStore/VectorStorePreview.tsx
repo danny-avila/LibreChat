@@ -1,7 +1,8 @@
+/* eslint-disable i18next/no-literal-string */
 import React, { useState } from 'react';
 import DeleteIconButton from '../DeleteIconButton';
-import { TrashIcon, Button } from '@librechat/client';
-import { TFile } from 'librechat-data-provider/dist/types';
+import { TrashIcon, Button } from '@bizu/client';
+import { TFile } from 'bizu-data-provider/dist/types';
 import UploadFileButton from '../FileList/UploadFileButton';
 import UploadFileModal from '../FileList/UploadFileModal';
 import { BarChart4Icon, Clock3, FileClock, FileIcon, InfoIcon, PlusIcon } from 'lucide-react';

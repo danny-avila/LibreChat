@@ -2,13 +2,13 @@
 
 ## What This Is
 
-Bizu is a fork of **LibreChat v0.8.1-rc2**, an open-source ChatGPT alternative. The goal: a simplified, PT-BR-only ChatGPT clone for the Brazilian market, using cheap Chinese models (DeepSeek, etc.) via OpenRouter, with a freemium subscription model.
+Bizu is a fork of **Bizu v0.8.1-rc2**, an open-source ChatGPT alternative. The goal: a simplified, PT-BR-only ChatGPT clone for the Brazilian market, using cheap Chinese models (DeepSeek, etc.) via OpenRouter, with a freemium subscription model.
 
 ---
 
 ## Current State of the Codebase
 
-### What's Working (inherited from LibreChat)
+### What's Working (inherited from Bizu)
 - Full chat UI with streaming, message editing, branching
 - Multi-model support (OpenAI, Anthropic, Google, + custom endpoints like DeepSeek via OpenRouter)
 - Built-in token balance/transaction tracking system (MongoDB)
@@ -25,37 +25,37 @@ Bizu is a fork of **LibreChat v0.8.1-rc2**, an open-source ChatGPT alternative. 
 2. **README**: Updated to describe Bizu scope and roadmap.
 
 ### What Has NOT Been Done Yet
-Almost everything on the roadmap. The codebase is essentially still vanilla LibreChat with minor changes.
+Almost everything on the roadmap. The codebase is essentially still vanilla Bizu with minor changes.
 
 ---
 
 ## Critical Gaps to Launch
 
 ### 1. AUTHENTICATION — Supabase Auth (mentioned in roadmap, NOT started)
-**Current**: LibreChat uses its own JWT auth backed by MongoDB (`api/server/services/AuthService.js`, `api/strategies/`). It works, but it's complex.
+**Current**: Bizu uses its own JWT auth backed by MongoDB (`api/server/services/AuthService.js`, `api/strategies/`). It works, but it's complex.
 
 **Decision needed**:
-- **Option A**: Keep LibreChat's auth as-is. It works, has email/password, social login, password reset. Simpler to launch fast.
+- **Option A**: Keep Bizu's auth as-is. It works, has email/password, social login, password reset. Simpler to launch fast.
 - **Option B**: Migrate to Supabase Auth. Cleaner for a new product, but requires replacing the entire auth layer.
 
-**Recommendation**: Keep LibreChat's auth for v1 launch. It's battle-tested. Migrate later if needed.
+**Recommendation**: Keep Bizu's auth for v1 launch. It's battle-tested. Migrate later if needed.
 
 ### 2. PAYMENTS — Stripe Integration (NOT started, zero code)
-**Current**: LibreChat has a built-in **token balance system** (`api/models/Balance.js`, `api/server/controllers/Balance.js`, `api/models/tx.js`) that tracks token credits per user. It supports auto-refill with configurable intervals. But there is **no payment gateway** — no Stripe, no billing page, no subscription management.
+**Current**: Bizu has a built-in **token balance system** (`api/models/Balance.js`, `api/server/controllers/Balance.js`, `api/models/tx.js`) that tracks token credits per user. It supports auto-refill with configurable intervals. But there is **no payment gateway** — no Stripe, no billing page, no subscription management.
 
 **What's needed**:
 - Stripe Checkout / Billing Portal integration
 - Subscription plans (free, basic_cn, pro_global per the README)
 - Webhook handler for `checkout.session.completed`, `customer.subscription.updated/deleted`
-- Link Stripe subscription status to LibreChat's balance system OR implement plan-based model access control
+- Link Stripe subscription status to Bizu's balance system OR implement plan-based model access control
 - Billing/subscription management page in the client UI
 - Plan-based model gating (free users get limited models, paid users get more)
 
 ### 3. MODEL CONFIGURATION — DeepSeek/Chinese Models via OpenRouter
-**Current**: The `librechat.example.yaml` has OpenRouter configured as a custom endpoint. DeepSeek pricing is already in `api/models/tx.js`. The infrastructure exists.
+**Current**: The `bizu.example.yaml` has OpenRouter configured as a custom endpoint. DeepSeek pricing is already in `api/models/tx.js`. The infrastructure exists.
 
 **What's needed**:
-- Create a production `librechat.yaml` with the exact models you want to offer
+- Create a production `bizu.yaml` with the exact models you want to offer
 - Configure model tiers per plan (free = DeepSeek-V3 only, basic_cn = all Chinese models, pro = global models)
 - Set up the `OPENROUTER_KEY` environment variable
 - Potentially simplify the model selector UI to hide endpoints and just show models
@@ -69,7 +69,7 @@ Per the README "Phase 2" roadmap, these need to be hidden:
 - Audio/TTS/STT
 - Assistants
 
-**What's needed**: Update `librechat.yaml` interface config:
+**What's needed**: Update `bizu.yaml` interface config:
 ```yaml
 interface:
   agents: false
@@ -93,11 +93,11 @@ interface:
 - Remove language selector from settings UI
 
 ### 6. BRANDING
-**Current**: Still says "LibreChat" everywhere — app title, docker containers, terms of service, welcome message, help URL.
+**Current**: Still says "Bizu" everywhere — app title, docker containers, terms of service, welcome message, help URL.
 
 **What's needed**:
 - Update `.env`: `APP_TITLE=Bizu`
-- Update `librechat.yaml`: custom welcome message, privacy policy, terms of service URLs
+- Update `bizu.yaml`: custom welcome message, privacy policy, terms of service URLs
 - Replace logo/favicon in `client/public/`
 - Update `HELP_AND_FAQ_URL`
 
@@ -128,7 +128,7 @@ These must be set with real values:
 
 ## Features You Can Remove Entirely (to simplify codebase)
 
-These exist in LibreChat but aren't needed for Bizu v1:
+These exist in Bizu but aren't needed for Bizu v1:
 - **Plugins system** (`api/server/routes/plugins.js`) — complex, not needed
 - **Assistants API** — OpenAI-specific, not needed for OpenRouter
 - **Azure OpenAI** — not needed
@@ -147,7 +147,7 @@ These exist in LibreChat but aren't needed for Bizu v1:
 ### Phase 1: Minimum Viable Product (launch-ready)
 1. Clean up i18n (keep only pt-BR + en fallback)
 2. Brand everything as "Bizu" (titles, logos, welcome, ToS)
-3. Configure `librechat.yaml` with DeepSeek models via OpenRouter
+3. Configure `bizu.yaml` with DeepSeek models via OpenRouter
 4. Disable unnecessary UI features (agents, assistants, presets, etc.)
 5. Set up production `.env` with real secrets
 6. Secure Docker deployment (MongoDB auth, SSL)
@@ -190,7 +190,7 @@ bizu-chat/
 ├── config/                # CLI scripts (user management, balance)
 ├── docker-compose.yml     # Dev Docker setup
 ├── deploy-compose.yml     # Production Docker setup
-└── librechat.example.yaml # Model/feature configuration
+└── bizu.example.yaml # Model/feature configuration
 ```
 
 **Database**: MongoDB (conversations, users, messages, balances, transactions)

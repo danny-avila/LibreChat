@@ -1,8 +1,8 @@
 {
-  "name": "@librechat/api",
+  "name": "@bizu/api",
   "version": "1.6.0",
   "type": "commonjs",
-  "description": "MCP services for LibreChat",
+  "description": "MCP services for Bizu",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
   "types": "./dist/types/index.d.ts",
@@ -35,14 +35,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/LibreChat.git"
+    "url": "git+https://github.com/danny-avila/Bizu.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/LibreChat/issues"
+    "url": "https://github.com/danny-avila/Bizu/issues"
   },
-  "homepage": "https://librechat.ai",
+  "homepage": "https://bizu.ai",
   "devDependencies": {
     "@babel/preset-env": "^7.21.5",
     "@babel/preset-react": "^7.18.6",
@@ -66,7 +66,7 @@
     "@types/winston": "^2.4.4",
     "jest": "^30.2.0",
     "jest-junit": "^16.0.0",
-    "librechat-data-provider": "*",
+    "bizu-data-provider": "*",
     "mongodb": "^6.14.2",
     "rimraf": "^6.1.2",
     "rollup": "^4.22.4",
@@ -85,7 +85,7 @@
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.79",
     "@librechat/agents": "^3.0.36",
-    "@librechat/data-schemas": "*",
+    "@bizu/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.21.0",
     "axios": "^1.12.1",
     "connect-redis": "^8.1.0",
@@ -100,7 +100,7 @@
     "jsonwebtoken": "^9.0.0",
     "keyv": "^5.3.2",
     "keyv-file": "^5.1.2",
-    "librechat-data-provider": "*",
+    "bizu-data-provider": "*",
     "memorystore": "^1.6.7",
     "mongoose": "^8.12.1",
     "node-fetch": "2.7.0",

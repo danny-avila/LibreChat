@@ -1,5 +1,5 @@
-import { Tools } from 'librechat-data-provider';
-import type { UIResource } from 'librechat-data-provider';
+import { Tools } from 'bizu-data-provider';
+import type { UIResource } from 'bizu-data-provider';
 import type * as t from './types';
 
 const RECOGNIZED_PROVIDERS = new Set([

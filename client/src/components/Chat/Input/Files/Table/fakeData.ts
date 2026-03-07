@@ -1,5 +1,5 @@
-import { FileSources } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
+import { FileSources } from 'bizu-data-provider';
+import type { TFile } from 'bizu-data-provider';
 
 export const files: TFile[] = [
   {

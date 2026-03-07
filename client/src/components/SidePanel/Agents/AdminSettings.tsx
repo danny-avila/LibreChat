@@ -2,7 +2,7 @@ import { useMemo, useEffect, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
+import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'bizu-data-provider';
 import {
   Button,
   Switch,
@@ -12,7 +12,7 @@ import {
   OGDialogContent,
   OGDialogTrigger,
   useToastContext,
-} from '@librechat/client';
+} from '@bizu/client';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import { useUpdateAgentPermissionsMutation } from '~/data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
@@ -200,7 +200,7 @@ const AdminSettings = () => {
                         <span>{localize('com_ui_admin_access_warning')}</span>
                         {'\n'}
                         <a
-                          href="https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/interface"
+                          href="https://www.bizu.ai/docs/configuration/bizu_yaml/object_structure/interface"
                           target="_blank"
                           rel="noreferrer"
                           className="text-blue-500 underline"

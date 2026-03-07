@@ -1,6 +1,6 @@
 const { EventSource } = require('eventsource');
-const { Time } = require('librechat-data-provider');
-const { MCPManager, FlowStateManager, OAuthReconnectionManager } = require('@librechat/api');
+const { Time } = require('bizu-data-provider');
+const { MCPManager, FlowStateManager, OAuthReconnectionManager } = require('@bizu/api');
 const logger = require('./winston');
 
 global.EventSource = EventSource;

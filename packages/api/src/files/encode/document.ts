@@ -1,6 +1,6 @@
 import { Providers } from '@librechat/agents';
-import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
+import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'bizu-data-provider';
+import type { IMongoFile } from '@bizu/data-schemas';
 import type {
   AnthropicDocumentBlock,
   StrategyFunctions,

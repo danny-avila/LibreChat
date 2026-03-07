@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useGetModelsQuery } from 'bizu-data-provider/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
   Constants,
@@ -10,14 +10,14 @@ import {
   getEndpointField,
   LocalStorageKeys,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
+} from 'bizu-data-provider';
 import type {
   TPreset,
   TSubmission,
   TModelsConfig,
   TConversation,
   TEndpointsConfig,
-} from 'librechat-data-provider';
+} from 'bizu-data-provider';
 import type { AssistantListItem } from '~/common';
 import {
   updateLastSelectedModel,

@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'bizu-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'bizu-data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import store from '~/store';
 
@@ -31,7 +31,7 @@ export default function useAddedHelpers({
     store.messagesSiblingIdxFamily(latestMessage?.parentMessageId ?? null),
   );
 
-  const queryParam = paramId === 'new' ? paramId : conversation?.conversationId ?? paramId ?? '';
+  const queryParam = paramId === 'new' ? paramId : (conversation?.conversationId ?? paramId ?? '');
 
   const setMessages = useCallback(
     (messages: TMessage[]) => {

@@ -1,9 +1,4 @@
-import type {
-  TPreset,
-  TConversation,
-  EModelEndpoint,
-  TEndpointsConfig,
-} from 'librechat-data-provider';
+import type { TPreset, TConversation, EModelEndpoint, TEndpointsConfig } from 'bizu-data-provider';
 import { getLocalStorageItems } from './localStorage';
 import { mapEndpoints } from './endpoints';
 

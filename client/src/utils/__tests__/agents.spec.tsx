@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { getAgentAvatarUrl, renderAgentAvatar, getContactDisplayName } from '../agents';
-import type t from 'librechat-data-provider';
+import type t from 'bizu-data-provider';
 
 // Mock the Bot icon from lucide-react
 jest.mock('lucide-react', () => ({

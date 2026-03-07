@@ -1,13 +1,13 @@
 const initializeClient = require('./initialize');
 
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
+jest.mock('@bizu/api', () => ({
+  ...jest.requireActual('@bizu/api'),
   resolveHeaders: jest.fn(),
   getOpenAIConfig: jest.fn(),
   getCustomEndpointConfig: jest.fn().mockReturnValue({
     apiKey: 'test-key',
     baseURL: 'https://test.com',
-    headers: { 'x-user': '{{LIBRECHAT_USER_ID}}', 'x-email': '{{LIBRECHAT_USER_EMAIL}}' },
+    headers: { 'x-user': '{{BIZU_USER_ID}}', 'x-email': '{{BIZU_USER_EMAIL}}' },
     models: { default: ['test-model'] },
   }),
 }));
@@ -52,11 +52,11 @@ describe('custom/initializeClient', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    const { getCustomEndpointConfig, resolveHeaders, getOpenAIConfig } = require('@librechat/api');
+    const { getCustomEndpointConfig, resolveHeaders, getOpenAIConfig } = require('@bizu/api');
     getCustomEndpointConfig.mockReturnValue({
       apiKey: 'test-key',
       baseURL: 'https://test.com',
-      headers: { 'x-user': '{{LIBRECHAT_USER_ID}}', 'x-email': '{{LIBRECHAT_USER_EMAIL}}' },
+      headers: { 'x-user': '{{BIZU_USER_ID}}', 'x-email': '{{BIZU_USER_EMAIL}}' },
       models: { default: ['test-model'] },
     });
     resolveHeaders.mockReturnValue({ 'x-user': 'user-123', 'x-email': 'test@example.com' });
@@ -87,7 +87,7 @@ describe('custom/initializeClient', () => {
   });
 
   it('throws if endpoint config is missing', async () => {
-    const { getCustomEndpointConfig } = require('@librechat/api');
+    const { getCustomEndpointConfig } = require('@bizu/api');
     getCustomEndpointConfig.mockReturnValueOnce(null);
     await expect(
       initializeClient({ req: mockRequest, res: mockResponse, optionsOnly: true }),

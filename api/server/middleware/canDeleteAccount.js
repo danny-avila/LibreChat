@@ -1,6 +1,6 @@
-const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
-const { SystemRoles } = require('librechat-data-provider');
+const { isEnabled } = require('@bizu/api');
+const { logger } = require('@bizu/data-schemas');
+const { SystemRoles } = require('bizu-data-provider');
 
 /**
  * Checks if the user can delete their account

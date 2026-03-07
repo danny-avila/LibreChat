@@ -1,8 +1,8 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import { createReadStream } from 'fs';
-import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
+import { logger } from '@bizu/data-schemas';
+import { FileSources } from 'bizu-data-provider';
 import type { ServerRequest } from '~/types';
 import { logAxiosError, readFileAsString } from '~/utils';
 import { generateShortLivedToken } from '~/crypto/jwt';

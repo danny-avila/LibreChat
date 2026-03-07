@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
-import { QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'bizu-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'bizu-data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';

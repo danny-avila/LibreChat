@@ -1,11 +1,7 @@
 import { useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
-import {
-  AuthTypeEnum,
-  AuthorizationTypeEnum,
-  TokenExchangeMethodEnum,
-} from 'librechat-data-provider';
+import { AuthTypeEnum, AuthorizationTypeEnum, TokenExchangeMethodEnum } from 'bizu-data-provider';
 import {
   OGDialog,
   OGDialogTrigger,
@@ -13,7 +9,7 @@ import {
   OGDialogTemplate,
   useToastContext,
   TrashIcon,
-} from '@librechat/client';
+} from '@bizu/client';
 import type { AssistantPanelProps, ActionAuthForm } from '~/common';
 import { useAssistantsMapContext } from '~/Providers';
 import { useDeleteAction } from '~/data-provider';

@@ -1,7 +1,7 @@
 import 'test/matchMedia.mock';
 import { render, screen } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
-import { TPlugin } from 'librechat-data-provider';
+import { TPlugin } from 'bizu-data-provider';
 import PluginStoreItem from '../PluginStoreItem';
 
 const mockPlugin = {

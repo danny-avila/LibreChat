@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
+import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@bizu/client';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
 import { useChatFormContext } from '~/Providers';
 import { globalAudioId } from '~/common';

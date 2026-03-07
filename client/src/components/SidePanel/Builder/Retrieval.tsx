@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
-import { Capabilities } from 'librechat-data-provider';
-import type { AssistantsEndpoint } from 'librechat-data-provider';
+import { Capabilities } from 'bizu-data-provider';
+import type { AssistantsEndpoint } from 'bizu-data-provider';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import {
   Checkbox,
@@ -9,7 +9,7 @@ import {
   HoverCardPortal,
   HoverCardTrigger,
   CircleHelpIcon,
-} from '@librechat/client';
+} from '@bizu/client';
 import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
 import type { AssistantForm } from '~/common';
 import { useLocalize } from '~/hooks';

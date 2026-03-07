@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { GearIcon } from '@librechat/client';
-import type { Action } from 'librechat-data-provider';
+import { GearIcon } from '@bizu/client';
+import type { Action } from 'bizu-data-provider';
 import { cn } from '~/utils';
 
 export default function Action({ action, onClick }: { action: Action; onClick: () => void }) {

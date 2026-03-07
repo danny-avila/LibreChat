@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { GearIcon, MCPIcon } from '@librechat/client';
-import type { MCP } from 'librechat-data-provider';
+import { GearIcon, MCPIcon } from '@bizu/client';
+import type { MCP } from 'bizu-data-provider';
 import { cn } from '~/utils';
 
 type MCPProps = {

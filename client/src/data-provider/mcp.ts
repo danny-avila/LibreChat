@@ -1,11 +1,11 @@
 /**
  * Dedicated queries for MCP (Model Context Protocol) tools
- * Decoupled from regular LibreChat tools
+ * Decoupled from regular Bizu tools
  */
 import { useQuery } from '@tanstack/react-query';
-import { QueryKeys, dataService } from 'librechat-data-provider';
+import { QueryKeys, dataService } from 'bizu-data-provider';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
-import type { MCPServersResponse } from 'librechat-data-provider';
+import type { MCPServersResponse } from 'bizu-data-provider';
 
 /**
  * Hook for fetching MCP-specific tools

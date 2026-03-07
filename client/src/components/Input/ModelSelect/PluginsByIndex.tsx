@@ -1,15 +1,15 @@
 import { useRecoilValue } from 'recoil';
 import { ChevronDownIcon } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
+import { useAvailablePluginsQuery } from 'bizu-data-provider/react-query';
 import {
   Button,
   SelectDropDown,
   SelectDropDownPop,
   MultiSelectDropDown,
   useMediaQuery,
-} from '@librechat/client';
-import type { TPlugin } from 'librechat-data-provider';
+} from '@bizu/client';
+import type { TPlugin } from 'bizu-data-provider';
 import type { TModelSelectProps } from '~/common';
 import { useSetIndexOptions, useAuthContext, useLocalize } from '~/hooks';
 import { cn, cardStyle, selectPlugins, processPlugins } from '~/utils';

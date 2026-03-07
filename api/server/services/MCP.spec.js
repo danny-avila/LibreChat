@@ -1,6 +1,6 @@
-const { logger } = require('@librechat/data-schemas');
-const { MCPOAuthHandler } = require('@librechat/api');
-const { CacheKeys } = require('librechat-data-provider');
+const { logger } = require('@bizu/data-schemas');
+const { MCPOAuthHandler } = require('@bizu/api');
+const { CacheKeys } = require('bizu-data-provider');
 const {
   createMCPTool,
   createMCPTools,
@@ -10,7 +10,7 @@ const {
 } = require('./MCP');
 
 // Mock all dependencies
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@bizu/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
     error: jest.fn(),
@@ -43,7 +43,7 @@ jest.mock('@librechat/agents', () => ({
   },
 }));
 
-jest.mock('@librechat/api', () => ({
+jest.mock('@bizu/api', () => ({
   MCPOAuthHandler: {
     generateFlowId: jest.fn(),
   },
@@ -55,7 +55,7 @@ jest.mock('@librechat/api', () => ({
   },
 }));
 
-jest.mock('librechat-data-provider', () => ({
+jest.mock('bizu-data-provider', () => ({
   CacheKeys: {
     FLOWS: 'flows',
   },
@@ -112,7 +112,7 @@ describe('tests for the new helper functions used by the MCP connection status e
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
     mockGetOAuthReconnectionManager = require('~/config').getOAuthReconnectionManager;
-    mockMcpServersRegistry = require('@librechat/api').mcpServersRegistry;
+    mockMcpServersRegistry = require('@bizu/api').mcpServersRegistry;
   });
 
   describe('getMCPSetupData', () => {

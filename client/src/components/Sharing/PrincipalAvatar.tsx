@@ -1,7 +1,7 @@
 import React from 'react';
 import { Users, User, Shield } from 'lucide-react';
-import { PrincipalType } from 'librechat-data-provider';
-import type { TPrincipal } from 'librechat-data-provider';
+import { PrincipalType } from 'bizu-data-provider';
+import type { TPrincipal } from 'bizu-data-provider';
 import { cn } from '~/utils';
 
 interface PrincipalAvatarProps {

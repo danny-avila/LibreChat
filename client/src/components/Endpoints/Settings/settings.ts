@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'bizu-data-provider';
 import type { FC } from 'react';
 import type { TModelSelectProps } from '~/common';
 import { GoogleSettings, PluginSettings } from './MultiView';

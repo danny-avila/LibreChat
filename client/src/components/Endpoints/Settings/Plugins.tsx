@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
-import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
+import { useAvailablePluginsQuery } from 'bizu-data-provider/react-query';
 import {
   Input,
   Label,
@@ -10,9 +10,9 @@ import {
   InputNumber,
   SelectDropDown,
   HoverCardTrigger,
-} from '@librechat/client';
+} from '@bizu/client';
 import type { TModelSelectProps, OnInputNumberChange } from '~/common';
-import type { TPlugin } from 'librechat-data-provider';
+import type { TPlugin } from 'bizu-data-provider';
 import {
   removeFocusOutlines,
   defaultTextProps,

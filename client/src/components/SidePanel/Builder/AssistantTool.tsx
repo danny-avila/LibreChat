@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useFormContext } from 'react-hook-form';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { useUpdateUserPluginsMutation } from 'bizu-data-provider/react-query';
 import {
   OGDialog,
   OGDialogTrigger,
@@ -8,8 +8,8 @@ import {
   OGDialogTemplate,
   TrashIcon,
   useToastContext,
-} from '@librechat/client';
-import type { TPlugin } from 'librechat-data-provider';
+} from '@bizu/client';
+import type { TPlugin } from 'bizu-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

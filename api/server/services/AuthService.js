@@ -1,9 +1,9 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
-const { logger } = require('@librechat/data-schemas');
-const { isEnabled, checkEmailConfig, isEmailDomainAllowed } = require('@librechat/api');
-const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
+const { logger } = require('@bizu/data-schemas');
+const { isEnabled, checkEmailConfig, isEmailDomainAllowed } = require('@bizu/api');
+const { ErrorTypes, SystemRoles, errorsToString } = require('bizu-data-provider');
 const {
   findUser,
   findToken,
@@ -90,7 +90,7 @@ const sendVerificationEmail = async (user) => {
     email: user.email,
     subject: 'Verify your email',
     payload: {
-      appName: process.env.APP_TITLE || 'LibreChat',
+      appName: process.env.APP_TITLE || 'Bizu',
       name: user.name || user.username || user.email,
       verificationLink: verificationLink,
       year: new Date().getFullYear(),
@@ -288,7 +288,7 @@ const requestPasswordReset = async (req) => {
       email: user.email,
       subject: 'Password Reset Request',
       payload: {
-        appName: process.env.APP_TITLE || 'LibreChat',
+        appName: process.env.APP_TITLE || 'Bizu',
         name: user.name || user.username || user.email,
         link: link,
         year: new Date().getFullYear(),
@@ -344,7 +344,7 @@ const resetPassword = async (userId, token, password) => {
       email: user.email,
       subject: 'Password Reset Successfully',
       payload: {
-        appName: process.env.APP_TITLE || 'LibreChat',
+        appName: process.env.APP_TITLE || 'Bizu',
         name: user.name || user.username || user.email,
         year: new Date().getFullYear(),
       },
@@ -389,7 +389,7 @@ const setAuthTokens = async (userId, res, _session = null) => {
       secure: isProduction,
       sameSite: 'strict',
     });
-    res.cookie('token_provider', 'librechat', {
+    res.cookie('token_provider', 'bizu', {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
       secure: isProduction,
@@ -504,7 +504,7 @@ const resendVerificationEmail = async (req) => {
       email: user.email,
       subject: 'Verify your email',
       payload: {
-        appName: process.env.APP_TITLE || 'LibreChat',
+        appName: process.env.APP_TITLE || 'Bizu',
         name: user.name || user.username || user.email,
         verificationLink: verificationLink,
         year: new Date().getFullYear(),

@@ -1,6 +1,6 @@
 import React from 'react';
-import { ECallState } from 'librechat-data-provider';
-import { CircleIcon, CircleDotsIcon } from '@librechat/client';
+import { ECallState } from 'bizu-data-provider';
+import { CircleIcon, CircleDotsIcon } from '@bizu/client';
 
 const CircleRender = ({ rmsLevel, isCameraOn, state }) => {
   const getIconComponent = (state) => {

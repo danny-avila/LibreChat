@@ -1,10 +1,10 @@
-import { ErrorTypes } from 'librechat-data-provider';
-import { logger } from '@librechat/data-schemas';
-import type { IUser, UserMethods } from '@librechat/data-schemas';
+import { ErrorTypes } from 'bizu-data-provider';
+import { logger } from '@bizu/data-schemas';
+import type { IUser, UserMethods } from '@bizu/data-schemas';
 import { findOpenIDUser } from './openid';
 
-jest.mock('@librechat/data-schemas', () => ({
-  ...jest.requireActual('@librechat/data-schemas'),
+jest.mock('@bizu/data-schemas', () => ({
+  ...jest.requireActual('@bizu/data-schemas'),
   logger: {
     warn: jest.fn(),
     info: jest.fn(),

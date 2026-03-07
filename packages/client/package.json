@@ -1,7 +1,7 @@
 {
-  "name": "@librechat/client",
+  "name": "@bizu/client",
   "version": "0.4.0",
-  "description": "React components for LibreChat",
+  "description": "React components for Bizu",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
   "types": "dist/types/index.d.ts",

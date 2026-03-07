@@ -1,6 +1,6 @@
 import { useEffect, useRef, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@bizu/client';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import useGetAudioSettings from './useGetAudioSettings';
 import store from '~/store';

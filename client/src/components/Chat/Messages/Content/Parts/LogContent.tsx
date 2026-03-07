@@ -1,7 +1,7 @@
 import { isAfter } from 'date-fns';
 import React, { useMemo } from 'react';
-import { imageExtRegex } from 'librechat-data-provider';
-import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
+import { imageExtRegex } from 'bizu-data-provider';
+import type { TFile, TAttachment, TAttachmentMetadata } from 'bizu-data-provider';
 import Image from '~/components/Chat/Messages/Content/Image';
 import { useLocalize } from '~/hooks';
 import LogLink from './LogLink';

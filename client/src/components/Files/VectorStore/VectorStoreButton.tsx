@@ -1,6 +1,7 @@
+/* eslint-disable i18next/no-literal-string */
 import React from 'react';
 import { PlusIcon } from 'lucide-react';
-import { Button } from '@librechat/client';
+import { Button } from '@bizu/client';
 
 type VectorStoreButtonProps = {
   onClick: () => void;

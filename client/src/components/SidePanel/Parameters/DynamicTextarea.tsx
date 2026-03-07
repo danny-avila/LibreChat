@@ -1,7 +1,7 @@
-import { OptionTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
+import { OptionTypes } from 'bizu-data-provider';
+import type { DynamicSettingProps } from 'bizu-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
-import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '@librechat/client';
+import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '@bizu/client';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';

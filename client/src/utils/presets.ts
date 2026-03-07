@@ -1,5 +1,5 @@
-import type { TPreset, TPlugin } from 'librechat-data-provider';
-import { EModelEndpoint } from 'librechat-data-provider';
+import type { TPreset, TPlugin } from 'bizu-data-provider';
+import { EModelEndpoint } from 'bizu-data-provider';
 
 type TEndpoints = Array<string | EModelEndpoint>;
 

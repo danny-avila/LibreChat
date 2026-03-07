@@ -5,7 +5,7 @@ import * as React from 'react';
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { render, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Agent } from 'librechat-data-provider';
+import type { Agent } from 'bizu-data-provider';
 
 // Mock toast context - define this after all mocks
 let mockShowToast: jest.Mock;
@@ -30,8 +30,8 @@ jest.mock('~/store/toast', () => ({
 jest.mock('~/store', () => {});
 
 // Mock the data service to control network responses
-jest.mock('librechat-data-provider', () => {
-  const actualModule = jest.requireActual('librechat-data-provider') as any;
+jest.mock('bizu-data-provider', () => {
+  const actualModule = jest.requireActual('bizu-data-provider') as any;
   return {
     ...actualModule,
     dataService: {
@@ -63,7 +63,7 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-jest.mock('@librechat/client', () => ({
+jest.mock('@bizu/client', () => ({
   Button: ({ children, onClick, ...props }: any) => (
     <button onClick={onClick} {...props}>
       {children}
@@ -77,7 +77,7 @@ jest.mock('@librechat/client', () => ({
 }));
 
 // Mock other dependencies
-jest.mock('librechat-data-provider/react-query', () => ({
+jest.mock('bizu-data-provider/react-query', () => ({
   useGetModelsQuery: () => ({ data: {} }),
   useGetEffectivePermissionsQuery: () => ({
     data: { permissionBits: 0xffffffff }, // All permissions
@@ -205,7 +205,7 @@ jest.mock('react-hook-form', () => {
 });
 
 // Import after mocks
-import { dataService } from 'librechat-data-provider';
+import { dataService } from 'bizu-data-provider';
 import { useGetAgentByIdQuery } from '~/data-provider';
 import AgentPanel from './AgentPanel';
 

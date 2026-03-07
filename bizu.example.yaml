@@ -1,9 +1,10 @@
 # Bizu Chat Configuration
+# Copy this file to bizu.yaml and customize as needed
+# For more information, see: https://www.bizu.ai/docs/configuration/bizu_yaml
+
 version: 1.2.1
 
 cache: true
-
-# Custom footer branding — set via CUSTOM_FOOTER env var in .env
 
 # Custom interface — simplified for Bizu
 interface:
@@ -16,16 +17,14 @@ interface:
   multiConvo: false
   fileSearch: false
   endpointsMenu: false
-  sidePanel: false
+  sidePanel: true
   modelSelect: true
-  parameters: false
+  parameters: true
   fileCitations: false
-  runCode: false
-  webSearch: false
   marketplace:
     use: false
 
-  # Privacy & Terms
+  # Privacy & Terms (update URLs when you have real ones)
   privacyPolicy:
     externalUrl: 'https://bizu.chat/privacidade'
     openNewTab: true
@@ -66,49 +65,8 @@ balance:
 registration:
   socialLogins: []
 
-# Model specs — friendly names, enforce to hide raw endpoint selector
-modelSpecs:
-  enforce: true
-  prioritize: true
-  list:
-    - name: 'deepseek-v3'
-      label: 'Bizu Essencial'
-      description: 'Rápido e versátil — ideal para conversas do dia a dia'
-      default: true
-      preset:
-        endpoint: 'OpenRouter'
-        model: 'deepseek/deepseek-chat-v3-0324'
-    - name: 'deepseek-r1'
-      label: 'Bizu Avançado'
-      description: 'Raciocínio profundo para tarefas complexas'
-      preset:
-        endpoint: 'OpenRouter'
-        model: 'deepseek/deepseek-r1'
-    - name: 'deepseek-r1-0528'
-      label: 'Bizu Avançado Plus'
-      description: 'Versão mais recente com raciocínio aprimorado'
-      preset:
-        endpoint: 'OpenRouter'
-        model: 'deepseek/deepseek-r1-0528'
-    - name: 'qwen3-235b'
-      label: 'Bizu Ultra'
-      description: 'Máxima capacidade para desafios exigentes'
-      preset:
-        endpoint: 'OpenRouter'
-        model: 'qwen/qwen3-235b-a22b'
-    - name: 'qwen3-30b'
-      label: 'Bizu Rápido'
-      description: 'Compacto e eficiente — respostas ágeis'
-      preset:
-        endpoint: 'OpenRouter'
-        model: 'qwen/qwen3-30b-a3b'
-
-# Models via OpenRouter
+# DeepSeek models via OpenRouter
 endpoints:
-  # Restrict agent capabilities — disable all tools for Bizu v1
-  agents:
-    disableBuilder: true
-    capabilities: []
   custom:
     - name: 'OpenRouter'
       apiKey: '${OPENROUTER_KEY}'

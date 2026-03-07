@@ -1,7 +1,8 @@
+/* eslint-disable i18next/no-literal-string */
 import React, { Fragment } from 'react';
 import { EarthIcon, LockIcon } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
-import type { TModelSpec } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'bizu-data-provider';
+import type { TModelSpec } from 'bizu-data-provider';
 import type { Endpoint } from '~/common';
 import { useAuthContext } from '~/hooks';
 import { isModelAllowedForPlan } from '~/utils/planModels';
@@ -184,7 +185,9 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                           Upgrade
                         </span>
                       )}
-                      {!isLocked && isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}
+                      {!isLocked && isGlobal && (
+                        <EarthIcon className="ml-auto size-4 text-green-400" />
+                      )}
                       {selectedEndpoint === endpoint.value && selectedModel === modelId && (
                         <svg
                           width="16"

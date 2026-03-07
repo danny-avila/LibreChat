@@ -1,6 +1,6 @@
-import { Tools } from 'librechat-data-provider';
+import { Tools } from 'bizu-data-provider';
 import { useState, useRef, useMemo, useLayoutEffect, useEffect } from 'react';
-import type { MemoryArtifact, TAttachment } from 'librechat-data-provider';
+import type { MemoryArtifact, TAttachment } from 'bizu-data-provider';
 import MemoryInfo from './MemoryInfo';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';

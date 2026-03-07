@@ -1,6 +1,6 @@
 import logger from '~/config/winston';
-import { removeNullishValues } from 'librechat-data-provider';
-import type { TCustomConfig, TConfigDefaults } from 'librechat-data-provider';
+import { removeNullishValues } from 'bizu-data-provider';
+import type { TCustomConfig, TConfigDefaults } from 'bizu-data-provider';
 
 /**
  * Loads and maps the Cloudflare Turnstile configuration.

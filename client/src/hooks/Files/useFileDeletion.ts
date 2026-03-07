@@ -1,7 +1,7 @@
 import debounce from 'lodash/debounce';
-import { FileSources, EToolResources, removeNullishValues } from 'librechat-data-provider';
+import { FileSources, EToolResources, removeNullishValues } from 'bizu-data-provider';
 import { useCallback, useState, useEffect } from 'react';
-import type * as t from 'librechat-data-provider';
+import type * as t from 'bizu-data-provider';
 import type { UseMutateAsyncFunction } from '@tanstack/react-query';
 import type { ExtendedFile, GenericSetter } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';

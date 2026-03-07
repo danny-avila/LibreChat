@@ -1,6 +1,6 @@
 const axios = require('axios');
-const { logAxiosError, resolveHeaders } = require('@librechat/api');
-const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
+const { logAxiosError, resolveHeaders } = require('@bizu/api');
+const { EModelEndpoint, defaultModels } = require('bizu-data-provider');
 
 const {
   fetchModels,
@@ -11,8 +11,8 @@ const {
   getAnthropicModels,
 } = require('./ModelService');
 
-jest.mock('@librechat/api', () => {
-  const originalUtils = jest.requireActual('@librechat/api');
+jest.mock('@bizu/api', () => {
+  const originalUtils = jest.requireActual('@bizu/api');
   return {
     ...originalUtils,
     processModelData: jest.fn((...args) => {
@@ -30,8 +30,8 @@ jest.mock('~/cache/getLogStores', () =>
     set: jest.fn().mockResolvedValue(true),
   })),
 );
-jest.mock('@librechat/data-schemas', () => ({
-  ...jest.requireActual('@librechat/data-schemas'),
+jest.mock('@bizu/data-schemas', () => ({
+  ...jest.requireActual('@bizu/data-schemas'),
   logger: {
     error: jest.fn(),
   },
@@ -174,7 +174,7 @@ describe('fetchModels with createTokenConfig true', () => {
 
   beforeEach(() => {
     // Clears the mock's history before each test
-    const _utils = require('@librechat/api');
+    const _utils = require('@bizu/api');
     axios.get.mockResolvedValue({ data });
   });
 
@@ -186,7 +186,7 @@ describe('fetchModels with createTokenConfig true', () => {
       createTokenConfig: true,
     });
 
-    const { processModelData } = require('@librechat/api');
+    const { processModelData } = require('@bizu/api');
     expect(processModelData).toHaveBeenCalled();
     expect(processModelData).toHaveBeenCalledWith(data);
   });
@@ -254,8 +254,8 @@ describe('getOpenAIModels with mocked config', () => {
         userProvidedOpenAI: true,
       },
     }));
-    jest.mock('librechat-data-provider', () => {
-      const original = jest.requireActual('librechat-data-provider');
+    jest.mock('bizu-data-provider', () => {
+      const original = jest.requireActual('bizu-data-provider');
       return {
         ...original,
         defaultModels: {

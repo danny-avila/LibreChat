@@ -14,7 +14,7 @@ jest.mock('~/config', () => ({
 }));
 
 // Mock all other dependencies that might cause issues
-jest.mock('librechat-data-provider', () => ({
+jest.mock('bizu-data-provider', () => ({
   isUUID: { parse: jest.fn() },
   megabyte: 1024 * 1024,
   PrincipalType: {
@@ -101,7 +101,7 @@ jest.mock('~/server/utils', () => ({
   determineFileType: jest.fn(),
 }));
 
-jest.mock('@librechat/api', () => ({
+jest.mock('@bizu/api', () => ({
   parseText: jest.fn(),
   parseTextNative: jest.fn(),
 }));

@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { ChevronLeft, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, useToastContext } from '@librechat/client';
-import { Constants, QueryKeys } from 'librechat-data-provider';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import type { TUpdateUserPlugins } from 'librechat-data-provider';
+import { Button, useToastContext } from '@bizu/client';
+import { Constants, QueryKeys } from 'bizu-data-provider';
+import { useUpdateUserPluginsMutation } from 'bizu-data-provider/react-query';
+import type { TUpdateUserPlugins } from 'bizu-data-provider';
 import ServerInitializationSection from '~/components/MCP/ServerInitializationSection';
 import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
 import { MCPPanelProvider, useMCPPanelContext } from '~/Providers';

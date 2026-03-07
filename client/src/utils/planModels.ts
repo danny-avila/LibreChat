@@ -13,10 +13,7 @@ const planModels: Record<string, string[]> = {
   pro_global: ['*'],
 };
 
-export function isModelAllowedForPlan(
-  plan: string | undefined,
-  model: string,
-): boolean {
+export function isModelAllowedForPlan(plan: string | undefined, model: string): boolean {
   const allowed = planModels[plan ?? 'free'] ?? planModels.free;
   if (allowed.includes('*')) {
     return true;

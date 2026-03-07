@@ -1,7 +1,7 @@
-import { FileSources } from 'librechat-data-provider';
+import { FileSources } from 'bizu-data-provider';
 import { Readable } from 'stream';
 
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@bizu/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
     warn: jest.fn(),

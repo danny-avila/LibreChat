@@ -1,5 +1,5 @@
 /* eslint-disable i18next/no-literal-string */
-import { Button } from '@librechat/client';
+import { Button } from '@bizu/client';
 import { useRouteError } from 'react-router-dom';
 import { useLocalize } from '~/hooks';
 import logger from '~/utils/logger';

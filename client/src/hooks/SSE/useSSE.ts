@@ -9,8 +9,8 @@ import {
   createPayload,
   LocalStorageKeys,
   removeNullishValues,
-} from 'librechat-data-provider';
-import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
+} from 'bizu-data-provider';
+import type { TMessage, TPayload, TSubmission, EventSubmission } from 'bizu-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';

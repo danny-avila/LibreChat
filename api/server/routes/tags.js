@@ -1,7 +1,7 @@
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
-const { generateCheckAccess } = require('@librechat/api');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { logger } = require('@bizu/data-schemas');
+const { generateCheckAccess } = require('@bizu/api');
+const { PermissionTypes, Permissions } = require('bizu-data-provider');
 const {
   updateTagsForConversation,
   updateConversationTag,

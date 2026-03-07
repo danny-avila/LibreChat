@@ -1,4 +1,4 @@
-const { removeNullishValues, anthropicSettings } = require('librechat-data-provider');
+const { removeNullishValues, anthropicSettings } = require('bizu-data-provider');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 
 const buildOptions = (endpoint, parsedBody) => {

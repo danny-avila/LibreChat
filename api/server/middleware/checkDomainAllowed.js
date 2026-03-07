@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { isEmailDomainAllowed } = require('@librechat/api');
+const { logger } = require('@bizu/data-schemas');
+const { isEmailDomainAllowed } = require('@bizu/api');
 const { getAppConfig } = require('~/server/services/Config');
 
 /**

@@ -1,5 +1,5 @@
-import { memorySchema } from 'librechat-data-provider';
-import type { TCustomConfig, TMemoryConfig } from 'librechat-data-provider';
+import { memorySchema } from 'bizu-data-provider';
+import type { TCustomConfig, TMemoryConfig } from 'bizu-data-provider';
 
 const hasValidAgent = (agent: TMemoryConfig['agent']) =>
   !!agent &&

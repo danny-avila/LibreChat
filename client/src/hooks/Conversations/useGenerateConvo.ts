@@ -1,14 +1,14 @@
 import { useRecoilValue } from 'recoil';
 import { useCallback, useRef, useEffect } from 'react';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { getEndpointField, LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import { useGetModelsQuery } from 'bizu-data-provider/react-query';
+import { getEndpointField, LocalStorageKeys, isAssistantsEndpoint } from 'bizu-data-provider';
 import type {
   TEndpointsConfig,
   EModelEndpoint,
   TModelsConfig,
   TConversation,
   TPreset,
-} from 'librechat-data-provider';
+} from 'bizu-data-provider';
 import type { AssistantListItem } from '~/common';
 import type { SetterOrUpdater } from 'recoil';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';

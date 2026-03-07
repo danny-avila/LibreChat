@@ -1,12 +1,7 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
-import type {
-  TModelSpec,
-  TAgentsMap,
-  TAssistantsMap,
-  TEndpointsConfig,
-} from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'bizu-data-provider';
+import type { TModelSpec, TAgentsMap, TAssistantsMap, TEndpointsConfig } from 'bizu-data-provider';
 import type { useLocalize } from '~/hooks';
 import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
 import { Endpoint, SelectedValues } from '~/common';
@@ -184,8 +179,7 @@ export const getDisplayValue = ({
     // Try to find a matching modelSpec by endpoint+model
     const matchingSpec = modelSpecs.find(
       (s) =>
-        s.preset?.endpoint === selectedValues.endpoint &&
-        s.preset?.model === selectedValues.model,
+        s.preset?.endpoint === selectedValues.endpoint && s.preset?.model === selectedValues.model,
     );
     if (matchingSpec) {
       return matchingSpec.label || matchingSpec.name;

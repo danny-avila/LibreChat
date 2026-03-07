@@ -5,7 +5,7 @@ jest.mock('@librechat/agents', () => ({
   sleep: jest.fn(),
 }));
 
-jest.mock('@librechat/api', () => ({
+jest.mock('@bizu/api', () => ({
   isEnabled: jest.fn(),
   createAxiosInstance: jest.fn(() => ({
     get: jest.fn(),
@@ -16,7 +16,7 @@ jest.mock('@librechat/api', () => ({
   logAxiosError: jest.fn(),
 }));
 
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@bizu/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
     info: jest.fn(),
@@ -86,7 +86,7 @@ jest.mock('multer', () => {
   }));
 });
 
-jest.mock('librechat-data-provider', () => ({
+jest.mock('bizu-data-provider', () => ({
   CacheKeys: {
     GEN_TITLE: 'GEN_TITLE',
   },
@@ -191,7 +191,7 @@ describe('Convos Routes', () => {
       expect(response.text).toBe('Error clearing conversations');
 
       /** Verify error was logged */
-      const { logger } = require('@librechat/data-schemas');
+      const { logger } = require('@bizu/data-schemas');
       expect(logger.error).toHaveBeenCalledWith('Error clearing conversations', expect.any(Error));
     });
 

@@ -1,6 +1,6 @@
 import { MCPTokenStorage } from '~/mcp/oauth/tokens';
 import { decryptV2 } from '~/crypto';
-import type { TokenMethods, IToken } from '@librechat/data-schemas';
+import type { TokenMethods, IToken } from '@bizu/data-schemas';
 import { Types } from 'mongoose';
 
 jest.mock('~/crypto', () => ({

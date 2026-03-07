@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@bizu/data-schemas';
 import type { mongo } from 'mongoose';
 
 /**

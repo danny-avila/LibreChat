@@ -6,9 +6,9 @@ import {
   DropdownMenuGroup,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from '@librechat/client';
-import { PermissionBits } from 'librechat-data-provider';
-import type { TPromptGroup } from 'librechat-data-provider';
+} from '@bizu/client';
+import { PermissionBits } from 'bizu-data-provider';
+import type { TPromptGroup } from 'bizu-data-provider';
 import { useLocalize, useSubmitMessage, useCustomLink, useResourcePermissions } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import PreviewPrompt from '~/components/Prompts/PreviewPrompt';

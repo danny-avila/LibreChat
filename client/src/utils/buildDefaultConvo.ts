@@ -3,8 +3,8 @@ import {
   EModelEndpoint,
   isAssistantsEndpoint,
   isAgentsEndpoint,
-} from 'librechat-data-provider';
-import type { TConversation, EndpointSchemaKey } from 'librechat-data-provider';
+} from 'bizu-data-provider';
+import type { TConversation, EndpointSchemaKey } from 'bizu-data-provider';
 import { getLocalStorageItems } from './localStorage';
 
 const buildDefaultConvo = ({

@@ -1,8 +1,8 @@
 import { useRecoilValue } from 'recoil';
-import { QueryKeys, dataService } from 'librechat-data-provider';
+import { QueryKeys, dataService } from 'bizu-data-provider';
 import { useQuery } from '@tanstack/react-query';
 import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
-import type t from 'librechat-data-provider';
+import type t from 'bizu-data-provider';
 import store from '~/store';
 
 export const useGetUserQuery = (

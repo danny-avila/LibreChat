@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
   useToastContext,
-} from '@librechat/client';
+} from '@bizu/client';
 import {
   flexRender,
   getCoreRowModel,
@@ -32,7 +32,7 @@ import {
   isAssistantsEndpoint,
   getEndpointFileConfig,
   type TFile,
-} from 'librechat-data-provider';
+} from 'bizu-data-provider';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';

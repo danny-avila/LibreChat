@@ -5,7 +5,7 @@ const {
   bedrockInputParser,
   bedrockOutputParser,
   removeNullishValues,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {

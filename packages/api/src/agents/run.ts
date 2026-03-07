@@ -1,5 +1,5 @@
 import { Run, Providers } from '@librechat/agents';
-import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
+import { providerEndpointMap, KnownEndpoints } from 'bizu-data-provider';
 import type {
   MultiAgentGraphConfig,
   OpenAIClientOptions,
@@ -9,8 +9,8 @@ import type {
   RunConfig,
   IState,
 } from '@librechat/agents';
-import type { IUser } from '@librechat/data-schemas';
-import type { Agent } from 'librechat-data-provider';
+import type { IUser } from '@bizu/data-schemas';
+import type { Agent } from 'bizu-data-provider';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 

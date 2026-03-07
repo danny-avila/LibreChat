@@ -2,9 +2,9 @@ const axios = require('axios');
 const fs = require('fs').promises;
 const FormData = require('form-data');
 const { Readable } = require('stream');
-const { logger } = require('@librechat/data-schemas');
-const { genAzureEndpoint } = require('@librechat/api');
-const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
+const { logger } = require('@bizu/data-schemas');
+const { genAzureEndpoint } = require('@bizu/api');
+const { extractEnvVariable, STTProviders } = require('bizu-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
 
 /**
@@ -117,7 +117,7 @@ class STTService {
     const sttSchema = appConfig?.speech?.stt;
     if (!sttSchema) {
       throw new Error(
-        'No STT schema is set. Did you configure STT in the custom config (librechat.yaml)?',
+        'No STT schema is set. Did you configure STT in the custom config (bizu.yaml)?',
       );
     }
 

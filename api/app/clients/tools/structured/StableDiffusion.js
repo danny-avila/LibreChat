@@ -6,9 +6,9 @@ const axios = require('axios');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('@langchain/core/tools');
-const { logger } = require('@librechat/data-schemas');
-const { FileContext, ContentTypes } = require('librechat-data-provider');
-const { getBasePath } = require('@librechat/api');
+const { logger } = require('@bizu/data-schemas');
+const { FileContext, ContentTypes } = require('bizu-data-provider');
+const { getBasePath } = require('@bizu/api');
 const paths = require('~/config/paths');
 
 const displayMessage =

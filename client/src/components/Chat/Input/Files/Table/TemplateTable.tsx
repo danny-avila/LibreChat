@@ -1,4 +1,5 @@
-import { DotsIcon, TrashIcon } from '@librechat/client';
+/* eslint-disable i18next/no-literal-string */
+import { DotsIcon, TrashIcon } from '@bizu/client';
 
 export default function Template() {
   return (

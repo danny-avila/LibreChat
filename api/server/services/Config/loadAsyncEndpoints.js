@@ -1,7 +1,7 @@
 const path = require('path');
-const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
-const { loadServiceKey, isUserProvided } = require('@librechat/api');
+const { logger } = require('@bizu/data-schemas');
+const { EModelEndpoint } = require('bizu-data-provider');
+const { loadServiceKey, isUserProvided } = require('@bizu/api');
 const { config } = require('./EndpointService');
 
 const { openAIApiKey, azureOpenAIApiKey, useAzurePlugins, userProvidedOpenAI, googleKey } = config;

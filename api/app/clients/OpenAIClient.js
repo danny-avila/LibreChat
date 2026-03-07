@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@bizu/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { sleep, SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
 const {
@@ -11,7 +11,7 @@ const {
   genAzureChatCompletion,
   getModelMaxOutputTokens,
   createStreamEventHandlers,
-} = require('@librechat/api');
+} = require('@bizu/api');
 const {
   Constants,
   ImageDetail,
@@ -24,7 +24,7 @@ const {
   getResponseSender,
   validateVisionModel,
   mapModelToAzureConfig,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { formatMessage, createContextHandlers } = require('./prompts');
 const { spendTokens } = require('~/models/spendTokens');
@@ -787,8 +787,8 @@ class OpenAIClient extends BaseClient {
 
       if (this.useOpenRouter) {
         opts.defaultHeaders = {
-          'HTTP-Referer': 'https://librechat.ai',
-          'X-Title': 'LibreChat',
+          'HTTP-Referer': 'https://bizu.ai',
+          'X-Title': 'Bizu',
         };
       }
 

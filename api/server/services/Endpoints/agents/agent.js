@@ -2,10 +2,10 @@ const { Providers } = require('@librechat/agents');
 const {
   primeResources,
   getModelMaxTokens,
-  extractLibreChatParams,
+  extractBizuParams,
   filterFilesByEndpointConfig,
   optionalChainWithEmptyCheck,
-} = require('@librechat/api');
+} = require('@bizu/api');
 const {
   ErrorTypes,
   EModelEndpoint,
@@ -14,7 +14,7 @@ const {
   isAgentsEndpoint,
   replaceSpecialVars,
   providerEndpointMap,
-} = require('librechat-data-provider');
+} = require('bizu-data-provider');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 const { getProviderConfig } = require('~/server/services/Endpoints');
 const { processFiles } = require('~/server/services/Files/process');
@@ -71,7 +71,7 @@ const initializeAgent = async ({
     ),
   );
 
-  const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(_modelOptions);
+  const { resendFiles, maxContextTokens, modelOptions } = extractBizuParams(_modelOptions);
 
   const provider = agent.provider;
   agent.endpoint = provider;

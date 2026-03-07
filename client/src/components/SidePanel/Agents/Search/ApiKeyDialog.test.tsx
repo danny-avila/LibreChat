@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ApiKeyDialog from './ApiKeyDialog';
-import { AuthType, SearchCategories, RerankerTypes } from 'librechat-data-provider';
+import { AuthType, SearchCategories, RerankerTypes } from 'bizu-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 
 // Mock useLocalize to just return the key

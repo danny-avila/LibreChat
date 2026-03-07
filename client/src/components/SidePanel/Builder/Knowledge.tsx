@@ -1,10 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import {
-  mergeFileConfig,
-  retrievalMimeTypes,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
-import type { AssistantsEndpoint } from 'librechat-data-provider';
+import { mergeFileConfig, retrievalMimeTypes, getEndpointFileConfig } from 'bizu-data-provider';
+import type { AssistantsEndpoint } from 'bizu-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';

@@ -1,9 +1,9 @@
 const mongoose = require('mongoose');
 const crypto = require('node:crypto');
-const { logger } = require('@librechat/data-schemas');
-const { ResourceType, SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
+const { logger } = require('@bizu/data-schemas');
+const { ResourceType, SystemRoles, Tools, actionDelimiter } = require('bizu-data-provider');
 const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_all, mcp_delimiter } =
-  require('librechat-data-provider').Constants;
+  require('bizu-data-provider').Constants;
 const {
   removeAgentFromAllProjects,
   removeAgentIdsFromProject,

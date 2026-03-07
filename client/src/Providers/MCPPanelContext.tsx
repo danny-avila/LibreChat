@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import { Constants } from 'librechat-data-provider';
+import { Constants } from 'bizu-data-provider';
 import { useChatContext } from './ChatContext';
 
 interface MCPPanelContextValue {

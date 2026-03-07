@@ -15,7 +15,7 @@ import type {
   VisibilityState,
   ColumnFiltersState,
 } from '@tanstack/react-table';
-import { FileContext } from 'librechat-data-provider';
+import { FileContext } from 'bizu-data-provider';
 import {
   Button,
   Input,
@@ -32,8 +32,8 @@ import {
   TrashIcon,
   Spinner,
   useMediaQuery,
-} from '@librechat/client';
-import type { TFile } from 'librechat-data-provider';
+} from '@bizu/client';
+import type { TFile } from 'bizu-data-provider';
 import type { AugmentedColumnDef } from '~/common';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
 import { useLocalize } from '~/hooks';

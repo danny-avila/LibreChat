@@ -1,11 +1,7 @@
 import { useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
-import {
-  AuthTypeEnum,
-  AuthorizationTypeEnum,
-  TokenExchangeMethodEnum,
-} from 'librechat-data-provider';
+import { AuthTypeEnum, AuthorizationTypeEnum, TokenExchangeMethodEnum } from 'bizu-data-provider';
 import {
   Label,
   OGDialog,
@@ -13,7 +9,7 @@ import {
   OGDialogTrigger,
   useToastContext,
   OGDialogTemplate,
-} from '@librechat/client';
+} from '@bizu/client';
 import type { MCPForm } from '~/common';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { defaultMCPFormValues } from '~/common/mcp';

@@ -1,5 +1,5 @@
-import { EModelEndpoint, AuthType } from 'librechat-data-provider';
-import type { TModelSpec } from 'librechat-data-provider';
+import { EModelEndpoint, AuthType } from 'bizu-data-provider';
+import type { TModelSpec } from 'bizu-data-provider';
 
 export const data: TModelSpec[] = [
   {
@@ -33,7 +33,7 @@ export const data: TModelSpec[] = [
     iconURL: EModelEndpoint.openAI, // Allow using project-included icons
     preset: {
       chatGptLabel: 'Vision Helper',
-      greeting: 'What\'s up!!',
+      greeting: "What's up!!",
       endpoint: EModelEndpoint.openAI,
       model: 'gpt-4-turbo',
       promptPrefix:
