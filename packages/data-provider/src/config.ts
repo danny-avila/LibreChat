@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
-import { EModelEndpoint, eModelEndpointSchema } from './schemas';
+import { EModelEndpoint, eModelEndpointSchema, isAgentsEndpoint } from './schemas';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
@@ -1924,6 +1924,37 @@ export function getEndpointField<
     return undefined;
   }
   return config[property];
+}
+
+/**
+ * Resolves the effective endpoint type following the chain:
+ * endpoint (if not agents) → agent.provider → agents → default (endpoint itself)
+ *
+ * For non-agents endpoints, resolves from the endpoint's config type.
+ * For agents, resolves from the agent's provider config type, falling back to "agents".
+ */
+export function resolveEndpointType(
+  endpointsConfig: TEndpointsConfig | undefined | null,
+  endpoint: string | null | undefined,
+  agentProvider?: string | null,
+): EModelEndpoint | string | undefined {
+  if (!endpoint) {
+    return undefined;
+  }
+
+  if (!isAgentsEndpoint(endpoint)) {
+    return getEndpointField(endpointsConfig, endpoint, 'type') || endpoint;
+  }
+
+  if (agentProvider) {
+    const providerType = getEndpointField(endpointsConfig, agentProvider, 'type');
+    if (providerType) {
+      return providerType;
+    }
+    return agentProvider;
+  }
+
+  return EModelEndpoint.agents;
 }
 
 /** Resolves the `defaultParamsEndpoint` for a given endpoint from its custom params config */

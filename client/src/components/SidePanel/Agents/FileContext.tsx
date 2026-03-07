@@ -1,10 +1,12 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
+import { useWatch } from 'react-hook-form';
 import {
   EModelEndpoint,
   EToolResources,
   mergeFileConfig,
+  resolveEndpointType,
   getEndpointFileConfig,
 } from 'librechat-data-provider';
 import {
@@ -17,9 +19,9 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@librechat/client';
-import type { ExtendedFile } from '~/common';
+import type { ExtendedFile, AgentForm } from '~/common';
+import { useGetFileConfig, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
 import { useLocalize, useLazyEffect } from '~/hooks';
-import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { ESide, isEphemeralAgent } from '~/common';
@@ -73,10 +75,17 @@ function FileContext({
     750,
   );
 
+  const providerOption = useWatch<AgentForm>({ name: 'provider' });
+  const { data: endpointsConfig } = useGetEndpointsQuery();
+  const providerValue =
+    typeof providerOption === 'string'
+      ? providerOption
+      : (providerOption as { value?: string } | undefined)?.value;
+  const endpointType = resolveEndpointType(endpointsConfig, EModelEndpoint.agents, providerValue);
   const endpointFileConfig = getEndpointFileConfig({
     fileConfig,
-    endpoint: EModelEndpoint.agents,
-    endpointType: EModelEndpoint.agents,
+    endpoint: providerValue ?? EModelEndpoint.agents,
+    endpointType,
   });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
