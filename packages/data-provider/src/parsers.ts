@@ -243,6 +243,8 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return 'Mistral';
     } else if (model && model.includes('deepseek')) {
       return 'Deepseek';
+    } else if (model && model.includes('qwen')) {
+      return 'Qwen';
     } else if (model && model.includes('gpt-')) {
       const gptVersion = extractGPTVersion(model);
       return gptVersion || 'GPT';
@@ -281,6 +283,8 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       return 'Mistral';
     } else if (model && model.includes('deepseek')) {
       return 'Deepseek';
+    } else if (model && model.includes('qwen')) {
+      return 'Qwen';
     } else if (model && model.includes('gpt-')) {
       const gptVersion = extractGPTVersion(model);
       return gptVersion || 'GPT';
