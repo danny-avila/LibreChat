@@ -31,11 +31,14 @@ function FileSearch({
 
   // Get startup configuration for SharePoint feature flag
   const { data: startupConfig } = useGetStartupConfig();
+  const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
+  const endpointOverride = providerValue ?? EModelEndpoint.agents;
 
   const { handleFileChange } = useFileHandlingNoChatContext(
     {
       additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-      endpointOverride: EModelEndpoint.agents,
+      endpointOverride,
+      endpointTypeOverride: endpointType,
       fileSetter: setFiles,
     },
     fileHandlingState,
@@ -45,7 +48,8 @@ function FileSearch({
     useSharePointFileHandlingNoChatContext(
       {
         additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-        endpointOverride: EModelEndpoint.agents,
+        endpointOverride,
+        endpointTypeOverride: endpointType,
         fileSetter: setFiles,
       },
       fileHandlingState,
@@ -62,8 +66,6 @@ function FileSearch({
   );
 
   const fileSearchChecked = watch(AgentCapabilities.file_search);
-
-  const { endpointFileConfig } = useAgentFileConfig();
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;

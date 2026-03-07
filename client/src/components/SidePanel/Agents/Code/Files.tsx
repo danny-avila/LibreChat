@@ -22,11 +22,14 @@ function Files({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
   const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
+  const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
+  const endpointOverride = providerValue ?? EModelEndpoint.agents;
   const { abortUpload, handleFileChange } = useFileHandlingNoChatContext(
     {
       fileSetter: setFiles,
       additionalMetadata: { agent_id, tool_resource },
-      endpointOverride: EModelEndpoint.agents,
+      endpointOverride,
+      endpointTypeOverride: endpointType,
     },
     fileHandlingState,
   );
@@ -42,8 +45,6 @@ function Files({
   );
 
   const codeChecked = watch(AgentCapabilities.execute_code);
-
-  const { endpointFileConfig } = useAgentFileConfig();
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   if (isUploadDisabled) {

@@ -36,11 +36,14 @@ function FileContext({
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
+  const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
+  const endpointOverride = providerValue ?? EModelEndpoint.agents;
 
   const { handleFileChange } = useFileHandlingNoChatContext(
     {
       additionalMetadata: { agent_id, tool_resource: EToolResources.context },
-      endpointOverride: EModelEndpoint.agents,
+      endpointOverride,
+      endpointTypeOverride: endpointType,
       fileSetter: setFiles,
     },
     fileHandlingState,
@@ -49,7 +52,8 @@ function FileContext({
     useSharePointFileHandlingNoChatContext(
       {
         additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-        endpointOverride: EModelEndpoint.agents,
+        endpointOverride,
+        endpointTypeOverride: endpointType,
         fileSetter: setFiles,
       },
       fileHandlingState,
@@ -63,8 +67,6 @@ function FileContext({
     [_files],
     750,
   );
-
-  const { endpointFileConfig } = useAgentFileConfig();
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
     try {
