@@ -43,13 +43,37 @@ export function getToolIconType(name: string): ToolIconType {
   return 'generic';
 }
 
+export function getMCPServerName(toolName: string): string {
+  if (!toolName.includes(Constants.mcp_delimiter)) {
+    return '';
+  }
+  const [, server] = toolName.split(Constants.mcp_delimiter);
+  return server || '';
+}
+
 interface ToolIconProps {
   type: ToolIconType;
+  iconUrl?: string;
   isAnimating?: boolean;
   className?: string;
 }
 
-export default function ToolIcon({ type, isAnimating = false, className }: ToolIconProps) {
+export default function ToolIcon({ type, iconUrl, isAnimating = false, className }: ToolIconProps) {
+  if (iconUrl) {
+    return (
+      <img
+        src={iconUrl}
+        alt=""
+        className={cn(
+          'size-4 shrink-0 rounded-full object-cover',
+          isAnimating && 'animate-pulse',
+          className,
+        )}
+        aria-hidden="true"
+      />
+    );
+  }
+
   const IconComponent = ICON_MAP[type];
   return (
     <IconComponent

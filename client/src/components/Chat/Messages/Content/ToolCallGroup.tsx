@@ -3,6 +3,7 @@ import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { TMessageContentParts, Agents, TAttachment } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
+import { useMCPIconMap } from '~/hooks/MCP';
 import type { PartWithIndex } from './ParallelContent';
 import { StackedToolIcons } from './ToolOutput';
 import ToolCall from './ToolCall';
@@ -39,6 +40,7 @@ export default function ToolCallGroup({
   attachmentMap,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
+  const mcpIconMap = useMCPIconMap();
   const count = parts.length;
 
   const allCompleted = useMemo(() => {
@@ -94,7 +96,11 @@ export default function ToolCallGroup({
         aria-expanded={isExpanded}
         aria-label={localize('com_ui_used_n_tools', { 0: String(count) })}
       >
-        <StackedToolIcons toolNames={toolNames} isAnimating={!allCompleted && isSubmitting} />
+        <StackedToolIcons
+          toolNames={toolNames}
+          mcpIconMap={mcpIconMap}
+          isAnimating={!allCompleted && isSubmitting}
+        />
         <span className="text-sm font-medium">
           {localize('com_ui_used_n_tools', { 0: String(count) })}
         </span>
