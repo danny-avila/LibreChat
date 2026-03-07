@@ -1,49 +1,38 @@
-import { useState, useMemo } from 'react';
-import { useLocalize } from '~/hooks';
-import { detectOutputType, OutputType } from './detectOutputType';
-import TableOutput from './TableOutput';
-import ErrorOutput from './ErrorOutput';
+import { useMemo } from 'react';
 
-const MAX_LINES = 8;
+interface ContentBlock {
+  type?: string;
+  text?: string;
+}
 
-function TruncatedOutput({ text }: { text: string }) {
-  const localize = useLocalize();
-  const [showAll, setShowAll] = useState(false);
+function extractText(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return '';
+  }
 
-  const formatted = useMemo(() => {
-    const trimmed = text.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try {
-        return JSON.stringify(JSON.parse(trimmed), null, 2);
-      } catch {
-        return text;
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return (parsed as ContentBlock[])
+          .filter((block) => typeof block.text === 'string')
+          .map((block) => block.text)
+          .join('\n')
+          .trim();
       }
+      if (typeof parsed === 'object' && parsed !== null) {
+        const obj = parsed as ContentBlock;
+        if (typeof obj.text === 'string') {
+          return obj.text.trim();
+        }
+      }
+    } catch {
+      // Not JSON — fall through to raw text
     }
-    return text;
-  }, [text]);
+  }
 
-  const lines = useMemo(() => formatted.split('\n'), [formatted]);
-  const needsTruncation = lines.length > MAX_LINES;
-
-  const displayText =
-    needsTruncation && !showAll ? lines.slice(0, MAX_LINES).join('\n') + '\n...' : formatted;
-
-  return (
-    <div>
-      <pre className="max-h-[300px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-tertiary p-3 font-mono text-xs text-text-primary">
-        <code>{displayText}</code>
-      </pre>
-      {needsTruncation && (
-        <button
-          type="button"
-          className="mt-1.5 text-xs text-text-secondary transition-colors hover:text-text-primary"
-          onClick={() => setShowAll((prev) => !prev)}
-        >
-          {showAll ? localize('com_ui_show_less') : localize('com_ui_show_more')}
-        </button>
-      )}
-    </div>
-  );
+  return trimmed;
 }
 
 interface OutputRendererProps {
@@ -51,15 +40,15 @@ interface OutputRendererProps {
 }
 
 export default function OutputRenderer({ text }: OutputRendererProps) {
-  const detected = useMemo(() => detectOutputType(text), [text]);
+  const displayText = useMemo(() => extractText(text), [text]);
 
-  if (detected.type === OutputType.ERROR) {
-    return <ErrorOutput text={text} />;
+  if (!displayText) {
+    return null;
   }
 
-  if (detected.type === OutputType.TABLE) {
-    return <TableOutput data={detected.parsed as Record<string, unknown>[]} />;
-  }
-
-  return <TruncatedOutput text={text} />;
+  return (
+    <pre className="max-h-[300px] overflow-auto whitespace-pre-wrap break-words text-xs text-text-secondary">
+      {displayText}
+    </pre>
+  );
 }

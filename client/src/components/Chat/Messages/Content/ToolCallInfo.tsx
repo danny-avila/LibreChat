@@ -8,20 +8,6 @@ import { OutputRenderer } from './ToolOutput';
 import UIResourceCarousel from './UIResourceCarousel';
 import { cn } from '~/utils';
 
-function isSimpleObject(obj: unknown): obj is Record<string, string | number | boolean | null> {
-  if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
-    return false;
-  }
-  const entries = Object.entries(obj);
-  if (entries.length === 0 || entries.length > 6) {
-    return false;
-  }
-  return entries.every(
-    ([, v]) =>
-      v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean',
-  );
-}
-
 function KeyValueInput({ data }: { data: Record<string, string | number | boolean | null> }) {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
@@ -37,6 +23,20 @@ function KeyValueInput({ data }: { data: Record<string, string | number | boolea
   );
 }
 
+function isSimpleObject(obj: unknown): obj is Record<string, string | number | boolean | null> {
+  if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
+    return false;
+  }
+  const entries = Object.entries(obj);
+  if (entries.length === 0 || entries.length > 8) {
+    return false;
+  }
+  return entries.every(
+    ([, v]) =>
+      v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean',
+  );
+}
+
 function InputRenderer({ input }: { input: string }) {
   if (!input || input.trim().length === 0) {
     return null;
@@ -47,18 +47,11 @@ function InputRenderer({ input }: { input: string }) {
     if (isSimpleObject(parsed)) {
       return <KeyValueInput data={parsed} />;
     }
-    return (
-      <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-tertiary p-2 font-mono text-xs text-text-primary">
-        <code>{JSON.stringify(parsed, null, 2)}</code>
-      </pre>
-    );
   } catch {
-    return (
-      <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-tertiary p-2 font-mono text-xs text-text-primary">
-        <code>{input}</code>
-      </pre>
-    );
+    // Not JSON
   }
+
+  return null;
 }
 
 export default function ToolCallInfo({
@@ -74,15 +67,15 @@ export default function ToolCallInfo({
   const [showParams, setShowParams] = useState(false);
   const paramsExpandStyle = useExpandCollapse(showParams);
 
-  const formattedInput = useMemo(() => {
+  const parsedInput = useMemo(() => {
     try {
       const parsed = JSON.parse(input);
       if (typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length === 0) {
-        return '';
+        return null;
       }
-      return JSON.stringify(parsed, null, 2);
+      return parsed;
     } catch {
-      return input;
+      return input || null;
     }
   }, [input]);
 
@@ -93,7 +86,7 @@ export default function ToolCallInfo({
         return attachment[Tools.ui_resources] as UIResource[];
       }) ?? [];
 
-  const hasParams = formattedInput.trim().length > 0;
+  const hasParams = parsedInput !== null && isSimpleObject(parsedInput);
 
   return (
     <div className="w-full p-3">
@@ -119,7 +112,7 @@ export default function ToolCallInfo({
           </button>
           <div style={paramsExpandStyle}>
             <div className="overflow-hidden pt-1">
-              <InputRenderer input={formattedInput} />
+              <InputRenderer input={input} />
             </div>
           </div>
         </>
