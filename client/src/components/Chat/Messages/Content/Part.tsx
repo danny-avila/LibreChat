@@ -7,7 +7,13 @@ import {
   isImageVisionTool,
 } from 'librechat-data-provider';
 import { memo } from 'react';
-import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
+import type {
+  TMessageContentParts,
+  TAttachment,
+  FunctionToolCall,
+  CodeToolCall,
+  Agents,
+} from 'librechat-data-provider';
 import {
   OpenAIImageGen,
   ExecuteCode,

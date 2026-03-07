@@ -500,7 +500,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
 
   // Dialog zoom controls
   const dialogZoomControls = (
-    <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1 rounded-md border border-border-light bg-surface-secondary p-1 shadow-lg">
+    <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1 rounded-full border border-border-light bg-surface-secondary p-1 shadow-lg">
       <button
         type="button"
         onClick={(e) => {
@@ -710,14 +710,14 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
 
     // No previous render, show streaming code
     return (
-      <div className="w-full overflow-hidden rounded-md border border-border-light">
-        <div className="flex items-center gap-2 rounded-t-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200">
-          <Spinner className="h-3 w-3 text-gray-200" />
-          <span>{localize('com_ui_mermaid')}</span>
+      <div className="w-full overflow-hidden rounded-xl border border-border-light shadow-md">
+        <div className="flex items-center gap-2 border-b border-border-light bg-surface-secondary px-4 py-2 font-sans text-xs text-text-secondary">
+          <Spinner className="h-3 w-3" />
+          <span className="font-medium">{localize('com_ui_mermaid')}</span>
         </div>
         <pre
           ref={streamingCodeRef}
-          className="max-h-[350px] min-h-[150px] overflow-auto whitespace-pre-wrap rounded-b-md bg-surface-primary-alt p-4 font-mono text-xs text-text-secondary"
+          className="max-h-[350px] min-h-[150px] overflow-auto whitespace-pre-wrap bg-surface-primary-alt p-4 font-mono text-xs text-text-secondary"
         >
           {children}
         </pre>
@@ -728,7 +728,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   // Error state
   if (error) {
     return (
-      <div className="w-full overflow-hidden rounded-md border border-border-light">
+      <div className="w-full overflow-hidden rounded-xl border border-border-light shadow-md">
         <MermaidHeader codeContent={children} showCode={showCode} onToggleCode={handleToggleCode} />
         <div className="rounded-b-md border-t border-red-500/30 bg-red-500/10 p-4">
           <div className="mb-2 flex items-center justify-between">
@@ -772,7 +772,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
       {expandedDialog}
       <div
         className={cn(
-          'relative w-full overflow-hidden rounded-md border transition-all duration-200',
+          'relative w-full overflow-hidden rounded-xl border shadow-md transition-all duration-200',
           showControls ? 'border-border-light' : 'border-transparent',
         )}
         onMouseEnter={() => setIsHovered(true)}
