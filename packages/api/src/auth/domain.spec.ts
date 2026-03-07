@@ -230,8 +230,36 @@ describe('isPrivateIP', () => {
       expect(isPrivateIP('169.254.0.1')).toBe(true);
     });
 
-    it('should detect 0.0.0.0', () => {
+    it('should detect 0.0.0.0/8 (current network)', () => {
       expect(isPrivateIP('0.0.0.0')).toBe(true);
+      expect(isPrivateIP('0.1.2.3')).toBe(true);
+    });
+
+    it('should detect 100.64.0.0/10 (CGNAT / shared address space)', () => {
+      expect(isPrivateIP('100.64.0.1')).toBe(true);
+      expect(isPrivateIP('100.127.255.255')).toBe(true);
+      expect(isPrivateIP('100.63.255.255')).toBe(false);
+      expect(isPrivateIP('100.128.0.1')).toBe(false);
+    });
+
+    it('should detect 192.0.0.0/24 (IETF protocol assignments)', () => {
+      expect(isPrivateIP('192.0.0.1')).toBe(true);
+      expect(isPrivateIP('192.0.0.255')).toBe(true);
+      expect(isPrivateIP('192.0.1.1')).toBe(false);
+    });
+
+    it('should detect 198.18.0.0/15 (benchmarking)', () => {
+      expect(isPrivateIP('198.18.0.1')).toBe(true);
+      expect(isPrivateIP('198.19.255.255')).toBe(true);
+      expect(isPrivateIP('198.17.0.1')).toBe(false);
+      expect(isPrivateIP('198.20.0.1')).toBe(false);
+    });
+
+    it('should detect 224.0.0.0/4 (multicast) and 240.0.0.0/4 (reserved)', () => {
+      expect(isPrivateIP('224.0.0.1')).toBe(true);
+      expect(isPrivateIP('239.255.255.255')).toBe(true);
+      expect(isPrivateIP('240.0.0.1')).toBe(true);
+      expect(isPrivateIP('255.255.255.255')).toBe(true);
     });
 
     it('should allow public IPs', () => {
@@ -426,8 +454,16 @@ describe('resolveHostnameSSRF', () => {
     expect(await resolveHostnameSSRF('example.com')).toBe(false);
   });
 
-  it('should skip literal IPv4 addresses (handled by isSSRFTarget)', async () => {
-    expect(await resolveHostnameSSRF('169.254.169.254')).toBe(false);
+  it('should detect private literal IPv4 addresses without DNS lookup', async () => {
+    expect(await resolveHostnameSSRF('169.254.169.254')).toBe(true);
+    expect(await resolveHostnameSSRF('127.0.0.1')).toBe(true);
+    expect(await resolveHostnameSSRF('10.0.0.1')).toBe(true);
+    expect(mockedLookup).not.toHaveBeenCalled();
+  });
+
+  it('should allow public literal IPv4 addresses without DNS lookup', async () => {
+    expect(await resolveHostnameSSRF('8.8.8.8')).toBe(false);
+    expect(await resolveHostnameSSRF('93.184.216.34')).toBe(false);
     expect(mockedLookup).not.toHaveBeenCalled();
   });
 
