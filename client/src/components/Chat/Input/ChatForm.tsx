@@ -19,6 +19,7 @@ import {
   useSubmitMessage,
   useFocusChatEffect,
 } from '~/hooks';
+import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
@@ -64,6 +65,18 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   );
 
   const { requiresKey } = useRequiresKey();
+  const { data: startupConfig } = useGetStartupConfig();
+  const balanceQuery = useGetUserBalance({
+    enabled: startupConfig?.balance?.enabled === true,
+  });
+  const balanceExhausted = useMemo(
+    () =>
+      startupConfig?.balance?.enabled === true &&
+      balanceQuery.data != null &&
+      balanceQuery.data.tokenCredits <= 0,
+    [startupConfig?.balance?.enabled, balanceQuery.data],
+  );
+
   const methods = useChatFormContext();
   const {
     files,
@@ -105,8 +118,8 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     [conversation?.assistant_id, endpoint, assistantMap],
   );
   const disableInputs = useMemo(
-    () => requiresKey || invalidAssistant,
-    [requiresKey, invalidAssistant],
+    () => requiresKey || invalidAssistant || balanceExhausted,
+    [requiresKey, invalidAssistant, balanceExhausted],
   );
 
   const handleContainerClick = useCallback(() => {
@@ -205,6 +218,15 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   );
 
   return (
+    <>
+      {balanceExhausted && (
+        <div className="mx-auto mb-2 flex w-full max-w-3xl items-center justify-center gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+          <span>
+            Você atingiu o limite do seu plano. Aguarde a renovação mensal ou faça upgrade para
+            continuar.
+          </span>
+        </div>
+      )}
     <form
       onSubmit={methods.handleSubmit(submitMessage)}
       className={cn(
@@ -359,6 +381,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         </div>
       </div>
     </form>
+    </>
   );
 });
 
