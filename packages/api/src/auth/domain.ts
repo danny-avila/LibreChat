@@ -61,6 +61,9 @@ function isPrivateIPv4(a: number, b: number, c: number): boolean {
 
 /** Checks if an IPv6 address embeds a private IPv4 via 6to4, NAT64, or Teredo */
 function hasPrivateEmbeddedIPv4(ipv6: string): boolean {
+  if (!ipv6.startsWith('2002:') && !ipv6.startsWith('64:ff9b::') && !ipv6.startsWith('2001::')) {
+    return false;
+  }
   const segments = ipv6.split(':').filter((s) => s !== '');
 
   if (ipv6.startsWith('2002:') && segments.length >= 3) {
