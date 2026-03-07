@@ -41,4 +41,5 @@ export interface IAgent extends Omit<Document, 'model'> {
   mcpServerNames?: string[];
   /** Per-tool configuration (defer_loading, allowed_callers) */
   tool_options?: AgentToolOptions;
+  tenantId?: string;
 }

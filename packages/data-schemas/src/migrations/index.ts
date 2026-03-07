@@ -1,0 +1,1 @@
+export { dropSupersededTenantIndexes } from './tenantIndexes';

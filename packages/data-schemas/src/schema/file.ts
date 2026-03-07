@@ -78,6 +78,10 @@ const file: Schema<IMongoFile> = new Schema(
       type: Date,
       expires: 3600, // 1 hour in seconds
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -86,7 +90,7 @@ const file: Schema<IMongoFile> = new Schema(
 
 file.index({ createdAt: 1, updatedAt: 1 });
 file.index(
-  { filename: 1, conversationId: 1, context: 1 },
+  { filename: 1, conversationId: 1, context: 1, tenantId: 1 },
   { unique: true, partialFilterExpression: { context: FileContext.execute_code } },
 );
 
