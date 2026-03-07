@@ -196,6 +196,7 @@ export type TUser = {
   name: string;
   avatar: string;
   role: string;
+  plan?: 'free' | 'basic_cn' | 'pro_global';
   provider: string;
   plugins?: string[];
   twoFactorEnabled?: boolean;

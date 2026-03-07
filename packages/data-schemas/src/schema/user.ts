@@ -66,6 +66,11 @@ const userSchema = new Schema<IUser>(
       type: String,
       default: SystemRoles.USER,
     },
+    plan: {
+      type: String,
+      enum: ['free', 'basic_cn', 'pro_global'],
+      default: 'free',
+    },
     googleId: {
       type: String,
       unique: true,

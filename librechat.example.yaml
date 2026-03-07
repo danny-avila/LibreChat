@@ -54,6 +54,14 @@ interface:
 
       Ao usar o Bizu, você reconhece que leu e concorda com estes Termos de Uso.
 
+balance:
+  enabled: true
+  startBalance: 100000
+  autoRefillEnabled: true
+  refillIntervalValue: 30
+  refillIntervalUnit: 'days'
+  refillAmount: 100000
+
 registration:
   socialLogins: []
 

@@ -1,7 +1,9 @@
 import React from 'react';
-import { EarthIcon } from 'lucide-react';
+import { EarthIcon, LockIcon } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
+import { useAuthContext } from '~/hooks';
+import { isModelAllowedForPlan } from '~/utils/planModels';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 
@@ -13,6 +15,8 @@ interface EndpointModelItemProps {
 
 export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
   const { handleSelectModel } = useModelSelectorContext();
+  const { user } = useAuthContext();
+  const isLocked = modelId ? !isModelAllowedForPlan(user?.plan, modelId) : false;
   let isGlobal = false;
   let modelName = modelId;
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
@@ -35,8 +39,10 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
   return (
     <MenuItem
       key={modelId}
-      onClick={() => handleSelectModel(endpoint, modelId ?? '')}
-      className="flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
+      onClick={() => !isLocked && handleSelectModel(endpoint, modelId ?? '')}
+      className={`flex w-full items-center justify-between rounded-lg px-2 text-sm ${
+        isLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+      }`}
     >
       <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
         {avatarUrl ? (
@@ -50,7 +56,13 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           </div>
         ) : null}
         <span className="truncate text-left">{modelName}</span>
-        {isGlobal && (
+        {isLocked && (
+          <span className="ml-auto flex flex-shrink-0 items-center gap-1 self-center text-xs text-yellow-500">
+            <LockIcon className="size-3" />
+            Upgrade
+          </span>
+        )}
+        {!isLocked && isGlobal && (
           <EarthIcon className="ml-auto size-4 flex-shrink-0 self-center text-green-400" />
         )}
       </div>
