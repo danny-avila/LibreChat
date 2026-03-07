@@ -52,7 +52,7 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
 
 const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
   const [isLoaded, setIsLoaded] = useState(false);
-  const { filepath = null } = attachment as TFile & TAttachmentMetadata;
+  const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
 
   useEffect(() => {
     setIsLoaded(false);
@@ -76,6 +76,8 @@ const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
       <Image
         altText={attachment.filename || 'attachment image'}
         imagePath={filepath ?? ''}
+        width={width}
+        height={height}
         className="mb-4"
       />
     </div>

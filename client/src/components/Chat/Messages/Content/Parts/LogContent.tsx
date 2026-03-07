@@ -94,6 +94,8 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       )}
       {imageAttachments?.map((attachment) => (
         <Image
+          width={attachment.width}
+          height={attachment.height}
           key={attachment.filepath}
           altText={attachment.filename}
           imagePath={attachment.filepath}

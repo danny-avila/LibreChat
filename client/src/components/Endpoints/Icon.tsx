@@ -1,64 +1,102 @@
-import React, { memo, useState } from 'react';
+import React, { memo } from 'react';
 import { UserIcon, useAvatar } from '@librechat/client';
-import type { TUser } from 'librechat-data-provider';
 import type { IconProps } from '~/common';
 import MessageEndpointIcon from './MessageEndpointIcon';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
+type ResolvedAvatar = { type: 'image'; src: string } | { type: 'fallback' };
+
+/**
+ * Caches the resolved avatar decision per user ID.
+ * Invalidated when `user.avatar` changes (e.g., settings upload).
+ * Tracks failed image URLs so they fall back to SVG permanently for the session.
+ */
+const avatarCache = new Map<
+  string,
+  { avatar: string; avatarSrc: string; resolved: ResolvedAvatar }
+>();
+const failedUrls = new Set<string>();
+
+function resolveAvatar(userId: string, userAvatar: string, avatarSrc: string): ResolvedAvatar {
+  if (!userId) {
+    const imgSrc = userAvatar || avatarSrc;
+    return imgSrc && !failedUrls.has(imgSrc)
+      ? { type: 'image', src: imgSrc }
+      : { type: 'fallback' };
+  }
+
+  const cached = avatarCache.get(userId);
+  if (cached && cached.avatar === userAvatar && cached.avatarSrc === avatarSrc) {
+    return cached.resolved;
+  }
+
+  const imgSrc = userAvatar || avatarSrc;
+  const resolved: ResolvedAvatar =
+    imgSrc && !failedUrls.has(imgSrc) ? { type: 'image', src: imgSrc } : { type: 'fallback' };
+
+  avatarCache.set(userId, { avatar: userAvatar, avatarSrc, resolved });
+  return resolved;
+}
+
+function markAvatarFailed(userId: string, src: string): ResolvedAvatar {
+  failedUrls.add(src);
+  const fallback: ResolvedAvatar = { type: 'fallback' };
+  const cached = avatarCache.get(userId);
+  if (cached) {
+    avatarCache.set(userId, { ...cached, resolved: fallback });
+  }
+  return fallback;
+}
+
 type UserAvatarProps = {
   size: number;
-  user?: TUser;
+  avatar: string;
   avatarSrc: string;
+  userId: string;
   username: string;
   className?: string;
 };
 
-const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAvatarProps) => {
-  const [imageError, setImageError] = useState(false);
+const UserAvatar = memo(
+  ({ size, avatar, avatarSrc, userId, username, className }: UserAvatarProps) => {
+    const [resolved, setResolved] = React.useState(() => resolveAvatar(userId, avatar, avatarSrc));
 
-  const handleImageError = () => {
-    setImageError(true);
-  };
+    React.useEffect(() => {
+      setResolved(resolveAvatar(userId, avatar, avatarSrc));
+    }, [userId, avatar, avatarSrc]);
 
-  const renderDefaultAvatar = () => (
-    <div
-      style={{
-        backgroundColor: 'rgb(121, 137, 255)',
-        width: '20px',
-        height: '20px',
-        boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
-      }}
-      className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
-    >
-      <UserIcon />
-    </div>
-  );
-
-  return (
-    <div
-      title={username}
-      style={{
-        width: size,
-        height: size,
-      }}
-      className={cn('relative flex items-center justify-center', className ?? '')}
-    >
-      {(!(user?.avatar ?? '') && (!(user?.username ?? '') || user?.username.trim() === '')) ||
-      imageError ? (
-        renderDefaultAvatar()
-      ) : (
-        <img
-          className="rounded-full"
-          src={(user?.avatar ?? '') || avatarSrc}
-          alt="avatar"
-          onError={handleImageError}
-        />
-      )}
-    </div>
-  );
-});
+    return (
+      <div
+        title={username}
+        style={{ width: size, height: size }}
+        className={cn('relative flex items-center justify-center', className ?? '')}
+      >
+        {resolved.type === 'image' ? (
+          <img
+            className="rounded-full"
+            src={resolved.src}
+            alt="avatar"
+            onError={() => setResolved(markAvatarFailed(userId, resolved.src))}
+          />
+        ) : (
+          <div
+            style={{
+              backgroundColor: 'rgb(121, 137, 255)',
+              width: '20px',
+              height: '20px',
+              boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
+            }}
+            className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
+          >
+            <UserIcon />
+          </div>
+        )}
+      </div>
+    );
+  },
+);
 
 UserAvatar.displayName = 'UserAvatar';
 
@@ -74,9 +112,10 @@ const Icon: React.FC<IconProps> = memo((props) => {
     return (
       <UserAvatar
         size={size}
-        user={user}
         avatarSrc={avatarSrc}
         username={username}
+        userId={user?.id ?? ''}
+        avatar={user?.avatar ?? ''}
         className={props.className}
       />
     );

@@ -11,6 +11,7 @@ import type { TMessageContentParts, TAttachment } from 'librechat-data-provider'
 import { OpenAIImageGen, EmptyText, Reasoning, ExecuteCode, AgentUpdate, Text } from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
+import { getCachedPreview } from '~/utils';
 import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
@@ -222,8 +223,14 @@ const Part = memo(function Part({
     }
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];
+    const cached = imageFile.file_id ? getCachedPreview(imageFile.file_id) : undefined;
     return (
-      <Image imagePath={imageFile.filepath} altText={imageFile.filename ?? 'Uploaded Image'} />
+      <Image
+        imagePath={cached ?? imageFile.filepath}
+        altText={imageFile.filename ?? 'Uploaded Image'}
+        width={imageFile.width}
+        height={imageFile.height}
+      />
     );
   }
 
