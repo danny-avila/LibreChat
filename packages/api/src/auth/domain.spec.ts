@@ -504,6 +504,9 @@ describe('resolveHostnameSSRF', () => {
 
     mockedLookup.mockResolvedValueOnce([{ address: 'fc00::1', family: 6 }] as never);
     expect(await resolveHostnameSSRF('ula.example.com')).toBe(true);
+
+    mockedLookup.mockResolvedValueOnce([{ address: '::ffff:a9fe:a9fe', family: 6 }] as never);
+    expect(await resolveHostnameSSRF('meta.example.com')).toBe(true);
   });
 
   it('should fail open on DNS resolution failure', async () => {
