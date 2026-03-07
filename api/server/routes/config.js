@@ -64,10 +64,12 @@ const getMCPServers = async (payload, appConfig) => {
 };
 
 router.get('/', async function (req, res) {
+  logger.info(`[config] ALLOW_REGISTRATION env value: "${process.env.ALLOW_REGISTRATION}", isEnabled: ${isEnabled(process.env.ALLOW_REGISTRATION)}`);
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
 
   const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
   if (cachedStartupConfig) {
+    logger.info(`[config] Returning CACHED config, registrationEnabled: ${cachedStartupConfig.registrationEnabled}`);
     const appConfig = await getAppConfig({ role: req.user?.role });
     await getMCPServers(cachedStartupConfig, appConfig);
     res.send(cachedStartupConfig);
