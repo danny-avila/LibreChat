@@ -26,11 +26,13 @@ jest.mock('~/hooks', () => ({
   useLazyEffect: () => {},
 }));
 
+const mockUseFileHandlingNoChatContext = jest.fn().mockReturnValue({
+  abortUpload: jest.fn(),
+  handleFileChange: jest.fn(),
+});
+
 jest.mock('~/hooks/Files/useFileHandling', () => ({
-  useFileHandlingNoChatContext: () => ({
-    abortUpload: jest.fn(),
-    handleFileChange: jest.fn(),
-  }),
+  useFileHandlingNoChatContext: (...args: unknown[]) => mockUseFileHandlingNoChatContext(...args),
 }));
 
 jest.mock('~/components/Chat/Input/Files/FileRow', () => () => null);
@@ -79,6 +81,44 @@ describe('Code/Files', () => {
       </Wrapper>,
     );
     expect(container.innerHTML).toBe('');
+  });
+
+  it('passes provider as endpointOverride and resolved type as endpointTypeOverride', () => {
+    mockFileConfig = mergeFileConfig({ endpoints: { default: { fileLimit: 10 } } });
+    mockUseFileHandlingNoChatContext.mockClear();
+    render(
+      <Wrapper provider="Moonshot">
+        <Files agent_id="agent-1" />
+      </Wrapper>,
+    );
+    const params = mockUseFileHandlingNoChatContext.mock.calls[0][0];
+    expect(params.endpointOverride).toBe('Moonshot');
+    expect(params.endpointTypeOverride).toBe(EModelEndpoint.custom);
+  });
+
+  it('falls back to agents for endpointOverride when no provider', () => {
+    mockFileConfig = mergeFileConfig({ endpoints: { default: { fileLimit: 10 } } });
+    mockUseFileHandlingNoChatContext.mockClear();
+    render(
+      <Wrapper>
+        <Files agent_id="agent-1" />
+      </Wrapper>,
+    );
+    const params = mockUseFileHandlingNoChatContext.mock.calls[0][0];
+    expect(params.endpointOverride).toBe(EModelEndpoint.agents);
+    expect(params.endpointTypeOverride).toBe(EModelEndpoint.agents);
+  });
+
+  it('falls back to agents for endpointOverride when provider is empty string', () => {
+    mockFileConfig = mergeFileConfig({ endpoints: { default: { fileLimit: 10 } } });
+    mockUseFileHandlingNoChatContext.mockClear();
+    render(
+      <Wrapper provider="">
+        <Files agent_id="agent-1" />
+      </Wrapper>,
+    );
+    const params = mockUseFileHandlingNoChatContext.mock.calls[0][0];
+    expect(params.endpointOverride).toBe(EModelEndpoint.agents);
   });
 
   it('renders when provider has no specific config and agents config is enabled', () => {

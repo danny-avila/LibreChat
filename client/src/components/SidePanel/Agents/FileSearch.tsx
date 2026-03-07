@@ -32,7 +32,7 @@ function FileSearch({
   // Get startup configuration for SharePoint feature flag
   const { data: startupConfig } = useGetStartupConfig();
   const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
-  const endpointOverride = providerValue ?? EModelEndpoint.agents;
+  const endpointOverride = providerValue || EModelEndpoint.agents;
 
   const { handleFileChange } = useFileHandlingNoChatContext(
     {

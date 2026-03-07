@@ -27,8 +27,12 @@ jest.mock('~/hooks', () => ({
   useLazyEffect: () => {},
 }));
 
+const mockUseFileHandlingNoChatContext = jest.fn().mockReturnValue({
+  handleFileChange: jest.fn(),
+});
+
 jest.mock('~/hooks/Files/useFileHandling', () => ({
-  useFileHandlingNoChatContext: () => ({ handleFileChange: jest.fn() }),
+  useFileHandlingNoChatContext: (...args: unknown[]) => mockUseFileHandlingNoChatContext(...args),
 }));
 
 jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
@@ -102,6 +106,32 @@ describe('FileContext', () => {
       </Wrapper>,
     );
     expect(container.innerHTML).toBe('');
+  });
+
+  it('passes provider as endpointOverride and resolved type as endpointTypeOverride', () => {
+    mockFileConfig = mergeFileConfig({ endpoints: { default: { fileLimit: 10 } } });
+    mockUseFileHandlingNoChatContext.mockClear();
+    render(
+      <Wrapper provider="Moonshot">
+        <FileContext agent_id="agent-1" />
+      </Wrapper>,
+    );
+    const params = mockUseFileHandlingNoChatContext.mock.calls[0][0];
+    expect(params.endpointOverride).toBe('Moonshot');
+    expect(params.endpointTypeOverride).toBe(EModelEndpoint.custom);
+  });
+
+  it('falls back to agents for endpointOverride when no provider', () => {
+    mockFileConfig = mergeFileConfig({ endpoints: { default: { fileLimit: 10 } } });
+    mockUseFileHandlingNoChatContext.mockClear();
+    render(
+      <Wrapper>
+        <FileContext agent_id="agent-1" />
+      </Wrapper>,
+    );
+    const params = mockUseFileHandlingNoChatContext.mock.calls[0][0];
+    expect(params.endpointOverride).toBe(EModelEndpoint.agents);
+    expect(params.endpointTypeOverride).toBe(EModelEndpoint.agents);
   });
 
   it('renders when provider has no specific config and agents config is enabled', () => {

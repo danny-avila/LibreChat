@@ -23,7 +23,7 @@ function Files({
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
   const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
   const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
-  const endpointOverride = providerValue ?? EModelEndpoint.agents;
+  const endpointOverride = providerValue || EModelEndpoint.agents;
   const { abortUpload, handleFileChange } = useFileHandlingNoChatContext(
     {
       fileSetter: setFiles,

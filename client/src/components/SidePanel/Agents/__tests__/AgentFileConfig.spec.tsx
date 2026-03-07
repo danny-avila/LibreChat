@@ -77,6 +77,18 @@ describe('AgentPanel file config resolution (useAgentFileConfig)', () => {
       expect(screen.getByTestId('endpointType').textContent).toBe(EModelEndpoint.agents);
     });
 
+    it('falls back to agents when provider is empty string', () => {
+      render(<TestWrapper provider="" />);
+      expect(screen.getByTestId('endpointType').textContent).toBe(EModelEndpoint.agents);
+      expect(screen.getByTestId('fileLimit').textContent).toBe('20');
+    });
+
+    it('falls back to agents when provider option has empty value', () => {
+      render(<TestWrapper provider={{ label: '', value: '' }} />);
+      expect(screen.getByTestId('endpointType').textContent).toBe(EModelEndpoint.agents);
+      expect(screen.getByTestId('fileLimit').textContent).toBe('20');
+    });
+
     it('resolves correctly when provider is an option object', () => {
       render(<TestWrapper provider={{ label: 'Moonshot', value: 'Moonshot' }} />);
       expect(screen.getByTestId('endpointType').textContent).toBe(EModelEndpoint.custom);

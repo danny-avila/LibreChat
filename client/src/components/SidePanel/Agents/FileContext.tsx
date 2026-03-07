@@ -37,7 +37,7 @@ function FileContext({
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
   const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
-  const endpointOverride = providerValue ?? EModelEndpoint.agents;
+  const endpointOverride = providerValue || EModelEndpoint.agents;
 
   const { handleFileChange } = useFileHandlingNoChatContext(
     {

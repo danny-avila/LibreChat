@@ -29,7 +29,7 @@ export default function useAgentFileConfig(): {
   const endpointFileConfig = getEndpointFileConfig({
     fileConfig,
     endpointType,
-    endpoint: providerValue ?? EModelEndpoint.agents,
+    endpoint: providerValue || EModelEndpoint.agents,
   });
 
   return { endpointType, providerValue, endpointFileConfig };

@@ -30,7 +30,7 @@ type UseFileHandling = {
   fileSetter?: FileSetter;
   fileFilter?: (file: File) => boolean;
   additionalMetadata?: Record<string, string | undefined>;
-  /** Overrides `endpoint` for validation and upload routing */
+  /** Overrides `endpoint` for upload routing; also used as `endpointType` fallback when `endpointTypeOverride` is not set */
   endpointOverride?: EModelEndpoint | string;
   /** Overrides `endpointType` independently from `endpointOverride` */
   endpointTypeOverride?: EModelEndpoint | string;
