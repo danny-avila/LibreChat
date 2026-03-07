@@ -30,8 +30,10 @@ type UseFileHandling = {
   fileSetter?: FileSetter;
   fileFilter?: (file: File) => boolean;
   additionalMetadata?: Record<string, string | undefined>;
-  /** Overrides both `endpoint` and `endpointType` for validation and upload routing */
-  endpointOverride?: EModelEndpoint;
+  /** Overrides `endpoint` for upload routing; also used as `endpointType` fallback when `endpointTypeOverride` is not set */
+  endpointOverride?: EModelEndpoint | string;
+  /** Overrides `endpointType` independently from `endpointOverride` */
+  endpointTypeOverride?: EModelEndpoint | string;
 };
 
 export type FileHandlingState = {
@@ -64,9 +66,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
   const endpointOverride = params?.endpointOverride;
+  const endpointTypeOverride = params?.endpointTypeOverride;
   const endpointType = useMemo(
-    () => endpointOverride ?? conversation?.endpointType,
-    [endpointOverride, conversation?.endpointType],
+    () => endpointTypeOverride ?? endpointOverride ?? conversation?.endpointType,
+    [endpointTypeOverride, endpointOverride, conversation?.endpointType],
   );
   const endpoint = useMemo(
     () => endpointOverride ?? conversation?.endpoint ?? 'default',
