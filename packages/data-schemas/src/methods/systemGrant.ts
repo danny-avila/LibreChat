@@ -10,12 +10,11 @@ import logger from '~/config/winston';
  * Precomputed reverse map: for each capability, which broader capabilities imply it.
  * Built once at module load so `hasCapabilityForPrincipals` avoids O(N×M) per call.
  */
-const reverseImplications: Partial<
-  Record<(typeof SystemCapabilities)[keyof typeof SystemCapabilities], string[]>
-> = {};
+type BaseSystemCapability = (typeof SystemCapabilities)[keyof typeof SystemCapabilities];
+const reverseImplications: Partial<Record<BaseSystemCapability, BaseSystemCapability[]>> = {};
 for (const [broad, implied] of Object.entries(CapabilityImplications)) {
-  for (const cap of implied as string[]) {
-    (reverseImplications[cap as keyof typeof reverseImplications] ??= []).push(broad);
+  for (const cap of implied as BaseSystemCapability[]) {
+    (reverseImplications[cap] ??= []).push(broad as BaseSystemCapability);
   }
 }
 

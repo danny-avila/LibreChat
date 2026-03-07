@@ -38,8 +38,8 @@ const systemGrantSchema = new Schema<ISystemGrant>(
       type: String,
       required: false,
       validate: {
-        validator: (v: unknown) => v !== null,
-        message: 'tenantId must be a non-empty string or omitted entirely — never null',
+        validator: (v: unknown) => v !== null && v !== '',
+        message: 'tenantId must be a non-empty string or omitted entirely — never null or empty',
       },
     },
     grantedBy: {

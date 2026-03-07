@@ -19,6 +19,7 @@ export const SystemCapabilities = {
   MANAGE_MCP_SERVERS: 'manage:mcpservers',
   READ_PROMPTS: 'read:prompts',
   MANAGE_PROMPTS: 'manage:prompts',
+  /** Reserved — not yet enforced by any middleware. Grant has no effect until assistant listing is gated. */
   READ_ASSISTANTS: 'read:assistants',
   MANAGE_ASSISTANTS: 'manage:assistants',
 } as const;
