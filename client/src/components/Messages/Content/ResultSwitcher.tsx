@@ -16,9 +16,9 @@ const ResultSwitcher: React.FC<ResultSwitcherProps> = ({
   }
 
   return (
-    <div className="flex items-center justify-start gap-1 self-center bg-gray-700 pb-2 text-xs">
+    <div className="flex items-center justify-start gap-1 self-center border-t border-border-light bg-surface-secondary px-3 pb-2 pt-1.5 text-xs">
       <button
-        className="hover-button rounded-md p-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200 disabled:hover:text-gray-400"
+        className="rounded-md p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-secondary disabled:opacity-40 disabled:hover:bg-transparent"
         type="button"
         onClick={onPrevious}
         disabled={currentIndex === 0}
@@ -38,11 +38,11 @@ const ResultSwitcher: React.FC<ResultSwitcherProps> = ({
           <polyline points="15 18 9 12 15 6" />
         </svg>
       </button>
-      <span className="flex-shrink-0 tabular-nums">
+      <span className="flex-shrink-0 tabular-nums text-text-secondary">
         {currentIndex + 1} / {totalCount}
       </span>
       <button
-        className="hover-button rounded-md p-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200 disabled:hover:text-gray-400"
+        className="rounded-md p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-secondary disabled:opacity-40 disabled:hover:bg-transparent"
         type="button"
         onClick={onNext}
         disabled={currentIndex === totalCount - 1}

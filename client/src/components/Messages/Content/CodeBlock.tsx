@@ -23,138 +23,127 @@ interface FloatingCodeBarProps extends CodeBarProps {
   isVisible: boolean;
 }
 
-const CodeBar: React.FC<CodeBarProps> = React.memo(function CodeBar({
-  lang,
-  error,
-  codeRef,
-  blockIndex,
-  plugin = null,
-  allowExecution = true,
-}) {
-  const localize = useLocalize();
-  const [isCopied, setIsCopied] = useState(false);
-  return (
-    <div className="relative flex items-center justify-between rounded-tl-md rounded-tr-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200 dark:bg-gray-700">
-      <span className="">{lang}</span>
-      {plugin === true ? (
-        <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-white/50" />
-      ) : (
-        <div className="flex items-center justify-center gap-4">
-          {allowExecution === true && (
-            <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} />
-          )}
-          <button
-            type="button"
-            className={cn(
-              'ml-auto flex gap-2 rounded-sm focus:outline focus:outline-white',
-              error === true ? 'h-4 w-4 items-start text-white/50' : '',
+const CodeBar: React.FC<CodeBarProps> = React.memo(
+  ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true }) => {
+    const localize = useLocalize();
+    const [isCopied, setIsCopied] = useState(false);
+    return (
+      <div className="flex items-center justify-between border-b border-border-light px-3 py-1.5 font-sans text-xs text-text-secondary">
+        <span className="rounded bg-surface-tertiary px-2 py-0.5 text-[10px] font-medium">
+          {lang}
+        </span>
+        {plugin === true ? (
+          <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-text-tertiary" />
+        ) : (
+          <div className="flex items-center justify-center gap-2">
+            {allowExecution === true && (
+              <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} />
             )}
-            onClick={async () => {
-              const codeString = codeRef.current?.textContent;
-              if (codeString != null) {
-                setIsCopied(true);
-                copy(codeString.trim(), { format: 'text/plain' });
+            <button
+              type="button"
+              className={cn(
+                'ml-auto flex gap-2 rounded-sm text-text-tertiary transition-colors hover:text-text-secondary focus:outline focus:outline-2 focus:outline-border-heavy',
+                error === true ? 'h-4 w-4 items-start' : '',
+              )}
+              onClick={async () => {
+                const codeString = codeRef.current?.textContent;
+                if (codeString != null) {
+                  setIsCopied(true);
+                  copy(codeString.trim(), { format: 'text/plain' });
 
-                setTimeout(() => {
-                  setIsCopied(false);
-                }, 3000);
-              }
-            }}
-          >
-            {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
-            {error !== true && (
-              <span className="relative">
-                <span className="invisible">{localize('com_ui_copy_code')}</span>
-                <span className="absolute inset-0 flex items-center">
-                  {isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+                  setTimeout(() => {
+                    setIsCopied(false);
+                  }, 3000);
+                }
+              }}
+            >
+              {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
+              {error !== true && (
+                <span className="relative">
+                  <span className="invisible">{localize('com_ui_copy_code')}</span>
+                  <span className="absolute inset-0 flex items-center">
+                    {isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+                  </span>
                 </span>
-              </span>
-            )}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-});
-CodeBar.displayName = 'CodeBar';
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  },
+);
 
-const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(function FloatingCodeBar({
-  lang,
-  error,
-  codeRef,
-  blockIndex,
-  plugin = null,
-  allowExecution = true,
-  isVisible,
-}) {
-  const localize = useLocalize();
-  const [isCopied, setIsCopied] = useState(false);
-  const copyButtonRef = useRef<HTMLButtonElement>(null);
+const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(
+  ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true, isVisible }) => {
+    const localize = useLocalize();
+    const [isCopied, setIsCopied] = useState(false);
+    const copyButtonRef = useRef<HTMLButtonElement>(null);
 
-  const handleCopy = useCallback(() => {
-    const codeString = codeRef.current?.textContent;
-    if (codeString != null) {
-      const wasFocused = document.activeElement === copyButtonRef.current;
-      setIsCopied(true);
-      copy(codeString.trim(), { format: 'text/plain' });
-      if (wasFocused) {
-        requestAnimationFrame(() => {
-          copyButtonRef.current?.focus();
-        });
+    const handleCopy = useCallback(() => {
+      const codeString = codeRef.current?.textContent;
+      if (codeString != null) {
+        const wasFocused = document.activeElement === copyButtonRef.current;
+        setIsCopied(true);
+        copy(codeString.trim(), { format: 'text/plain' });
+        if (wasFocused) {
+          requestAnimationFrame(() => {
+            copyButtonRef.current?.focus();
+          });
+        }
+
+        setTimeout(() => {
+          const focusedElement = document.activeElement as HTMLElement | null;
+          setIsCopied(false);
+          requestAnimationFrame(() => {
+            focusedElement?.focus();
+          });
+        }, 3000);
       }
+    }, [codeRef]);
 
-      setTimeout(() => {
-        const focusedElement = document.activeElement as HTMLElement | null;
-        setIsCopied(false);
-        requestAnimationFrame(() => {
-          focusedElement?.focus();
-        });
-      }, 3000);
-    }
-  }, [codeRef]);
-
-  return (
-    <div
-      className={cn(
-        'absolute bottom-2 right-2 flex items-center gap-2 font-sans text-xs text-gray-200 transition-opacity duration-150',
-        isVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
-      )}
-    >
-      {plugin === true ? (
-        <InfoIcon className="flex h-4 w-4 gap-2 text-white/50" />
-      ) : (
-        <>
-          {allowExecution === true && (
-            <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} iconOnly />
-          )}
-          <TooltipAnchor
-            description={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
-            render={
-              <button
-                ref={copyButtonRef}
-                type="button"
-                tabIndex={isVisible ? 0 : -1}
-                aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
-                className={cn(
-                  'flex items-center justify-center rounded p-1.5 hover:bg-gray-700 focus:bg-gray-700 focus:outline focus:outline-white',
-                  error === true ? 'h-4 w-4 text-white/50' : '',
-                )}
-                onClick={handleCopy}
-              >
-                {isCopied ? (
-                  <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
-                ) : (
-                  <Clipboard aria-hidden="true" />
-                )}
-              </button>
-            }
-          />
-        </>
-      )}
-    </div>
-  );
-});
-FloatingCodeBar.displayName = 'FloatingCodeBar';
+    return (
+      <div
+        className={cn(
+          'absolute bottom-2 right-2 flex items-center gap-2 font-sans text-xs text-text-secondary transition-opacity duration-150',
+          isVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}
+      >
+        {plugin === true ? (
+          <InfoIcon className="flex h-4 w-4 gap-2 text-text-tertiary" />
+        ) : (
+          <>
+            {allowExecution === true && (
+              <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} iconOnly />
+            )}
+            <TooltipAnchor
+              description={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+              render={
+                <button
+                  ref={copyButtonRef}
+                  type="button"
+                  tabIndex={isVisible ? 0 : -1}
+                  aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+                  className={cn(
+                    'flex items-center justify-center rounded p-1.5 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-secondary focus:outline focus:outline-2 focus:outline-border-heavy',
+                    error === true ? 'h-4 w-4' : '',
+                  )}
+                  onClick={handleCopy}
+                >
+                  {isCopied ? (
+                    <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+                  ) : (
+                    <Clipboard aria-hidden="true" />
+                  )}
+                </button>
+              }
+            />
+          </>
+        )}
+      </div>
+    );
+  },
+);
 
 const CodeBlock: React.FC<CodeBlockProps> = ({
   lang,
@@ -231,7 +220,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative w-full rounded-md bg-gray-900 text-xs text-white/80"
+      className="relative w-full overflow-hidden rounded-lg border border-border-light bg-surface-secondary text-xs"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onFocus={handleFocus}
@@ -245,7 +234,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
         plugin={plugin === true}
         allowExecution={allowExecution}
       />
-      <div className={cn(classProp, 'overflow-y-auto p-4')}>
+      <div className={cn(classProp, 'overflow-y-auto bg-surface-tertiary p-4')}>
         <code
           ref={codeRef}
           className={cn(
@@ -266,13 +255,8 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
       />
       {allowExecution === true && toolCalls && toolCalls.length > 0 && (
         <>
-          <div className="bg-gray-700 p-4 text-xs">
-            <div
-              className="prose flex flex-col-reverse text-white"
-              style={{
-                color: 'white',
-              }}
-            >
+          <div className="border-t border-border-light bg-surface-tertiary p-4 text-xs">
+            <div className="prose flex flex-col-reverse text-text-primary">
               <pre className="shrink-0">
                 <LogContent
                   output={(currentToolCall?.result as string | undefined) ?? ''}

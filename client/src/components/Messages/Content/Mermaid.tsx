@@ -438,7 +438,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   const zoomControls = (
     <div
       className={cn(
-        'absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-md border border-border-light bg-surface-secondary p-1 shadow-lg transition-opacity duration-200',
+        'absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-lg border border-border-light bg-surface-secondary p-1 shadow-md transition-opacity duration-200',
         showControls ? 'opacity-100' : 'pointer-events-none opacity-0',
       )}
     >
@@ -500,7 +500,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
 
   // Dialog zoom controls
   const dialogZoomControls = (
-    <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1 rounded-full border border-border-light bg-surface-secondary p-1 shadow-lg">
+    <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1 rounded-lg border border-border-light bg-surface-secondary p-1 shadow-md">
       <button
         type="button"
         onClick={(e) => {
@@ -564,14 +564,14 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
         showCloseButton={false}
         className="h-[85vh] max-h-[85vh] w-[90vw] max-w-[90vw] gap-0 overflow-hidden border-border-light bg-surface-primary-alt p-0"
       >
-        <OGDialogTitle className="flex h-10 items-center justify-between bg-gray-700 px-4 font-sans text-xs text-gray-200">
+        <OGDialogTitle className="flex h-10 items-center justify-between border-b border-border-light bg-surface-secondary px-4 font-sans text-xs text-text-secondary">
           <span>{localize('com_ui_mermaid')}</span>
           <div className="flex gap-2">
             <Button
               ref={dialogShowCodeButtonRef}
               variant="ghost"
               size="sm"
-              className="h-auto min-w-[6rem] gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
+              className="h-auto min-w-[6rem] gap-1 rounded-sm px-1 py-0 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-border-heavy focus-visible:ring-offset-0"
               onClick={handleToggleDialogCode}
             >
               {dialogShowCode ? (
@@ -585,13 +585,13 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
               ref={dialogCopyButtonRef}
               variant="ghost"
               size="sm"
-              className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
+              className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-border-heavy focus-visible:ring-offset-0"
               onClick={handleDialogCopy}
             >
               {isDialogCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
               {localize('com_ui_copy_code')}
             </Button>
-            <OGDialogClose className="rounded-sm p-1 text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+            <OGDialogClose className="rounded-sm p-1 text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy">
               <X className="h-4 w-4" />
               <span className="sr-only">{localize('com_ui_close')}</span>
             </OGDialogClose>
@@ -648,7 +648,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
       return (
         <div
           className={cn(
-            'relative w-full overflow-hidden rounded-md border transition-all duration-200',
+            'relative w-full overflow-hidden rounded-lg border transition-all duration-200',
             showControls ? 'border-border-light' : 'border-transparent',
           )}
           onMouseEnter={() => setIsHovered(true)}
@@ -710,7 +710,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
 
     // No previous render, show streaming code
     return (
-      <div className="w-full overflow-hidden rounded-xl border border-border-light shadow-md">
+      <div className="w-full overflow-hidden rounded-lg border border-border-light">
         <div className="flex items-center gap-2 border-b border-border-light bg-surface-secondary px-4 py-2 font-sans text-xs text-text-secondary">
           <Spinner className="h-3 w-3" />
           <span className="font-medium">{localize('com_ui_mermaid')}</span>
@@ -728,11 +728,11 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   // Error state
   if (error) {
     return (
-      <div className="w-full overflow-hidden rounded-xl border border-border-light shadow-md">
+      <div className="w-full overflow-hidden rounded-lg border border-border-light">
         <MermaidHeader codeContent={children} showCode={showCode} onToggleCode={handleToggleCode} />
-        <div className="rounded-b-md border-t border-red-500/30 bg-red-500/10 p-4">
+        <div className="border-t border-border-light bg-surface-tertiary p-4">
           <div className="mb-2 flex items-center justify-between">
-            <span className="font-semibold text-red-500 dark:text-red-400">
+            <span className="font-semibold text-red-600 dark:text-red-400">
               {localize('com_ui_mermaid_failed')}
             </span>
             <button
@@ -772,7 +772,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
       {expandedDialog}
       <div
         className={cn(
-          'relative w-full overflow-hidden rounded-xl border shadow-md transition-all duration-200',
+          'relative w-full overflow-hidden rounded-lg border transition-all duration-200',
           showControls ? 'border-border-light' : 'border-transparent',
         )}
         onMouseEnter={() => setIsHovered(true)}

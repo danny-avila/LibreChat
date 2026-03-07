@@ -46,7 +46,7 @@ export default function CodeWindowHeader({ language, code }: CodeWindowHeaderPro
       </span>
       <button
         type="button"
-        className="rounded p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-secondary"
+        className="rounded-sm p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-secondary focus:outline focus:outline-2 focus:outline-border-heavy"
         onClick={handleCopy}
         aria-label="Copy code"
       >
