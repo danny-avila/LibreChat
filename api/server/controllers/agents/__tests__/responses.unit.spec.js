@@ -189,6 +189,20 @@ describe('createResponse controller', () => {
     };
   });
 
+  describe('processStream config', () => {
+    it('should pass agent_id, agent_name, and dynamic runName in config.configurable', async () => {
+      const api = require('@librechat/api');
+      await createResponse(req, res);
+
+      const run = await api.createRun.mock.results[0].value;
+      const config = run.processStream.mock.calls[0][1];
+
+      expect(config.runName).toBe('Test Agent');
+      expect(config.configurable.agent_id).toBe('agent-123');
+      expect(config.configurable.agent_name).toBe('Test Agent');
+    });
+  });
+
   describe('token usage recording - non-streaming', () => {
     it('should call recordCollectedUsage after successful non-streaming completion', async () => {
       await createResponse(req, res);

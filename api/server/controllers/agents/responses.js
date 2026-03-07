@@ -487,7 +487,7 @@ const createResponse = async (req, res) => {
           thread_id: conversationId,
           user_id: userId,
           agent_id: agent.id,
-          agent_name: agent.name,
+          ...(agent.name != null && { agent_name: agent.name }),
           user: createSafeUser(req.user),
           requestBody: {
             messageId: responseId,
@@ -643,7 +643,7 @@ const createResponse = async (req, res) => {
           thread_id: conversationId,
           user_id: userId,
           agent_id: agent.id,
-          agent_name: agent.name,
+          ...(agent.name != null && { agent_name: agent.name }),
           user: createSafeUser(req.user),
           requestBody: {
             messageId: responseId,

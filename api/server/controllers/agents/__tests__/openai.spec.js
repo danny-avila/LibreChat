@@ -160,6 +160,20 @@ describe('OpenAIChatCompletionController', () => {
     };
   });
 
+  describe('processStream config', () => {
+    it('should pass agent_id and dynamic runName in config.configurable', async () => {
+      const api = require('@librechat/api');
+      await OpenAIChatCompletionController(req, res);
+
+      const run = await api.createRun.mock.results[0].value;
+      const config = run.processStream.mock.calls[0][1];
+
+      expect(config.runName).toBe('gpt-4');
+      expect(config.configurable.agent_id).toBe('agent-123');
+      expect(config.configurable).not.toHaveProperty('agent_name');
+    });
+  });
+
   describe('token usage recording', () => {
     it('should call recordCollectedUsage after successful non-streaming completion', async () => {
       await OpenAIChatCompletionController(req, res);
