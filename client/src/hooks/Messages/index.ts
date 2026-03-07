@@ -7,4 +7,6 @@ export { default as useMessageHelpers } from './useMessageHelpers';
 export { default as useCopyToClipboard } from './useCopyToClipboard';
 export { default as useMessageScrolling } from './useMessageScrolling';
 export { default as useContentMetadata } from './useContentMetadata';
+export { default as useExpandCollapse } from './useExpandCollapse';
+export { EXPAND_TRANSITION } from './useExpandCollapse';
 export type { ContentMetadataResult } from './useContentMetadata';

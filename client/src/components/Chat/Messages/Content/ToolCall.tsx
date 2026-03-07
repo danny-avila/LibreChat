@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
 import {
@@ -8,11 +8,12 @@ import {
   actionDomainSeparator,
 } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
-import { useLocalize, useProgress } from '~/hooks';
+import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
+import { ToolIcon, getToolIconType } from './ToolOutput';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
-import { logger, cn } from '~/utils';
+import { logger } from '~/utils';
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -36,10 +37,7 @@ export default function ToolCall({
 }) {
   const localize = useLocalize();
   const [showInfo, setShowInfo] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [contentHeight, setContentHeight] = useState<number | undefined>(0);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const prevShowInfoRef = useRef<boolean>(showInfo);
+  const expandStyle = useExpandCollapse(showInfo);
 
   const { function_name, domain, isMCPToolCall, mcpServerName } = useMemo(() => {
     if (typeof name !== 'string') {
@@ -64,6 +62,8 @@ export default function ToolCall({
       mcpServerName: '',
     };
   }, [name]);
+
+  const toolIconType = useMemo(() => getToolIconType(name), [name]);
 
   const actionId = useMemo(() => {
     if (isMCPToolCall || !auth) {
@@ -151,49 +151,6 @@ export default function ToolCall({
     return localize('com_assistants_completed_function', { 0: function_name });
   };
 
-  useLayoutEffect(() => {
-    if (showInfo !== prevShowInfoRef.current) {
-      prevShowInfoRef.current = showInfo;
-      setIsAnimating(true);
-
-      if (showInfo && contentRef.current) {
-        requestAnimationFrame(() => {
-          if (contentRef.current) {
-            const height = contentRef.current.scrollHeight;
-            setContentHeight(height + 4);
-          }
-        });
-      } else {
-        setContentHeight(0);
-      }
-
-      const timer = setTimeout(() => {
-        setIsAnimating(false);
-      }, 400);
-
-      return () => clearTimeout(timer);
-    }
-  }, [showInfo]);
-
-  useEffect(() => {
-    if (!contentRef.current) {
-      return;
-    }
-    const resizeObserver = new ResizeObserver((entries) => {
-      if (showInfo && !isAnimating) {
-        for (const entry of entries) {
-          if (entry.target === contentRef.current) {
-            setContentHeight(entry.contentRect.height + 4);
-          }
-        }
-      }
-    });
-    resizeObserver.observe(contentRef.current);
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [showInfo, isAnimating]);
-
   if (!isLast && (!function_name || function_name.length === 0) && !output) {
     return null;
   }
@@ -213,58 +170,26 @@ export default function ToolCall({
             !cancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
           }
           finishedText={getFinishedText()}
+          icon={<ToolIcon type={toolIconType} isAnimating={progress < 1 && !cancelled} />}
           hasInput={hasInfo}
           isExpanded={showInfo}
           error={cancelled}
         />
       </div>
-      <div
-        className="relative"
-        style={{
-          height: showInfo ? contentHeight : 0,
-          overflow: 'hidden',
-          transition:
-            'height 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          opacity: showInfo ? 1 : 0,
-          transformOrigin: 'top',
-          willChange: 'height, opacity',
-          perspective: '1000px',
-          backfaceVisibility: 'hidden',
-          WebkitFontSmoothing: 'subpixel-antialiased',
-        }}
-      >
-        <div
-          className={cn(
-            'overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-md',
-            showInfo && 'shadow-lg',
+      <div style={expandStyle}>
+        <div className="overflow-hidden">
+          {hasInfo && (
+            <div className="overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+              <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />
+            </div>
           )}
-          style={{
-            transform: showInfo ? 'translateY(0) scale(1)' : 'translateY(-8px) scale(0.98)',
-            opacity: showInfo ? 1 : 0,
-            transition:
-              'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          <div ref={contentRef}>
-            {showInfo && hasInfo && (
-              <ToolCallInfo
-                key="tool-call-info"
-                input={args ?? ''}
-                output={output}
-                domain={authDomain || (domain ?? '')}
-                function_name={function_name}
-                pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
-                attachments={attachments}
-              />
-            )}
-          </div>
         </div>
       </div>
       {auth != null && auth && progress < 1 && !cancelled && (
         <div className="flex w-full flex-col gap-2.5">
           <div className="mb-1 mt-2">
             <Button
-              className="font-mediu inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm"
+              className="inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium"
               variant="default"
               rel="noopener noreferrer"
               onClick={handleOAuthClick}

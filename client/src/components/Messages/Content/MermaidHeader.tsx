@@ -16,7 +16,7 @@ interface MermaidHeaderProps {
 }
 
 const iconBtnClass =
-  'flex items-center justify-center rounded p-1.5 text-text-secondary hover:bg-surface-hover focus-visible:outline focus-visible:outline-white';
+  'flex items-center justify-center rounded-full p-1.5 text-text-secondary hover:bg-surface-hover focus-visible:outline focus-visible:outline-white transition-colors';
 
 const MermaidHeader: React.FC<MermaidHeaderProps> = memo(
   ({

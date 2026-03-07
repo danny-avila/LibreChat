@@ -8,10 +8,11 @@ import type {
 } from 'librechat-data-provider';
 import { MessageContext, SearchContext } from '~/Providers';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
-import { mapAttachments } from '~/utils';
+import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { EditTextPart, EmptyText } from './Parts';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
+import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
 
@@ -217,6 +218,8 @@ const ContentParts = memo(function ContentParts({
     }
   });
 
+  const groupedParts = groupSequentialToolCalls(sequentialParts);
+
   return (
     <SearchContext.Provider value={{ searchResults }}>
       <MemoryArtifacts attachments={attachments} />
@@ -226,7 +229,21 @@ const ContentParts = memo(function ContentParts({
           <EmptyText />
         </Container>
       )}
-      {sequentialParts.map(({ part, idx }) => renderPart(part, idx, idx === lastContentIdx))}
+      {groupedParts.map((group, gIdx) => {
+        if (group.type === 'single') {
+          const { part, idx } = group.part;
+          return renderPart(part, idx, idx === lastContentIdx);
+        }
+        return (
+          <ToolCallGroup
+            key={`tool-group-${gIdx}`}
+            parts={group.parts}
+            isSubmitting={effectiveIsSubmitting}
+            isLast={group.parts.some((p) => p.idx === lastContentIdx)}
+            attachmentMap={attachmentMap}
+          />
+        );
+      })}
     </SearchContext.Provider>
   );
 });

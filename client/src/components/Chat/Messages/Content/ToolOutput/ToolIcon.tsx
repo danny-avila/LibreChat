@@ -1,0 +1,64 @@
+import { Constants } from 'librechat-data-provider';
+import { Plug, Terminal, Globe, ImageIcon, ArrowRightLeft, FileSearch, Wrench } from 'lucide-react';
+import { cn } from '~/utils';
+
+export type ToolIconType =
+  | 'mcp'
+  | 'execute_code'
+  | 'web_search'
+  | 'image_gen'
+  | 'agent_handoff'
+  | 'file_search'
+  | 'generic';
+
+const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>> = {
+  mcp: Plug,
+  execute_code: Terminal,
+  web_search: Globe,
+  image_gen: ImageIcon,
+  agent_handoff: ArrowRightLeft,
+  file_search: FileSearch,
+  generic: Wrench,
+};
+
+export function getToolIconType(name: string): ToolIconType {
+  if (!name) {
+    return 'generic';
+  }
+  if (name.includes(Constants.mcp_delimiter)) {
+    return 'mcp';
+  }
+  if (name === 'execute_code' || name === Constants.PROGRAMMATIC_TOOL_CALLING) {
+    return 'execute_code';
+  }
+  if (name === 'web_search') {
+    return 'web_search';
+  }
+  if (name === 'image_gen_oai' || name === 'image_edit_oai' || name === 'gemini_image_gen') {
+    return 'image_gen';
+  }
+  if (name.startsWith(Constants.LC_TRANSFER_TO_)) {
+    return 'agent_handoff';
+  }
+  return 'generic';
+}
+
+interface ToolIconProps {
+  type: ToolIconType;
+  isAnimating?: boolean;
+  className?: string;
+}
+
+export default function ToolIcon({ type, isAnimating = false, className }: ToolIconProps) {
+  const IconComponent = ICON_MAP[type];
+  return (
+    <IconComponent
+      className={cn(
+        'size-4 shrink-0 text-text-secondary',
+        isAnimating && 'animate-pulse',
+        className,
+      )}
+      aria-hidden="true"
+    />
+  );
+}

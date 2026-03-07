@@ -1,8 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
-import { Spinner } from '@librechat/client';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import CancelledIcon from './CancelledIcon';
-import FinishedIcon from './FinishedIcon';
 import { cn } from '~/utils';
 
 const wrapperClass =
@@ -44,6 +42,7 @@ export default function ProgressText({
   inProgressText,
   finishedText,
   authText,
+  icon: iconProp,
   hasInput = true,
   popover = false,
   isExpanded = false,
@@ -54,6 +53,7 @@ export default function ProgressText({
   inProgressText: string;
   finishedText: string;
   authText?: string;
+  icon?: React.ReactNode;
   hasInput?: boolean;
   popover?: boolean;
   isExpanded?: boolean;
@@ -73,10 +73,7 @@ export default function ProgressText({
     if (error) {
       return <CancelledIcon />;
     }
-    if (progress < 1) {
-      return <Spinner />;
-    }
-    return <FinishedIcon />;
+    return iconProp ?? null;
   };
 
   const text = getText();
@@ -96,7 +93,7 @@ export default function ProgressText({
         aria-expanded={hasInput ? isExpanded : undefined}
       >
         {icon}
-        <span className={showShimmer ? 'shimmer' : ''}>{text}</span>
+        <span className={cn(showShimmer ? 'shimmer' : '', 'font-medium')}>{text}</span>
         {hasInput &&
           (isExpanded ? (
             <ChevronUp className="size-4 shrink-0 translate-y-[1px]" aria-hidden="true" />
