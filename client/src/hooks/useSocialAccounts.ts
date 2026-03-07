@@ -92,10 +92,18 @@ export function useSocialAccounts() {
       return data;
     },
     onSuccess: (data) => {
-      // Redirect to OAuth URL
       if (data.oauthUrl) {
-        window.location.href = data.oauthUrl;
+        if (data.openInNewTab) {
+          window.open(data.oauthUrl, '_blank', 'noopener,noreferrer');
+          showToast({
+            message: 'Open the new tab to connect in Postiz. When done, return here and click Refresh to see your account.',
+            status: 'success',
+          });
+        } else {
+          window.location.href = data.oauthUrl;
+        }
       }
+      setConnectingPlatform(null);
     },
     onError: (error: Error) => {
       showToast({

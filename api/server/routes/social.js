@@ -38,15 +38,66 @@ function verifyOAuthState(state) {
 }
 
 /**
+ * Map Postiz integration to our account shape (for UI)
+ */
+function postizIntegrationToAccount(integration, platform) {
+  return {
+    _id: integration.id,
+    userId: null,
+    platform: platform || integration.identifier,
+    postizIntegrationId: integration.id,
+    accountName: integration.name || integration.profile || `${integration.identifier} account`,
+    accountId: integration.id,
+    isActive: !integration.disabled,
+    metadata: {
+      picture: integration.picture,
+      profile: integration.profile,
+    },
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    fromPostiz: true,
+  };
+}
+
+/**
  * GET /api/social/accounts
- * Get user's connected social accounts
+ * Get user's connected social accounts (from DB + Postiz integrations)
  */
 router.get('/accounts', requireJwtAuth, async (req, res) => {
   try {
-    const accounts = await SocialAccount.find({
+    const dbAccounts = await SocialAccount.find({
       userId: req.user.id,
       isActive: true,
     }).select('-__v').sort({ createdAt: -1 });
+
+    let accounts = dbAccounts.map((a) => a.toObject());
+
+    try {
+      const postizList = await PostizService.getIntegrations();
+      const postizByPlatform = {};
+      for (const i of postizList) {
+        const platform = i.identifier === 'x' ? 'x' : (i.identifier || '').toLowerCase();
+        if (['linkedin', 'x', 'instagram', 'facebook', 'tiktok', 'youtube', 'pinterest'].includes(platform)) {
+          postizByPlatform[platform] = postizIntegrationToAccount(i, platform);
+        }
+      }
+      const merged = [];
+      const seen = new Set();
+      for (const a of accounts) {
+        if (postizByPlatform[a.platform]) {
+          merged.push({ ...postizByPlatform[a.platform], _id: a._id });
+          seen.add(a.platform);
+        } else {
+          merged.push(a);
+        }
+      }
+      for (const [platform, acc] of Object.entries(postizByPlatform)) {
+        if (!seen.has(platform)) merged.push(acc);
+      }
+      accounts = merged;
+    } catch (postizErr) {
+      logger.warn('[Social] Could not fetch Postiz integrations for accounts:', postizErr.message);
+    }
 
     res.json({ accounts });
   } catch (error) {
@@ -94,11 +145,12 @@ router.post('/connect/:platform', requireJwtAuth, async (req, res) => {
     // Initiate OAuth with Postiz
     const oauthData = await PostizService.initiateConnection(platform, callbackUrl);
 
-    // Return OAuth URL for frontend to redirect
+    // Return URL for frontend: open in new tab (Postiz has no connect API; user connects in Postiz UI)
     res.json({
       oauthUrl: oauthData.url || oauthData.authUrl,
+      openInNewTab: oauthData.openInNewTab === true,
       platform,
-      state,
+      state: oauthData.openInNewTab ? undefined : state,
     });
   } catch (error) {
     logger.error('[Social] Failed to initiate connection:', error);
@@ -199,35 +251,42 @@ router.get('/callback/:platform', async (req, res) => {
 
 /**
  * DELETE /api/social/accounts/:id
- * Disconnect a social account
+ * Disconnect a social account (id may be MongoDB _id or Postiz integration id)
  */
 router.delete('/accounts/:id', requireJwtAuth, async (req, res) => {
   try {
-    const account = await SocialAccount.findOne({
+    let account = await SocialAccount.findOne({
       _id: req.params.id,
       userId: req.user.id,
     });
 
     if (!account) {
-      return res.status(404).json({ error: 'Account not found' });
+      account = await SocialAccount.findOne({
+        postizIntegrationId: req.params.id,
+        userId: req.user.id,
+      });
     }
 
-    // Disconnect from Postiz
+    const postizId = account?.postizIntegrationId || req.params.id;
+
+    // Disconnect from Postiz (works for both DB-stored and Postiz-only accounts)
     try {
-      await PostizService.disconnectIntegration(account.postizIntegrationId);
+      await PostizService.disconnectIntegration(postizId);
     } catch (postizError) {
       logger.warn('[Social] Failed to disconnect from Postiz, continuing anyway:', postizError);
     }
 
-    // Mark as inactive in our database
-    account.isActive = false;
-    await account.save();
+    if (account) {
+      account.isActive = false;
+      await account.save();
+      logger.info(`[Social] Disconnected ${account.platform} for user ${req.user.id}`);
+    } else {
+      logger.info(`[Social] Disconnected Postiz integration ${postizId} for user ${req.user.id}`);
+    }
 
-    logger.info(`[Social] Disconnected ${account.platform} for user ${req.user.id}`);
-
-    res.json({ 
+    res.json({
       message: 'Account disconnected successfully',
-      platform: account.platform 
+      platform: account?.platform || 'unknown',
     });
   } catch (error) {
     logger.error('[Social] Failed to disconnect account:', error);
@@ -237,25 +296,44 @@ router.delete('/accounts/:id', requireJwtAuth, async (req, res) => {
 
 /**
  * GET /api/social/status
- * Get connection status for all platforms
+ * Get connection status for all platforms (DB + Postiz integrations)
  */
 router.get('/status', requireJwtAuth, async (req, res) => {
   try {
-    const accounts = await SocialAccount.find({
+    const dbAccounts = await SocialAccount.find({
       userId: req.user.id,
       isActive: true,
     }).select('platform accountName postizIntegrationId metadata createdAt');
 
-    const status = {
-      linkedin: accounts.find(a => a.platform === 'linkedin') || null,
-      x: accounts.find(a => a.platform === 'x') || null,
-      instagram: accounts.find(a => a.platform === 'instagram') || null,
-      facebook: accounts.find(a => a.platform === 'facebook') || null,
-      tiktok: accounts.find(a => a.platform === 'tiktok') || null,
-      youtube: accounts.find(a => a.platform === 'youtube') || null,
-      pinterest: accounts.find(a => a.platform === 'pinterest') || null,
+    let status = {
+      linkedin: dbAccounts.find(a => a.platform === 'linkedin') || null,
+      x: dbAccounts.find(a => a.platform === 'x') || null,
+      instagram: dbAccounts.find(a => a.platform === 'instagram') || null,
+      facebook: dbAccounts.find(a => a.platform === 'facebook') || null,
+      tiktok: dbAccounts.find(a => a.platform === 'tiktok') || null,
+      youtube: dbAccounts.find(a => a.platform === 'youtube') || null,
+      pinterest: dbAccounts.find(a => a.platform === 'pinterest') || null,
     };
 
+    try {
+      const postizList = await PostizService.getIntegrations();
+      for (const i of postizList) {
+        const platform = i.identifier === 'x' ? 'x' : (i.identifier || '').toLowerCase();
+        if (['linkedin', 'x', 'instagram', 'facebook', 'tiktok', 'youtube', 'pinterest'].includes(platform)) {
+          status[platform] = {
+            platform,
+            accountName: i.name || i.profile || `${platform} account`,
+            postizIntegrationId: i.id,
+            metadata: { picture: i.picture, profile: i.profile },
+            createdAt: new Date(),
+          };
+        }
+      }
+    } catch (postizErr) {
+      logger.warn('[Social] Could not fetch Postiz integrations for status:', postizErr.message);
+    }
+
+    const accounts = Object.values(status).filter(Boolean);
     res.json({ status, accounts });
   } catch (error) {
     logger.error('[Social] Failed to get status:', error);

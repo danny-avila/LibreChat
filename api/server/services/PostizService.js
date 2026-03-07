@@ -4,7 +4,10 @@ const logger = require('~/config/winston');
 class PostizService {
   constructor() {
     this.baseURL = process.env.POSTIZ_API_URL || 'http://localhost:4007/api';
+    this.publicApiBaseURL = process.env.POSTIZ_PUBLIC_API_URL || `${this.baseURL.replace(/\/$/, '')}/public/v1`;
     this.apiKey = process.env.POSTIZ_API_KEY;
+    // Postiz app (frontend) URL for "Connect" — where users add integrations in the UI
+    this.appURL = process.env.POSTIZ_APP_URL || this.baseURL.replace(/\/api\/?$/, '') || 'http://localhost:4007';
     
     if (!this.apiKey) {
       logger.warn('[PostizService] POSTIZ_API_KEY not configured');
@@ -12,7 +15,7 @@ class PostizService {
   }
 
   /**
-   * Create axios instance with authentication
+   * Create axios instance with authentication (main API)
    */
   getClient() {
     return axios.create({
@@ -26,13 +29,27 @@ class PostizService {
   }
 
   /**
-   * Get user's integrations from Postiz
+   * Create axios instance for Postiz Public API (v1)
+   */
+  getPublicClient() {
+    return axios.create({
+      baseURL: this.publicApiBaseURL,
+      headers: {
+        'Authorization': this.apiKey,
+        'Content-Type': 'application/json',
+      },
+      timeout: 30000,
+    });
+  }
+
+  /**
+   * Get integrations from Postiz (Public API: GET /integrations)
    */
   async getIntegrations() {
     try {
-      const client = this.getClient();
-      const response = await client.get('/integrations/list');
-      return response.data;
+      const client = this.getPublicClient();
+      const response = await client.get('/integrations');
+      return Array.isArray(response.data) ? response.data : [];
     } catch (error) {
       logger.error('[PostizService] Failed to get integrations:', error.message);
       throw new Error('Failed to fetch integrations from Postiz');
@@ -40,44 +57,16 @@ class PostizService {
   }
 
   /**
-   * Initiate OAuth connection for a platform
-   * @param {string} platform - Platform name (linkedin, x, instagram, etc.)
-   * @param {string} callbackUrl - URL to redirect after OAuth
+   * Initiate "connection" by returning Postiz app URL — Postiz has no public API for OAuth.
+   * User connects in Postiz UI; we open that page and sync via getIntegrations().
    */
-  async initiateConnection(platform, callbackUrl) {
-    try {
-      const client = this.getClient();
-      logger.info(`[PostizService] Initiating ${platform} connection with callback: ${callbackUrl}`);
-      
-      // Try the correct Postiz API endpoint for initiating OAuth
-      // The endpoint should return an OAuth URL to redirect the user to
-      const response = await client.post(`/integrations/${platform}/connect`, {
-        redirect: callbackUrl,
-      });
-      
-      logger.info(`[PostizService] ${platform} connection initiated successfully`);
-      return response.data;
-    } catch (error) {
-      // Log detailed error information
-      if (error.response) {
-        logger.error(`[PostizService] Postiz API error for ${platform}:`, {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          url: error.config?.url,
-        });
-        
-        // Return more specific error message
-        const errorMessage = error.response.data?.message || error.response.data?.error || error.message;
-        throw new Error(`Postiz error: ${errorMessage}`);
-      } else if (error.request) {
-        logger.error(`[PostizService] No response from Postiz for ${platform}:`, error.message);
-        throw new Error('Cannot connect to Postiz. Please ensure Postiz is running.');
-      } else {
-        logger.error(`[PostizService] Failed to initiate ${platform} connection:`, error.message);
-        throw new Error(`Failed to initiate ${platform} connection: ${error.message}`);
-      }
-    }
+  async initiateConnection(platform, _callbackUrl) {
+    const url = `${this.appURL.replace(/\/$/, '')}/integrations/social/${platform}`;
+    logger.info(`[PostizService] Connect ${platform} via Postiz UI: ${url}`);
+    return {
+      url,
+      openInNewTab: true,
+    };
   }
 
   /**
@@ -113,7 +102,7 @@ class PostizService {
   }
 
   /**
-   * Create a post on connected platforms
+   * Create a post on connected platforms (Public API: POST /posts)
    * @param {Object} postData - Post data
    * @param {string} postData.content - Post text content
    * @param {Array<string>} postData.integrations - Array of integration IDs
@@ -122,7 +111,7 @@ class PostizService {
    */
   async createPost(postData) {
     try {
-      const client = this.getClient();
+      const client = this.getPublicClient();
       const response = await client.post('/posts', postData);
       return response.data;
     } catch (error) {

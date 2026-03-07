@@ -3,6 +3,83 @@
 ## Problem
 Postiz works fine initially but crashes/hangs after 20-30 minutes, showing gateway timeout errors.
 
+---
+
+## 504 After Idle (refresh or navigate → timeout, works again after 10–20 min)
+
+If the app works right after deploy but **after a few minutes idle** you get **504 timeouts** on refresh or navigation, and it only recovers after 10–20 minutes, the cause is usually **idle timeouts** (proxy or backend).
+
+### 1. Run keep-alive so the app is never idle
+
+Use the keep-alive script so something hits Postiz every 1–2 minutes. That keeps connections warm and avoids proxy/backend idle timeouts.
+
+**Option A – Cron (recommended)**  
+On the server that can reach your Postiz URL:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Ping Postiz every 90 seconds (every 2nd minute)
+*/2 * * * * POSTIZ_URL=https://postiz.cloud.jamot.pro /path/to/postiz-deployment/keep-alive.sh once >> /var/log/postiz-keepalive.log 2>&1
+```
+
+Use your real path and `POSTIZ_URL` (and optional `KEEP_ALIVE_INTERVAL`, default 90).
+
+**Option B – Run in background**
+
+```bash
+cd postiz-deployment
+chmod +x keep-alive.sh
+POSTIZ_URL=https://postiz.cloud.jamot.pro nohup ./keep-alive.sh >> keep-alive.log 2>&1 &
+```
+
+**Option C – External monitor**  
+Use UptimeRobot, Better Uptime, or similar to hit `https://postiz.cloud.jamot.pro` every 1–2 minutes. That also keeps the path (proxy → app) from going idle.
+
+### 2. Increase proxy (Coolify/Nginx) timeouts
+
+504 often comes from the **reverse proxy** closing the connection to the backend after an idle period. Increase timeouts so the proxy waits longer before closing.
+
+**Coolify**  
+In the app’s proxy/network settings, set for the Postiz service:
+
+- **Read timeout:** 300 (seconds)
+- **Connect timeout:** 300
+- **Send timeout:** 300  
+
+If there is a single “Proxy read timeout” or “Idle timeout”, set it to at least 300.
+
+**Nginx** (if you edit config yourself):
+
+```nginx
+location / {
+    proxy_read_timeout 300s;
+    proxy_connect_timeout 300s;
+    proxy_send_timeout 300s;
+    # ... rest of proxy_* to your backend
+}
+```
+
+Then reload Nginx.
+
+### 3. Database connection pool (if Postiz supports it)
+
+After idle, the app’s DB connections can be dropped by PostgreSQL or the pool. If Postiz reads pool settings from env, add to `postiz-deployment/.env`:
+
+```env
+# Optional: if Postiz supports these
+DATABASE_POOL_MIN=2
+DATABASE_POOL_MAX=10
+```
+
+(Only if the Postiz image/documentation mentions these or similar variables.)
+
+### 4. Verify
+
+- After adding keep-alive (cron or background), wait 5+ minutes, then refresh and navigate. 504s after idle should stop or reduce.
+- If 504s persist, increase proxy timeouts as in step 2 and restart the proxy.
+
 ## Immediate Actions When Crash Occurs
 
 ### 1. Run Diagnostics
@@ -272,6 +349,45 @@ If issues persist, collect this information:
    - RAM: `free -h`
    - CPU: `lscpu`
    - Disk: `df -h`
+
+## Facebook OAuth: "The domain of this URL isn't included in the app's domains"
+
+If you see this when connecting Facebook from Postiz at `postiz.cloud.jamot.pro`, configure **two** places in the Facebook app.
+
+### 1. App Domains (Basic settings – you already have this)
+
+- **Settings → Basic → App domains** must include the domain of the URL Facebook redirects to.
+- You have: `postiz.cloud.jamot.pro`.
+- Also add the root domain: **`jamot.pro`** (Facebook often requires the root when using subdomains).
+
+### 2. Valid OAuth Redirect URIs (required)
+
+- Go to **Products → Facebook Login → Settings** (or **Use cases → Customize → Facebook Login → Settings**).
+- In **Valid OAuth Redirect URIs**, add these **exact** URLs (one per line; add all to cover Postiz’s possible callback paths):
+
+```
+https://postiz.cloud.jamot.pro/integrations/social/facebook
+https://postiz.cloud.jamot.pro/api/integrations/social/facebook/callback
+https://postiz.cloud.jamot.pro/api/auth/facebook/callback
+```
+
+- Save changes. Facebook uses strict matching; the redirect URI from Postiz must match one of these exactly (including `https`, no trailing slash unless Postiz sends it).
+
+### 3. Optional: Privacy Policy and Terms URLs
+
+- In **Basic** settings, set **Privacy Policy URL** and **Terms of Service URL** if the app is in Live mode or you see validation warnings.
+
+### 4. Verify Postiz URL config
+
+- In `postiz-deployment/.env` ensure:
+  - `MAIN_URL=https://postiz.cloud.jamot.pro`
+  - `FRONTEND_URL=https://postiz.cloud.jamot.pro`
+  - `NEXT_PUBLIC_BACKEND_URL=https://postiz.cloud.jamot.pro/api`
+- Restart Postiz after any `.env` change: `docker compose restart postiz`.
+
+After that, try “Connect Facebook” again from Postiz. If it still fails, check the browser address bar when the error appears and add that **exact** URL to Valid OAuth Redirect URIs.
+
+---
 
 ## Prevention Checklist
 
