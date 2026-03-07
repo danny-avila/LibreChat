@@ -560,7 +560,7 @@ describe('systemGrant methods', () => {
         expect(result).toBe(false);
       });
 
-      it('platform-level grant does not match tenant-scoped query', async () => {
+      it('platform-level grant satisfies tenant-scoped query', async () => {
         const userId = new Types.ObjectId();
 
         await methods.grantCapability({
@@ -574,7 +574,7 @@ describe('systemGrant methods', () => {
           capability: SystemCapabilities.READ_CONFIGS,
           tenantId: 'tenant-1',
         });
-        expect(result).toBe(false);
+        expect(result).toBe(true);
       });
 
       it('tenant-scoped grant matches same-tenant query', async () => {
