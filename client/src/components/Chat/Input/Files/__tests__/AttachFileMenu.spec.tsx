@@ -75,7 +75,7 @@ const mockUseGetStartupConfig = jest.requireMock('~/data-provider').useGetStartu
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-function setupMocks(overrides: { provider?: string; endpointType?: string } = {}) {
+function setupMocks(overrides: { provider?: string } = {}) {
   const translations: Record<string, string> = {
     com_ui_upload_provider: 'Upload to Provider',
     com_ui_upload_image_input: 'Upload Image',

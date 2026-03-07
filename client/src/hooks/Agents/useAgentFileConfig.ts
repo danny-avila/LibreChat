@@ -10,7 +10,7 @@ import type { AgentForm } from '~/common';
 import { useGetFileConfig, useGetEndpointsQuery } from '~/data-provider';
 
 export default function useAgentFileConfig(): {
-  endpointType: string | undefined;
+  endpointType: EModelEndpoint | string | undefined;
   providerValue: string | undefined;
   endpointFileConfig: EndpointFileConfig;
 } {
