@@ -87,8 +87,14 @@ export function applyTenantIsolation(schema: Schema): void {
       return;
     }
     const replacement = this.getUpdate() as Record<string, unknown> | null;
-    if (replacement && 'tenantId' in replacement) {
+    if (!replacement) {
+      return;
+    }
+    if ('tenantId' in replacement && replacement.tenantId !== tenantId) {
       throw new Error('[TenantIsolation] Modifying tenantId via replacement is not allowed');
+    }
+    if (tenantId && !('tenantId' in replacement)) {
+      replacement.tenantId = tenantId;
     }
   };
 
