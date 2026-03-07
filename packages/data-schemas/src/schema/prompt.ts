@@ -23,6 +23,10 @@ const promptSchema: Schema<IPrompt> = new Schema(
       enum: ['text', 'chat'],
       required: true,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,

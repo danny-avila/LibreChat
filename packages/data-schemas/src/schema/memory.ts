@@ -28,6 +28,10 @@ const MemoryEntrySchema: Schema<IMemoryEntry> = new Schema({
     type: Date,
     default: Date.now,
   },
+  tenantId: {
+    type: String,
+    index: true,
+  },
 });
 
 export default MemoryEntrySchema;

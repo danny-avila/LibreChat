@@ -54,16 +54,8 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       capability: capabilityQuery,
     };
 
-    /*
-     * TODO(#12091): In multi-tenant mode, platform-level grants (tenantId absent)
-     * should also satisfy tenant-scoped checks so that seeded ADMIN grants remain
-     * effective. When tenantId is set, query both tenant-scoped AND platform-level:
-     *   query.$or = [{ tenantId }, { tenantId: { $exists: false } }]
-     * Also: getUserPrincipals currently has no tenantId param, so group memberships
-     * are returned across all tenants. Filter by tenant there too.
-     */
     if (tenantId != null) {
-      query.tenantId = tenantId;
+      query.$and = [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }];
     } else {
       query.tenantId = { $exists: false };
     }
@@ -194,7 +186,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     };
 
     if (tenantId != null) {
-      filter.tenantId = tenantId;
+      filter.$or = [{ tenantId }, { tenantId: { $exists: false } }];
     } else {
       filter.tenantId = { $exists: false };
     }

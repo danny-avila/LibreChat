@@ -560,7 +560,7 @@ describe('systemGrant methods', () => {
         expect(result).toBe(false);
       });
 
-      it('platform-level grant does not match tenant-scoped query', async () => {
+      it('platform-level grant satisfies tenant-scoped query', async () => {
         const userId = new Types.ObjectId();
 
         await methods.grantCapability({
@@ -574,7 +574,7 @@ describe('systemGrant methods', () => {
           capability: SystemCapabilities.READ_CONFIGS,
           tenantId: 'tenant-1',
         });
-        expect(result).toBe(false);
+        expect(result).toBe(true);
       });
 
       it('tenant-scoped grant matches same-tenant query', async () => {
@@ -677,6 +677,19 @@ describe('systemGrant methods', () => {
       });
       expect(grants).toHaveLength(1);
       expect(grants[0].capability).toBe(SystemCapabilities.READ_CONFIGS);
+    });
+
+    it('includes platform-level grants when called with a tenantId', async () => {
+      await methods.seedSystemGrants();
+
+      const grants = await methods.getCapabilitiesForPrincipal({
+        principalType: PrincipalType.ROLE,
+        principalId: SystemRoles.ADMIN,
+        tenantId: 'acme',
+      });
+
+      expect(grants.some((g) => g.capability === SystemCapabilities.ACCESS_ADMIN)).toBe(true);
+      expect(grants).toHaveLength(Object.values(SystemCapabilities).length);
     });
 
     it('throws TypeError for invalid ObjectId string on USER principal', async () => {
