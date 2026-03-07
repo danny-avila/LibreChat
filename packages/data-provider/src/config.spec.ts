@@ -262,3 +262,54 @@ describe('resolveEndpointType + isDocumentSupportedProvider (upload menu)', () =
     expect(isDocumentSupportedProvider(directType)).toBe(isDocumentSupportedProvider(agentType));
   });
 });
+
+describe('any custom endpoint is document-supported regardless of name', () => {
+  const arbitraryNames = [
+    'My LLM Gateway',
+    'company-internal-api',
+    'LiteLLM Proxy',
+    'test_endpoint_123',
+    'AI Studio',
+    'ACME Corp',
+    'localhost:8080',
+  ];
+
+  const configWithArbitraryEndpoints: TEndpointsConfig = {
+    [EModelEndpoint.agents]: { userProvide: false, order: 1 },
+    ...Object.fromEntries(
+      arbitraryNames.map((name) => [
+        name,
+        { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
+      ]),
+    ),
+  };
+
+  it.each(arbitraryNames)('direct custom endpoint "%s" is document-supported', (name) => {
+    const endpointType = resolveEndpointType(configWithArbitraryEndpoints, name);
+    expect(endpointType).toBe(EModelEndpoint.custom);
+    expect(isDocumentSupportedProvider(endpointType)).toBe(true);
+  });
+
+  it.each(arbitraryNames)('agent with custom provider "%s" is document-supported', (name) => {
+    const endpointType = resolveEndpointType(
+      configWithArbitraryEndpoints,
+      EModelEndpoint.agents,
+      name,
+    );
+    expect(endpointType).toBe(EModelEndpoint.custom);
+    expect(isDocumentSupportedProvider(endpointType)).toBe(true);
+  });
+
+  it.each(arbitraryNames)(
+    '"%s" resolves the same whether used directly or through an agent',
+    (name) => {
+      const directType = resolveEndpointType(configWithArbitraryEndpoints, name);
+      const agentType = resolveEndpointType(
+        configWithArbitraryEndpoints,
+        EModelEndpoint.agents,
+        name,
+      );
+      expect(directType).toBe(agentType);
+    },
+  );
+});
