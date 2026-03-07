@@ -2,10 +2,9 @@ import { memo, useMemo } from 'react';
 import {
   Constants,
   supportsFiles,
-  EModelEndpoint,
   mergeFileConfig,
   isAgentsEndpoint,
-  getEndpointField,
+  resolveEndpointType,
   isAssistantsEndpoint,
   getEndpointFileConfig,
 } from 'librechat-data-provider';
@@ -55,21 +54,31 @@ function AttachFileChat({
 
   const { data: endpointsConfig } = useGetEndpointsQuery();
 
-  const endpointType = useMemo(() => {
-    return (
-      getEndpointField(endpointsConfig, endpoint, 'type') ||
-      (endpoint as EModelEndpoint | undefined)
-    );
-  }, [endpoint, endpointsConfig]);
+  const agentProvider = useMemo(() => {
+    if (!isAgents || !conversation?.agent_id) {
+      return undefined;
+    }
+    const agent = agentData || agentsMap?.[conversation.agent_id];
+    return agent?.provider;
+  }, [isAgents, conversation?.agent_id, agentData, agentsMap]);
 
+  const endpointType = useMemo(
+    () => resolveEndpointType(endpointsConfig, endpoint, agentProvider),
+    [endpointsConfig, endpoint, agentProvider],
+  );
+
+  const fileConfigEndpoint = useMemo(
+    () => (isAgents && agentProvider ? agentProvider : endpoint),
+    [isAgents, agentProvider, endpoint],
+  );
   const endpointFileConfig = useMemo(
     () =>
       getEndpointFileConfig({
-        endpoint,
         fileConfig,
         endpointType,
+        endpoint: fileConfigEndpoint,
       }),
-    [endpoint, fileConfig, endpointType],
+    [fileConfigEndpoint, fileConfig, endpointType],
   );
   const endpointSupportsFiles: boolean = useMemo(
     () => supportsFiles[endpointType ?? endpoint ?? ''] ?? false,

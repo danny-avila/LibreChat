@@ -3,22 +3,16 @@ import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { useFormContext } from 'react-hook-form';
 import { SharePointIcon, AttachmentIcon, DropdownPopup } from '@librechat/client';
-import {
-  EModelEndpoint,
-  EToolResources,
-  mergeFileConfig,
-  AgentCapabilities,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
+import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
-import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
-import { useLocalize, useLazyEffect } from '~/hooks';
+import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
+import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { useGetStartupConfig } from '~/data-provider';
 import FileSearchCheckbox from './FileSearchCheckbox';
 import { isEphemeralAgent } from '~/common';
-import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
-import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 
 function FileSearch({
   agent_id,
@@ -37,15 +31,14 @@ function FileSearch({
 
   // Get startup configuration for SharePoint feature flag
   const { data: startupConfig } = useGetStartupConfig();
-
-  const { data: fileConfig = null } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
+  const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
+  const endpointOverride = providerValue || EModelEndpoint.agents;
 
   const { handleFileChange } = useFileHandlingNoChatContext(
     {
       additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-      endpointOverride: EModelEndpoint.agents,
+      endpointOverride,
+      endpointTypeOverride: endpointType,
       fileSetter: setFiles,
     },
     fileHandlingState,
@@ -55,7 +48,8 @@ function FileSearch({
     useSharePointFileHandlingNoChatContext(
       {
         additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-        endpointOverride: EModelEndpoint.agents,
+        endpointOverride,
+        endpointTypeOverride: endpointType,
         fileSetter: setFiles,
       },
       fileHandlingState,
@@ -72,12 +66,6 @@ function FileSearch({
   );
 
   const fileSearchChecked = watch(AgentCapabilities.file_search);
-
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig,
-    endpoint: EModelEndpoint.agents,
-    endpointType: EModelEndpoint.agents,
-  });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;

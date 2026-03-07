@@ -46,7 +46,6 @@ export default function MCPServerMenuItem({
       name="mcp-servers"
       value={server.serverName}
       checked={isSelected}
-      setValueOnChange={false}
       onChange={() => onToggle(server.serverName)}
       aria-label={accessibleLabel}
       className={cn(

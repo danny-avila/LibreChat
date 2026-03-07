@@ -50,7 +50,7 @@ interface AttachFileMenuProps {
   endpoint?: string | null;
   disabled?: boolean | null;
   conversationId: string;
-  endpointType?: EModelEndpoint;
+  endpointType?: EModelEndpoint | string;
   endpointFileConfig?: EndpointFileConfig;
   useResponsesApi?: boolean;
 }
