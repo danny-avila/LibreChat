@@ -19,7 +19,10 @@ export function getTenantId(): string | undefined {
   return tenantStorage.getStore()?.tenantId;
 }
 
-/** Runs a function in an explicit cross-tenant system context (bypasses tenant filtering) */
-export function runAsSystem<T>(fn: () => T): T {
+/**
+ * Runs a function in an explicit cross-tenant system context (bypasses tenant filtering).
+ * The callback MUST be async — sync callbacks returning Mongoose thenables will lose context.
+ */
+export function runAsSystem<T>(fn: () => Promise<T>): Promise<T> {
   return tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, fn);
 }
