@@ -466,7 +466,7 @@ const OpenAIChatCompletionController = async (req, res) => {
 
     // Process the stream
     const config = {
-      runName: 'AgentRun',
+      runName: agent.name || agent.model_parameters?.model || 'AgentRun',
       configurable: {
         thread_id: conversationId,
         user_id: userId,

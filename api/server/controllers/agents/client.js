@@ -725,7 +725,7 @@ class AgentClient extends BaseClient {
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
-        runName: 'AgentRun',
+        runName: this.options.agent.name || this.model || 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
