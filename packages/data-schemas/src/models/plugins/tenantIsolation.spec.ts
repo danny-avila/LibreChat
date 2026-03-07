@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { tenantStorage, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
-import { applyTenantIsolation } from './tenantIsolation';
+import { applyTenantIsolation, _resetStrictCache } from './tenantIsolation';
 
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 
@@ -387,6 +387,44 @@ describe('applyTenantIsolation', () => {
         TestModel.updateOne({ name: 'guarded' }, { $set: { tenantId: 'tenant-b' } }),
       ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
     });
+
+    it('blocks tenantId in replaceOne replacement document', async () => {
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          TestModel.replaceOne({ name: 'guarded' }, { name: 'replaced', tenantId: 'tenant-b' }),
+        ),
+      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via replacement is not allowed');
+    });
+
+    it('blocks tenantId in findOneAndReplace replacement document', async () => {
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          TestModel.findOneAndReplace(
+            { name: 'guarded' },
+            { name: 'replaced', tenantId: 'tenant-b' },
+          ),
+        ),
+      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via replacement is not allowed');
+    });
+
+    it('allows replaceOne without tenantId in replacement', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.replaceOne({ name: 'guarded' }, { name: 'replaced-ok' }),
+      );
+
+      const doc = await TestModel.findOne({ name: 'replaced-ok' }).lean();
+      expect(doc).not.toBeNull();
+    });
+
+    it('allows SYSTEM_TENANT_ID to replace with tenantId', async () => {
+      await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+        TestModel.replaceOne({ name: 'guarded' }, { name: 'sys-replaced', tenantId: 'tenant-b' }),
+      );
+
+      const doc = await TestModel.findOne({ name: 'sys-replaced' }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc!.tenantId).toBe('tenant-b');
+    });
   });
 
   describe('runAsSystem', () => {
@@ -453,6 +491,7 @@ describe('applyTenantIsolation', () => {
         await TestModel.create({ name: 'strict-doc', tenantId: 'tenant-a' });
       });
       process.env.TENANT_ISOLATION_STRICT = 'true';
+      _resetStrictCache();
     });
 
     afterEach(() => {
@@ -461,6 +500,7 @@ describe('applyTenantIsolation', () => {
       } else {
         process.env.TENANT_ISOLATION_STRICT = originalEnv;
       }
+      _resetStrictCache();
     });
 
     it('throws on find without tenant context', async () => {

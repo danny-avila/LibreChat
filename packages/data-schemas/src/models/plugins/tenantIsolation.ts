@@ -1,8 +1,16 @@
 import type { Schema, Query, Aggregate, UpdateQuery } from 'mongoose';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import logger from '~/config/winston';
+
+let _strictMode: boolean | undefined;
 
 function isStrict(): boolean {
-  return process.env.TENANT_ISOLATION_STRICT === 'true';
+  return (_strictMode ??= process.env.TENANT_ISOLATION_STRICT === 'true');
+}
+
+/** Resets the cached strict-mode flag. Exposed for test teardown only. */
+export function _resetStrictCache(): void {
+  _strictMode = undefined;
 }
 
 if (
@@ -10,7 +18,7 @@ if (
   process.env.TENANT_ISOLATION_STRICT !== 'true' &&
   process.env.TENANT_ISOLATION_STRICT !== 'false'
 ) {
-  console.warn(
+  logger.warn(
     `[TenantIsolation] TENANT_ISOLATION_STRICT="${process.env.TENANT_ISOLATION_STRICT}" ` +
       'is not "true" or "false"; defaulting to non-strict mode.',
   );
@@ -42,7 +50,7 @@ function assertNoTenantIdMutation(update: UpdateQuery<unknown> | null): void {
  * - `tenantId` is `SYSTEM_TENANT_ID` -> skips injection (explicit cross-tenant op).
  * - `tenantId` absent + `TENANT_ISOLATION_STRICT=true` -> throws (fail-closed).
  * - `tenantId` absent + strict mode off -> passes through (transitional/pre-tenancy).
- * - Update operations that modify `tenantId` are blocked unless running as system.
+ * - Update and replace operations that modify `tenantId` are blocked unless running as system.
  */
 export function applyTenantIsolation(schema: Schema): void {
   const s = schema as Schema & { [key: symbol]: boolean };
@@ -73,6 +81,17 @@ export function applyTenantIsolation(schema: Schema): void {
     assertNoTenantIdMutation(this.getUpdate() as UpdateQuery<unknown> | null);
   };
 
+  const replaceGuard = function (this: Query<unknown, unknown>) {
+    const tenantId = getTenantId();
+    if (tenantId === SYSTEM_TENANT_ID) {
+      return;
+    }
+    const replacement = this.getUpdate() as Record<string, unknown> | null;
+    if (replacement && 'tenantId' in replacement) {
+      throw new Error('[TenantIsolation] Modifying tenantId via replacement is not allowed');
+    }
+  };
+
   schema.pre('find', queryMiddleware);
   schema.pre('findOne', queryMiddleware);
   schema.pre('findOneAndUpdate', queryMiddleware);
@@ -88,6 +107,9 @@ export function applyTenantIsolation(schema: Schema): void {
   schema.pre('findOneAndUpdate', updateGuard);
   schema.pre('updateOne', updateGuard);
   schema.pre('updateMany', updateGuard);
+
+  schema.pre('replaceOne', replaceGuard);
+  schema.pre('findOneAndReplace', replaceGuard);
 
   schema.pre('aggregate', function (this: Aggregate<unknown>) {
     const tenantId = getTenantId();
