@@ -22,6 +22,7 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('~/hooks', () => ({
+  useAgentFileConfig: jest.requireActual('~/hooks/Agents/useAgentFileConfig').default,
   useLocalize: () => (key: string) => key,
   useLazyEffect: () => {},
 }));

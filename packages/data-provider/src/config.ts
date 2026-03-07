@@ -1927,11 +1927,12 @@ export function getEndpointField<
 }
 
 /**
- * Resolves the effective endpoint type following the chain:
- * endpoint (if not agents) → agent.provider → agents → default (endpoint itself)
+ * Resolves the effective endpoint type:
+ * - Non-agents endpoint: config.type || endpoint
+ * - Agents + provider: config[provider].type || provider
+ * - Agents, no provider: EModelEndpoint.agents
  *
- * For non-agents endpoints, resolves from the endpoint's config type.
- * For agents, resolves from the agent's provider config type, falling back to "agents".
+ * Returns `undefined` when endpoint is null/undefined.
  */
 export function resolveEndpointType(
   endpointsConfig: TEndpointsConfig | undefined | null,

@@ -1,19 +1,11 @@
 import { memo, useMemo, useRef, useState } from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
+import { useFormContext } from 'react-hook-form';
 import { AttachmentIcon } from '@librechat/client';
-import {
-  EToolResources,
-  EModelEndpoint,
-  mergeFileConfig,
-  AgentCapabilities,
-  resolveEndpointType,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
+import { EToolResources, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
-import { useGetFileConfig, useGetEndpointsQuery } from '~/data-provider';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
-import { useLocalize, useLazyEffect } from '~/hooks';
 import { isEphemeralAgent } from '~/common';
 
 const tool_resource = EToolResources.execute_code;
@@ -30,9 +22,6 @@ function Files({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
   const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
-  const { data: fileConfig = null } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
   const { abortUpload, handleFileChange } = useFileHandlingNoChatContext(
     {
       fileSetter: setFiles,
@@ -54,18 +43,7 @@ function Files({
 
   const codeChecked = watch(AgentCapabilities.execute_code);
 
-  const providerOption = useWatch<AgentForm>({ name: 'provider' });
-  const { data: endpointsConfig } = useGetEndpointsQuery();
-  const providerValue =
-    typeof providerOption === 'string'
-      ? providerOption
-      : (providerOption as { value?: string } | undefined)?.value;
-  const endpointType = resolveEndpointType(endpointsConfig, EModelEndpoint.agents, providerValue);
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig,
-    endpoint: providerValue ?? EModelEndpoint.agents,
-    endpointType,
-  });
+  const { endpointFileConfig } = useAgentFileConfig();
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   if (isUploadDisabled) {

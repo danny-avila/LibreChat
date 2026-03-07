@@ -1,25 +1,14 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { useForm, FormProvider, useWatch } from 'react-hook-form';
-import {
-  EModelEndpoint,
-  mergeFileConfig,
-  resolveEndpointType,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
+import { useForm, FormProvider } from 'react-hook-form';
+import { EModelEndpoint, mergeFileConfig, resolveEndpointType } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
+import useAgentFileConfig from '~/hooks/Agents/useAgentFileConfig';
 
 /**
- * Tests the file config resolution logic shared by FileContext, FileSearch, and Code/Files.
- * All three components follow the same pattern:
- *   1. Read provider from form context via useWatch
- *   2. Resolve endpointType via resolveEndpointType(endpointsConfig, 'agents', provider)
- *   3. Call getEndpointFileConfig({ fileConfig, endpoint: provider ?? 'agents', endpointType })
- *   4. Use the result for isUploadDisabled and file limits
- *
- * This test validates that logic with real resolveEndpointType and getEndpointFileConfig
- * — no mocking of the resolution chain.
+ * Tests the useAgentFileConfig hook used by FileContext, FileSearch, and Code/Files.
+ * Uses the real hook with mocked data-fetching layer.
  */
 
 const mockEndpointsConfig: TEndpointsConfig = {
@@ -44,29 +33,8 @@ jest.mock('~/data-provider', () => ({
   }),
 }));
 
-/**
- * Mirrors the resolution logic in FileContext / FileSearch / Code/Files:
- *   const providerOption = useWatch<AgentForm>({ name: 'provider' });
- *   const providerValue = typeof providerOption === 'string' ? providerOption : providerOption?.value;
- *   const endpointType = resolveEndpointType(endpointsConfig, EModelEndpoint.agents, providerValue);
- *   const endpointFileConfig = getEndpointFileConfig({ fileConfig, endpoint: providerValue ?? 'agents', endpointType });
- */
 function FileConfigProbe() {
-  const providerOption = useWatch<AgentForm>({ name: 'provider' });
-  const providerValue =
-    typeof providerOption === 'string'
-      ? providerOption
-      : (providerOption as { value?: string } | undefined)?.value;
-  const endpointType = resolveEndpointType(
-    mockEndpointsConfig,
-    EModelEndpoint.agents,
-    providerValue,
-  );
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig: mockFileConfig,
-    endpoint: providerValue ?? EModelEndpoint.agents,
-    endpointType,
-  });
+  const { endpointType, endpointFileConfig } = useAgentFileConfig();
   return (
     <div>
       <span data-testid="endpointType">{String(endpointType)}</span>
@@ -87,7 +55,7 @@ function TestWrapper({ provider }: { provider?: string | { label: string; value:
   );
 }
 
-describe('AgentPanel file config resolution', () => {
+describe('AgentPanel file config resolution (useAgentFileConfig)', () => {
   describe('endpointType resolution from form provider', () => {
     it('resolves to custom when provider is a custom endpoint string', () => {
       render(<TestWrapper provider="Moonshot" />);
@@ -131,7 +99,7 @@ describe('AgentPanel file config resolution', () => {
       expect(screen.getByTestId('fileLimit').textContent).toBe('20');
     });
 
-    it('falls back to agents config for openAI provider (no openAI-specific config)', () => {
+    it('falls back to default config for openAI provider (no openAI-specific config)', () => {
       render(<TestWrapper provider={EModelEndpoint.openAI} />);
       expect(screen.getByTestId('fileLimit').textContent).toBe('10');
     });

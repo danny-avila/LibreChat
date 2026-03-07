@@ -1,14 +1,7 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
-import { useWatch } from 'react-hook-form';
-import {
-  EModelEndpoint,
-  EToolResources,
-  mergeFileConfig,
-  resolveEndpointType,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
+import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
 import {
   HoverCard,
   DropdownPopup,
@@ -19,14 +12,14 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@librechat/client';
-import type { ExtendedFile, AgentForm } from '~/common';
-import { useGetFileConfig, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
-import { useLocalize, useLazyEffect } from '~/hooks';
+import type { ExtendedFile } from '~/common';
+import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
+import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { useGetStartupConfig } from '~/data-provider';
 import { ESide, isEphemeralAgent } from '~/common';
-import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
-import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 
 function FileContext({
   agent_id,
@@ -43,10 +36,6 @@ function FileContext({
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
-
-  const { data: fileConfig = null } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
 
   const { handleFileChange } = useFileHandlingNoChatContext(
     {
@@ -75,18 +64,7 @@ function FileContext({
     750,
   );
 
-  const providerOption = useWatch<AgentForm>({ name: 'provider' });
-  const { data: endpointsConfig } = useGetEndpointsQuery();
-  const providerValue =
-    typeof providerOption === 'string'
-      ? providerOption
-      : (providerOption as { value?: string } | undefined)?.value;
-  const endpointType = resolveEndpointType(endpointsConfig, EModelEndpoint.agents, providerValue);
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig,
-    endpoint: providerValue ?? EModelEndpoint.agents,
-    endpointType,
-  });
+  const { endpointFileConfig } = useAgentFileConfig();
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
     try {

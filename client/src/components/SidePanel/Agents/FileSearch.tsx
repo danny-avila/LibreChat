@@ -1,24 +1,17 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
-import { useFormContext, useWatch } from 'react-hook-form';
+import { useFormContext } from 'react-hook-form';
 import { SharePointIcon, AttachmentIcon, DropdownPopup } from '@librechat/client';
-import {
-  EModelEndpoint,
-  EToolResources,
-  mergeFileConfig,
-  AgentCapabilities,
-  resolveEndpointType,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
+import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
-import { useGetFileConfig, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { useGetStartupConfig } from '~/data-provider';
 import FileSearchCheckbox from './FileSearchCheckbox';
-import { useLocalize, useLazyEffect } from '~/hooks';
 import { isEphemeralAgent } from '~/common';
 
 function FileSearch({
@@ -38,10 +31,6 @@ function FileSearch({
 
   // Get startup configuration for SharePoint feature flag
   const { data: startupConfig } = useGetStartupConfig();
-
-  const { data: fileConfig = null } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
 
   const { handleFileChange } = useFileHandlingNoChatContext(
     {
@@ -74,18 +63,7 @@ function FileSearch({
 
   const fileSearchChecked = watch(AgentCapabilities.file_search);
 
-  const providerOption = useWatch<AgentForm>({ name: 'provider' });
-  const { data: endpointsConfig } = useGetEndpointsQuery();
-  const providerValue =
-    typeof providerOption === 'string'
-      ? providerOption
-      : (providerOption as { value?: string } | undefined)?.value;
-  const endpointType = resolveEndpointType(endpointsConfig, EModelEndpoint.agents, providerValue);
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig,
-    endpoint: providerValue ?? EModelEndpoint.agents,
-    endpointType,
-  });
+  const { endpointFileConfig } = useAgentFileConfig();
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;

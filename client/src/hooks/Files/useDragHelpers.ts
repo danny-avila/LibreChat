@@ -72,7 +72,7 @@ export default function useDragHelpers() {
       const currentEndpoint = conversationRef.current?.endpoint ?? 'default';
       const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
 
-      /** Get agent permissions at drop time */
+      /** Get agent data from cache; if absent, provider-specific file config restrictions are bypassed client-side */
       const agentId = conversationRef.current?.agent_id;
       const agent = agentId
         ? queryClient.getQueryData<t.Agent>([QueryKeys.agent, agentId])

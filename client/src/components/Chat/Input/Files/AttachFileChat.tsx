@@ -67,7 +67,10 @@ function AttachFileChat({
     [endpointsConfig, endpoint, agentProvider],
   );
 
-  const fileConfigEndpoint = isAgents && agentProvider ? agentProvider : endpoint;
+  const fileConfigEndpoint = useMemo(
+    () => (isAgents && agentProvider ? agentProvider : endpoint),
+    [isAgents, agentProvider, endpoint],
+  );
   const endpointFileConfig = useMemo(
     () =>
       getEndpointFileConfig({
