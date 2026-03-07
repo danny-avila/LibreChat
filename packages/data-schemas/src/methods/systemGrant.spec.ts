@@ -79,26 +79,34 @@ describe('systemGrant methods', () => {
     });
 
     it('retries on transient failure and succeeds', async () => {
+      jest.useFakeTimers();
       jest.spyOn(SystemGrant, 'bulkWrite').mockRejectedValueOnce(new Error('disk full'));
 
-      await expect(methods.seedSystemGrants()).resolves.not.toThrow();
+      const seedPromise = methods.seedSystemGrants();
+      await jest.advanceTimersByTimeAsync(5000);
+      await seedPromise;
 
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Attempt 1/3 failed'));
+      jest.useRealTimers();
     });
 
     it('logs error after all retries exhausted', async () => {
+      jest.useFakeTimers();
       jest
         .spyOn(SystemGrant, 'bulkWrite')
         .mockRejectedValueOnce(new Error('disk full'))
         .mockRejectedValueOnce(new Error('disk full'))
         .mockRejectedValueOnce(new Error('disk full'));
 
-      await expect(methods.seedSystemGrants()).resolves.not.toThrow();
+      const seedPromise = methods.seedSystemGrants();
+      await jest.advanceTimersByTimeAsync(10000);
+      await seedPromise;
 
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Failed to seed capabilities after all retries'),
         expect.any(Error),
       );
+      jest.useRealTimers();
     });
   });
 
@@ -689,6 +697,17 @@ describe('systemGrant methods', () => {
           principalId: new Types.ObjectId(),
           capability: SystemCapabilities.READ_USERS,
           tenantId: null,
+        }),
+      ).rejects.toThrow(/tenantId/);
+    });
+
+    it('rejects empty string tenantId at the schema level', async () => {
+      await expect(
+        SystemGrant.create({
+          principalType: PrincipalType.USER,
+          principalId: new Types.ObjectId(),
+          capability: SystemCapabilities.READ_USERS,
+          tenantId: '',
         }),
       ).rejects.toThrow(/tenantId/);
     });
