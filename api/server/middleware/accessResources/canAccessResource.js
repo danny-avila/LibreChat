@@ -72,7 +72,13 @@ const canAccessResource = (options) => {
         });
       }
       const cap = ResourceCapabilityMap[resourceType];
-      if (cap && (await hasCapability(req.user, cap))) {
+      let hasCap = false;
+      try {
+        hasCap = cap != null && (await hasCapability(req.user, cap));
+      } catch (err) {
+        logger.warn(`[canAccessResource] capability check failed, denying bypass: ${err.message}`);
+      }
+      if (hasCap) {
         logger.debug(
           `[canAccessResource] ${cap} bypass for user ${req.user.id} on ${resourceType} ${rawResourceId}`,
         );

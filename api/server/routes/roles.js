@@ -1,4 +1,5 @@
 const express = require('express');
+const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   SystemRoles,
   roleDefaults,
@@ -11,7 +12,6 @@ const {
   peoplePickerPermissionsSchema,
   remoteAgentsPermissionsSchema,
 } = require('librechat-data-provider');
-const { SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, requireCapability, requireJwtAuth } = require('~/server/middleware');
 const { updateRoleByName, getRoleByName } = require('~/models');
 
@@ -114,7 +114,12 @@ router.get('/:roleName', async (req, res) => {
   const roleName = _r.toUpperCase();
 
   try {
-    const hasReadRoles = await hasCapability(req.user, SystemCapabilities.READ_ROLES);
+    let hasReadRoles = false;
+    try {
+      hasReadRoles = await hasCapability(req.user, SystemCapabilities.READ_ROLES);
+    } catch (err) {
+      logger.warn(`[GET /roles/:roleName] capability check failed: ${err.message}`);
+    }
     if (!hasReadRoles && (roleName === SystemRoles.ADMIN || !roleDefaults[roleName])) {
       return res.status(403).send({ message: 'Unauthorized' });
     }
@@ -126,7 +131,8 @@ router.get('/:roleName', async (req, res) => {
 
     res.status(200).send(role);
   } catch (error) {
-    return res.status(500).send({ message: 'Failed to retrieve role', error: error.message });
+    logger.error('[GET /roles/:roleName] Error:', error);
+    return res.status(500).send({ message: 'Failed to retrieve role' });
   }
 });
 

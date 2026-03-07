@@ -390,7 +390,12 @@ router.post('/', async (req, res) => {
     if (metadata.agent_id && metadata.tool_resource && !isMessageAttachment) {
       const userId = req.user.id;
 
-      const hasManageAgents = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
+      let hasManageAgents = false;
+      try {
+        hasManageAgents = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
+      } catch (err) {
+        logger.warn(`[/files] capability check failed, denying bypass: ${err.message}`);
+      }
       if (hasManageAgents) {
         logger.debug(
           `[/files] MANAGE_AGENTS bypass for user ${req.user.id} on agent ${metadata.agent_id}`,
