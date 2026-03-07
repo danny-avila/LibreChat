@@ -676,13 +676,17 @@ class BaseClient {
       balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
+      // Add a safety buffer for estimated completion tokens since we can't know
+      // completion length upfront. This prevents users from triggering expensive
+      // completions with near-zero balance. Buffer = min(promptTokens, 1000).
+      const completionBuffer = Math.min(promptTokens, 1000);
       await checkBalance({
         req: this.options.req,
         res: this.options.res,
         txData: {
           user: this.user,
           tokenType: 'prompt',
-          amount: promptTokens,
+          amount: promptTokens + completionBuffer,
           endpoint: this.options.endpoint,
           model: this.modelOptions?.model ?? this.model,
           endpointTokenConfig: this.options.endpointTokenConfig,

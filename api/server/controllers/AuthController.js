@@ -22,7 +22,8 @@ const registrationController = async (req, res) => {
     res.status(status).send({ message });
   } catch (err) {
     logger.error('[registrationController]', err);
-    return res.status(500).json({ message: err.message });
+    // Return generic message to prevent leaking internal error details
+    return res.status(500).json({ message: 'Registration failed. Please try again.' });
   }
 };
 

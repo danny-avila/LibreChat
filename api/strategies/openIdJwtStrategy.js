@@ -4,7 +4,7 @@ const { logger } = require('@bizu/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SystemRoles } = require('bizu-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const { isEnabled, findOpenIDUser } = require('@bizu/api');
+const { isEnabled, findOpenIDUser, math } = require('@bizu/api');
 const { updateUser, findUser } = require('~/models');
 
 /**
@@ -27,9 +27,8 @@ const { updateUser, findUser } = require('~/models');
 const openIdJwtLogin = (openIdConfig) => {
   let jwksRsaOptions = {
     cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
-    cacheMaxAge: process.env.OPENID_JWKS_URL_CACHE_TIME
-      ? eval(process.env.OPENID_JWKS_URL_CACHE_TIME)
-      : 60000,
+    // Use safe math parser instead of eval to prevent code injection
+    cacheMaxAge: math(process.env.OPENID_JWKS_URL_CACHE_TIME, 60000),
     jwksUri: openIdConfig.serverMetadata().jwks_uri,
   };
 

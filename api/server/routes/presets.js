@@ -2,10 +2,25 @@ const crypto = require('crypto');
 const express = require('express');
 const { logger } = require('@bizu/data-schemas');
 const { getPresets, savePreset, deletePresets } = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+
+// Block all preset operations when presets are disabled in interface config
+router.use(async (req, res, next) => {
+  try {
+    const appConfig = await getAppConfig();
+    if (appConfig?.interfaceConfig?.presets === false) {
+      return res.status(403).json({ message: 'Presets are disabled' });
+    }
+    next();
+  } catch (error) {
+    logger.error('[presets] Error checking interface config', error);
+    next();
+  }
+});
 
 router.get('/', async (req, res) => {
   const presets = (await getPresets(req.user.id)).map((preset) => preset);

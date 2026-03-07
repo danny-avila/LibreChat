@@ -14,6 +14,8 @@ const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 const { mcpServersRegistry } = require('@bizu/api');
 
+const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
+
 const router = express.Router();
 const emailLoginEnabled =
   process.env.ALLOW_EMAIL_LOGIN === undefined || isEnabled(process.env.ALLOW_EMAIL_LOGIN);
@@ -63,14 +65,28 @@ const getMCPServers = async (payload, appConfig) => {
   }
 };
 
-router.get('/', async function (req, res) {
+// Use optional JWT so unauthenticated requests (login page) get a limited payload
+router.get('/', optionalJwtAuth, async function (req, res) {
+  const isAuthenticated = !!req.user;
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
 
   const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
   if (cachedStartupConfig) {
-    const appConfig = await getAppConfig({ role: req.user?.role });
-    await getMCPServers(cachedStartupConfig, appConfig);
-    res.send(cachedStartupConfig);
+    // Clone to avoid mutating the cache when stripping fields
+    const payload = { ...cachedStartupConfig };
+    if (isAuthenticated) {
+      const appConfig = await getAppConfig({ role: req.user?.role });
+      await getMCPServers(payload, appConfig);
+    } else {
+      // Strip sensitive fields for unauthenticated requests
+      delete payload.modelSpecs;
+      delete payload.balance;
+      delete payload.interface;
+      delete payload.serverDomain;
+      delete payload.instanceProjectId;
+      delete payload.mcpServers;
+    }
+    res.send(payload);
     return;
   }
 
@@ -192,8 +208,21 @@ router.get('/', async function (req, res) {
     }
 
     await cache.set(CacheKeys.STARTUP_CONFIG, payload);
-    await getMCPServers(payload, appConfig);
-    return res.status(200).send(payload);
+
+    // Build response: authenticated users get the full payload;
+    // unauthenticated users (login page) get a limited subset.
+    const responsePayload = { ...payload };
+    if (isAuthenticated) {
+      await getMCPServers(responsePayload, appConfig);
+    } else {
+      delete responsePayload.modelSpecs;
+      delete responsePayload.balance;
+      delete responsePayload.interface;
+      delete responsePayload.serverDomain;
+      delete responsePayload.instanceProjectId;
+      delete responsePayload.mcpServers;
+    }
+    return res.status(200).send(responsePayload);
   } catch (err) {
     logger.error('Error in startup config', err);
     return res.status(500).send({ error: err.message });

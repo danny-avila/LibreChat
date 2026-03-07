@@ -22,7 +22,8 @@ router.get('/terms', requireJwtAuth, getTermsStatusController);
 router.post('/terms/accept', requireJwtAuth, acceptTermsController);
 router.post('/plugins', requireJwtAuth, updateUserPluginsController);
 router.delete('/delete', requireJwtAuth, canDeleteAccount, configMiddleware, deleteUserController);
-router.post('/verify', verifyEmailController);
+// Rate-limit verification token submission to prevent brute-force attacks
+router.post('/verify', require('~/server/middleware').verifyTokenLimiter, verifyEmailController);
 router.post('/verify/resend', verifyEmailLimiter, resendVerificationController);
 
 module.exports = router;

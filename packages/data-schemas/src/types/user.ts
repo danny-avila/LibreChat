@@ -48,6 +48,7 @@ export interface BalanceConfig {
   refillIntervalValue?: number;
   refillIntervalUnit?: string;
   refillAmount?: number;
+  maxRefillCount?: number;
 }
 
 export interface CreateUserRequest extends Partial<IUser> {

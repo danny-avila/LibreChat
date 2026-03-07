@@ -60,6 +60,11 @@ jest.mock('react-i18next', () => {
     ...actual,
     useTranslation: () => {
       const i18n = require('~/locales/i18n').default;
+      // Force English in tests so existing assertions (expecting English strings) pass.
+      // The production app defaults to PT-BR via i18n.ts config.
+      if (i18n.language !== 'en') {
+        i18n.changeLanguage('en');
+      }
       return {
         t: (key, options) => i18n.t(key, options),
         i18n: {

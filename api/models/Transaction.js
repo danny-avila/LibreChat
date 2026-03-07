@@ -164,10 +164,16 @@ async function createAutoRefillTransaction(txData) {
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
     return;
   }
-  const transaction = new Transaction(txData);
+  const { skipBalanceUpdate, ...transactionData } = txData;
+  const transaction = new Transaction(transactionData);
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
   calculateTokenValue(transaction);
   await transaction.save();
+
+  // When skipBalanceUpdate is true, the caller already updated the balance atomically
+  if (skipBalanceUpdate) {
+    return { rate: transaction.rate, user: transaction.user.toString(), transaction };
+  }
 
   const balanceResponse = await updateBalance({
     user: transaction.user,

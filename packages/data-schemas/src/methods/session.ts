@@ -13,7 +13,20 @@ export class SessionError extends Error {
 }
 
 const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-const expires = REFRESH_TOKEN_EXPIRY ? eval(REFRESH_TOKEN_EXPIRY) : 1000 * 60 * 60 * 24 * 7; // 7 days default
+
+// Safe math eval: only allows digits, operators, parens, and whitespace — no arbitrary code
+function safeMathEval(str: string | undefined, fallback: number): number {
+  if (!str) {return fallback;}
+  if (!/^[+\-\d.\s*/%()]+$/.test(str)) {return fallback;}
+  try {
+    const value = new Function(`return (${str})`)();
+    return typeof value === 'number' && !isNaN(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const expires = safeMathEval(REFRESH_TOKEN_EXPIRY, 1000 * 60 * 60 * 24 * 7);
 
 // Factory function that takes mongoose instance and returns the methods
 export function createSessionMethods(mongoose: typeof import('mongoose')) {

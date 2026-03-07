@@ -72,10 +72,12 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
 
     const user = await User.create(userData);
 
-    // If balance is enabled, create or update a balance record for the user
+    // If balance is enabled, create or update a balance record for the user.
+    // Use $setOnInsert for tokenCredits to prevent double-crediting if the record already exists
+    // (e.g., from a concurrent middleware call via createSetBalanceConfig).
     if (balanceConfig?.enabled && balanceConfig?.startBalance) {
       const update: {
-        $inc: { tokenCredits: number };
+        $setOnInsert: { tokenCredits: number };
         $set?: {
           autoRefillEnabled: boolean;
           refillIntervalValue: number;
@@ -83,7 +85,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
           refillAmount: number;
         };
       } = {
-        $inc: { tokenCredits: balanceConfig.startBalance },
+        $setOnInsert: { tokenCredits: balanceConfig.startBalance },
       };
 
       if (
@@ -170,13 +172,20 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     let expires = 1000 * 60 * 15;
 
     if (process.env.SESSION_EXPIRY !== undefined && process.env.SESSION_EXPIRY !== '') {
-      try {
-        const evaluated = eval(process.env.SESSION_EXPIRY);
-        if (evaluated) {
-          expires = evaluated;
+      // Safe math eval: only allows digits, operators, parens, and whitespace — no arbitrary code
+      const expiryStr = process.env.SESSION_EXPIRY;
+      if (/^[+\-\d.\s*/%()]+$/.test(expiryStr)) {
+        try {
+          const evaluated = new Function(`return (${expiryStr})`)();
+          // Preserve original behavior: falsy results (0, NaN) keep the default
+          if (evaluated) {
+            expires = evaluated;
+          }
+        } catch (error) {
+          console.warn('Invalid SESSION_EXPIRY expression, using default:', error);
         }
-      } catch (error) {
-        console.warn('Invalid SESSION_EXPIRY expression, using default:', error);
+      } else {
+        console.warn('SESSION_EXPIRY contains invalid characters, using default');
       }
     }
 

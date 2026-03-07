@@ -218,6 +218,13 @@ const tokenValues = Object.assign(
     'qwen3-vl-8b-instruct': { prompt: 0.18, completion: 0.69 },
     'qwen3-vl-30b-a3b': { prompt: 0.29, completion: 1.0 },
     'qwen3-vl-235b-a22b': { prompt: 0.3, completion: 1.2 },
+    // Bizu-specific: explicit OpenRouter model name entries.
+    // Prices in USD per 1M tokens — verify at https://openrouter.ai/models
+    'deepseek/deepseek-chat-v3-0324': { prompt: 0.28, completion: 0.42 },
+    'deepseek/deepseek-r1': { prompt: 0.4, completion: 2.0 },
+    'deepseek/deepseek-r1-0528': { prompt: 0.4, completion: 2.0 },
+    'qwen/qwen3-235b-a22b': { prompt: 0.08, completion: 0.55 },
+    'qwen/qwen3-30b-a3b': { prompt: 0.06, completion: 0.22 },
     // Qwen3 specialized models
     'qwen3-max': { prompt: 1.2, completion: 6 },
     'qwen3-coder': { prompt: 0.22, completion: 0.95 },

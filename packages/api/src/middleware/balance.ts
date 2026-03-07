@@ -60,6 +60,11 @@ function buildUpdateFields(
     updateFields.refillAmount = config.refillAmount;
   }
 
+  // Sync the max refill cap from config (0 = unlimited)
+  if (config.maxRefillCount != null && userRecord?.maxRefillCount !== config.maxRefillCount) {
+    updateFields.maxRefillCount = config.maxRefillCount;
+  }
+
   // Initialize lastRefill if it's missing when auto-refill is enabled
   if (config.autoRefillEnabled && !userRecord?.lastRefill) {
     updateFields.lastRefill = new Date();

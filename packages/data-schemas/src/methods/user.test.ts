@@ -151,10 +151,9 @@ describe('User Methods', () => {
         expirationTime: 900, // 15 minutes in seconds (default)
       });
 
-      // Verify warning was logged
+      // Verify warning was logged (regex pre-check catches invalid chars before eval)
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        'Invalid SESSION_EXPIRY expression, using default:',
-        expect.any(SyntaxError),
+        'SESSION_EXPIRY contains invalid characters, using default',
       );
 
       consoleWarnSpy.mockRestore();

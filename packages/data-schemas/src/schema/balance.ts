@@ -36,6 +36,16 @@ const balanceSchema = new Schema<t.IBalance>({
     type: Number,
     default: 0,
   },
+  // tracks total number of auto-refills performed for this user
+  refillCount: {
+    type: Number,
+    default: 0,
+  },
+  // maximum number of auto-refills allowed (0 = unlimited)
+  maxRefillCount: {
+    type: Number,
+    default: 0,
+  },
 });
 
 export default balanceSchema;

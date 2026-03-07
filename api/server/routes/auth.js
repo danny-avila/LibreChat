@@ -40,7 +40,8 @@ router.post(
   setBalanceConfig,
   loginController,
 );
-router.post('/refresh', refreshController);
+// Rate-limit refresh token endpoint to prevent brute-force/replay attacks
+router.post('/refresh', middleware.refreshLimiter, refreshController);
 router.post(
   '/register',
   middleware.registerLimiter,

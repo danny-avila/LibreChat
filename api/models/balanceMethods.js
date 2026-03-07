@@ -51,24 +51,68 @@ const checkBalanceRecord = async function ({
 
   // Only perform auto-refill if spending would bring the balance to 0 or below
   if (balance - tokenCost <= 0 && record.autoRefillEnabled && record.refillAmount > 0) {
-    const lastRefillDate = new Date(record.lastRefill);
-    const now = new Date();
-    if (
-      isInvalidDate(lastRefillDate) ||
-      now >=
-        addIntervalToDate(lastRefillDate, record.refillIntervalValue, record.refillIntervalUnit)
-    ) {
-      try {
-        /** @type {{ rate: number, user: string, balance: number, transaction: import('@bizu/data-schemas').ITransaction}} */
-        const result = await createAutoRefillTransaction({
-          user: user,
-          tokenType: 'credits',
-          context: 'autoRefill',
-          rawAmount: record.refillAmount,
-        });
-        balance = result.balance;
-      } catch (error) {
-        logger.error('[Balance.check] Failed to record transaction for auto-refill', error);
+    // Check if refill cap has been reached (maxRefillCount of 0 means unlimited)
+    const refillCount = record.refillCount || 0;
+    const maxRefillCount = record.maxRefillCount || 0;
+    if (maxRefillCount > 0 && refillCount >= maxRefillCount) {
+      logger.debug('[Balance.check] Auto-refill cap reached', {
+        user,
+        refillCount,
+        maxRefillCount,
+      });
+    } else {
+      const lastRefillDate = new Date(record.lastRefill);
+      const now = new Date();
+      // Determine the cutoff date: if lastRefill is invalid, we allow immediate refill
+      const cutoff = isInvalidDate(lastRefillDate)
+        ? new Date(0)
+        : addIntervalToDate(lastRefillDate, record.refillIntervalValue, record.refillIntervalUnit);
+
+      if (now >= cutoff) {
+        try {
+          // Atomic refill: use findOneAndUpdate with a condition on lastRefill to prevent
+          // concurrent requests from triggering multiple refills
+          const atomicResult = await Balance.findOneAndUpdate(
+            {
+              user,
+              // Only proceed if lastRefill hasn't changed since we read it (compare-and-swap)
+              lastRefill: record.lastRefill,
+            },
+            {
+              $set: { lastRefill: now },
+              $inc: { tokenCredits: record.refillAmount, refillCount: 1 },
+            },
+            { new: true },
+          ).lean();
+
+          if (atomicResult) {
+            balance = atomicResult.tokenCredits;
+            // Also record the transaction for audit trail
+            try {
+              await createAutoRefillTransaction({
+                user,
+                tokenType: 'credits',
+                context: 'autoRefill',
+                rawAmount: record.refillAmount,
+                skipBalanceUpdate: true,
+              });
+            } catch (txError) {
+              logger.error('[Balance.check] Failed to record refill transaction', txError);
+            }
+            logger.debug('[Balance.check] Atomic auto-refill performed', { user, balance });
+          } else {
+            // Another concurrent request already performed the refill — re-read balance
+            const freshRecord = await Balance.findOne({ user }).lean();
+            if (freshRecord) {
+              balance = freshRecord.tokenCredits;
+            }
+            logger.debug('[Balance.check] Refill already performed by concurrent request', {
+              user,
+            });
+          }
+        } catch (error) {
+          logger.error('[Balance.check] Failed to perform auto-refill', error);
+        }
       }
     }
   }

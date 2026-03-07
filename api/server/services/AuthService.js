@@ -205,7 +205,8 @@ const registerUser = async (user, additionalData = {}) => {
     //determine if this is the first registered user (not counting anonymous_user)
     const isFirstRegisteredUser = (await countUsers()) === 0;
 
-    const salt = bcrypt.genSaltSync(10);
+    // Use async bcrypt to avoid blocking the event loop under concurrent registrations
+    const salt = await bcrypt.genSalt(10);
     const newUserData = {
       provider: provider ?? 'local',
       email,
@@ -213,7 +214,7 @@ const registerUser = async (user, additionalData = {}) => {
       name,
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
-      password: bcrypt.hashSync(password, salt),
+      password: await bcrypt.hash(password, salt),
       ...additionalData,
     };
 
@@ -418,10 +419,10 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;
     }
+    const { math } = require('@bizu/api');
     const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-    const expiryInMilliseconds = REFRESH_TOKEN_EXPIRY
-      ? eval(REFRESH_TOKEN_EXPIRY)
-      : 1000 * 60 * 60 * 24 * 7; // 7 days default
+    // Use safe math parser instead of eval to prevent code injection
+    const expiryInMilliseconds = math(REFRESH_TOKEN_EXPIRY, 1000 * 60 * 60 * 24 * 7);
     const expirationDate = new Date(Date.now() + expiryInMilliseconds);
     if (tokenset == null) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');

@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Test files
+**/*.spec.js
+**/*.spec.ts
+**/*.test.js
+**/*.test.ts
+**/__tests__/
+e2e/
+
+# Development configs
+.devcontainer/
+.vscode/
+.github/
+
+# Git and docs
+.git/
+*.md
+
+# Environment files (secrets must be injected at runtime, not baked into images)
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.DS_Store
+*.swp
+*.swo

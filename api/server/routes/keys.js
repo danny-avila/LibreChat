@@ -4,7 +4,9 @@ const { updateUserKey, deleteUserKey, getUserKeyExpiry } = require('../services/
 const { requireJwtAuth } = require('../middleware/');
 
 router.put('/', requireJwtAuth, async (req, res) => {
-  await updateUserKey({ userId: req.user.id, ...req.body });
+  // Destructure only expected fields to prevent userId override from req.body
+  const { name, value, expiresAt } = req.body;
+  await updateUserKey({ userId: req.user.id, name, value, expiresAt });
   res.status(201).send();
 });
 

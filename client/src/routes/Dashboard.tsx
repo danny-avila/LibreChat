@@ -7,53 +7,12 @@ import {
 } from '~/components/Prompts';
 import DashboardRoute from './Layouts/Dashboard';
 
+// Files / vector-store routes are disabled for v1.
+// Prompts route kept but only active if re-enabled via config in the future.
 const dashboardRoutes = {
   path: 'd/*',
   element: <DashboardRoute />,
   children: [
-    /*
-    {
-      element: <FileDashboardView />,
-      children: [
-        {
-          index: true,
-          element: <EmptyVectorStorePreview />,
-        },
-        {
-          path: ':vectorStoreId',
-          element: <DataTableFilePreview />,
-        },
-      ],
-    },
-    {
-      path: 'files/*',
-      element: <FilesListView />,
-      children: [
-        {
-          index: true,
-          element: <EmptyFilePreview />,
-        },
-        {
-          path: ':fileId',
-          element: <FilePreview />,
-        },
-      ],
-    },
-    {
-      path: 'vector-stores/*',
-      element: <VectorStoreView />,
-      children: [
-        {
-          index: true,
-          element: <EmptyVectorStorePreview />,
-        },
-        {
-          path: ':vectorStoreId',
-          element: <VectorStorePreview />,
-        },
-      ],
-    },
-    */
     {
       path: 'prompts/*',
       element: <PromptsView />,
@@ -73,8 +32,9 @@ const dashboardRoutes = {
       ],
     },
     {
+      // Catch-all: redirect to main chat instead of the non-existent /d/files
       path: '*',
-      element: <Navigate to="/d/files" replace={true} />,
+      element: <Navigate to="/c/new" replace={true} />,
     },
   ],
 };
