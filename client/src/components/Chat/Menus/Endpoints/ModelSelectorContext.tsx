@@ -129,14 +129,18 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
 
   const keyProps = useKeyDialog();
 
+  const enforceSpecs = startupConfig?.modelSpecs?.enforce === true;
+
   /** Memoized search results */
   const searchResults = useMemo(() => {
     if (!searchValue) {
       return null;
     }
-    const allItems = [...modelSpecs, ...mappedEndpoints];
+    const allItems = enforceSpecs
+      ? [...modelSpecs]
+      : [...modelSpecs, ...mappedEndpoints];
     return filterItems(allItems, searchValue, agentsMap, assistantsMap || {});
-  }, [searchValue, modelSpecs, mappedEndpoints, agentsMap, assistantsMap]);
+  }, [searchValue, modelSpecs, mappedEndpoints, agentsMap, assistantsMap, enforceSpecs]);
 
   const setDebouncedSearchValue = useMemo(
     () =>
