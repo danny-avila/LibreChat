@@ -863,8 +863,9 @@ describe('spendTokens', () => {
         tokenUsage.promptTokens.read * (readRate ?? 0);
       const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
 
-      expect(result?.prompt?.prompt).toBeCloseTo(-expectedPromptCost, 0);
-      expect(result?.completion?.completion).toBeCloseTo(-expectedCompletionCost, 0);
+      expect(result).not.toBeNull();
+      expect(result!.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result!.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
     });
 
     it('should charge standard rates for structured tokens when below threshold', async () => {
@@ -905,8 +906,9 @@ describe('spendTokens', () => {
         tokenUsage.promptTokens.read * (readRate ?? 0);
       const expectedCompletionCost = tokenUsage.completionTokens * standardCompletionRate;
 
-      expect(result?.prompt?.prompt).toBeCloseTo(-expectedPromptCost, 0);
-      expect(result?.completion?.completion).toBeCloseTo(-expectedCompletionCost, 0);
+      expect(result).not.toBeNull();
+      expect(result!.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result!.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
     });
 
     it('should charge standard rates for gemini-3.1-pro-preview when prompt tokens are below threshold', async () => {
@@ -1034,8 +1036,9 @@ describe('spendTokens', () => {
         tokenUsage.promptTokens.read * readRate;
       const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
 
-      expect(result.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
-      expect(result.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
+      expect(result).not.toBeNull();
+      expect(result!.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result!.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
     });
 
     it('should not apply premium pricing to non-premium models regardless of prompt size', async () => {

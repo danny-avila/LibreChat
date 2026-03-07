@@ -43,4 +43,5 @@ export interface IMessage extends Document {
   expiredAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;
+  tenantId?: string;
 }
