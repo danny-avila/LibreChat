@@ -270,6 +270,86 @@ describe('isPrivateIP', () => {
   });
 });
 
+describe('isPrivateIP - IPv4-mapped IPv6 hex-normalized form (CVE-style SSRF bypass)', () => {
+  /**
+   * Node.js URL parser normalizes IPv4-mapped IPv6 from dotted-decimal to hex:
+   *   new URL('http://[::ffff:169.254.169.254]/').hostname → '::ffff:a9fe:a9fe'
+   *
+   * These tests confirm whether isPrivateIP catches the hex form that actually
+   * reaches it in production (via parseDomainSpec → new URL → hostname).
+   */
+  it('should detect hex-normalized AWS metadata address (::ffff:a9fe:a9fe)', () => {
+    // ::ffff:169.254.169.254 → hex form after URL parsing
+    expect(isPrivateIP('::ffff:a9fe:a9fe')).toBe(true);
+  });
+
+  it('should detect hex-normalized loopback (::ffff:7f00:1)', () => {
+    // ::ffff:127.0.0.1 → hex form after URL parsing
+    expect(isPrivateIP('::ffff:7f00:1')).toBe(true);
+  });
+
+  it('should detect hex-normalized 192.168.x.x (::ffff:c0a8:101)', () => {
+    // ::ffff:192.168.1.1 → hex form after URL parsing
+    expect(isPrivateIP('::ffff:c0a8:101')).toBe(true);
+  });
+
+  it('should detect hex-normalized 10.x.x.x (::ffff:a00:1)', () => {
+    // ::ffff:10.0.0.1 → hex form after URL parsing
+    expect(isPrivateIP('::ffff:a00:1')).toBe(true);
+  });
+
+  it('should detect hex-normalized 172.16.x.x (::ffff:ac10:1)', () => {
+    // ::ffff:172.16.0.1 → hex form after URL parsing
+    expect(isPrivateIP('::ffff:ac10:1')).toBe(true);
+  });
+
+  it('should detect hex-normalized 0.0.0.0 (::ffff:0:0)', () => {
+    // ::ffff:0.0.0.0 → hex form after URL parsing
+    expect(isPrivateIP('::ffff:0:0')).toBe(true);
+  });
+
+  it('should allow hex-normalized public IPs (::ffff:808:808 = 8.8.8.8)', () => {
+    expect(isPrivateIP('::ffff:808:808')).toBe(false);
+  });
+
+  it('should confirm URL parser produces the hex form that bypasses dotted regex', () => {
+    // This test documents the exact normalization gap
+    const hostname = new URL('http://[::ffff:169.254.169.254]/').hostname.replace(/^\[|\]$/g, '');
+    expect(hostname).toBe('::ffff:a9fe:a9fe'); // hex, not dotted
+    // The hostname that actually reaches isPrivateIP must be caught
+    expect(isPrivateIP(hostname)).toBe(true);
+  });
+});
+
+describe('isActionDomainAllowed - IPv4-mapped IPv6 hex SSRF bypass (end-to-end)', () => {
+  beforeEach(() => {
+    mockedLookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+  });
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should block http://[::ffff:169.254.169.254]/ (AWS metadata via IPv6)', async () => {
+    expect(await isActionDomainAllowed('http://[::ffff:169.254.169.254]/', null)).toBe(false);
+  });
+
+  it('should block http://[::ffff:127.0.0.1]/ (loopback via IPv6)', async () => {
+    expect(await isActionDomainAllowed('http://[::ffff:127.0.0.1]/', null)).toBe(false);
+  });
+
+  it('should block http://[::ffff:192.168.1.1]/ (private via IPv6)', async () => {
+    expect(await isActionDomainAllowed('http://[::ffff:192.168.1.1]/', null)).toBe(false);
+  });
+
+  it('should block http://[::ffff:10.0.0.1]/ (private via IPv6)', async () => {
+    expect(await isActionDomainAllowed('http://[::ffff:10.0.0.1]/', null)).toBe(false);
+  });
+
+  it('should allow http://[::ffff:8.8.8.8]/ (public via IPv6)', async () => {
+    expect(await isActionDomainAllowed('http://[::ffff:8.8.8.8]/', null)).toBe(true);
+  });
+});
+
 describe('resolveHostnameSSRF', () => {
   afterEach(() => {
     jest.clearAllMocks();
@@ -303,8 +383,23 @@ describe('resolveHostnameSSRF', () => {
     expect(mockedLookup).not.toHaveBeenCalled();
   });
 
-  it('should skip literal IPv6 addresses', async () => {
-    expect(await resolveHostnameSSRF('::1')).toBe(false);
+  it('should detect private IPv6 literals without DNS lookup', async () => {
+    expect(await resolveHostnameSSRF('::1')).toBe(true);
+    expect(await resolveHostnameSSRF('fc00::1')).toBe(true);
+    expect(await resolveHostnameSSRF('fe80::1')).toBe(true);
+    expect(mockedLookup).not.toHaveBeenCalled();
+  });
+
+  it('should detect hex-normalized IPv4-mapped IPv6 literals', async () => {
+    expect(await resolveHostnameSSRF('::ffff:a9fe:a9fe')).toBe(true);
+    expect(await resolveHostnameSSRF('::ffff:7f00:1')).toBe(true);
+    expect(await resolveHostnameSSRF('[::ffff:a9fe:a9fe]')).toBe(true);
+    expect(mockedLookup).not.toHaveBeenCalled();
+  });
+
+  it('should allow public IPv6 literals without DNS lookup', async () => {
+    expect(await resolveHostnameSSRF('2001:db8::1')).toBe(false);
+    expect(await resolveHostnameSSRF('::ffff:808:808')).toBe(false);
     expect(mockedLookup).not.toHaveBeenCalled();
   });
 
@@ -913,6 +1008,35 @@ describe('isMCPDomainAllowed', () => {
       expect(await isMCPDomainAllowed({ url: 'https://example.com' }, ['example.com'])).toBe(true);
       expect(await isMCPDomainAllowed({ url: 'ws://example.com' }, ['example.com'])).toBe(true);
       expect(await isMCPDomainAllowed({ url: 'wss://example.com' }, ['example.com'])).toBe(true);
+    });
+  });
+
+  describe('IPv4-mapped IPv6 hex SSRF bypass', () => {
+    it('should block MCP server targeting AWS metadata via IPv6-mapped address', async () => {
+      const config = { url: 'http://[::ffff:169.254.169.254]/mcp' };
+      expect(await isMCPDomainAllowed(config, null)).toBe(false);
+    });
+
+    it('should block MCP server targeting loopback via IPv6-mapped address', async () => {
+      const config = { url: 'http://[::ffff:127.0.0.1]/mcp' };
+      expect(await isMCPDomainAllowed(config, null)).toBe(false);
+    });
+
+    it('should block MCP server targeting private range via IPv6-mapped address', async () => {
+      expect(await isMCPDomainAllowed({ url: 'http://[::ffff:10.0.0.1]/mcp' }, null)).toBe(false);
+      expect(await isMCPDomainAllowed({ url: 'http://[::ffff:192.168.1.1]/mcp' }, null)).toBe(
+        false,
+      );
+    });
+
+    it('should block WebSocket MCP targeting private range via IPv6-mapped address', async () => {
+      expect(await isMCPDomainAllowed({ url: 'ws://[::ffff:127.0.0.1]/mcp' }, null)).toBe(false);
+      expect(await isMCPDomainAllowed({ url: 'wss://[::ffff:10.0.0.1]/mcp' }, null)).toBe(false);
+    });
+
+    it('should allow MCP server targeting public IP via IPv6-mapped address', async () => {
+      const config = { url: 'http://[::ffff:8.8.8.8]/mcp' };
+      expect(await isMCPDomainAllowed(config, null)).toBe(true);
     });
   });
 });

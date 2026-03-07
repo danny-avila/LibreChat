@@ -52,12 +52,22 @@ function isPrivateIPv4(a: number, b: number, c: number): boolean {
  * Handles IPv4, IPv6, and IPv4-mapped IPv6 addresses (::ffff:A.B.C.D).
  */
 export function isPrivateIP(ip: string): boolean {
-  const normalized = ip.toLowerCase().trim();
+  const normalized = ip
+    .toLowerCase()
+    .trim()
+    .replace(/^\[|\]$/g, '');
 
   const mappedMatch = normalized.match(/^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (mappedMatch) {
     const [, a, b, c] = mappedMatch.map(Number);
     return isPrivateIPv4(a, b, c);
+  }
+
+  const hexMappedMatch = normalized.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexMappedMatch) {
+    const hi = parseInt(hexMappedMatch[1], 16);
+    const lo = parseInt(hexMappedMatch[2], 16);
+    return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
   }
 
   const ipv4Match = normalized.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
@@ -66,13 +76,12 @@ export function isPrivateIP(ip: string): boolean {
     return isPrivateIPv4(a, b, c);
   }
 
-  const ipv6 = normalized.replace(/^\[|\]$/g, '');
   if (
-    ipv6 === '::1' ||
-    ipv6 === '::' ||
-    ipv6.startsWith('fc') ||
-    ipv6.startsWith('fd') ||
-    ipv6.startsWith('fe80')
+    normalized === '::1' ||
+    normalized === '::' ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    normalized.startsWith('fe80')
   ) {
     return true;
   }
@@ -95,7 +104,7 @@ export async function resolveHostnameSSRF(hostname: string): Promise<boolean> {
 
   const ipv6Check = normalizedHost.replace(/^\[|\]$/g, '');
   if (ipv6Check.includes(':')) {
-    return false;
+    return isPrivateIP(ipv6Check);
   }
 
   try {
