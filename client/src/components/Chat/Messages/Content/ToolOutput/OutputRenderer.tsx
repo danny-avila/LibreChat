@@ -22,6 +22,35 @@ function isError(text: string): boolean {
   return ERROR_PREFIX.test(text) || text.startsWith('Error processing tool');
 }
 
+function formatValue(value: unknown, indent: number): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value !== 'object') {
+    return String(value);
+  }
+  const pad = '  '.repeat(indent);
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return '[]';
+    }
+    if (value.every((v) => typeof v !== 'object' || v === null)) {
+      return value.map(String).join(', ');
+    }
+    return value.map((item) => `${pad}${formatValue(item, indent + 1)}`).join('\n');
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  return entries
+    .map(([k, v]) => {
+      const formatted = formatValue(v, indent + 1);
+      if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+        return `${pad}${k}:\n${formatted}`;
+      }
+      return `${pad}${k}: ${formatted}`;
+    })
+    .join('\n');
+}
+
 function formatObjectArray(arr: Record<string, unknown>[]): string {
   const keys = Object.keys(arr[0]);
   const nameKey = keys.find((k) => /^(name|title|label|id)$/i.test(k));
@@ -62,13 +91,6 @@ function isUniformObjectArray(parsed: unknown): parsed is Record<string, unknown
     }
   }
   return true;
-}
-
-function formatObject(obj: Record<string, unknown>): string {
-  return Object.entries(obj)
-    .filter(([, v]) => v !== null && v !== undefined && typeof v !== 'object')
-    .map(([k, v]) => `${k}: ${v}`)
-    .join('\n');
 }
 
 function extractText(raw: string): { text: string; error: boolean } {
@@ -114,8 +136,9 @@ function extractText(raw: string): { text: string; error: boolean } {
           }
           return { text: t, error: false };
         }
-        return { text: formatObject(parsed as Record<string, unknown>), error: false };
       }
+
+      return { text: formatValue(parsed, 0), error: false };
     } catch {
       // Not JSON
     }
@@ -138,7 +161,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
   return (
     <pre
       className={cn(
-        'max-h-[300px] overflow-auto whitespace-pre-wrap break-words text-xs',
+        'max-h-[300px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs',
         error ? 'text-red-600 dark:text-red-400' : 'text-text-secondary',
       )}
     >
