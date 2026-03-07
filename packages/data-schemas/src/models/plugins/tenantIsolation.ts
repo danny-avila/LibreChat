@@ -155,8 +155,8 @@ export function applyTenantIsolation(schema: Schema): void {
     const tenantId = getTenantId();
 
     if (!tenantId && isStrict()) {
-      throw new Error(
-        '[TenantIsolation] insertMany attempted without tenant context in strict mode',
+      return next(
+        new Error('[TenantIsolation] insertMany attempted without tenant context in strict mode'),
       );
     }
 
@@ -165,8 +165,8 @@ export function applyTenantIsolation(schema: Schema): void {
         if (!doc.tenantId) {
           doc.tenantId = tenantId;
         } else if (isStrict() && doc.tenantId !== tenantId) {
-          throw new Error(
-            '[TenantIsolation] Document tenantId does not match current tenant context',
+          return next(
+            new Error('[TenantIsolation] Document tenantId does not match current tenant context'),
           );
         }
       }
