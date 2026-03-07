@@ -47,6 +47,32 @@ function isPrivateIPv4(a: number, b: number, c: number): boolean {
   return false;
 }
 
+/** Extracts embedded IPv4 from Teredo (2001:0:), 6to4 (2002:), and NAT64 (64:ff9b::) addresses */
+function extractEmbeddedIPv4(ipv6: string): boolean {
+  const segments = ipv6.split(':').filter((s) => s !== '');
+
+  if (ipv6.startsWith('2002:') && segments.length >= 3) {
+    const hi = parseInt(segments[1], 16);
+    const lo = parseInt(segments[2], 16);
+    if (!isNaN(hi) && !isNaN(lo)) {
+      return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
+    }
+  }
+
+  if (ipv6.startsWith('64:ff9b::') || ipv6.startsWith('2001::')) {
+    const lastTwo = segments.slice(-2);
+    if (lastTwo.length === 2) {
+      const hi = parseInt(lastTwo[0], 16);
+      const lo = parseInt(lastTwo[1], 16);
+      if (!isNaN(hi) && !isNaN(lo)) {
+        return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
+      }
+    }
+  }
+
+  return false;
+}
+
 /**
  * Checks if an IP address belongs to a private, reserved, or link-local range.
  * Handles IPv4, IPv6, and IPv4-mapped IPv6 addresses (::ffff:A.B.C.D).
@@ -63,7 +89,7 @@ export function isPrivateIP(ip: string): boolean {
     return isPrivateIPv4(a, b, c);
   }
 
-  const hexMappedMatch = normalized.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  const hexMappedMatch = normalized.match(/^(?:::ffff:|::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
   if (hexMappedMatch) {
     const hi = parseInt(hexMappedMatch[1], 16);
     const lo = parseInt(hexMappedMatch[2], 16);
@@ -83,6 +109,10 @@ export function isPrivateIP(ip: string): boolean {
     normalized.startsWith('fd') ||
     normalized.startsWith('fe80')
   ) {
+    return true;
+  }
+
+  if (extractEmbeddedIPv4(normalized) === true) {
     return true;
   }
 

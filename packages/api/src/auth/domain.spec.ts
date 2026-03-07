@@ -312,6 +312,38 @@ describe('isPrivateIP - IPv4-mapped IPv6 hex-normalized form (CVE-style SSRF byp
     expect(isPrivateIP('::ffff:808:808')).toBe(false);
   });
 
+  it('should detect IPv4-compatible addresses without ffff prefix (::XXXX:XXXX)', () => {
+    expect(isPrivateIP('::7f00:1')).toBe(true);
+    expect(isPrivateIP('::a9fe:a9fe')).toBe(true);
+    expect(isPrivateIP('::c0a8:101')).toBe(true);
+    expect(isPrivateIP('::a00:1')).toBe(true);
+  });
+
+  it('should allow public IPs in IPv4-compatible form', () => {
+    expect(isPrivateIP('::808:808')).toBe(false);
+  });
+
+  it('should detect 6to4 addresses embedding private IPv4 (2002:XXXX:XXXX::)', () => {
+    expect(isPrivateIP('2002:7f00:1::')).toBe(true);
+    expect(isPrivateIP('2002:a9fe:a9fe::')).toBe(true);
+    expect(isPrivateIP('2002:c0a8:101::')).toBe(true);
+    expect(isPrivateIP('2002:a00:1::')).toBe(true);
+  });
+
+  it('should allow 6to4 addresses embedding public IPv4', () => {
+    expect(isPrivateIP('2002:808:808::')).toBe(false);
+  });
+
+  it('should detect NAT64 addresses embedding private IPv4 (64:ff9b::XXXX:XXXX)', () => {
+    expect(isPrivateIP('64:ff9b::7f00:1')).toBe(true);
+    expect(isPrivateIP('64:ff9b::a9fe:a9fe')).toBe(true);
+  });
+
+  it('should detect Teredo addresses embedding private IPv4 (2001::XXXX:XXXX)', () => {
+    expect(isPrivateIP('2001::7f00:1')).toBe(true);
+    expect(isPrivateIP('2001::a9fe:a9fe')).toBe(true);
+  });
+
   it('should confirm URL parser produces the hex form that bypasses dotted regex', () => {
     // This test documents the exact normalization gap
     const hostname = new URL('http://[::ffff:169.254.169.254]/').hostname.replace(/^\[|\]$/g, '');
@@ -347,6 +379,22 @@ describe('isActionDomainAllowed - IPv4-mapped IPv6 hex SSRF bypass (end-to-end)'
 
   it('should allow http://[::ffff:8.8.8.8]/ (public via IPv6)', async () => {
     expect(await isActionDomainAllowed('http://[::ffff:8.8.8.8]/', null)).toBe(true);
+  });
+
+  it('should block IPv4-compatible IPv6 without ffff prefix', async () => {
+    expect(await isActionDomainAllowed('http://[::127.0.0.1]/', null)).toBe(false);
+    expect(await isActionDomainAllowed('http://[::169.254.169.254]/', null)).toBe(false);
+    expect(await isActionDomainAllowed('http://[0:0:0:0:0:0:127.0.0.1]/', null)).toBe(false);
+  });
+
+  it('should block 6to4 addresses embedding private IPv4', async () => {
+    expect(await isActionDomainAllowed('http://[2002:7f00:1::]/', null)).toBe(false);
+    expect(await isActionDomainAllowed('http://[2002:a9fe:a9fe::]/', null)).toBe(false);
+  });
+
+  it('should block NAT64 addresses embedding private IPv4', async () => {
+    expect(await isActionDomainAllowed('http://[64:ff9b::127.0.0.1]/', null)).toBe(false);
+    expect(await isActionDomainAllowed('http://[64:ff9b::169.254.169.254]/', null)).toBe(false);
   });
 });
 
