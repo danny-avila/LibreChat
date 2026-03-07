@@ -34,14 +34,14 @@ export default function Root() {
   // Global health check - runs once per authenticated session
   useHealthCheck(isAuthenticated);
 
+  const { data: config } = useGetStartupConfig();
+
   // Only fetch data maps for features that are actually enabled in config
   // to avoid unnecessary API calls for disabled features
   const agentsEnabled = config?.interface?.agents !== false;
   const assistantsMap = useAssistantsMap({ isAuthenticated });
   const agentsMap = useAgentsMap({ isAuthenticated: isAuthenticated && agentsEnabled });
   const fileMap = useFileMap({ isAuthenticated });
-
-  const { data: config } = useGetStartupConfig();
   const { data: termsData } = useUserTermsQuery({
     enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
   });
