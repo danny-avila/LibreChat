@@ -53,7 +53,7 @@ Every interactive element gets a unique `@e1`, `@e2`, `@e3`… reference that th
 
 <Tabs items={['Docker Compose', 'Build from source']}>
   <Tabs.Tab>
-Add to your `docker-compose.override.yml`:
+Add to your `docker-compose.override.yaml`:
 
 ```yaml
 services:
@@ -64,8 +64,8 @@ services:
       - PORT=8932
       # Optional: path to a specific Chromium binary
       # - CHROMIUM_PATH=/usr/bin/chromium
-    ports:
-      - "8932:8932"
+    # Internal Docker network only — do not expose publicly without auth
+    # For local dev, uncomment: ports: ["127.0.0.1:8932:8932"]
     restart: unless-stopped
 ```
   </Tabs.Tab>
@@ -88,25 +88,21 @@ The server listens on `http://localhost:8932` by default. Set `PORT` to override
 
 ### Configure librechat.yaml
 
-Add the server to `mcpServers` in your `librechat.yaml`:
+Add the server to your `librechat.yaml`:
 
 ```yaml
+# Allow the MCP client to reach the agent-browser server
+mcpSettings:
+  allowedDomains:
+    - http://agent-browser-mcp:8932
+    - http://localhost:8932
+
 mcpServers:
   agent-browser:
     type: sse
     url: http://agent-browser-mcp:8932/sse
-    # Adjust the URL for local/non-Docker setups:
+    # For local/non-Docker setups:
     # url: http://localhost:8932/sse
-    autoApprove:
-      - navigate
-      - snapshot
-      - click
-      - fill
-      - get_text
-      - press_key
-      - screenshot
-      - get_url
-      - close_browser
 ```
 
 </Steps>
@@ -117,6 +113,15 @@ mcpServers:
 |----------|---------|-------------|
 | `PORT` | `8932` | HTTP port the MCP server listens on |
 | `CHROMIUM_PATH` | _(Playwright managed)_ | Path to a custom Chromium binary |
+
+### Security
+
+<Callout type="warning">
+  **SSRF protection:** The `navigate` tool validates URLs and rejects requests to private
+  IP ranges (10.x, 192.168.x, 172.16-31.x, 127.x, 169.254.x) and internal hostnames
+  (localhost, .local, .internal). For internal/homelab use, fork the server and adjust
+  the `isAllowedUrl()` function in `src/server.ts`.
+</Callout>
 
 ## Implementation reference
 
@@ -171,9 +176,18 @@ function buildMcpServer(): McpServer {
   server.tool(
     "navigate",
     "Navigate the browser to a URL. Returns the page title.",
-    { url: z.string().describe("Full URL including https://") },
+    {
+      url: z
+        .string()
+        .url()
+        .refine(isAllowedUrl, {
+          message:
+            "URL must use http/https and must not point to private, loopback, or link-local addresses.",
+        })
+        .describe("Full URL including https://"),
+    },
     async ({ url }) => {
-      // ... call agent-browser BrowserManager
+      // ... call agent-browser BrowserManager with a validated, external URL
       return { content: [{ type: "text", text: `Navigated to: ${title}` }] };
     }
   );
@@ -200,6 +214,6 @@ function buildMcpServer(): McpServer {
 
 ## Related
 
-- [MCP Server configuration reference](/docs/configuration/librechat_yaml/object_structure/mcp_servers)
+- [MCP Server configuration](https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/mcp_servers)
 - [Vercel `agent-browser` npm package](https://www.npmjs.com/package/agent-browser)
 - [Model Context Protocol SDK](https://github.com/modelcontextprotocol/typescript-sdk)
