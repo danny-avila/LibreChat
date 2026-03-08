@@ -91,12 +91,6 @@ services:
       KEEP_ALIVE_TIMEOUT: "65000"
       HEADERS_TIMEOUT: "66000"
 
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f -s -o /dev/null -w \"%{http_code}\" --max-time 15 http://localhost:5000/ | grep -qE '200|301|302' || exit 1"]
-      interval: 60s
-      timeout: 20s
-      retries: 3
-      start_period: 90s
     volumes:
       - postiz-config:/config/
       - postiz-uploads:/uploads/
@@ -105,7 +99,6 @@ services:
     networks:
       - postiz-network
       - temporal-network
-      # Coolify proxy network (must exist for Coolify; create it if not external)
       - coolify-proxy
     depends_on:
       postiz-postgres:
@@ -290,8 +283,6 @@ networks:
   temporal-network:
     driver: bridge
     name: temporal-network
-  # Coolify creates a network named with the resource UUID before running compose.
-  # Attach to it as external so we don't try to create it (avoids label/ownership conflict).
   coolify-proxy:
     name: ${COOLIFY_RESOURCE_UUID:-coolify-default}
     external: true
