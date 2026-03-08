@@ -10,7 +10,7 @@ import {
 import { debounce } from 'lodash';
 import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
-import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
+import { setTokenHeader, SystemRoles, CUSTOM_ROLE_NAME_REGEX } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
@@ -45,6 +45,17 @@ const AuthContextProvider = ({
   });
   const { data: adminRole = null } = useGetRole(SystemRoles.ADMIN, {
     enabled: !!(isAuthenticated && user?.role === SystemRoles.ADMIN),
+  });
+
+  const customRoleName = user?.role ?? '';
+  const isCustomRole =
+    isAuthenticated &&
+    customRoleName !== '' &&
+    customRoleName !== SystemRoles.USER &&
+    customRoleName !== SystemRoles.ADMIN &&
+    CUSTOM_ROLE_NAME_REGEX.test(customRoleName);
+  const { data: customRole = null } = useGetRole(customRoleName, {
+    enabled: isCustomRole,
   });
 
   const navigate = useNavigate();
@@ -224,11 +235,22 @@ const AuthContextProvider = ({
       roles: {
         [SystemRoles.USER]: userRole,
         [SystemRoles.ADMIN]: adminRole,
+        ...(isCustomRole && customRoleName ? { [customRoleName]: customRole } : {}),
       },
       isAuthenticated,
     }),
 
-    [user, error, isAuthenticated, token, userRole, adminRole],
+    [
+      user,
+      error,
+      isAuthenticated,
+      token,
+      userRole,
+      adminRole,
+      isCustomRole,
+      customRoleName,
+      customRole,
+    ],
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;

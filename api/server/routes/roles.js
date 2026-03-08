@@ -1,18 +1,20 @@
 const express = require('express');
 const {
   SystemRoles,
-  roleDefaults,
+  isSystemRole,
   PermissionTypes,
   agentPermissionsSchema,
   promptPermissionsSchema,
   memoryPermissionsSchema,
+  CUSTOM_ROLE_NAME_REGEX,
   mcpServersPermissionsSchema,
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
   remoteAgentsPermissionsSchema,
 } = require('librechat-data-provider');
 const { checkAdmin, requireJwtAuth } = require('~/server/middleware');
-const { updateRoleByName, getRoleByName } = require('~/models/Role');
+const { updateRoleByName, getRoleByName, getAllRoleNames } = require('~/models/Role');
+const { Role } = require('~/db/models');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -103,6 +105,51 @@ const createPermissionUpdateHandler = (permissionKey) => {
 };
 
 /**
+ * GET /api/roles
+ * List all role names (admin-only)
+ */
+router.get('/', checkAdmin, async (req, res) => {
+  try {
+    const roleNames = await getAllRoleNames();
+    res.status(200).send(roleNames);
+  } catch (error) {
+    return res.status(500).send({ message: 'Failed to list roles', error: error.message });
+  }
+});
+
+/**
+ * POST /api/roles
+ * Create a new custom role (admin-only)
+ */
+router.post('/', checkAdmin, async (req, res) => {
+  const { name } = req.body;
+  if (!name || typeof name !== 'string') {
+    return res.status(400).send({ message: 'Role name is required' });
+  }
+
+  const roleName = name.toUpperCase();
+
+  if (!CUSTOM_ROLE_NAME_REGEX.test(roleName)) {
+    return res.status(400).send({ message: 'Invalid role name format' });
+  }
+
+  if (isSystemRole(roleName)) {
+    return res.status(400).send({ message: 'Cannot create system roles' });
+  }
+
+  try {
+    const existing = await Role.findOne({ name: roleName }).lean().exec();
+    if (existing) {
+      return res.status(409).send({ message: 'Role already exists' });
+    }
+    const role = await getRoleByName(roleName);
+    res.status(201).send(role);
+  } catch (error) {
+    return res.status(500).send({ message: 'Failed to create role', error: error.message });
+  }
+});
+
+/**
  * GET /api/roles/:roleName
  * Get a specific role by name
  */
@@ -111,10 +158,10 @@ router.get('/:roleName', async (req, res) => {
   // TODO: TEMP, use a better parsing for roleName
   const roleName = _r.toUpperCase();
 
-  if (
-    (req.user.role !== SystemRoles.ADMIN && roleName === SystemRoles.ADMIN) ||
-    (req.user.role !== SystemRoles.ADMIN && !roleDefaults[roleName])
-  ) {
+  const isAdmin = req.user.role === SystemRoles.ADMIN;
+  const isOwnRole = req.user.role === roleName;
+  const isUserRole = roleName === SystemRoles.USER;
+  if (!isAdmin && !isOwnRole && !isUserRole) {
     return res.status(403).send({ message: 'Unauthorized' });
   }
 

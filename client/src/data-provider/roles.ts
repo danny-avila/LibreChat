@@ -29,6 +29,16 @@ export const useGetRole = (
   });
 };
 
+export const useListRoles = (config?: UseQueryOptions<string[]>): QueryObserverResult<string[]> => {
+  return useQuery<string[]>([QueryKeys.roles, 'list'], () => dataService.listRoles(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+  });
+};
+
 export const useUpdatePromptPermissionsMutation = (
   options?: t.UpdatePromptPermOptions,
 ): UseMutationResult<

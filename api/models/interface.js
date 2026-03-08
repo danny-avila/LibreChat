@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
-const { getRoleByName, updateAccessPermissions } = require('./Role');
+const { getRoleByName, updateAccessPermissions, getAllRoleNames } = require('./Role');
 
 /**
  * Update interface permissions based on app configuration.
@@ -13,6 +13,7 @@ async function updateInterfacePermissions(appConfig) {
       appConfig,
       getRoleByName,
       updateAccessPermissions,
+      getAllRoleNames,
     });
   } catch (error) {
     logger.error('Error updating interface permissions:', error);

@@ -96,10 +96,10 @@ describe('updateAccessPermissions', () => {
   });
 
   it('should handle non-existent roles', async () => {
-    await updateAccessPermissions('NON_EXISTENT_ROLE', {
+    await updateAccessPermissions('invalid_role_name', {
       [PermissionTypes.PROMPTS]: { CREATE: true },
     });
-    const role = await Role.findOne({ name: 'NON_EXISTENT_ROLE' });
+    const role = await Role.findOne({ name: 'invalid_role_name' });
     expect(role).toBeNull();
   });
 

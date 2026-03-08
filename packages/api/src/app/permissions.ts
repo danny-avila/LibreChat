@@ -3,6 +3,7 @@ import {
   SystemRoles,
   Permissions,
   roleDefaults,
+  isSystemRole,
   PermissionTypes,
   getConfigDefaults,
 } from 'librechat-data-provider';
@@ -54,6 +55,7 @@ export async function updateInterfacePermissions({
   appConfig,
   getRoleByName,
   updateAccessPermissions,
+  getAllRoleNames,
 }: {
   appConfig: AppConfig;
   getRoleByName: (roleName: string, fieldsToSelect?: string | string[]) => Promise<IRole | null>;
@@ -63,6 +65,7 @@ export async function updateInterfacePermissions({
 
     roleData?: IRole | null,
   ) => Promise<void>;
+  getAllRoleNames?: () => Promise<string[]>;
 }) {
   const loadedInterface = appConfig?.interfaceConfig;
   if (!loadedInterface) {
@@ -99,8 +102,16 @@ export async function updateInterfacePermissions({
   // 1. Explicit user configuration (from librechat.yaml)
   // 2. Role-specific defaults (from roleDefaults)
   // 3. Interface schema defaults (from interfaceSchema.default())
-  for (const roleName of [SystemRoles.USER, SystemRoles.ADMIN]) {
-    const defaultPerms = roleDefaults[roleName]?.permissions;
+  const roleNamesToProcess: string[] = getAllRoleNames
+    ? await getAllRoleNames()
+    : [SystemRoles.USER, SystemRoles.ADMIN];
+
+  for (const roleName of roleNamesToProcess) {
+    const defaultPerms = (
+      isSystemRole(roleName)
+        ? roleDefaults[roleName as SystemRoles]
+        : roleDefaults[SystemRoles.USER]
+    ).permissions;
 
     const existingRole = await getRoleByName(roleName);
     const existingPermissions = existingRole?.permissions as

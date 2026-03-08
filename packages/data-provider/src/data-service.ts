@@ -914,6 +914,14 @@ export function updateMarketplacePermissions(
   return request.put(endpoints.updateMarketplacePermissions(variables.roleName), variables.updates);
 }
 
+export function listRoles(): Promise<string[]> {
+  return request.get(endpoints.roles());
+}
+
+export function createRole(data: { name: string }): Promise<r.TRole> {
+  return request.post(endpoints.roles(), data);
+}
+
 /* Tags */
 export function getConversationTags(): Promise<t.TConversationTagsResponse> {
   return request.get(endpoints.conversationTags());
