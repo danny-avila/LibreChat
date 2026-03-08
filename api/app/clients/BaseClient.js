@@ -1146,7 +1146,8 @@ class BaseClient {
             !item.type ||
             item.type === ContentTypes.THINK ||
             item.type === ContentTypes.ERROR ||
-            item.type === ContentTypes.IMAGE_URL
+            item.type === ContentTypes.IMAGE_URL ||
+            item.type === 'document_url'
           ) {
             continue;
           }

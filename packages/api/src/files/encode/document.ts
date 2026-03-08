@@ -8,6 +8,7 @@ import {
 import type { IMongoFile } from '@librechat/data-schemas';
 import type {
   AnthropicDocumentBlock,
+  MistralDocumentBlock,
   StrategyFunctions,
   DocumentResult,
   ServerRequest,
@@ -156,6 +157,16 @@ export async function encodeAndFormatDocuments(
           mimeType: 'application/pdf',
           data: content,
         });
+      } else if (
+        provider === Providers.MISTRALAI ||
+        provider === Providers.MISTRAL ||
+        endpoint?.toLowerCase() === 'mistral'
+      ) {
+        const document: MistralDocumentBlock = {
+          type: 'document_url',
+          document_url: `data:application/pdf;base64,${content}`,
+        };
+        result.documents.push(document);
       } else if (isOpenAILikeProvider(provider) && provider != Providers.AZURE) {
         result.documents.push({
           type: 'file',
