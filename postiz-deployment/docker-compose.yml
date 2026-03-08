@@ -105,6 +105,8 @@ services:
     networks:
       - postiz-network
       - temporal-network
+      # Coolify proxy network (must exist for Coolify; create it if not external)
+      - coolify-proxy
     depends_on:
       postiz-postgres:
         condition: service_healthy
@@ -288,3 +290,9 @@ networks:
   temporal-network:
     driver: bridge
     name: temporal-network
+  # Coolify creates a network named with the resource UUID and marks it external.
+  # Define it here so Docker Compose creates it when missing (fixes "network declared as external, but could not be found").
+  coolify-proxy:
+    name: ${COOLIFY_RESOURCE_UUID:-coolify-default}
+    driver: bridge
+    external: false
