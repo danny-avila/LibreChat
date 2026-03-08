@@ -43,7 +43,7 @@ const shouldRebase = process.argv.includes('--rebase');
   console.purple('Removing all tags for LibreChat `deployed` images...');
   const repositories = ['registry.librechat.ai/danny-avila/librechat-dev-api', 'librechat-client'];
   repositories.forEach((repo) => {
-    const tags = execSync(`sudo docker images ${repo} -q`, { encoding: 'utf8' })
+    const tags = execSync(`sudo docker images ${repo} --format "{{.Repository}}:{{.Tag}}"`, { encoding: 'utf8' })
       .split('\n')
       .filter(Boolean);
     tags.forEach((tag) => {
