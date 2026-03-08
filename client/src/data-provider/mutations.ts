@@ -611,7 +611,7 @@ export const useBulkArchiveConversationsMutation = (
         });
         queryClient.invalidateQueries({
           queryKey: [QueryKeys.archivedConversations],
-          refetchPage: (_, index) => index === 0,
+          refetchType: 'all',
         });
 
         onSuccess?.(data, vars, context);
