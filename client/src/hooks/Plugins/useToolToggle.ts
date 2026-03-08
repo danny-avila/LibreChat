@@ -4,7 +4,7 @@ import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { VerifyToolAuthResponse } from 'librechat-data-provider';
 import type { UseQueryOptions } from '@tanstack/react-query';
-import { useVerifyAgentToolAuth } from '~/data-provider';
+import { useVerifyAgentToolAuth, useGetStartupConfig } from '~/data-provider';
 import { setTimestamp } from '~/utils/timestamps';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { ephemeralAgentByConvoId } from '~/store';
@@ -36,6 +36,7 @@ export function useToolToggle({
 }: UseToolToggleOptions) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
+  const { data: startupConfig } = useGetStartupConfig();
 
   const authQuery = useVerifyAgentToolAuth(
     { toolId: authConfig?.toolId || '' },
@@ -76,7 +77,18 @@ export function useToolToggle({
     }
   }, [ephemeralAgent, toolKey, storageKey]);
 
-  const [isPinned, setIsPinned] = useLocalStorage<boolean>(`${localStorageKey}pinned`, false);
+  const defaultPinnedState = useMemo(() => {
+    const pinnedTools = startupConfig?.interface?.pinnedTools;
+    if (Array.isArray(pinnedTools)) {
+      return pinnedTools.includes(toolKey);
+    }
+    return false;
+  }, [startupConfig?.interface?.pinnedTools, toolKey]);
+
+  const [isPinned, setIsPinned] = useLocalStorage<boolean>(
+    `${localStorageKey}pinned`,
+    defaultPinnedState,
+  );
 
   const handleChange = useCallback(
     ({ e, value }: { e?: React.ChangeEvent<HTMLInputElement>; value: ToolValue }) => {
