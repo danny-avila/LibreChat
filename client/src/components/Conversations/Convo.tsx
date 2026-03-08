@@ -209,7 +209,9 @@ export default function Conversation({
           return;
         }
         if (isSelectMode) {
-          onToggleSelect?.(conversationId ?? '');
+          if (conversationId) {
+            onToggleSelect?.(conversationId);
+          }
           return;
         }
         if (e.button === 0) {
@@ -258,7 +260,7 @@ export default function Conversation({
               aria-label={title || localize('com_ui_untitled')}
               className="flex-shrink-0"
               onClick={(e) => e.stopPropagation()}
-              onCheckedChange={() => onToggleSelect?.(conversationId ?? '')}
+              onCheckedChange={() => conversationId && onToggleSelect?.(conversationId)}
             />
           ) : isGenerating ? (
             <svg
