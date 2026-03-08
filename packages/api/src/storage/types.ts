@@ -58,6 +58,10 @@ export interface S3FileRef {
   source: string;
 }
 
+export type SaveBufferFn = (params: SaveBufferParams) => Promise<string>;
+
 export type BatchUpdateFn = (files: Array<{ file_id: string; filepath: string }>) => Promise<void>;
+
+export type UrlBuilder = (params: GetURLParams) => Promise<string>;
 
 export type MongoFile = TFile;

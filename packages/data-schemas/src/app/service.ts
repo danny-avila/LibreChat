@@ -47,7 +47,8 @@ export const AppService = async (params?: {
     | FileSources.local
     | FileSources.s3
     | FileSources.firebase
-    | FileSources.azure_blob;
+    | FileSources.azure_blob
+    | FileSources.cloudfront;
   const startBalance = process.env.START_BALANCE;
   const balance = config.balance ?? {
     enabled: process.env.CHECK_BALANCE?.toLowerCase().trim() === 'true',
@@ -89,6 +90,7 @@ export const AppService = async (params?: {
     interfaceConfig,
     turnstileConfig,
     fileStrategies: config.fileStrategies,
+    cloudfront: config.cloudfront as AppConfig['cloudfront'],
   };
 
   const agentsDefaults = agentsConfigSetup(config);

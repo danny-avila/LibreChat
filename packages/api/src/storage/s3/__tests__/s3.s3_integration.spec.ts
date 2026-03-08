@@ -403,9 +403,10 @@ describe('S3 Integration Tests', () => {
     });
   });
 
-  describe('S3ImageService', () => {
+  describe('ImageService (S3 strategy)', () => {
     it('uploads avatar and returns URL', async () => {
-      const { S3ImageService } = await import('../images');
+      const { ImageService } = await import('../../images');
+      const { saveBufferToS3 } = await import('../crud');
 
       const mockDeps = {
         resizeImageBuffer: jest.fn().mockImplementation(async (buffer: Buffer) => ({
@@ -414,10 +415,10 @@ describe('S3 Integration Tests', () => {
           height: 100,
         })),
         updateUser: jest.fn().mockResolvedValue(undefined),
-        updateFile: jest.fn().mockResolvedValue(undefined),
+        updateFile: jest.fn().mockResolvedValue(null),
       };
 
-      const imageService = new S3ImageService(mockDeps);
+      const imageService = new ImageService(saveBufferToS3, mockDeps);
 
       const pngBuffer = MINIMAL_PNG;
 
@@ -434,7 +435,8 @@ describe('S3 Integration Tests', () => {
     });
 
     it('updates user when manual is true', async () => {
-      const { S3ImageService } = await import('../images');
+      const { ImageService } = await import('../../images');
+      const { saveBufferToS3 } = await import('../crud');
 
       const mockDeps = {
         resizeImageBuffer: jest.fn().mockImplementation(async (buffer: Buffer) => ({
@@ -443,10 +445,10 @@ describe('S3 Integration Tests', () => {
           height: 100,
         })),
         updateUser: jest.fn().mockResolvedValue(undefined),
-        updateFile: jest.fn().mockResolvedValue(undefined),
+        updateFile: jest.fn().mockResolvedValue(null),
       };
 
-      const imageService = new S3ImageService(mockDeps);
+      const imageService = new ImageService(saveBufferToS3, mockDeps);
 
       const pngBuffer = MINIMAL_PNG;
 
@@ -464,7 +466,8 @@ describe('S3 Integration Tests', () => {
     });
 
     it('does not update user when agentId is provided', async () => {
-      const { S3ImageService } = await import('../images');
+      const { ImageService } = await import('../../images');
+      const { saveBufferToS3 } = await import('../crud');
 
       const mockDeps = {
         resizeImageBuffer: jest.fn().mockImplementation(async (buffer: Buffer) => ({
@@ -473,10 +476,10 @@ describe('S3 Integration Tests', () => {
           height: 100,
         })),
         updateUser: jest.fn().mockResolvedValue(undefined),
-        updateFile: jest.fn().mockResolvedValue(undefined),
+        updateFile: jest.fn().mockResolvedValue(null),
       };
 
-      const imageService = new S3ImageService(mockDeps);
+      const imageService = new ImageService(saveBufferToS3, mockDeps);
 
       const pngBuffer = MINIMAL_PNG;
 
@@ -492,7 +495,8 @@ describe('S3 Integration Tests', () => {
     });
 
     it('returns tuple with resolved promise and filepath in prepareImageURL', async () => {
-      const { S3ImageService } = await import('../images');
+      const { ImageService } = await import('../../images');
+      const { saveBufferToS3 } = await import('../crud');
 
       const mockDeps = {
         resizeImageBuffer: jest.fn().mockImplementation(async (buffer: Buffer) => ({
@@ -501,10 +505,10 @@ describe('S3 Integration Tests', () => {
           height: 100,
         })),
         updateUser: jest.fn().mockResolvedValue(undefined),
-        updateFile: jest.fn().mockResolvedValue(undefined),
+        updateFile: jest.fn().mockResolvedValue(null),
       };
 
-      const imageService = new S3ImageService(mockDeps);
+      const imageService = new ImageService(saveBufferToS3, mockDeps);
 
       const testFile = {
         file_id: 'file-123',

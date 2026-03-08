@@ -10,7 +10,13 @@ const {
   getS3FileStream,
   deleteFileFromS3,
   uploadFileToS3,
-  S3ImageService,
+  getCloudFrontURL,
+  saveURLToCloudFront,
+  saveBufferToCloudFront,
+  getCloudFrontFileStream,
+  deleteFileFromCloudFront,
+  uploadFileToCloudFront,
+  ImageService,
 } = require('@librechat/api');
 const { resizeImageBuffer } = require('./images/resize');
 const { updateUser, updateFile } = require('~/models');
@@ -37,15 +43,21 @@ const {
   getLocalFileStream,
 } = require('./Local');
 
-const s3ImageService = new S3ImageService({
+const imageServiceDeps = {
   resizeImageBuffer,
   updateUser,
   updateFile,
-});
+};
 
-const uploadImageToS3 = (params) => s3ImageService.uploadImageToS3(params);
+const s3ImageService = new ImageService(saveBufferToS3, imageServiceDeps);
+const uploadImageToS3 = (params) => s3ImageService.uploadImage(params);
 const prepareImageURLS3 = (_req, file) => s3ImageService.prepareImageURL(file);
 const processS3Avatar = (params) => s3ImageService.processAvatar(params);
+
+const cloudFrontImageService = new ImageService(saveBufferToCloudFront, imageServiceDeps);
+const uploadImageToCloudFront = (params) => cloudFrontImageService.uploadImage(params);
+const prepareCloudFrontImageURL = (_req, file) => cloudFrontImageService.prepareImageURL(file);
+const processCloudFrontAvatar = (params) => cloudFrontImageService.processAvatar(params);
 const {
   saveBufferToAzure,
   saveURLToAzure,
@@ -107,6 +119,22 @@ const s3Strategy = () => ({
   processAvatar: processS3Avatar,
   handleImageUpload: uploadImageToS3,
   getDownloadStream: getS3FileStream,
+});
+
+/**
+ * CloudFront CDN Strategy Functions
+ * Uses S3 for storage, CloudFront for URL delivery
+ */
+const cloudfrontStrategy = () => ({
+  handleFileUpload: uploadFileToCloudFront,
+  saveURL: saveURLToCloudFront,
+  getFileURL: getCloudFrontURL,
+  deleteFile: deleteFileFromCloudFront,
+  saveBuffer: saveBufferToCloudFront,
+  prepareImagePayload: prepareCloudFrontImageURL,
+  processAvatar: processCloudFrontAvatar,
+  handleImageUpload: uploadImageToCloudFront,
+  getDownloadStream: getCloudFrontFileStream,
 });
 
 /**
@@ -291,6 +319,8 @@ const getStrategyFunctions = (fileSource) => {
     return vectorStrategy();
   } else if (fileSource === FileSources.s3) {
     return s3Strategy();
+  } else if (fileSource === FileSources.cloudfront) {
+    return cloudfrontStrategy();
   } else if (fileSource === FileSources.execute_code) {
     return codeOutputStrategy();
   } else if (fileSource === FileSources.mistral_ocr) {

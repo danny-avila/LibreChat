@@ -1,18 +1,15 @@
 import fs from 'fs';
-import { Readable } from 'stream';
-import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
-import { initializeS3 } from '../../cdn/s3';
-import { deleteRagFile } from '../../files';
-import { s3Config } from './s3Config';
+import { logger } from '@librechat/data-schemas';
+import { FileSources } from 'librechat-data-provider';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { GetObjectCommandInput } from '@aws-sdk/client-s3';
+import type { Readable } from 'stream';
 import type { ServerRequest } from '~/types';
 import type {
   SaveBufferParams,
@@ -20,10 +17,15 @@ import type {
   SaveURLParams,
   UploadFileParams,
   UploadResult,
+  UrlBuilder,
   S3FileRef,
   MongoFile,
   BatchUpdateFn,
 } from '../types';
+
+import { initializeS3 } from '../../cdn/s3';
+import { deleteRagFile } from '../../files';
+import { s3Config } from './s3Config';
 
 const {
   AWS_BUCKET_NAME: bucketName,
@@ -77,7 +79,8 @@ export async function saveBufferToS3({
   buffer,
   fileName,
   basePath = defaultBasePath,
-}: SaveBufferParams): Promise<string> {
+  urlBuilder,
+}: SaveBufferParams & { urlBuilder?: UrlBuilder }): Promise<string> {
   const key = getS3Key(basePath, userId, fileName);
   const params = { Bucket: bucketName, Key: key, Body: buffer };
 
@@ -88,7 +91,8 @@ export async function saveBufferToS3({
     }
 
     await s3.send(new PutObjectCommand(params));
-    return await getS3URL({ userId, fileName, basePath });
+    const getUrl = urlBuilder ?? getS3URL;
+    return await getUrl({ userId, fileName, basePath });
   } catch (error) {
     logger.error('[saveBufferToS3] Error uploading buffer to S3:', (error as Error).message);
     throw error;
@@ -100,7 +104,8 @@ export async function saveURLToS3({
   URL,
   fileName,
   basePath = defaultBasePath,
-}: SaveURLParams): Promise<string> {
+  urlBuilder,
+}: SaveURLParams & { urlBuilder?: UrlBuilder }): Promise<string> {
   try {
     const response = await fetch(URL);
     if (!response.ok) {
@@ -108,7 +113,7 @@ export async function saveURLToS3({
     }
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    return await saveBufferToS3({ userId, buffer, fileName, basePath });
+    return await saveBufferToS3({ userId, buffer, fileName, basePath, urlBuilder });
   } catch (error) {
     logger.error('[saveURLToS3] Error uploading file from URL to S3:', (error as Error).message);
     throw error;
@@ -248,7 +253,8 @@ export async function uploadFileToS3({
   file,
   file_id,
   basePath = defaultBasePath,
-}: UploadFileParams): Promise<UploadResult> {
+  urlBuilder,
+}: UploadFileParams & { urlBuilder?: UrlBuilder }): Promise<UploadResult> {
   if (!req.user) {
     throw new Error('[uploadFileToS3] User not authenticated');
   }
@@ -275,7 +281,8 @@ export async function uploadFileToS3({
     };
 
     await s3.send(new PutObjectCommand(uploadParams));
-    const fileURL = await getS3URL({ userId, fileName, basePath });
+    const getUrl = urlBuilder ?? getS3URL;
+    const fileURL = await getUrl({ userId, fileName, basePath });
     // NOTE: temp file is intentionally NOT deleted on the success path.
     // The caller (processAgentFileUpload) reads file.path after this returns
     // to stream the file to the RAG vector embedding service (POST /embed).

@@ -85,7 +85,9 @@
   "peerDependencies": {
     "@anthropic-ai/vertex-sdk": "^0.14.3",
     "@aws-sdk/client-bedrock-runtime": "^3.970.0",
+    "@aws-sdk/client-cloudfront": "^3.1000.0",
     "@aws-sdk/client-s3": "^3.980.0",
+    "@aws-sdk/cloudfront-signer": "^3.999.0",
     "@azure/identity": "^4.7.0",
     "@azure/search-documents": "^12.0.0",
     "@azure/storage-blob": "^12.30.0",
