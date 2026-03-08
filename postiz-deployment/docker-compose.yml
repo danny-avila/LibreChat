@@ -290,9 +290,8 @@ networks:
   temporal-network:
     driver: bridge
     name: temporal-network
-  # Coolify creates a network named with the resource UUID and marks it external.
-  # Define it here so Docker Compose creates it when missing (fixes "network declared as external, but could not be found").
+  # Coolify creates a network named with the resource UUID before running compose.
+  # Attach to it as external so we don't try to create it (avoids label/ownership conflict).
   coolify-proxy:
     name: ${COOLIFY_RESOURCE_UUID:-coolify-default}
-    driver: bridge
-    external: false
+    external: true
