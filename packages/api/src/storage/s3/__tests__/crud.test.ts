@@ -2,6 +2,7 @@ import fs from 'fs';
 import { Readable } from 'stream';
 import { mockClient } from 'aws-sdk-client-mock';
 import { sdkStreamMixin } from '@smithy/util-stream';
+import { FileSources } from 'librechat-data-provider';
 import {
   S3Client,
   PutObjectCommand,
@@ -9,10 +10,9 @@ import {
   HeadObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
-import { FileSources } from 'librechat-data-provider';
-import type { ServerRequest } from '~/types';
 import type { TFile } from 'librechat-data-provider';
 import type { S3FileRef } from '~/storage/types';
+import type { ServerRequest } from '~/types';
 
 const s3Mock = mockClient(S3Client);
 

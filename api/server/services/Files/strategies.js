@@ -1,19 +1,17 @@
 const { FileSources } = require('librechat-data-provider');
 const {
-  parseDocument,
-  uploadMistralOCR,
-  uploadAzureMistralOCR,
-  uploadGoogleVertexMistralOCR,
   getS3URL,
   saveURLToS3,
+  parseDocument,
+  uploadFileToS3,
+  S3ImageService,
   saveBufferToS3,
   getS3FileStream,
   deleteFileFromS3,
-  uploadFileToS3,
-  S3ImageService,
+  uploadMistralOCR,
+  uploadAzureMistralOCR,
+  uploadGoogleVertexMistralOCR,
 } = require('@librechat/api');
-const { resizeImageBuffer } = require('./images/resize');
-const { updateUser, updateFile } = require('~/models');
 const {
   getFirebaseURL,
   prepareImageURL,
@@ -36,6 +34,8 @@ const {
   processLocalAvatar,
   getLocalFileStream,
 } = require('./Local');
+const { resizeImageBuffer } = require('./images/resize');
+const { updateUser, updateFile } = require('~/models');
 
 const s3ImageService = new S3ImageService({
   resizeImageBuffer,

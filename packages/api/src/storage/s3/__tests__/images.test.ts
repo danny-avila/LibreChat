@@ -1,8 +1,8 @@
 import fs from 'fs';
-import { S3ImageService } from '../images';
-import { saveBufferToS3 } from '../crud';
-import type { S3ImageServiceDeps } from '../images';
+import type { S3ImageServiceDeps } from '~/storage/s3/images';
 import type { ServerRequest } from '~/types';
+import { S3ImageService } from '~/storage/s3/images';
+import { saveBufferToS3 } from '~/storage/s3/crud';
 
 jest.mock('fs', () => ({
   ...jest.requireActual('fs'),
