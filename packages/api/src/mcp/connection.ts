@@ -426,28 +426,29 @@ export class MCPConnection extends EventEmitter {
             env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },
           });
 
-        case 'websocket':
+        case 'websocket': {
           if (!isWebSocketOptions(options)) {
             throw new Error('Invalid options for websocket transport.');
           }
           this.url = options.url;
-          if (this.useSSRFProtection) {
-            /**
-             * SSRF pre-check: validate hostname before WebSocket connect.
-             * Note: WebSocketClientTransport does its own DNS resolution, creating a small
-             * TOCTOU window for DNS rebinding. This is an SDK limitation — the transport
-             * accepts only a URL with no custom DNS lookup hook. The connect-time SSRF-safe
-             * agents used for SSE/StreamableHTTP cannot be applied here.
-             */
-            const wsHostname = new URL(options.url).hostname;
-            const isSSRF = await resolveHostnameSSRF(wsHostname);
-            if (isSSRF) {
-              throw new Error(
-                `SSRF protection: WebSocket host "${wsHostname}" resolved to a private/reserved IP address`,
-              );
-            }
+          /**
+           * SSRF pre-check: always validate resolved IPs for WebSocket, regardless
+           * of allowlist configuration. Allowlisting a domain grants trust to that
+           * name, not to whatever IP it resolves to at runtime (DNS rebinding).
+           *
+           * Note: WebSocketClientTransport does its own DNS resolution, creating a
+           * small TOCTOU window. This is an SDK limitation — the transport accepts
+           * only a URL with no custom DNS lookup hook.
+           */
+          const wsHostname = new URL(options.url).hostname;
+          const isSSRF = await resolveHostnameSSRF(wsHostname);
+          if (isSSRF) {
+            throw new Error(
+              `SSRF protection: WebSocket host "${wsHostname}" resolved to a private/reserved IP address`,
+            );
           }
           return new WebSocketClientTransport(new URL(options.url));
+        }
 
         case 'sse': {
           if (!isSSEOptions(options)) {
