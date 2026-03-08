@@ -36,7 +36,7 @@ User sees consolidated response
 ## How it works in LibreChat v0.8.3+
 
 1. **Agents are created in Agent Builder UI** — there is no JSON import; each agent must be created manually via the interface at `/agent-builder`
-2. **Specialist agents appear as tools** — once created, any agent with the `tools` capability can call other agents as tools
+2. **Specialist agents are linked via agent chains** — the orchestrator is configured with edges that reference other agents by `agent_ids`. Agents do not appear as built-in tools in the standard tool registry.
 3. **Context is passed explicitly** — the orchestrator passes relevant information in its delegation call
 
 ## Minimal toolset principle
@@ -45,7 +45,7 @@ Give each specialist agent **only** the tools it needs. An over-tooled agent is 
 
 | Agent Type | Recommended Tools |
 |------------|------------------|
-| Research   | perplexica_search, navigate, snapshot |
+| Research   | perplexica_search, navigate, snapshot (Custom MCP tools) |
 | Action     | domain-specific APIs, write operations |
 | Summariser | No tools (just processes input text) |
 | Data       | execute_code, file_search |
@@ -80,9 +80,13 @@ ALWAYS complete tool calls before responding to the user.
 NEVER generate placeholder text — call the tool immediately.
 ```
 
-### 3. Enable the `chain` capability
+### 3. (Optional) Enable the Chain Capability
 
-In the orchestrator's Agent Builder configuration, enable the **Chain** capability. This allows the agent to invoke other agents as tools.
+In the orchestrator's Agent Builder configuration, the **Chain** capability controls the
+Agent Builder UI for configuring sequential chains between this agent and specific other
+agents (via `agent_ids`). It does **not** by itself enable agent-as-a-tool delegation —
+that behavior comes from combining the **tools** capability with properly configured agent
+handoffs.
 
 ## Delegation patterns
 
@@ -110,20 +114,20 @@ User: "Find the current Bitcoin price and analyse the trend"
 |-------|----------|
 | Specialist agent not appearing as a tool | Ensure the specialist was saved in Agent Builder; refresh the orchestrator |
 | Orchestrator generates text instead of calling agent | Add explicit delegation instructions to system prompt; enable `tools` capability |
-| Infinite loop between agents | Set `recursionLimit` in `librechat.yaml` agents config (default: 25) |
+| Infinite loop between agents | Set `recursionLimit` in `librechat.yaml` under `endpoints.agents` (no hardcoded default; recommended: 50) |
 | Agent calls wrong specialist | Make delegation rules more specific in orchestrator system prompt |
 
 ## librechat.yaml configuration
 
 ```yaml
-agents:
-  disableBuilder: false
-  recursionLimit: 25
-  maxContextTokens: 32000
-  capabilities:
-    - execute_code
-    - file_search
-    - artifacts
-    - tools
-    - chain
+endpoints:
+  agents:
+    disableBuilder: false
+    recursionLimit: 50
+    capabilities:
+      - execute_code
+      - file_search
+      - artifacts
+      - tools
+      - chain
 ```
