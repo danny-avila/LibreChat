@@ -98,6 +98,8 @@ html {
   --border-heavy: var(--gray-400);
   --border-xheavy: var(--gray-500);
   --border-destructive: var(--red-600);
+  --user-message-bg: #e9eef6;
+  --user-message-border: #cfd8e6;
   /* These are test styles */
 
   --background: 0 0% 100%;
@@ -160,6 +162,8 @@ html {
   --border-heavy: var(--gray-500);
   --border-xheavy: var(--gray-400);
   --border-destructive: var(--red-500);
+  --user-message-bg: #2b3340;
+  --user-message-border: #435066;
   /* These are test styles */
 
   --background: 0 0% 7%;
@@ -197,6 +201,8 @@ html {
   --border-medium: rgba(0, 0, 0, 0.15);
   --border-heavy: rgba(0, 0, 0, 0.2);
   --border-xheavy: rgba(0, 0, 0, 0.25);
+  --user-message-bg: #e9eef6;
+  --user-message-border: #cfd8e6;
 }
 .gizmo.dark {
   --text-primary: var(--gray-100);
@@ -209,6 +215,8 @@ html {
   --border-medium: rgba(217, 217, 227, 0.15);
   --border-heavy: rgba(217, 217, 227, 0.2);
   --border-xheavy: rgba(217, 217, 227, 0.25);
+  --user-message-bg: #2b3340;
+  --user-message-border: #435066;
 }
 
 .text-token-text-primary {
@@ -2529,6 +2537,26 @@ html {
 .message-content {
   font-size: var(--markdown-font-size, var(--font-size-base));
   line-height: 1.4;
+}
+
+.user-message-bubble {
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--user-message-border);
+  border-radius: 1.5rem;
+  background-color: var(--user-message-bg);
+  color: var(--text-primary);
+  padding: 0.875rem 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.user-message-bubble > :first-child {
+  margin-top: 0;
+}
+
+.user-message-bubble > :last-child {
+  margin-bottom: 0;
 }
 
 .message-content pre code {
