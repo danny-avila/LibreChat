@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
-import { useToastContext, useMediaQuery } from '@librechat/client';
+import { Checkbox, useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
@@ -20,6 +20,9 @@ interface ConversationProps {
   retainView: () => void;
   toggleNav: () => void;
   isGenerating?: boolean;
+  isSelectMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 export default function Conversation({
@@ -27,6 +30,9 @@ export default function Conversation({
   retainView,
   toggleNav,
   isGenerating = false,
+  isSelectMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: ConversationProps) {
   const params = useParams();
   const localize = useLocalize();
@@ -182,21 +188,28 @@ export default function Conversation({
       ref={containerRef}
       className={cn(
         'group relative flex h-12 w-full items-center rounded-lg outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white md:h-9',
-        isActiveConvo || isPopoverActive
-          ? 'bg-surface-active-alt before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-full before:bg-black dark:before:bg-white'
-          : 'hover:bg-surface-active-alt',
+        isSelectMode && isSelected
+          ? 'bg-surface-active-alt'
+          : isActiveConvo || isPopoverActive
+            ? 'bg-surface-active-alt before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-full before:bg-black dark:before:bg-white'
+            : 'hover:bg-surface-active-alt',
       )}
       role="button"
       tabIndex={renaming ? -1 : 0}
       aria-label={localize('com_ui_conversation_label', {
         title: title || localize('com_ui_untitled'),
       })}
+      aria-pressed={isSelectMode ? isSelected : undefined}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onFocus={handleMouseEnter}
       onBlur={handleBlur}
       onClick={(e) => {
         if (renaming) {
+          return;
+        }
+        if (isSelectMode) {
+          onToggleSelect?.(conversationId ?? '');
           return;
         }
         if (e.button === 0) {
@@ -212,7 +225,11 @@ export default function Conversation({
         }
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          handleNavigation(false);
+          if (isSelectMode) {
+            onToggleSelect?.(conversationId ?? '');
+          } else {
+            handleNavigation(false);
+          }
         }
       }}
       style={{ cursor: renaming ? 'default' : 'pointer' }}
@@ -228,14 +245,22 @@ export default function Conversation({
         />
       ) : (
         <ConvoLink
-          isActiveConvo={isActiveConvo}
+          isActiveConvo={isActiveConvo && !isSelectMode}
           isPopoverActive={isPopoverActive}
           title={title}
           onRename={handleRename}
           isSmallScreen={isSmallScreen}
           localize={localize}
         >
-          {isGenerating ? (
+          {isSelectMode ? (
+            <Checkbox
+              checked={isSelected}
+              aria-label={title || localize('com_ui_untitled')}
+              className="flex-shrink-0"
+              onClick={(e) => e.stopPropagation()}
+              onCheckedChange={() => onToggleSelect?.(conversationId ?? '')}
+            />
+          ) : isGenerating ? (
             <svg
               className="h-5 w-5 flex-shrink-0 animate-spin text-text-primary"
               viewBox="0 0 24 24"
@@ -266,21 +291,19 @@ export default function Conversation({
           )}
         </ConvoLink>
       )}
-      <div
-        className={cn(
-          'mr-2 flex origin-left',
-          isPopoverActive || isActiveConvo
-            ? 'pointer-events-auto scale-x-100 opacity-100'
-            : 'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[60px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[60px] group-hover:scale-x-100 group-hover:opacity-100',
-          !isPopoverActive && isActiveConvo && isShiftHeld ? 'max-w-[60px]' : 'max-w-[28px]',
-        )}
-        // Removing aria-hidden to fix accessibility issue: ARIA hidden element must not be focusable or contain focusable elements
-        // but not sure what its original purpose was, so leaving the property commented out until it can be cleared safe to delete.
-        // aria-hidden={!(isPopoverActive || isActiveConvo)}
-      >
-        {/* Only render ConvoOptions when user interacts (hover/focus) or for active conversation */}
-        {!renaming && (hasInteracted || isActiveConvo) && <ConvoOptions {...convoOptionsProps} />}
-      </div>
+      {!isSelectMode && (
+        <div
+          className={cn(
+            'mr-2 flex origin-left',
+            isPopoverActive || isActiveConvo
+              ? 'pointer-events-auto scale-x-100 opacity-100'
+              : 'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[60px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[60px] group-hover:scale-x-100 group-hover:opacity-100',
+            !isPopoverActive && isActiveConvo && isShiftHeld ? 'max-w-[60px]' : 'max-w-[28px]',
+          )}
+        >
+          {!renaming && (hasInteracted || isActiveConvo) && <ConvoOptions {...convoOptionsProps} />}
+        </div>
+      )}
     </div>
   );
 }

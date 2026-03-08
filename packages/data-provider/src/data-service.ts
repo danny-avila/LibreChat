@@ -745,6 +745,18 @@ export function archiveConversation(
   return request.post(endpoints.archiveConversation(), { arg: payload });
 }
 
+export function bulkDeleteConversations(
+  payload: t.TBulkDeleteConversationsRequest,
+): Promise<t.TBulkDeleteConversationsResponse> {
+  return request.deleteWithOptions(endpoints.bulkDeleteConversations(), { data: payload });
+}
+
+export function bulkArchiveConversations(
+  payload: t.TBulkArchiveConversationsRequest,
+): Promise<t.TBulkArchiveConversationsResponse> {
+  return request.post(endpoints.bulkArchiveConversations(), payload);
+}
+
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
   return request.get(endpoints.genTitle(payload.conversationId));
 }

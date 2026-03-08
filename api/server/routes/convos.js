@@ -140,6 +140,51 @@ router.delete('/', async (req, res) => {
   }
 });
 
+router.delete('/bulk-delete', async (req, res) => {
+  const { conversationIds } = req.body ?? {};
+
+  if (!Array.isArray(conversationIds) || conversationIds.length === 0) {
+    return res.status(400).json({ error: 'conversationIds array is required' });
+  }
+
+  try {
+    const filter = { conversationId: { $in: conversationIds } };
+    const dbResponse = await deleteConvos(req.user.id, filter);
+    for (const conversationId of conversationIds) {
+      await deleteToolCalls(req.user.id, conversationId);
+      await deleteConvoSharedLink(req.user.id, conversationId);
+    }
+    res.status(201).json(dbResponse);
+  } catch (error) {
+    logger.error('Error bulk deleting conversations', error);
+    res.status(500).send('Error bulk deleting conversations');
+  }
+});
+
+router.post('/bulk-archive', async (req, res) => {
+  const { conversationIds, isArchived } = req.body ?? {};
+
+  if (!Array.isArray(conversationIds) || conversationIds.length === 0) {
+    return res.status(400).json({ error: 'conversationIds array is required' });
+  }
+
+  if (typeof isArchived !== 'boolean') {
+    return res.status(400).json({ error: 'isArchived must be a boolean' });
+  }
+
+  try {
+    const { Conversation } = require('~/db/models');
+    const result = await Conversation.updateMany(
+      { conversationId: { $in: conversationIds }, user: req.user.id },
+      { $set: { isArchived, expiredAt: null } },
+    );
+    res.status(200).json({ modifiedCount: result.modifiedCount });
+  } catch (error) {
+    logger.error('Error bulk archiving conversations', error);
+    res.status(500).send('Error bulk archiving conversations');
+  }
+});
+
 router.delete('/all', async (req, res) => {
   try {
     const dbResponse = await deleteConvos(req.user.id, {});
