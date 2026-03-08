@@ -23,12 +23,7 @@ const MessageAvatar = ({ iconData }: { iconData: TMessageIcon }) => (
 );
 
 const MessageBody = ({ message, messageLabel, fontSize }) => (
-  <div
-    className={cn(
-      'relative flex flex-col',
-      message.isCreatedByUser ? '' : 'agent-turn',
-    )}
-  >
+  <div className={cn('relative flex flex-col', message.isCreatedByUser ? '' : 'agent-turn')}>
     <div className={cn('select-none font-semibold', fontSize)}>{messageLabel}</div>
     <SearchContent message={message} />
     <SubRow classes="text-xs">

@@ -108,11 +108,12 @@ const MessageRender = memo(function MessageRender({
   const userMessageWidthClass = maximizeChatSpace
     ? 'w-fit max-w-[85%] sm:max-w-[min(64vw,56rem)]'
     : 'w-fit max-w-[85%] sm:max-w-[min(65%,42rem)]';
-  const messageWidthClass = hasParallelContent
-    ? 'w-full'
-    : isUserMessageRightAligned
-      ? userMessageWidthClass
-      : 'w-11/12';
+  let messageWidthClass = 'w-11/12';
+  if (hasParallelContent) {
+    messageWidthClass = 'w-full';
+  } else if (isUserMessageRightAligned) {
+    messageWidthClass = userMessageWidthClass;
+  }
 
   const getChatWidthClass = () => {
     if (maximizeChatSpace) {
