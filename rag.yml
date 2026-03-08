@@ -1,5 +1,4 @@
-version: '3.8'
-
+# Compose Specification (Docker Compose v2+) — no version key needed
 services:
   vectordb:
     image: pgvector/pgvector:0.8.0-pg15-trixie
