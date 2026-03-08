@@ -5,13 +5,12 @@
  *
  * 1. Does NOT follow HTTP redirects from SSE/StreamableHTTP transports
  *    (redirect: 'manual' prevents SSRF via server-controlled 301/302)
- * 2. Blocks WebSocket connections to hosts that DNS-resolve to private IPs
- *    even when useSSRFProtection is false (allowlist-configured scenario)
+ * 2. Blocks WebSocket connections to hosts that DNS-resolve to private IPs,
+ *    regardless of whether useSSRFProtection is enabled (allowlist scenario)
  */
 
 import * as net from 'net';
 import * as http from 'http';
-import { Agent } from 'undici';
 import { randomUUID } from 'crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -41,28 +40,6 @@ const mockedResolveHostnameSSRF = resolveHostnameSSRF as jest.MockedFunction<
   typeof resolveHostnameSSRF
 >;
 
-const allAgentsCreated: Agent[] = [];
-const OriginalAgent = Agent;
-const PatchedAgent = new Proxy(OriginalAgent, {
-  construct(target, args) {
-    const instance = new target(...(args as [Agent.Options?]));
-    allAgentsCreated.push(instance);
-    return instance;
-  },
-});
-(global as Record<string, unknown>).__undiciAgent = PatchedAgent;
-
-afterAll(async () => {
-  const destroying = allAgentsCreated.map((a) => {
-    if (!a.destroyed && !a.closed) {
-      return a.destroy().catch(() => undefined);
-    }
-    return Promise.resolve();
-  });
-  allAgentsCreated.length = 0;
-  await Promise.all(destroying);
-});
-
 async function safeDisconnect(conn: MCPConnection | null): Promise<void> {
   if (!conn) {
     return;
@@ -74,6 +51,7 @@ async function safeDisconnect(conn: MCPConnection | null): Promise<void> {
 
 interface TestServer {
   url: string;
+  redirectHit: boolean;
   close: () => Promise<void>;
 }
 
@@ -104,10 +82,24 @@ function trackSockets(httpServer: http.Server): () => Promise<void> {
 }
 
 /**
- * Creates an HTTP server that responds with a 301 redirect to a private IP.
- * Simulates an SSRF attack where a trusted MCP server redirects to internal resources.
+ * Creates an HTTP server that responds with a 301 redirect to a target URL.
+ * A second server is spun up at the redirect target to detect whether the
+ * redirect was actually followed.
  */
 async function createRedirectingServer(redirectTarget: string): Promise<TestServer> {
+  const state = { redirectHit: false };
+
+  const targetPort = new URL(redirectTarget).port || '80';
+  const targetServer = http.createServer((_req, res) => {
+    state.redirectHit = true;
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('You should not be here');
+  });
+  const destroyTargetSockets = trackSockets(targetServer);
+  await new Promise<void>((resolve) =>
+    targetServer.listen(parseInt(targetPort), '127.0.0.1', resolve),
+  );
+
   const httpServer = http.createServer((_req, res) => {
     res.writeHead(301, { Location: redirectTarget });
     res.end();
@@ -119,8 +111,12 @@ async function createRedirectingServer(redirectTarget: string): Promise<TestServ
 
   return {
     url: `http://127.0.0.1:${port}/`,
+    get redirectHit() {
+      return state.redirectHit;
+    },
     close: async () => {
       await destroySockets();
+      await destroyTargetSockets();
     },
   };
 }
@@ -128,7 +124,7 @@ async function createRedirectingServer(redirectTarget: string): Promise<TestServ
 /**
  * Creates a real StreamableHTTP MCP server for baseline connectivity tests.
  */
-async function createStreamableServer(): Promise<TestServer> {
+async function createStreamableServer(): Promise<Omit<TestServer, 'redirectHit'>> {
   const sessions = new Map<string, StreamableHTTPServerTransport>();
 
   const httpServer = http.createServer(async (req, res) => {
@@ -178,7 +174,10 @@ describe('MCP SSRF protection – redirect blocking', () => {
   });
 
   it('should not follow redirects from streamable-http to a private IP', async () => {
-    redirectServer = await createRedirectingServer('http://169.254.169.254/latest/meta-data/');
+    const targetPort = await getFreePort();
+    redirectServer = await createRedirectingServer(
+      `http://127.0.0.1:${targetPort}/latest/meta-data/`,
+    );
 
     conn = new MCPConnection({
       serverName: 'redirect-test',
@@ -186,16 +185,13 @@ describe('MCP SSRF protection – redirect blocking', () => {
       useSSRFProtection: false,
     });
 
-    /**
-     * With redirect: 'manual', the transport receives the 301 as-is.
-     * The MCP SDK treats a non-200 initial response as a connection failure.
-     * The connection should fail — NOT follow the redirect to 169.254.169.254.
-     */
     await expect(conn.connect()).rejects.toThrow();
+    expect(redirectServer.redirectHit).toBe(false);
   });
 
-  it('should not follow redirects from streamable-http even with SSRF protection off', async () => {
-    redirectServer = await createRedirectingServer('http://127.0.0.1:8080/admin');
+  it('should not follow redirects even with SSRF protection off (allowlist scenario)', async () => {
+    const targetPort = await getFreePort();
+    redirectServer = await createRedirectingServer(`http://127.0.0.1:${targetPort}/admin`);
 
     conn = new MCPConnection({
       serverName: 'redirect-test-2',
@@ -204,6 +200,7 @@ describe('MCP SSRF protection – redirect blocking', () => {
     });
 
     await expect(conn.connect()).rejects.toThrow();
+    expect(redirectServer.redirectHit).toBe(false);
   });
 
   it('should connect normally to a non-redirecting streamable-http server', async () => {
@@ -250,6 +247,21 @@ describe('MCP SSRF protection – WebSocket DNS resolution', () => {
     );
   });
 
+  it('should block WebSocket to host resolving to private IP even with SSRF protection off', async () => {
+    mockedResolveHostnameSSRF.mockResolvedValueOnce(true);
+
+    conn = new MCPConnection({
+      serverName: 'ws-ssrf-allowlist',
+      serverConfig: { type: 'websocket', url: 'ws://allowlisted.example.com:8080/mcp' },
+      useSSRFProtection: false,
+    });
+
+    await expect(conn.connect()).rejects.toThrow(/SSRF protection/);
+    expect(mockedResolveHostnameSSRF).toHaveBeenCalledWith(
+      expect.stringContaining('allowlisted.example.com'),
+    );
+  });
+
   it('should allow WebSocket to host resolving to public IP', async () => {
     mockedResolveHostnameSSRF.mockResolvedValueOnce(false);
 
@@ -260,11 +272,13 @@ describe('MCP SSRF protection – WebSocket DNS resolution', () => {
     });
 
     /**
-     * The connection will fail because there's no real WebSocket server,
-     * but it should NOT fail with an SSRF error — it should get past the
-     * SSRF check and fail on the actual WebSocket connection.
+     * Connection fails because there's no real WebSocket server, but the error
+     * should NOT be an SSRF error — it passes the SSRF check and fails on connect.
      */
-    await expect(conn.connect()).rejects.toThrow();
-    await expect(conn.connect()).rejects.not.toThrow(/SSRF protection/);
+    try {
+      await conn.connect();
+    } catch (err: unknown) {
+      expect((err as Error).message).not.toMatch(/SSRF protection/);
+    }
   });
 });
