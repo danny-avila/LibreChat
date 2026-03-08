@@ -11,7 +11,8 @@ import {
 } from '@aws-sdk/client-s3';
 import { FileSources } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
-import type { MongoFile, S3FileRef } from '../../types';
+import type { TFile } from 'librechat-data-provider';
+import type { S3FileRef } from '~/storage/types';
 
 const s3Mock = mockClient(S3Client);
 
@@ -28,7 +29,7 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn().mockResolvedValue('https://bucket.s3.amazonaws.com/test-key?signed=true'),
 }));
 
-jest.mock('../../../files', () => ({
+jest.mock('~/files', () => ({
   deleteRagFile: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -42,7 +43,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { deleteRagFile } from '../../../files';
+import { deleteRagFile } from '~/files';
 import { logger } from '@librechat/data-schemas';
 
 describe('S3 CRUD', () => {
@@ -284,7 +285,7 @@ describe('S3 CRUD', () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
         file_id: 'file123',
-      } as MongoFile;
+      } as TFile;
 
       s3Mock.on(HeadObjectCommand).resolvesOnce({});
 
@@ -296,11 +297,11 @@ describe('S3 CRUD', () => {
       expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(1);
     });
 
-    it('handles file not found gracefully', async () => {
+    it('handles file not found gracefully and cleans up RAG', async () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/nonexistent.jpg',
         file_id: 'file123',
-      } as MongoFile;
+      } as TFile;
 
       s3Mock.on(HeadObjectCommand).rejects({ name: 'NotFound' });
 
@@ -308,31 +309,34 @@ describe('S3 CRUD', () => {
       await deleteFileFromS3(mockReq, mockFile);
 
       expect(logger.warn).toHaveBeenCalled();
+      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
+      expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(0);
     });
 
     it('throws error if user ID does not match', async () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/different-user/file.jpg',
         file_id: 'file123',
-      } as MongoFile;
+      } as TFile;
 
       const { deleteFileFromS3 } = await import('../crud');
       await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('User ID mismatch');
       expect(logger.error).toHaveBeenCalled();
     });
 
-    it('handles NoSuchKey error', async () => {
+    it('handles NoSuchKey error without calling deleteRagFile', async () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
         file_id: 'file123',
-      } as MongoFile;
+      } as TFile;
 
       s3Mock.on(HeadObjectCommand).resolvesOnce({});
-      const noSuchKeyError = Object.assign(new Error('NoSuchKey'), { code: 'NoSuchKey' });
+      const noSuchKeyError = Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' });
       s3Mock.on(DeleteObjectCommand).rejects(noSuchKeyError);
 
       const { deleteFileFromS3 } = await import('../crud');
       await expect(deleteFileFromS3(mockReq, mockFile)).resolves.toBeUndefined();
+      expect(deleteRagFile).not.toHaveBeenCalled();
     });
   });
 
@@ -501,7 +505,7 @@ describe('S3 CRUD', () => {
 
       const mockBatchUpdate = jest.fn().mockResolvedValue(undefined);
 
-      const result = await refreshS3FileUrls(files as MongoFile[], mockBatchUpdate, 60);
+      const result = await refreshS3FileUrls(files as TFile[], mockBatchUpdate, 60);
 
       expect(result[0].filepath).toContain('signed=true');
       expect(result[1].filepath).toContain('signed=true');
@@ -524,7 +528,7 @@ describe('S3 CRUD', () => {
 
       const mockBatchUpdate = jest.fn();
 
-      const result = await refreshS3FileUrls(files as MongoFile[], mockBatchUpdate);
+      const result = await refreshS3FileUrls(files as TFile[], mockBatchUpdate);
 
       expect(result).toEqual(files);
       expect(mockBatchUpdate).not.toHaveBeenCalled();

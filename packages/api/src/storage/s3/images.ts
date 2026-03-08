@@ -3,13 +3,9 @@ import path from 'path';
 import sharp from 'sharp';
 import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
+import type { TFile } from 'librechat-data-provider';
 import type { FormatEnum } from 'sharp';
-import type {
-  UploadImageParams,
-  ImageUploadResult,
-  ProcessAvatarParams,
-  MongoFile,
-} from '../types';
+import type { UploadImageParams, ImageUploadResult, ProcessAvatarParams } from '~/storage/types';
 import { saveBufferToS3 } from './crud';
 import { s3Config } from './s3Config';
 
@@ -22,7 +18,7 @@ export interface S3ImageServiceDeps {
     endpoint: string,
   ) => Promise<{ buffer: Buffer; width: number; height: number }>;
   updateUser: (userId: string, update: { avatar: string }) => Promise<IUser | null>;
-  updateFile: (params: { file_id: string }) => Promise<MongoFile>;
+  updateFile: (params: { file_id: string }) => Promise<TFile>;
 }
 
 export class S3ImageService {
@@ -40,12 +36,12 @@ export class S3ImageService {
     resolution = 'high',
     basePath = defaultBasePath,
   }: UploadImageParams): Promise<ImageUploadResult> {
-    if (!req.user) {
-      throw new Error('[S3ImageService.uploadImageToS3] User not authenticated');
-    }
-
     const inputFilePath = file.path;
     try {
+      if (!req.user) {
+        throw new Error('[S3ImageService.uploadImageToS3] User not authenticated');
+      }
+
       const appConfig = req.config;
       const inputBuffer = await fs.promises.readFile(inputFilePath);
 
@@ -79,7 +75,7 @@ export class S3ImageService {
         fileName,
         basePath,
       });
-      const bytes = Buffer.byteLength(processedBuffer);
+      const bytes = processedBuffer.length;
       return { filepath: downloadURL, bytes, width, height };
     } catch (error) {
       logger.error(
@@ -99,7 +95,7 @@ export class S3ImageService {
     }
   }
 
-  async prepareImageURL(file: { file_id: string; filepath: string }): Promise<[MongoFile, string]> {
+  async prepareImageURL(file: { file_id: string; filepath: string }): Promise<[TFile, string]> {
     try {
       return await Promise.all([this.deps.updateFile({ file_id: file.file_id }), file.filepath]);
     } catch (error) {
@@ -120,7 +116,7 @@ export class S3ImageService {
   }: ProcessAvatarParams): Promise<string> {
     try {
       const metadata = await sharp(buffer).metadata();
-      const extension = metadata.format === 'gif' ? 'gif' : 'png';
+      const extension = metadata.format ?? 'png';
       const timestamp = new Date().getTime();
 
       const fileName = agentId

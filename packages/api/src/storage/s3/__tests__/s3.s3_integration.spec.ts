@@ -33,22 +33,30 @@ const TEST_RUN_ID = `integration-test-${Date.now()}-${Math.random().toString(36)
 const TEST_BASE_PATH = TEST_RUN_ID;
 
 async function deleteAllWithPrefix(s3: S3Client, bucket: string, prefix: string): Promise<void> {
-  const listCommand = new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix });
-  const response = await s3.send(listCommand);
+  let continuationToken: string | undefined;
 
-  if (!response.Contents?.length) {
-    return;
-  }
+  do {
+    const listCommand = new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    });
+    const response = await s3.send(listCommand);
 
-  const deleteCommand = new DeleteObjectsCommand({
-    Bucket: bucket,
-    Delete: {
-      Objects: response.Contents.filter(
-        (obj): obj is typeof obj & { Key: string } => obj.Key !== undefined,
-      ).map((obj) => ({ Key: obj.Key })),
-    },
-  });
-  await s3.send(deleteCommand);
+    if (response.Contents?.length) {
+      const deleteCommand = new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: {
+          Objects: response.Contents.filter(
+            (obj): obj is typeof obj & { Key: string } => obj.Key !== undefined,
+          ).map((obj) => ({ Key: obj.Key })),
+        },
+      });
+      await s3.send(deleteCommand);
+    }
+
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (continuationToken);
 }
 
 describe('S3 Integration Tests', () => {
@@ -73,7 +81,7 @@ describe('S3 Integration Tests', () => {
     // s3Client is retained as a plain instance — it remains valid even though
     // beforeEach/afterEach call resetModules() for per-test isolation.
     jest.resetModules();
-    const { initializeS3 } = await import('../../../cdn/s3');
+    const { initializeS3 } = await import('~/cdn/s3');
     s3Client = initializeS3();
   });
 
@@ -298,9 +306,9 @@ describe('S3 Integration Tests', () => {
 
       expect(stream).toBeInstanceOf(Readable);
 
-      const chunks: Buffer[] = [];
+      const chunks: Uint8Array[] = [];
       for await (const chunk of stream) {
-        chunks.push(chunk as Buffer);
+        chunks.push(chunk as Uint8Array);
       }
       const downloadedContent = Buffer.concat(chunks).toString();
       expect(downloadedContent).toBe(testContent);

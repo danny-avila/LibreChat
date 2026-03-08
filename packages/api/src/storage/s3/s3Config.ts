@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { isEnabled } from '../../utils/common';
+import { isEnabled } from '~/utils/common';
 
 const MAX_EXPIRY_SECONDS = 7 * 24 * 60 * 60; // 7 days
 const DEFAULT_EXPIRY_SECONDS = 2 * 60; // 2 minutes

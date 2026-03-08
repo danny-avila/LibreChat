@@ -9,21 +9,21 @@ import {
   HeadObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
-import { initializeS3 } from '../../cdn/s3';
-import { deleteRagFile } from '../../files';
-import { s3Config } from './s3Config';
 import type { GetObjectCommandInput } from '@aws-sdk/client-s3';
+import type { TFile } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 import type {
-  SaveBufferParams,
-  GetURLParams,
-  SaveURLParams,
   UploadFileParams,
+  SaveBufferParams,
+  BatchUpdateFn,
+  SaveURLParams,
+  GetURLParams,
   UploadResult,
   S3FileRef,
-  MongoFile,
-  BatchUpdateFn,
-} from '../types';
+} from '~/storage/types';
+import { initializeS3 } from '~/cdn/s3';
+import { deleteRagFile } from '~/files';
+import { s3Config } from './s3Config';
 
 const {
   AWS_BUCKET_NAME: bucketName,
@@ -192,7 +192,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
   }
 }
 
-export async function deleteFileFromS3(req: ServerRequest, file: MongoFile): Promise<void> {
+export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise<void> {
   if (!req.user) {
     throw new Error('[deleteFileFromS3] User not authenticated');
   }
@@ -214,8 +214,6 @@ export async function deleteFileFromS3(req: ServerRequest, file: MongoFile): Pro
 
   const params = { Bucket: bucketName, Key: key };
 
-  await deleteRagFile({ userId, file });
-
   try {
     try {
       const headCommand = new HeadObjectCommand(params);
@@ -224,19 +222,20 @@ export async function deleteFileFromS3(req: ServerRequest, file: MongoFile): Pro
     } catch (headErr) {
       if ((headErr as { name?: string }).name === 'NotFound') {
         logger.warn(`[deleteFileFromS3] File does not exist: ${key}`);
+        await deleteRagFile({ userId, file });
         return;
       }
       throw headErr;
     }
 
-    const deleteResult = await s3.send(new DeleteObjectCommand(params));
-    logger.debug('[deleteFileFromS3] Delete command response:', JSON.stringify(deleteResult));
+    await s3.send(new DeleteObjectCommand(params));
+    await deleteRagFile({ userId, file });
     logger.debug('[deleteFileFromS3] S3 File deletion completed');
   } catch (error) {
     logger.error(`[deleteFileFromS3] Error deleting file from S3: ${(error as Error).message}`);
     logger.error((error as Error).stack);
 
-    if ((error as { code?: string }).code === 'NoSuchKey') {
+    if ((error as { name?: string }).name === 'NoSuchKey') {
       return;
     }
     throw error;
@@ -338,16 +337,14 @@ export function needsRefresh(signedUrl: string, bufferSeconds: number): boolean 
     const second = dateParam.substring(13, 15);
 
     const dateObj = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
-    const expiresAtDate = new Date(dateObj.getTime() + parseInt(expiresParam) * 1000);
-
     const now = new Date();
 
     if (s3RefreshExpiryMs !== null) {
-      const urlCreationTime = dateObj.getTime();
-      const urlAge = now.getTime() - urlCreationTime;
+      const urlAge = now.getTime() - dateObj.getTime();
       return urlAge >= s3RefreshExpiryMs;
     }
 
+    const expiresAtDate = new Date(dateObj.getTime() + parseInt(expiresParam) * 1000);
     const bufferTime = new Date(now.getTime() + bufferSeconds * 1000);
     return expiresAtDate <= bufferTime;
   } catch (error) {
@@ -379,18 +376,19 @@ export async function getNewS3URL(currentURL: string): Promise<string | undefine
 }
 
 export async function refreshS3FileUrls(
-  files: MongoFile[] | null | undefined,
+  files: TFile[] | null | undefined,
   batchUpdateFiles: BatchUpdateFn,
   bufferSeconds = 3600,
-): Promise<MongoFile[]> {
+): Promise<TFile[]> {
   if (!files || !Array.isArray(files) || files.length === 0) {
     return [];
   }
 
   const filesToUpdate: Array<{ file_id: string; filepath: string }> = [];
+  const updatedFiles = [...files];
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
+  for (let i = 0; i < updatedFiles.length; i++) {
+    const file = updatedFiles[i];
     if (!file?.file_id) {
       continue;
     }
@@ -413,7 +411,7 @@ export async function refreshS3FileUrls(
         file_id: file.file_id,
         filepath: newURL,
       });
-      files[i].filepath = newURL;
+      updatedFiles[i] = { ...file, filepath: newURL };
     } catch (error) {
       logger.error(`Error refreshing S3 URL for file ${file.file_id}:`, error);
     }
@@ -423,7 +421,7 @@ export async function refreshS3FileUrls(
     await batchUpdateFiles(filesToUpdate);
   }
 
-  return files;
+  return updatedFiles;
 }
 
 export async function refreshS3Url(fileObj: S3FileRef, bufferSeconds = 3600): Promise<string> {

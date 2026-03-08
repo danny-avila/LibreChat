@@ -1,4 +1,3 @@
-import type { TFile } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 
 export interface SaveBufferParams {
@@ -59,5 +58,3 @@ export interface S3FileRef {
 }
 
 export type BatchUpdateFn = (files: Array<{ file_id: string; filepath: string }>) => Promise<void>;
-
-export type MongoFile = TFile;

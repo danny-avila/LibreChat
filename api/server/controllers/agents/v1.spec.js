@@ -22,6 +22,14 @@ jest.mock('~/server/services/Files/images/avatar', () => ({
   resizeAvatar: jest.fn(),
 }));
 
+jest.mock('sharp', () =>
+  jest.fn(() => ({
+    metadata: jest.fn().mockResolvedValue({}),
+    toFormat: jest.fn().mockReturnThis(),
+    toBuffer: jest.fn().mockResolvedValue(Buffer.alloc(0)),
+  })),
+);
+
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   refreshS3Url: jest.fn(),
