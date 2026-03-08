@@ -271,14 +271,7 @@ describe('MCP SSRF protection – WebSocket DNS resolution', () => {
       useSSRFProtection: true,
     });
 
-    /**
-     * Connection fails because there's no real WebSocket server, but the error
-     * should NOT be an SSRF error — it passes the SSRF check and fails on connect.
-     */
-    try {
-      await conn.connect();
-    } catch (err: unknown) {
-      expect((err as Error).message).not.toMatch(/SSRF protection/);
-    }
+    /** Fails on connect (no real server), but the error must not be an SSRF rejection. */
+    await expect(conn.connect()).rejects.not.toThrow(/SSRF protection/);
   });
 });
