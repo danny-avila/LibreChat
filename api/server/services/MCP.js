@@ -538,7 +538,12 @@ function createToolInstance({
         }
 
         try {
-          await flowManager.createFlow(validationId, validationFlowType, flowMetadata, derivedSignal);
+          await flowManager.createFlow(
+            validationId,
+            validationFlowType,
+            flowMetadata,
+            derivedSignal,
+          );
 
           /** @type {{ id: string; delta: AgentToolCallDelta }} */
           const successData = {
@@ -556,7 +561,7 @@ function createToolInstance({
           } else {
             sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data: successData });
           }
-        } catch (validationError) {
+        } catch (_validationError) {
           throw new Error(
             `Tool call validation required for ${serverName}/${toolName}. User rejected or validation timed out.`,
           );
