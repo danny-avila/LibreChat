@@ -4,7 +4,7 @@ import { ChevronDown } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useExpandCollapse } from '~/hooks';
 import { cn } from '~/utils';
 
 interface AgentHandoffProps {
@@ -17,8 +17,8 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
   const localize = useLocalize();
   const agentsMap = useAgentsMapContext();
   const [showInfo, setShowInfo] = useState(false);
+  const expandStyle = useExpandCollapse(showInfo);
 
-  /** Extracted agent ID from tool name (e.g., "lc_transfer_to_agent_gUV0wMb7zHt3y3Xjz-8_4" -> "agent_gUV0wMb7zHt3y3Xjz-8_4") */
   const targetAgentId = useMemo(() => {
     if (typeof name !== 'string' || !name.startsWith(Constants.LC_TRANSFER_TO_)) {
       return null;
@@ -44,19 +44,31 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
     }
   }, [_args]) as string;
 
-  /** Requires more than 2 characters as can be an empty object: `{}` */
   const hasInfo = useMemo(() => (args?.trim()?.length ?? 0) > 2, [args]);
 
   return (
-    <div className="my-3">
+    <div className="my-2.5">
       <div
         className={cn(
           'flex items-center gap-2.5 text-sm text-text-secondary',
           hasInfo && 'cursor-pointer transition-colors hover:text-text-primary',
         )}
         onClick={() => hasInfo && setShowInfo(!showInfo)}
+        role={hasInfo ? 'button' : undefined}
+        tabIndex={hasInfo ? 0 : undefined}
+        aria-expanded={hasInfo ? showInfo : undefined}
+        onKeyDown={
+          hasInfo
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setShowInfo(!showInfo);
+                }
+              }
+            : undefined
+        }
       >
-        <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+        <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full ring-1 ring-border-light">
           <MessageIcon
             message={
               {
@@ -78,14 +90,18 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
           />
         )}
       </div>
-      {hasInfo && showInfo && (
-        <div className="ml-8 mt-2 rounded-md bg-surface-secondary p-3 text-xs">
-          <div className="mb-1 font-medium text-text-secondary">
-            {localize('com_ui_handoff_instructions')}:
-          </div>
-          <pre className="overflow-x-auto whitespace-pre-wrap text-text-primary">{args}</pre>
+      <div style={expandStyle}>
+        <div className="overflow-hidden">
+          {hasInfo && (
+            <div className="ml-8 mt-2 rounded-lg border border-border-light bg-surface-secondary p-3 text-xs">
+              <div className="mb-1 font-medium text-text-secondary">
+                {localize('com_ui_handoff_instructions')}:
+              </div>
+              <pre className="overflow-x-auto whitespace-pre-wrap text-text-primary">{args}</pre>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };
