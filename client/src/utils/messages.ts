@@ -192,6 +192,23 @@ export const getMessageAriaLabel = (message: TMessage, localize: LocalizeFunctio
 };
 
 /**
+ * Provides better context for screen readers in a conversation.
+ *
+ * Instead of each message being solely the name of the user (or AI), it prefixes with
+ * whether it's a prompt or response (and the depth) so that the parts of a conversation
+ * are more easily navigable by screen reader.
+ */
+export const getHeaderPrefixForScreenReader = (
+  message: TMessage,
+  localize: LocalizeFunction,
+): string => {
+  const number = !_.isNil(message.depth) ? ` ${message.depth + 1}` : ``;
+  return message.isCreatedByUser
+    ? `${localize('com_ui_prompt')}${number}: `
+    : `${localize('com_ui_response')}${number}: `;
+};
+
+/**
  * Creates initial content parts for dual message display with agent-based grouping.
  * Sets up primary and added agent content parts with agentId for column rendering.
  *
