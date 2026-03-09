@@ -156,6 +156,8 @@ export type ParsedServerConfig = MCPOptions & {
   dbId?: string;
   /** True if access is only via agent (not directly shared with user) */
   consumeOnly?: boolean;
+  /** True when inspection failed at startup; the server is known but not fully initialized */
+  inspectionFailed?: boolean;
 };
 
 export type AddServerResult = {
