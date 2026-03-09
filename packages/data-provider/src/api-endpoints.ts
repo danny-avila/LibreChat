@@ -164,6 +164,32 @@ export const verifyEmail = () => `${BASE_URL}/api/user/verify`;
 export const loginPage = () => `${BASE_URL}/login`;
 export const registerPage = () => `${BASE_URL}/register`;
 
+const REDIRECT_PARAM = 'redirect_to';
+const LOGIN_PATH_RE = /(?:^|\/)login(?:\/|$)/;
+
+/**
+ * Builds a `/login?redirect_to=...` URL from the given or current location.
+ * Returns plain `/login` (no param) when already on a login route to prevent recursive nesting.
+ */
+export function buildLoginRedirectUrl(pathname?: string, search?: string, hash?: string): string {
+  const p = pathname ?? window.location.pathname;
+  if (LOGIN_PATH_RE.test(p)) {
+    return '/login';
+  }
+  const s = search ?? window.location.search;
+  const h = hash ?? window.location.hash;
+
+  const stripped =
+    BASE_URL && (p === BASE_URL || p.startsWith(BASE_URL + '/'))
+      ? p.slice(BASE_URL.length) || '/'
+      : p;
+  const currentPath = `${stripped}${s}${h}`;
+  if (!currentPath || currentPath === '/') {
+    return '/login';
+  }
+  return `/login?${REDIRECT_PARAM}=${encodeURIComponent(currentPath)}`;
+}
+
 export const resendVerificationEmail = () => `${BASE_URL}/api/user/verify/resend`;
 
 export const plugins = () => `${BASE_URL}/api/plugins`;

@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { useRecoilValue } from 'recoil';
 import { Trans } from 'react-i18next';
 import { BookCopy } from 'lucide-react';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
@@ -13,7 +14,7 @@ import {
 import type { FC } from 'react';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { useLocalize, usePresets } from '~/hooks';
-import { useChatContext } from '~/Providers';
+import store from '~/store';
 
 const PresetsMenu: FC = () => {
   const localize = useLocalize();
@@ -33,7 +34,7 @@ const PresetsMenu: FC = () => {
     presetToDelete,
     confirmDeletePreset,
   } = usePresets();
-  const { preset } = useChatContext();
+  const preset = useRecoilValue(store.presetByIndex(0));
 
   const handleDeleteDialogChange = (open: boolean) => {
     setShowDeleteDialog(open);

@@ -185,10 +185,11 @@ export class MCPConnectionFactory {
 
   protected constructor(basic: t.BasicConnectionOptions, oauth?: t.OAuthConnectionOptions) {
     this.serverConfig = processMCPEnv({
-      options: basic.serverConfig,
       user: oauth?.user,
-      customUserVars: oauth?.customUserVars,
       body: oauth?.requestBody,
+      dbSourced: basic.dbSourced,
+      options: basic.serverConfig,
+      customUserVars: oauth?.customUserVars,
     });
     this.serverName = basic.serverName;
     this.useOAuth = !!oauth?.useOAuth;

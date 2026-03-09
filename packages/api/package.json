@@ -1,6 +1,6 @@
 {
   "name": "@librechat/api",
-  "version": "1.7.23",
+  "version": "1.7.24",
   "type": "commonjs",
   "description": "MCP services for LibreChat",
   "main": "dist/index.js",
@@ -90,7 +90,7 @@
     "@google/genai": "^1.19.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.80",
-    "@librechat/agents": "^3.1.54",
+    "@librechat/agents": "^3.1.55",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@smithy/node-http-handler": "^4.4.5",

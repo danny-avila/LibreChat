@@ -219,7 +219,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
           {showPlusPopover && !isAssistantsEndpoint(endpoint) && (
             <Mention
-              conversation={conversation}
               setShowMentionPopover={setShowPlusPopover}
               newConversation={generateConversation}
               textAreaRef={textAreaRef}
@@ -230,7 +229,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
           )}
           {showMentionPopover && (
             <Mention
-              conversation={conversation}
               setShowMentionPopover={setShowMentionPopover}
               newConversation={newConversation}
               textAreaRef={textAreaRef}

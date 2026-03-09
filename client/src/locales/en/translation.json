@@ -1189,7 +1189,7 @@
   "com_ui_next": "Next",
   "com_ui_no": "No",
   "com_ui_no_api_keys": "No API keys yet. Create one to get started.",
-  "com_ui_no_auth": "No Auth",
+  "com_ui_no_auth": "None (Auto-detect)",
   "com_ui_no_bookmarks": "it seems like you have no bookmarks yet. Click on a chat and add a new one",
   "com_ui_no_bookmarks_match": "No bookmarks match your search",
   "com_ui_no_bookmarks_title": "No bookmarks yet",

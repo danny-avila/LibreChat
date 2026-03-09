@@ -123,7 +123,8 @@ describe('LogoutController', () => {
   });
 
   describe('OPENID_USE_END_SESSION_ENDPOINT disabled', () => {
-    it('does not include redirect when disabled', async () => {
+    // NJ: We override redirect on logout
+    it.skip('does not include redirect when disabled', async () => {
       mockIsEnabled.mockReturnValue(false);
       const req = buildReq();
       const res = buildRes();
@@ -136,7 +137,8 @@ describe('LogoutController', () => {
   });
 
   describe('OPENID_ISSUER unset', () => {
-    it('does not include redirect when OPENID_ISSUER is missing', async () => {
+    // NJ: We override redirect on logout
+    it.skip('does not include redirect when OPENID_ISSUER is missing', async () => {
       delete process.env.OPENID_ISSUER;
       const req = buildReq();
       const res = buildRes();
@@ -149,7 +151,8 @@ describe('LogoutController', () => {
   });
 
   describe('non-OpenID user', () => {
-    it('does not include redirect for non-OpenID users', async () => {
+    // NJ: We override redirect on logout
+    it.skip('does not include redirect for non-OpenID users', async () => {
       const req = buildReq({
         user: { _id: 'user1', provider: 'local' },
       });
