@@ -5,7 +5,7 @@ import { ContentTypes } from 'librechat-data-provider';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar } from './Thinking';
 import { showThinkingAtom } from '~/store/showThinking';
 import { useMessageContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useExpandCollapse } from '~/hooks';
 import { cn } from '~/utils';
 
 type ReasoningProps = {
@@ -42,6 +42,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   const [isExpanded, setIsExpanded] = useState(showThinking);
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const expandStyle = useExpandCollapse(isExpanded);
   const { isSubmitting, isLatestMessage, nextType } = useMessageContext();
 
   // Strip <think> tags from the reasoning content (modern format)
@@ -113,13 +114,8 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
           role="group"
           aria-label={label}
           aria-hidden={!isExpanded || undefined}
-          className={cn(
-            'grid transition-all duration-300 ease-out',
-            nextType !== ContentTypes.THINK && isExpanded && 'mb-4',
-          )}
-          style={{
-            gridTemplateRows: isExpanded ? '1fr' : '0fr',
-          }}
+          className={cn(nextType !== ContentTypes.THINK && isExpanded && 'mb-4')}
+          style={expandStyle}
         >
           <div className="relative overflow-hidden">
             <ThinkingContent>{reasoningText}</ThinkingContent>
