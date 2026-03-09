@@ -11,7 +11,6 @@ import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { EditTextPart, EmptyText } from './Parts';
 import MemoryArtifacts from './MemoryArtifacts';
-import Sources from '~/components/Web/Sources';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
@@ -223,7 +222,6 @@ const ContentParts = memo(function ContentParts({
   return (
     <SearchContext.Provider value={{ searchResults }}>
       <MemoryArtifacts attachments={attachments} />
-      <Sources messageId={messageId} conversationId={conversationId || undefined} />
       {showEmptyCursor && (
         <Container>
           <EmptyText />

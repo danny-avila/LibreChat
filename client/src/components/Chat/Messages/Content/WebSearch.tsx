@@ -1,9 +1,12 @@
-import { useMemo } from 'react';
-import type { TAttachment } from 'librechat-data-provider';
+import { useMemo, useState } from 'react';
+import { Globe, ChevronDown } from 'lucide-react';
+import { Tools } from 'librechat-data-provider';
+import type { TAttachment, ValidSource, SearchResultData } from 'librechat-data-provider';
+import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { useSearchContext } from '~/Providers';
-import ProgressText from './ProgressText';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useExpandCollapse } from '~/hooks';
+import cn from '~/utils/cn';
 
 type ProgressKeys =
   | 'com_ui_web_searching'
@@ -11,11 +14,72 @@ type ProgressKeys =
   | 'com_ui_web_search_processing'
   | 'com_ui_web_search_reading';
 
+const MAX_VISIBLE_FAVICONS = 3;
+
+function collectSources(results: Record<string, SearchResultData>): ValidSource[] {
+  const sourceMap = new Map<string, ValidSource>();
+  for (const result of Object.values(results)) {
+    if (!result) {
+      continue;
+    }
+    result.organic?.forEach((s) => {
+      if (s.link) {
+        sourceMap.set(s.link, s);
+      }
+    });
+    result.topStories?.forEach((s) => {
+      if (s.link) {
+        sourceMap.set(s.link, s);
+      }
+    });
+  }
+  return Array.from(sourceMap.values());
+}
+
+function getUniqueDomainSources(sources: ValidSource[], max: number): ValidSource[] {
+  const seen = new Set<string>();
+  const result: ValidSource[] = [];
+  for (const source of sources) {
+    const domain = getCleanDomain(source.link);
+    if (seen.has(domain)) {
+      continue;
+    }
+    seen.add(domain);
+    result.push(source);
+    if (result.length >= max) {
+      break;
+    }
+  }
+  return result;
+}
+
+function SourceFaviconStack({ sources }: { sources: ValidSource[] }) {
+  const visible = getUniqueDomainSources(sources, MAX_VISIBLE_FAVICONS);
+  return (
+    <div className="flex items-center" aria-hidden="true">
+      {visible.map((source, i) => (
+        <div
+          key={source.link}
+          className={cn(
+            'relative flex items-center justify-center rounded-full border border-border-medium bg-surface-secondary',
+            'h-[22px] w-[22px]',
+            i > 0 && '-ml-2.5',
+          )}
+          style={{ zIndex: MAX_VISIBLE_FAVICONS - i }}
+        >
+          <FaviconImage domain={getCleanDomain(source.link)} className="size-3 rounded-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function WebSearch({
   initialProgress: progress = 0.1,
   isSubmitting,
   isLast,
   output,
+  attachments,
 }: {
   isLast?: boolean;
   isSubmitting: boolean;
@@ -30,14 +94,39 @@ export default function WebSearch({
 
   const complete = !isLast && progress === 1;
   const finalizing = isSubmitting && isLast && progress === 1;
+
+  const allSources = useMemo((): ValidSource[] => {
+    if (searchResults && Object.keys(searchResults).length > 0) {
+      return collectSources(searchResults);
+    }
+    if (attachments) {
+      const turnMap: Record<string, SearchResultData> = {};
+      for (const att of attachments) {
+        if (att.type === Tools.web_search && att[Tools.web_search]) {
+          const data = att[Tools.web_search];
+          const key = typeof data.turn === 'number' ? String(data.turn) : '0';
+          turnMap[key] = data;
+        }
+      }
+      if (Object.keys(turnMap).length > 0) {
+        return collectSources(turnMap);
+      }
+    }
+    return [];
+  }, [searchResults, attachments]);
+
   const processedSources = useMemo(() => {
     if (complete && !finalizing) {
       return [];
     }
-    if (!searchResults) return [];
+    if (!searchResults) {
+      return [];
+    }
     const values = Object.values(searchResults);
     const result = values[values.length - 1];
-    if (!result) return [];
+    if (!result) {
+      return [];
+    }
     if (finalizing) {
       return [...(result.organic || []), ...(result.topStories || [])];
     }
@@ -45,18 +134,23 @@ export default function WebSearch({
       (source) => source.processed === true,
     );
   }, [searchResults, complete, finalizing]);
-  const turns = useMemo(() => {
-    if (!searchResults) return 0;
-    return Object.values(searchResults).length;
-  }, [searchResults]);
 
-  const clampedProgress = useMemo(() => {
-    return Math.min(progress, 0.99);
-  }, [progress]);
+  const ownTurn = useMemo(() => {
+    if (!attachments) {
+      return 0;
+    }
+    for (const att of attachments) {
+      if (att.type === Tools.web_search && att[Tools.web_search]) {
+        const turn = att[Tools.web_search].turn;
+        return typeof turn === 'number' ? turn : 0;
+      }
+    }
+    return 0;
+  }, [attachments]);
 
   const showSources = processedSources.length > 0;
   const progressText = useMemo(() => {
-    let text: ProgressKeys = turns > 1 ? 'com_ui_web_searching_again' : 'com_ui_web_searching';
+    let text: ProgressKeys = ownTurn > 0 ? 'com_ui_web_searching_again' : 'com_ui_web_searching';
     if (showSources) {
       text = 'com_ui_web_search_processing';
     }
@@ -64,28 +158,88 @@ export default function WebSearch({
       text = 'com_ui_web_search_reading';
     }
     return localize(text);
-  }, [turns, localize, showSources, finalizing]);
+  }, [ownTurn, localize, showSources, finalizing]);
 
-  if (complete || cancelled) {
+  const [showSourceList, setShowSourceList] = useState(false);
+  const sourceExpandStyle = useExpandCollapse(showSourceList);
+  const sourceCount = allSources.length;
+
+  if (cancelled) {
     return null;
   }
-  return (
-    <>
-      <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
-        {showSources && (
-          <div className="mr-2">
-            <StackedFavicons sources={processedSources} start={-5} />
+
+  if (complete) {
+    const hasSourceData = sourceCount > 0;
+    const completedText = localize('com_ui_web_searched');
+
+    return (
+      <div className="my-1">
+        <button
+          type="button"
+          className={cn(
+            'group flex items-center gap-2 rounded-full py-1 text-sm transition-colors',
+            hasSourceData
+              ? 'text-text-secondary hover:text-text-primary'
+              : 'pointer-events-none text-text-secondary',
+          )}
+          disabled={!hasSourceData}
+          onClick={hasSourceData ? () => setShowSourceList((prev) => !prev) : undefined}
+          aria-expanded={hasSourceData ? showSourceList : undefined}
+        >
+          {hasSourceData ? (
+            <SourceFaviconStack sources={allSources} />
+          ) : (
+            <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+          )}
+          <span className="text-sm font-medium">{completedText}</span>
+          {hasSourceData && (
+            <ChevronDown
+              className={cn(
+                'size-3.5 shrink-0 text-text-secondary transition-transform duration-200',
+                showSourceList && 'rotate-180',
+              )}
+              aria-hidden="true"
+            />
+          )}
+        </button>
+        {hasSourceData && (
+          <div style={sourceExpandStyle}>
+            <div className="overflow-hidden">
+              <div className="mt-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
+                {allSources.map((source, i) => {
+                  const domain = getCleanDomain(source.link);
+                  return (
+                    <a
+                      key={i}
+                      href={source.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={cn(
+                        'flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-surface-hover',
+                        i > 0 && 'border-t border-border-light',
+                      )}
+                    >
+                      <FaviconImage domain={domain} className="size-4 shrink-0 rounded-sm" />
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">
+                        {source.title || domain}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-text-secondary">{domain}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
-        <ProgressText
-          finishedText=""
-          hasInput={false}
-          error={cancelled}
-          isExpanded={false}
-          progress={clampedProgress}
-          inProgressText={progressText}
-        />
       </div>
-    </>
+    );
+  }
+
+  return (
+    <div className="my-2.5 flex items-center gap-2.5">
+      {showSources && <StackedFavicons sources={processedSources} start={-5} />}
+      <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+      <span className="shimmer text-xs font-medium text-text-secondary">{progressText}</span>
+    </div>
   );
 }
