@@ -1,8 +1,7 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useMemo, useEffect, useRef, useCallback } from 'react';
+import { useRecoilState } from 'recoil';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
-import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import { useProgress, useLocalize, useExpandCollapse } from '~/hooks';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
@@ -45,6 +44,8 @@ export function useParseArgs(args?: string): ParsedArgs | null {
   }, [args]);
 }
 
+const ERROR_PATTERNS = /^(Traceback|Error:|Exception:|.*Error:)/m;
+
 export default function ExecuteCode({
   isSubmitting,
   initialProgress = 0.1,
@@ -61,18 +62,21 @@ export default function ExecuteCode({
   const localize = useLocalize();
   const hasOutput = output.length > 0;
   const outputRef = useRef<string>(output);
-  const showAnalysisCode = useRecoilValue(store.showCode);
-  const [showCode, setShowCode] = useState(showAnalysisCode);
+  const [showCode, setShowCode] = useRecoilState(store.showCode);
   const expandStyle = useExpandCollapse(showCode);
 
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
   const progress = useProgress(initialProgress);
+
+  const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
 
   useEffect(() => {
     if (output !== outputRef.current) {
       outputRef.current = output;
     }
   }, [output]);
+
+  const toggleCode = useCallback(() => setShowCode((prev) => !prev), [setShowCode]);
 
   const cancelled = !isSubmitting && progress < 1;
 
@@ -81,7 +85,7 @@ export default function ExecuteCode({
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
-          onClick={() => setShowCode((prev) => !prev)}
+          onClick={toggleCode}
           inProgressText={localize('com_ui_analyzing')}
           finishedText={
             cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
@@ -94,26 +98,23 @@ export default function ExecuteCode({
       <div className="mb-2" style={expandStyle}>
         <div className="overflow-hidden">
           <div className="mt-0.5 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-            {showCode && code && <CodeWindowHeader language={lang} code={code} />}
-            {showCode && (
-              <div className="max-h-[300px] overflow-auto">
-                <MarkdownLite
-                  content={code ? `\`\`\`${lang}\n${code}\n\`\`\`` : ''}
-                  codeExecution={false}
-                />
-              </div>
+            {code && <CodeWindowHeader language={lang} code={code} />}
+            {code && (
+              <pre className="max-h-[300px] overflow-auto bg-surface-tertiary p-4 font-mono text-xs text-text-secondary">
+                <code>{code}</code>
+              </pre>
             )}
             {hasOutput && (
-              <div
-                className={cn(
-                  'bg-surface-tertiary p-4 text-xs',
-                  showCode ? 'border-t border-border-light' : '',
-                )}
-              >
-                <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
+              <div className={cn('p-4 text-xs', code && 'border-t border-border-light')}>
+                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
                   {localize('com_ui_output')}
                 </div>
-                <div className="max-h-[200px] overflow-auto">
+                <div
+                  className={cn(
+                    'max-h-[200px] overflow-auto',
+                    outputHasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                  )}
+                >
                   <Stdout output={output} />
                 </div>
               </div>
