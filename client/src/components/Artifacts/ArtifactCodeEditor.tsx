@@ -313,7 +313,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
     <div className="h-full w-full bg-[#1e1e1e]">
       <MonacoEditor
         height="100%"
-        language={language}
+        language={readOnly ? 'plaintext' : language}
         theme="vs-dark"
         defaultValue={artifact.content}
         onChange={handleChange}
