@@ -21,6 +21,9 @@ import { Agent } from 'undici';
 import { randomUUID } from 'crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { Keyv } from 'keyv';
+import { Types } from 'mongoose';
+import type { IUser } from '@librechat/data-schemas';
 import type { Socket } from 'net';
 import type * as t from '~/mcp/types';
 import { MCPInspectionFailedError } from '~/mcp/errors';
@@ -28,7 +31,9 @@ import { registryStatusCache } from '~/mcp/registry/cache/RegistryStatusCache';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { FlowStateManager } from '~/flow/manager';
 import { MCPConnection } from '~/mcp/connection';
+import { MCPManager } from '~/mcp/MCPManager';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -183,6 +188,14 @@ describe('MCP reinitialize recovery – integration (issue #12143)', () => {
   afterEach(async () => {
     await safeDisconnect(conn);
     conn = null;
+    // Reset MCPManager if it was created during the test
+    try {
+      const mgr = MCPManager.getInstance();
+      await Promise.all(mgr.appConnections?.disconnectAll() ?? []);
+    } catch {
+      // Not initialized — nothing to clean up
+    }
+    (MCPManager as unknown as { instance: null }).instance = null;
     if (server) {
       await server.close();
       server = null;
@@ -350,6 +363,104 @@ describe('MCP reinitialize recovery – integration (issue #12143)', () => {
     expect(config).toBeDefined();
     expect(config!.inspectionFailed).toBeUndefined();
     expect(config!.tools).toContain('echo');
+  });
+
+  it('concurrent reinitMCPServer-equivalent flows should not crash or corrupt state', async () => {
+    const deadPort = await getFreePort();
+    const serverName = 'concurrent-reinit';
+    const configs: t.MCPServers = {
+      [serverName]: {
+        type: 'streamable-http',
+        url: `http://127.0.0.1:${deadPort}/`,
+      },
+    };
+
+    // Reset MCPManager singleton so createInstance works
+    (MCPManager as unknown as { instance: null }).instance = null;
+
+    // Initialize with dead server — this sets up both registry (stub) and MCPManager
+    await MCPManager.createInstance(configs);
+    const mcpManager = MCPManager.getInstance();
+
+    expect((await registry.getServerConfig(serverName))!.inspectionFailed).toBe(true);
+
+    // Server comes back online
+    server = await createMCPServerOnPort(deadPort);
+
+    const flowManager = new FlowStateManager<null>(new Keyv(), { ttl: 60_000 });
+    const makeUser = (): IUser =>
+      ({
+        _id: new Types.ObjectId(),
+        id: new Types.ObjectId().toString(),
+        username: 'testuser',
+        email: 'test@example.com',
+        name: 'Test',
+        avatar: '',
+        provider: 'email',
+        role: 'user',
+        emailVerified: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }) as IUser;
+
+    /**
+     * Replicate reinitMCPServer logic: check inspectionFailed → reinspect → getConnection.
+     * Each call uses a distinct user to simulate concurrent requests from different users.
+     */
+    async function simulateReinitMCPServer(): Promise<{ success: boolean; tools: number }> {
+      const user = makeUser();
+      const config = await registry.getServerConfig(serverName, user.id);
+      if (config?.inspectionFailed) {
+        try {
+          const storageLocation = config.dbId ? 'DB' : 'CACHE';
+          await registry.reinspectServer(serverName, storageLocation, user.id);
+        } catch {
+          // Mirrors reinitMCPServer early return on failed reinspection
+          return { success: false, tools: 0 };
+        }
+      }
+
+      const connection = await mcpManager.getConnection({
+        serverName,
+        user,
+        flowManager,
+        forceNew: true,
+      });
+
+      const tools = await connection.fetchTools();
+      return { success: true, tools: tools.length };
+    }
+
+    const n = 3 + Math.floor(Math.random() * 5); // 3–7 concurrent calls
+    const results = await Promise.allSettled(
+      Array.from({ length: n }, () => simulateReinitMCPServer()),
+    );
+
+    // All promises should resolve (no unhandled throws)
+    for (const r of results) {
+      expect(r.status).toBe('fulfilled');
+    }
+
+    const values = (results as PromiseFulfilledResult<{ success: boolean; tools: number }>[]).map(
+      (r) => r.value,
+    );
+
+    // At least one full reinit must succeed with tools
+    const succeeded = values.filter((v) => v.success);
+    expect(succeeded.length).toBeGreaterThanOrEqual(1);
+    for (const s of succeeded) {
+      expect(s.tools).toBe(2);
+    }
+
+    // Any that returned success: false hit the reinspect guard — that's fine
+    const earlyReturned = values.filter((v) => !v.success);
+    expect(earlyReturned.every((v) => v.tools === 0)).toBe(true);
+
+    // Final registry state must be fully recovered
+    const finalConfig = await registry.getServerConfig(serverName);
+    expect(finalConfig).toBeDefined();
+    expect(finalConfig!.inspectionFailed).toBeUndefined();
+    expect(finalConfig!.tools).toContain('echo');
   });
 
   it('reinspectServer should throw MCPInspectionFailedError when the server is still unreachable', async () => {
