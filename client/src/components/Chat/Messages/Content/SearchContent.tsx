@@ -10,7 +10,6 @@ import type {
   TMessageContentParts,
 } from 'librechat-data-provider';
 import { UnfinishedMessage } from './MessageContent';
-import Sources from '~/components/Web/Sources';
 import { cn, mapAttachments } from '~/utils';
 import { SearchContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
@@ -34,7 +33,6 @@ const SearchContent = ({
   if (Array.isArray(message.content) && message.content.length > 0) {
     return (
       <SearchContext.Provider value={{ searchResults }}>
-        <Sources />
         {message.content
           .filter((part: TMessageContentParts | undefined) => part)
           .map((part: TMessageContentParts | undefined, idx: number) => {
