@@ -102,6 +102,7 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
       className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
       style={{ fontSize: '0.7rem' }}
     >
+      <span className="sr-only">{localize('com_ui_chats_date_label_screen_reader_prefix')}</span>{' '}
       {localize(groupName as TranslationKeys) || groupName}
     </h2>
   );
