@@ -1,3 +1,6 @@
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useLocalize } from '~/hooks';
+
 interface ResultSwitcherProps {
   currentIndex: number;
   totalCount: number;
@@ -5,65 +8,47 @@ interface ResultSwitcherProps {
   onNext: () => void;
 }
 
-const ResultSwitcher: React.FC<ResultSwitcherProps> = ({
+export default function ResultSwitcher({
   currentIndex,
   totalCount,
   onPrevious,
   onNext,
-}) => {
+}: ResultSwitcherProps) {
+  const localize = useLocalize();
+
   if (totalCount <= 1) {
     return null;
   }
 
+  const atFirst = currentIndex === 0;
+  const atLast = currentIndex === totalCount - 1;
+
   return (
-    <div className="flex items-center justify-start gap-1 self-center border-t border-border-light bg-surface-secondary px-3 pb-2 pt-1.5 text-xs">
+    <nav
+      aria-label={localize('com_ui_navigate_results')}
+      className="flex items-center justify-center gap-1.5 border-t border-border-light px-3 py-1.5 text-xs"
+    >
       <button
-        className="rounded-md p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-secondary disabled:opacity-40 disabled:hover:bg-transparent"
         type="button"
         onClick={onPrevious}
-        disabled={currentIndex === 0}
+        disabled={atFirst}
+        aria-label={localize('com_ui_prev_result')}
+        className="rounded p-0.5 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline focus:outline-2 focus:outline-border-heavy disabled:pointer-events-none disabled:opacity-30"
       >
-        <svg
-          stroke="currentColor"
-          fill="none"
-          strokeWidth="1.5"
-          viewBox="0 0 24 24"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-4 w-4"
-          height="1em"
-          width="1em"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <polyline points="15 18 9 12 15 6" />
-        </svg>
+        <ChevronLeft className="size-3.5" aria-hidden="true" />
       </button>
-      <span className="flex-shrink-0 tabular-nums text-text-secondary">
-        {currentIndex + 1} / {totalCount}
+      <span className="min-w-[3ch] select-none text-center tabular-nums text-text-secondary">
+        {currentIndex + 1}/{totalCount}
       </span>
       <button
-        className="rounded-md p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-secondary disabled:opacity-40 disabled:hover:bg-transparent"
         type="button"
         onClick={onNext}
-        disabled={currentIndex === totalCount - 1}
+        disabled={atLast}
+        aria-label={localize('com_ui_next_result')}
+        className="rounded p-0.5 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline focus:outline-2 focus:outline-border-heavy disabled:pointer-events-none disabled:opacity-30"
       >
-        <svg
-          stroke="currentColor"
-          fill="none"
-          strokeWidth="1.5"
-          viewBox="0 0 24 24"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-4 w-4"
-          height="1em"
-          width="1em"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
+        <ChevronRight className="size-3.5" aria-hidden="true" />
       </button>
-    </div>
+    </nav>
   );
-};
-
-export default ResultSwitcher;
+}
