@@ -1,29 +1,17 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const { Constants, EnvVar, GraphEvents, ToolEndHandler } = require('@librechat/agents');
-const {
-  Time,
-  Tools,
-  CacheKeys,
-  StepTypes,
-  FileContext,
-  ErrorTypes,
-  EModelEndpoint,
-} = require('librechat-data-provider');
+const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
   sendEvent,
-  requiresApproval,
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
-  MCPToolCallValidationHandler,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { saveBase64Image } = require('~/server/services/Files/process');
-const { getFlowStateManager } = require('~/config');
-const { getLogStores } = require('~/cache');
 
 class ModelEndHandler {
   /**
@@ -121,78 +109,6 @@ async function emitEvent(res, streamId, eventData) {
 }
 
 /**
- * Checks if a tool call is a native Anthropic web search (server_tool_use).
- * @param {Object} toolCall - The tool call object
- * @returns {boolean}
- */
-function isNativeWebSearch(toolCall) {
-  return toolCall?.name === Tools.web_search && toolCall?.id?.startsWith('srvtoolu_');
-}
-
-/**
- * Handles approval flow for native web search tool calls.
- * @param {Object} params
- * @param {Object} params.toolCall - The tool call requiring approval
- * @param {Object} params.toolApprovalConfig - The tool approval configuration
- * @param {ServerResponse} params.res - The response object for SSE
- * @param {string | null} params.streamId - The stream ID for resumable mode
- * @param {string} params.stepId - The step ID
- * @param {string} params.userId - The user ID
- * @param {AbortSignal} [params.signal] - Optional abort signal
- * @returns {Promise<void>}
- */
-async function handleNativeWebSearchApproval({
-  toolCall,
-  toolApprovalConfig,
-  res,
-  streamId,
-  stepId,
-  userId,
-  signal,
-}) {
-  const needsApproval = requiresApproval(Tools.web_search, toolApprovalConfig);
-  if (!needsApproval) {
-    return;
-  }
-
-  const flowsCache = getLogStores(CacheKeys.FLOWS);
-  const flowManager = getFlowStateManager(flowsCache);
-  const derivedSignal = signal ? AbortSignal.any([signal]) : undefined;
-
-  const toolArgs = toolCall.args || {};
-  const { validationId, flowMetadata } =
-    await MCPToolCallValidationHandler.initiateValidationFlow(
-      userId,
-      'anthropic',
-      Tools.web_search,
-      typeof toolArgs === 'string' ? { input: toolArgs } : toolArgs,
-    );
-
-  const validationData = {
-    id: stepId,
-    delta: {
-      type: StepTypes.TOOL_CALLS,
-      tool_calls: [{ id: toolCall.id, name: toolCall.name, args: '' }],
-      validation: validationId,
-      expires_at: Date.now() + Time.TEN_MINUTES,
-    },
-  };
-  await emitEvent(res, streamId, { event: GraphEvents.ON_RUN_STEP_DELTA, data: validationData });
-
-  const validationFlowType = MCPToolCallValidationHandler.getFlowType();
-  await flowManager.createFlow(validationId, validationFlowType, flowMetadata, derivedSignal);
-
-  const successData = {
-    id: stepId,
-    delta: {
-      type: StepTypes.TOOL_CALLS,
-      tool_calls: [{ id: toolCall.id, name: toolCall.name }],
-    },
-  };
-  await emitEvent(res, streamId, { event: GraphEvents.ON_RUN_STEP_DELTA, data: successData });
-}
-
-/**
  * @typedef {Object} ToolExecuteOptions
  * @property {(toolNames: string[]) => Promise<{loadedTools: StructuredTool[]}>} loadTools - Function to load tools by name
  * @property {Object} configurable - Configurable context for tool invocation
@@ -217,14 +133,12 @@ function getDefaultHandlers({
   collectedUsage,
   streamId = null,
   toolExecuteOptions = null,
-  toolApprovalConfig,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
       `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
     );
   }
-  const pendingNativeWebSearchApprovals = new Set();
   const handlers = {
     [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
@@ -236,24 +150,6 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
-        if (data?.stepDetails?.type === StepTypes.TOOL_CALLS && toolApprovalConfig) {
-          const toolCalls = data.stepDetails.tool_calls || [];
-          for (const toolCall of toolCalls) {
-            if (isNativeWebSearch(toolCall) && !pendingNativeWebSearchApprovals.has(toolCall.id)) {
-              pendingNativeWebSearchApprovals.add(toolCall.id);
-              await handleNativeWebSearchApproval({
-                toolCall,
-                toolApprovalConfig,
-                res,
-                streamId,
-                stepId: data.id,
-                userId: metadata?.user_id || metadata?.user?.id,
-                signal: metadata?.signal,
-              });
-            }
-          }
-        }
-
         aggregateContent({ event, data });
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
           await emitEvent(res, streamId, { event, data });
