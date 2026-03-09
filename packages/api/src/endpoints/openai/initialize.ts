@@ -1,4 +1,5 @@
 import { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } from 'librechat-data-provider';
+import type { TToolApproval } from 'librechat-data-provider';
 import type {
   BaseInitializeParams,
   InitializeResultBase,
@@ -8,6 +9,23 @@ import type {
 import { getAzureCredentials, resolveHeaders, isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { validateEndpointURL } from '~/auth';
 import { getOpenAIConfig } from './config';
+
+function shouldDisableNativeWebSearch(toolApproval: TToolApproval | undefined): boolean {
+  if (!toolApproval) {
+    return false;
+  }
+  const { required, excluded } = toolApproval;
+  if (excluded?.includes('web_search')) {
+    return false;
+  }
+  if (required === true) {
+    return true;
+  }
+  if (Array.isArray(required) && required.includes('web_search')) {
+    return true;
+  }
+  return false;
+}
 
 /**
  * Initializes OpenAI options for agent usage. This function always returns configuration
@@ -132,6 +150,14 @@ export async function initializeOpenAI({
     model: modelName,
     user: req.user?.id,
   };
+
+  const toolApproval = appConfig?.endpoints?.[EModelEndpoint.agents]?.toolApproval;
+  if (shouldDisableNativeWebSearch(toolApproval)) {
+    clientOptions.dropParams = clientOptions.dropParams ?? [];
+    if (!clientOptions.dropParams.includes('web_search')) {
+      clientOptions.dropParams.push('web_search');
+    }
+  }
 
   const finalClientOptions: OpenAIConfigOptions = {
     ...clientOptions,
