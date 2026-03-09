@@ -56,6 +56,15 @@ async function reinitMCPServer({
           `[MCP Reinitialize] Reinspection failed for server ${serverName}:`,
           reinspectError,
         );
+        return {
+          availableTools: null,
+          success: false,
+          message: `MCP server '${serverName}' is still unreachable`,
+          oauthRequired: false,
+          serverName,
+          oauthUrl: null,
+          tools: null,
+        };
       }
     }
 

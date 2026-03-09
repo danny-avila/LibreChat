@@ -218,7 +218,7 @@ describe('MCPServersRegistry', () => {
         expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1); // Still 1
       });
 
-      it('should not cache "not found" results to allow recovery after reinspection', async () => {
+      it('should cache "not found" results to avoid repeated DB lookups', async () => {
         // Spy on the DB repository get method
         const dbRepoGetSpy = jest.spyOn(registry['dbConfigsRepo'], 'get');
 
@@ -227,20 +227,13 @@ describe('MCPServersRegistry', () => {
         expect(config1).toBeUndefined();
         expect(dbRepoGetSpy).toHaveBeenCalledTimes(1);
 
-        // Second call - undefined is not cached, so DB is hit again
+        // Second call - should hit read-through cache, not DB
         const config2 = await registry.getServerConfig('nonexistent_server');
         expect(config2).toBeUndefined();
-        expect(dbRepoGetSpy).toHaveBeenCalledTimes(2);
+        expect(dbRepoGetSpy).toHaveBeenCalledTimes(1); // Still 1, not 2
       });
 
       it('should use different cache keys for different userIds', async () => {
-        // Add a server so that cache repo returns it (enabling read-through caching)
-        await registry.addServer(
-          'test_server',
-          { type: 'stdio', command: 'node', args: [] },
-          'CACHE',
-        );
-
         // Spy on the cache repository get method
         const cacheRepoGetSpy = jest.spyOn(registry['cacheConfigsRepo'], 'get');
 

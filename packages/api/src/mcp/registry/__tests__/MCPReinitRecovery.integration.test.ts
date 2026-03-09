@@ -23,9 +23,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Socket } from 'net';
 import type * as t from '~/mcp/types';
+import { MCPInspectionFailedError } from '~/mcp/errors';
 import { registryStatusCache } from '~/mcp/registry/cache/RegistryStatusCache';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnection } from '~/mcp/connection';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -122,208 +124,6 @@ interface TestServer {
   close: () => Promise<void>;
 }
 
-async function createMCPServer(): Promise<TestServer> {
-  const sessions = new Map<string, StreamableHTTPServerTransport>();
-
-  const httpServer = http.createServer(async (req, res) => {
-    const sid = req.headers['mcp-session-id'] as string | undefined;
-    let transport = sid ? sessions.get(sid) : undefined;
-
-    if (!transport) {
-      transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
-      const mcp = new McpServer({ name: 'recovery-test-server', version: '0.0.1' });
-      mcp.tool('echo', 'Echo tool for testing', {}, async () => ({
-        content: [{ type: 'text', text: 'ok' }],
-      }));
-      mcp.tool('greet', 'Greeting tool', {}, async () => ({
-        content: [{ type: 'text', text: 'hello' }],
-      }));
-      await mcp.connect(transport);
-    }
-
-    await transport.handleRequest(req, res);
-
-    if (transport.sessionId && !sessions.has(transport.sessionId)) {
-      sessions.set(transport.sessionId, transport);
-      transport.onclose = () => sessions.delete(transport!.sessionId!);
-    }
-  });
-
-  const destroySockets = trackSockets(httpServer);
-  const port = await getFreePort();
-  await new Promise<void>((resolve) => httpServer.listen(port, '127.0.0.1', resolve));
-
-  return {
-    url: `http://127.0.0.1:${port}/`,
-    port,
-    close: async () => {
-      const closing = [...sessions.values()].map((t) => t.close().catch(() => undefined));
-      sessions.clear();
-      await Promise.all(closing);
-      await destroySockets();
-    },
-  };
-}
-
-describe('MCP reinitialize recovery – integration (issue #12143)', () => {
-  let server: TestServer | null = null;
-  let conn: MCPConnection | null = null;
-  let registry: MCPServersRegistry;
-
-  beforeEach(async () => {
-    (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
-    MCPServersRegistry.createInstance(mockMongoose, ['127.0.0.1']);
-    registry = MCPServersRegistry.getInstance();
-    await registryStatusCache.reset();
-    await registry.reset();
-    MCPServersInitializer.resetProcessFlag();
-  });
-
-  afterEach(async () => {
-    await safeDisconnect(conn);
-    conn = null;
-    if (server) {
-      await server.close();
-      server = null;
-    }
-  });
-
-  it('should store a stub config when the MCP server is unreachable at startup', async () => {
-    // Point to a port where nothing is listening — simulates a down server
-    const deadPort = await getFreePort();
-    const configs: t.MCPServers = {
-      'speedy-mcp': {
-        type: 'streamable-http',
-        url: `http://127.0.0.1:${deadPort}/`,
-      },
-    };
-
-    await MCPServersInitializer.initialize(configs);
-
-    // Before the fix: getServerConfig would return undefined here
-    // After the fix: a stub with inspectionFailed=true is stored
-    const config = await registry.getServerConfig('speedy-mcp');
-    expect(config).toBeDefined();
-    expect(config!.inspectionFailed).toBe(true);
-    expect(config!.url).toBe(`http://127.0.0.1:${deadPort}/`);
-    // No tools or capabilities since inspection failed
-    expect(config!.tools).toBeUndefined();
-    expect(config!.capabilities).toBeUndefined();
-    expect(config!.toolFunctions).toBeUndefined();
-  });
-
-  it('should recover via reinspectServer after the MCP server comes back online', async () => {
-    // Phase 1: Server is down at startup
-    const deadPort = await getFreePort();
-    const configs: t.MCPServers = {
-      'speedy-mcp': {
-        type: 'streamable-http',
-        url: `http://127.0.0.1:${deadPort}/`,
-      },
-    };
-
-    await MCPServersInitializer.initialize(configs);
-
-    const stubConfig = await registry.getServerConfig('speedy-mcp');
-    expect(stubConfig).toBeDefined();
-    expect(stubConfig!.inspectionFailed).toBe(true);
-
-    // Phase 2: Start the real server — but on a DIFFERENT port.
-    // To simulate "server comes back", we need the URL to match.
-    // So start the server on the dead port.
-    server = await createMCPServerOnPort(deadPort);
-
-    // Phase 3: Reinspect — this is what the reinitialize button triggers
-    const result = await registry.reinspectServer('speedy-mcp', 'CACHE');
-
-    // Verify the stub was replaced with a fully inspected config
-    expect(result.config.inspectionFailed).toBeUndefined();
-    expect(result.config.tools).toContain('echo');
-    expect(result.config.tools).toContain('greet');
-    expect(result.config.capabilities).toBeDefined();
-    expect(result.config.toolFunctions).toBeDefined();
-
-    // Verify the registry now returns the real config
-    const realConfig = await registry.getServerConfig('speedy-mcp');
-    expect(realConfig).toBeDefined();
-    expect(realConfig!.inspectionFailed).toBeUndefined();
-    expect(realConfig!.tools).toContain('echo');
-  });
-
-  it('should allow a real client connection after reinspection succeeds', async () => {
-    // Phase 1: Server is down at startup
-    const deadPort = await getFreePort();
-    const configs: t.MCPServers = {
-      'speedy-mcp': {
-        type: 'streamable-http',
-        url: `http://127.0.0.1:${deadPort}/`,
-      },
-    };
-
-    await MCPServersInitializer.initialize(configs);
-    expect((await registry.getServerConfig('speedy-mcp'))!.inspectionFailed).toBe(true);
-
-    // Phase 2: Server comes back online
-    server = await createMCPServerOnPort(deadPort);
-
-    // Phase 3: Reinspect
-    await registry.reinspectServer('speedy-mcp', 'CACHE');
-
-    // Phase 4: Establish a real client connection — this is what getUserConnection does
-    conn = new MCPConnection({
-      serverName: 'speedy-mcp',
-      serverConfig: { type: 'streamable-http', url: server.url },
-      useSSRFProtection: false,
-    });
-
-    await conn.connect();
-    const tools = await conn.fetchTools();
-
-    expect(tools).toHaveLength(2);
-    expect(tools.map((t) => t.name)).toContain('echo');
-    expect(tools.map((t) => t.name)).toContain('greet');
-  });
-
-  it('should not negative-cache undefined DB results, allowing recovery', async () => {
-    // Query a server that doesn't exist at all — not even a stub
-    const config1 = await registry.getServerConfig('nonexistent');
-    expect(config1).toBeUndefined();
-
-    // Now add the server to cache (simulating it being registered after recovery)
-    server = await createMCPServer();
-    await registry.addServer('nonexistent', { type: 'streamable-http', url: server.url }, 'CACHE');
-
-    // The second lookup should find the newly added config
-    // Before the fix: would return undefined due to negative caching
-    const config2 = await registry.getServerConfig('nonexistent');
-    expect(config2).toBeDefined();
-    expect(config2!.tools).toContain('echo');
-  });
-
-  it('reinspectServer should throw when the server is still unreachable', async () => {
-    // Server is down at startup
-    const deadPort = await getFreePort();
-    const configs: t.MCPServers = {
-      'still-broken': {
-        type: 'streamable-http',
-        url: `http://127.0.0.1:${deadPort}/`,
-      },
-    };
-
-    await MCPServersInitializer.initialize(configs);
-    expect((await registry.getServerConfig('still-broken'))!.inspectionFailed).toBe(true);
-
-    // Server is STILL down — reinspection should fail
-    await expect(registry.reinspectServer('still-broken', 'CACHE')).rejects.toThrow();
-
-    // The stub should remain intact for future retry
-    const config = await registry.getServerConfig('still-broken');
-    expect(config).toBeDefined();
-    expect(config!.inspectionFailed).toBe(true);
-  });
-});
-
-/** Creates an MCP server listening on a specific port (for simulating recovery on same URL) */
 async function createMCPServerOnPort(port: number): Promise<TestServer> {
   const sessions = new Map<string, StreamableHTTPServerTransport>();
 
@@ -365,3 +165,175 @@ async function createMCPServerOnPort(port: number): Promise<TestServer> {
     },
   };
 }
+
+describe('MCP reinitialize recovery – integration (issue #12143)', () => {
+  let server: TestServer | null = null;
+  let conn: MCPConnection | null = null;
+  let registry: MCPServersRegistry;
+
+  beforeEach(async () => {
+    (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+    MCPServersRegistry.createInstance(mockMongoose, ['127.0.0.1']);
+    registry = MCPServersRegistry.getInstance();
+    await registryStatusCache.reset();
+    await registry.reset();
+    MCPServersInitializer.resetProcessFlag();
+  });
+
+  afterEach(async () => {
+    await safeDisconnect(conn);
+    conn = null;
+    if (server) {
+      await server.close();
+      server = null;
+    }
+  });
+
+  it('should store a stub config when the MCP server is unreachable at startup', async () => {
+    const deadPort = await getFreePort();
+    const configs: t.MCPServers = {
+      'speedy-mcp': {
+        type: 'streamable-http',
+        url: `http://127.0.0.1:${deadPort}/`,
+      },
+    };
+
+    await MCPServersInitializer.initialize(configs);
+
+    // Before the fix: getServerConfig would return undefined here
+    // After the fix: a stub with inspectionFailed=true is stored
+    const config = await registry.getServerConfig('speedy-mcp');
+    expect(config).toBeDefined();
+    expect(config!.inspectionFailed).toBe(true);
+    expect(config!.url).toBe(`http://127.0.0.1:${deadPort}/`);
+    expect(config!.tools).toBeUndefined();
+    expect(config!.capabilities).toBeUndefined();
+    expect(config!.toolFunctions).toBeUndefined();
+  });
+
+  it('should recover via reinspectServer after the MCP server comes back online', async () => {
+    // Phase 1: Server is down at startup
+    const deadPort = await getFreePort();
+    const configs: t.MCPServers = {
+      'speedy-mcp': {
+        type: 'streamable-http',
+        url: `http://127.0.0.1:${deadPort}/`,
+      },
+    };
+
+    await MCPServersInitializer.initialize(configs);
+
+    const stubConfig = await registry.getServerConfig('speedy-mcp');
+    expect(stubConfig).toBeDefined();
+    expect(stubConfig!.inspectionFailed).toBe(true);
+
+    // Phase 2: Start the real server on the same (previously dead) port
+    server = await createMCPServerOnPort(deadPort);
+
+    // Phase 3: Reinspect — this is what the reinitialize button triggers
+    const result = await registry.reinspectServer('speedy-mcp', 'CACHE');
+
+    // Verify the stub was replaced with a fully inspected config
+    expect(result.config.inspectionFailed).toBeUndefined();
+    expect(result.config.tools).toContain('echo');
+    expect(result.config.tools).toContain('greet');
+    expect(result.config.capabilities).toBeDefined();
+    expect(result.config.toolFunctions).toBeDefined();
+
+    // Verify the registry now returns the real config
+    const realConfig = await registry.getServerConfig('speedy-mcp');
+    expect(realConfig).toBeDefined();
+    expect(realConfig!.inspectionFailed).toBeUndefined();
+    expect(realConfig!.tools).toContain('echo');
+  });
+
+  it('should allow a real client connection after reinspection succeeds', async () => {
+    // Phase 1: Server is down at startup
+    const deadPort = await getFreePort();
+    const configs: t.MCPServers = {
+      'speedy-mcp': {
+        type: 'streamable-http',
+        url: `http://127.0.0.1:${deadPort}/`,
+      },
+    };
+
+    await MCPServersInitializer.initialize(configs);
+    expect((await registry.getServerConfig('speedy-mcp'))!.inspectionFailed).toBe(true);
+
+    // Phase 2: Server comes back online on the same port
+    server = await createMCPServerOnPort(deadPort);
+
+    // Phase 3: Reinspect
+    await registry.reinspectServer('speedy-mcp', 'CACHE');
+
+    // Phase 4: Establish a real client connection
+    conn = new MCPConnection({
+      serverName: 'speedy-mcp',
+      serverConfig: { type: 'streamable-http', url: server.url },
+      useSSRFProtection: false,
+    });
+
+    await conn.connect();
+    const tools = await conn.fetchTools();
+
+    expect(tools).toHaveLength(2);
+    expect(tools.map((t) => t.name)).toContain('echo');
+    expect(tools.map((t) => t.name)).toContain('greet');
+  });
+
+  it('should not attempt connections to stub servers via ConnectionsRepository', async () => {
+    const deadPort = await getFreePort();
+    await MCPServersInitializer.initialize({
+      'stub-srv': { type: 'streamable-http', url: `http://127.0.0.1:${deadPort}/` },
+    });
+    expect((await registry.getServerConfig('stub-srv'))!.inspectionFailed).toBe(true);
+
+    const repo = new ConnectionsRepository(undefined);
+    expect(await repo.has('stub-srv')).toBe(false);
+    expect(await repo.get('stub-srv')).toBeNull();
+
+    const all = await repo.getAll();
+    expect(all.has('stub-srv')).toBe(false);
+  });
+
+  it('addServerStub should clear negative read-through cache entries', async () => {
+    // Query a server that doesn't exist — result is negative-cached
+    const config1 = await registry.getServerConfig('late-server');
+    expect(config1).toBeUndefined();
+
+    // Store a stub (simulating a failed init that runs after the lookup)
+    await registry.addServerStub(
+      'late-server',
+      { type: 'streamable-http', url: 'http://127.0.0.1:9999/' },
+      'CACHE',
+    );
+
+    // The stub should be found despite the earlier negative cache entry
+    const config2 = await registry.getServerConfig('late-server');
+    expect(config2).toBeDefined();
+    expect(config2!.inspectionFailed).toBe(true);
+  });
+
+  it('reinspectServer should throw MCPInspectionFailedError when the server is still unreachable', async () => {
+    const deadPort = await getFreePort();
+    const configs: t.MCPServers = {
+      'still-broken': {
+        type: 'streamable-http',
+        url: `http://127.0.0.1:${deadPort}/`,
+      },
+    };
+
+    await MCPServersInitializer.initialize(configs);
+    expect((await registry.getServerConfig('still-broken'))!.inspectionFailed).toBe(true);
+
+    // Server is STILL down — reinspection should fail with MCPInspectionFailedError
+    await expect(registry.reinspectServer('still-broken', 'CACHE')).rejects.toThrow(
+      MCPInspectionFailedError,
+    );
+
+    // The stub should remain intact for future retry
+    const config = await registry.getServerConfig('still-broken');
+    expect(config).toBeDefined();
+    expect(config!.inspectionFailed).toBe(true);
+  });
+});

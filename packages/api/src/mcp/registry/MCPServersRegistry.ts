@@ -105,9 +105,7 @@ export class MCPServersRegistry {
     }
 
     const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
-    if (configFromDB != null) {
-      await this.readThroughCache.set(cacheKey, configFromDB);
-    }
+    await this.readThroughCache.set(cacheKey, configFromDB);
     return configFromDB;
   }
 
@@ -157,8 +155,11 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const stubConfig = { ...config, inspectionFailed: true } as t.ParsedServerConfig;
-    return await configRepo.add(serverName, stubConfig, userId);
+    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true };
+    const result = await configRepo.add(serverName, stubConfig, userId);
+    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName, userId));
+    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName));
+    return result;
   }
 
   public async addServer(
@@ -201,6 +202,11 @@ export class MCPServersRegistry {
     if (!existing) {
       throw new Error(`Server "${serverName}" not found in ${storageLocation} for reinspection.`);
     }
+    if (!existing.inspectionFailed) {
+      throw new Error(
+        `Server "${serverName}" is not in a failed state. Use updateServer() instead.`,
+      );
+    }
 
     const { inspectionFailed: _, ...configForInspection } = existing;
     let parsedConfig: t.ParsedServerConfig;
@@ -219,10 +225,12 @@ export class MCPServersRegistry {
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
 
-    await configRepo.update(serverName, parsedConfig, userId);
-    await this.readThroughCache.clear();
+    const updatedConfig = { ...parsedConfig, updatedAt: Date.now() };
+    await configRepo.update(serverName, updatedConfig, userId);
+    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName, userId));
+    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName));
     await this.readThroughCacheAll.clear();
-    return { serverName, config: { ...parsedConfig, updatedAt: Date.now() } };
+    return { serverName, config: updatedConfig };
   }
 
   public async updateServer(
