@@ -25,6 +25,9 @@ services:
 
 # # USE LIBRECHAT CONFIG FILE
   api:
+    build:
+      context: .
+      target: node
     volumes:
       - ./librechat.yaml:/app/librechat.yaml
 
