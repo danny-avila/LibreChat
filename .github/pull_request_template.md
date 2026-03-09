@@ -1,41 +1,34 @@
-# Pull Request Template
+## 📝 Summary of Changes
+- [*Briefly describe what this PR does, what problem it solves, and how you solved it.*]
 
-⚠️ Before Submitting a PR, Please Review:
-- Please ensure that you have thoroughly read and understood the [Contributing Docs](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md) before submitting your Pull Request.
+---
 
-⚠️ Documentation Updates Notice:
-- Kindly note that documentation updates are managed in this repository: [librechat.ai](https://github.com/LibreChat-AI/librechat.ai)
+## ✅ PR Pre-Flight Self-Review Checklist
 
-## Summary
+*Before you submit this PR, please check the boxes below.*
 
-Please provide a brief summary of your changes and the related issue. Include any motivation and context that is relevant to your changes. If there are any dependencies necessary for your changes, please list them here.
+### 🛠️ Code Quality & Standards
 
-## Change Type
+- [ ] **1. Document Your Work:** I have added or updated all necessary **DocBlocks** and in-code comments.
+- [ ] **2. Ensure Test Coverage:** I have written or updated necessary and they all pass.
+- [ ] **3. Tidy Up the Code:** I have removed all **unused imports** and cleared out all unnecessary **debug logs** (`console.log`, `dd()`, etc.).
 
-Please delete any irrelevant options.
+### ⚙️ PR Management
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] This change requires a documentation update
-- [ ] Translation update
+- [ ] **4. Target Verification:** I have verified the **PR target branch** (e.g., the correct release/milestone branch) is set correctly.
+- [ ] **5. Conflict Check:** I have pulled the latest changes from the target branch and **resolved any conflicts**.
+- [ ] **6. CI Health:** I have checked that the **GitHub Workflow/CI checks** are passing.
 
-## Testing
+### 🗣️ Reviewer Instructions
 
-Please describe your test process and include instructions so that we can reproduce your test. If there are any important variables for your testing configuration, list them here.
+- [ ] **7. Write a Great Description:** The PR description clearly summarizes the change and includes **detailed, easy-to-follow testing steps** for the reviewer.
 
-### **Test Configuration**:
+---
 
-## Checklist
+## 📸 Screenshots / Demos (Optional)
+- [*If applicable, add screenshots or GIFs that help illustrate the changes. If none, put `n/a`*]
 
-Please delete any irrelevant options.
+---
 
-- [ ] My code adheres to this project's style guidelines
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented in any complex areas of my code
-- [ ] I have made pertinent documentation changes
-- [ ] My changes do not introduce new warnings
-- [ ] I have written tests demonstrating that my changes are effective or that my feature works
-- [ ] Local unit tests pass with my changes
-- [ ] Any changes dependent on mine have been merged and published in downstream modules.
-- [ ] A pull request for updating the documentation has been submitted.
+## 🤝 Open for Discussion / Feedback
+- [*Any specific areas you'd like the reviewer to pay extra attention to? Any known limitations or follow-up tasks?*]
