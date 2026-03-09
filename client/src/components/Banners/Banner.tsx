@@ -38,11 +38,13 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
   return (
     <div
       ref={bannerRef}
-      className="sticky top-0 z-20 flex items-center bg-presentation px-2 py-1 text-text-primary dark:bg-gradient-to-r md:relative"
+      className="sticky top-0 z-20 flex items-center bg-presentation px-3 py-2 text-text-primary dark:bg-gradient-to-r md:relative"
     >
       <div
         className={cn(
-          'text-md w-full truncate text-center [&_a]:text-blue-700 [&_a]:underline dark:[&_a]:text-blue-400',
+          'md:text-md text-xs sm:text-sm',
+          'w-full whitespace-normal break-words text-center',
+          '[&_a]:text-blue-700 [&_a]:underline dark:[&_a]:text-blue-400',
           !banner.persistable && 'px-4',
         )}
         dangerouslySetInnerHTML={{ __html: banner.message }}
