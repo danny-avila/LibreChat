@@ -70,10 +70,6 @@ bower_components/
 .floo
 .flooignore
 
-#config file
-librechat.yaml
-librechat.yml
-
 # Environment
 .npmrc
 .env*
@@ -101,10 +97,6 @@ config.local.ts
 junit.xml
 **/.venv/
 **/venv/
-
-# docker override file
-docker-compose.override.yaml
-docker-compose.override.yml
 
 # meilisearch
 meilisearch
