@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface ContentBlock {
@@ -18,7 +19,7 @@ function cleanError(text: string): string {
   return cleaned;
 }
 
-function isError(text: string): boolean {
+export function isError(text: string): boolean {
   return ERROR_PREFIX.test(text) || text.startsWith('Error processing tool');
 }
 
@@ -93,14 +94,18 @@ function isUniformObjectArray(parsed: unknown): parsed is Record<string, unknown
   return true;
 }
 
-function extractText(raw: string): { text: string; error: boolean } {
+function isStructuredText(text: string): boolean {
+  return text.includes('\n') || text.includes('{') || text.includes(':');
+}
+
+function extractText(raw: string): { text: string; rawError: string; error: boolean } {
   const trimmed = raw.trim();
   if (!trimmed) {
-    return { text: '', error: false };
+    return { text: '', rawError: '', error: false };
   }
 
   if (isError(trimmed)) {
-    return { text: cleanError(trimmed), error: true };
+    return { text: cleanError(trimmed), rawError: trimmed, error: true };
   }
 
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
@@ -117,13 +122,13 @@ function extractText(raw: string): { text: string; error: boolean } {
             .join('\n')
             .trim();
           if (isError(joined)) {
-            return { text: cleanError(joined), error: true };
+            return { text: cleanError(joined), rawError: joined, error: true };
           }
-          return { text: joined, error: false };
+          return { text: joined, rawError: '', error: false };
         }
 
         if (isUniformObjectArray(parsed)) {
-          return { text: formatObjectArray(parsed), error: false };
+          return { text: formatObjectArray(parsed), rawError: '', error: false };
         }
       }
 
@@ -132,40 +137,79 @@ function extractText(raw: string): { text: string; error: boolean } {
         if (typeof obj.text === 'string') {
           const t = obj.text.trim();
           if (isError(t)) {
-            return { text: cleanError(t), error: true };
+            return { text: cleanError(t), rawError: t, error: true };
           }
-          return { text: t, error: false };
+          return { text: t, rawError: '', error: false };
         }
       }
 
-      return { text: formatValue(parsed, 0), error: false };
+      return { text: formatValue(parsed, 0), rawError: '', error: false };
     } catch {
       // Not JSON
     }
   }
 
-  return { text: trimmed, error: false };
+  return { text: trimmed, rawError: '', error: false };
 }
+
+const TRUNCATE_LINES = 20;
+const VISIBLE_LINES = 15;
 
 interface OutputRendererProps {
   text: string;
 }
 
 export default function OutputRenderer({ text }: OutputRendererProps) {
-  const { text: displayText, error } = useMemo(() => extractText(text), [text]);
+  const localize = useLocalize();
+  const { text: displayText, rawError, error } = useMemo(() => extractText(text), [text]);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   if (!displayText) {
     return null;
   }
 
+  const lines = displayText.split('\n');
+  const needsTruncation = lines.length > TRUNCATE_LINES;
+  const visibleText =
+    needsTruncation && !isExpanded ? lines.slice(0, VISIBLE_LINES).join('\n') : displayText;
+  const structured = isStructuredText(displayText);
+
   return (
-    <pre
-      className={cn(
-        'max-h-[300px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs',
-        error ? 'text-red-600 dark:text-red-400' : 'text-text-secondary',
+    <div>
+      <pre
+        className={cn(
+          'max-h-[300px] overflow-auto whitespace-pre-wrap break-words text-xs',
+          error && 'font-mono text-red-600 dark:text-red-400',
+          !error && structured && 'font-mono text-text-secondary',
+          !error && !structured && 'font-sans text-sm text-text-primary',
+        )}
+      >
+        {visibleText}
+      </pre>
+      {needsTruncation && (
+        <button
+          type="button"
+          className="mt-1 text-xs text-text-tertiary underline hover:text-text-secondary"
+          onClick={() => setIsExpanded((prev) => !prev)}
+        >
+          {isExpanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}
+        </button>
       )}
-    >
-      {displayText}
-    </pre>
+      {error && rawError && rawError !== displayText && (
+        <button
+          type="button"
+          className="mt-1 block text-xs text-text-tertiary underline hover:text-text-secondary"
+          onClick={() => setShowErrorDetails((prev) => !prev)}
+        >
+          {localize('com_ui_details')}
+        </button>
+      )}
+      {showErrorDetails && rawError && (
+        <pre className="mt-2 max-h-[200px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-red-600/70 dark:text-red-400/70">
+          {rawError}
+        </pre>
+      )}
+    </div>
   );
 }

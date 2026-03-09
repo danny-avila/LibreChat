@@ -43,6 +43,8 @@ export default function ProgressText({
   finishedText,
   authText,
   icon: iconProp,
+  subtitle,
+  errorSuffix,
   hasInput = true,
   popover = false,
   isExpanded = false,
@@ -54,6 +56,8 @@ export default function ProgressText({
   finishedText: string;
   authText?: string;
   icon?: React.ReactNode;
+  subtitle?: string;
+  errorSuffix?: string;
   hasInput?: boolean;
   popover?: boolean;
   isExpanded?: boolean;
@@ -70,7 +74,7 @@ export default function ProgressText({
   };
 
   const getIcon = () => {
-    if (error) {
+    if (error && !errorSuffix) {
       return <CancelledIcon />;
     }
     return iconProp ?? null;
@@ -94,6 +98,10 @@ export default function ProgressText({
       >
         {icon}
         <span className={cn(showShimmer ? 'shimmer' : '', 'font-medium')}>{text}</span>
+        {subtitle && <span className="font-normal text-text-tertiary">{subtitle}</span>}
+        {errorSuffix && (
+          <span className="font-normal text-red-600 dark:text-red-400">— {errorSuffix}</span>
+        )}
         {hasInput &&
           (isExpanded ? (
             <ChevronUp className="size-4 shrink-0 translate-y-[1px]" aria-hidden="true" />

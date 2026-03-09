@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { TMessageContentParts, Agents, TAttachment } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
@@ -57,7 +57,23 @@ export default function ToolCallGroup({
     });
   }, [parts]);
 
-  const autoCollapse = count >= 3 && allCompleted;
+  const toolNameSummary = useMemo(() => {
+    const names = toolNames
+      .map((n) => {
+        if (!n) {
+          return '';
+        }
+        const idx = n.indexOf(Constants.mcp_delimiter);
+        return idx >= 0 ? n.slice(0, idx) : n;
+      })
+      .filter(Boolean);
+    if (names.length <= 2) {
+      return names.join(', ');
+    }
+    return `${names.slice(0, 2).join(', ')}, ...`;
+  }, [toolNames]);
+
+  const autoCollapse = count >= 2 && allCompleted;
   const [isExpanded, setIsExpanded] = useState(!autoCollapse);
   const expandStyle = useExpandCollapse(isExpanded);
 
@@ -104,6 +120,9 @@ export default function ToolCallGroup({
         <span className="text-sm font-medium">
           {localize('com_ui_used_n_tools', { 0: String(count) })}
         </span>
+        {toolNameSummary && (
+          <span className="text-xs font-normal text-text-tertiary">— {toolNameSummary}</span>
+        )}
         {isExpanded ? (
           <ChevronUp className="size-4 shrink-0 text-text-tertiary" aria-hidden="true" />
         ) : (
