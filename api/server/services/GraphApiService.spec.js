@@ -960,7 +960,7 @@ describe('GraphApiService', () => {
         );
 
         expect(graphToken).toBe('mocked-graph-token');
-        
+
         if (client.genericGrantRequest) {
           const clientOptions = client.genericGrantRequest.mock.calls[0][3];
           expect(clientOptions[Symbol.for('openid-client.custom.fetch')]).toBeDefined();
