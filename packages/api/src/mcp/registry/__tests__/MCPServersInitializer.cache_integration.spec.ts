@@ -303,9 +303,10 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       const searchToolsServer = await registry.getServerConfig('search_tools_server');
       expect(searchToolsServer).toBeDefined();
 
-      // Verify file_tools_server was not added (due to inspection failure)
+      // Verify file_tools_server was stored as a stub (for recovery via reinitialize)
       const fileToolsServer = await registry.getServerConfig('file_tools_server');
-      expect(fileToolsServer).toBeUndefined();
+      expect(fileToolsServer).toBeDefined();
+      expect(fileToolsServer?.inspectionFailed).toBe(true);
     });
 
     it('should set initialized status after completion', async () => {
