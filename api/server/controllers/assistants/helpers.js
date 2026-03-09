@@ -15,6 +15,8 @@ const {
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getEndpointsConfig } = require('~/server/services/Config');
 
+const toIdString = (value) => (value == null ? '' : value.toString?.() ?? String(value));
+
 /**
  * @param {ServerRequest} req
  * @param {string} [endpoint]
@@ -310,7 +312,7 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
     const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   } else if (endpoint === EModelEndpoint.e2bAssistants) {
-    const assistants = await listE2BAssistants({ userId: req.user.id });
+    const assistants = await listE2BAssistants();
     body = {
       object: 'list',
       data: assistants,
@@ -370,7 +372,7 @@ function filterAssistants({ assistants, userId, userRole, userGroups = [], assis
 
   // 普通用户过滤规则（基于 OpenAI metadata 字段）
   const filteredAssistants = assistants.filter((assistant) => {
-    const authorId = assistant.metadata?.author;
+      const authorId = toIdString(assistant.metadata?.author);
     // 助手 metadata 中的 group（由这个服务器在保存时写入）
     const group = assistant.metadata?.group;
 

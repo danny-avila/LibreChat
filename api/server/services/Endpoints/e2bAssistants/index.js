@@ -3,6 +3,36 @@ const { initializeClient: initE2B, e2bClientManager } = require('./initialize');
 const { getE2BAssistantDocs } = require('~/models/E2BAssistant');
 const { buildOptions } = require('./buildOptions');
 
+const toIdString = (value) => (value == null ? '' : value.toString?.() ?? String(value));
+
+const normalizeMetadata = (assistant) => {
+  const metadata =
+    assistant?.metadata && typeof assistant.metadata === 'object' ? { ...assistant.metadata } : {};
+
+  // Author can be stored as ObjectId in legacy records; normalize to string for visibility checks.
+  if (metadata.author !== undefined && metadata.author !== null) {
+    metadata.author = toIdString(metadata.author);
+  }
+
+  if (!metadata.author && assistant?.author) {
+    metadata.author = toIdString(assistant.author);
+  }
+
+  if (!metadata.role && assistant?.role) {
+    metadata.role = assistant.role;
+  }
+
+  if (metadata.group === undefined && assistant?.group !== undefined && assistant?.group !== null) {
+    metadata.group = assistant.group;
+  }
+
+  if (!metadata.endpoint) {
+    metadata.endpoint = EModelEndpoint.e2bAssistants;
+  }
+
+  return metadata;
+};
+
 /**
  * Initializes the E2B Assistants client.
  * Returns both the E2B manager and a standard OpenAI client for inference.
@@ -25,19 +55,19 @@ const initializeClient = async ({ req, res }) => {
 /**
  * Lists available E2B assistants (agents).
  */
-const listAssistants = async ({ userId }) => {
-  // Retrieve assistants from local DB
-  const assistants = await getE2BAssistantDocs({ userId });
+const listAssistants = async () => {
+  // Retrieve all assistants; visibility is filtered by shared assistant filtering logic.
+  const assistants = await getE2BAssistantDocs({});
   return assistants.map(a => ({
-    id: a.assistant_id,
+    id: a.id,
     object: 'assistant',
-    created_at: Math.floor(new Date(a.createdAt).getTime() / 1000),
+    created_at: Math.floor(new Date(a.createdAt ?? Date.now()).getTime() / 1000),
     name: a.name,
     description: a.description,
     model: a.model,
-    instructions: a.instructions,
+    instructions: a.prompt,
     tools: a.tools,
-    metadata: a.metadata,
+    metadata: normalizeMetadata(a),
   }));
 };
 

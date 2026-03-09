@@ -94,6 +94,15 @@ export default function AssistantSelect({
             : undefined,
         };
 
+        // Visibility group can be returned either as top-level `group` or inside `metadata.group`.
+        // Normalize it to top-level so the form always rehydrates correctly.
+        if (assistant.group === undefined) {
+          const metadataGroup = (_assistant.metadata as { group?: string | null } | undefined)?.group;
+          if (metadataGroup !== undefined) {
+            assistant.group = metadataGroup;
+          }
+        }
+
         const handleFile = (file_id: string, list?: Array<[string, ExtendedFile]>) => {
           const file = fileMap?.[file_id];
           if (file) {
@@ -150,6 +159,8 @@ export default function AssistantSelect({
           const docAny = assistantDoc as any;
           if (docAny.group !== undefined) {
             assistant.group = docAny.group;
+          } else if (docAny.metadata?.group !== undefined) {
+            assistant.group = docAny.metadata.group;
           }
         }
 

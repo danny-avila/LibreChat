@@ -2,7 +2,7 @@ const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { sendEvent, sanitizeMessageForTransmit } = require('@librechat/api');
-const { ContentTypes } = require('librechat-data-provider');
+const { ContentTypes, EModelEndpoint, SystemRoles } = require('librechat-data-provider');
 const { 
   createE2BAssistantDoc, 
   getE2BAssistantDocs, 
@@ -12,6 +12,64 @@ const {
 const E2BDataAnalystAgent = require('~/server/services/Agents/e2bAgent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { saveMessage, getConvo, getMessages, getFiles } = require('~/models');
+
+const toIdString = (value) => (value == null ? '' : value.toString?.() ?? String(value));
+
+const buildVisibilityMetadata = (assistant) => {
+  const metadata =
+    assistant?.metadata && typeof assistant.metadata === 'object' ? { ...assistant.metadata } : {};
+
+  if (!metadata.author && assistant?.author) {
+    metadata.author = toIdString(assistant.author);
+  }
+  if (!metadata.role && assistant?.role) {
+    metadata.role = assistant.role;
+  }
+  if (metadata.group === undefined && assistant?.group !== undefined && assistant?.group !== null) {
+    metadata.group = assistant.group;
+  }
+  if (!metadata.endpoint) {
+    metadata.endpoint = EModelEndpoint.e2bAssistants;
+  }
+
+  return metadata;
+};
+
+const canAccessAssistant = ({ assistant, userId, userRole, userGroups = [] }) => {
+  if (userRole === SystemRoles.ADMIN) {
+    return true;
+  }
+
+  const metadata = buildVisibilityMetadata(assistant);
+  const authorId = toIdString(metadata.author);
+  const group = typeof metadata.group === 'string' ? metadata.group : '';
+  const role = typeof metadata.role === 'string' ? metadata.role.toUpperCase() : '';
+
+  if (authorId && authorId === userId) {
+    return true;
+  }
+
+  if (authorId && authorId !== userId) {
+    if (role === SystemRoles.ADMIN) {
+      if (!group) {
+        return true;
+      }
+      return userGroups.includes(group);
+    }
+
+    if (group && userGroups.includes(group)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  if (Array.isArray(metadata.visibleTo)) {
+    return metadata.visibleTo.includes(userId);
+  }
+
+  return false;
+};
 
 /**
  * Helper: Encrypt passwords in data_sources
@@ -122,6 +180,7 @@ const createAssistant = async (req, res) => {
       name, 
       description, 
       instructions, 
+      group,
       e2b_config, 
       model, 
       model_parameters, 
@@ -133,6 +192,7 @@ const createAssistant = async (req, res) => {
       tool_resources,
       append_current_datetime,
       data_sources, // ✨ Extract data_sources
+      metadata,
       // ...other fields
     } = req.body;
     
@@ -175,6 +235,15 @@ const createAssistant = async (req, res) => {
       // Access control defaults (to be refined by collaborators)
       is_public: false,
       access_level: 0,
+      metadata: {
+        ...(metadata && typeof metadata === 'object' ? metadata : {}),
+        author: req.user.id,
+        role: req.user.role,
+        endpoint: EModelEndpoint.e2bAssistants,
+        ...(group !== undefined && req.user.role === SystemRoles.ADMIN
+          ? { group: group || '' }
+          : {}),
+      },
     };
 
     const assistant = await createE2BAssistantDoc(assistantData);
@@ -235,19 +304,24 @@ const createAssistant = async (req, res) => {
  */
 const listAssistants = async (req, res) => {
   try {
-    const query = {};
-    
-    // TODO: Add collaboration/public access logic here
-    // For now, only show user's own assistants
-    query.author = req.user.id;
-    
-    const assistants = await getE2BAssistantDocs(query);
+    const assistants = await getE2BAssistantDocs({});
+
+    const visibleAssistants = assistants.filter((assistant) =>
+      canAccessAssistant({
+        assistant,
+        userId: req.user.id,
+        userRole: req.user.role,
+        userGroups: req.user.groups || [],
+      }),
+    );
     
     // Map prompt to instructions for frontend compatibility
-    const mappedAssistants = assistants.map(assistant => {
+    const mappedAssistants = visibleAssistants.map((assistant) => {
+      const metadata = buildVisibilityMetadata(assistant);
       const mapped = {
         ...(assistant.toObject ? assistant.toObject() : assistant),
         instructions: assistant.prompt,
+        metadata,
       };
       
       // Ensure all frontend fields exist
@@ -286,8 +360,6 @@ const getAssistant = async (req, res) => {
   try {
     const { assistant_id } = req.params;
     
-    // TODO: Add permission check
-    // We fetch by ID, but we should verify the user has access if it's private
     const assistants = await getE2BAssistantDocs({ id: assistant_id });
     
     if (!assistants || assistants.length === 0) {
@@ -296,10 +368,15 @@ const getAssistant = async (req, res) => {
     
     const assistant = assistants[0];
     
-    // Simple ownership check for now
-    if (assistant.author.toString() !== req.user.id && !assistant.is_public) {
-       // Allow if admin? Skipping for MVP
-       // return res.status(403).json({ error: 'Access denied' });
+    if (
+      !canAccessAssistant({
+        assistant,
+        userId: req.user.id,
+        userRole: req.user.role,
+        userGroups: req.user.groups || [],
+      })
+    ) {
+      return res.status(403).json({ error: 'Access denied' });
     }
     
     // Map prompt back to instructions for frontend compatibility
@@ -307,6 +384,7 @@ const getAssistant = async (req, res) => {
     const assistantResponse = {
       ...assistantObj,
       instructions: assistantObj.prompt,
+      metadata: buildVisibilityMetadata(assistantObj),
     };
     
     // Ensure all frontend fields exist
@@ -360,6 +438,9 @@ const updateAssistant = async (req, res) => {
       updateData.prompt = updateData.instructions;
       delete updateData.instructions;
     }
+
+    const group = updateData.group;
+    delete updateData.group;
     
     // Explicitly handle all updatable fields
     const fieldsToUpdate = {};
@@ -380,7 +461,6 @@ const updateAssistant = async (req, res) => {
     if (updateData.env_vars !== undefined) fieldsToUpdate.env_vars = updateData.env_vars;
     if (updateData.has_internet_access !== undefined) fieldsToUpdate.has_internet_access = updateData.has_internet_access;
     if (updateData.is_persistent !== undefined) fieldsToUpdate.is_persistent = updateData.is_persistent;
-    if (updateData.metadata !== undefined) fieldsToUpdate.metadata = updateData.metadata;
     if (updateData.data_sources !== undefined) fieldsToUpdate.data_sources = updateData.data_sources; // ✨ Add this!
     
     // Validate ownership before update
@@ -388,9 +468,30 @@ const updateAssistant = async (req, res) => {
     if (!assistants || assistants.length === 0) {
         return res.status(404).json({ error: 'Assistant not found' });
     }
-    if (assistants[0].author.toString() !== req.user.id) {
+    if (req.user.role !== SystemRoles.ADMIN && assistants[0].author.toString() !== req.user.id) {
         return res.status(403).json({ error: 'Access denied' });
     }
+
+    const currentAssistant = assistants[0];
+    const existingMetadata = buildVisibilityMetadata(currentAssistant);
+    const incomingMetadata =
+      updateData.metadata && typeof updateData.metadata === 'object' ? updateData.metadata : {};
+
+    const mergedMetadata = {
+      ...existingMetadata,
+      ...incomingMetadata,
+      author: existingMetadata.author || req.user.id,
+      role: existingMetadata.role || req.user.role,
+      endpoint: EModelEndpoint.e2bAssistants,
+    };
+
+    if (group !== undefined && req.user.role === SystemRoles.ADMIN) {
+      mergedMetadata.group = group && typeof group === 'object' ? (group.value ?? '') : (group || '');
+    } else if (req.user.role !== SystemRoles.ADMIN && existingMetadata.group !== undefined) {
+      mergedMetadata.group = existingMetadata.group;
+    }
+
+    fieldsToUpdate.metadata = mergedMetadata;
 
     const assistant = await updateE2BAssistantDoc(
       { id: assistant_id },
@@ -415,6 +516,7 @@ const updateAssistant = async (req, res) => {
     const assistantResponse = {
       ...assistantObj,
       instructions: assistantObj.prompt,
+      metadata: buildVisibilityMetadata(assistantObj),
     };
     
     // Ensure all frontend fields exist
@@ -456,7 +558,7 @@ const deleteAssistant = async (req, res) => {
     if (!assistants || assistants.length === 0) {
         return res.status(404).json({ error: 'Assistant not found' });
     }
-    if (assistants[0].author.toString() !== req.user.id) {
+    if (req.user.role !== SystemRoles.ADMIN && assistants[0].author.toString() !== req.user.id) {
         return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -493,6 +595,17 @@ const chat = async (req, res) => {
       return res.status(404).json({ error: 'Assistant not found' });
     }
     const assistant = assistants[0];
+
+    if (
+      !canAccessAssistant({
+        assistant,
+        userId: req.user.id,
+        userRole: req.user.role,
+        userGroups: req.user.groups || [],
+      })
+    ) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     // Set headers for SSE
     res.writeHead(200, {
