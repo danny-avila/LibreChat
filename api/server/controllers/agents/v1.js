@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
+  refreshS3Url,
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
@@ -35,7 +36,6 @@ const {
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
-const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { getCachedTools } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');

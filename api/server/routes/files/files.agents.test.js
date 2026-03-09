@@ -39,7 +39,16 @@ jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn(),
 }));
 
-jest.mock('~/server/services/Files/S3/crud', () => ({
+jest.mock('sharp', () =>
+  jest.fn(() => ({
+    metadata: jest.fn().mockResolvedValue({}),
+    toFormat: jest.fn().mockReturnThis(),
+    toBuffer: jest.fn().mockResolvedValue(Buffer.alloc(0)),
+  })),
+);
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   refreshS3FileUrls: jest.fn(),
 }));
 

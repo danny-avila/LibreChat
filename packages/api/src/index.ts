@@ -37,6 +37,8 @@ export * from './prompts';
 export * from './endpoints';
 /* Files */
 export * from './files';
+/* Storage */
+export * from './storage';
 /* Tools */
 export * from './tools';
 /* web search */
