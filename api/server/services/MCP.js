@@ -724,7 +724,7 @@ function createToolInstance({
 
       if (isValidationError) {
         throw new Error(
-          `Tool call for ${serverName}/${toolName} was not approved by the user.`,
+          `Tool call for ${serverName}/${toolName} was not approved by the user. Wait for next instructions.`,
         );
       }
 
