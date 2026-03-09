@@ -2,7 +2,7 @@ const fs = require('fs').promises;
 const express = require('express');
 const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
-const { verifyAgentUploadPermission } = require('@librechat/api');
+const { refreshS3FileUrls, verifyAgentUploadPermission } = require('@librechat/api');
 const {
   Time,
   isUUID,
@@ -26,7 +26,6 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { cleanFileName } = require('~/server/utils/files');
 const { hasCapability } = require('~/server/middleware');
