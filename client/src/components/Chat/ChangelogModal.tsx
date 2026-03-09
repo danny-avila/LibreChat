@@ -18,9 +18,41 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
     {
+        version: 'v1.3',
+        date: 'March 9, 2026',
+        isCurrent: true,
+        highlights: ['Long-Term Memory', 'Admin rule management', 'Organisation-wide context'],
+        sections: [
+            {
+                title: 'Long-Term Memory — Admin Controlled',
+                items: [
+                    'Admins can now create and manage persistent memory rules that apply across all conversations for every member in the organisation.',
+                    'Memory rules are injected as context into every new or ongoing conversation, ensuring the AI agent always has relevant organisational knowledge.',
+                    'Role-based access control ensures only Admin users can create and manage memory entries.',
+                ],
+            },
+            {
+                title: 'How to Add Memory Manually',
+                items: [
+                    'Open the right-side panel in chat.fleetworx.net and navigate to the Memory section.',
+                    'Tap the + button to create a new memory entry.',
+                    'Each entry has a Key (for identification, e.g. fleetworx_info, fleetworx_rules, fleetworx_client_summary) and a Value (the information to store).',
+                    'Saved entries are immediately available to the AI agent as persistent context.',
+                ],
+            },
+            {
+                title: 'How to Add Memory Automatically',
+                items: [
+                    'Simply type "Please remember..." or "Please save..." in any conversation.',
+                    'The agent will automatically extract the key and information and save it as a memory entry.',
+                    'No manual panel interaction required — memory is built conversationally.',
+                ],
+            },
+        ],
+    },
+    {
         version: 'v1.2',
         date: 'February 24, 2026',
-        isCurrent: true,
         highlights: ['Text-to-SQL Query Load Management'],
         sections: [
             {
@@ -31,14 +63,6 @@ const CHANGELOG: ChangelogEntry[] = [
                 ],
             },
         ],
-        workInProgress: {
-            title: 'Coming Soon — Long-Term Memory',
-            items: [
-                'Enabling the side panel in chat.fleetworx.net to allow rule configuration as memory entries through the interface.',
-                'Integrating persistent memory within the Fleetworx AI agent\'s LLM calls.',
-                'Implementing role-based access control using script, allowing only Admin users to create and manage rule-based memory control.',
-            ],
-        },
     },
     {
         version: 'v1.1',
