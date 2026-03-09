@@ -193,6 +193,22 @@ describe('MCPServersRegistry', () => {
     });
   });
 
+  describe('reinspectServer', () => {
+    it('should throw when called on a healthy (non-stub) server', async () => {
+      await registry.addServer('healthy_server', testParsedConfig, 'CACHE');
+
+      await expect(registry.reinspectServer('healthy_server', 'CACHE')).rejects.toThrow(
+        'is not in a failed state',
+      );
+    });
+
+    it('should throw when the server does not exist', async () => {
+      await expect(registry.reinspectServer('ghost_server', 'CACHE')).rejects.toThrow(
+        'not found in CACHE',
+      );
+    });
+  });
+
   describe('Read-through cache', () => {
     describe('getServerConfig', () => {
       it('should cache repeated calls for the same server', async () => {
