@@ -1,11 +1,9 @@
 import React from 'react';
 import { InfoIcon } from 'lucide-react';
-import { TooltipAnchor } from '@librechat/client';
 import type { CodeBarProps } from '~/common';
 import CopyCodeButton from '~/components/Messages/Content/CopyCodeButton';
 import useCopyCode from '~/components/Messages/Content/useCopyCode';
 import RunCode from '~/components/Messages/Content/RunCode';
-import { useLocalize } from '~/hooks';
 import cn from '~/utils/cn';
 
 interface FloatingCodeBarProps extends CodeBarProps {
@@ -13,10 +11,8 @@ interface FloatingCodeBarProps extends CodeBarProps {
 }
 
 const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(
-  ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true, isVisible }) => {
-    const localize = useLocalize();
+  ({ lang, codeRef, blockIndex, plugin = null, allowExecution = true, isVisible }) => {
     const { isCopied, buttonRef, handleCopy } = useCopyCode(codeRef);
-    const copyLabel = isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code');
 
     return (
       <div
@@ -32,20 +28,12 @@ const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(
             {allowExecution === true && (
               <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} iconOnly />
             )}
-            <TooltipAnchor
-              description={copyLabel}
-              render={
-                <CopyCodeButton
-                  ref={buttonRef}
-                  isCopied={isCopied}
-                  tabIndex={isVisible ? 0 : -1}
-                  className={cn(
-                    'flex items-center justify-center rounded p-1.5 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-secondary focus:outline focus:outline-2 focus:outline-border-heavy',
-                    error === true ? 'h-4 w-4' : '',
-                  )}
-                  onClick={handleCopy}
-                />
-              }
+            <CopyCodeButton
+              ref={buttonRef}
+              isCopied={isCopied}
+              iconOnly
+              tabIndex={isVisible ? 0 : -1}
+              onClick={handleCopy}
             />
           </>
         )}
