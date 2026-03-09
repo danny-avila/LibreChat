@@ -5,7 +5,6 @@ import CopyCodeButton from '~/components/Messages/Content/CopyCodeButton';
 import useCopyCode from '~/components/Messages/Content/useCopyCode';
 import LangIcon from '~/components/Messages/Content/LangIcon';
 import RunCode from '~/components/Messages/Content/RunCode';
-import cn from '~/utils/cn';
 
 const CodeBar: React.FC<CodeBarProps> = React.memo(
   ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true }) => {
@@ -24,15 +23,7 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
             {allowExecution === true && (
               <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} />
             )}
-            <CopyCodeButton
-              isCopied={isCopied}
-              showLabel={error !== true}
-              className={cn(
-                'ml-auto flex gap-2 rounded-sm text-text-secondary transition-colors hover:text-text-secondary focus:outline focus:outline-2 focus:outline-border-heavy',
-                error === true ? 'h-4 w-4 items-start' : '',
-              )}
-              onClick={handleCopy}
-            />
+            {error !== true && <CopyCodeButton isCopied={isCopied} onClick={handleCopy} />}
           </div>
         )}
       </div>

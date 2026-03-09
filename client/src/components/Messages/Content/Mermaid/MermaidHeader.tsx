@@ -49,8 +49,6 @@ const MermaidHeader: React.FC<MermaidHeaderProps> = memo(
       });
     }, [onToggleCode]);
 
-    const copyLabel = isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code');
-
     return (
       <div className={cn('flex items-center justify-between gap-1 px-2 py-1', className)}>
         <span className="rounded text-xs font-medium text-text-secondary">
@@ -87,17 +85,7 @@ const MermaidHeader: React.FC<MermaidHeaderProps> = memo(
               </button>
             }
           />
-          <TooltipAnchor
-            description={copyLabel}
-            render={
-              <CopyCodeButton
-                ref={copyButtonRef}
-                isCopied={isCopied}
-                className={iconBtnClass}
-                onClick={handleCopy}
-              />
-            }
-          />
+          <CopyCodeButton ref={copyButtonRef} isCopied={isCopied} iconOnly onClick={handleCopy} />
         </div>
       </div>
     );
