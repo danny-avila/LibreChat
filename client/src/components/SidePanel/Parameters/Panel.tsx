@@ -43,14 +43,16 @@ export default function Parameters() {
     const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model);
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
-    const isWebSearchEnabled = !startupConfig?.endpointsToWebSearchFromParamSidePanel?.includes(conversation?.endpoint);
     const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
+    const dropParams = startupConfig?.endpointsDropParamsMap?.[conversation?.endpoint ?? ''] ?? [];
+    const dropParamsSet = new Set(dropParams);
+
     return defaultParams
-      .filter((param) => param != null && (isWebSearchEnabled || param.key !== 'web_search'))
+      .filter((param) => param != null && !dropParamsSet.has(param.key))
       .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
-  }, [endpointType, endpointsConfig, model, provider, startupConfig]);
+  }, [endpointType, endpointsConfig, model, provider, startupConfig, conversation?.endpoint]);
 
   useEffect(() => {
     if (!parameters) {
