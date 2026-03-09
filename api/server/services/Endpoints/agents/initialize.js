@@ -147,7 +147,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const summarizationOptions =
     appConfig?.summarization?.enabled === false ? { enabled: false } : { enabled: true };
 
-  const toolApprovalConfig = appConfig?.endpoints?.[EModelEndpoint.agents]?.toolApproval;
   const eventHandlers = getDefaultHandlers({
     res,
     toolExecuteOptions,
@@ -156,7 +155,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolEndCallback,
     collectedUsage,
     streamId,
-    toolApprovalConfig,
   });
 
   if (!endpointOption.agent) {
