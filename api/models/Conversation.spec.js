@@ -17,7 +17,7 @@ jest.mock('~/server/services/Config/app');
 jest.mock('./Message');
 const { getMessages, deleteMessages } = require('./Message');
 
-const { Conversation } = require('~/db/models');
+const { Conversation, Message } = require('~/db/models');
 
 describe('Conversation Operations', () => {
   let mongoServer;
@@ -496,6 +496,74 @@ describe('Conversation Operations', () => {
     it('should return "New Chat" if conversation not found', async () => {
       const result = await getConvoTitle('user123', 'non-existent-id');
       expect(result).toBe('New Chat');
+    });
+  });
+
+  describe('getConvosByCursor search', () => {
+    it('should merge conversation IDs from conversation and message search', async () => {
+      const convoIdFromConvo = uuidv4();
+      const convoIdFromMessage = uuidv4();
+      const extraId = uuidv4();
+
+      await Conversation.create({
+        conversationId: convoIdFromConvo,
+        user: 'user123',
+        title: 'Matched by convo search',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+      });
+
+      await Conversation.create({
+        conversationId: convoIdFromMessage,
+        user: 'user123',
+        title: 'Matched by message search',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
+
+      await Conversation.create({
+        conversationId: extraId,
+        user: 'user123',
+        title: 'Unmatched',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        updatedAt: new Date('2026-01-03T00:00:00.000Z'),
+      });
+
+      const originalConvoMeiliSearch = Conversation.meiliSearch;
+      const convoSearchMock = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ conversationId: convoIdFromConvo }] });
+      Conversation.meiliSearch = convoSearchMock;
+      const originalMessageMeiliSearch = Message.meiliSearch;
+      const messageSearchMock = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ conversationId: convoIdFromMessage }] });
+      Message.meiliSearch = messageSearchMock;
+      const findSpy = jest.spyOn(Conversation, 'find');
+
+      const result = await getConvosByCursor('user123', { search: 'hello' });
+
+      expect(convoSearchMock).toHaveBeenCalledWith('hello', { filter: 'user = "user123"' });
+      expect(messageSearchMock).toHaveBeenCalledWith('hello', { filter: 'user = "user123"' });
+
+      try {
+        const findArg = findSpy.mock.calls[0]?.[0];
+        const conversationIdFilter = findArg?.$and?.find((clause) => clause?.conversationId?.$in);
+        expect(conversationIdFilter).toBeTruthy();
+        expect(new Set(conversationIdFilter.conversationId.$in)).toEqual(
+          new Set([convoIdFromConvo, convoIdFromMessage]),
+        );
+        const resultIds = result.conversations.map((convo) => convo.conversationId);
+        expect(resultIds).toEqual(expect.arrayContaining([convoIdFromConvo, convoIdFromMessage]));
+        expect(resultIds).not.toContain(extraId);
+      } finally {
+        findSpy.mockRestore();
+        Conversation.meiliSearch = originalConvoMeiliSearch;
+        Message.meiliSearch = originalMessageMeiliSearch;
+      }
     });
   });
 

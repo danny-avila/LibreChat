@@ -151,6 +151,7 @@ const messageSchema: Schema<IMessage> = new Schema(
 messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 messageSchema.index({ createdAt: 1 });
 messageSchema.index({ messageId: 1, user: 1 }, { unique: true });
+messageSchema.index({ user: 1, conversationId: 1, updatedAt: -1 });
 
 // index for MeiliSearch sync operations
 messageSchema.index({ _meiliIndex: 1, expiredAt: 1 });
