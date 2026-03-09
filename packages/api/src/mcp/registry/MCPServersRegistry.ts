@@ -229,6 +229,7 @@ export class MCPServersRegistry {
     await configRepo.update(serverName, updatedConfig, userId);
     await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName, userId));
     await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName));
+    // Full clear required: getAllServerConfigs is keyed by userId with no reverse index to enumerate cached keys
     await this.readThroughCacheAll.clear();
     return { serverName, config: updatedConfig };
   }
