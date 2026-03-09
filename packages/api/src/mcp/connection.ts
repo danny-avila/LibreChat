@@ -319,19 +319,7 @@ export class MCPConnection extends EventEmitter {
   private isCircuitOpen(): boolean {
     const cb = this.getCircuitBreaker();
     const now = Date.now();
-    if (now < cb.cooldownUntil) {
-      logger.warn(
-        `${this.getLogPrefix()} Circuit breaker: cycle cooldown active until ${new Date(cb.cooldownUntil).toISOString()}`,
-      );
-      return true;
-    }
-    if (now < cb.failedBackoffUntil) {
-      logger.warn(
-        `${this.getLogPrefix()} Circuit breaker: failure backoff active until ${new Date(cb.failedBackoffUntil).toISOString()}`,
-      );
-      return true;
-    }
-    return false;
+    return now < cb.cooldownUntil || now < cb.failedBackoffUntil;
   }
 
   private recordCycle(): void {

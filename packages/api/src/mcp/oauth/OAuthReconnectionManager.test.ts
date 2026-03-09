@@ -258,16 +258,14 @@ describe('OAuthReconnectionManager', () => {
       const oauthServers = new Set(['server1']);
       (mockRegistryInstance.getOAuthServers as jest.Mock).mockResolvedValue(oauthServers);
 
-      // server1: has expired access token, no refresh token
       tokenMethods.findToken.mockImplementation(async ({ identifier }) => {
         if (identifier === 'mcp:server1') {
           return {
             userId,
             identifier,
-            expiresAt: new Date(Date.now() - 3600000), // 1 hour ago
+            expiresAt: new Date(Date.now() - 3600000),
           } as unknown as MCPOAuthTokens;
         }
-        // No refresh token
         return null;
       });
 
@@ -283,13 +281,12 @@ describe('OAuthReconnectionManager', () => {
       const oauthServers = new Set(['server1']);
       (mockRegistryInstance.getOAuthServers as jest.Mock).mockResolvedValue(oauthServers);
 
-      // server1: expired access token but has refresh token
       tokenMethods.findToken.mockImplementation(async ({ identifier }) => {
         if (identifier === 'mcp:server1') {
           return {
             userId,
             identifier,
-            expiresAt: new Date(Date.now() - 3600000), // 1 hour ago
+            expiresAt: new Date(Date.now() - 3600000),
           } as unknown as MCPOAuthTokens;
         }
         if (identifier === 'mcp:server1:refresh') {
@@ -314,10 +311,8 @@ describe('OAuthReconnectionManager', () => {
 
       await reconnectionManager.reconnectServers(userId);
 
-      // Verify server1 was marked as active (reconnection was attempted)
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(true);
 
-      // Wait for async tryReconnect to complete
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith(
@@ -330,7 +325,6 @@ describe('OAuthReconnectionManager', () => {
       const oauthServers = new Set(['server1']);
       (mockRegistryInstance.getOAuthServers as jest.Mock).mockResolvedValue(oauthServers);
 
-      // server1: no access token at all, but has refresh token
       tokenMethods.findToken.mockImplementation(async ({ identifier }) => {
         if (identifier === 'mcp:server1:refresh') {
           return {
@@ -354,7 +348,6 @@ describe('OAuthReconnectionManager', () => {
 
       await reconnectionManager.reconnectServers(userId);
 
-      // Verify reconnection was attempted
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(true);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -475,7 +468,6 @@ describe('OAuthReconnectionManager', () => {
       const userId = 'user-123';
       const serverName = 'server1';
 
-      // Reset singleton and create without MCPManager
       (OAuthReconnectionManager as unknown as { instance: null }).instance = null;
       (MCPManager.getInstance as jest.Mock).mockImplementation(() => {
         throw new Error('MCPManager has not been initialized.');

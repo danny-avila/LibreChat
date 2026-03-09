@@ -669,11 +669,9 @@ describe('MCPConnection Circuit Breaker', () => {
       }
       expect(isCircuitOpen(cb)).toBe(true);
 
-      // Still open after 29s
       jest.advanceTimersByTime(29_000);
       expect(isCircuitOpen(cb)).toBe(true);
 
-      // Closed after 30s
       jest.advanceTimersByTime(1_000);
       expect(isCircuitOpen(cb)).toBe(false);
     });
@@ -687,10 +685,8 @@ describe('MCPConnection Circuit Breaker', () => {
         recordCycle(cb);
       }
 
-      // Advance past the 60s window
       jest.advanceTimersByTime(CB_CYCLE_WINDOW_MS + 1);
 
-      // This should start a new window, not trigger cooldown
       recordCycle(cb);
       expect(isCircuitOpen(cb)).toBe(false);
     });
@@ -727,26 +723,21 @@ describe('MCPConnection Circuit Breaker', () => {
 
       const cb = createCB();
 
-      // Rapid failures within the 120s window to accumulate failedRounds
-      // 3 failures = 30s backoff (30s * 2^0)
       for (let i = 0; i < 3; i++) {
         recordFailedRound(cb);
       }
       expect(cb.failedBackoffUntil - Date.now()).toBe(30_000);
 
-      // 4th failure (still within 120s window) = 60s backoff (30s * 2^1)
       recordFailedRound(cb);
       expect(cb.failedBackoffUntil - Date.now()).toBe(60_000);
 
-      // 5th failure = 120s backoff (30s * 2^2)
       recordFailedRound(cb);
       expect(cb.failedBackoffUntil - Date.now()).toBe(120_000);
 
-      // 6th failure = 240s backoff (30s * 2^3)
       recordFailedRound(cb);
       expect(cb.failedBackoffUntil - Date.now()).toBe(240_000);
 
-      // 7th failure = capped at 300s (30s * 2^4 = 480s > 300s)
+      // capped at 300s
       recordFailedRound(cb);
       expect(cb.failedBackoffUntil - Date.now()).toBe(300_000);
     });
@@ -759,12 +750,10 @@ describe('MCPConnection Circuit Breaker', () => {
       recordFailedRound(cb);
       recordFailedRound(cb);
 
-      // Advance past the 120s window
       jest.advanceTimersByTime(CB_FAILED_WINDOW_MS + 1);
 
-      // This should start a new window
       recordFailedRound(cb);
-      expect(isCircuitOpen(cb)).toBe(false); // Only 1 failure in new window
+      expect(isCircuitOpen(cb)).toBe(false);
     });
   });
 
@@ -797,16 +786,13 @@ describe('MCPConnection Circuit Breaker', () => {
       const cb = createCB();
       registry.set(serverName, cb);
 
-      // Trigger cooldown
       for (let i = 0; i < CB_MAX_CYCLES; i++) {
         recordCycle(cb);
       }
       expect(isCircuitOpen(cb)).toBe(true);
 
-      // Clear cooldown (simulates MCPConnection.clearCooldown)
       registry.delete(serverName);
 
-      // New CB should be open
       const newCb = createCB();
       expect(isCircuitOpen(newCb)).toBe(false);
     });

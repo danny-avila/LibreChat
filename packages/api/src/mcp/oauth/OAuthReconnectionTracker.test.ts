@@ -413,7 +413,6 @@ describe('OAuthReconnectTracker', () => {
       tracker.setFailed(userId, serverName);
       expect(tracker.isFailed(userId, serverName)).toBe(true);
 
-      // Still within 5 min cooldown
       jest.advanceTimersByTime(4 * 60 * 1000);
       expect(tracker.isFailed(userId, serverName)).toBe(true);
     });
@@ -425,7 +424,6 @@ describe('OAuthReconnectTracker', () => {
       tracker.setFailed(userId, serverName);
       expect(tracker.isFailed(userId, serverName)).toBe(true);
 
-      // Advance past 5 min cooldown
       jest.advanceTimersByTime(5 * 60 * 1000);
       expect(tracker.isFailed(userId, serverName)).toBe(false);
     });
@@ -465,13 +463,11 @@ describe('OAuthReconnectTracker', () => {
       const now = Date.now();
       jest.setSystemTime(now);
 
-      // Simulate 5 failures
       for (let i = 0; i < 5; i++) {
         tracker.setFailed(userId, serverName);
-        jest.advanceTimersByTime(30 * 60 * 1000); // advance past max cooldown
+        jest.advanceTimersByTime(30 * 60 * 1000);
       }
 
-      // 6th failure should still use 30 min cooldown (capped)
       tracker.setFailed(userId, serverName);
       jest.advanceTimersByTime(29 * 60 * 1000);
       expect(tracker.isFailed(userId, serverName)).toBe(true);
@@ -483,16 +479,13 @@ describe('OAuthReconnectTracker', () => {
       const now = Date.now();
       jest.setSystemTime(now);
 
-      // Build up attempts
       tracker.setFailed(userId, serverName);
       tracker.setFailed(userId, serverName);
       tracker.setFailed(userId, serverName);
 
-      // Remove should reset everything
       tracker.removeFailed(userId, serverName);
       expect(tracker.isFailed(userId, serverName)).toBe(false);
 
-      // New failure should start from attempt 1 (5 min cooldown)
       tracker.setFailed(userId, serverName);
       jest.advanceTimersByTime(5 * 60 * 1000);
       expect(tracker.isFailed(userId, serverName)).toBe(false);

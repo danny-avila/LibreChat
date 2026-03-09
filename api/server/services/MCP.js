@@ -248,9 +248,7 @@ async function reconnectServer({
   const now = Date.now();
   const lastAttempt = lastReconnectAttempts.get(serverName) ?? 0;
   if (now - lastAttempt < RECONNECT_THROTTLE_MS) {
-    logger.warn(
-      `[MCP][reconnectServer] Throttled reconnect for ${serverName} (${now - lastAttempt}ms since last attempt)`,
-    );
+    logger.debug(`[MCP][reconnectServer] Throttled reconnect for ${serverName}`);
     return null;
   }
   lastReconnectAttempts.set(serverName, now);
