@@ -9,6 +9,7 @@ const {
 const {
   sendEvent,
   MCPOAuthHandler,
+  requiresApproval,
   isMCPDomainAllowed,
   normalizeServerName,
   normalizeJsonSchema,
@@ -21,6 +22,7 @@ const {
   CacheKeys,
   Constants,
   ContentTypes,
+  EModelEndpoint,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const {
@@ -499,59 +501,66 @@ function createToolInstance({
         derivedSignal.addEventListener('abort', abortHandler, { once: true });
       }
 
-      // Tool call validation flow - requires user approval before executing
-      const validationFlowType = MCPToolCallValidationHandler.getFlowType();
-      const { validationId, flowMetadata } =
-        await MCPToolCallValidationHandler.initiateValidationFlow(
-          userId,
-          serverName,
-          toolName,
-          typeof toolArguments === 'string' ? { input: toolArguments } : toolArguments,
-        );
+      // Tool call validation flow - only if tool requires approval
+      const appConfig = await getAppConfig({ role: config?.configurable?.user?.role });
+      const toolApprovalConfig = appConfig?.endpoints?.[EModelEndpoint.agents]?.toolApproval;
+      const toolKey = `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
+      const needsApproval = requiresApproval(toolKey, toolApprovalConfig);
 
-      /** @type {{ id: string; delta: AgentToolCallDelta }} */
-      const validationData = {
-        id: stepId,
-        delta: {
-          type: StepTypes.TOOL_CALLS,
-          tool_calls: [{ ...toolCall, args: '' }],
-          validation: validationId,
-          expires_at: Date.now() + Time.TEN_MINUTES,
-        },
-      };
-
-      if (streamId) {
-        await GenerationJobManager.emitChunk(streamId, {
-          event: GraphEvents.ON_RUN_STEP_DELTA,
-          data: validationData,
-        });
-      } else {
-        sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data: validationData });
-      }
-
-      try {
-        await flowManager.createFlow(validationId, validationFlowType, flowMetadata, derivedSignal);
+      if (needsApproval) {
+        const validationFlowType = MCPToolCallValidationHandler.getFlowType();
+        const { validationId, flowMetadata } =
+          await MCPToolCallValidationHandler.initiateValidationFlow(
+            userId,
+            serverName,
+            toolName,
+            typeof toolArguments === 'string' ? { input: toolArguments } : toolArguments,
+          );
 
         /** @type {{ id: string; delta: AgentToolCallDelta }} */
-        const successData = {
+        const validationData = {
           id: stepId,
           delta: {
             type: StepTypes.TOOL_CALLS,
-            tool_calls: [{ ...toolCall }],
+            tool_calls: [{ ...toolCall, args: '' }],
+            validation: validationId,
+            expires_at: Date.now() + Time.TEN_MINUTES,
           },
         };
+
         if (streamId) {
           await GenerationJobManager.emitChunk(streamId, {
             event: GraphEvents.ON_RUN_STEP_DELTA,
-            data: successData,
+            data: validationData,
           });
         } else {
-          sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data: successData });
+          sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data: validationData });
         }
-      } catch (validationError) {
-        throw new Error(
-          `Tool call validation required for ${serverName}/${toolName}. User rejected or validation timed out.`,
-        );
+
+        try {
+          await flowManager.createFlow(validationId, validationFlowType, flowMetadata, derivedSignal);
+
+          /** @type {{ id: string; delta: AgentToolCallDelta }} */
+          const successData = {
+            id: stepId,
+            delta: {
+              type: StepTypes.TOOL_CALLS,
+              tool_calls: [{ ...toolCall }],
+            },
+          };
+          if (streamId) {
+            await GenerationJobManager.emitChunk(streamId, {
+              event: GraphEvents.ON_RUN_STEP_DELTA,
+              data: successData,
+            });
+          } else {
+            sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data: successData });
+          }
+        } catch (validationError) {
+          throw new Error(
+            `Tool call validation required for ${serverName}/${toolName}. User rejected or validation timed out.`,
+          );
+        }
       }
 
       const customUserVars =
