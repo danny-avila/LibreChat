@@ -883,7 +883,7 @@ function wrapToolWithApproval({ tool, res, streamId }) {
       } else {
         sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data: successData });
       }
-    } catch (validationError) {
+    } catch (_validationError) {
       throw new Error(
         `Tool call validation required for ${toolName}. User rejected or validation timed out.`,
       );
