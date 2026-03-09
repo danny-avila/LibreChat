@@ -807,7 +807,6 @@ describe('GraphApiService', () => {
   describe('Proxy Configuration', () => {
     let originalEnv;
     const { ProxyAgent } = require('undici');
-    const { HttpsProxyAgent } = require('https-proxy-agent');
 
     beforeAll(() => {
       originalEnv = { ...process.env };
@@ -845,7 +844,7 @@ describe('GraphApiService', () => {
 
         expect(Client.init).toHaveBeenCalled();
         const initCall = Client.init.mock.calls[0][0];
-        
+
         // fetchOptions should either not exist or not have a dispatcher
         if (initCall.fetchOptions) {
           expect(initCall.fetchOptions.dispatcher).toBeUndefined();
@@ -880,7 +879,7 @@ describe('GraphApiService', () => {
         if (client.genericGrantRequest) {
           expect(client.genericGrantRequest).toHaveBeenCalled();
           const clientOptions = client.genericGrantRequest.mock.calls[0][3];
-          
+
           expect(clientOptions).toBeDefined();
           const customFetchSymbol = Symbol.for('openid-client.custom.fetch');
           expect(clientOptions[customFetchSymbol]).toBeDefined();
@@ -901,7 +900,7 @@ describe('GraphApiService', () => {
         if (client.genericGrantRequest) {
           expect(client.genericGrantRequest).toHaveBeenCalled();
           const clientOptions = client.genericGrantRequest.mock.calls[0][3];
-          
+
           // clientOptions should be empty object or not have custom fetch
           expect(clientOptions).toEqual({});
         }
@@ -921,7 +920,7 @@ describe('GraphApiService', () => {
         if (client.genericGrantRequest) {
           const clientOptions = client.genericGrantRequest.mock.calls[0][3];
           const customFetch = clientOptions[Symbol.for('openid-client.custom.fetch')];
-          
+
           expect(customFetch).toBeDefined();
           expect(typeof customFetch).toBe('function');
         }
@@ -940,7 +939,7 @@ describe('GraphApiService', () => {
         if (client.genericGrantRequest) {
           const clientOptions = client.genericGrantRequest.mock.calls[0][3];
           const customFetch = clientOptions[Symbol.for('openid-client.custom.fetch')];
-          
+
           // Test that custom fetch function is created with HttpsProxyAgent
           expect(customFetch).toBeDefined();
           expect(typeof customFetch).toBe('function');
