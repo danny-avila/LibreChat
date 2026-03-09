@@ -2100,4 +2100,98 @@ describe('updateInterfacePermissions - permissions', () => {
     expect(userCall[1][PermissionTypes.MCP_SERVERS]).toHaveProperty(Permissions.SHARE_PUBLIC);
     expect(userCall[1][PermissionTypes.MCP_SERVERS]).not.toHaveProperty(Permissions.SHARE);
   });
+
+  it('should apply explicit remoteAgents config to USER permissions (regression: loadDefaultInterface omission)', async () => {
+    const config = {
+      interface: {
+        remoteAgents: { use: true, create: true, share: false, public: false },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+
+    expect(userCall[1][PermissionTypes.REMOTE_AGENTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
+    });
+
+    expect(adminCall[1][PermissionTypes.REMOTE_AGENTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
+    });
+  });
+
+  it('should enable all remoteAgents permissions when fully enabled in config', async () => {
+    const config = {
+      interface: {
+        remoteAgents: { use: true, create: true, share: true, public: true },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    expect(userCall[1][PermissionTypes.REMOTE_AGENTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: true,
+      [Permissions.SHARE_PUBLIC]: true,
+    });
+  });
+
+  it('should use role defaults for remoteAgents when not configured (all false for USER)', async () => {
+    const config = {
+      interface: {
+        bookmarks: true,
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    expect(userCall[1][PermissionTypes.REMOTE_AGENTS]).toEqual({
+      [Permissions.USE]: false,
+      [Permissions.CREATE]: false,
+      [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
+    });
+  });
 });
