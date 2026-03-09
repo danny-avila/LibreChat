@@ -10,8 +10,11 @@ import {
   OGDialogTitle,
 } from '@librechat/client';
 import { dataService } from 'librechat-data-provider';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+
+type LocalizeFn = ReturnType<typeof useLocalize>;
 
 // Type definitions
 interface AdminConversation {
@@ -55,12 +58,12 @@ interface AdminConversationMessagesResponse {
 }
 
 // Helper functions
-const getEndpointLabel = (endpoint: string) => {
+const getEndpointLabel = (endpoint: string, localize: LocalizeFn) => {
   const labels: Record<string, string> = {
-    assistants: 'OpenAI 助手',
-    azureAssistants: 'Azure 助手',
-    agents: '智能体',
-    gptPlugins: 'GPT 插件',
+    assistants: localize('com_admin_conv_endpoint_assistants'),
+    azureAssistants: localize('com_admin_conv_endpoint_azure_assistants'),
+    agents: localize('com_admin_conv_endpoint_agents'),
+    gptPlugins: localize('com_admin_conv_endpoint_gpt_plugins'),
     openAI: 'OpenAI',
     google: 'Google',
     anthropic: 'Anthropic',
@@ -68,30 +71,33 @@ const getEndpointLabel = (endpoint: string) => {
   return labels[endpoint] || endpoint;
 };
 
-const formatDate = (dateString: string) => {
+const formatDate = (
+  dateString: string,
+  localize: LocalizeFn,
+) => {
   const date = new Date(dateString);
   const now = new Date();
   const diffTime = Math.abs(now.getTime() - date.getTime());
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) {
-    return date.toLocaleTimeString('zh-CN', {
+    return date.toLocaleTimeString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
     });
   } else if (diffDays === 1) {
-    return '昨天';
+    return localize('com_admin_conv_yesterday');
   } else if (diffDays < 7) {
-    return `${diffDays}天前`;
+    return localize('com_admin_conv_days_ago', { count: diffDays });
   }
-  return date.toLocaleDateString('zh-CN', {
+  return date.toLocaleDateString(undefined, {
     month: '2-digit',
     day: '2-digit',
   });
 };
 
 const formatFullDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('zh-CN', {
+  return new Date(dateString).toLocaleDateString(undefined, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -105,9 +111,11 @@ const ConversationItem = memo(
   ({
     conversation,
     onViewMessages,
+    localize,
   }: {
     conversation: AdminConversation;
     onViewMessages: (conv: AdminConversation) => void;
+    localize: LocalizeFn;
   }) => {
     return (
       <div
@@ -122,16 +130,16 @@ const ConversationItem = memo(
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-text-primary">
-            {conversation.title || '新对话'}
+            {conversation.title || localize('com_admin_conv_new_conversation')}
           </div>
           <div className="flex items-center gap-2 text-xs text-text-secondary">
             <span className="flex items-center gap-1">
               <Bot size={10} />
-              {getEndpointLabel(conversation.endpoint)}
+              {getEndpointLabel(conversation.endpoint, localize)}
             </span>
             <span className="flex items-center gap-1">
               <Clock size={10} />
-              {formatDate(conversation.updatedAt)}
+              {formatDate(conversation.updatedAt, localize)}
             </span>
           </div>
         </div>
@@ -159,10 +167,12 @@ const MessagesDialog = memo(
     isOpen,
     onClose,
     conversation,
+    localize,
   }: {
     isOpen: boolean;
     onClose: () => void;
     conversation: AdminConversation | null;
+    localize: LocalizeFn;
   }) => {
     const { data, isLoading } = useQuery<AdminConversationMessagesResponse>({
       queryKey: ['adminConversationMessages', conversation?.conversationId],
@@ -175,12 +185,12 @@ const MessagesDialog = memo(
         <OGDialogContent className="flex max-h-[80vh] max-w-2xl flex-col overflow-hidden">
           <OGDialogHeader>
             <OGDialogTitle className="truncate pr-8">
-              {conversation?.title || '新对话'}
+              {conversation?.title || localize('com_admin_conv_new_conversation')}
             </OGDialogTitle>
             <div className="flex items-center gap-2 text-xs text-text-secondary">
               <span className="flex items-center gap-1">
                 <Bot size={12} />
-                {conversation && getEndpointLabel(conversation.endpoint)}
+                {conversation && getEndpointLabel(conversation.endpoint, localize)}
               </span>
               <span>•</span>
               <span>{conversation && formatFullDate(conversation.updatedAt)}</span>
@@ -192,7 +202,7 @@ const MessagesDialog = memo(
                 <Spinner className="h-6 w-6" />
               </div>
             ) : data?.messages.length === 0 ? (
-              <div className="py-8 text-center text-sm text-text-secondary">暂无消息</div>
+              <div className="py-8 text-center text-sm text-text-secondary">{localize('com_admin_conv_no_messages')}</div>
             ) : (
               data?.messages.map((message) => (
                 <div
@@ -213,7 +223,9 @@ const MessagesDialog = memo(
                           : 'text-green-600 dark:text-green-400',
                       )}
                     >
-                      {message.isCreatedByUser ? '用户' : '助手'}
+                      {message.isCreatedByUser
+                        ? localize('com_admin_conv_sender_user')
+                        : localize('com_admin_conv_sender_assistant')}
                     </span>
                     <span className="text-xs text-text-secondary">
                       {formatFullDate(message.createdAt)}
@@ -236,6 +248,7 @@ MessagesDialog.displayName = 'MessagesDialog';
 
 // Main Component
 const AdminUserConversations: React.FC = memo(() => {
+  const localize = useLocalize();
   const selectedUser = useRecoilValue(store.adminSelectedUser);
   const isAdminViewMode = useRecoilValue(store.isAdminViewMode);
   const [page, setPage] = useState(1);
@@ -284,7 +297,9 @@ const AdminUserConversations: React.FC = memo(() => {
           className="flex items-center justify-between px-1 py-2 text-xs font-bold text-text-secondary"
         >
           <span>
-            {selectedUser.name || selectedUser.username || selectedUser.email} 的对话
+            {localize('com_admin_conv_user_conversations', {
+              name: selectedUser.name || selectedUser.username || selectedUser.email,
+            })}
             {data && ` (${data.pagination.total})`}
           </span>
           {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -298,7 +313,7 @@ const AdminUserConversations: React.FC = memo(() => {
                 <Spinner className="h-4 w-4" />
               </div>
             ) : data?.conversations.length === 0 ? (
-              <div className="py-4 text-center text-xs text-text-secondary">该用户暂无对话</div>
+              <div className="py-4 text-center text-xs text-text-secondary">{localize('com_admin_conv_no_user_conversations')}</div>
             ) : (
               <>
                 <div className="space-y-1">
@@ -307,6 +322,7 @@ const AdminUserConversations: React.FC = memo(() => {
                       key={conversation.conversationId}
                       conversation={conversation}
                       onViewMessages={handleViewMessages}
+                        localize={localize}
                     />
                   ))}
                 </div>
@@ -325,7 +341,7 @@ const AdminUserConversations: React.FC = memo(() => {
                         onClick={() => setPage((p) => Math.max(1, p - 1))}
                         disabled={page === 1}
                       >
-                        上页
+                        {localize('com_admin_prev_page')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -334,7 +350,7 @@ const AdminUserConversations: React.FC = memo(() => {
                         onClick={() => setPage((p) => p + 1)}
                         disabled={page >= data.pagination.totalPages}
                       >
-                        下页
+                        {localize('com_admin_next_page')}
                       </Button>
                     </div>
                   </div>
@@ -350,6 +366,7 @@ const AdminUserConversations: React.FC = memo(() => {
         isOpen={isMessagesOpen}
         onClose={handleCloseMessages}
         conversation={selectedConversation}
+        localize={localize}
       />
     </>
   );

@@ -108,6 +108,12 @@ export type Assistant = {
   tools?: FunctionTool[];
   tool_resources?: ToolResources;
   data_sources?: DataSource[];
+  /** 助手可见性分组（仅 ADMIN 可设置） */
+  group?: string | null;
+  /** 创建者角色 */
+  role?: string;
+  /** 是否附加当前时间 */
+  append_current_datetime?: boolean;
 };
 
 export type TAssistantsMap = Record<AssistantsEndpoint, Record<string, Assistant>>;
@@ -140,6 +146,8 @@ export type AssistantUpdateParams = {
   endpoint: AssistantsEndpoint;
   append_current_datetime?: boolean;
   data_sources?: DataSource[];
+  /** 助手可见性分组（仅 ADMIN 可设置） */
+  group?: string | null;
 };
 
 export type AssistantListParams = {
@@ -564,6 +572,9 @@ export type AssistantDocument = {
   createdAt?: Date;
   updatedAt?: Date;
   append_current_datetime?: boolean;
+  role?: string;
+  /** 助手可见性分组：仅该分组的用户可见，空值表示对所有用户可见 */
+  group?: string | null;
 };
 
 /* Agent types */

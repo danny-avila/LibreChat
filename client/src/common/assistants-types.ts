@@ -40,4 +40,6 @@ export type AssistantForm = {
       password?: string;
     };
   }>;
+  /** ADMIN 可设置的助手可见分组，空値表示对所有用户可见 */
+  group?: string | null;
 } & Actions;

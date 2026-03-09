@@ -4,7 +4,7 @@ import { useRecoilState } from 'recoil';
 import { Search, Users, X, ChevronDown, User as UserIcon } from 'lucide-react';
 import { SystemRoles, dataService } from 'librechat-data-provider';
 import { Button, Input, Spinner } from '@librechat/client';
-import { useAuthContext } from '~/hooks';
+import { useAuthContext, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -37,6 +37,7 @@ interface AdminUserSelectorProps {
 
 const AdminUserSelector: React.FC<AdminUserSelectorProps> = memo(({ onUserSelect }) => {
   const { user: currentUser } = useAuthContext();
+  const localize = useLocalize();
   const [selectedUser, setSelectedUser] = useRecoilState(store.adminSelectedUser);
   const [isAdminViewMode, setIsAdminViewMode] = useRecoilState(store.isAdminViewMode);
   const [isOpen, setIsOpen] = useState(false);
@@ -139,10 +140,11 @@ const AdminUserSelector: React.FC<AdminUserSelectorProps> = memo(({ onUserSelect
           <Users size={14} className="flex-shrink-0" />
           {selectedUser ? (
             <span className="truncate">
-              查看: {selectedUser.name || selectedUser.username || selectedUser.email}
+              {localize('com_admin_user_selector_view')}{' '}
+              {selectedUser.name || selectedUser.username || selectedUser.email}
             </span>
           ) : (
-            <span>选择用户查看对话</span>
+            <span>{localize('com_admin_conv_filter_select_user')}</span>
           )}
         </div>
         <ChevronDown
@@ -172,7 +174,7 @@ const AdminUserSelector: React.FC<AdminUserSelectorProps> = memo(({ onUserSelect
               <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-text-secondary" />
               <Input
                 type="text"
-                placeholder="搜索用户..."
+                placeholder={localize('com_admin_conv_search_placeholder')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 pl-7 text-xs"
@@ -189,10 +191,10 @@ const AdminUserSelector: React.FC<AdminUserSelectorProps> = memo(({ onUserSelect
               </div>
             ) : isError ? (
               <div className="py-4 text-center text-xs text-red-500">
-                加载用户失败: {(error as Error)?.message || '未知错误'}
+                {localize('com_admin_load_failed')}: {(error as Error)?.message || localize('com_ui_unknown')}
               </div>
             ) : data?.users.length === 0 ? (
-              <div className="py-4 text-center text-xs text-text-secondary">未找到用户</div>
+              <div className="py-4 text-center text-xs text-text-secondary">{localize('com_admin_no_users_found')}</div>
             ) : (
               data?.users.map((user) => (
                 <button
@@ -216,13 +218,13 @@ const AdminUserSelector: React.FC<AdminUserSelectorProps> = memo(({ onUserSelect
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium text-text-primary">
-                      {user.name || user.username || '未命名'}
+                      {user.name || user.username || localize('com_ui_unknown')}
                     </div>
                     <div className="truncate text-text-secondary">{user.email}</div>
                   </div>
                   {user.role === 'ADMIN' && (
                     <span className="flex-shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                      管理员
+                      {localize('com_admin_role_admin')}
                     </span>
                   )}
                 </button>

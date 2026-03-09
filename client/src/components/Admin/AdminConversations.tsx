@@ -151,18 +151,27 @@ const getAdminUsers = async (params?: {
   return await request.get<AdminUsersResponse>(`/api/admin/users${query}`);
 };
 
+const tr = (
+  localize: ReturnType<typeof useLocalize>,
+  key: string,
+  values?: Record<string, string>,
+) => localize(key as never, values as never);
+
 // Helper functions
-const getEndpointLabel = (endpoint: string) => {
+const getEndpointLabel = (
+  endpoint: string,
+  localize: ReturnType<typeof useLocalize>,
+) => {
   const labels: Record<string, string> = {
-    assistants: 'OpenAI 助手',
-    azureAssistants: 'Azure 助手',
-    agents: '智能体',
+    assistants: tr(localize, 'com_admin_conv_endpoint_assistants'),
+    azureAssistants: tr(localize, 'com_admin_conv_endpoint_azure_assistants'),
+    agents: tr(localize, 'com_admin_conv_endpoint_agents'),
   };
   return labels[endpoint] || endpoint;
 };
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('zh-CN', {
+  return new Date(dateString).toLocaleDateString(undefined, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -217,7 +226,9 @@ const ConversationListItem = memo(
     conversation: AdminConversation;
     isSelected: boolean;
     onSelect: (conversation: AdminConversation) => void;
-  }) => (
+  }) => {
+    const localize = useLocalize();
+    return (
     <div
       onClick={() => onSelect(conversation)}
       className={cn(
@@ -231,18 +242,21 @@ const ConversationListItem = memo(
         <MessageSquare size={16} className="text-text-secondary" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium text-text-primary">{conversation.title || '新对话'}</div>
+        <div className="truncate font-medium text-text-primary">
+          {conversation.title || tr(localize, 'com_admin_conv_new_conversation')}
+        </div>
         <div className="flex items-center gap-2 text-xs text-text-secondary">
           <span className="flex items-center gap-1">
             <Bot size={10} />
-            {getEndpointLabel(conversation.endpoint)}
+            {getEndpointLabel(conversation.endpoint, localize)}
           </span>
           <span>•</span>
           <span>{formatDate(conversation.updatedAt)}</span>
         </div>
       </div>
     </div>
-  ),
+    );
+  },
 );
 
 ConversationListItem.displayName = 'ConversationListItem';
@@ -260,11 +274,12 @@ const MessagesPanel = memo(
     messages: AdminConversationMessage[] | undefined;
     onClose: () => void;
   }) => {
+    const localize = useLocalize();
     if (!conversation) {
       return (
         <div className="flex h-full flex-col items-center justify-center bg-surface-secondary">
           <MessageSquare className="mb-2 h-12 w-12 text-text-secondary opacity-50" />
-          <p className="text-sm text-text-secondary">选择一个对话查看详情</p>
+          <p className="text-sm text-text-secondary">{tr(localize, 'com_admin_conv_select_for_details')}</p>
         </div>
       );
     }
@@ -276,7 +291,7 @@ const MessagesPanel = memo(
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-lg font-bold text-text-primary">
-                {conversation.title || '新对话'}
+                {conversation.title || tr(localize, 'com_admin_conv_new_conversation')}
               </h2>
               <div className="mt-2 space-y-1">
                 {conversation.userInfo && (
@@ -287,7 +302,7 @@ const MessagesPanel = memo(
                 )}
                 <div className="flex items-center gap-2 text-xs text-text-secondary">
                   <Bot size={12} />
-                  <span>{getEndpointLabel(conversation.endpoint)}</span>
+                  <span>{getEndpointLabel(conversation.endpoint, localize)}</span>
                   <span>•</span>
                   <span>{formatDate(conversation.updatedAt)}</span>
                 </div>
@@ -298,7 +313,7 @@ const MessagesPanel = memo(
               size="sm"
               className="h-8 w-8 flex-shrink-0 p-0 md:hidden"
               onClick={onClose}
-              aria-label="关闭"
+              aria-label={tr(localize, 'com_admin_conv_close')}
             >
               <X size={16} />
             </Button>
@@ -313,7 +328,7 @@ const MessagesPanel = memo(
             </div>
           ) : messages?.length === 0 ? (
             <div className="flex h-full items-center justify-center text-center">
-              <p className="text-sm text-text-secondary">暂无消息</p>
+              <p className="text-sm text-text-secondary">{tr(localize, 'com_admin_conv_no_messages')}</p>
             </div>
           ) : (
             messages?.map((message) => (
@@ -335,13 +350,15 @@ const MessagesPanel = memo(
                         : 'text-green-600 dark:text-green-400',
                     )}
                   >
-                    {message.isCreatedByUser ? '用户' : '助手'}
+                    {message.isCreatedByUser
+                      ? tr(localize, 'com_admin_conv_sender_user')
+                      : tr(localize, 'com_admin_conv_sender_assistant')}
                   </span>
                   <span className="text-xs text-text-secondary">{formatDate(message.createdAt)}</span>
                 </div>
                 <div className="whitespace-pre-wrap break-words text-sm text-text-primary">
                   {getMessageText(message) || (
-                    <span className="text-text-secondary italic">（无文本内容）</span>
+                    <span className="text-text-secondary italic">{tr(localize, 'com_admin_conv_no_text_content')}</span>
                   )}
                 </div>
               </div>
@@ -417,8 +434,8 @@ const AdminConversations: React.FC = () => {
       <div className="flex w-full flex-col border-r border-border-light md:w-96">
         <div className="flex-shrink-0 border-b border-border-light bg-surface-secondary p-6">
           <div className="mb-6">
-            <h1 className="text-2xl font-bold text-text-primary">对话管理</h1>
-            <p className="mt-1 text-xs text-text-secondary">查看所有用户的对话记录</p>
+            <h1 className="text-2xl font-bold text-text-primary">{tr(localize, 'com_admin_conv_title')}</h1>
+            <p className="mt-1 text-xs text-text-secondary">{tr(localize, 'com_admin_conv_subtitle')}</p>
           </div>
 
           {/* Filters */}
@@ -428,7 +445,7 @@ const AdminConversations: React.FC = () => {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
               <Input
                 type="text"
-                placeholder="搜索..."
+                placeholder={tr(localize, 'com_admin_conv_search_placeholder')}
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
@@ -447,13 +464,13 @@ const AdminConversations: React.FC = () => {
               }}
             >
               <SelectTrigger className="h-9 text-sm">
-                <SelectValue placeholder="所有类型" />
+                <SelectValue placeholder={tr(localize, 'com_admin_conv_filter_all_types')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">所有类型</SelectItem>
-                <SelectItem value="assistants">OpenAI 助手</SelectItem>
-                <SelectItem value="azureAssistants">Azure 助手</SelectItem>
-                <SelectItem value="agents">智能体</SelectItem>
+                <SelectItem value="all">{tr(localize, 'com_admin_conv_filter_all_types')}</SelectItem>
+                <SelectItem value="assistants">{tr(localize, 'com_admin_conv_endpoint_assistants')}</SelectItem>
+                <SelectItem value="azureAssistants">{tr(localize, 'com_admin_conv_endpoint_azure_assistants')}</SelectItem>
+                <SelectItem value="agents">{tr(localize, 'com_admin_conv_endpoint_agents')}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -468,11 +485,11 @@ const AdminConversations: React.FC = () => {
               <SelectTrigger className="h-9 text-sm">
                 <div className="flex items-center gap-2">
                   <UserIcon size={14} />
-                  <SelectValue placeholder="选择用户查看对话" />
+                  <SelectValue placeholder={tr(localize, 'com_admin_conv_filter_select_user')} />
                 </div>
               </SelectTrigger>
               <SelectContent className="max-h-60">
-                <SelectItem value="all">所有用户</SelectItem>
+                <SelectItem value="all">{tr(localize, 'com_admin_conv_filter_all_users')}</SelectItem>
                 {usersData?.users?.map((user) => (
                   <SelectItem key={user._id} value={user._id}>
                     {user.name || user.username || user.email}
@@ -492,13 +509,13 @@ const AdminConversations: React.FC = () => {
               }}
             >
               <SelectTrigger className="h-9 text-sm">
-                <SelectValue placeholder="排序方式" />
+                <SelectValue placeholder={tr(localize, 'com_admin_conv_filter_sort')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="updatedAt-desc">最近更新</SelectItem>
-                <SelectItem value="updatedAt-asc">最早更新</SelectItem>
-                <SelectItem value="createdAt-desc">最新创建</SelectItem>
-                <SelectItem value="createdAt-asc">最早创建</SelectItem>
+                <SelectItem value="updatedAt-desc">{tr(localize, 'com_admin_conv_sort_recently_updated')}</SelectItem>
+                <SelectItem value="updatedAt-asc">{tr(localize, 'com_admin_conv_sort_oldest_updated')}</SelectItem>
+                <SelectItem value="createdAt-desc">{tr(localize, 'com_admin_conv_sort_newest_created')}</SelectItem>
+                <SelectItem value="createdAt-asc">{tr(localize, 'com_admin_conv_sort_oldest_created')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -512,12 +529,12 @@ const AdminConversations: React.FC = () => {
             </div>
           ) : isError ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-4">
-              <p className="text-sm font-medium text-red-500">加载失败</p>
-              <p className="text-center text-xs text-text-secondary">无法获取对话数据，请检查网络或刷新页面</p>
+              <p className="text-sm font-medium text-red-500">{tr(localize, 'com_admin_load_failed')}</p>
+              <p className="text-center text-xs text-text-secondary">{tr(localize, 'com_admin_conv_load_failed_desc')}</p>
             </div>
           ) : data?.conversations && data.conversations.length === 0 ? (
             <div className="flex h-full items-center justify-center">
-              <p className="text-sm text-text-secondary">未找到对话记录</p>
+              <p className="text-sm text-text-secondary">{tr(localize, 'com_admin_conv_no_conversations_found')}</p>
             </div>
           ) : data?.conversations ? (
             <div className="divide-y divide-border-light">
@@ -548,7 +565,7 @@ const AdminConversations: React.FC = () => {
                 disabled={page === 1}
               >
                 <ChevronLeft size={14} />
-                上一页
+                {tr(localize, 'com_admin_prev_page')}
               </Button>
               <Button
                 size="sm"
@@ -557,7 +574,7 @@ const AdminConversations: React.FC = () => {
                 onClick={() => setPage((p) => p + 1)}
                 disabled={page >= data.pagination.totalPages}
               >
-                下一页
+                {tr(localize, 'com_admin_next_page')}
                 <ChevronRight size={14} />
               </Button>
             </div>

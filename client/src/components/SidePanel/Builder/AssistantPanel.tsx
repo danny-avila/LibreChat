@@ -1,10 +1,13 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { Spinner, useToastContext, SelectDropDown } from '@librechat/client';
+import { request } from 'librechat-data-provider';
 import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
 import {
   Tools,
   Capabilities,
+  SystemRoles,
   actionDelimiter,
   ImageVisionTool,
   defaultAssistantFormValues,
@@ -16,6 +19,7 @@ import {
   useUpdateAssistantMutation,
   useAvailableAgentToolsQuery,
 } from '~/data-provider';
+import { useAuthContext } from '~/hooks';
 import { cn, cardStyle, defaultTextProps, removeFocusOutlines } from '~/utils';
 import AssistantConversationStarters from './AssistantConversationStarters';
 import AssistantToolsDialog from '~/components/Tools/AssistantToolsDialog';
@@ -53,6 +57,18 @@ export default function AssistantPanel({
 }: AssistantPanelProps & { assistantsConfig?: TConfig | null }) {
   const modelsQuery = useGetModelsQuery();
   const assistantMap = useAssistantsMapContext();
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
+
+  // 获取分组列表（仅 ADMIN 用户需要）
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore - request.get 的泛型在编译后的 dist 类型不一致
+  const { data: groupsData } = useQuery<{ groups: Array<{ name: string }>; systemRoles: string[] }>({
+    queryKey: ['adminGroups'],
+    queryFn: () => request.get('/api/admin/groups') as Promise<{ groups: Array<{ name: string }>; systemRoles: string[] }>,
+    enabled: isAdmin,
+    staleTime: 60_000,
+  });
 
   const { data: allTools = [] } = useAvailableAgentToolsQuery();
   const { onSelect: onSelectAssistant } = useSelectAssistant(endpoint);
@@ -113,29 +129,22 @@ export default function AssistantPanel({
 
   const create = useCreateAssistantMutation({
     onSuccess: (data) => {
-      try {
-        console.log('[E2B Assistant] Created successfully:', data);
-        if (data && typeof data === 'object') {
-          setCurrentAssistantId(data.id);
-          showToast({
-            message: `${localize('com_assistants_create_success')} ${
-              data.name ?? localize('com_ui_assistant')
-            }`,
-          });
-        } else {
-          console.error('[E2B Assistant] Invalid data received in onSuccess:', data);
-          showToast({
-            message: localize('com_assistants_create_error'),
-            status: 'error',
-          });
-        }
-      } catch (error) {
-        console.error('[E2B Assistant] Error in onSuccess handler:', error);
+      if (data && typeof data === 'object') {
+        setCurrentAssistantId(data.id);
+        showToast({
+          message: `${localize('com_assistants_create_success')} ${
+            data.name ?? localize('com_ui_assistant')
+          }`,
+        });
+      } else {
+        showToast({
+          message: localize('com_assistants_create_error'),
+          status: 'error',
+        });
       }
     },
     onError: (err) => {
       const error = err as any;
-      console.error('[E2B Assistant] Creation error details:', error);
       const detailedMessage = error.response?.data?.error || error.message || 'Unknown error';
       showToast({
         message: `${localize('com_assistants_create_error')}: ${detailedMessage}`,
@@ -184,11 +193,8 @@ export default function AssistantPanel({
       model,
       append_current_datetime,
       data_sources,
+      group,
     } = data;
-
-    console.log('[AssistantPanel] Submitting form data...');
-    console.log('[AssistantPanel] data_sources count:', data_sources?.length || 0);
-    console.log('[AssistantPanel] Full data_sources:', data_sources);
 
     if (assistant_id) {
       update.mutate({
@@ -203,6 +209,7 @@ export default function AssistantPanel({
           endpoint,
           append_current_datetime,
           data_sources,
+          ...(isAdmin ? { group: group ?? null } : {}),
         },
       });
       return;
@@ -409,6 +416,43 @@ export default function AssistantPanel({
           {/* Data Sources (E2B Only) */}
           {endpoint === 'e2bAssistants' && (
             <DataSources assistant_id={assistant_id} />
+          )}
+          {/* 分组可见性（仅 ADMIN 用户且助手已创建时可设置） */}
+          {isAdmin && assistant_id && (
+            <div className="mb-6">
+              <label className={labelClass}>{localize('com_assistants_visibility_group_label')}</label>
+              <p className="mb-2 text-xs text-text-secondary">
+                {localize('com_assistants_visibility_group_desc')}
+              </p>
+              <Controller
+                name="group"
+                control={control}
+                render={({ field }) => (
+                  <SelectDropDown
+                    emptyTitle={true}
+                    value={field.value || ''}
+                    setValue={(val: string | { value?: string; label?: string }) => {
+                      const strVal =
+                        typeof val === 'object' && val !== null
+                          ? (val.value ?? '')
+                          : (val ?? '');
+                      field.onChange(strVal === '' ? null : strVal);
+                    }}
+                    availableValues={[
+                      { value: '', label: localize('com_assistants_visibility_group_all_users') },
+                      ...(groupsData?.groups?.map((g) => ({ value: g.name, label: g.name })) ?? []),
+                    ]}
+                    showAbove={false}
+                    showLabel={false}
+                    className={cn(
+                      cardStyle,
+                      'flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer',
+                    )}
+                    containerClassName="rounded-md"
+                  />
+                )}
+              />
+            </div>
           )}
           {/* Capabilities */}
           <CapabilitiesForm

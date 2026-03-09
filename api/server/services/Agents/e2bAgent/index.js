@@ -603,8 +603,8 @@ class E2BDataAnalystAgent {
                                       (result.error && result.error.includes('Sandbox expired'));
                   
                   const output = isRecovering 
-                    ? '🔄 沙箱已超时，正在自动恢复并重试...\n' + (result.stdout || result.stderr || '')
-                    : (result.stderr || result.error || '执行失败');
+                    ? '🔄 Sandbox expired, recovering and retrying...\n' + (result.stdout || result.stderr || '')
+                    : (result.stderr || result.error || 'Execution failed');
                   
                   const failedToolCall = {
                     id: id,

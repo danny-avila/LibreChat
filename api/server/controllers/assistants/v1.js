@@ -26,10 +26,12 @@ const createAssistant = async (req, res) => {
       endpoint,
       conversation_starters,
       append_current_datetime,
+      group,
       ...assistantData
     } = req.body;
     delete assistantData.conversation_starters;
     delete assistantData.append_current_datetime;
+    delete assistantData.group;
 
     const toolDefinitions = await getCachedTools();
 
@@ -62,6 +64,7 @@ const createAssistant = async (req, res) => {
       author: req.user.id,
       endpoint,
       role: req.user.role,
+      ...(group !== undefined && req.user.role === SystemRoles.ADMIN ? { group: group || '' } : {}),
     };
 
     const assistant = await openai.beta.assistants.create(assistantData);
@@ -72,6 +75,10 @@ const createAssistant = async (req, res) => {
     }
     if (append_current_datetime !== undefined) {
       createData.append_current_datetime = append_current_datetime;
+    }
+    // 分组可见性：仅 ADMIN 用户创建的助手才允许设置分组
+    if (group !== undefined && req.user.role === SystemRoles.ADMIN) {
+      createData.group = group || null; // DB 中用 null 表示无分组
     }
 
     const document = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
@@ -134,6 +141,7 @@ const patchAssistant = async (req, res) => {
       endpoint: _e,
       conversation_starters,
       append_current_datetime,
+      group,
       ...updateData
     } = req.body;
 
@@ -162,6 +170,26 @@ const patchAssistant = async (req, res) => {
       updateData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;
     }
 
+    // 若 ADMIN 设置了 group，同步写入 OpenAI metadata 和 MongoDB
+    // groupStr 必须是字符串，防御前端误传 Option 对象 {value, label}
+    let groupStr;
+    if (group !== undefined && req.user.role === SystemRoles.ADMIN) {
+      groupStr = group && typeof group === 'object' ? (group.value ?? '') : (group || '');
+      // 获取现有 metadata 以保留 author、role、endpoint 等字段
+      let existingMetadata = {};
+      try {
+        const currentAssistant = await openai.beta.assistants.retrieve(assistant_id);
+        existingMetadata = currentAssistant.metadata || {};
+      } catch (_err) {
+        logger.warn(`[/assistants/:id] Failed to retrieve metadata for merge, proceeding with partial metadata`);
+        existingMetadata = { author: req.user.id, role: req.user.role };
+      }
+      updateData.metadata = {
+        ...existingMetadata,
+        ...(updateData.metadata || {}),
+        group: groupStr,
+      };
+    }
     const updatedAssistant = await openai.beta.assistants.update(assistant_id, updateData);
 
     if (conversation_starters !== undefined) {
@@ -175,6 +203,14 @@ const patchAssistant = async (req, res) => {
     if (append_current_datetime !== undefined) {
       await updateAssistantDoc({ assistant_id }, { append_current_datetime });
       updatedAssistant.append_current_datetime = append_current_datetime;
+    }
+
+    // 分组可见性：仅 ADMIN 用户可以设置助手可见分组
+    // groupStr 已在上方从 group 中提取为字符串，'' 表示无分组限制
+    if (groupStr !== undefined && req.user.role === SystemRoles.ADMIN) {
+      const groupValue = groupStr || null; // DB 中用 null 表示无分组
+      await updateAssistantDoc({ assistant_id }, { group: groupValue });
+      updatedAssistant.group = groupValue;
     }
 
     res.json(updatedAssistant);
@@ -236,7 +272,7 @@ const listAssistants = async (req, res) => {
  * @param {Partial<TAssistantEndpoint>} [params.assistantsConfig] -  The assistant configuration.
  * @returns {AssistantDocument[]} - The filtered list of assistants.
  */
-function filterAssistantDocs({ documents, userId, userRole, assistantsConfig = {} }) {
+function filterAssistantDocs({ documents, userId, userRole, userGroups = [], assistantsConfig = {} }) {
   const { supportedIds, excludedIds } = assistantsConfig;
   const removeUserId = (doc) => {
     const { user: _u, ...document } = doc;
@@ -252,20 +288,26 @@ function filterAssistantDocs({ documents, userId, userRole, assistantsConfig = {
     }
     return documents.map(removeUserId);
   }
-  
-  // 普通用户：显示自己创建的助手 + ADMIN 用户创建的助手
+
+  // 普通用户过滤规则：
+  // 1. 自己创建的助手总是可见
+  // 2. ADMIN 创建的助手：空分组 = 全体可见；有分组 = 仅该分组可见
+  // 3. 任意助手设置了 group = 用户属于该分组则可见
   const filteredDocs = documents.filter((doc) => {
-    // 用户自己创建的助手
-    if (userId === doc.user.toString()) {
+    // 自己创建的助手总是可见
+    if (userId === doc.user?.toString()) {
       return true;
     }
-    // ADMIN 用户创建的助手
-    if (doc.role && doc.role.toUpperCase() === SystemRoles.ADMIN) {
-      return true;
+    // ADMIN 创建的助手
+    if (doc.role?.toUpperCase() === SystemRoles.ADMIN) {
+      if (!doc.group) return true; // 无分组限制，全体可见
+      return userGroups.includes(doc.group); // 有分组限制，检查用户是否在该分组
     }
+    // 普通用户的助手（不是自己的）：只有设置了 group 且用户在该分组才可见
+    if (doc.group && userGroups.includes(doc.group)) return true;
     return false;
   });
-  
+
   if (supportedIds?.length) {
     return filteredDocs.filter((doc) => supportedIds.includes(doc.assistant_id)).map(removeUserId);
   } else if (excludedIds?.length) {
@@ -285,19 +327,25 @@ const getAssistantDocuments = async (req, res) => {
     const endpoint = req.query?.endpoint;
     const assistantsConfig = appConfig.endpoints?.[endpoint];
     
-    // 查询条件：ADMIN 用户获取所有助手，普通用户获取自己的 + ADMIN 创建的助手
+    // 查询条件：ADMIN 用户获取所有助手，普通用户获取自己的 + ADMIN全局的 + 分组可见的
     let searchParams;
+    const userGroups = req.user.groups || [];
     if (req.user.role === SystemRoles.ADMIN) {
       // ADMIN 可以看到所有助手
       searchParams = {};
     } else {
-      // 普通用户：自己创建的 + ADMIN 创建的助手
-      searchParams = {
-        $or: [
-          { user: req.user.id },
-          { role: SystemRoles.ADMIN }
-        ]
-      };
+      // 普通用户：
+      //   1. 自己的助手
+      //   2. ADMIN 创建的无分组限制的助手（全局可见）
+      //   3. 有分组且用户属于该分组的助手均可见
+      const orConditions = [
+        { user: req.user.id },
+        { role: SystemRoles.ADMIN, $or: [{ group: { $exists: false } }, { group: null }, { group: '' }] },
+      ];
+      if (userGroups.length > 0) {
+        orConditions.push({ group: { $in: userGroups } });
+      }
+      searchParams = { $or: orConditions };
     }
     
     const documents = await getAssistants(
@@ -305,6 +353,7 @@ const getAssistantDocuments = async (req, res) => {
       {
         user: 1,
         role: 1,
+        group: 1,
         assistant_id: 1,
         conversation_starters: 1,
         createdAt: 1,
@@ -317,6 +366,7 @@ const getAssistantDocuments = async (req, res) => {
       documents,
       userId: req.user.id,
       userRole: req.user.role,
+      userGroups,
       assistantsConfig,
     });
     res.json(docs);

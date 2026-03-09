@@ -97,7 +97,7 @@ function AccountSettings() {
             className="select-item text-sm"
           >
             <Users className="icon-md" aria-hidden="true" />
-            用户管理
+            {localize('com_admin_user_management_title')}
           </Select.SelectItem>
         )}
         {isAdmin && (
@@ -107,7 +107,7 @@ function AccountSettings() {
             className="select-item text-sm"
           >
             <MessageSquare className="icon-md" aria-hidden="true" />
-            对话管理
+            {localize('com_admin_conv_title')}
           </Select.SelectItem>
         )}
         <DropdownMenuSeparator />

@@ -40,6 +40,7 @@ const keys = new Set([
   'model',
   'append_current_datetime',
   'data_sources', // ✨ Add this!
+  'group', // 分组可见性
 ]);
 
 export default function AssistantSelect({
@@ -144,6 +145,12 @@ export default function AssistantSelect({
             assistant.conversation_starters = assistantDoc.conversation_starters;
           }
           assistant.append_current_datetime = assistantDoc.append_current_datetime ?? false;
+          // 分组可见性字段
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const docAny = assistantDoc as any;
+          if (docAny.group !== undefined) {
+            assistant.group = docAny.group;
+          }
         }
 
         return assistant;
@@ -233,6 +240,11 @@ export default function AssistantSelect({
           return;
         }
 
+        if (name === 'group') {
+          formValues[name] = (value as string | null | undefined) ?? null;
+          return;
+        }
+
         if (typeof value !== 'number' && typeof value !== 'object') {
           formValues[name] = value;
         }
@@ -249,6 +261,7 @@ export default function AssistantSelect({
       endpoint,
       lastSelectedModels,
       toolkits,
+      documentsMap,
     ],
   );
 

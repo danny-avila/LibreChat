@@ -326,6 +326,8 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
 
   body.data = filterAssistants({
     userId: req.user.id,
+    userRole: req.user.role,
+    userGroups: req.user.groups || [],
     assistants: body.data,
     assistantsConfig: appConfig.endpoints?.[endpoint],
   });
@@ -353,47 +355,58 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
 //   return assistants;
 // }
 
-function filterAssistants({ assistants, userId, assistantsConfig }) {
+function filterAssistants({ assistants, userId, userRole, userGroups = [], assistantsConfig }) {
   const { supportedIds, excludedIds } = assistantsConfig;
-  
-  // 过滤助手：
-  // 1. 用户自己创建的助手总是可见
-  // 2. 其他用户创建的助手：
-  //    - 如果设置了 visibleTo，检查当前用户是否在列表中
-  //    - 如果没有设置 visibleTo，则默认对所有用户可见（管理员创建的助手）
+
+  // ADMIN 用户可以看到所有助手
+  if (userRole === SystemRoles.ADMIN) {
+    if (supportedIds?.length) {
+      return assistants.filter((assistant) => supportedIds.includes(assistant.id));
+    } else if (excludedIds?.length) {
+      return assistants.filter((assistant) => !excludedIds.includes(assistant.id));
+    }
+    return assistants;
+  }
+
+  // 普通用户过滤规则（基于 OpenAI metadata 字段）
   const filteredAssistants = assistants.filter((assistant) => {
     const authorId = assistant.metadata?.author;
-    
-    // 用户自己创建的助手总是可见
+    // 助手 metadata 中的 group（由这个服务器在保存时写入）
+    const group = assistant.metadata?.group;
+
+    // 自己创建的助手总是可见
     if (userId === authorId) {
       return true;
     }
-    
-    // 其他用户创建的助手
+
+    // 别人创建的助手
     if (authorId && authorId !== userId) {
-      // 如果设置了 visibleTo 字段，检查当前用户是否在列表中
-      if (assistant.metadata.visibleTo) {
-        // visibleTo 应该是一个用户ID数组
-        return Array.isArray(assistant.metadata.visibleTo) && 
-               assistant.metadata.visibleTo.includes(userId);
-      }
-      
-      // 没有 visibleTo 时，只有当作者角色是管理员才对所有用户可见
       const role = assistant.metadata?.role;
-      return typeof role === 'string' && role.toUpperCase() === SystemRoles.ADMIN;
+      const isAdminCreated = typeof role === 'string' && role.toUpperCase() === SystemRoles.ADMIN;
+
+      if (isAdminCreated) {
+        if (!group) return true; // ADMIN 全局助手（无分组限制，含空字符串和 null/undefined）
+        return userGroups.includes(group); // ADMIN 分组限制助手
+      }
+
+      // 普通用户的助手：设置了分组且用户属于该分组才可见
+      if (group && userGroups.includes(group)) return true;
+      return false;
     }
-    
-    // 没有作者信息的助手默认不可见
+
+    // 没有作者信息的助手（比如使用 visibleTo 机制的旧数据）
+    if (assistant.metadata?.visibleTo) {
+      return Array.isArray(assistant.metadata.visibleTo) &&
+             assistant.metadata.visibleTo.includes(userId);
+    }
     return false;
   });
-  
-  // 应用 supportedIds 和 excludedIds 过滤
+
   if (supportedIds?.length) {
     return filteredAssistants.filter((assistant) => supportedIds.includes(assistant.id));
   } else if (excludedIds?.length) {
     return filteredAssistants.filter((assistant) => !excludedIds.includes(assistant.id));
   }
-  
   return filteredAssistants;
 }
 

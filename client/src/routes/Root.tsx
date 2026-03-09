@@ -7,6 +7,7 @@ import {
   useAuthContext,
   useAgentsMap,
   useFileMap,
+  useLocalize,
 } from '~/hooks';
 import {
   PromptGroupsProvider,
@@ -32,6 +33,7 @@ export default function Root() {
   });
 
   const navigate = useNavigate();
+  const localize = useLocalize();
   const { isAuthenticated, logout } = useAuthContext();
 
   // Global health check - runs once per authenticated session
@@ -89,7 +91,7 @@ export default function Root() {
         <div className="flex h-screen w-full items-center justify-center bg-surface-primary">
           <div className="flex flex-col items-center gap-4">
             <Spinner className="h-8 w-8" />
-            <p className="text-text-secondary">验证登录状态...</p>
+            <p className="text-text-secondary">{localize('com_root_checking_auth')}</p>
           </div>
         </div>
       );
