@@ -140,6 +140,9 @@ export class ConnectionsRepository {
   }
 
   private isAllowedToConnectToServer(config: t.ParsedServerConfig) {
+    if (config.inspectionFailed) {
+      return false;
+    }
     //the repository is not allowed to be connected in case the Connection repository is shared (ownerId is undefined/null) and the server requires Auth or startup false.
     if (this.ownerId === undefined && (config.startup === false || config.requiresOAuth)) {
       return false;

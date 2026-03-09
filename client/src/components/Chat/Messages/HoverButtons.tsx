@@ -18,7 +18,7 @@ type THoverButtons = {
   message: TMessage;
   regenerate: () => void;
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  latestMessage: TMessage | null;
+  latestMessageId?: string;
   isLast: boolean;
   index: number;
   handleFeedback?: ({ feedback }: { feedback: TFeedback | undefined }) => void;
@@ -119,7 +119,7 @@ const HoverButtons = ({
   message,
   regenerate,
   handleContinue,
-  latestMessage,
+  latestMessageId,
   isLast,
   handleFeedback,
 }: THoverButtons) => {
@@ -143,7 +143,7 @@ const HoverButtons = ({
     searchResult: message.searchResult,
     finish_reason: message.finish_reason,
     isCreatedByUser: message.isCreatedByUser,
-    latestMessageId: latestMessage?.messageId,
+    latestMessageId: latestMessageId,
   });
 
   const {
@@ -239,7 +239,7 @@ const HoverButtons = ({
         messageId={message.messageId}
         conversationId={conversation.conversationId}
         forkingSupported={forkingSupported}
-        latestMessageId={latestMessage?.messageId}
+        latestMessageId={latestMessageId}
         isLast={isLast}
       />
 

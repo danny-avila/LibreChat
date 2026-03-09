@@ -1,15 +1,17 @@
 import { useCallback } from 'react';
-import useFileHandling from './useFileHandling';
-import useSharePointDownload from './useSharePointDownload';
 import type { EModelEndpoint } from 'librechat-data-provider';
 import type { SharePointFile } from '~/data-provider/Files/sharepoint';
+import type { FileHandlingState } from './useFileHandling';
+import useFileHandling, { useFileHandlingNoChatContext } from './useFileHandling';
+import useSharePointDownload from './useSharePointDownload';
 
 interface UseSharePointFileHandlingProps {
   fileSetter?: any;
   toolResource?: string;
   fileFilter?: (file: File) => boolean;
   additionalMetadata?: Record<string, string | undefined>;
-  endpointOverride?: EModelEndpoint;
+  endpointOverride?: EModelEndpoint | string;
+  endpointTypeOverride?: EModelEndpoint | string;
 }
 
 interface UseSharePointFileHandlingReturn {
@@ -23,6 +25,43 @@ export default function useSharePointFileHandling(
   props?: UseSharePointFileHandlingProps,
 ): UseSharePointFileHandlingReturn {
   const { handleFiles } = useFileHandling(props);
+  const { downloadSharePointFiles, isDownloading, downloadProgress, error } = useSharePointDownload(
+    {
+      onFilesDownloaded: async (downloadedFiles: File[]) => {
+        const fileArray = Array.from(downloadedFiles);
+        await handleFiles(fileArray, props?.toolResource);
+      },
+      onError: (error) => {
+        console.error('SharePoint download failed:', error);
+      },
+    },
+  );
+
+  const handleSharePointFiles = useCallback(
+    async (sharePointFiles: SharePointFile[]) => {
+      try {
+        await downloadSharePointFiles(sharePointFiles);
+      } catch (error) {
+        console.error('SharePoint file handling error:', error);
+        throw error;
+      }
+    },
+    [downloadSharePointFiles],
+  );
+
+  return {
+    handleSharePointFiles,
+    isProcessing: isDownloading,
+    downloadProgress,
+    error,
+  };
+}
+
+export function useSharePointFileHandlingNoChatContext(
+  props: UseSharePointFileHandlingProps | undefined,
+  fileState: FileHandlingState,
+): UseSharePointFileHandlingReturn {
+  const { handleFiles } = useFileHandlingNoChatContext(props, fileState);
 
   const { downloadSharePointFiles, isDownloading, downloadProgress, error } = useSharePointDownload(
     {
