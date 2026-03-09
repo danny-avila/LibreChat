@@ -314,6 +314,44 @@ describe('MCP reinitialize recovery – integration (issue #12143)', () => {
     expect(config2!.inspectionFailed).toBe(true);
   });
 
+  it('concurrent reinspectServer calls should not crash or corrupt state', async () => {
+    const deadPort = await getFreePort();
+    await MCPServersInitializer.initialize({
+      'race-server': {
+        type: 'streamable-http',
+        url: `http://127.0.0.1:${deadPort}/`,
+      },
+    });
+    expect((await registry.getServerConfig('race-server'))!.inspectionFailed).toBe(true);
+
+    server = await createMCPServerOnPort(deadPort);
+
+    // Simulate multiple users clicking Reinitialize at the same time.
+    // reinitMCPServer calls reinspectServer internally — this tests the critical section.
+    const n = 3 + Math.floor(Math.random() * 8); // 3–10 concurrent calls
+    const results = await Promise.allSettled(
+      Array.from({ length: n }, () => registry.reinspectServer('race-server', 'CACHE')),
+    );
+
+    const successes = results.filter((r) => r.status === 'fulfilled');
+    const failures = results.filter((r) => r.status === 'rejected');
+
+    // At least one must succeed
+    expect(successes.length).toBeGreaterThanOrEqual(1);
+
+    // Any failure must be the "not in a failed state" guard (the first call already
+    // replaced the stub), not an unhandled crash or data corruption.
+    for (const f of failures) {
+      expect((f as PromiseRejectedResult).reason.message).toMatch(/not in a failed state/);
+    }
+
+    // Final state must be fully recovered regardless of how many succeeded
+    const config = await registry.getServerConfig('race-server');
+    expect(config).toBeDefined();
+    expect(config!.inspectionFailed).toBeUndefined();
+    expect(config!.tools).toContain('echo');
+  });
+
   it('reinspectServer should throw MCPInspectionFailedError when the server is still unreachable', async () => {
     const deadPort = await getFreePort();
     const configs: t.MCPServers = {
