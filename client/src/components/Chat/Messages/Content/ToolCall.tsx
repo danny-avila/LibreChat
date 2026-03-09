@@ -10,7 +10,7 @@ import {
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { useMCPIconMap } from '~/hooks/MCP';
-import { ToolIcon, getToolIconType } from './ToolOutput';
+import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -98,8 +98,9 @@ export default function ToolCall({
     window.open(auth, '_blank', 'noopener,noreferrer');
   }, [auth, isMCPToolCall, mcpServerName, actionId]);
 
-  const error =
-    typeof output === 'string' && output.toLowerCase().includes('error processing tool');
+  const hasError = typeof output === 'string' && isError(output);
+  const cancelled = !isSubmitting && initialProgress < 1 && !hasError;
+  const errorState = hasError;
 
   const args = useMemo(() => {
     if (typeof _args === 'string') {
@@ -139,7 +140,17 @@ export default function ToolCall({
   }, [auth]);
 
   const progress = useProgress(initialProgress);
-  const cancelled = (!isSubmitting && progress < 1) || error === true;
+  const showCancelled = cancelled || (errorState && !output);
+
+  const subtitle = useMemo(() => {
+    if (isMCPToolCall && mcpServerName) {
+      return localize('com_ui_via_server', { 0: mcpServerName });
+    }
+    if (domain && domain.length !== Constants.ENCODED_DOMAIN_LENGTH) {
+      return localize('com_ui_via_server', { 0: domain });
+    }
+    return undefined;
+  }, [isMCPToolCall, mcpServerName, domain, localize]);
 
   const getFinishedText = () => {
     if (cancelled) {
@@ -170,19 +181,21 @@ export default function ToolCall({
               : localize('com_assistants_running_action')
           }
           authText={
-            !cancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
+            !showCancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
           }
           finishedText={getFinishedText()}
+          subtitle={subtitle}
+          errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ToolIcon
               type={toolIconType}
               iconUrl={mcpIconUrl}
-              isAnimating={progress < 1 && !cancelled}
+              isAnimating={progress < 1 && !showCancelled && !errorState}
             />
           }
           hasInput={hasInfo}
           isExpanded={showInfo}
-          error={cancelled}
+          error={showCancelled}
         />
       </div>
       <div style={expandStyle}>
@@ -194,7 +207,7 @@ export default function ToolCall({
           )}
         </div>
       </div>
-      {auth != null && auth && progress < 1 && !cancelled && (
+      {auth != null && auth && progress < 1 && !showCancelled && (
         <div className="flex w-full flex-col gap-2.5">
           <div className="mb-1 mt-2">
             <Button
