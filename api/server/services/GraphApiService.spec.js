@@ -52,6 +52,7 @@ describe('GraphApiService', () => {
   afterEach(() => {
     // Clean up environment variables
     delete process.env.OPENID_GRAPH_SCOPES;
+    delete process.env.PROXY;
   });
 
   beforeEach(async () => {
@@ -813,7 +814,6 @@ describe('GraphApiService', () => {
     });
 
     beforeEach(() => {
-      jest.resetModules();
       process.env = { ...originalEnv };
       jest.clearAllMocks();
     });
@@ -851,7 +851,7 @@ describe('GraphApiService', () => {
         }
       });
 
-      it('should pass correct proxy URL to ProxyAgent', async () => {
+      it('should create ProxyAgent dispatcher for any configured proxy URL', async () => {
         const proxyUrl = 'http://custom-proxy.example.com:3128';
         process.env.PROXY = proxyUrl;
         mockTokensCache.get.mockResolvedValue(null);
@@ -860,8 +860,6 @@ describe('GraphApiService', () => {
 
         const initCall = Client.init.mock.calls[0][0];
         expect(initCall.fetchOptions.dispatcher).toBeInstanceOf(ProxyAgent);
-        // ProxyAgent is initialized with the proxy URL
-        expect(initCall.fetchOptions.dispatcher).toBeDefined();
       });
     });
 
