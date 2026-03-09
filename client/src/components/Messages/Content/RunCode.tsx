@@ -98,8 +98,8 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
       <button
         type="button"
         className={cn(
-          'flex items-center justify-center rounded-sm text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-secondary focus:outline focus:outline-2 focus:outline-border-heavy',
-          iconOnly ? 'p-1.5' : 'ml-auto gap-2 px-2 py-1',
+          'flex items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-secondary focus:outline focus:outline-2 focus:outline-border-heavy',
+          iconOnly ? 'rounded-lg p-1.5' : 'ml-auto gap-2 px-2 py-1',
         )}
         onClick={debouncedExecute}
         disabled={execute.isLoading}
