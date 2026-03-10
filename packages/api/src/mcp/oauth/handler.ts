@@ -222,6 +222,27 @@ export class MCPOAuthHandler {
   }
 
   /**
+   * Discovers OAuth authorization server metadata with origin-URL fallback.
+   * If discovery fails for a path-based URL, retries with just the origin.
+   * Mirrors the fallback behavior in `discoverMetadata` and `initiateOAuthFlow`.
+   */
+  private static async discoverWithOriginFallback(
+    serverUrl: URL,
+    fetchFn: FetchLike,
+  ): ReturnType<typeof discoverAuthorizationServerMetadata> {
+    const metadata = await discoverAuthorizationServerMetadata(serverUrl, { fetchFn });
+    // If discovery failed and we're using a path-based URL, try the base URL
+    if (!metadata && serverUrl.pathname !== '/') {
+      const baseUrl = new URL(serverUrl.origin);
+      logger.debug(
+        `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+      );
+      return discoverAuthorizationServerMetadata(baseUrl, { fetchFn });
+    }
+    return metadata;
+  }
+
+  /**
    * Registers an OAuth client dynamically
    */
   private static async registerOAuthClient(
@@ -737,18 +758,7 @@ export class MCPOAuthHandler {
           /** Auto-discover OAuth configuration for refresh */
           const serverUrl = new URL(metadata.serverUrl);
           const fetchFn = this.createOAuthFetch(oauthHeaders);
-          let oauthMetadata = await discoverAuthorizationServerMetadata(serverUrl, { fetchFn });
-
-          // If discovery failed and we're using a path-based URL, try the base URL
-          if (!oauthMetadata && serverUrl.pathname !== '/') {
-            const baseUrl = new URL(serverUrl.origin);
-            logger.debug(
-              `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
-            );
-            oauthMetadata = await discoverAuthorizationServerMetadata(baseUrl, {
-              fetchFn,
-            });
-          }
+          const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
           if (!oauthMetadata) {
             /**
@@ -925,18 +935,7 @@ export class MCPOAuthHandler {
       /** Auto-discover OAuth configuration for refresh */
       const serverUrl = new URL(metadata.serverUrl);
       const fetchFn = this.createOAuthFetch(oauthHeaders);
-      let oauthMetadata = await discoverAuthorizationServerMetadata(serverUrl, { fetchFn });
-
-      // If discovery failed and we're using a path-based URL, try the base URL
-      if (!oauthMetadata && serverUrl.pathname !== '/') {
-        const baseUrl = new URL(serverUrl.origin);
-        logger.debug(
-          `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
-        );
-        oauthMetadata = await discoverAuthorizationServerMetadata(baseUrl, {
-          fetchFn,
-        });
-      }
+      const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
       let tokenUrl: URL;
       if (!oauthMetadata?.token_endpoint) {
