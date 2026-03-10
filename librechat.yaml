@@ -336,7 +336,7 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
   custom:
-    - name: "TAIA"
+    - name: "TAIA-dev"
       apiKey: "taia"
       iconURL: "/assets/logo.png"
       baseURL: "http://ollama:11434/v1" 
@@ -347,9 +347,10 @@ endpoints:
       titleConvo: true
       titleModel: "qwen3.5:4b"
 
-    - name: "vLLM-Production"
+    - name: "TAIA-Production"
       baseURL: "http://vllm:8000/v1"
       apiKey: "sk-enterprise-secure-key"
+      iconURL: "/assets/logo.png"
       models:
         default: [ "meta-llama/Llama-3.3-70B-Instruct" ]
         fetch: false
