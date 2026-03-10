@@ -57,12 +57,15 @@ export abstract class UserConnectionManager {
     }
 
     const connectionPromise = this.createUserConnectionInternal(opts, userId);
-    this.pendingConnections.set(lockKey, connectionPromise);
+
+    if (!forceNew) {
+      this.pendingConnections.set(lockKey, connectionPromise);
+    }
 
     try {
       return await connectionPromise;
     } finally {
-      if (this.pendingConnections.get(lockKey) === connectionPromise) {
+      if (!forceNew && this.pendingConnections.get(lockKey) === connectionPromise) {
         this.pendingConnections.delete(lockKey);
       }
     }
