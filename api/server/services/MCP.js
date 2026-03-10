@@ -34,11 +34,27 @@ const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
+const MAX_CACHE_SIZE = 1000;
 const lastReconnectAttempts = new Map();
 const RECONNECT_THROTTLE_MS = 10_000;
 
 const missingToolCache = new Map();
 const MISSING_TOOL_TTL_MS = 10_000;
+
+function evictStale(map, ttl) {
+  if (map.size <= MAX_CACHE_SIZE) {
+    return;
+  }
+  const now = Date.now();
+  for (const [key, timestamp] of map) {
+    if (now - timestamp >= ttl) {
+      map.delete(key);
+    }
+    if (map.size <= MAX_CACHE_SIZE) {
+      return;
+    }
+  }
+}
 
 const unavailableMsg =
   "This tool's MCP server is temporarily unavailable. Please try again shortly.";
@@ -253,6 +269,7 @@ async function reconnectServer({
     return null;
   }
   lastReconnectAttempts.set(throttleKey, now);
+  evictStale(lastReconnectAttempts, RECONNECT_THROTTLE_MS);
 
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${user.id}:${serverName}:${Date.now()}`;
@@ -473,6 +490,7 @@ async function createMCPTool({
 
     if (!toolDefinition) {
       missingToolCache.set(toolKey, Date.now());
+      evictStale(missingToolCache, MISSING_TOOL_TTL_MS);
     }
   }
 
