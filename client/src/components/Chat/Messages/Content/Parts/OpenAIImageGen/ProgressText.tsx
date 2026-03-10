@@ -87,7 +87,9 @@ export default function ProgressText({
       type="button"
       className={cn(
         'progress-text-content absolute left-0 top-0 inline-flex w-full items-center gap-2 overflow-visible whitespace-nowrap',
-        !hasInput && 'pointer-events-none',
+        hasInput
+          ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
+          : 'pointer-events-none',
       )}
       disabled={!hasInput}
       onClick={hasInput ? onClick : undefined}

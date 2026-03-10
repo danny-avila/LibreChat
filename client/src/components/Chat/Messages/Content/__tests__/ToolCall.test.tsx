@@ -21,6 +21,15 @@ jest.mock('~/hooks', () => ({
     return translations[key] || key;
   },
   useProgress: (initialProgress: number) => (initialProgress >= 1 ? 1 : initialProgress),
+  useExpandCollapse: (isExpanded: boolean) => ({
+    display: 'grid',
+    gridTemplateRows: isExpanded ? '1fr' : '0fr',
+    opacity: isExpanded ? 1 : 0,
+  }),
+}));
+
+jest.mock('~/hooks/MCP', () => ({
+  useMCPIconMap: () => ({}),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/MessageContent', () => ({
@@ -377,6 +386,24 @@ describe('ToolCall', () => {
 
       const attachmentGroup = screen.getByTestId('attachment-group');
       expect(JSON.parse(attachmentGroup.textContent!)).toEqual(complexAttachments);
+    });
+  });
+
+  describe('A11Y-04: screen reader status announcements', () => {
+    it('includes sr-only aria-live region for status announcements', () => {
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          initialProgress={1}
+          isSubmitting={false}
+          name="test_func"
+          output="result"
+        />,
+      );
+
+      const liveRegion = document.querySelector('[aria-live="polite"]');
+      expect(liveRegion).not.toBeNull();
+      expect(liveRegion!.className).toContain('sr-only');
     });
   });
 });

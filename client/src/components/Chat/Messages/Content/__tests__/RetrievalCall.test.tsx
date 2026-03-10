@@ -168,3 +168,17 @@ describe('RetrievalCall - LGCY-03: Localization', () => {
     expect(container.textContent).not.toContain('Used Retrieval');
   });
 });
+
+describe('RetrievalCall - A11Y-04: screen reader status announcements', () => {
+  it('includes sr-only aria-live region for status announcements', () => {
+    renderRetrievalCall({
+      initialProgress: 1,
+      isSubmitting: false,
+      output: 'files found',
+    });
+
+    const liveRegion = document.querySelector('[aria-live="polite"]');
+    expect(liveRegion).not.toBeNull();
+    expect(liveRegion!.className).toContain('sr-only');
+  });
+});

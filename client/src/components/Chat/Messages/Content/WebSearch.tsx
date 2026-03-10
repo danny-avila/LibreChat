@@ -179,12 +179,17 @@ export default function WebSearch({
           className={cn(
             'group flex items-center gap-2 rounded-full py-1 text-sm transition-colors',
             hasSourceData
-              ? 'text-text-secondary hover:text-text-primary'
+              ? 'text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
               : 'pointer-events-none text-text-secondary',
           )}
           disabled={!hasSourceData}
           onClick={hasSourceData ? () => setShowSourceList((prev) => !prev) : undefined}
           aria-expanded={hasSourceData ? showSourceList : undefined}
+          aria-label={
+            hasSourceData
+              ? `${completedText} - ${sourceCount} ${sourceCount === 1 ? 'source' : 'sources'}`
+              : completedText
+          }
         >
           {hasSourceData ? (
             <SourceFaviconStack sources={allSources} />
