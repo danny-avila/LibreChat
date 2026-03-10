@@ -49,7 +49,7 @@ const unavailableMsg =
  */
 function createUnavailableToolStub(toolName, serverName) {
   const normalizedToolKey = `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
-  const _call = async () => unavailableMsg;
+  const _call = async () => [unavailableMsg, null];
   const toolInstance = tool(_call, {
     schema: {
       type: 'object',
@@ -373,6 +373,10 @@ async function createMCPTools({
     userMCPAuthMap,
     streamId,
   });
+  if (result === null) {
+    logger.debug(`[MCP][${serverName}] Reconnect throttled, skipping tool creation.`);
+    return [];
+  }
   if (!result || !result.tools) {
     logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
     return [];
