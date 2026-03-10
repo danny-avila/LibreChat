@@ -25,6 +25,9 @@ jest.mock('~/hooks', () => ({
   }),
 }));
 
+const getProgressLabel = (progress: number) =>
+  progress >= 1 ? 'Image created' : 'Generating image...';
+
 jest.mock('../Parts/OpenAIImageGen/ProgressText', () => ({
   __esModule: true,
   default: ({
@@ -52,7 +55,7 @@ jest.mock('../Parts/OpenAIImageGen/ProgressText', () => ({
       onClick={onClick}
       type="button"
     >
-      {error ? 'Error' : progress >= 1 ? 'Image created' : 'Generating image...'}
+      {error ? 'Error' : getProgressLabel(progress)}
     </button>
   ),
 }));

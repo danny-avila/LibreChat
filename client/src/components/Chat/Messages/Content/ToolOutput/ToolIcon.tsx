@@ -1,5 +1,14 @@
-import { Constants } from 'librechat-data-provider';
-import { Plug, Terminal, Globe, ImageIcon, ArrowRightLeft, FileSearch, Wrench } from 'lucide-react';
+import { Constants, actionDelimiter } from 'librechat-data-provider';
+import {
+  Plug,
+  Terminal,
+  Globe,
+  ImageIcon,
+  ArrowRightLeft,
+  FileSearch,
+  Zap,
+  Wrench,
+} from 'lucide-react';
 import { cn } from '~/utils';
 
 export type ToolIconType =
@@ -9,6 +18,7 @@ export type ToolIconType =
   | 'image_gen'
   | 'agent_handoff'
   | 'file_search'
+  | 'action'
   | 'generic';
 
 const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>> = {
@@ -18,6 +28,7 @@ const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>
   image_gen: ImageIcon,
   agent_handoff: ArrowRightLeft,
   file_search: FileSearch,
+  action: Zap,
   generic: Wrench,
 };
 
@@ -39,6 +50,9 @@ export function getToolIconType(name: string): ToolIconType {
   }
   if (name.startsWith(Constants.LC_TRANSFER_TO_)) {
     return 'agent_handoff';
+  }
+  if (name.includes(actionDelimiter)) {
+    return 'action';
   }
   return 'generic';
 }

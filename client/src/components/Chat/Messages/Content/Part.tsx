@@ -225,6 +225,7 @@ const Part = memo(function Part({
           args={toolCall.function.arguments as string}
           isSubmitting={isSubmitting}
           toolName={toolCall.function.name}
+          output={toolCall.function.output ?? ''}
         />
       );
     } else if (toolCall.type === ToolCallTypes.FUNCTION && ToolCallTypes.FUNCTION in toolCall) {
@@ -238,6 +239,9 @@ const Part = memo(function Part({
         }
         return null;
       }
+
+
+
 
 
 
