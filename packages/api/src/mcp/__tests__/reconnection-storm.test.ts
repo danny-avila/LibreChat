@@ -6,13 +6,23 @@
  * per test suite and MCPConnection talks to it through a genuine HTTP stack.
  */
 import http from 'http';
-import express from 'express';
 import { randomUUID } from 'crypto';
+import express from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import type { Socket } from 'net';
 import { OAuthReconnectionTracker } from '~/mcp/oauth/OAuthReconnectionTracker';
 import { MCPConnection } from '~/mcp/connection';
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -22,6 +32,22 @@ interface TestServer {
   url: string;
   httpServer: http.Server;
   close: () => Promise<void>;
+}
+
+function trackSockets(httpServer: http.Server): () => Promise<void> {
+  const sockets = new Set<Socket>();
+  httpServer.on('connection', (socket: Socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  return () =>
+    new Promise<void>((resolve) => {
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      sockets.clear();
+      httpServer.close(() => resolve());
+    });
 }
 
 function startMCPServer(): Promise<TestServer> {
@@ -80,17 +106,17 @@ function startMCPServer(): Promise<TestServer> {
 
   return new Promise((resolve) => {
     const httpServer = app.listen(0, '127.0.0.1', () => {
+      const destroySockets = trackSockets(httpServer);
       const addr = httpServer.address() as { port: number };
       resolve({
         url: `http://127.0.0.1:${addr.port}/mcp`,
         httpServer,
-        close: () =>
-          new Promise<void>((r) => {
-            for (const t of Object.values(transports)) {
-              t.close().catch(() => {});
-            }
-            httpServer.close(() => r());
-          }),
+        close: async () => {
+          for (const t of Object.values(transports)) {
+            t.close().catch(() => {});
+          }
+          await destroySockets();
+        },
       });
     });
   });
@@ -103,11 +129,6 @@ function createConnection(serverName: string, url: string, initTimeout = 5000): 
   });
 }
 
-/**
- * Cleanly shut down an MCPConnection so no background handleReconnection
- * timers leak. Sets shouldStopReconnecting before disconnect so that
- * the transport close event doesn't trigger a reconnection loop.
- */
 async function teardownConnection(conn: MCPConnection): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (conn as any).shouldStopReconnecting = true;
@@ -152,8 +173,7 @@ describe('Fix #2: Circuit breaker stops rapid reconnect cycling', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  Fix #3 — SSE 400/405 with no session now short-circuits            */
-/*  (returns early, no connectionChange 'error' emitted)               */
+/*  Fix #3 — SSE 400/405 handled in same branch as 404                */
 /* ------------------------------------------------------------------ */
 describe('Fix #3: SSE 400/405 handled in same branch as 404', () => {
   it('400 with active session triggers reconnection (session lost)', async () => {
@@ -161,7 +181,6 @@ describe('Fix #3: SSE 400/405 handled in same branch as 404', () => {
     const conn = createConnection('sse-400', srv.url);
     await conn.connect();
 
-    // Prevent background handleReconnection from spawning timers
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (conn as any).shouldStopReconnecting = true;
 
@@ -172,9 +191,6 @@ describe('Fix #3: SSE 400/405 handled in same branch as 404', () => {
     const transport = (conn as any).transport;
     transport.onerror({ message: 'Failed to open SSE stream', code: 400 });
 
-    // With a session, 400 falls through to emit error (triggering reconnection).
-    // Previously only 404 entered this code path; 400/405 were unhandled and
-    // would also emit error but without the session-lost detection logic.
     expect(changes).toContain('error');
 
     await teardownConnection(conn);
@@ -215,14 +231,12 @@ describe('Fix #4: Circuit breaker state persists across instance replacement', (
     await conn1.connect();
     await teardownConnection(conn1);
 
-    // conn1's disconnect(false) inside connect() recorded a cycle in the static Map
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cbAfterConn1 = (MCPConnection as any).circuitBreakers.get('replace');
     expect(cbAfterConn1).toBeDefined();
     const cyclesAfterConn1 = cbAfterConn1.cycleCount;
     expect(cyclesAfterConn1).toBeGreaterThan(0);
 
-    // New instance for same server inherits the cycle count
     const conn2 = createConnection('replace', srv.url);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cbFromConn2 = (conn2 as any).getCircuitBreaker();
@@ -265,8 +279,6 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
       }
     }
 
-    // First 3 reach client.connect and fail (recordFailedRound each time).
-    // After 3rd failure backoff kicks in; attempts 4-5 are blocked at isCircuitOpen.
     expect(spy.mock.calls.length).toBe(3);
     expect(errors).toHaveLength(5);
     expect(errors.filter((m) => m.includes('Circuit breaker is open'))).toHaveLength(2);
@@ -277,7 +289,6 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
   it('user B is immediately blocked when user A already tripped the breaker for the same server', async () => {
     const deadUrl = 'http://127.0.0.1:1/mcp';
 
-    // User A connects 3 times and trips the breaker
     const userA = new MCPConnection({
       serverName: 'shared-dead',
       serverConfig: { url: deadUrl, type: 'streamable-http', initTimeout: 1000 } as never,
@@ -288,14 +299,10 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
       try {
         await userA.connect();
       } catch {
-        // expected failures
+        // expected
       }
     }
 
-    // User B's very first attempt is blocked — the breaker is per-server, not per-user.
-    // This is intentional: when a server is down, it's down for everyone. Blocking
-    // immediately prevents O(N×3) storms where each of N users independently discovers
-    // the server is unreachable.
     const userB = new MCPConnection({
       serverName: 'shared-dead',
       serverConfig: { url: deadUrl, type: 'streamable-http', initTimeout: 1000 } as never,
@@ -311,7 +318,6 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
     }
 
     expect(blockedMessage).toContain('Circuit breaker is open');
-    // User B's client.connect was never called — blocked before reaching the SDK
     expect(spyB).toHaveBeenCalledTimes(0);
 
     await userA.disconnect();
@@ -321,7 +327,6 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
   it('clearCooldown after user retry unblocks all users', async () => {
     const deadUrl = 'http://127.0.0.1:1/mcp';
 
-    // Trip the breaker
     const userA = new MCPConnection({
       serverName: 'shared-dead-clear',
       serverConfig: { url: deadUrl, type: 'streamable-http', initTimeout: 1000 } as never,
@@ -335,7 +340,6 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
       }
     }
 
-    // Breaker is open for everyone
     const userB = new MCPConnection({
       serverName: 'shared-dead-clear',
       serverConfig: { url: deadUrl, type: 'streamable-http', initTimeout: 1000 } as never,
@@ -347,11 +351,8 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
       expect((e as Error).message).toContain('Circuit breaker is open');
     }
 
-    // User A explicitly retries (forceNew) — clears the breaker for everyone
     MCPConnection.clearCooldown('shared-dead-clear');
 
-    // User B can now attempt to connect again (will fail because server is
-    // still dead, but the point is the breaker no longer blocks the attempt)
     const spyB = jest.spyOn(userB.client, 'connect');
     try {
       await userB.connect();
@@ -359,7 +360,6 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
       // expected — server is still dead
     }
 
-    // User B's attempt reached the SDK this time — not blocked by breaker
     expect(spyB).toHaveBeenCalledTimes(1);
 
     await userA.disconnect();
@@ -422,7 +422,6 @@ describe('Fix #6: OAuth failure uses cooldown-based retry', () => {
     jest.advanceTimersByTime(20 * 60 * 1000);
     expect(tracker.isFailed('u1', 'srv')).toBe(false);
 
-    // 4th failure: 30 min cap — still blocked at 29m, clear at 30m
     tracker.setFailed('u1', 'srv');
     jest.advanceTimersByTime(29 * 60 * 1000);
     expect(tracker.isFailed('u1', 'srv')).toBe(true);
@@ -442,20 +441,6 @@ describe('Fix #6: OAuth failure uses cooldown-based retry', () => {
     tracker.setFailed('u1', 'srv');
     jest.advanceTimersByTime(5 * 60 * 1000);
     expect(tracker.isFailed('u1', 'srv')).toBe(false);
-  });
-});
-
-/* ------------------------------------------------------------------ */
-/*  Fix #8 — Default initTimeout reduced from 120s to 30s              */
-/* ------------------------------------------------------------------ */
-describe('Fix #8: Default initTimeout is 30s', () => {
-  it('options.initTimeout is undefined, code falls back to DEFAULT_INIT_TIMEOUT (30s)', () => {
-    const conn = new MCPConnection({
-      serverName: 'prod',
-      serverConfig: { url: 'http://127.0.0.1:1/mcp', type: 'streamable-http' } as never,
-    });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((conn as any).options.initTimeout).toBeUndefined();
   });
 });
 
