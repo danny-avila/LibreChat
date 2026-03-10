@@ -213,7 +213,7 @@ export class OAuthReconnectionManager {
       identifier: `mcp:${serverName}:refresh`,
     });
 
-    if (refreshToken == null && accessToken == null) {
+    if (refreshToken == null) {
       return false;
     }
 

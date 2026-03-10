@@ -245,13 +245,14 @@ async function reconnectServer({
     `[MCP][reconnectServer] serverName: ${serverName}, user: ${user?.id}, hasUserMCPAuthMap: ${!!userMCPAuthMap}`,
   );
 
+  const throttleKey = `${user.id}:${serverName}`;
   const now = Date.now();
-  const lastAttempt = lastReconnectAttempts.get(serverName) ?? 0;
+  const lastAttempt = lastReconnectAttempts.get(throttleKey) ?? 0;
   if (now - lastAttempt < RECONNECT_THROTTLE_MS) {
     logger.debug(`[MCP][reconnectServer] Throttled reconnect for ${serverName}`);
     return null;
   }
-  lastReconnectAttempts.set(serverName, now);
+  lastReconnectAttempts.set(throttleKey, now);
 
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${user.id}:${serverName}:${Date.now()}`;
