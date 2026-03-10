@@ -735,9 +735,21 @@ export class MCPOAuthHandler {
           throw new Error('No token URL available for refresh');
         } else {
           /** Auto-discover OAuth configuration for refresh */
-          const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl, {
-            fetchFn: this.createOAuthFetch(oauthHeaders),
-          });
+          const serverUrl = new URL(metadata.serverUrl);
+          const fetchFn = this.createOAuthFetch(oauthHeaders);
+          let oauthMetadata = await discoverAuthorizationServerMetadata(serverUrl, { fetchFn });
+
+          // If discovery failed and we're using a path-based URL, try the base URL
+          if (!oauthMetadata && serverUrl.pathname !== '/') {
+            const baseUrl = new URL(serverUrl.origin);
+            logger.debug(
+              `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+            );
+            oauthMetadata = await discoverAuthorizationServerMetadata(baseUrl, {
+              fetchFn,
+            });
+          }
+
           if (!oauthMetadata) {
             /**
              * No metadata discovered - use fallback /token endpoint.
@@ -911,9 +923,20 @@ export class MCPOAuthHandler {
       }
 
       /** Auto-discover OAuth configuration for refresh */
-      const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl, {
-        fetchFn: this.createOAuthFetch(oauthHeaders),
-      });
+      const serverUrl = new URL(metadata.serverUrl);
+      const fetchFn = this.createOAuthFetch(oauthHeaders);
+      let oauthMetadata = await discoverAuthorizationServerMetadata(serverUrl, { fetchFn });
+
+      // If discovery failed and we're using a path-based URL, try the base URL
+      if (!oauthMetadata && serverUrl.pathname !== '/') {
+        const baseUrl = new URL(serverUrl.origin);
+        logger.debug(
+          `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+        );
+        oauthMetadata = await discoverAuthorizationServerMetadata(baseUrl, {
+          fetchFn,
+        });
+      }
 
       let tokenUrl: URL;
       if (!oauthMetadata?.token_endpoint) {
