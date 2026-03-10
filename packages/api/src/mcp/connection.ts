@@ -281,6 +281,7 @@ export class MCPConnection extends EventEmitter {
   private oauthTokens?: MCPOAuthTokens | null;
   private requestHeaders?: Record<string, string> | null;
   private oauthRequired = false;
+  private oauthRecovery = false;
   private readonly useSSRFProtection: boolean;
   iconPath?: string;
   timeout?: number;
@@ -365,6 +366,13 @@ export class MCPConnection extends EventEmitter {
     cb.failedRounds = 0;
     cb.failedWindowStart = Date.now();
     cb.failedBackoffUntil = 0;
+  }
+
+  private decrementCycleCount(): void {
+    const cb = this.getCircuitBreaker();
+    if (cb.cycleCount > 0) {
+      cb.cycleCount--;
+    }
   }
 
   setRequestHeaders(headers: Record<string, string> | null): void {
@@ -816,6 +824,10 @@ export class MCPConnection extends EventEmitter {
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
         this.resetFailedRounds();
+        if (this.oauthRecovery) {
+          this.decrementCycleCount();
+          this.oauthRecovery = false;
+        }
       } catch (error) {
         // Check if it's a rate limit error - stop immediately to avoid making it worse
         if (this.isRateLimitError(error)) {
@@ -899,9 +911,8 @@ export class MCPConnection extends EventEmitter {
           try {
             // Wait for OAuth to be handled
             await oauthHandledPromise;
-            // Reset the oauthRequired flag
             this.oauthRequired = false;
-            // Don't throw the error - just return so connection can be retried
+            this.oauthRecovery = true;
             logger.info(
               `${this.getLogPrefix()} OAuth handled successfully, connection will be retried`,
             );
