@@ -5,6 +5,16 @@ import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 
 export const PENDING_STALE_MS = 2 * 60 * 1000;
 
+const SECONDS_THRESHOLD = 1e10;
+
+/**
+ * Normalizes an expiration timestamp to milliseconds.
+ * Timestamps below 10 billion are assumed to be in seconds (valid until ~2286).
+ */
+export function normalizeExpiresAt(timestamp: number): number {
+  return timestamp < SECONDS_THRESHOLD ? timestamp * 1000 : timestamp;
+}
+
 export class FlowStateManager<T = unknown> {
   private keyv: Keyv;
   private ttl: number;
@@ -47,32 +57,8 @@ export class FlowStateManager<T = unknown> {
     return `${type}:${flowId}`;
   }
 
-  /**
-   * Normalizes an expiration timestamp to milliseconds.
-   * Detects whether the input is in seconds or milliseconds based on magnitude.
-   * Timestamps below 10 billion are assumed to be in seconds (valid until ~2286).
-   * @param timestamp - The expiration timestamp (in seconds or milliseconds)
-   * @returns The timestamp normalized to milliseconds
-   */
-  private normalizeExpirationTimestamp(timestamp: number): number {
-    const SECONDS_THRESHOLD = 1e10;
-    if (timestamp < SECONDS_THRESHOLD) {
-      return timestamp * 1000;
-    }
-    return timestamp;
-  }
-
-  /**
-   * Checks if a flow's token has expired based on its expires_at field
-   * @param flowState - The flow state to check
-   * @returns true if the token has expired, false otherwise (including if no expires_at exists)
-   */
   private isTokenExpired(flowState: FlowState<T> | undefined): boolean {
-    if (!flowState?.result) {
-      return false;
-    }
-
-    if (typeof flowState.result !== 'object') {
+    if (!flowState?.result || typeof flowState.result !== 'object') {
       return false;
     }
 
@@ -81,13 +67,11 @@ export class FlowStateManager<T = unknown> {
     }
 
     const expiresAt = (flowState.result as { expires_at: unknown }).expires_at;
-
     if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
       return false;
     }
 
-    const normalizedExpiresAt = this.normalizeExpirationTimestamp(expiresAt);
-    return normalizedExpiresAt < Date.now();
+    return normalizeExpiresAt(expiresAt) < Date.now();
   }
 
   /**

@@ -13,7 +13,7 @@
 
 import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
-import { FlowStateManager } from '~/flow/manager';
+import { FlowStateManager, PENDING_STALE_MS } from '~/flow/manager';
 import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
 import { MockKeyv, InMemoryTokenStore, createOAuthMCPServer } from './helpers/oauthTestServer';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
@@ -629,7 +629,6 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
 
       // A new flow should be created (the stale one would be deleted + recreated)
       // This verifies our staleness check threshold
-      const PENDING_STALE_MS = 2 * 60 * 1000;
       expect(age > PENDING_STALE_MS).toBe(true);
     });
 
@@ -649,7 +648,6 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       const state = await flowManager.getFlowState(flowId, 'mcp_oauth');
       const age = state?.createdAt ? Date.now() - state.createdAt : Infinity;
 
-      const PENDING_STALE_MS = 2 * 60 * 1000;
       expect(age < PENDING_STALE_MS).toBe(true);
     });
   });

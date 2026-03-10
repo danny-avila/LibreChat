@@ -6,7 +6,7 @@ import type { MCPOAuthTokens, OAuthMetadata, MCPOAuthFlowMetadata } from '~/mcp/
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
-import { PENDING_STALE_MS } from '~/flow/manager';
+import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
@@ -555,7 +555,8 @@ export class MCPConnectionFactory {
             : Infinity;
           const cachedTokens = existingFlow.result as MCPOAuthTokens | null | undefined;
           const isTokenExpired =
-            cachedTokens?.expires_at != null && cachedTokens.expires_at < Date.now();
+            cachedTokens?.expires_at != null &&
+            normalizeExpiresAt(cachedTokens.expires_at) < Date.now();
 
           if (completedAge <= PENDING_STALE_MS && cachedTokens !== undefined && !isTokenExpired) {
             logger.debug(

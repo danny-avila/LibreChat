@@ -5,6 +5,7 @@
  * using a real test OAuth server (not mocked SDK functions).
  */
 
+import { createHash } from 'crypto';
 import { Keyv } from 'keyv';
 import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
 import { FlowStateManager } from '~/flow/manager';
@@ -439,6 +440,99 @@ describe('MCP OAuth Flow — Real HTTP Server', () => {
       expect(secondRes.status).toBe(400);
       const body = (await secondRes.json()) as { error: string };
       expect(body.error).toBe('invalid_grant');
+    });
+  });
+
+  describe('PKCE verification', () => {
+    let server: OAuthTestServer;
+
+    beforeEach(async () => {
+      server = await createOAuthMCPServer({ tokenTTLMs: 60000 });
+    });
+
+    afterEach(async () => {
+      await server.close();
+    });
+
+    function generatePKCE(): { verifier: string; challenge: string } {
+      const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      return { verifier, challenge };
+    }
+
+    it('should accept valid code_verifier matching code_challenge', async () => {
+      const { verifier, challenge } = generatePKCE();
+
+      const authRes = await fetch(
+        `${server.url}authorize?redirect_uri=http://localhost&state=test&code_challenge=${challenge}&code_challenge_method=S256`,
+        { redirect: 'manual' },
+      );
+      const location = authRes.headers.get('location') ?? '';
+      const code = new URL(location).searchParams.get('code') ?? '';
+
+      const tokenRes = await fetch(`${server.url}token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=authorization_code&code=${code}&code_verifier=${verifier}`,
+      });
+
+      expect(tokenRes.status).toBe(200);
+      const data = (await tokenRes.json()) as { access_token: string };
+      expect(data.access_token).toBeDefined();
+    });
+
+    it('should reject wrong code_verifier', async () => {
+      const { challenge } = generatePKCE();
+
+      const authRes = await fetch(
+        `${server.url}authorize?redirect_uri=http://localhost&state=test&code_challenge=${challenge}&code_challenge_method=S256`,
+        { redirect: 'manual' },
+      );
+      const location = authRes.headers.get('location') ?? '';
+      const code = new URL(location).searchParams.get('code') ?? '';
+
+      const tokenRes = await fetch(`${server.url}token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=authorization_code&code=${code}&code_verifier=wrong-verifier`,
+      });
+
+      expect(tokenRes.status).toBe(400);
+      const body = (await tokenRes.json()) as { error: string };
+      expect(body.error).toBe('invalid_grant');
+    });
+
+    it('should reject missing code_verifier when code_challenge was provided', async () => {
+      const { challenge } = generatePKCE();
+
+      const authRes = await fetch(
+        `${server.url}authorize?redirect_uri=http://localhost&state=test&code_challenge=${challenge}&code_challenge_method=S256`,
+        { redirect: 'manual' },
+      );
+      const location = authRes.headers.get('location') ?? '';
+      const code = new URL(location).searchParams.get('code') ?? '';
+
+      const tokenRes = await fetch(`${server.url}token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=authorization_code&code=${code}`,
+      });
+
+      expect(tokenRes.status).toBe(400);
+      const body = (await tokenRes.json()) as { error: string };
+      expect(body.error).toBe('invalid_grant');
+    });
+
+    it('should still accept codes without PKCE when no code_challenge was provided', async () => {
+      const code = await server.getAuthCode();
+
+      const tokenRes = await fetch(`${server.url}token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=authorization_code&code=${code}`,
+      });
+
+      expect(tokenRes.status).toBe(200);
     });
   });
 });

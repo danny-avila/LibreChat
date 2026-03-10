@@ -299,7 +299,13 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     const toolFlowId = flowState.metadata?.toolFlowId;
     if (toolFlowId) {
       logger.debug('[MCP OAuth] Completing tool flow', { toolFlowId });
-      await flowManager.completeFlow(toolFlowId, 'mcp_oauth', tokens);
+      const completed = await flowManager.completeFlow(toolFlowId, 'mcp_oauth', tokens);
+      if (!completed) {
+        logger.warn(
+          '[MCP OAuth] Tool flow state not found during completion — waiter will time out',
+          { toolFlowId },
+        );
+      }
     }
 
     /** Redirect to success page with flowId and serverName */

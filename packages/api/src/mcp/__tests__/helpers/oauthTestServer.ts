@@ -1,6 +1,6 @@
 import * as http from 'http';
 import * as net from 'net';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -107,7 +107,7 @@ export async function createOAuthMCPServer(
   const tokenIssueTimes = new Map<string, number>();
   const issuedRefreshTokens = new Map<string, string>();
   const refreshTokenIssueTimes = new Map<string, number>();
-  const authCodes = new Set<string>();
+  const authCodes = new Map<string, { codeChallenge?: string; codeChallengeMethod?: string }>();
   const registeredClients = new Map<string, { client_id: string; client_secret: string }>();
 
   let port = 0;
@@ -153,7 +153,9 @@ export async function createOAuthMCPServer(
 
     if (url.pathname === '/authorize') {
       const code = randomUUID();
-      authCodes.add(code);
+      const codeChallenge = url.searchParams.get('code_challenge') ?? undefined;
+      const codeChallengeMethod = url.searchParams.get('code_challenge_method') ?? undefined;
+      authCodes.set(code, { codeChallenge, codeChallengeMethod });
       const redirectUri = url.searchParams.get('redirect_uri') ?? '';
       const state = url.searchParams.get('state') ?? '';
       res.writeHead(302, {
@@ -176,11 +178,30 @@ export async function createOAuthMCPServer(
 
       if (grantType === 'authorization_code') {
         const code = params.get('code');
-        if (!code || !authCodes.has(code)) {
+        const codeData = code ? authCodes.get(code) : undefined;
+        if (!code || !codeData) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'invalid_grant' }));
           return;
         }
+
+        if (codeData.codeChallenge) {
+          const codeVerifier = params.get('code_verifier');
+          if (!codeVerifier) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'invalid_grant' }));
+            return;
+          }
+          if (codeData.codeChallengeMethod === 'S256') {
+            const expected = createHash('sha256').update(codeVerifier).digest('base64url');
+            if (expected !== codeData.codeChallenge) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'invalid_grant' }));
+              return;
+            }
+          }
+        }
+
         authCodes.delete(code);
 
         const accessToken = randomUUID();
