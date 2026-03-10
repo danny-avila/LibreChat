@@ -1,58 +1,52 @@
-import ProgressCircle from './ProgressCircle';
-import InProgressCall from './InProgressCall';
-import RetrievalIcon from './RetrievalIcon';
-import CancelledIcon from './CancelledIcon';
+import { useState } from 'react';
+import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
+import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
 import ProgressText from './ProgressText';
-import { ToolIcon } from './ToolOutput';
-import { useProgress } from '~/hooks';
 
 export default function RetrievalCall({
   initialProgress = 0.1,
   isSubmitting,
+  output,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  output?: string;
 }) {
   const progress = useProgress(initialProgress);
-  const radius = 56.08695652173913;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - progress * circumference;
-  const error = progress >= 2;
+  const localize = useLocalize();
 
-  const renderStatusIcon = () => {
-    if (progress < 1) {
-      return (
-        <InProgressCall progress={progress} isSubmitting={isSubmitting} error={error}>
-          <div
-            className="absolute left-0 top-0 flex h-full w-full items-center justify-center rounded-full bg-transparent text-white"
-            style={{ opacity: 1, transform: 'none' }}
-          >
-            <div>
-              <RetrievalIcon />
-            </div>
-            <ProgressCircle radius={radius} circumference={circumference} offset={offset} />
-          </div>
-        </InProgressCall>
-      );
-    }
-    if (error) {
-      return <CancelledIcon />;
-    }
-    return <ToolIcon type="file_search" />;
-  };
+  const errorState = typeof output === 'string' && isError(output);
+  const cancelled = !isSubmitting && initialProgress < 1 && !errorState;
+  const hasOutput = !!output && !isError(output);
+  const [showOutput, setShowOutput] = useState(false);
+  const expandStyle = useExpandCollapse(showOutput);
 
   return (
-    <div className="my-2.5 flex items-center gap-2.5">
-      <div className="relative h-5 w-5 shrink-0">{renderStatusIcon()}</div>
-      <ProgressText
-        progress={progress}
-        onClick={() => ({})}
-        inProgressText={'Searching my knowledge'}
-        finishedText={'Used Retrieval'}
-        icon={<ToolIcon type="file_search" isAnimating={progress < 1 && !error} />}
-        hasInput={false}
-        popover={false}
-      />
+    <div className="my-2.5">
+      <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
+        <ProgressText
+          progress={progress}
+          onClick={hasOutput ? () => setShowOutput((prev) => !prev) : undefined}
+          inProgressText={localize('com_ui_searching_files')}
+          finishedText={localize('com_ui_retrieved_files')}
+          errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          icon={
+            <ToolIcon type="file_search" isAnimating={progress < 1 && !cancelled && !errorState} />
+          }
+          hasInput={hasOutput}
+          isExpanded={showOutput}
+          error={cancelled}
+        />
+      </div>
+      <div style={expandStyle}>
+        <div className="overflow-hidden">
+          {hasOutput && (
+            <div className="overflow-hidden rounded-lg border border-border-light bg-surface-secondary p-3">
+              <OutputRenderer text={output} />
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
