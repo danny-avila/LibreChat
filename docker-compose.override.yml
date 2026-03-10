@@ -23,13 +23,18 @@
 
 services:
 
-# # USE LIBRECHAT CONFIG FILE
+  # USE LIBRECHAT CONFIG FILE
   api:
     build:
       context: .
       target: node
     volumes:
       - ./librechat.yaml:/app/librechat.yaml
+
+  # EXPOSE MONGODB PORTS - USE CAREFULLY, THIS MAKES YOUR DATABASE VULNERABLE TO ATTACKS
+  mongodb:
+    ports:
+      - 27017:27017
 
 # # LOCAL BUILD
 #   api:
@@ -87,11 +92,6 @@ services:
 #     image: tianon/true
 #     command: ""
 #     entrypoint: ""
-
-# # EXPOSE MONGODB PORTS - USE CAREFULLY, THIS MAKES YOUR DATABASE VULNERABLE TO ATTACKS
-#   mongodb:
-#     ports:
-#       - 27018:27017
 
 # # DISABLE MEILISEARCH
 #   meilisearch:

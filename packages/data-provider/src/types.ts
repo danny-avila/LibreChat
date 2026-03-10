@@ -409,6 +409,7 @@ export type TRegisterUser = {
   password: string;
   confirm_password?: string;
   token?: string;
+  departments?: string[];
 };
 
 export type TLoginUser = {

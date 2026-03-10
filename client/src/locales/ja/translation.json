@@ -152,6 +152,8 @@
   "com_auth_click_here": "ここをクリック",
   "com_auth_continue": "続く",
   "com_auth_create_account": "アカウント登録",
+  "com_auth_departments": "部門",
+  "com_auth_departments_hint": "部署名を入力し、Enterキーまたはコンマキーを押して追加してください",
   "com_auth_discord_login": "Discordでログイン",
   "com_auth_email": "メール",
   "com_auth_email_address": "メールアドレス",

@@ -1,5 +1,5 @@
-import { useForm } from 'react-hook-form';
-import React, { useContext, useState } from 'react';
+import { useForm, Controller } from 'react-hook-form';
+import React, { useContext, useState, useRef } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
@@ -19,6 +19,7 @@ const Registration: React.FC = () => {
   const {
     watch,
     register,
+    control,
     handleSubmit,
     formState: { errors },
   } = useForm<TRegisterUser>({ mode: 'onChange' });
@@ -28,31 +29,29 @@ const Registration: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [countdown, setCountdown] = useState<number>(3);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [deptInput, setDeptInput] = useState('');
+  const [isDeptFocused, setIsDeptFocused] = useState(false);
+  const deptInputRef = useRef<HTMLInputElement>(null);
 
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
   const token = queryParams.get('token');
   const validTheme = isDark(theme) ? 'dark' : 'light';
-
-  // only require captcha if we have a siteKey
   const requireCaptcha = Boolean(startupConfig?.turnstile?.siteKey);
 
   const registerUser = useRegisterUserMutation({
-    onMutate: () => {
-      setIsSubmitting(true);
-    },
+    onMutate: () => setIsSubmitting(true),
     onSuccess: () => {
       setIsSubmitting(false);
       setCountdown(3);
       const timer = setInterval(() => {
-        setCountdown((prevCountdown) => {
-          if (prevCountdown <= 1) {
+        setCountdown((prev) => {
+          if (prev <= 1) {
             clearInterval(timer);
             navigate('/c/new', { replace: true });
             return 0;
-          } else {
-            return prevCountdown - 1;
           }
+          return prev - 1;
         });
       }, 1000);
     },
@@ -64,9 +63,25 @@ const Registration: React.FC = () => {
     },
   });
 
-  const renderInput = (id: string, label: TranslationKeys, type: string, validation: object) => (
+  const renderFieldWrapper = (
+    content: React.ReactNode,
+    errorMsg?: string,
+    hint?: string,
+  ) => (
     <div className="mb-4">
-      <div className="relative">
+      <div className="relative">{content}</div>
+      {errorMsg && (
+        <span role="alert" className="mt-1 text-sm text-red-500">
+          {errorMsg}
+        </span>
+      )}
+      {hint && <p className="mt-1 text-xs text-text-secondary-alt">{hint}</p>}
+    </div>
+  );
+
+  const renderInput = (id: string, label: TranslationKeys, type: string, validation: object) =>
+    renderFieldWrapper(
+      <>
         <input
           id={id}
           type={type}
@@ -87,14 +102,95 @@ const Registration: React.FC = () => {
         >
           {localize(label)}
         </label>
-      </div>
-      {errors[id] && (
-        <span role="alert" className="mt-1 text-sm text-red-500">
-          {String(errors[id]?.message) ?? ''}
-        </span>
-      )}
-    </div>
-  );
+      </>,
+      errors[id] ? String(errors[id]?.message) : undefined,
+    );
+
+  const renderDepartmentsInput = () =>
+    renderFieldWrapper(
+      <Controller
+        name="departments"
+        control={control}
+        defaultValue={[]}
+        render={({ field }) => {
+          const tags: string[] = field.value ?? [];
+          const isFloated = tags.length > 0 || deptInput.length > 0 || isDeptFocused;
+
+          const commitPending = () => {
+            const trimmed = deptInput.trim();
+            if (trimmed && !tags.includes(trimmed)) {
+              field.onChange([...tags, trimmed]);
+            }
+            setDeptInput('');
+          };
+
+          return (
+            <div
+              className="min-h-[48px] w-full cursor-text rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2 pt-3 focus-within:border-green-500"
+              onClick={() => deptInputRef.current?.focus()}
+            >
+              <label
+                className={`pointer-events-none absolute start-3 z-10 origin-[0] transform bg-surface-primary px-2 text-sm duration-200 ${
+                  isFloated
+                    ? 'top-1.5 -translate-y-4 scale-75 text-green-500'
+                    : 'top-1/2 -translate-y-1/2 scale-100 text-text-secondary-alt'
+                }`}
+              >
+                {localize('com_auth_departments')}
+              </label>
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {tags.map((dept, index) => (
+                  <span
+                    key={index}
+                    className="flex items-center gap-1 rounded-full bg-green-500/20 px-2.5 py-0.5 text-sm text-green-700 dark:text-green-300"
+                  >
+                    {dept}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${dept}`}
+                      className="ml-0.5 leading-none hover:text-red-500"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        field.onChange(tags.filter((_, i) => i !== index));
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                <input
+                  ref={deptInputRef}
+                  type="text"
+                  className="min-w-[140px] flex-1 bg-transparent text-sm text-text-primary focus:outline-none"
+                  value={deptInput}
+                  onChange={(e) => setDeptInput(e.target.value.toUpperCase())}
+                  onFocus={() => setIsDeptFocused(true)}
+                  onBlur={() => {
+                    setIsDeptFocused(false);
+                    commitPending();
+                  }}
+                  onKeyDown={(e) => {
+                    const trimmed = deptInput.trim();
+                    if ((e.key === 'Enter' || e.key === ',') && trimmed) {
+                      e.preventDefault();
+                      if (!tags.includes(trimmed)) {
+                        field.onChange([...tags, trimmed]);
+                      }
+                      setDeptInput('');
+                    }
+                    if (e.key === 'Backspace' && !deptInput && tags.length > 0) {
+                      field.onChange(tags.slice(0, -1));
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          );
+        }}
+      />,
+      undefined,
+      localize('com_auth_departments_hint'),
+    );
 
   return (
     <>
@@ -129,39 +225,18 @@ const Registration: React.FC = () => {
           >
             {renderInput('name', 'com_auth_full_name', 'text', {
               required: localize('com_auth_name_required'),
-              minLength: {
-                value: 3,
-                message: localize('com_auth_name_min_length'),
-              },
-              maxLength: {
-                value: 80,
-                message: localize('com_auth_name_max_length'),
-              },
+              minLength: { value: 3, message: localize('com_auth_name_min_length') },
+              maxLength: { value: 80, message: localize('com_auth_name_max_length') },
             })}
             {renderInput('username', 'com_auth_username', 'text', {
-              minLength: {
-                value: 2,
-                message: localize('com_auth_username_min_length'),
-              },
-              maxLength: {
-                value: 80,
-                message: localize('com_auth_username_max_length'),
-              },
+              minLength: { value: 2, message: localize('com_auth_username_min_length') },
+              maxLength: { value: 80, message: localize('com_auth_username_max_length') },
             })}
             {renderInput('email', 'com_auth_email', 'email', {
               required: localize('com_auth_email_required'),
-              minLength: {
-                value: 1,
-                message: localize('com_auth_email_min_length'),
-              },
-              maxLength: {
-                value: 120,
-                message: localize('com_auth_email_max_length'),
-              },
-              pattern: {
-                value: /\S+@\S+\.\S+/,
-                message: localize('com_auth_email_pattern'),
-              },
+              minLength: { value: 1, message: localize('com_auth_email_min_length') },
+              maxLength: { value: 120, message: localize('com_auth_email_max_length') },
+              pattern: { value: /\S+@\S+\.\S+/, message: localize('com_auth_email_pattern') },
             })}
             {renderInput('password', 'com_auth_password', 'password', {
               required: localize('com_auth_password_required'),
@@ -169,24 +244,20 @@ const Registration: React.FC = () => {
                 value: startupConfig?.minPasswordLength || 8,
                 message: localize('com_auth_password_min_length'),
               },
-              maxLength: {
-                value: 128,
-                message: localize('com_auth_password_max_length'),
-              },
+              maxLength: { value: 128, message: localize('com_auth_password_max_length') },
             })}
             {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
               validate: (value: string) =>
                 value === password || localize('com_auth_password_not_match'),
             })}
 
+            {renderDepartmentsInput()}
+
             {startupConfig?.turnstile?.siteKey && (
               <div className="my-4 flex justify-center">
                 <Turnstile
                   siteKey={startupConfig.turnstile.siteKey}
-                  options={{
-                    ...startupConfig.turnstile.options,
-                    theme: validTheme,
-                  }}
+                  options={{ ...startupConfig.turnstile.options, theme: validTheme }}
                   onSuccess={(token) => setTurnstileToken(token)}
                   onError={() => setTurnstileToken(null)}
                   onExpire={() => setTurnstileToken(null)}
