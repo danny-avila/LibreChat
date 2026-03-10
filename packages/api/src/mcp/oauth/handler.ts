@@ -209,16 +209,28 @@ export class MCPOAuthHandler {
   }
 
   /**
-   * Discovers OAuth authorization server metadata with origin-URL fallback.
-   * If discovery fails for a path-based URL, retries with just the origin.
-   * Mirrors the fallback behavior in `discoverMetadata` and `initiateOAuthFlow`.
+   * Discovers OAuth authorization server metadata, retrying with just the origin
+   * when discovery fails for a path-based URL. Shared implementation used by
+   * `discoverMetadata` and both `refreshOAuthTokens` branches.
    */
   private static async discoverWithOriginFallback(
     serverUrl: URL,
     fetchFn: FetchLike,
   ): ReturnType<typeof discoverAuthorizationServerMetadata> {
-    const metadata = await discoverAuthorizationServerMetadata(serverUrl, { fetchFn });
-    // If discovery failed and we're using a path-based URL, try the base URL
+    let metadata: Awaited<ReturnType<typeof discoverAuthorizationServerMetadata>>;
+    try {
+      metadata = await discoverAuthorizationServerMetadata(serverUrl, { fetchFn });
+    } catch (err) {
+      if (serverUrl.pathname === '/') {
+        throw err;
+      }
+      const baseUrl = new URL(serverUrl.origin);
+      logger.debug(
+        `[MCPOAuth] Discovery threw for path URL, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+        { error: err },
+      );
+      return discoverAuthorizationServerMetadata(baseUrl, { fetchFn });
+    }
     if (!metadata && serverUrl.pathname !== '/') {
       const baseUrl = new URL(serverUrl.origin);
       logger.debug(
