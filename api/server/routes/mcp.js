@@ -13,6 +13,7 @@ const {
   MCPOAuthHandler,
   MCPTokenStorage,
   setOAuthSession,
+  PENDING_STALE_MS,
   getUserMCPAuthMap,
   validateOAuthCsrf,
   OAUTH_CSRF_COOKIE,
@@ -161,7 +162,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     let hasActiveFlow = false;
     if (!hasCsrf && !hasSession) {
       const pendingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
-      hasActiveFlow = pendingFlow?.status === 'PENDING';
+      const pendingAge = pendingFlow?.createdAt ? Date.now() - pendingFlow.createdAt : Infinity;
+      hasActiveFlow = pendingFlow?.status === 'PENDING' && pendingAge < PENDING_STALE_MS;
       if (hasActiveFlow) {
         logger.debug(
           '[MCP OAuth] CSRF/session cookies absent, validating via active PENDING flow',

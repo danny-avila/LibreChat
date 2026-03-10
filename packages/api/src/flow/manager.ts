@@ -3,6 +3,8 @@ import { logger } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 
+export const PENDING_STALE_MS = 2 * 60 * 1000;
+
 export class FlowStateManager<T = unknown> {
   private keyv: Keyv;
   private ttl: number;
@@ -150,6 +152,7 @@ export class FlowStateManager<T = unknown> {
       let isCleanedUp = false;
       let intervalId: NodeJS.Timeout | null = null;
       let missingStateRetried = false;
+      let isRetrying = false;
 
       // Cleanup function to avoid duplicate cleanup
       const cleanup = () => {
@@ -189,7 +192,7 @@ export class FlowStateManager<T = unknown> {
       }
 
       intervalId = setInterval(async () => {
-        if (isCleanedUp) return;
+        if (isCleanedUp || isRetrying) return;
 
         try {
           let flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
@@ -197,11 +200,13 @@ export class FlowStateManager<T = unknown> {
           if (!flowState) {
             if (!missingStateRetried) {
               missingStateRetried = true;
+              isRetrying = true;
               logger.warn(
                 `[${flowKey}] Flow state not found, retrying once after 500ms (race recovery)`,
               );
               await new Promise((r) => setTimeout(r, 500));
               flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+              isRetrying = false;
             }
 
             if (!flowState) {
@@ -264,19 +269,10 @@ export class FlowStateManager<T = unknown> {
 
     if (!flowState) {
       logger.warn(
-        '[FlowStateManager] Flow state not found during completion — recreating as COMPLETED (race recovery)',
+        '[FlowStateManager] Flow state not found during completion — cannot recover metadata, skipping',
         { flowId, type },
       );
-      const recoveredState: FlowState<T> = {
-        type,
-        status: 'COMPLETED',
-        metadata: {},
-        createdAt: Date.now(),
-        result,
-        completedAt: Date.now(),
-      };
-      await this.keyv.set(flowKey, recoveredState, this.ttl);
-      return true;
+      return false;
     }
 
     /** Prevent duplicate completion */
@@ -318,7 +314,7 @@ export class FlowStateManager<T = unknown> {
   async isFlowStale(
     flowId: string,
     type: string,
-    staleThresholdMs: number = 2 * 60 * 1000,
+    staleThresholdMs: number = PENDING_STALE_MS,
   ): Promise<{ isStale: boolean; age: number; status?: string }> {
     const flowKey = this.getFlowKey(flowId, type);
     const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;

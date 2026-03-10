@@ -2,11 +2,11 @@ import { logger } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, OAuthMetadata } from '~/mcp/oauth';
+import type { MCPOAuthTokens, OAuthMetadata, MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
-import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
+import { PENDING_STALE_MS } from '~/flow/manager';
 import { sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
@@ -313,7 +313,6 @@ export class MCPConnectionFactory {
             const pendingAge = existingFlow.createdAt
               ? Date.now() - existingFlow.createdAt
               : Infinity;
-            const PENDING_STALE_MS = 2 * 60 * 1000;
 
             if (pendingAge < PENDING_STALE_MS) {
               logger.debug(
@@ -511,19 +510,19 @@ export class MCPConnectionFactory {
       const existingFlow = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
 
       if (existingFlow) {
+        const flowMeta = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
+
         if (existingFlow.status === 'PENDING') {
           const pendingAge = existingFlow.createdAt
             ? Date.now() - existingFlow.createdAt
             : Infinity;
-          const PENDING_STALE_MS = 2 * 60 * 1000;
 
           if (pendingAge < PENDING_STALE_MS) {
             logger.debug(
               `${this.logPrefix} Found recent PENDING OAuth flow (${Math.round(pendingAge / 1000)}s old), joining instead of creating new one`,
             );
 
-            const storedAuthUrl = (existingFlow.metadata as Record<string, unknown>)
-              ?.authorizationUrl as string | undefined;
+            const storedAuthUrl = flowMeta?.authorizationUrl;
             if (storedAuthUrl && typeof this.oauthStart === 'function') {
               logger.info(
                 `${this.logPrefix} Re-issuing stored authorization URL to caller while joining PENDING flow`,
@@ -538,13 +537,11 @@ export class MCPConnectionFactory {
             logger.info(
               `${this.logPrefix} Joined existing OAuth flow completed for ${this.serverName}`,
             );
-            const clientInfo = (existingFlow.metadata as FlowMetadata)?.clientInfo as
-              | OAuthClientInformation
-              | undefined;
-            const metadata = (existingFlow.metadata as FlowMetadata)?.metadata as
-              | OAuthMetadata
-              | undefined;
-            return { tokens, clientInfo, metadata };
+            return {
+              tokens,
+              clientInfo: flowMeta?.clientInfo,
+              metadata: flowMeta?.metadata,
+            };
           }
 
           logger.debug(
@@ -553,19 +550,21 @@ export class MCPConnectionFactory {
         }
 
         if (existingFlow.status === 'COMPLETED') {
-          const { isStale } = await this.flowManager.isFlowStale(flowId, 'mcp_oauth');
-          if (!isStale && existingFlow.result !== undefined) {
+          const completedAge = existingFlow.completedAt
+            ? Date.now() - existingFlow.completedAt
+            : Infinity;
+          const cachedTokens = existingFlow.result as MCPOAuthTokens | null | undefined;
+          const isTokenExpired =
+            cachedTokens?.expires_at != null && cachedTokens.expires_at < Date.now();
+
+          if (completedAge <= PENDING_STALE_MS && cachedTokens !== undefined && !isTokenExpired) {
             logger.debug(
               `${this.logPrefix} Found non-stale COMPLETED OAuth flow, reusing cached tokens`,
             );
             return {
-              tokens: existingFlow.result as MCPOAuthTokens | null,
-              clientInfo: (existingFlow.metadata as FlowMetadata)?.clientInfo as
-                | OAuthClientInformation
-                | undefined,
-              metadata: (existingFlow.metadata as FlowMetadata)?.metadata as
-                | OAuthMetadata
-                | undefined,
+              tokens: cachedTokens,
+              clientInfo: flowMeta?.clientInfo,
+              metadata: flowMeta?.metadata,
             };
           }
         }
@@ -594,7 +593,7 @@ export class MCPConnectionFactory {
       );
 
       // Store flow state BEFORE redirecting so the callback can find it
-      const metadataWithUrl = { ...(flowMetadata as FlowMetadata), authorizationUrl };
+      const metadataWithUrl = { ...flowMetadata, authorizationUrl };
       await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
 
       if (typeof this.oauthStart === 'function') {

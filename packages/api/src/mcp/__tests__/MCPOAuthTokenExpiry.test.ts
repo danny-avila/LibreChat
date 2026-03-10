@@ -466,7 +466,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         authorizationUrl: `${server.url}authorize?state=${flowId}`,
       });
 
-      // Step 9: Get a new auth code and exchange for tokens (simulating user re-auth)
+      // Step 8: Get a new auth code and exchange for tokens (simulating user re-auth)
       const newCode = await server.getAuthCode();
       const newTokenRes = await fetch(`${server.url}token`, {
         method: 'POST',
@@ -480,7 +480,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         refresh_token?: string;
       };
 
-      // Step 10: Complete the flow
+      // Step 9: Complete the flow
       const mcpTokens: MCPOAuthTokens = {
         ...newTokens,
         obtained_at: Date.now(),
@@ -488,7 +488,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       };
       await flowManager.completeFlow(flowId, 'mcp_oauth', mcpTokens);
 
-      // Step 11: Store the new tokens
+      // Step 10: Store the new tokens
       await MCPTokenStorage.storeTokens({
         userId: 'u1',
         serverName: 'test-srv',
@@ -498,7 +498,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         findToken: tokenStore.findToken,
       });
 
-      // Step 12: Verify new tokens work
+      // Step 11: Verify new tokens work
       const newResult = await MCPTokenStorage.getTokens({
         userId: 'u1',
         serverName: 'test-srv',
@@ -507,7 +507,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       expect(newResult).not.toBeNull();
       expect(newResult!.access_token).toBe(newTokens.access_token);
 
-      // Step 13: Verify new token works against server
+      // Step 12: Verify new token works against server
       const finalMcpRes = await fetch(server.url, {
         method: 'POST',
         headers: {

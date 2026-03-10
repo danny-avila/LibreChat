@@ -7,7 +7,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { FlowState } from '~/flow/types';
 import type { Socket } from 'net';
 
-export class MockKeyv<T = string> {
+export class MockKeyv<T = unknown> {
   private store: Map<string, FlowState<T>>;
 
   constructor() {

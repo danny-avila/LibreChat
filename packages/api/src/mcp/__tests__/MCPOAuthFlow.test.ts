@@ -6,8 +6,7 @@
  */
 
 import { Keyv } from 'keyv';
-import { MCPTokenStorage } from '~/mcp/oauth';
-import { MCPOAuthHandler } from '~/mcp/oauth';
+import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
 import { FlowStateManager } from '~/flow/manager';
 import { createOAuthMCPServer, MockKeyv, InMemoryTokenStore } from './helpers/oauthTestServer';
 import type { OAuthTestServer } from './helpers/oauthTestServer';

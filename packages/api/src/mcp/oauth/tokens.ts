@@ -36,7 +36,12 @@ interface GetTokensParams {
   findToken: TokenMethods['findToken'];
   refreshTokens?: (
     refreshToken: string,
-    metadata: { userId: string; serverName: string; identifier: string },
+    metadata: {
+      userId: string;
+      serverName: string;
+      identifier: string;
+      clientInfo?: OAuthClientInformation;
+    },
   ) => Promise<MCPOAuthTokens>;
   createToken?: TokenMethods['createToken'];
   updateToken?: TokenMethods['updateToken'];
@@ -286,7 +291,7 @@ export class MCPTokenStorage {
           logger.info(
             `${logPrefix} Access token ${reason} and no refresh token available — re-authentication required`,
           );
-          throw new ReauthenticationRequiredError(serverName, reason as 'expired' | 'missing');
+          throw new ReauthenticationRequiredError(serverName, reason);
         }
 
         if (!refreshTokens) {

@@ -231,8 +231,8 @@ describe('MCP OAuth Race Condition Fixes', () => {
     });
   });
 
-  describe('Fix 3: Resilient completeFlow recovers deleted state', () => {
-    it('should recreate flow as COMPLETED when state was deleted by race', async () => {
+  describe('Fix 3: completeFlow handles deleted state gracefully', () => {
+    it('should return false when state was deleted by race', async () => {
       const store = new MockKeyv();
       const flowManager = new FlowStateManager(store as unknown as Keyv, { ttl: 30000, ci: true });
 
@@ -249,21 +249,18 @@ describe('MCP OAuth Race Condition Fixes', () => {
         token_type: 'Bearer',
       } as never);
 
-      expect(result).toBe(true);
+      expect(result).toBe(false);
 
       const stateAfterComplete = await flowManager.getFlowState(flowId, 'mcp_oauth');
-      expect(stateAfterComplete?.status).toBe('COMPLETED');
-      expect(stateAfterComplete?.result).toEqual(
-        expect.objectContaining({ access_token: 'recovered-token' }),
-      );
+      expect(stateAfterComplete).toBeUndefined();
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('recreating as COMPLETED'),
+        expect.stringContaining('cannot recover metadata'),
         expect.any(Object),
       );
     });
 
-    it('should resolve monitorFlow when state reappears after retry', async () => {
+    it('should reject monitorFlow when state is deleted and not recoverable', async () => {
       const store = new MockKeyv();
       const flowManager = new FlowStateManager(store as unknown as Keyv, { ttl: 30000, ci: true });
 
@@ -277,15 +274,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
 
       await flowManager.deleteFlow(flowId, 'mcp_oauth');
 
-      setTimeout(async () => {
-        await flowManager.completeFlow(flowId, 'mcp_oauth', {
-          access_token: 'retry-token',
-          token_type: 'Bearer',
-        } as never);
-      }, 1500);
-
-      const result = await monitorPromise;
-      expect(result).toEqual(expect.objectContaining({ access_token: 'retry-token' }));
+      await expect(monitorPromise).rejects.toThrow('Flow state not found');
     });
   });
 
