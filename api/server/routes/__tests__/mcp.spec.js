@@ -32,6 +32,8 @@ jest.mock('@librechat/api', () => {
       getFlowState: jest.fn(),
       completeOAuthFlow: jest.fn(),
       generateFlowId: jest.fn(),
+      resolveStateToFlowId: jest.fn(async (state) => state),
+      storeStateMapping: jest.fn(),
     },
     MCPTokenStorage: {
       storeTokens: jest.fn(),
@@ -180,7 +182,10 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
         authorizationUrl: 'https://oauth.example.com/auth',
         flowId: 'test-user-id:test-server',
+        flowMetadata: { state: 'random-state-value' },
       });
+      MCPOAuthHandler.storeStateMapping.mockResolvedValue();
+      mockFlowManager.initFlow = jest.fn().mockResolvedValue();
 
       const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
         userId: 'test-user-id',

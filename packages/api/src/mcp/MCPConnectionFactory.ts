@@ -346,6 +346,7 @@ export class MCPConnectionFactory {
           // Store flow state BEFORE redirecting so the callback can find it
           const metadataWithUrl = { ...flowMetadata, authorizationUrl };
           await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
+          await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager!);
 
           // Start monitoring in background — createFlow will find the existing PENDING state
           // written by initFlow above, so metadata arg is unused (pass {} to make that explicit)
@@ -596,6 +597,7 @@ export class MCPConnectionFactory {
       // Store flow state BEFORE redirecting so the callback can find it
       const metadataWithUrl = { ...flowMetadata, authorizationUrl };
       await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
+      await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager);
 
       if (typeof this.oauthStart === 'function') {
         logger.info(`${this.logPrefix} OAuth flow started, issued authorization URL to user`);

@@ -426,8 +426,8 @@ export class MCPOAuthHandler {
           scope: config.scope,
         });
 
-        /** Add state parameter with flowId to the authorization URL */
-        authorizationUrl.searchParams.set('state', flowId);
+        /** Add cryptographic state parameter to the authorization URL */
+        authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
         const flowMetadata: MCPOAuthFlowMetadata = {
@@ -505,8 +505,8 @@ export class MCPOAuthHandler {
           `[MCPOAuth] Authorization URL: ${sanitizeUrlForLogging(authorizationUrl.toString())}`,
         );
 
-        /** Add state parameter with flowId to the authorization URL */
-        authorizationUrl.searchParams.set('state', flowId);
+        /** Add cryptographic state parameter to the authorization URL */
+        authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
         if (resourceMetadata?.resource != null && resourceMetadata.resource) {
@@ -670,6 +670,33 @@ export class MCPOAuthHandler {
    */
   private static generateState(): string {
     return randomBytes(32).toString('base64url');
+  }
+
+  private static readonly STATE_MAP_TYPE = 'mcp_oauth_state';
+
+  /**
+   * Stores a mapping from the opaque OAuth state parameter to the flowId.
+   * This allows the callback to resolve the flowId from an unguessable state
+   * value, preventing attackers from forging callback requests.
+   */
+  static async storeStateMapping(
+    state: string,
+    flowId: string,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<void> {
+    await flowManager.initFlow(state, this.STATE_MAP_TYPE, { flowId });
+  }
+
+  /**
+   * Resolves an opaque OAuth state parameter back to the original flowId.
+   * Returns null if the state is not found (expired or never stored).
+   */
+  static async resolveStateToFlowId(
+    state: string,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<string | null> {
+    const mapping = await flowManager.getFlowState(state, this.STATE_MAP_TYPE);
+    return (mapping?.metadata?.flowId as string) ?? null;
   }
 
   /**

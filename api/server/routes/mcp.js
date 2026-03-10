@@ -92,7 +92,11 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
     }
 
     const oauthHeaders = await getOAuthHeaders(serverName, userId);
-    const { authorizationUrl, flowId: oauthFlowId } = await MCPOAuthHandler.initiateOAuthFlow(
+    const {
+      authorizationUrl,
+      flowId: oauthFlowId,
+      flowMetadata,
+    } = await MCPOAuthHandler.initiateOAuthFlow(
       serverName,
       serverUrl,
       userId,
@@ -102,6 +106,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
 
     logger.debug('[MCP OAuth] OAuth flow initiated', { oauthFlowId, authorizationUrl });
 
+    await MCPOAuthHandler.storeStateMapping(flowMetadata.state, oauthFlowId, flowManager);
     setOAuthCsrfCookie(res, oauthFlowId, OAUTH_CSRF_COOKIE_PATH);
     res.redirect(authorizationUrl);
   } catch (error) {
@@ -144,18 +149,23 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       return res.redirect(`${basePath}/oauth/error?error=missing_state`);
     }
 
-    const flowId = state;
-    logger.debug('[MCP OAuth] Using flow ID from state', { flowId });
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
+    const flowManager = getFlowStateManager(flowsCache);
+
+    const flowId = await MCPOAuthHandler.resolveStateToFlowId(state, flowManager);
+    if (!flowId) {
+      logger.error('[MCP OAuth] Could not resolve state to flow ID', { state });
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
+    logger.debug('[MCP OAuth] Resolved flow ID from state', { flowId });
 
     const flowParts = flowId.split(':');
     if (flowParts.length < 2 || !flowParts[0] || !flowParts[1]) {
-      logger.error('[MCP OAuth] Invalid flow ID format in state', { flowId });
+      logger.error('[MCP OAuth] Invalid flow ID format', { flowId });
       return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
     }
 
     const [flowUserId] = flowParts;
-    const flowsCache = getLogStores(CacheKeys.FLOWS);
-    const flowManager = getFlowStateManager(flowsCache);
 
     const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
     const hasSession = !hasCsrf && validateOAuthSession(req, flowUserId);
