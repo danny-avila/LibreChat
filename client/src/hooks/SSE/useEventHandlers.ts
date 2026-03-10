@@ -526,6 +526,23 @@ export default function useEventHandlers({
         } else if (requestMessage != null && responseMessage != null) {
           finalMessages = [...messages, requestMessage, responseMessage];
         }
+
+        /* Preserve files from current messages when server response lacks them */
+        if (finalMessages.length > 0) {
+          const currentMsgMap = new Map(
+            currentMessages
+              .filter((m) => m.files && m.files.length > 0)
+              .map((m) => [m.messageId, m.files]),
+          );
+          for (let i = 0; i < finalMessages.length; i++) {
+            const msg = finalMessages[i];
+            const preservedFiles = currentMsgMap.get(msg.messageId);
+            if (msg.files == null && preservedFiles) {
+              finalMessages[i] = { ...msg, files: preservedFiles };
+            }
+          }
+        }
+
         if (finalMessages.length > 0) {
           setFinalMessages(conversation.conversationId, finalMessages);
         } else if (
