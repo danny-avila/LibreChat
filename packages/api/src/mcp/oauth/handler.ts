@@ -224,10 +224,12 @@ export class MCPOAuthHandler {
       if (serverUrl.pathname === '/') {
         throw err;
       }
+      const baseUrl = new URL(serverUrl.origin);
       logger.debug(
-        `[MCPOAuth] Discovery threw for path URL, trying base URL: ${sanitizeUrlForLogging(new URL(serverUrl.origin))}`,
+        `[MCPOAuth] Discovery threw for path URL, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+        { error: err },
       );
-      metadata = undefined;
+      return discoverAuthorizationServerMetadata(baseUrl, { fetchFn });
     }
     if (!metadata && serverUrl.pathname !== '/') {
       const baseUrl = new URL(serverUrl.origin);

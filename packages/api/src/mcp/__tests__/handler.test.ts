@@ -1704,6 +1704,27 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
 
         expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenCalledTimes(1);
       });
+
+      it('propagates the throw when both path and origin discovery throw', async () => {
+        const metadata = {
+          serverName: 'sentry',
+          serverUrl: 'https://mcp.sentry.dev/mcp',
+          clientInfo: {
+            client_id: 'test-client-id',
+            client_secret: 'test-client-secret',
+          },
+        };
+
+        mockDiscoverAuthorizationServerMetadata
+          .mockRejectedValueOnce(new Error('Network error'))
+          .mockRejectedValueOnce(new Error('Origin also failed'));
+
+        await expect(
+          MCPOAuthHandler.refreshOAuthTokens('test-refresh-token', metadata, {}, {}),
+        ).rejects.toThrow('Origin also failed');
+
+        expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenCalledTimes(2);
+      });
     });
   });
 });
