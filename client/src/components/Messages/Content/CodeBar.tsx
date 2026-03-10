@@ -1,17 +1,19 @@
 import React from 'react';
 import { InfoIcon } from 'lucide-react';
 import type { CodeBarProps } from '~/common';
-import CopyCodeButton from '~/components/Messages/Content/CopyCodeButton';
 import useCopyCode from '~/components/Messages/Content/useCopyCode';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import LangIcon from '~/components/Messages/Content/LangIcon';
 import RunCode from '~/components/Messages/Content/RunCode';
+import { useLocalize } from '~/hooks';
 
 const CodeBar: React.FC<CodeBarProps> = React.memo(
   ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true }) => {
+    const localize = useLocalize();
     const { isCopied, handleCopy } = useCopyCode(codeRef);
 
     return (
-      <div className="flex items-center justify-between px-3 py-1.5 font-sans text-xs text-text-secondary">
+      <div className="flex items-center justify-between px-1.5 py-1.5 font-sans text-xs text-text-secondary">
         <span className="flex items-center gap-1.5 text-xs font-medium">
           <LangIcon lang={lang} className="size-3.5" />
           {lang}
@@ -23,7 +25,13 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
             {allowExecution === true && (
               <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} />
             )}
-            {error !== true && <CopyCodeButton isCopied={isCopied} onClick={handleCopy} />}
+            {error !== true && (
+              <CopyButton
+                isCopied={isCopied}
+                onClick={handleCopy}
+                label={localize('com_ui_copy_code')}
+              />
+            )}
           </div>
         )}
       </div>

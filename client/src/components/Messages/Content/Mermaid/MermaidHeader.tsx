@@ -1,8 +1,9 @@
 import React, { memo, useState, useCallback, useRef } from 'react';
 import copy from 'copy-to-clipboard';
-import { Expand, ChevronUp, ChevronDown } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
-import CopyCodeButton from '~/components/Messages/Content/CopyCodeButton';
+
+import { Expand, ChevronUp, ChevronDown } from 'lucide-react';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useLocalize } from '~/hooks';
 import cn from '~/utils/cn';
 
@@ -85,7 +86,7 @@ const MermaidHeader: React.FC<MermaidHeaderProps> = memo(
               </button>
             }
           />
-          <CopyCodeButton ref={copyButtonRef} isCopied={isCopied} iconOnly onClick={handleCopy} />
+          <CopyButton ref={copyButtonRef} isCopied={isCopied} iconOnly onClick={handleCopy} />
         </div>
       </div>
     );

@@ -1,9 +1,8 @@
-import React, { memo, useState } from 'react';
-import copy from 'copy-to-clipboard';
-import { Button } from '@librechat/client';
-import { Copy, CircleCheckBig } from 'lucide-react';
-import { handleDoubleClick } from '~/utils';
-import { useLocalize } from '~/hooks';
+import React, { memo, useEffect, useRef, useState } from 'react';
+import rehypeKatex from 'rehype-katex';
+import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import { handleDoubleClick, langSubset } from '~/utils';
 
 type TCodeProps = {
   inline: boolean;
@@ -26,29 +25,70 @@ export const code: React.ElementType = memo(({ inline, className, children }: TC
   return <code className={`hljs language-${lang} !whitespace-pre`}>{children}</code>;
 });
 
-export const CopyCodeButton: React.FC<{ content: string }> = ({ content }) => {
-  const localize = useLocalize();
-  const [isCopied, setIsCopied] = useState(false);
+export const CodeMarkdown = memo(
+  ({ content = '', isSubmitting }: { content: string; isSubmitting: boolean }) => {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const [userScrolled, setUserScrolled] = useState(false);
+    const currentContent = content;
+    const rehypePlugins = [
+      [rehypeKatex],
+      [
+        rehypeHighlight,
+        {
+          detect: true,
+          ignoreMissing: true,
+          subset: langSubset,
+        },
+      ],
+    ];
 
-  const handleCopy = () => {
-    copy(content, { format: 'text/plain' });
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 3000);
-  };
+    useEffect(() => {
+      const scrollContainer = scrollRef.current;
+      if (!scrollContainer) {
+        return;
+      }
 
-  return (
-    <Button
-      size="icon"
-      variant="ghost"
-      className="h-9 w-9"
-      onClick={handleCopy}
-      aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
-    >
-      {isCopied ? (
-        <CircleCheckBig size={16} aria-hidden="true" />
-      ) : (
-        <Copy size={16} aria-hidden="true" />
-      )}
-    </Button>
-  );
-};
+      const handleScroll = () => {
+        const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+        const isNearBottom = scrollHeight - scrollTop - clientHeight < 50;
+
+        if (!isNearBottom) {
+          setUserScrolled(true);
+        } else {
+          setUserScrolled(false);
+        }
+      };
+
+      scrollContainer.addEventListener('scroll', handleScroll);
+
+      return () => {
+        scrollContainer.removeEventListener('scroll', handleScroll);
+      };
+    }, []);
+
+    useEffect(() => {
+      const scrollContainer = scrollRef.current;
+      if (!scrollContainer || !isSubmitting || userScrolled) {
+        return;
+      }
+
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }, [content, isSubmitting, userScrolled]);
+
+    return (
+      <div ref={scrollRef} className="max-h-full overflow-y-auto">
+        <ReactMarkdown
+          /* @ts-ignore */
+          rehypePlugins={rehypePlugins}
+          components={
+            { code } as {
+              [key: string]: React.ElementType;
+            }
+          }
+        >
+          {currentContent}
+        </ReactMarkdown>
+      </div>
+    );
+  },
+);
