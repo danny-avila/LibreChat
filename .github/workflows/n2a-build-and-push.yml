@@ -113,13 +113,13 @@ jobs:
                     az login --service-principal -u ${{secrets.ARC_RUNNER_SP_CLIENT_ID_NONPROD}} -p ${{secrets.ARC_RUNNER_SP_CLIENT_SECRET_NONPROD}} --tenant ${{secrets.AZURE_TENANT_ID}}
                     az account set --subscription "${{ secrets.AZURE_NONPROD_SUBSCRIPTION_ID }}"
                     az containerapp update \
-                      --name conpaichateastusn2a002 \
+                      --name conplayaieastusn2a002 \
                       --resource-group rg-playai-eastus-n2a-002 \
-                      --container-name conpaichat \
+                      --container-name conplayai \
                       --image ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ needs.build.outputs.commit_sha }}
                     az containerapp update \
-                      --name conpaichateastusn2a002 \
+                      --name conplayaieastusn2a002 \
                       --resource-group rg-playai-eastus-n2a-002 \
-                      --container-name conpairag \
+                      --container-name conplayairag \
                       --image ${{ env.ACR_HOST }}/paychex/rag_api:n2a.latest \
                       --output none
