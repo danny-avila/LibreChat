@@ -15,7 +15,7 @@ import type {
   Agents,
 } from 'librechat-data-provider';
 import {
-  OpenAIImageGen,
+  ImageGen,
   ExecuteCode,
   AgentUpdate,
   EmptyText,
@@ -31,7 +31,6 @@ import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
-import ImageGen from './ImageGen';
 import Image from './Image';
 
 type PartProps = {
@@ -154,7 +153,7 @@ const Part = memo(function Part({
         toolCall.name === 'gemini_image_gen')
     ) {
       return (
-        <OpenAIImageGen
+        <ImageGen
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           toolName={toolCall.name}
@@ -220,6 +219,8 @@ const Part = memo(function Part({
         <ImageGen
           initialProgress={toolCall.progress ?? 0.1}
           args={toolCall.function.arguments as string}
+          isSubmitting={isSubmitting}
+          toolName={toolCall.function.name}
         />
       );
     } else if (toolCall.type === ToolCallTypes.FUNCTION && ToolCallTypes.FUNCTION in toolCall) {
@@ -233,6 +234,8 @@ const Part = memo(function Part({
         }
         return null;
       }
+
+
 
       return (
         <ToolCall
