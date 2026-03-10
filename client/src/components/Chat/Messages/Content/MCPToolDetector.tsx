@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useMessageContext } from '~/Providers';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import { isChatBlockedState, submittedFormsState } from '~/store/crawlForm';
 import { useSubmitMessage, useLocalize } from '~/hooks';
+import { Button } from '@librechat/client';
+import { Download } from 'lucide-react';
 import CrawlForm from './CrawlForm';
 import CustomForm from './CustomForm';
 import OutreachForm from './OutreachForm';
@@ -505,6 +507,74 @@ const MCP_TOOL_CONFIGS = {
               const inner = (value as Record<string, unknown>)[TOOL_FIELD] as Record<string, unknown> | undefined;
               const h = inner?.[HTML_FIELD];
               if (typeof h === 'string' && h.length > 0) return h;
+            }
+          }
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    },
+    extractS3Url: (output: string): string | null => {
+      const readUrl = (obj: Record<string, unknown> | null | undefined): string | null => {
+        if (!obj) return null;
+        const u = (obj['s3_url'] ?? obj['s_3_url']) as string | undefined;
+        return typeof u === 'string' && u.startsWith('http') ? u : null;
+      };
+      try {
+        let data: Record<string, unknown>;
+        try {
+          const parsed = JSON.parse(output);
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.text) {
+            data = JSON.parse(parsed[0].text as string);
+          } else {
+            data = typeof parsed === 'object' && parsed !== null ? parsed : {};
+          }
+        } catch {
+          data = JSON.parse(output);
+        }
+        const TOOL_FIELD = 'convert_digest_json_to_html';
+        const topLevel = (data?.[TOOL_FIELD] ?? (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as Record<string, unknown> | undefined;
+        let s3Url = readUrl(topLevel ?? (data as Record<string, unknown>));
+        if (s3Url) return s3Url;
+        if (typeof data === 'object' && data !== null) {
+          for (const value of Object.values(data)) {
+            if (value && typeof value === 'object' && TOOL_FIELD in value) {
+              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as Record<string, unknown> | undefined;
+              s3Url = readUrl(inner ?? null);
+              if (s3Url) return s3Url;
+            }
+          }
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    },
+    extractDigestId: (output: string): string | null => {
+      try {
+        let data: Record<string, unknown>;
+        try {
+          const parsed = JSON.parse(output);
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.text) {
+            data = JSON.parse(parsed[0].text as string);
+          } else {
+            data = typeof parsed === 'object' && parsed !== null ? parsed : {};
+          }
+        } catch {
+          data = JSON.parse(output);
+        }
+        const TOOL_FIELD = 'convert_digest_json_to_html';
+        const DIGEST_ID_FIELD = 'digest_id';
+        const topLevel = (data?.[TOOL_FIELD] ?? (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as Record<string, unknown> | undefined;
+        let digestId = (data?.[DIGEST_ID_FIELD] as string) ?? topLevel?.[DIGEST_ID_FIELD] as string | undefined;
+        if (typeof digestId === 'string' && digestId.length > 0) return digestId;
+        if (!digestId && typeof data === 'object' && data !== null) {
+          for (const value of Object.values(data)) {
+            if (value && typeof value === 'object' && TOOL_FIELD in value) {
+              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as Record<string, unknown> | undefined;
+              const d = inner?.[DIGEST_ID_FIELD];
+              if (typeof d === 'string' && d.length > 0) return d;
             }
           }
         }
@@ -1130,7 +1200,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     return null;
   }
 
-  // HTML preview for convert_digest_json_to_html (weekly digest email)
+  // HTML preview and/or S3 download for convert_digest_json_to_html (weekly digest email)
   const htmlPreview =
     'renderHtmlPreview' in toolConfig &&
     toolConfig.renderHtmlPreview &&
@@ -1138,21 +1208,103 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     typeof toolConfig.extractHtml === 'function'
       ? toolConfig.extractHtml(output ?? '')
       : null;
-  if (htmlPreview) {
+  const s3Url =
+    'extractS3Url' in toolConfig && typeof toolConfig.extractS3Url === 'function'
+      ? toolConfig.extractS3Url(output ?? '')
+      : null;
+  const digestIdFromOutput =
+    'extractDigestId' in toolConfig && typeof toolConfig.extractDigestId === 'function'
+      ? toolConfig.extractDigestId(output ?? '')
+      : null;
+  const digestIdFromInput = useMemo(() => {
+    if (function_name !== 'convert_digest_json_to_html' || !toolCall?.args) return null;
+    try {
+      const args = typeof toolCall.args === 'string' ? JSON.parse(toolCall.args) : toolCall.args;
+      const digest = args?.digest;
+      return typeof digest?.digest_id === 'string' && digest.digest_id.length > 0
+        ? digest.digest_id
+        : null;
+    } catch {
+      return null;
+    }
+  }, [function_name, toolCall?.args]);
+  const digestId = digestIdFromInput ?? digestIdFromOutput;
+
+  const [downloadState, setDownloadState] = useState<{ loading: boolean; error: string | null }>({
+    loading: false,
+    error: null,
+  });
+  const handleDownloadHtml = useCallback(() => {
+    const filename = (digestId && digestId.length > 0) ? `${digestId}.html` : 'weekly-digest.html';
+    if (htmlPreview) {
+      const blob = new Blob([htmlPreview], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    if (!s3Url) return;
+    setDownloadState({ loading: true, error: null });
+    fetch(s3Url)
+      .then((res) => {
+        if (!res.ok) throw new Error(res.statusText);
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        setDownloadState({ loading: false, error: null });
+      })
+      .catch(() => {
+        setDownloadState({ loading: false, error: null });
+        window.open(s3Url, '_blank', 'noopener,noreferrer');
+      });
+  }, [htmlPreview, s3Url, digestId]);
+
+  if (htmlPreview || s3Url) {
     return (
       <div className="my-3 w-full overflow-hidden rounded-xl border border-border-light bg-surface-secondary">
-        <div className="border-b border-border-light bg-surface-primary px-3 py-2 text-sm font-medium text-text-primary">
-          Weekly digest preview
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-light bg-surface-primary px-3 py-2 text-sm font-medium text-text-primary">
+          <span>Weekly digest preview</span>
+          {(htmlPreview || s3Url) && (
+            <Button
+              type="button"
+              onClick={handleDownloadHtml}
+              disabled={downloadState.loading}
+              className="flex items-center gap-1.5"
+            >
+              <Download className="h-4 w-4" />
+              {downloadState.loading ? 'Downloading…' : 'Download HTML'}
+            </Button>
+          )}
         </div>
-        <div className="relative max-h-[70vh] min-h-[200px] w-full overflow-auto bg-white">
-          <iframe
-            title="Weekly digest HTML preview"
-            srcDoc={htmlPreview}
-            sandbox="allow-same-origin"
-            className="h-full min-h-[400px] w-full border-0"
-            style={{ height: 'min(70vh, 800px)' }}
-          />
-        </div>
+        {downloadState.error && (
+          <div className="border-b border-border-light bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+            {downloadState.error}
+          </div>
+        )}
+        {htmlPreview ? (
+          <div className="relative max-h-[70vh] min-h-[200px] w-full overflow-auto bg-white">
+            <iframe
+              title="Weekly digest HTML preview"
+              srcDoc={htmlPreview}
+              sandbox="allow-same-origin"
+              className="h-full min-h-[400px] w-full border-0"
+              style={{ height: 'min(70vh, 800px)' }}
+            />
+          </div>
+        ) : (
+          <div className="px-3 py-4 text-sm text-text-secondary">
+            HTML was generated and saved. Use the button above to download the file.
+          </div>
+        )}
       </div>
     );
   }
