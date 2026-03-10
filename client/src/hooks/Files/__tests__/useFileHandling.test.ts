@@ -51,7 +51,9 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('~/hooks/useLocalize', () => {
-  const fn = jest.fn((key: string) => key);
+  const fn = jest.fn((key: string) => key) as jest.Mock & {
+    TranslationKeys: Record<string, never>;
+  };
   fn.TranslationKeys = {};
   return { __esModule: true, default: fn, TranslationKeys: {} };
 });
@@ -87,6 +89,8 @@ jest.mock('../useUpdateFiles', () => ({
 jest.mock('~/utils', () => ({
   logger: { log: jest.fn() },
   validateFiles: jest.fn(() => true),
+  cachePreview: jest.fn(),
+  getCachedPreview: jest.fn(() => undefined),
 }));
 
 const mockValidateFiles = jest.requireMock('~/utils').validateFiles;
@@ -263,7 +267,7 @@ describe('useFileHandling', () => {
 
     it('falls back to "default" when no conversation endpoint and no override', async () => {
       mockConversation = {
-        conversationId: Constants.NEW_CONVO,
+        conversationId: Constants.NEW_CONVO as string,
         endpoint: null,
         endpointType: undefined,
       };

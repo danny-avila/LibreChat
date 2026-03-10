@@ -152,7 +152,7 @@ const MessageRender = memo(function MessageRender({
         )}
 
         <div className="flex flex-col gap-1">
-          <div className="flex max-w-full flex-grow flex-col gap-0">
+          <div className="flex min-h-[20px] max-w-full flex-grow flex-col gap-0">
             <MessageContext.Provider value={messageContextValue}>
               <MessageContent
                 ask={ask}
