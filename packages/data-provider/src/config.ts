@@ -181,6 +181,7 @@ export enum AgentCapabilities {
   execute_code = 'execute_code',
   file_search = 'file_search',
   web_search = 'web_search',
+  image_generation = 'image_generation',
   artifacts = 'artifacts',
   actions = 'actions',
   context = 'context',
@@ -268,6 +269,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.execute_code,
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,
+  AgentCapabilities.image_generation,
   AgentCapabilities.artifacts,
   AgentCapabilities.actions,
   AgentCapabilities.context,
@@ -1833,6 +1835,8 @@ export enum LocalStorageKeys {
   LAST_FILE_SEARCH_TOGGLE_ = 'LAST_FILE_SEARCH_TOGGLE_',
   /** Last checked toggle for Artifacts per conversation ID */
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
+  /** Last checked toggle for Image Generation per conversation ID */
+  LAST_IMAGE_GEN_TOGGLE_ = 'LAST_IMAGE_GEN_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

@@ -20,6 +20,7 @@ export enum Tools {
   code_interpreter = 'code_interpreter',
   file_search = 'file_search',
   web_search = 'web_search',
+  gemini_image_gen = 'gemini_image_gen',
   retrieval = 'retrieval',
   function = 'function',
   memory = 'memory',

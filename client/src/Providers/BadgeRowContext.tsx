@@ -20,6 +20,7 @@ interface BadgeRowContextType {
   webSearch: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
   fileSearch: ReturnType<typeof useToolToggle>;
+  imageGeneration: ReturnType<typeof useToolToggle>;
   codeInterpreter: ReturnType<typeof useToolToggle>;
   codeApiKeyForm: ReturnType<typeof useCodeApiKeyForm>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
@@ -104,11 +105,13 @@ export default function BadgeRowProvider({
       const webSearchToggleKey = `${LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_}${storageSuffix}`;
       const fileSearchToggleKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${storageSuffix}`;
       const artifactsToggleKey = `${LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_}${storageSuffix}`;
+      const imageGenToggleKey = `${LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_}${key}`;
 
       const codeToggleValue = getTimestampedValue(codeToggleKey);
       const webSearchToggleValue = getTimestampedValue(webSearchToggleKey);
       const fileSearchToggleValue = getTimestampedValue(fileSearchToggleKey);
       const artifactsToggleValue = getTimestampedValue(artifactsToggleKey);
+      const imageGenToggleValue = getTimestampedValue(imageGenToggleKey);
 
       const initialValues: Record<string, any> = {};
 
@@ -141,6 +144,14 @@ export default function BadgeRowProvider({
           initialValues[AgentCapabilities.artifacts] = JSON.parse(artifactsToggleValue);
         } catch (e) {
           console.error('Failed to parse artifacts toggle value:', e);
+        }
+      }
+
+      if (imageGenToggleValue !== null) {
+        try {
+          initialValues[AgentCapabilities.image_generation] = JSON.parse(imageGenToggleValue);
+        } catch (e) {
+          console.error('Failed to parse image generation toggle value:', e);
         }
       }
 
@@ -242,12 +253,21 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
+  /** Image Generation hook - using capability key */
+  const imageGeneration = useToolToggle({
+    conversationId,
+    toolKey: AgentCapabilities.image_generation,
+    localStorageKey: LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_,
+    isAuthenticated: true,
+  });
+
   const mcpServerManager = useMCPServerManager({ conversationId, storageContextKey });
 
   const value: BadgeRowContextType = {
     webSearch,
     artifacts,
     fileSearch,
+    imageGeneration,
     agentsConfig,
     conversationId,
     storageContextKey,
