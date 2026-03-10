@@ -155,7 +155,7 @@ actions:
 mcpServers:
   wordpress:
     type: sse
-    url: 'http://wordpress-mcp-python:8001/sse'
+    url: 'http://host.docker.internal:8001/sse'
     serverInstructions: |
       # CONTEXT & QUALITY STANDARD
       You are a professional assistant managing WordPress websites. Your output must be a final, professional work product. Do not use placeholders. Do not add a sign-off like 'Best,' or 'Thanks,'; focus only on the main body of the message.
