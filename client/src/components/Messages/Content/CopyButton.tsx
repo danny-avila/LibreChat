@@ -4,18 +4,22 @@ import { TooltipAnchor } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import cn from '~/utils/cn';
 
-interface CopyCodeButtonProps {
+interface CopyButtonProps {
   isCopied: boolean;
   iconOnly?: boolean;
   onClick: () => void;
   tabIndex?: number;
   className?: string;
+  label?: string;
+  copiedLabel?: string;
 }
 
-const CopyCodeButton = React.forwardRef<HTMLButtonElement, CopyCodeButtonProps>(
-  ({ isCopied, iconOnly = false, onClick, tabIndex, className }, ref) => {
+const CopyButton = React.forwardRef<HTMLButtonElement, CopyButtonProps>(
+  ({ isCopied, iconOnly = false, onClick, tabIndex, className, label, copiedLabel }, ref) => {
     const localize = useLocalize();
-    const label = isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code');
+    const defaultLabel = label ?? localize('com_ui_copy');
+    const defaultCopiedLabel = copiedLabel ?? localize('com_ui_copied');
+    const currentLabel = isCopied ? defaultCopiedLabel : defaultLabel;
 
     const button = (
       <button
@@ -23,7 +27,7 @@ const CopyCodeButton = React.forwardRef<HTMLButtonElement, CopyCodeButtonProps>(
         type="button"
         onClick={onClick}
         tabIndex={tabIndex}
-        aria-label={label}
+        aria-label={currentLabel}
         className={cn(
           'inline-flex select-none items-center justify-center text-text-secondary transition-all duration-200 ease-out',
           'hover:bg-surface-hover hover:text-text-primary',
@@ -58,7 +62,7 @@ const CopyCodeButton = React.forwardRef<HTMLButtonElement, CopyCodeButtonProps>(
                 isCopied ? '-translate-y-full opacity-0' : 'translate-y-0 opacity-100',
               )}
             >
-              {localize('com_ui_copy_code')}
+              {defaultLabel}
             </span>
             <span
               className={cn(
@@ -66,7 +70,7 @@ const CopyCodeButton = React.forwardRef<HTMLButtonElement, CopyCodeButtonProps>(
                 isCopied ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0',
               )}
             >
-              {localize('com_ui_copied')}
+              {defaultCopiedLabel}
             </span>
           </span>
         )}
@@ -74,13 +78,13 @@ const CopyCodeButton = React.forwardRef<HTMLButtonElement, CopyCodeButtonProps>(
     );
 
     if (iconOnly) {
-      return <TooltipAnchor description={label} render={button} />;
+      return <TooltipAnchor description={currentLabel} render={button} />;
     }
 
     return button;
   },
 );
 
-CopyCodeButton.displayName = 'CopyCodeButton';
+CopyButton.displayName = 'CopyButton';
 
-export default CopyCodeButton;
+export default CopyButton;
