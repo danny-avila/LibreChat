@@ -827,6 +827,9 @@ export class MCPConnection extends EventEmitter {
         if (this.oauthRecovery) {
           this.decrementCycleCount();
           this.oauthRecovery = false;
+          logger.debug(
+            `${this.getLogPrefix()} OAuth recovery: decremented cycle count after successful reconnect`,
+          );
         }
       } catch (error) {
         // Check if it's a rate limit error - stop immediately to avoid making it worse
