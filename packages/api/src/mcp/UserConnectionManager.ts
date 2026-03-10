@@ -65,6 +65,9 @@ export abstract class UserConnectionManager {
 
     const userServerMap = this.userConnections.get(userId);
     let connection = forceNew ? undefined : userServerMap?.get(serverName);
+    if (forceNew) {
+      MCPConnection.clearCooldown(serverName);
+    }
     const now = Date.now();
 
     // Check if user is idle
