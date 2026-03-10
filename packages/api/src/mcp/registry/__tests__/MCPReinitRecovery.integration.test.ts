@@ -17,20 +17,20 @@
 
 import * as net from 'net';
 import * as http from 'http';
+import { Keyv } from 'keyv';
 import { Agent } from 'undici';
+import { Types } from 'mongoose';
 import { randomUUID } from 'crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { Keyv } from 'keyv';
-import { Types } from 'mongoose';
 import type { IUser } from '@librechat/data-schemas';
 import type { Socket } from 'net';
 import type * as t from '~/mcp/types';
-import { MCPInspectionFailedError } from '~/mcp/errors';
 import { registryStatusCache } from '~/mcp/registry/cache/RegistryStatusCache';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { MCPInspectionFailedError } from '~/mcp/errors';
 import { FlowStateManager } from '~/flow/manager';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
