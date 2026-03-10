@@ -34,6 +34,39 @@ const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
+const lastReconnectAttempts = new Map();
+const RECONNECT_THROTTLE_MS = 10_000;
+
+const missingToolCache = new Map();
+const MISSING_TOOL_TTL_MS = 10_000;
+
+const unavailableMsg =
+  "This tool's MCP server is temporarily unavailable. Please try again shortly.";
+
+/**
+ * @param {string} toolName
+ * @param {string} serverName
+ */
+function createUnavailableToolStub(toolName, serverName) {
+  const normalizedToolKey = `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
+  const _call = async () => unavailableMsg;
+  const toolInstance = tool(_call, {
+    schema: {
+      type: 'object',
+      properties: {
+        input: { type: 'string', description: 'Input for the tool' },
+      },
+      required: [],
+    },
+    name: normalizedToolKey,
+    description: unavailableMsg,
+    responseFormat: AgentConstants.CONTENT_AND_ARTIFACT,
+  });
+  toolInstance.mcp = true;
+  toolInstance.mcpRawServerName = serverName;
+  return toolInstance;
+}
+
 function isEmptyObjectSchema(jsonSchema) {
   return (
     jsonSchema != null &&
@@ -211,6 +244,16 @@ async function reconnectServer({
   logger.debug(
     `[MCP][reconnectServer] serverName: ${serverName}, user: ${user?.id}, hasUserMCPAuthMap: ${!!userMCPAuthMap}`,
   );
+
+  const throttleKey = `${user.id}:${serverName}`;
+  const now = Date.now();
+  const lastAttempt = lastReconnectAttempts.get(throttleKey) ?? 0;
+  if (now - lastAttempt < RECONNECT_THROTTLE_MS) {
+    logger.debug(`[MCP][reconnectServer] Throttled reconnect for ${serverName}`);
+    return null;
+  }
+  lastReconnectAttempts.set(throttleKey, now);
+
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${user.id}:${serverName}:${Date.now()}`;
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
@@ -267,7 +310,7 @@ async function reconnectServer({
       userMCPAuthMap,
       forceNew: true,
       returnOnOAuth: false,
-      connectionTimeout: Time.TWO_MINUTES,
+      connectionTimeout: Time.THIRTY_SECONDS,
     });
   } finally {
     // Clean up abort handler to prevent memory leaks
@@ -332,7 +375,7 @@ async function createMCPTools({
   });
   if (!result || !result.tools) {
     logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
-    return;
+    return [];
   }
 
   const serverTools = [];
@@ -402,6 +445,14 @@ async function createMCPTool({
   /** @type {LCTool | undefined} */
   let toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
+    const cachedAt = missingToolCache.get(toolKey);
+    if (cachedAt && Date.now() - cachedAt < MISSING_TOOL_TTL_MS) {
+      logger.debug(
+        `[MCP][${serverName}][${toolName}] Tool in negative cache, returning unavailable stub.`,
+      );
+      return createUnavailableToolStub(toolName, serverName);
+    }
+
     logger.warn(
       `[MCP][${serverName}][${toolName}] Requested tool not found in available tools, re-initializing MCP server.`,
     );
@@ -415,11 +466,17 @@ async function createMCPTool({
       streamId,
     });
     toolDefinition = result?.availableTools?.[toolKey]?.function;
+
+    if (!toolDefinition) {
+      missingToolCache.set(toolKey, Date.now());
+    }
   }
 
   if (!toolDefinition) {
-    logger.warn(`[MCP][${serverName}][${toolName}] Tool definition not found, cannot create tool.`);
-    return;
+    logger.warn(
+      `[MCP][${serverName}][${toolName}] Tool definition not found, returning unavailable stub.`,
+    );
+    return createUnavailableToolStub(toolName, serverName);
   }
 
   return createToolInstance({
@@ -720,4 +777,5 @@ module.exports = {
   getMCPSetupData,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
+  createUnavailableToolStub,
 };

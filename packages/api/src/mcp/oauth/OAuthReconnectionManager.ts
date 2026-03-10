@@ -96,6 +96,24 @@ export class OAuthReconnectionManager {
     }
   }
 
+  /**
+   * Attempts to reconnect a single OAuth MCP server.
+   * @returns true if reconnection succeeded, false otherwise.
+   */
+  public async reconnectServer(userId: string, serverName: string): Promise<boolean> {
+    if (this.mcpManager == null) {
+      return false;
+    }
+
+    this.reconnectionsTracker.setActive(userId, serverName);
+    try {
+      await this.tryReconnect(userId, serverName);
+      return !this.reconnectionsTracker.isFailed(userId, serverName);
+    } catch {
+      return false;
+    }
+  }
+
   public clearReconnection(userId: string, serverName: string) {
     this.reconnectionsTracker.removeFailed(userId, serverName);
     this.reconnectionsTracker.removeActive(userId, serverName);
@@ -174,23 +192,31 @@ export class OAuthReconnectionManager {
       }
     }
 
-    // if the server has no tokens for the user, don't attempt to reconnect
+    // if the server has a valid (non-expired) access token, allow reconnect
     const accessToken = await this.tokenMethods.findToken({
       userId,
       type: 'mcp_oauth',
       identifier: `mcp:${serverName}`,
     });
-    if (accessToken == null) {
+
+    if (accessToken != null) {
+      const now = new Date();
+      if (!accessToken.expiresAt || accessToken.expiresAt >= now) {
+        return true;
+      }
+    }
+
+    // if the access token is expired or TTL-deleted, fall back to refresh token
+    const refreshToken = await this.tokenMethods.findToken({
+      userId,
+      type: 'mcp_oauth',
+      identifier: `mcp:${serverName}:refresh`,
+    });
+
+    if (refreshToken == null) {
       return false;
     }
 
-    // if the token has expired, don't attempt to reconnect
-    const now = new Date();
-    if (accessToken.expiresAt && accessToken.expiresAt < now) {
-      return false;
-    }
-
-    // …otherwise, we're good to go with the reconnect attempt
     return true;
   }
 }
