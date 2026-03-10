@@ -3,7 +3,7 @@ import { PixelCard } from '@librechat/client';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import Image from '~/components/Chat/Messages/Content/Image';
 import { ToolIcon, OutputRenderer, isError } from '../../ToolOutput';
-import { useProgress, useExpandCollapse } from '~/hooks';
+import { useProgress, useExpandCollapse, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
 import { scaleImage } from '~/utils';
 
@@ -24,6 +24,7 @@ export default function OpenAIImageGen({
   output?: string | null;
   attachments?: TAttachment[];
 }) {
+  const localize = useLocalize();
   const isAgentStyle = toolName != null && AGENT_STYLE_TOOLS.has(toolName);
   const [agentProgress, setAgentProgress] = useState(initialProgress);
   const legacyProgress = useProgress(isAgentStyle ? 1 : initialProgress);
@@ -203,6 +204,20 @@ export default function OpenAIImageGen({
 
   return (
     <>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {(() => {
+          if (progress < 1 && !cancelled) {
+            return '';
+          }
+          if (cancelled && hasError) {
+            return localize('com_ui_image_gen_failed');
+          }
+          if (cancelled) {
+            return localize('com_ui_cancelled');
+          }
+          return localize('com_ui_image_created');
+        })()}
+      </span>
       <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
         <ToolIcon type="image_gen" isAnimating={isInProgress} />
         <ProgressText

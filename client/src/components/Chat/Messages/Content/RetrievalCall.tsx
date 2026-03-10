@@ -23,6 +23,17 @@ export default function RetrievalCall({
 
   return (
     <div className="my-2.5">
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {(() => {
+          if (progress < 1 && !cancelled) {
+            return localize('com_ui_searching_files');
+          }
+          if (cancelled) {
+            return localize('com_ui_cancelled');
+          }
+          return localize('com_ui_retrieved_files');
+        })()}
+      </span>
       <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}

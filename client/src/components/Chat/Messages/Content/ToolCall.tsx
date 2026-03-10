@@ -171,6 +171,16 @@ export default function ToolCall({
 
   return (
     <>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {(() => {
+          if (progress < 1 && !showCancelled) {
+            return function_name
+              ? localize('com_assistants_running_var', { 0: function_name })
+              : localize('com_assistants_running_action');
+          }
+          return getFinishedText();
+        })()}
+      </span>
       <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
