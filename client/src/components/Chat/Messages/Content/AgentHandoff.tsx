@@ -48,25 +48,18 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
 
   return (
     <div className="my-2.5">
-      <div
+      <button
+        type="button"
         className={cn(
-          'flex items-center gap-2.5 text-sm text-text-secondary',
-          hasInfo && 'cursor-pointer transition-colors hover:text-text-primary',
-        )}
-        onClick={() => hasInfo && setShowInfo(!showInfo)}
-        role={hasInfo ? 'button' : undefined}
-        tabIndex={hasInfo ? 0 : undefined}
-        aria-expanded={hasInfo ? showInfo : undefined}
-        onKeyDown={
+          'flex appearance-none items-center gap-2.5 bg-transparent text-sm text-text-secondary',
           hasInfo
-            ? (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setShowInfo(!showInfo);
-                }
-              }
-            : undefined
-        }
+            ? 'transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
+            : 'pointer-events-none',
+        )}
+        disabled={!hasInfo}
+        onClick={hasInfo ? () => setShowInfo(!showInfo) : undefined}
+        aria-expanded={hasInfo ? showInfo : undefined}
+        aria-label={`${localize('com_ui_transferred_to')} ${targetAgent?.name || localize('com_ui_agent')}`}
       >
         <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full ring-1 ring-border-light">
           <MessageIcon
@@ -89,7 +82,7 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
             aria-hidden="true"
           />
         )}
-      </div>
+      </button>
       <div style={expandStyle}>
         <div className="overflow-hidden">
           {hasInfo && (

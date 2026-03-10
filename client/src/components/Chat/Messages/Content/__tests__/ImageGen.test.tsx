@@ -287,3 +287,18 @@ describe('ImageGen - ACTN-02/03: Collapsible output panel', () => {
     expect(progressText).toHaveAttribute('data-is-expanded', 'false');
   });
 });
+
+describe('ImageGen - A11Y-04: screen reader status announcements', () => {
+  it('includes sr-only aria-live region for status announcements', () => {
+    renderImageGen({
+      initialProgress: 1,
+      isSubmitting: false,
+      args: '{"prompt":"test"}',
+      output: '',
+    });
+
+    const liveRegion = document.querySelector('[aria-live="polite"]');
+    expect(liveRegion).not.toBeNull();
+    expect(liveRegion!.className).toContain('sr-only');
+  });
+});

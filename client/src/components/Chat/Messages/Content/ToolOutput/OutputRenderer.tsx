@@ -190,7 +190,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
       {needsTruncation && (
         <button
           type="button"
-          className="mt-1 text-xs text-text-tertiary underline hover:text-text-secondary"
+          className="mt-1 text-xs text-text-tertiary underline hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
           onClick={() => setIsExpanded((prev) => !prev)}
         >
           {isExpanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}
@@ -199,7 +199,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
       {error && rawError && rawError !== displayText && (
         <button
           type="button"
-          className="mt-1 block text-xs text-text-tertiary underline hover:text-text-secondary"
+          className="mt-1 block text-xs text-text-tertiary underline hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
           onClick={() => setShowErrorDetails((prev) => !prev)}
         >
           {localize('com_ui_details')}

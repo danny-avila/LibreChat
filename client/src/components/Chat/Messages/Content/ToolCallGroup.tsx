@@ -107,7 +107,7 @@ export default function ToolCallGroup({
     <div className="my-1">
       <button
         type="button"
-        className="inline-flex w-full items-center gap-2 py-1 text-text-secondary"
+        className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
         onClick={handleToggle}
         aria-expanded={isExpanded}
         aria-label={localize('com_ui_used_n_tools', { 0: String(count) })}
