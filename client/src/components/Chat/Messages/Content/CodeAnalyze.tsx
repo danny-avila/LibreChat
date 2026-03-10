@@ -28,6 +28,9 @@ export default function CodeAnalyze({
 
   return (
     <>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {progress < 1 ? localize('com_ui_analyzing') : localize('com_ui_analyzing_finished')}
+      </span>
       <div className="my-2.5 flex items-center gap-2.5">
         <ProgressText
           progress={progress}

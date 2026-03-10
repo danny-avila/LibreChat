@@ -174,6 +174,9 @@ export default function WebSearch({
 
     return (
       <div className="my-1">
+        <span className="sr-only" aria-live="polite" aria-atomic="true">
+          {completedText}
+        </span>
         <button
           type="button"
           className={cn(
@@ -242,6 +245,9 @@ export default function WebSearch({
 
   return (
     <div className="my-2.5 flex items-center gap-2.5">
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {progressText}
+      </span>
       {showSources && <StackedFavicons sources={processedSources} start={-5} />}
       <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
       <span className="shimmer text-xs font-medium text-text-secondary">{progressText}</span>
