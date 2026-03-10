@@ -61,6 +61,10 @@ describe('MCPConnection OAuth Events — Real Server', () => {
   let server: OAuthTestServer;
   let connection: MCPConnection | null = null;
 
+  beforeEach(() => {
+    MCPConnection.clearCooldown('test-server');
+  });
+
   afterEach(async () => {
     await safeDisconnect(connection);
     connection = null;
@@ -105,12 +109,16 @@ describe('MCPConnection OAuth Events — Real Server', () => {
         // Expected to fail since no one handles oauthRequired
       });
 
+      let raceTimer: NodeJS.Timeout | undefined;
       const eventData = await Promise.race([
         oauthRequiredPromise,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Timed out waiting for oauthRequired')), 10000),
-        ),
-      ]);
+        new Promise<never>((_, reject) => {
+          raceTimer = setTimeout(
+            () => reject(new Error('Timed out waiting for oauthRequired')),
+            10000,
+          );
+        }),
+      ]).finally(() => clearTimeout(raceTimer));
 
       expect(eventData.serverName).toBe('test-server');
       expect(eventData.error).toBeDefined();
