@@ -8,19 +8,24 @@
  *
  * This suite tests mechanism 3 — the PENDING flow fallback — including
  * staleness enforcement and rejection of non-PENDING flows.
+ *
+ * These tests exercise the validation functions directly for fast,
+ * focused coverage. Route-level integration tests using supertest
+ * are in api/server/routes/__tests__/mcp.spec.js ("CSRF fallback
+ * via active PENDING flow" describe block).
  */
 
 import { Keyv } from 'keyv';
 import { FlowStateManager, PENDING_STALE_MS } from '~/flow/manager';
+import type { Request, Response } from 'express';
 import {
-  validateOAuthCsrf,
-  validateOAuthSession,
   generateOAuthCsrfToken,
-  OAUTH_CSRF_COOKIE,
   OAUTH_SESSION_COOKIE,
+  validateOAuthSession,
+  OAUTH_CSRF_COOKIE,
+  validateOAuthCsrf,
 } from '~/oauth/csrf';
 import { MockKeyv } from './helpers/oauthTestServer';
-import type { Request, Response } from 'express';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
