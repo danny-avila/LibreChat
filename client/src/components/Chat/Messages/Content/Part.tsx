@@ -208,7 +208,11 @@ const Part = memo(function Part({
       toolCall.type === ToolCallTypes.FILE_SEARCH
     ) {
       return (
-        <RetrievalCall initialProgress={toolCall.progress ?? 0.1} isSubmitting={isSubmitting} />
+        <RetrievalCall
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          output={(toolCall as { output?: string }).output}
+        />
       );
     } else if (
       toolCall.type === ToolCallTypes.FUNCTION &&
@@ -234,6 +238,8 @@ const Part = memo(function Part({
         }
         return null;
       }
+
+
 
 
 

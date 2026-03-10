@@ -14,6 +14,10 @@ jest.mock('~/hooks', () => ({
     return translations[key] || key;
   },
   useProgress: (initialProgress: number) => (initialProgress >= 1 ? 1 : initialProgress),
+  useExpandCollapse: (isExpanded: boolean) =>
+    isExpanded
+      ? { display: 'grid', gridTemplateRows: '1fr', opacity: 1 }
+      : { display: 'grid', gridTemplateRows: '0fr', opacity: 0 },
 }));
 
 jest.mock('../ProgressText', () => ({
@@ -22,6 +26,7 @@ jest.mock('../ProgressText', () => ({
     onClick,
     inProgressText,
     finishedText,
+    icon,
     hasInput,
     isExpanded,
     error,
@@ -46,6 +51,7 @@ jest.mock('../ProgressText', () => ({
       data-error={error}
       data-error-suffix={errorSuffix}
     >
+      {icon}
       {finishedText || inProgressText}
     </div>
   ),
@@ -55,37 +61,8 @@ jest.mock('../ToolOutput', () => ({
   ToolIcon: ({ type, isAnimating }: { type: string; isAnimating?: boolean }) => (
     <span data-testid="tool-icon" data-type={type} data-animating={isAnimating} />
   ),
+  OutputRenderer: ({ text }: { text: string }) => <pre data-testid="output-renderer">{text}</pre>,
   isError: (output: string) => typeof output === 'string' && output.toLowerCase().includes('error'),
-}));
-
-jest.mock('~/hooks/Messages/useExpandCollapse', () => ({
-  __esModule: true,
-  default: (isExpanded: boolean) => ({
-    expandStyle: isExpanded ? {} : { display: 'none' },
-    isTransitioning: false,
-  }),
-}));
-
-jest.mock('../ProgressCircle', () => ({
-  __esModule: true,
-  default: () => <div data-testid="progress-circle" />,
-}));
-
-jest.mock('../InProgressCall', () => ({
-  __esModule: true,
-  default: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="in-progress-call">{children}</div>
-  ),
-}));
-
-jest.mock('../RetrievalIcon', () => ({
-  __esModule: true,
-  default: () => <div data-testid="retrieval-icon" />,
-}));
-
-jest.mock('../CancelledIcon', () => ({
-  __esModule: true,
-  default: () => <div data-testid="cancelled-icon" />,
 }));
 
 jest.mock('~/utils', () => ({
