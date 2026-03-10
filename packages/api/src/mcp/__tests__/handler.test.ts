@@ -1488,20 +1488,26 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenCalledTimes(2);
         expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenNthCalledWith(
           1,
-          new URL('https://mcp.sentry.dev/mcp'),
+          expect.any(URL),
           expect.any(Object),
         );
         expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenNthCalledWith(
           2,
-          new URL('https://mcp.sentry.dev/'),
+          expect.any(URL),
           expect.any(Object),
         );
+        const firstDiscoveryUrl = mockDiscoverAuthorizationServerMetadata.mock.calls[0][0] as URL;
+        const secondDiscoveryUrl = mockDiscoverAuthorizationServerMetadata.mock.calls[1][0] as URL;
+        expect(firstDiscoveryUrl).toBeInstanceOf(URL);
+        expect(firstDiscoveryUrl.href).toBe('https://mcp.sentry.dev/mcp');
+        expect(secondDiscoveryUrl).toBeInstanceOf(URL);
+        expect(secondDiscoveryUrl.href).toBe('https://mcp.sentry.dev/');
 
         // Token endpoint from origin discovery metadata is used
-        expect(mockFetch).toHaveBeenCalledWith(
-          'https://mcp.sentry.dev/oauth/token',
-          expect.objectContaining({ method: 'POST' }),
-        );
+        expect(mockFetch).toHaveBeenCalled();
+        const [fetchUrl, fetchOptions] = mockFetch.mock.calls[0];
+        expect(String(fetchUrl)).toBe('https://mcp.sentry.dev/oauth/token');
+        expect(fetchOptions).toEqual(expect.objectContaining({ method: 'POST' }));
         expect(result.access_token).toBe('new-access-token');
       });
 
@@ -1547,20 +1553,27 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenCalledTimes(2);
         expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenNthCalledWith(
           1,
-          new URL('https://mcp.sentry.dev/mcp'),
+          expect.any(URL),
           expect.any(Object),
         );
         expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenNthCalledWith(
           2,
-          new URL('https://mcp.sentry.dev/'),
+          expect.any(URL),
           expect.any(Object),
         );
+        const firstDiscoveryUrl = mockDiscoverAuthorizationServerMetadata.mock.calls[0][0] as URL;
+        const secondDiscoveryUrl = mockDiscoverAuthorizationServerMetadata.mock.calls[1][0] as URL;
+        expect(firstDiscoveryUrl).toBeInstanceOf(URL);
+        expect(firstDiscoveryUrl.href).toBe('https://mcp.sentry.dev/mcp');
+        expect(secondDiscoveryUrl).toBeInstanceOf(URL);
+        expect(secondDiscoveryUrl.href).toBe('https://mcp.sentry.dev/');
 
         // Token endpoint from origin discovery metadata is used
-        expect(mockFetch).toHaveBeenCalledWith(
-          new URL('https://mcp.sentry.dev/oauth/token'),
-          expect.objectContaining({ method: 'POST' }),
-        );
+        expect(mockFetch).toHaveBeenCalled();
+        const [fetchUrl, fetchOptions] = mockFetch.mock.calls[0];
+        expect(fetchUrl).toBeInstanceOf(URL);
+        expect(fetchUrl.toString()).toBe('https://mcp.sentry.dev/oauth/token');
+        expect(fetchOptions).toEqual(expect.objectContaining({ method: 'POST' }));
         expect(result.access_token).toBe('new-access-token');
       });
 
