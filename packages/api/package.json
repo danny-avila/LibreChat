@@ -94,6 +94,7 @@
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@smithy/node-http-handler": "^4.4.5",
+    "ai-tokenizer": "^1.0.6",
     "axios": "^1.13.5",
     "connect-redis": "^8.1.0",
     "eventsource": "^3.0.2",
@@ -116,7 +117,6 @@
     "node-fetch": "2.7.0",
     "pdfjs-dist": "^5.4.624",
     "rate-limit-redis": "^4.2.0",
-    "tiktoken": "^1.0.15",
     "undici": "^7.18.2",
     "zod": "^3.22.4"
   }
