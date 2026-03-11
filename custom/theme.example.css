@@ -1,0 +1,267 @@
+/*
+ * LibreChat Custom Theme
+ *
+ * This file documents all theme variables with their default values.
+ * To use it, copy this file to `theme.css` in the same directory and
+ * change whatever you want.
+ *
+ * How it works:
+ *   - The server checks for `custom/theme.css` on startup
+ *   - If found, a <link> tag is injected at the end of <head>, after all built-in styles
+ *   - This gives your overrides the highest precedence in the cascade by load order
+ *   - The file is served with no-cache headers, so CSS edits take effect on page reload
+ *     (no container or server restart needed)
+ *
+ * Docker setup:
+ *   Mount this directory via docker-compose.override.yml:
+ *
+ *     services:
+ *       api:
+ *         volumes:
+ *           - ./custom:/app/custom
+ *
+ *   Or mount a single file:
+ *
+ *     services:
+ *       api:
+ *         volumes:
+ *           - ./my-theme.css:/app/custom/theme.css
+ *
+ * Tips:
+ *   - Use your browser's DevTools to inspect elements and find which variables
+ *     or classes to override.
+ *   - The `html` selector targets light mode; `.dark` targets dark mode.
+ *   - To load custom fonts, add @font-face rules below and place the font
+ *     files in this directory — they'll be served under /custom/.
+ */
+
+/* ==========================================================================
+ * Base color palette
+ *
+ * Redefine these to shift the entire palette at once, or override the
+ * individual semantic variables below for more surgical control.
+ * ========================================================================== */
+
+:root {
+  --white: #fff;
+  --black: #000;
+
+  --gray-20: #ececf1;
+  --gray-50: #f7f7f8;
+  --gray-100: #ececec;
+  --gray-200: #e3e3e3;
+  --gray-300: #cdcdcd;
+  --gray-400: #999696;
+  --gray-500: #595959;
+  --gray-600: #424242;
+  --gray-700: #2f2f2f;
+  --gray-800: #212121;
+  --gray-850: #171717;
+  --gray-900: #0d0d0d;
+
+  --green-50: #ecfdf5;
+  --green-100: #d1fae5;
+  --green-200: #a7f3d0;
+  --green-300: #6ee7b7;
+  --green-400: #34d399;
+  --green-500: #10b981;
+  --green-600: #059669;
+  --green-700: #047857;
+  --green-800: #065f46;
+  --green-900: #064e3b;
+  --green-950: #022c22;
+
+  --red-50: #fef2f2;
+  --red-100: #fee2e2;
+  --red-200: #fecaca;
+  --red-300: #fca5a5;
+  --red-400: #f87171;
+  --red-500: #ef4444;
+  --red-600: #dc2626;
+  --red-700: #b91c1c;
+  --red-800: #991b1b;
+  --red-900: #7f1d1d;
+  --red-950: #450a0a;
+
+  --amber-50: #fffbeb;
+  --amber-100: #fef3c7;
+  --amber-200: #fde68a;
+  --amber-300: #fcd34d;
+  --amber-400: #fbbf24;
+  --amber-500: #f59e0b;
+  --amber-600: #d97706;
+  --amber-700: #b45309;
+  --amber-800: #92400e;
+  --amber-900: #78350f;
+  --amber-950: #451a03;
+
+  /* Typography */
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --markdown-font-size: 1rem;
+}
+
+/* ==========================================================================
+ * Light mode semantic variables  (selector: html)
+ * ========================================================================== */
+
+html {
+  --brand-purple: #ab68ff;
+
+  /* Text */
+  --presentation: var(--white);
+  --text-primary: var(--gray-800);
+  --text-secondary: var(--gray-600);
+  --text-secondary-alt: var(--gray-500);
+  --text-tertiary: var(--gray-500);
+  --text-warning: var(--amber-500);
+  --text-destructive: var(--red-600);
+
+  /* Focus ring */
+  --ring-primary: var(--gray-500);
+
+  /* Header */
+  --header-primary: var(--white);
+  --header-hover: var(--gray-50);
+  --header-button-hover: var(--gray-50);
+
+  /* Surfaces */
+  --surface-active: var(--gray-100);
+  --surface-active-alt: var(--gray-200);
+  --surface-hover: var(--gray-200);
+  --surface-hover-alt: var(--gray-300);
+  --surface-primary: var(--white);
+  --surface-primary-alt: var(--gray-50);
+  --surface-primary-contrast: var(--gray-100);
+  --surface-secondary: var(--gray-50);
+  --surface-secondary-alt: var(--gray-200);
+  --surface-tertiary: var(--gray-100);
+  --surface-tertiary-alt: var(--white);
+  --surface-dialog: var(--white);
+  --surface-chat: var(--white);
+  --surface-submit: var(--green-700);
+  --surface-submit-hover: var(--green-800);
+  --surface-destructive: var(--red-700);
+  --surface-destructive-hover: var(--red-800);
+
+  /* Borders */
+  --border-light: var(--gray-200);
+  --border-medium: var(--gray-300);
+  --border-medium-alt: var(--gray-300);
+  --border-heavy: var(--gray-400);
+  --border-xheavy: var(--gray-500);
+  --border-destructive: var(--red-600);
+
+  /* HSL-based variables used by shadcn/ui components */
+  --background: 0 0% 100%;
+  --foreground: 0 0% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 3.9%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 96.1%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 96.1%;
+  --muted-foreground: 0 0% 45.1%;
+  --accent: 0 0% 96.1%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 89.8%;
+  --input: 0 0% 89.8%;
+  --ring: 0 0% 3.9%;
+  --radius: 0.5rem;
+  --switch-unchecked: 0 0% 58%;
+}
+
+/* ==========================================================================
+ * Dark mode semantic variables  (selector: .dark)
+ * ========================================================================== */
+
+.dark {
+  --brand-purple: #ab68ff;
+
+  /* Text */
+  --presentation: var(--gray-800);
+  --text-primary: var(--gray-100);
+  --text-secondary: var(--gray-300);
+  --text-secondary-alt: var(--gray-400);
+  --text-tertiary: var(--gray-500);
+  --text-warning: var(--amber-500);
+  --text-destructive: var(--red-600);
+
+  /* Header */
+  --header-primary: var(--gray-700);
+  --header-hover: var(--gray-600);
+  --header-button-hover: var(--gray-700);
+
+  /* Surfaces */
+  --surface-active: var(--gray-500);
+  --surface-active-alt: var(--gray-700);
+  --surface-hover: var(--gray-600);
+  --surface-hover-alt: var(--gray-600);
+  --surface-primary: var(--gray-900);
+  --surface-primary-alt: var(--gray-850);
+  --surface-primary-contrast: var(--gray-850);
+  --surface-secondary: var(--gray-800);
+  --surface-secondary-alt: var(--gray-800);
+  --surface-tertiary: var(--gray-700);
+  --surface-tertiary-alt: var(--gray-700);
+  --surface-dialog: var(--gray-850);
+  --surface-chat: var(--gray-700);
+  --surface-submit: var(--green-700);
+  --surface-submit-hover: var(--green-800);
+  --surface-destructive: var(--red-800);
+  --surface-destructive-hover: var(--red-900);
+
+  /* Borders */
+  --border-light: var(--gray-700);
+  --border-medium: var(--gray-600);
+  --border-medium-alt: var(--gray-600);
+  --border-heavy: var(--gray-500);
+  --border-xheavy: var(--gray-400);
+  --border-destructive: var(--red-500);
+
+  /* HSL-based variables used by shadcn/ui components */
+  --background: 0 0% 7%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 14.9%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 14.9%;
+  --muted-foreground: 0 0% 63.9%;
+  --accent: 0 0% 14.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 40.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 14.9%;
+  --input: 0 0% 14.9%;
+  --ring: 0 0% 83.1%;
+  --switch-unchecked: 0 0% 40%;
+}
+
+/* ==========================================================================
+ * Custom font example
+ *
+ * Place font files in this directory; they are served under /custom/.
+ * ========================================================================== */
+
+/*
+@font-face {
+  font-family: 'MyFont';
+  src: url('/custom/MyFont.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+html {
+  font-family: 'MyFont', sans-serif;
+}
+*/

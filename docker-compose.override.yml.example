@@ -60,6 +60,20 @@
 #       source: ./your_cert.pem
 #       target: /app/your_cert.pem
 
+# # CUSTOM THEME CSS
+# # Mount a directory containing a theme.css file to override frontend styles.
+# # The theme.css file can override CSS custom properties and any other styles.
+# # Changes to the mounted file take effect on page reload without restarting the container.
+#   api:
+#     volumes:
+#     - type: bind
+#       source: ./custom
+#       target: /app/custom
+# # To use a path other than /app/custom inside the container, also set CUSTOM_THEME_PATH:
+# #   api:
+# #     environment:
+# #       - CUSTOM_THEME_PATH=/app/my-theme
+
 # # ADD MONGO-EXPRESS
 #   mongo-express:
 #     image: mongo-express
