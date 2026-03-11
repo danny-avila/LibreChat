@@ -88,6 +88,7 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   clientInfo?: OAuthClientInformation;
   metadata?: OAuthMetadata;
   resourceMetadata?: OAuthProtectedResourceMetadata;
+  authorizationUrl?: string;
 }
 
 export interface MCPOAuthTokens extends OAuthTokens {

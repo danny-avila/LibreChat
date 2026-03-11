@@ -13,6 +13,7 @@ const {
   MCPOAuthHandler,
   MCPTokenStorage,
   setOAuthSession,
+  PENDING_STALE_MS,
   getUserMCPAuthMap,
   validateOAuthCsrf,
   OAUTH_CSRF_COOKIE,
@@ -91,7 +92,11 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
     }
 
     const oauthHeaders = await getOAuthHeaders(serverName, userId);
-    const { authorizationUrl, flowId: oauthFlowId } = await MCPOAuthHandler.initiateOAuthFlow(
+    const {
+      authorizationUrl,
+      flowId: oauthFlowId,
+      flowMetadata,
+    } = await MCPOAuthHandler.initiateOAuthFlow(
       serverName,
       serverUrl,
       userId,
@@ -101,6 +106,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
 
     logger.debug('[MCP OAuth] OAuth flow initiated', { oauthFlowId, authorizationUrl });
 
+    await MCPOAuthHandler.storeStateMapping(flowMetadata.state, oauthFlowId, flowManager);
     setOAuthCsrfCookie(res, oauthFlowId, OAUTH_CSRF_COOKIE_PATH);
     res.redirect(authorizationUrl);
   } catch (error) {
@@ -143,30 +149,52 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       return res.redirect(`${basePath}/oauth/error?error=missing_state`);
     }
 
-    const flowId = state;
-    logger.debug('[MCP OAuth] Using flow ID from state', { flowId });
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
+    const flowManager = getFlowStateManager(flowsCache);
+
+    const flowId = await MCPOAuthHandler.resolveStateToFlowId(state, flowManager);
+    if (!flowId) {
+      logger.error('[MCP OAuth] Could not resolve state to flow ID', { state });
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
+    logger.debug('[MCP OAuth] Resolved flow ID from state', { flowId });
 
     const flowParts = flowId.split(':');
     if (flowParts.length < 2 || !flowParts[0] || !flowParts[1]) {
-      logger.error('[MCP OAuth] Invalid flow ID format in state', { flowId });
+      logger.error('[MCP OAuth] Invalid flow ID format', { flowId });
       return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
     }
 
     const [flowUserId] = flowParts;
-    if (
-      !validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH) &&
-      !validateOAuthSession(req, flowUserId)
-    ) {
-      logger.error('[MCP OAuth] CSRF validation failed: no valid CSRF or session cookie', {
-        flowId,
-        hasCsrfCookie: !!req.cookies?.[OAUTH_CSRF_COOKIE],
-        hasSessionCookie: !!req.cookies?.[OAUTH_SESSION_COOKIE],
-      });
-      return res.redirect(`${basePath}/oauth/error?error=csrf_validation_failed`);
+
+    const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
+    const hasSession = !hasCsrf && validateOAuthSession(req, flowUserId);
+    let hasActiveFlow = false;
+    if (!hasCsrf && !hasSession) {
+      const pendingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
+      const pendingAge = pendingFlow?.createdAt ? Date.now() - pendingFlow.createdAt : Infinity;
+      hasActiveFlow = pendingFlow?.status === 'PENDING' && pendingAge < PENDING_STALE_MS;
+      if (hasActiveFlow) {
+        logger.debug(
+          '[MCP OAuth] CSRF/session cookies absent, validating via active PENDING flow',
+          {
+            flowId,
+          },
+        );
+      }
     }
 
-    const flowsCache = getLogStores(CacheKeys.FLOWS);
-    const flowManager = getFlowStateManager(flowsCache);
+    if (!hasCsrf && !hasSession && !hasActiveFlow) {
+      logger.error(
+        '[MCP OAuth] CSRF validation failed: no valid CSRF cookie, session cookie, or active flow',
+        {
+          flowId,
+          hasCsrfCookie: !!req.cookies?.[OAUTH_CSRF_COOKIE],
+          hasSessionCookie: !!req.cookies?.[OAUTH_SESSION_COOKIE],
+        },
+      );
+      return res.redirect(`${basePath}/oauth/error?error=csrf_validation_failed`);
+    }
 
     logger.debug('[MCP OAuth] Getting flow state for flowId: ' + flowId);
     const flowState = await MCPOAuthHandler.getFlowState(flowId, flowManager);
@@ -281,7 +309,13 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     const toolFlowId = flowState.metadata?.toolFlowId;
     if (toolFlowId) {
       logger.debug('[MCP OAuth] Completing tool flow', { toolFlowId });
-      await flowManager.completeFlow(toolFlowId, 'mcp_oauth', tokens);
+      const completed = await flowManager.completeFlow(toolFlowId, 'mcp_oauth', tokens);
+      if (!completed) {
+        logger.warn(
+          '[MCP OAuth] Tool flow state not found during completion — waiter will time out',
+          { toolFlowId },
+        );
+      }
     }
 
     /** Redirect to success page with flowId and serverName */

@@ -32,6 +32,9 @@ jest.mock('@librechat/api', () => {
       getFlowState: jest.fn(),
       completeOAuthFlow: jest.fn(),
       generateFlowId: jest.fn(),
+      resolveStateToFlowId: jest.fn(async (state) => state),
+      storeStateMapping: jest.fn(),
+      deleteStateMapping: jest.fn(),
     },
     MCPTokenStorage: {
       storeTokens: jest.fn(),
@@ -180,7 +183,10 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
         authorizationUrl: 'https://oauth.example.com/auth',
         flowId: 'test-user-id:test-server',
+        flowMetadata: { state: 'random-state-value' },
       });
+      MCPOAuthHandler.storeStateMapping.mockResolvedValue();
+      mockFlowManager.initFlow = jest.fn().mockResolvedValue();
 
       const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
         userId: 'test-user-id',
@@ -365,6 +371,121 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_state`);
+    });
+
+    describe('CSRF fallback via active PENDING flow', () => {
+      it('should proceed when a fresh PENDING flow exists and no cookies are present', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue({
+            status: 'PENDING',
+            createdAt: Date.now(),
+          }),
+          completeFlow: jest.fn().mockResolvedValue(true),
+          deleteFlow: jest.fn().mockResolvedValue(true),
+        };
+        const mockFlowState = {
+          serverName: 'test-server',
+          userId: 'test-user-id',
+          metadata: {},
+          clientInfo: {},
+          codeVerifier: 'test-verifier',
+        };
+
+        getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+        MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
+        MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+          access_token: 'test-token',
+        });
+        MCPTokenStorage.storeTokens.mockResolvedValue();
+        mockRegistryInstance.getServerConfig.mockResolvedValue({});
+
+        const mockMcpManager = {
+          getUserConnection: jest.fn().mockResolvedValue({
+            fetchTools: jest.fn().mockResolvedValue([]),
+          }),
+        };
+        require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+        require('~/config').getOAuthReconnectionManager.mockReturnValue({
+          clearReconnection: jest.fn(),
+        });
+        require('~/server/services/Config/mcp').updateMCPServerTools.mockResolvedValue();
+
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .query({ code: 'test-code', state: flowId });
+
+        const basePath = getBasePath();
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toContain(`${basePath}/oauth/success`);
+      });
+
+      it('should reject when no PENDING flow exists and no cookies are present', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue(null),
+        };
+
+        getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .query({ code: 'test-code', state: flowId });
+
+        const basePath = getBasePath();
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(
+          `${basePath}/oauth/error?error=csrf_validation_failed`,
+        );
+      });
+
+      it('should reject when only a COMPLETED flow exists (not PENDING)', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue({
+            status: 'COMPLETED',
+            createdAt: Date.now(),
+          }),
+        };
+
+        getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .query({ code: 'test-code', state: flowId });
+
+        const basePath = getBasePath();
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(
+          `${basePath}/oauth/error?error=csrf_validation_failed`,
+        );
+      });
+
+      it('should reject when PENDING flow is stale (older than PENDING_STALE_MS)', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue({
+            status: 'PENDING',
+            createdAt: Date.now() - 3 * 60 * 1000,
+          }),
+        };
+
+        getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .query({ code: 'test-code', state: flowId });
+
+        const basePath = getBasePath();
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(
+          `${basePath}/oauth/error?error=csrf_validation_failed`,
+        );
+      });
     });
 
     it('should handle OAuth callback successfully', async () => {

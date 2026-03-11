@@ -4,6 +4,15 @@ import type { TokenMethods, IToken } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthMetadata } from './types';
 import { isSystemUserId } from '~/mcp/enum';
 
+export class ReauthenticationRequiredError extends Error {
+  constructor(serverName: string, reason: 'expired' | 'missing') {
+    super(
+      `Re-authentication required for "${serverName}": access token ${reason} and no refresh token available`,
+    );
+    this.name = 'ReauthenticationRequiredError';
+  }
+}
+
 interface StoreTokensParams {
   userId: string;
   serverName: string;
@@ -27,7 +36,12 @@ interface GetTokensParams {
   findToken: TokenMethods['findToken'];
   refreshTokens?: (
     refreshToken: string,
-    metadata: { userId: string; serverName: string; identifier: string },
+    metadata: {
+      userId: string;
+      serverName: string;
+      identifier: string;
+      clientInfo?: OAuthClientInformation;
+    },
   ) => Promise<MCPOAuthTokens>;
   createToken?: TokenMethods['createToken'];
   updateToken?: TokenMethods['updateToken'];
@@ -273,10 +287,11 @@ export class MCPTokenStorage {
         });
 
         if (!refreshTokenData) {
+          const reason = isMissing ? 'missing' : 'expired';
           logger.info(
-            `${logPrefix} Access token ${isMissing ? 'missing' : 'expired'} and no refresh token available`,
+            `${logPrefix} Access token ${reason} and no refresh token available — re-authentication required`,
           );
-          return null;
+          throw new ReauthenticationRequiredError(serverName, reason);
         }
 
         if (!refreshTokens) {
@@ -395,6 +410,9 @@ export class MCPTokenStorage {
       logger.debug(`${logPrefix} Loaded existing OAuth tokens from storage`);
       return tokens;
     } catch (error) {
+      if (error instanceof ReauthenticationRequiredError) {
+        throw error;
+      }
       logger.error(`${logPrefix} Failed to retrieve tokens`, error);
       return null;
     }

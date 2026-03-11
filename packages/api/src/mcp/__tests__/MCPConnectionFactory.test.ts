@@ -275,7 +275,7 @@ describe('MCPConnectionFactory', () => {
       expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
         'flow123',
         'mcp_oauth',
-        mockFlowData.flowMetadata,
+        expect.objectContaining(mockFlowData.flowMetadata),
       );
       const initCallOrder = mockFlowManager.initFlow.mock.invocationCallOrder[0];
       const oauthStartCallOrder = (oauthOptions.oauthStart as jest.Mock).mock
@@ -550,7 +550,7 @@ describe('MCPConnectionFactory', () => {
       expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
         'flow123',
         'mcp_oauth',
-        mockFlowData.flowMetadata,
+        expect.objectContaining(mockFlowData.flowMetadata),
       );
       const initCallOrder = mockFlowManager.initFlow.mock.invocationCallOrder[0];
       const oauthStartCallOrder = (oauthOptions.oauthStart as jest.Mock).mock
