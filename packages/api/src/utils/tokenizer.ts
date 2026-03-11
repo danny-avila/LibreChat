@@ -1,43 +1,46 @@
 import { logger } from '@librechat/data-schemas';
-import * as claude from 'ai-tokenizer/encoding/claude';
 import { Tokenizer as AiTokenizer } from 'ai-tokenizer';
-import * as o200k_base from 'ai-tokenizer/encoding/o200k_base';
 
 export type EncodingName = 'o200k_base' | 'claude';
 
-const encodingData = {
-  o200k_base,
-  claude,
-} as const;
+type EncodingData = ConstructorParameters<typeof AiTokenizer>[0];
 
 class Tokenizer {
   private tokenizersCache: Partial<Record<EncodingName, AiTokenizer>> = {};
+  private loadingPromises: Partial<Record<EncodingName, Promise<void>>> = {};
 
-  getTokenizer(encoding: EncodingName = 'o200k_base'): AiTokenizer {
-    const cached = this.tokenizersCache[encoding];
-    if (cached) {
-      return cached;
+  /** Pre-loads an encoding so that subsequent getTokenCount calls are accurate. */
+  async initEncoding(encoding: EncodingName): Promise<void> {
+    if (this.tokenizersCache[encoding]) {
+      return;
     }
-
-    const data = encodingData[encoding];
-    const tokenizer = new AiTokenizer(data);
-    this.tokenizersCache[encoding] = tokenizer;
-    return tokenizer;
+    if (this.loadingPromises[encoding]) {
+      return this.loadingPromises[encoding];
+    }
+    this.loadingPromises[encoding] = (async () => {
+      const data: EncodingData =
+        encoding === 'claude'
+          ? await import('ai-tokenizer/encoding/claude')
+          : await import('ai-tokenizer/encoding/o200k_base');
+      this.tokenizersCache[encoding] = new AiTokenizer(data);
+    })();
+    return this.loadingPromises[encoding];
   }
 
   getTokenCount(text: string, encoding: EncodingName = 'o200k_base'): number {
+    const tokenizer = this.tokenizersCache[encoding];
+    if (!tokenizer) {
+      this.initEncoding(encoding);
+      return Math.ceil(text.length / 4);
+    }
     try {
-      const tokenizer = this.getTokenizer(encoding);
       return tokenizer.count(text);
     } catch (error) {
       logger.error('[Tokenizer] Error getting token count:', error);
       delete this.tokenizersCache[encoding];
-      try {
-        return this.getTokenizer(encoding).count(text);
-      } catch (retryError) {
-        logger.error('[Tokenizer] Recovery failed, returning 0:', retryError);
-        return 0;
-      }
+      delete this.loadingPromises[encoding];
+      this.initEncoding(encoding);
+      return Math.ceil(text.length / 4);
     }
   }
 }
@@ -46,11 +49,11 @@ const TokenizerSingleton = new Tokenizer();
 
 /**
  * Counts the number of tokens in a given text using ai-tokenizer with o200k_base encoding.
- * This is an async wrapper around Tokenizer.getTokenCount for compatibility.
  * @param text - The text to count tokens in. Defaults to an empty string.
  * @returns The number of tokens in the provided text.
  */
 export async function countTokens(text = ''): Promise<number> {
+  await TokenizerSingleton.initEncoding('o200k_base');
   return TokenizerSingleton.getTokenCount(text, 'o200k_base');
 }
 
