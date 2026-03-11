@@ -8,8 +8,8 @@ const {
   initializeClient: initAzureClient,
 } = require('~/server/services/Endpoints/azureAssistants');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getEndpointsConfig } = require('~/server/services/Config');
-const { hasCapability } = require('~/server/middleware');
 
 /**
  * @param {ServerRequest} req
