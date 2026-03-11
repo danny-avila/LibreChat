@@ -1172,6 +1172,10 @@ class AgentClient extends BaseClient {
     }
   }
 
+  /**
+   * Anthropic Claude models use a distinct BPE tokenizer; all others use o200k_base
+   * @returns The encoding to use for the model.
+   */
   getEncoding() {
     if (this.model && this.model.toLowerCase().includes('claude')) {
       return 'claude';
