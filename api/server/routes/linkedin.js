@@ -81,7 +81,8 @@ async function getValidAccessToken(account) {
  * Supports both token query parameter (dev mode) and standard JWT auth (production)
  */
 router.get('/connect', async (req, res) => {
-  const clientUrl = process.env.DOMAIN_CLIENT || 'http://localhost:3080';
+  // Use LIBRECHAT_URL for OAuth redirects (public URL), fallback to DOMAIN_CLIENT for dev
+  const clientUrl = process.env.LIBRECHAT_URL || process.env.DOMAIN_CLIENT;
   
   try {
     let userId;
@@ -146,7 +147,8 @@ router.get('/connect', async (req, res) => {
  */
 router.get('/callback', async (req, res) => {
   const { code, state, error: oauthError } = req.query;
-  const clientUrl = process.env.DOMAIN_CLIENT || 'http://localhost:3080';
+  // Use LIBRECHAT_URL for OAuth redirects (public URL), fallback to DOMAIN_CLIENT for dev
+  const clientUrl = process.env.LIBRECHAT_URL || process.env.DOMAIN_CLIENT;
 
   // Handle OAuth errors
   if (oauthError) {
