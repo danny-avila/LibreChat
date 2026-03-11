@@ -82,10 +82,6 @@ interface CircuitBreakerState {
   failedBackoffUntil: number;
 }
 
-const CB_MAX_CYCLES = 5;
-const CB_CYCLE_WINDOW_MS = 60_000;
-const CB_CYCLE_COOLDOWN_MS = 30_000;
-
 const CB_MAX_FAILED_ROUNDS = 3;
 const CB_FAILED_WINDOW_MS = 120_000;
 const CB_BASE_BACKOFF_MS = 30_000;
@@ -326,17 +322,17 @@ export class MCPConnection extends EventEmitter {
   private recordCycle(): void {
     const cb = this.getCircuitBreaker();
     const now = Date.now();
-    if (now - cb.cycleWindowStart > CB_CYCLE_WINDOW_MS) {
+    if (now - cb.cycleWindowStart > mcpConfig.CB_CYCLE_WINDOW_MS) {
       cb.cycleCount = 0;
       cb.cycleWindowStart = now;
     }
     cb.cycleCount++;
-    if (cb.cycleCount >= CB_MAX_CYCLES) {
-      cb.cooldownUntil = now + CB_CYCLE_COOLDOWN_MS;
+    if (cb.cycleCount >= mcpConfig.CB_MAX_CYCLES) {
+      cb.cooldownUntil = now + mcpConfig.CB_CYCLE_COOLDOWN_MS;
       cb.cycleCount = 0;
       cb.cycleWindowStart = now;
       logger.warn(
-        `${this.getLogPrefix()} Circuit breaker: too many cycles, cooling down for ${CB_CYCLE_COOLDOWN_MS}ms`,
+        `${this.getLogPrefix()} Circuit breaker: too many cycles, cooling down for ${mcpConfig.CB_CYCLE_COOLDOWN_MS}ms`,
       );
     }
   }

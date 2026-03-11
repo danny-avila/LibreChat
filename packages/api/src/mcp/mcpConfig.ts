@@ -12,4 +12,10 @@ export const mcpConfig = {
   USER_CONNECTION_IDLE_TIMEOUT: math(
     process.env.MCP_USER_CONNECTION_IDLE_TIMEOUT ?? 15 * 60 * 1000,
   ),
+  /** Max connect/disconnect cycles before the circuit breaker trips. Default: 5 */
+  CB_MAX_CYCLES: math(process.env.MCP_CB_MAX_CYCLES ?? 5),
+  /** Sliding window (ms) for counting cycles. Default: 60s */
+  CB_CYCLE_WINDOW_MS: math(process.env.MCP_CB_CYCLE_WINDOW_MS ?? 60_000),
+  /** Cooldown (ms) after the cycle breaker trips. Default: 30s */
+  CB_CYCLE_COOLDOWN_MS: math(process.env.MCP_CB_CYCLE_COOLDOWN_MS ?? 30_000),
 };
