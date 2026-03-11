@@ -5,14 +5,17 @@ services:
   api:
     container_name: LibreChat
     ports:
-      - "${PORT}:${PORT}"
+      - '${PORT}:${PORT}'
     depends_on:
       - rag_api
-    image: ghcr.io/danny-avila/librechat-dev:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: librechat-local:dev
     restart: always
-    user: "${UID}:${GID}"
+    user: '${UID}:${GID}'
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     environment:
       - HOST=0.0.0.0
       - MEILI_HOST=http://meilisearch:7700
@@ -22,6 +25,9 @@ services:
       - type: bind
         source: ./.env
         target: /app/.env
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/logs
@@ -29,7 +35,7 @@ services:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.12.3
     restart: always
-    user: "${UID}:${GID}"
+    user: '${UID}:${GID}'
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_NO_ANALYTICS=true

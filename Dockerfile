@@ -44,7 +44,7 @@ COPY --chown=node:node . .
 RUN \
     # React client build with configurable memory
     NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend; \
-    npm prune --production; \
+    rm -rf node_modules/.cache; \
     npm cache clean --force
 
 # Node API setup

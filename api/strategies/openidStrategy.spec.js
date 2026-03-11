@@ -774,6 +774,41 @@ describe('setupOpenId', () => {
     expect(callOptions.params?.code_challenge_method).toBeUndefined();
   });
 
+  it('should pass the client secret and default token auth method to discovery', async () => {
+    const openidClient = require('openid-client');
+
+    await setupOpenId();
+
+    expect(openidClient.discovery).toHaveBeenLastCalledWith(
+      new URL(process.env.OPENID_ISSUER),
+      process.env.OPENID_CLIENT_ID,
+      expect.objectContaining({
+        client_id: process.env.OPENID_CLIENT_ID,
+        client_secret: process.env.OPENID_CLIENT_SECRET,
+        token_endpoint_auth_method: 'client_secret_basic',
+      }),
+      expect.any(Function),
+      expect.any(Object),
+    );
+  });
+
+  it('should allow overriding the token endpoint auth method', async () => {
+    const openidClient = require('openid-client');
+
+    process.env.OPENID_TOKEN_ENDPOINT_AUTH_METHOD = 'client_secret_post';
+    await setupOpenId();
+
+    expect(openidClient.discovery).toHaveBeenLastCalledWith(
+      new URL(process.env.OPENID_ISSUER),
+      process.env.OPENID_CLIENT_ID,
+      expect.objectContaining({
+        token_endpoint_auth_method: 'client_secret_post',
+      }),
+      expect.any(Function),
+      expect.any(Object),
+    );
+  });
+
   it('should attach federatedTokens to user object for token propagation', async () => {
     // Arrange - setup tokenset with access token, id token, refresh token, and expiration
     const tokensetWithTokens = {

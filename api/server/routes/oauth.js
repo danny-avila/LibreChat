@@ -24,18 +24,18 @@ const domains = {
 
 const createAuthCallbackHandler = (provider, options = {}) => {
   return (req, res, next) => {
-    logger.info(`[${provider}Callback] Request received:`, {
-      code: req.query?.code ? 'present' : 'missing',
-      query: req.query,
-    });
+    const q = req.query;
+    logger.info(`[${provider}Callback] Query: ${JSON.stringify(q)}`);
 
     let attempts = 0;
     const maxAttempts = 2;
 
     const doAuth = () => {
+      logger.info(`[${provider}Callback] Starting passport.authenticate`);
       const auth = passport.authenticate(provider, { session: false, ...options });
       const startTime = Date.now();
       auth(req, res, (err) => {
+        logger.info(`[${provider}Callback] Passport auth done, err:`, err);
         const duration = Date.now() - startTime;
         attempts++;
         logger.info(`[${provider}Callback] Auth attempt ${attempts} completed in ${duration}ms`);

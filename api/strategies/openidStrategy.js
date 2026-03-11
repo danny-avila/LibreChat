@@ -32,11 +32,11 @@ const getLogStores = require('~/cache/getLogStores');
  */
 async function customFetch(url, options) {
   const urlStr = url.toString();
-  logger.debug(`[openidStrategy] Request to: ${urlStr}`);
+  logger.info(`[openidStrategy] Request to: ${urlStr}`);
   const debugOpenId = isEnabled(process.env.DEBUG_OPENID_REQUESTS);
   if (debugOpenId) {
-    logger.debug(`[openidStrategy] Request method: ${options.method || 'GET'}`);
-    logger.debug(`[openidStrategy] Request headers: ${logHeaders(options.headers)}`);
+    logger.info(`[openidStrategy] Request method: ${options.method || 'GET'}`);
+    logger.info(`[openidStrategy] Request headers: ${logHeaders(options.headers)}`);
     if (options.body) {
       let bodyForLogging = '';
       if (options.body instanceof URLSearchParams) {
@@ -46,7 +46,7 @@ async function customFetch(url, options) {
       } else {
         bodyForLogging = safeStringify(options.body);
       }
-      logger.debug(`[openidStrategy] Request body: ${bodyForLogging}`);
+      logger.info(`[openidStrategy] Request body: ${bodyForLogging}`);
     }
   }
 
@@ -64,8 +64,15 @@ async function customFetch(url, options) {
     const response = await undici.fetch(url, fetchOptions);
 
     if (debugOpenId) {
-      logger.debug(`[openidStrategy] Response status: ${response.status} ${response.statusText}`);
-      logger.debug(`[openidStrategy] Response headers: ${logHeaders(response.headers)}`);
+      logger.info(`[openidStrategy] Response status: ${response.status} ${response.statusText}`);
+      logger.info(`[openidStrategy] Response headers: ${logHeaders(response.headers)}`);
+      const body = await response.text();
+      logger.info(`[openidStrategy] Response body: ${body}`);
+      return new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
     }
 
     if (response.status === 200 && response.headers.has('www-authenticate')) {
@@ -98,6 +105,26 @@ This violates RFC 7235 and may cause issues with strict OAuth clients. Removing 
 
 /** @typedef {Configuration | null}  */
 let openidConfig = null;
+
+/**
+ * @param {string} tokenEndpointAuthMethod
+ * @returns {import('openid-client').ClientAuth}
+ */
+function getClientAuthentication(tokenEndpointAuthMethod) {
+  switch (tokenEndpointAuthMethod) {
+    case 'client_secret_post':
+      return client.ClientSecretPost(process.env.OPENID_CLIENT_SECRET);
+    case 'client_secret_basic':
+      return client.ClientSecretBasic(process.env.OPENID_CLIENT_SECRET);
+    case 'none':
+      return client.None();
+    default:
+      logger.warn(
+        `[openidStrategy] Unsupported OPENID_TOKEN_ENDPOINT_AUTH_METHOD "${tokenEndpointAuthMethod}", falling back to client_secret_basic`,
+      );
+      return client.ClientSecretBasic(process.env.OPENID_CLIENT_SECRET);
+  }
+}
 
 /**
  * Custom OpenID Strategy
@@ -661,17 +688,20 @@ const setupOpenIdAdmin = (openidConfig) => {
 async function setupOpenId() {
   try {
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
+    const tokenEndpointAuthMethod =
+      process.env.OPENID_TOKEN_ENDPOINT_AUTH_METHOD || 'client_secret_basic';
+    const clientAuthentication = getClientAuthentication(tokenEndpointAuthMethod);
 
     /** @type {ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
+      token_endpoint_auth_method: tokenEndpointAuthMethod,
     };
 
     if (shouldGenerateNonce) {
       clientMetadata.response_types = ['code'];
       clientMetadata.grant_types = ['authorization_code'];
-      clientMetadata.token_endpoint_auth_method = 'client_secret_post';
     }
 
     /** @type {Configuration} */
@@ -679,7 +709,7 @@ async function setupOpenId() {
       new URL(process.env.OPENID_ISSUER),
       process.env.OPENID_CLIENT_ID,
       clientMetadata,
-      undefined,
+      clientAuthentication,
       {
         [client.customFetch]: customFetch,
       },
@@ -687,6 +717,7 @@ async function setupOpenId() {
 
     logger.info(`[openidStrategy] OpenID authentication configuration`, {
       generateNonce: shouldGenerateNonce,
+      tokenEndpointAuthMethod,
       reason: shouldGenerateNonce
         ? 'OPENID_GENERATE_NONCE=true - Will generate nonce and use explicit metadata for federated providers'
         : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',

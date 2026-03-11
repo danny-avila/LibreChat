@@ -82,6 +82,7 @@
     "mathjs": "^15.1.0",
     "meilisearch": "^0.38.0",
     "memorystore": "^1.6.7",
+    "mongoose": "^8.12.1",
     "mime": "^3.0.0",
     "module-alias": "^2.2.3",
     "multer": "^2.0.2",
