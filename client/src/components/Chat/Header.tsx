@@ -76,7 +76,7 @@ function Header() {
               {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
               {hasAccessToBookmarks === true && <BookmarkMenu />}
               {hasAccessToMultiConvo === true && <AddMultiConvo />}
-              {/* NJ: We force all chats to be temporary & disable exporting/sharing */}
+              {/* NJ: We disable exporting/sharing */}
               {isSmallScreen && false && (
                 <>
                   <ExportAndShareMenu
@@ -89,7 +89,7 @@ function Header() {
           )}
         </div>
 
-        {/* NJ: We force all chats to be temporary & disable exporting/sharing */}
+        {/* NJ: We disable exporting/sharing */}
         {!isSmallScreen && false && (
           <div className="flex items-center gap-2">
             <ExportAndShareMenu

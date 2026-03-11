@@ -9,7 +9,7 @@ export type SearchState = {
   isTyping: boolean;
 };
 
-// NJ: Since we're forcing all chats to be temporary, the search bar's presence makes no sense, so disable it
+// NJ: Disable the search bar until we actually support search (via Meili)
 export const search = constRecoilStateOpts<SearchState>({
   key: 'search',
   default: {

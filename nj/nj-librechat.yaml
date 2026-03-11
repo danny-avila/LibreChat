@@ -16,9 +16,8 @@ fileStrategy: "s3"
 interface:
   customWelcome: 'NJ AI Assistant'
 
-  # Make sure temporary chats are available (but only retained the minimum amount of time, which is 1 hour)
-  temporaryChat: true
-  temporaryChatRetention: 1
+  # Disable temporary chats (we need to retain data for OPRA)
+  temporaryChat: false
 
   # Since we only have limited endpoints, we disable the more elaborate model selector
   # (Instead, we define the model selection using `modelSpecs` below)

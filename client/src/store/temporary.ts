@@ -1,9 +1,7 @@
 import { atomWithLocalStorage } from '~/store/utils';
-import { constRecoilState } from '~/nj/utils/constRecoilState';
 
-// NJ: We are forcing all chats to be temporary
-const isTemporary = constRecoilState('isTemporary', true);
-const defaultTemporaryChat = constRecoilState('defaultTemporaryChat', true);
+const isTemporary = atomWithLocalStorage('isTemporary', false);
+const defaultTemporaryChat = atomWithLocalStorage('defaultTemporaryChat', false);
 
 export default {
   isTemporary,
