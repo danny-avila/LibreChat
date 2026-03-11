@@ -12,7 +12,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Socket } from 'net';
+import type { OAuthTestServer } from './helpers/oauthTestServer';
+import type { MCPOAuthTokens } from '~/mcp/oauth';
 import { OAuthReconnectionTracker } from '~/mcp/oauth/OAuthReconnectionTracker';
+import { createOAuthMCPServer } from './helpers/oauthTestServer';
 import { MCPConnection } from '~/mcp/connection';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -499,6 +502,146 @@ describe('Cascade: Circuit breaker caps rapid cycling', () => {
 
     expect(breakerTripped).toBe(true);
   }, 30_000);
+});
+
+/* ------------------------------------------------------------------ */
+/*  OAuth: cycle recovery after successful OAuth reconnect             */
+/* ------------------------------------------------------------------ */
+describe('OAuth: cycle budget recovery after successful OAuth', () => {
+  let oauthServer: OAuthTestServer;
+
+  beforeEach(async () => {
+    oauthServer = await createOAuthMCPServer({ tokenTTLMs: 60000 });
+  });
+
+  afterEach(async () => {
+    await oauthServer.close();
+  });
+
+  async function exchangeCodeForToken(serverUrl: string): Promise<string> {
+    const authRes = await fetch(`${serverUrl}authorize?redirect_uri=http://localhost&state=test`, {
+      redirect: 'manual',
+    });
+    const location = authRes.headers.get('location') ?? '';
+    const code = new URL(location).searchParams.get('code') ?? '';
+    const tokenRes = await fetch(`${serverUrl}token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=authorization_code&code=${code}`,
+    });
+    const data = (await tokenRes.json()) as { access_token: string };
+    return data.access_token;
+  }
+
+  it('should decrement cycle count after successful OAuth recovery', async () => {
+    const serverName = 'oauth-cycle-test';
+    MCPConnection.clearCooldown(serverName);
+
+    const conn = new MCPConnection({
+      serverName,
+      serverConfig: { type: 'streamable-http', url: oauthServer.url, initTimeout: 10000 },
+      userId: 'user-1',
+    });
+
+    // When oauthRequired fires, get a token and emit oauthHandled
+    // This triggers the oauthRecovery path inside connectClient
+    conn.on('oauthRequired', async () => {
+      const accessToken = await exchangeCodeForToken(oauthServer.url);
+      conn.setOAuthTokens({
+        access_token: accessToken,
+        token_type: 'Bearer',
+      } as MCPOAuthTokens);
+      conn.emit('oauthHandled');
+    });
+
+    // connect() → 401 → oauthRequired → oauthHandled → connectClient returns
+    // connect() sees not connected → throws "Connection not established"
+    await expect(conn.connect()).rejects.toThrow('Connection not established');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cb = (MCPConnection as any).circuitBreakers.get(serverName);
+    const cyclesBeforeRetry = cb.cycleCount;
+
+    // Retry — should succeed and decrement cycle count via oauthRecovery
+    await conn.connect();
+    expect(await conn.isConnected()).toBe(true);
+
+    const cyclesAfterSuccess = cb.cycleCount;
+    // The retry adds +1 cycle (disconnect(false)) then -1 (oauthRecovery decrement)
+    // So cyclesAfterSuccess should equal cyclesBeforeRetry, not cyclesBeforeRetry + 1
+    expect(cyclesAfterSuccess).toBe(cyclesBeforeRetry);
+
+    await teardownConnection(conn);
+  });
+
+  it('should allow more OAuth reconnects than non-OAuth before breaker trips', async () => {
+    const serverName = 'oauth-budget';
+    MCPConnection.clearCooldown(serverName);
+
+    // Each OAuth flow: connect (+1) → 401 → oauthHandled → retry connect (+1) → success (-1) = net 1
+    // Without the decrement it would be net 2 per flow, tripping the breaker after ~2 users
+    let successfulFlows = 0;
+    for (let i = 0; i < 10; i++) {
+      const conn = new MCPConnection({
+        serverName,
+        serverConfig: { type: 'streamable-http', url: oauthServer.url, initTimeout: 10000 },
+        userId: `user-${i}`,
+      });
+
+      conn.on('oauthRequired', async () => {
+        const accessToken = await exchangeCodeForToken(oauthServer.url);
+        conn.setOAuthTokens({
+          access_token: accessToken,
+          token_type: 'Bearer',
+        } as MCPOAuthTokens);
+        conn.emit('oauthHandled');
+      });
+
+      try {
+        // First connect: 401 → oauthHandled → returns without connection
+        await conn.connect().catch(() => {});
+        // Retry: succeeds with token, decrements cycle
+        await conn.connect();
+        successfulFlows++;
+        await teardownConnection(conn);
+      } catch (e) {
+        conn.removeAllListeners();
+        if ((e as Error).message.includes('Circuit breaker is open')) {
+          break;
+        }
+      }
+    }
+
+    // With the oauthRecovery decrement, each flow is net ~1 cycle instead of ~2,
+    // so we should get more successful flows before the breaker trips
+    expect(successfulFlows).toBeGreaterThanOrEqual(3);
+  });
+
+  it('should not decrement cycle count when OAuth fails', async () => {
+    const serverName = 'oauth-failed-no-decrement';
+    MCPConnection.clearCooldown(serverName);
+
+    const conn = new MCPConnection({
+      serverName,
+      serverConfig: { type: 'streamable-http', url: oauthServer.url, initTimeout: 10000 },
+      userId: 'user-1',
+    });
+
+    conn.on('oauthRequired', () => {
+      conn.emit('oauthFailed', new Error('user denied'));
+    });
+
+    await expect(conn.connect()).rejects.toThrow();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cb = (MCPConnection as any).circuitBreakers.get(serverName);
+    const cyclesAfterFailure = cb.cycleCount;
+
+    // connect() recorded +1 cycle, oauthFailed should NOT decrement
+    expect(cyclesAfterFailure).toBeGreaterThanOrEqual(1);
+
+    conn.removeAllListeners();
+  });
 });
 
 /* ------------------------------------------------------------------ */
