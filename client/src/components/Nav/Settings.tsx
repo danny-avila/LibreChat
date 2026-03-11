@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import { MessageSquare, Command, DollarSign, Network } from 'lucide-react';
@@ -35,6 +36,17 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
   const tabRefs = useRef({});
   const { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
+  const [searchParams] = useSearchParams();
+
+  // Check for tab query parameter (e.g., from OAuth redirects)
+  useEffect(() => {
+    if (open) {
+      const tabParam = searchParams.get('tab');
+      if (tabParam === 'social' && import.meta.env.VITE_SOCIAL_MEDIA_AUTOMATION === 'true') {
+        setActiveTab(SettingsTabValues.SOCIAL_ACCOUNTS);
+      }
+    }
+  }, [open, searchParams]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const tabs: SettingsTabValues[] = [
