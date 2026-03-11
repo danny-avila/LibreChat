@@ -82,10 +82,6 @@ interface CircuitBreakerState {
   failedBackoffUntil: number;
 }
 
-const CB_MAX_FAILED_ROUNDS = 3;
-const CB_FAILED_WINDOW_MS = 120_000;
-const CB_BASE_BACKOFF_MS = 30_000;
-const CB_MAX_BACKOFF_MS = 300_000;
 /** Default body timeout for Streamable HTTP GET SSE streams that idle between server pushes */
 const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
 
@@ -340,15 +336,16 @@ export class MCPConnection extends EventEmitter {
   private recordFailedRound(): void {
     const cb = this.getCircuitBreaker();
     const now = Date.now();
-    if (now - cb.failedWindowStart > CB_FAILED_WINDOW_MS) {
+    if (now - cb.failedWindowStart > mcpConfig.CB_FAILED_WINDOW_MS) {
       cb.failedRounds = 0;
       cb.failedWindowStart = now;
     }
     cb.failedRounds++;
-    if (cb.failedRounds >= CB_MAX_FAILED_ROUNDS) {
+    if (cb.failedRounds >= mcpConfig.CB_MAX_FAILED_ROUNDS) {
       const backoff = Math.min(
-        CB_BASE_BACKOFF_MS * Math.pow(2, cb.failedRounds - CB_MAX_FAILED_ROUNDS),
-        CB_MAX_BACKOFF_MS,
+        mcpConfig.CB_BASE_BACKOFF_MS *
+          Math.pow(2, cb.failedRounds - mcpConfig.CB_MAX_FAILED_ROUNDS),
+        mcpConfig.CB_MAX_BACKOFF_MS,
       );
       cb.failedBackoffUntil = now + backoff;
       logger.warn(
