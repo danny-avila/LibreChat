@@ -591,6 +591,10 @@ describe('processTextWithTokenLimit', () => {
   });
 
   describe('direct comparison with REAL ai-tokenizer', () => {
+    beforeAll(async () => {
+      await Tokenizer.initEncoding('o200k_base');
+    });
+
     it('should produce valid truncation with real tokenizer', async () => {
       const counter = createRealTokenCounter();
       const text = createRealisticText(5000);
