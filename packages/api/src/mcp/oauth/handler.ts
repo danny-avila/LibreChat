@@ -161,20 +161,7 @@ export class MCPOAuthHandler {
     logger.debug(
       `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
     );
-    let rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
-      fetchFn,
-    });
-
-    // If discovery failed and we're using a path-based URL, try the base URL
-    if (!rawMetadata && authServerUrl.pathname !== '/') {
-      const baseUrl = new URL(authServerUrl.origin);
-      logger.debug(
-        `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
-      );
-      rawMetadata = await discoverAuthorizationServerMetadata(baseUrl, {
-        fetchFn,
-      });
-    }
+    const rawMetadata = await this.discoverWithOriginFallback(authServerUrl, fetchFn);
 
     if (!rawMetadata) {
       /**
@@ -219,6 +206,39 @@ export class MCPOAuthHandler {
       resourceMetadata,
       authServerUrl,
     };
+  }
+
+  /**
+   * Discovers OAuth authorization server metadata, retrying with just the origin
+   * when discovery fails for a path-based URL. Shared implementation used by
+   * `discoverMetadata` and both `refreshOAuthTokens` branches.
+   */
+  private static async discoverWithOriginFallback(
+    serverUrl: URL,
+    fetchFn: FetchLike,
+  ): ReturnType<typeof discoverAuthorizationServerMetadata> {
+    let metadata: Awaited<ReturnType<typeof discoverAuthorizationServerMetadata>>;
+    try {
+      metadata = await discoverAuthorizationServerMetadata(serverUrl, { fetchFn });
+    } catch (err) {
+      if (serverUrl.pathname === '/') {
+        throw err;
+      }
+      const baseUrl = new URL(serverUrl.origin);
+      logger.debug(
+        `[MCPOAuth] Discovery threw for path URL, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+        { error: err },
+      );
+      return discoverAuthorizationServerMetadata(baseUrl, { fetchFn });
+    }
+    if (!metadata && serverUrl.pathname !== '/') {
+      const baseUrl = new URL(serverUrl.origin);
+      logger.debug(
+        `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+      );
+      return discoverAuthorizationServerMetadata(baseUrl, { fetchFn });
+    }
+    return metadata;
   }
 
   /**
@@ -406,8 +426,8 @@ export class MCPOAuthHandler {
           scope: config.scope,
         });
 
-        /** Add state parameter with flowId to the authorization URL */
-        authorizationUrl.searchParams.set('state', flowId);
+        /** Add cryptographic state parameter to the authorization URL */
+        authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
         const flowMetadata: MCPOAuthFlowMetadata = {
@@ -485,8 +505,8 @@ export class MCPOAuthHandler {
           `[MCPOAuth] Authorization URL: ${sanitizeUrlForLogging(authorizationUrl.toString())}`,
         );
 
-        /** Add state parameter with flowId to the authorization URL */
-        authorizationUrl.searchParams.set('state', flowId);
+        /** Add cryptographic state parameter to the authorization URL */
+        authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
         if (resourceMetadata?.resource != null && resourceMetadata.resource) {
@@ -652,6 +672,44 @@ export class MCPOAuthHandler {
     return randomBytes(32).toString('base64url');
   }
 
+  private static readonly STATE_MAP_TYPE = 'mcp_oauth_state';
+
+  /**
+   * Stores a mapping from the opaque OAuth state parameter to the flowId.
+   * This allows the callback to resolve the flowId from an unguessable state
+   * value, preventing attackers from forging callback requests.
+   */
+  static async storeStateMapping(
+    state: string,
+    flowId: string,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<void> {
+    await flowManager.initFlow(state, this.STATE_MAP_TYPE, { flowId });
+  }
+
+  /**
+   * Resolves an opaque OAuth state parameter back to the original flowId.
+   * Returns null if the state is not found (expired or never stored).
+   */
+  static async resolveStateToFlowId(
+    state: string,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<string | null> {
+    const mapping = await flowManager.getFlowState(state, this.STATE_MAP_TYPE);
+    return (mapping?.metadata?.flowId as string) ?? null;
+  }
+
+  /**
+   * Deletes an orphaned state mapping when a flow is replaced.
+   * Prevents old authorization URLs from resolving after a flow restart.
+   */
+  static async deleteStateMapping(
+    state: string,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<void> {
+    await flowManager.deleteFlow(state, this.STATE_MAP_TYPE);
+  }
+
   /**
    * Gets the default redirect URI for a server
    */
@@ -735,9 +793,10 @@ export class MCPOAuthHandler {
           throw new Error('No token URL available for refresh');
         } else {
           /** Auto-discover OAuth configuration for refresh */
-          const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl, {
-            fetchFn: this.createOAuthFetch(oauthHeaders),
-          });
+          const serverUrl = new URL(metadata.serverUrl);
+          const fetchFn = this.createOAuthFetch(oauthHeaders);
+          const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
+
           if (!oauthMetadata) {
             /**
              * No metadata discovered - use fallback /token endpoint.
@@ -911,9 +970,9 @@ export class MCPOAuthHandler {
       }
 
       /** Auto-discover OAuth configuration for refresh */
-      const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl, {
-        fetchFn: this.createOAuthFetch(oauthHeaders),
-      });
+      const serverUrl = new URL(metadata.serverUrl);
+      const fetchFn = this.createOAuthFetch(oauthHeaders);
+      const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
       let tokenUrl: URL;
       if (!oauthMetadata?.token_endpoint) {
