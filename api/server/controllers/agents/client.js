@@ -1173,6 +1173,9 @@ class AgentClient extends BaseClient {
   }
 
   getEncoding() {
+    if (this.model && this.model.toLowerCase().includes('claude')) {
+      return 'claude';
+    }
     return 'o200k_base';
   }
 

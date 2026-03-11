@@ -1,74 +1,39 @@
 import { logger } from '@librechat/data-schemas';
-import { encoding_for_model as encodingForModel, get_encoding as getEncoding } from 'tiktoken';
-import type { Tiktoken, TiktokenModel, TiktokenEncoding } from 'tiktoken';
+import * as claude from 'ai-tokenizer/encoding/claude';
+import { Tokenizer as AiTokenizer } from 'ai-tokenizer';
+import * as o200k_base from 'ai-tokenizer/encoding/o200k_base';
 
-interface TokenizerOptions {
-  debug?: boolean;
-}
+type EncodingName = 'o200k_base' | 'claude';
+
+const encodingMap = {
+  o200k_base,
+  claude,
+} as const;
 
 class Tokenizer {
-  tokenizersCache: Record<string, Tiktoken>;
-  tokenizerCallsCount: number;
-  private options?: TokenizerOptions;
+  private tokenizersCache: Partial<Record<EncodingName, AiTokenizer>> = {};
 
-  constructor() {
-    this.tokenizersCache = {};
-    this.tokenizerCallsCount = 0;
-  }
-
-  getTokenizer(
-    encoding: TiktokenModel | TiktokenEncoding,
-    isModelName = false,
-    extendSpecialTokens: Record<string, number> = {},
-  ): Tiktoken {
-    let tokenizer: Tiktoken;
-    if (this.tokenizersCache[encoding]) {
-      tokenizer = this.tokenizersCache[encoding];
-    } else {
-      if (isModelName) {
-        tokenizer = encodingForModel(encoding as TiktokenModel, extendSpecialTokens);
-      } else {
-        tokenizer = getEncoding(encoding as TiktokenEncoding, extendSpecialTokens);
-      }
-      this.tokenizersCache[encoding] = tokenizer;
+  getTokenizer(encoding: EncodingName = 'o200k_base'): AiTokenizer {
+    const cached = this.tokenizersCache[encoding];
+    if (cached) {
+      return cached;
     }
+
+    const data = encodingMap[encoding];
+    const tokenizer = new AiTokenizer(data);
+    this.tokenizersCache[encoding] = tokenizer;
     return tokenizer;
   }
 
-  freeAndResetAllEncoders(): void {
-    try {
-      Object.keys(this.tokenizersCache).forEach((key) => {
-        if (this.tokenizersCache[key]) {
-          this.tokenizersCache[key].free();
-          delete this.tokenizersCache[key];
-        }
-      });
-      this.tokenizerCallsCount = 1;
-    } catch (error) {
-      logger.error('[Tokenizer] Free and reset encoders error', error);
-    }
-  }
-
-  resetTokenizersIfNecessary(): void {
-    if (this.tokenizerCallsCount >= 25) {
-      if (this.options?.debug) {
-        logger.debug('[Tokenizer] freeAndResetAllEncoders: reached 25 encodings, resetting...');
-      }
-      this.freeAndResetAllEncoders();
-    }
-    this.tokenizerCallsCount++;
-  }
-
-  getTokenCount(text: string, encoding: TiktokenModel | TiktokenEncoding = 'cl100k_base'): number {
-    this.resetTokenizersIfNecessary();
+  getTokenCount(text: string, encoding: EncodingName = 'o200k_base'): number {
     try {
       const tokenizer = this.getTokenizer(encoding);
-      return tokenizer.encode(text, 'all').length;
+      return tokenizer.count(text);
     } catch (error) {
       logger.error('[Tokenizer] Error getting token count:', error);
-      this.freeAndResetAllEncoders();
+      delete this.tokenizersCache[encoding];
       const tokenizer = this.getTokenizer(encoding);
-      return tokenizer.encode(text, 'all').length;
+      return tokenizer.count(text);
     }
   }
 }
@@ -76,13 +41,13 @@ class Tokenizer {
 const TokenizerSingleton = new Tokenizer();
 
 /**
- * Counts the number of tokens in a given text using tiktoken.
+ * Counts the number of tokens in a given text using ai-tokenizer.
  * This is an async wrapper around Tokenizer.getTokenCount for compatibility.
  * @param text - The text to be tokenized. Defaults to an empty string if not provided.
  * @returns The number of tokens in the provided text.
  */
 export async function countTokens(text = ''): Promise<number> {
-  return TokenizerSingleton.getTokenCount(text, 'cl100k_base');
+  return TokenizerSingleton.getTokenCount(text, 'o200k_base');
 }
 
 export default TokenizerSingleton;
