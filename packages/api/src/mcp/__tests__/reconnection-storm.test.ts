@@ -12,8 +12,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Socket } from 'net';
+import type { OAuthTestServer } from './helpers/oauthTestServer';
+import type { MCPOAuthTokens } from '~/mcp/oauth';
 import { OAuthReconnectionTracker } from '~/mcp/oauth/OAuthReconnectionTracker';
+import { createOAuthMCPServer } from './helpers/oauthTestServer';
 import { MCPConnection } from '~/mcp/connection';
+import { mcpConfig } from '~/mcp/mcpConfig';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -143,16 +147,17 @@ afterEach(() => {
 
 /* ------------------------------------------------------------------ */
 /*  Fix #2 — Circuit breaker trips after rapid connect/disconnect      */
-/*  cycles (5 cycles within 60s -> 30s cooldown)                       */
+/*  cycles (CB_MAX_CYCLES within window -> cooldown)                    */
 /* ------------------------------------------------------------------ */
 describe('Fix #2: Circuit breaker stops rapid reconnect cycling', () => {
-  it('blocks connection after 5 rapid cycles via static circuit breaker', async () => {
+  it('blocks connection after CB_MAX_CYCLES rapid cycles via static circuit breaker', async () => {
     const srv = await startMCPServer();
     const conn = createConnection('cycling-server', srv.url);
 
     let completedCycles = 0;
     let breakerMessage = '';
-    for (let cycle = 0; cycle < 10; cycle++) {
+    const maxAttempts = mcpConfig.CB_MAX_CYCLES * 2;
+    for (let cycle = 0; cycle < maxAttempts; cycle++) {
       try {
         await conn.connect();
         await teardownConnection(conn);
@@ -166,7 +171,7 @@ describe('Fix #2: Circuit breaker stops rapid reconnect cycling', () => {
     }
 
     expect(breakerMessage).toContain('Circuit breaker is open');
-    expect(completedCycles).toBeLessThanOrEqual(5);
+    expect(completedCycles).toBeLessThanOrEqual(mcpConfig.CB_MAX_CYCLES);
 
     await srv.close();
   });
@@ -266,12 +271,13 @@ describe('Fix #4: Circuit breaker state persists across instance replacement', (
 /*  recordFailedRound() in the catch path                              */
 /* ------------------------------------------------------------------ */
 describe('Fix #5: Dead server triggers circuit breaker', () => {
-  it('3 failures trigger backoff, blocking subsequent attempts before they reach the SDK', async () => {
+  it('failures trigger backoff, blocking subsequent attempts before they reach the SDK', async () => {
     const conn = createConnection('dead', 'http://127.0.0.1:1/mcp', 1000);
     const spy = jest.spyOn(conn.client, 'connect');
 
+    const totalAttempts = mcpConfig.CB_MAX_FAILED_ROUNDS + 2;
     const errors: string[] = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < totalAttempts; i++) {
       try {
         await conn.connect();
       } catch (e) {
@@ -279,8 +285,8 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
       }
     }
 
-    expect(spy.mock.calls.length).toBe(3);
-    expect(errors).toHaveLength(5);
+    expect(spy.mock.calls.length).toBe(mcpConfig.CB_MAX_FAILED_ROUNDS);
+    expect(errors).toHaveLength(totalAttempts);
     expect(errors.filter((m) => m.includes('Circuit breaker is open'))).toHaveLength(2);
 
     await conn.disconnect();
@@ -295,7 +301,7 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
       userId: 'user-A',
     });
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < mcpConfig.CB_MAX_FAILED_ROUNDS; i++) {
       try {
         await userA.connect();
       } catch {
@@ -332,7 +338,7 @@ describe('Fix #5: Dead server triggers circuit breaker', () => {
       serverConfig: { url: deadUrl, type: 'streamable-http', initTimeout: 1000 } as never,
       userId: 'user-A',
     });
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < mcpConfig.CB_MAX_FAILED_ROUNDS; i++) {
       try {
         await userA.connect();
       } catch {
@@ -448,13 +454,14 @@ describe('Fix #6: OAuth failure uses cooldown-based retry', () => {
 /*  Integration: Circuit breaker caps rapid cycling with real transport */
 /* ------------------------------------------------------------------ */
 describe('Cascade: Circuit breaker caps rapid cycling', () => {
-  it('breaker trips before 10 cycles complete against a live server', async () => {
+  it('breaker trips before double CB_MAX_CYCLES complete against a live server', async () => {
     const srv = await startMCPServer();
     const conn = createConnection('cascade', srv.url);
     const spy = jest.spyOn(conn.client, 'connect');
 
     let completedCycles = 0;
-    for (let i = 0; i < 10; i++) {
+    const maxAttempts = mcpConfig.CB_MAX_CYCLES * 2;
+    for (let i = 0; i < maxAttempts; i++) {
       try {
         await conn.connect();
         await teardownConnection(conn);
@@ -469,8 +476,8 @@ describe('Cascade: Circuit breaker caps rapid cycling', () => {
       }
     }
 
-    expect(completedCycles).toBeLessThanOrEqual(5);
-    expect(spy.mock.calls.length).toBeLessThanOrEqual(5);
+    expect(completedCycles).toBeLessThanOrEqual(mcpConfig.CB_MAX_CYCLES);
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(mcpConfig.CB_MAX_CYCLES);
 
     await srv.close();
   });
@@ -499,6 +506,146 @@ describe('Cascade: Circuit breaker caps rapid cycling', () => {
 
     expect(breakerTripped).toBe(true);
   }, 30_000);
+});
+
+/* ------------------------------------------------------------------ */
+/*  OAuth: cycle recovery after successful OAuth reconnect             */
+/* ------------------------------------------------------------------ */
+describe('OAuth: cycle budget recovery after successful OAuth', () => {
+  let oauthServer: OAuthTestServer;
+
+  beforeEach(async () => {
+    oauthServer = await createOAuthMCPServer({ tokenTTLMs: 60000 });
+  });
+
+  afterEach(async () => {
+    await oauthServer.close();
+  });
+
+  async function exchangeCodeForToken(serverUrl: string): Promise<string> {
+    const authRes = await fetch(`${serverUrl}authorize?redirect_uri=http://localhost&state=test`, {
+      redirect: 'manual',
+    });
+    const location = authRes.headers.get('location') ?? '';
+    const code = new URL(location).searchParams.get('code') ?? '';
+    const tokenRes = await fetch(`${serverUrl}token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=authorization_code&code=${code}`,
+    });
+    const data = (await tokenRes.json()) as { access_token: string };
+    return data.access_token;
+  }
+
+  it('should decrement cycle count after successful OAuth recovery', async () => {
+    const serverName = 'oauth-cycle-test';
+    MCPConnection.clearCooldown(serverName);
+
+    const conn = new MCPConnection({
+      serverName,
+      serverConfig: { type: 'streamable-http', url: oauthServer.url, initTimeout: 10000 },
+      userId: 'user-1',
+    });
+
+    // When oauthRequired fires, get a token and emit oauthHandled
+    // This triggers the oauthRecovery path inside connectClient
+    conn.on('oauthRequired', async () => {
+      const accessToken = await exchangeCodeForToken(oauthServer.url);
+      conn.setOAuthTokens({
+        access_token: accessToken,
+        token_type: 'Bearer',
+      } as MCPOAuthTokens);
+      conn.emit('oauthHandled');
+    });
+
+    // connect() → 401 → oauthRequired → oauthHandled → connectClient returns
+    // connect() sees not connected → throws "Connection not established"
+    await expect(conn.connect()).rejects.toThrow('Connection not established');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cb = (MCPConnection as any).circuitBreakers.get(serverName);
+    const cyclesBeforeRetry = cb.cycleCount;
+
+    // Retry — should succeed and decrement cycle count via oauthRecovery
+    await conn.connect();
+    expect(await conn.isConnected()).toBe(true);
+
+    const cyclesAfterSuccess = cb.cycleCount;
+    // The retry adds +1 cycle (disconnect(false)) then -1 (oauthRecovery decrement)
+    // So cyclesAfterSuccess should equal cyclesBeforeRetry, not cyclesBeforeRetry + 1
+    expect(cyclesAfterSuccess).toBe(cyclesBeforeRetry);
+
+    await teardownConnection(conn);
+  });
+
+  it('should allow more OAuth reconnects than non-OAuth before breaker trips', async () => {
+    const serverName = 'oauth-budget';
+    MCPConnection.clearCooldown(serverName);
+
+    // Each OAuth flow: connect (+1) → 401 → oauthHandled → retry connect (+1) → success (-1) = net 1
+    // Without the decrement it would be net 2 per flow, tripping the breaker after ~2 users
+    let successfulFlows = 0;
+    for (let i = 0; i < 10; i++) {
+      const conn = new MCPConnection({
+        serverName,
+        serverConfig: { type: 'streamable-http', url: oauthServer.url, initTimeout: 10000 },
+        userId: `user-${i}`,
+      });
+
+      conn.on('oauthRequired', async () => {
+        const accessToken = await exchangeCodeForToken(oauthServer.url);
+        conn.setOAuthTokens({
+          access_token: accessToken,
+          token_type: 'Bearer',
+        } as MCPOAuthTokens);
+        conn.emit('oauthHandled');
+      });
+
+      try {
+        // First connect: 401 → oauthHandled → returns without connection
+        await conn.connect().catch(() => {});
+        // Retry: succeeds with token, decrements cycle
+        await conn.connect();
+        successfulFlows++;
+        await teardownConnection(conn);
+      } catch (e) {
+        conn.removeAllListeners();
+        if ((e as Error).message.includes('Circuit breaker is open')) {
+          break;
+        }
+      }
+    }
+
+    // With the oauthRecovery decrement, each flow is net ~1 cycle instead of ~2,
+    // so we should get more successful flows before the breaker trips
+    expect(successfulFlows).toBeGreaterThanOrEqual(3);
+  });
+
+  it('should not decrement cycle count when OAuth fails', async () => {
+    const serverName = 'oauth-failed-no-decrement';
+    MCPConnection.clearCooldown(serverName);
+
+    const conn = new MCPConnection({
+      serverName,
+      serverConfig: { type: 'streamable-http', url: oauthServer.url, initTimeout: 10000 },
+      userId: 'user-1',
+    });
+
+    conn.on('oauthRequired', () => {
+      conn.emit('oauthFailed', new Error('user denied'));
+    });
+
+    await expect(conn.connect()).rejects.toThrow();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cb = (MCPConnection as any).circuitBreakers.get(serverName);
+    const cyclesAfterFailure = cb.cycleCount;
+
+    // connect() recorded +1 cycle, oauthFailed should NOT decrement
+    expect(cyclesAfterFailure).toBeGreaterThanOrEqual(1);
+
+    conn.removeAllListeners();
+  });
 });
 
 /* ------------------------------------------------------------------ */
