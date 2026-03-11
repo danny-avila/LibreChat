@@ -47,6 +47,8 @@ const TokenizerSingleton = new Tokenizer();
 /**
  * Counts the number of tokens in a given text using ai-tokenizer with o200k_base encoding.
  * This is an async wrapper around Tokenizer.getTokenCount for compatibility.
+ * @param text - The text to count tokens in. Defaults to an empty string.
+ * @returns The number of tokens in the provided text.
  */
 export async function countTokens(text = ''): Promise<number> {
   return TokenizerSingleton.getTokenCount(text, 'o200k_base');
