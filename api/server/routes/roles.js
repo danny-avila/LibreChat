@@ -12,8 +12,9 @@ const {
   peoplePickerPermissionsSchema,
   remoteAgentsPermissionsSchema,
 } = require('librechat-data-provider');
-const { hasCapability, requireCapability, requireJwtAuth } = require('~/server/middleware');
+const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
 const { updateRoleByName, getRoleByName } = require('~/models');
+const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
 router.use(requireJwtAuth);
