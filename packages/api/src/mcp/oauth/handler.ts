@@ -700,6 +700,17 @@ export class MCPOAuthHandler {
   }
 
   /**
+   * Deletes an orphaned state mapping when a flow is replaced.
+   * Prevents old authorization URLs from resolving after a flow restart.
+   */
+  static async deleteStateMapping(
+    state: string,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<void> {
+    await flowManager.deleteFlow(state, this.STATE_MAP_TYPE);
+  }
+
+  /**
    * Gets the default redirect URI for a server
    */
   private static getDefaultRedirectUri(serverName?: string): string {

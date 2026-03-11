@@ -343,7 +343,11 @@ export class MCPConnectionFactory {
           );
 
           if (existingFlow) {
+            const oldState = (existingFlow.metadata as MCPOAuthFlowMetadata)?.state;
             await this.flowManager!.deleteFlow(newFlowId, 'mcp_oauth');
+            if (oldState) {
+              await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager!);
+            }
           }
 
           // Store flow state BEFORE redirecting so the callback can find it
@@ -578,7 +582,11 @@ export class MCPConnectionFactory {
           `${this.logPrefix} Found existing OAuth flow (status: ${existingFlow.status}), cleaning up to start fresh`,
         );
         try {
+          const oldState = flowMeta?.state;
           await this.flowManager.deleteFlow(flowId, 'mcp_oauth');
+          if (oldState) {
+            await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager);
+          }
         } catch (error) {
           logger.warn(`${this.logPrefix} Failed to clean up existing OAuth flow`, error);
         }

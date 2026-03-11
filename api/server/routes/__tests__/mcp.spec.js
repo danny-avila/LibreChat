@@ -34,6 +34,7 @@ jest.mock('@librechat/api', () => {
       generateFlowId: jest.fn(),
       resolveStateToFlowId: jest.fn(async (state) => state),
       storeStateMapping: jest.fn(),
+      deleteStateMapping: jest.fn(),
     },
     MCPTokenStorage: {
       storeTokens: jest.fn(),

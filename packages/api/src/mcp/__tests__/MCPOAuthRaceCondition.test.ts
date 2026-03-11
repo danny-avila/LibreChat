@@ -11,7 +11,8 @@
 import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
-import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
+import type { MCPOAuthTokens } from '~/mcp/oauth';
+import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
 import { MockKeyv, createOAuthMCPServer } from './helpers/oauthTestServer';
 import { FlowStateManager } from '~/flow/manager';
 
@@ -275,6 +276,42 @@ describe('MCP OAuth Race Condition Fixes', () => {
       await flowManager.deleteFlow(flowId, 'mcp_oauth');
 
       await expect(monitorPromise).rejects.toThrow('Flow state not found');
+    });
+  });
+
+  describe('State mapping cleanup on flow replacement', () => {
+    it('should delete old state mapping when a flow is replaced', async () => {
+      const store = new MockKeyv();
+      const flowManager = new FlowStateManager<MCPOAuthTokens | null>(store as unknown as Keyv, {
+        ttl: 30000,
+        ci: true,
+      });
+
+      const flowId = 'user1:test-server';
+      const oldState = 'old-random-state-abc123';
+      const newState = 'new-random-state-xyz789';
+
+      // Simulate initial flow with state mapping
+      await flowManager.initFlow(flowId, 'mcp_oauth', { state: oldState });
+      await MCPOAuthHandler.storeStateMapping(oldState, flowId, flowManager);
+
+      // Old state should resolve
+      const resolvedBefore = await MCPOAuthHandler.resolveStateToFlowId(oldState, flowManager);
+      expect(resolvedBefore).toBe(flowId);
+
+      // Replace the flow: delete old, create new, clean up old state mapping
+      await flowManager.deleteFlow(flowId, 'mcp_oauth');
+      await MCPOAuthHandler.deleteStateMapping(oldState, flowManager);
+      await flowManager.initFlow(flowId, 'mcp_oauth', { state: newState });
+      await MCPOAuthHandler.storeStateMapping(newState, flowId, flowManager);
+
+      // Old state should no longer resolve
+      const resolvedOld = await MCPOAuthHandler.resolveStateToFlowId(oldState, flowManager);
+      expect(resolvedOld).toBeNull();
+
+      // New state should resolve
+      const resolvedNew = await MCPOAuthHandler.resolveStateToFlowId(newState, flowManager);
+      expect(resolvedNew).toBe(flowId);
     });
   });
 
