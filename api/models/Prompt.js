@@ -137,7 +137,7 @@ const getAllPromptGroups = async (req, filter) => {
     const promptGroupsPipeline = createAllGroupsPipeline(combinedQuery);
     return await PromptGroup.aggregate(promptGroupsPipeline).exec();
   } catch (error) {
-    console.error('Error getting all prompt groups', error);
+    logger.error('Error getting all prompt groups', error);
     return { message: 'Error getting all prompt groups' };
   }
 };
@@ -206,7 +206,7 @@ const getPromptGroups = async (req, filter) => {
       pages: Math.ceil(totalPromptGroups / validatedPageSize).toString(),
     };
   } catch (error) {
-    console.error('Error getting prompt groups', error);
+    logger.error('Error getting prompt groups', error);
     return { message: 'Error getting prompt groups' };
   }
 };

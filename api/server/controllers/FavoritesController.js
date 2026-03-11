@@ -1,3 +1,4 @@
+const { logger } = require('@librechat/data-schemas');
 const { updateUser, getUserById } = require('~/models');
 
 const MAX_FAVORITES = 50;
@@ -65,7 +66,7 @@ const updateFavoritesController = async (req, res) => {
 
     res.status(200).json(user.favorites);
   } catch (error) {
-    console.error('Error updating favorites:', error);
+    logger.error('Error updating favorites:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -88,7 +89,7 @@ const getFavoritesController = async (req, res) => {
 
     res.status(200).json(favorites);
   } catch (error) {
-    console.error('Error fetching favorites:', error);
+    logger.error('Error fetching favorites:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 };
