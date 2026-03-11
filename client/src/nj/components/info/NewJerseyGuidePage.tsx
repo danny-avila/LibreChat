@@ -242,13 +242,13 @@ export default function NewJerseyGuidePage() {
       </p>
       <p className="mb-6">
         Chat history, similar to other state work-related documents, is retained in accordance with
-        state records retention policies. Consult with your agency’s records custodians for more
-        information.
+        state records retention policies and may be subject to the open records request (OPRA).
+        Consult with your agency’s records custodians for more information.
       </p>
       <p className="mb-6">
         For maintenance purposes, the Platform team and OIT can access the information stored in the
-        database, and would only access this information in response to a user request to help with
-        a technical issue.
+        database, and would only access this information do this tofrom in response to a user
+        request to help with a technical issue or if legally required.
       </p>
 
       <p className="mb-2 font-bold">
