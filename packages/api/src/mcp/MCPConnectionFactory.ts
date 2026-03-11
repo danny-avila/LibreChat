@@ -104,6 +104,7 @@ export class MCPConnectionFactory {
         return { tools, connection, oauthRequired: false, oauthUrl: null };
       }
     } catch {
+      MCPConnection.decrementCycleCount(this.serverName);
       logger.debug(
         `${this.logPrefix} [Discovery] Connection failed, attempting unauthenticated tool listing`,
       );
@@ -126,6 +127,7 @@ export class MCPConnectionFactory {
         return { tools, connection: null, oauthRequired, oauthUrl };
       }
     } catch (listError) {
+      MCPConnection.decrementCycleCount(this.serverName);
       logger.debug(`${this.logPrefix} [Discovery] Unauthenticated tool listing failed:`, listError);
     }
 

@@ -364,9 +364,9 @@ export class MCPConnection extends EventEmitter {
     cb.failedBackoffUntil = 0;
   }
 
-  private decrementCycleCount(): void {
-    const cb = this.getCircuitBreaker();
-    if (cb.cycleCount > 0) {
+  public static decrementCycleCount(serverName: string): void {
+    const cb = MCPConnection.circuitBreakers.get(serverName);
+    if (cb && cb.cycleCount > 0) {
       cb.cycleCount--;
     }
   }
@@ -821,7 +821,7 @@ export class MCPConnection extends EventEmitter {
         this.reconnectAttempts = 0;
         this.resetFailedRounds();
         if (this.oauthRecovery) {
-          this.decrementCycleCount();
+          MCPConnection.decrementCycleCount(this.serverName);
           this.oauthRecovery = false;
           logger.debug(
             `${this.getLogPrefix()} OAuth recovery: decremented cycle count after successful reconnect`,
