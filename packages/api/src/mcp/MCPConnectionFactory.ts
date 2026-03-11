@@ -126,6 +126,7 @@ export class MCPConnectionFactory {
         }
         return { tools, connection: null, oauthRequired, oauthUrl };
       }
+      MCPConnection.decrementCycleCount(this.serverName);
     } catch (listError) {
       MCPConnection.decrementCycleCount(this.serverName);
       logger.debug(`${this.logPrefix} [Discovery] Unauthenticated tool listing failed:`, listError);
