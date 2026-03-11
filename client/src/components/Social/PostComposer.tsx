@@ -16,7 +16,7 @@ interface SelectedAccount {
 }
 
 export default function PostComposer({ isOpen, onClose, initialContent = '' }: PostComposerProps) {
-  const { accounts, loading: accountsLoading, createPost } = useSocialAccounts();
+  const { accounts, loading, createPost } = useSocialAccounts();
   const [composerState, setComposerState] = useRecoilState(postComposerState);
   const [content, setContent] = useState(initialContent);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
@@ -70,14 +70,14 @@ export default function PostComposer({ isOpen, onClose, initialContent = '' }: P
     setError(null);
 
     try {
-      // Map account IDs to Postiz integration IDs
-      const integrationIds = accounts
+      // Get selected platforms
+      const platforms = accounts
         .filter((acc) => selectedAccounts.includes(acc._id))
-        .map((acc) => acc.postizIntegrationId);
+        .map((acc) => acc.platform);
 
       await createPost({
         content,
-        integrationIds,
+        platforms,
       });
 
       setSuccess(true);
@@ -192,7 +192,7 @@ export default function PostComposer({ isOpen, onClose, initialContent = '' }: P
           <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
             Select Accounts
           </label>
-          {accountsLoading ? (
+          {loading ? (
             <div className="text-gray-500 dark:text-gray-400">Loading accounts...</div>
           ) : accounts.length === 0 ? (
             <div className="rounded-lg bg-yellow-100 p-4 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">

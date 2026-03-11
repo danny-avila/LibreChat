@@ -358,14 +358,14 @@ const startServer = async () => {
     console.error('[ERROR] Signage orders routes error:', e.message);
   }
 
-  // Social Media Integration Routes (Postiz)
+  // LinkedIn Direct API Integration
   try {
-    const socialRoutes = require('./routes/social');
-    app.use('/api/social', socialRoutes);
-    console.log('[OK] Social media integration routes loaded');
+    const linkedinRoutes = require('./routes/linkedin');
+    app.use('/api/linkedin', linkedinRoutes);
+    console.log('[OK] LinkedIn API routes loaded');
   } catch (e) {
-    console.log('[SKIP] Social media integration routes (error loading)');
-    console.error('[ERROR] Social routes error:', e.message);
+    console.log('[SKIP] LinkedIn API routes (error loading)');
+    console.error('[ERROR] LinkedIn routes error:', e.message);
   }
 
   // Error Controller

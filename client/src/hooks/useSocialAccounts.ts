@@ -7,212 +7,111 @@ interface SocialAccount {
   _id: string;
   userId: string;
   platform: string;
-  postizIntegrationId: string;
   accountName: string;
   accountId?: string;
   isActive: boolean;
   metadata?: {
-    type?: string;
+    email?: string;
     picture?: string;
-    providerAccountId?: string;
+    givenName?: string;
+    familyName?: string;
   };
   createdAt: string;
   updatedAt: string;
 }
 
-interface Platform {
-  id: string;
-  name: string;
-  icon: string;
-  color: string;
-}
-
-interface ConnectionStatus {
-  [key: string]: SocialAccount | null;
-}
-
 /**
  * Hook for managing social media account connections
+ * Currently supports: LinkedIn (direct OAuth)
+ * Coming soon: Facebook, X (Twitter), Instagram
  */
 export function useSocialAccounts() {
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
-  const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  // Fetch connected accounts
+  // Fetch LinkedIn account status
   const {
-    data: accountsData,
-    isLoading: isLoadingAccounts,
-    error: accountsError,
-    refetch: refetchAccounts,
+    data: linkedinData,
+    isLoading: isLoadingLinkedIn,
+    refetch: refetchLinkedIn,
   } = useQuery({
-    queryKey: ['socialAccounts'],
+    queryKey: ['linkedinAccount'],
     queryFn: async () => {
-      console.log('[useSocialAccounts] Fetching accounts...');
-      const data = await request.get('/api/social/accounts');
-      console.log('[useSocialAccounts] Accounts fetched:', data);
+      const data = await request.get('/api/linkedin/status');
       return data;
     },
   });
 
-  // Fetch connection status
-  const {
-    data: statusData,
-    isLoading: isLoadingStatus,
-    refetch: refetchStatus,
-  } = useQuery({
-    queryKey: ['socialStatus'],
-    queryFn: async () => {
-      console.log('[useSocialAccounts] Fetching status...');
-      const data = await request.get('/api/social/status');
-      console.log('[useSocialAccounts] Status fetched:', data);
+  // Create LinkedIn post mutation
+  const createLinkedInPostMutation = useMutation({
+    mutationFn: async (postData: { content: string; visibility?: string }) => {
+      const data = await request.post('/api/linkedin/posts', postData);
       return data;
     },
-  });
-
-  // Fetch supported platforms
-  const { 
-    data: platformsData,
-    isLoading: isLoadingPlatforms,
-    error: platformsError,
-  } = useQuery({
-    queryKey: ['socialPlatforms'],
-    queryFn: async () => {
-      console.log('[useSocialAccounts] Fetching platforms...');
-      const data = await request.get('/api/social/platforms');
-      console.log('[useSocialAccounts] Platforms fetched:', data);
-      return data;
-    },
-  });
-
-  // Connect account mutation
-  const connectMutation = useMutation({
-    mutationFn: async (platform: string) => {
-      const data = await request.post(`/api/social/connect/${platform}`, {});
-      return data;
-    },
-    onSuccess: (data) => {
-      if (data.oauthUrl) {
-        if (data.openInNewTab) {
-          window.open(data.oauthUrl, '_blank', 'noopener,noreferrer');
-          showToast({
-            message: 'Open the new tab to connect in Postiz. When done, return here and click Refresh to see your account.',
-            status: 'success',
-          });
-        } else {
-          window.location.href = data.oauthUrl;
-        }
-      }
-      setConnectingPlatform(null);
-    },
-    onError: (error: Error) => {
+    onSuccess: () => {
       showToast({
-        message: error.message || 'Failed to connect account',
-        status: 'error',
-      });
-      setConnectingPlatform(null);
-    },
-  });
-
-  // Disconnect account mutation
-  const disconnectMutation = useMutation({
-    mutationFn: async (accountId: string) => {
-      const data = await request.delete(`/api/social/accounts/${accountId}`);
-      return data;
-    },
-    onSuccess: (data) => {
-      showToast({
-        message: `${data.platform} account disconnected successfully`,
-        status: 'success',
-      });
-      // Invalidate queries to refetch data
-      queryClient.invalidateQueries({ queryKey: ['socialAccounts'] });
-      queryClient.invalidateQueries({ queryKey: ['socialStatus'] });
-    },
-    onError: (error: Error) => {
-      showToast({
-        message: error.message || 'Failed to disconnect account',
-        status: 'error',
-      });
-    },
-  });
-
-  // Connect account handler
-  const connectAccount = useCallback(
-    async (platform: string) => {
-      setConnectingPlatform(platform);
-      try {
-        await connectMutation.mutateAsync(platform);
-      } catch (error) {
-        setConnectingPlatform(null);
-      }
-    },
-    [connectMutation]
-  );
-
-  // Disconnect account handler
-  const disconnectAccount = useCallback(
-    async (accountId: string) => {
-      if (confirm('Are you sure you want to disconnect this account?')) {
-        await disconnectMutation.mutateAsync(accountId);
-      }
-    },
-    [disconnectMutation]
-  );
-
-  // Create post mutation
-  const createPostMutation = useMutation({
-    mutationFn: async (postData: { content: string; integrationIds: string[] }) => {
-      const data = await request.post('/api/social/posts', postData);
-      return data;
-    },
-    onSuccess: (data) => {
-      showToast({
-        message: 'Post published successfully!',
+        message: 'Post published to LinkedIn successfully!',
         status: 'success',
       });
     },
     onError: (error: Error) => {
       showToast({
-        message: error.message || 'Failed to create post',
+        message: error.message || 'Failed to publish to LinkedIn',
         status: 'error',
       });
       throw error;
     },
   });
 
-  // Create post handler
+  // Create post handler - routes to appropriate platform
   const createPost = useCallback(
-    async (postData: { content: string; integrationIds: string[] }) => {
-      return await createPostMutation.mutateAsync(postData);
+    async (postData: { content: string; platforms: string[] }) => {
+      const { content, platforms } = postData;
+      
+      // For now, only LinkedIn is supported
+      if (platforms.includes('linkedin')) {
+        return await createLinkedInPostMutation.mutateAsync({
+          content,
+          visibility: 'PUBLIC',
+        });
+      }
+      
+      throw new Error('No supported platforms selected');
     },
-    [createPostMutation]
+    [createLinkedInPostMutation]
   );
+
+  // Build accounts array from connected platforms
+  const accounts: SocialAccount[] = [];
+  if (linkedinData?.connected && linkedinData?.account) {
+    accounts.push({
+      _id: 'linkedin',
+      userId: '',
+      platform: 'linkedin',
+      accountName: linkedinData.account.accountName,
+      accountId: linkedinData.account.accountId,
+      isActive: true,
+      metadata: linkedinData.account.metadata,
+      createdAt: linkedinData.account.connectedAt,
+      updatedAt: linkedinData.account.connectedAt,
+    });
+  }
 
   // Refresh all data
   const refreshAccounts = useCallback(() => {
-    refetchAccounts();
-    refetchStatus();
-  }, [refetchAccounts, refetchStatus]);
+    refetchLinkedIn();
+  }, [refetchLinkedIn]);
 
   return {
     // Data
-    accounts: (accountsData?.accounts || []) as SocialAccount[],
-    status: (statusData?.status || {}) as ConnectionStatus,
-    platforms: (platformsData?.platforms || []) as Platform[],
-
+    accounts,
+    
     // Loading states
-    isLoading: isLoadingAccounts || isLoadingStatus || isLoadingPlatforms,
-    connectingPlatform,
-    isDisconnecting: disconnectMutation.isLoading,
-    isCreatingPost: createPostMutation.isLoading,
-
-    // Error states
-    error: accountsError || platformsError,
+    loading: isLoadingLinkedIn || loading,
+    isCreatingPost: createLinkedInPostMutation.isLoading,
 
     // Actions
-    connectAccount,
-    disconnectAccount,
     createPost,
     refreshAccounts,
   };

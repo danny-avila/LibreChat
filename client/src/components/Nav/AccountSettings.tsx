@@ -1,5 +1,6 @@
-import { useState, memo } from 'react';
+import { useState, memo, useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import { useSearchParams } from 'react-router-dom';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
@@ -19,6 +20,19 @@ function AccountSettings() {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Check for settings query parameter (e.g., from OAuth redirects)
+  useEffect(() => {
+    const shouldOpenSettings = searchParams.get('settings') === 'true';
+    if (shouldOpenSettings && !showSettings) {
+      setShowSettings(true);
+      // Clean up the settings parameter but keep other params (tab, success, platform, etc.)
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('settings');
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [searchParams, showSettings, setSearchParams]);
 
   return (
     <Select.SelectProvider>

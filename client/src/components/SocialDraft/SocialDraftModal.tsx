@@ -1,10 +1,10 @@
 /* eslint-disable i18next/no-literal-string */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { socialDraftState } from '~/store/socialDraft';
+import postComposerState from '~/store/postComposer';
 import { useLocalize, useAuthContext } from '~/hooks';
-import PostComposer from '~/components/Social/PostComposer';
 
 const FUNCTION_NAME = 'Social Media Draft';
 
@@ -63,6 +63,7 @@ function getDraftsFromResponse(data: any): Record<string, string> {
 
 export default function SocialDraftModal() {
   const [state, setState] = useRecoilState(socialDraftState);
+  const setPostComposerState = useSetRecoilState(postComposerState);
   const [rawIdea, setRawIdea] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string> | null>(null);
@@ -71,8 +72,6 @@ export default function SocialDraftModal() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [viewingDraftId, setViewingDraftId] = useState<string | null>(null);
   const [pollingForDraft, setPollingForDraft] = useState(false);
-  const [showPostComposer, setShowPostComposer] = useState(false);
-  const [selectedDraftContent, setSelectedDraftContent] = useState<string>('');
   const pendingCountRef = useRef(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { showToast } = useToastContext();
@@ -135,10 +134,9 @@ export default function SocialDraftModal() {
         // Get the first non-empty draft content
         const firstDraft = Object.values(draft.drafts).find((text) => text?.trim());
         
-        // Open PostComposer immediately (don't wait for API)
+        // Open PostComposer using Recoil state (so it persists after modal closes)
         if (firstDraft) {
-          setSelectedDraftContent(firstDraft);
-          setShowPostComposer(true);
+          setPostComposerState({ isOpen: true, initialContent: firstDraft });
           close(); // Close the draft modal
           
           showToast({
@@ -522,16 +520,6 @@ export default function SocialDraftModal() {
           )}
         </div>
       </div>
-
-      {/* Post Composer - Opens after draft approval */}
-      <PostComposer
-        isOpen={showPostComposer}
-        onClose={() => {
-          setShowPostComposer(false);
-          setSelectedDraftContent('');
-        }}
-        initialContent={selectedDraftContent}
-      />
     </div>
   );
 }
