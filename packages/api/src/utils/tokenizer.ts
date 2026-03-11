@@ -3,9 +3,9 @@ import * as claude from 'ai-tokenizer/encoding/claude';
 import { Tokenizer as AiTokenizer } from 'ai-tokenizer';
 import * as o200k_base from 'ai-tokenizer/encoding/o200k_base';
 
-type EncodingName = 'o200k_base' | 'claude';
+export type EncodingName = 'o200k_base' | 'claude';
 
-const encodingMap = {
+const encodingData = {
   o200k_base,
   claude,
 } as const;
@@ -19,7 +19,7 @@ class Tokenizer {
       return cached;
     }
 
-    const data = encodingMap[encoding];
+    const data = encodingData[encoding];
     const tokenizer = new AiTokenizer(data);
     this.tokenizersCache[encoding] = tokenizer;
     return tokenizer;
@@ -32,8 +32,12 @@ class Tokenizer {
     } catch (error) {
       logger.error('[Tokenizer] Error getting token count:', error);
       delete this.tokenizersCache[encoding];
-      const tokenizer = this.getTokenizer(encoding);
-      return tokenizer.count(text);
+      try {
+        return this.getTokenizer(encoding).count(text);
+      } catch (retryError) {
+        logger.error('[Tokenizer] Recovery failed, returning 0:', retryError);
+        return 0;
+      }
     }
   }
 }
@@ -41,10 +45,8 @@ class Tokenizer {
 const TokenizerSingleton = new Tokenizer();
 
 /**
- * Counts the number of tokens in a given text using ai-tokenizer.
+ * Counts the number of tokens in a given text using ai-tokenizer with o200k_base encoding.
  * This is an async wrapper around Tokenizer.getTokenCount for compatibility.
- * @param text - The text to be tokenized. Defaults to an empty string if not provided.
- * @returns The number of tokens in the provided text.
  */
 export async function countTokens(text = ''): Promise<number> {
   return TokenizerSingleton.getTokenCount(text, 'o200k_base');
