@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.8.3-rc2",
+  "version": "v0.8.3",
   "description": "",
   "type": "module",
   "scripts": {
@@ -81,7 +81,7 @@
     "lodash": "^4.17.23",
     "lucide-react": "^0.394.0",
     "match-sorter": "^8.1.0",
-    "mermaid": "^11.12.3",
+    "mermaid": "^11.13.0",
     "micromark-extension-llm-math": "^3.1.0",
     "qrcode.react": "^4.2.0",
     "rc-input-number": "^7.4.2",
@@ -148,7 +148,7 @@
     "jest-environment-jsdom": "^30.2.0",
     "jest-file-loader": "^1.0.3",
     "jest-junit": "^16.0.0",
-    "monaco-editor": "^0.55.0",
+    "monaco-editor": "^0.55.1",
     "postcss": "^8.4.31",
     "postcss-preset-env": "^11.2.0",
     "tailwindcss": "^3.4.1",

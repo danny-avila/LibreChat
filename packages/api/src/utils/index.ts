@@ -19,7 +19,6 @@ export * from './promise';
 export * from './sanitizeTitle';
 export * from './tempChatRetention';
 export * from './text';
-export { default as Tokenizer, countTokens } from './tokenizer';
 export * from './yaml';
 export * from './http';
 export * from './tokens';
