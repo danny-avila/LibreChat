@@ -23,10 +23,10 @@ export default function NewJerseyGuidePage() {
 
       <InfoSectionHeader text="Using the AI Assistant Responsibly" />
       <p className="mb-6">
-        AI tools can generate responses that can sound confident but are incorrect or incomplete —
-        these are often referred to as “hallucinations”. As a state employee, it is important to
-        review the AI’s output for accuracy, bias, completeness, accessibility, and style before
-        using it in your work.
+        AI tools can generate responses that sound confident but are incorrect or incomplete — these
+        are often referred to as “hallucinations”. As a state employee, it is important to review
+        the AI’s output for accuracy, bias, completeness, accessibility, and style before using it
+        in your work.
       </p>
       <p className="mb-6">
         You can reduce hallucinations by providing clear context, uploading source materials, asking
@@ -40,7 +40,7 @@ export default function NewJerseyGuidePage() {
         >
           guidance for reducing hallucinations
         </a>
-        , and keep an eye out for prompting tips we will be added to the tool very soon.
+        , and keep an eye out for prompting tips we will add to the tool very soon.
       </p>
       <p className="mb-6">
         As the{' '}
@@ -139,9 +139,9 @@ export default function NewJerseyGuidePage() {
 
       <p className="mb-2 font-bold">How can I use the NJ AI Assistant?</p>
       <p className="mb-6">
-        The NJ AI Assistant is a conversational tool that works with language. At its core, it reads
-        and generates text—which means it can help you write, refine, analyze, and reorganize
-        information through back-and-forth conversation.
+        You can think of it as having a thought partner or collaborator. You provide it with
+        instructions about what you need, and it responds with new text. This makes it very useful
+        for things like:
       </p>
       <p className="mb-6">
         You can think of it as having a thinking partner or collaborator. You provide it with text
@@ -150,10 +150,10 @@ export default function NewJerseyGuidePage() {
       </p>
       <ul className="mb-6 list-inside list-disc">
         <li className="mb-2">Drafting and editing content</li>
-        <li className="mb-2">Summarization & synthesizing</li>
+        <li className="mb-2">Summarizing and synthesizing content</li>
         <li className="mb-2">Analyzing and extracting information from documents</li>
         <li className="mb-2">
-          Generating ideas and exploring different angles for a given problem.
+          Generating ideas and exploring different angles for a given problem
         </li>
       </ul>
       <p className="mb-6">
@@ -165,7 +165,7 @@ export default function NewJerseyGuidePage() {
       <p className="mb-2 font-bold">What can’t I use the NJ AI Assistant for?</p>
       <p className="mb-6">
         Although the NJ AI Assistant works by generating language, there are still some things it is
-        not well-suited for —
+        not well-suited for:
       </p>
       <ul className="mb-6 list-inside list-disc">
         <li className="mb-2">
@@ -185,7 +185,7 @@ export default function NewJerseyGuidePage() {
         <li className="mb-2">
           <span className="font-bold">Analysis without source material:</span> The NJ AI Assistant
           doesn’t have access to external databases, state systems, or real-time information. A
-          broad question like “What areas of NJ are the most likely to be impacted by extreme
+          broad question like “what areas of NJ are the most likely to be impacted by extreme
           weather?” won’t get a reliable answer on its own. Instead, give it something to work with:
           upload relevant reports, provide context, be specific about how you’d like it to approach
           its analysis, and ask it to show its reasoning so you can spot errors.
@@ -193,11 +193,11 @@ export default function NewJerseyGuidePage() {
       </ul>
 
       <p className="mb-2 font-bold">What file types can I upload?</p>
-      <p className="mb-6">The following file types are supported</p>
+      <p className="mb-6">The following file types are supported:</p>
       <ul className="mb-6 list-inside list-disc">
         <li className="mb-2">Files: pdf, csv, xls/xlsx, docx, .txt, .md</li>
         <li className="mb-2">Code types: python, java, js, (and others)</li>
-        <li className="mb-2">Images file types: jpeg, jpg, png, gif, webp, heic, heif</li>
+        <li className="mb-2">Image file types: jpeg, jpg, png, gif, webp, heic, heif</li>
         <li className="mb-2">
           Maximum number of files: 10 files per prompt (whether images or text)
         </li>
@@ -242,13 +242,13 @@ export default function NewJerseyGuidePage() {
       </p>
       <p className="mb-6">
         Chat history, similar to other state work-related documents, is retained in accordance with
-        state records retention policies and may be subject to the open records request (OPRA).
-        Consult with your agency’s records custodians for more information.
+        state records retention policies and may be subject to open records requests (OPRA). Consult
+        with your agency’s records custodians for more information.
       </p>
       <p className="mb-6">
         For maintenance purposes, the Platform team and OIT can access the information stored in the
-        database, and would only access this information do this tofrom in response to a user
-        request to help with a technical issue or if legally required.
+        database, and would only access this information in response to a user request to help with
+        a technical issue or if legally required.
       </p>
 
       <p className="mb-2 font-bold">
@@ -306,14 +306,14 @@ export default function NewJerseyGuidePage() {
         </li>
         <li className="mb-2">
           In the immediate future, the team is thinking about more features to support responsible
-          and safe AI use. We are also writing resources and{' '}
+          and safe AI use. We are also writing{' '}
           <a
             href="https://innovation.nj.gov/skills/ai-how-tos/"
             className="font-normal text-primary underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
           >
-            how-to guides about LLM prompting best practices and AI use cases
+            how-to guides for effective prompting and sharing AI use cases
           </a>
           .
         </li>
@@ -325,7 +325,25 @@ export default function NewJerseyGuidePage() {
       <p className="mb-2 font-bold">NJ State-Developed Learning Resources</p>
       <ul className="mb-6 list-inside list-disc">
         <li className="mb-2">
-          Responsible Use of GenAI training - Available on the Learning Management System
+          Responsible Use of GenAI training - Available on the Learning Management System (for{' '}
+          <a
+            href="https://stateofnewjersey.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/ledetail/CLIP.RAIPP.WBT/latestversion"
+            className="font-normal text-primary underline hover:decoration-2"
+            target="_blank"
+            rel="noreferrer"
+          >
+            State Learners
+          </a>{' '}
+          and{' '}
+          <a
+            href="https://stateofnewjersey-external.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/ledetail/CLIP.RAIPP.WBT/latestversion"
+            className="font-normal text-primary underline hover:decoration-2"
+            target="_blank"
+            rel="noreferrer"
+          >
+            External Learners
+          </a>
+          )
         </li>
         <li className="mb-2">
           {' '}
@@ -348,7 +366,7 @@ export default function NewJerseyGuidePage() {
           >
             GenAI How-To Guides
           </a>{' '}
-          - (includes how to build tools and improve call center menus with genAI)
+          - (includes how to build genAI tools and improve call center menus with genA)
         </li>
       </ul>
       <p className="mb-2 font-bold">Other Resources</p>
