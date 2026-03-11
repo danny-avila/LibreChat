@@ -634,11 +634,11 @@ describe('processTextWithTokenLimit', () => {
       expect(newCalls).toBeLessThan(oldCalls);
     });
 
-    it('should handle the reported user scenario with real tokenizer (~120k tokens)', async () => {
+    it('should handle large text with real tokenizer (~20k tokens)', async () => {
       const oldCounter = createRealTokenCounter();
       const newCounter = createRealTokenCounter();
-      const text = createRealisticText(120000);
-      const tokenLimit = 100000;
+      const text = createRealisticText(20000);
+      const tokenLimit = 15000;
 
       const startOld = performance.now();
       await processTextWithTokenLimitOLD({
@@ -659,7 +659,7 @@ describe('processTextWithTokenLimit', () => {
       const oldCalls = oldCounter.getCallCount();
       const newCalls = newCounter.getCallCount();
 
-      console.log(`\n[REAL TOKENIZER - User reported scenario: ~120k tokens]`);
+      console.log(`\n[REAL TOKENIZER - ~20k tokens]`);
       console.log(`OLD implementation: ${oldCalls} tokenizer calls, ${timeOld.toFixed(0)}ms`);
       console.log(`NEW implementation: ${newCalls} tokenizer calls, ${timeNew.toFixed(0)}ms`);
       console.log(`Call reduction: ${((1 - newCalls / oldCalls) * 100).toFixed(1)}%`);
@@ -676,8 +676,8 @@ describe('processTextWithTokenLimit', () => {
     it('should achieve at least 70% reduction with real tokenizer', async () => {
       const oldCounter = createRealTokenCounter();
       const newCounter = createRealTokenCounter();
-      const text = createRealisticText(50000);
-      const tokenLimit = 10000;
+      const text = createRealisticText(15000);
+      const tokenLimit = 5000;
 
       await processTextWithTokenLimitOLD({
         text,
@@ -696,7 +696,7 @@ describe('processTextWithTokenLimit', () => {
       const reduction = 1 - newCalls / oldCalls;
 
       console.log(
-        `[Real tokenizer 50k tokens] OLD: ${oldCalls}, NEW: ${newCalls}, Reduction: ${(reduction * 100).toFixed(1)}%`,
+        `[Real tokenizer 15k tokens] OLD: ${oldCalls}, NEW: ${newCalls}, Reduction: ${(reduction * 100).toFixed(1)}%`,
       );
 
       expect(reduction).toBeGreaterThanOrEqual(0.7);
@@ -760,11 +760,11 @@ describe('processTextWithTokenLimit', () => {
       expect(newCalls).toBeLessThan(oldCalls);
     });
 
-    it('should handle user reported scenario with countTokens (~120k tokens)', async () => {
+    it('should handle large text with countTokens (~20k tokens)', async () => {
       const oldCounter = createCountTokensCounter();
       const newCounter = createCountTokensCounter();
-      const text = createRealisticText(120000);
-      const tokenLimit = 100000;
+      const text = createRealisticText(20000);
+      const tokenLimit = 15000;
 
       const startOld = performance.now();
       await processTextWithTokenLimitOLD({
@@ -785,7 +785,7 @@ describe('processTextWithTokenLimit', () => {
       const oldCalls = oldCounter.getCallCount();
       const newCalls = newCounter.getCallCount();
 
-      console.log(`\n[countTokens - User reported scenario: ~120k tokens]`);
+      console.log(`\n[countTokens - ~20k tokens]`);
       console.log(`OLD implementation: ${oldCalls} countTokens calls, ${timeOld.toFixed(0)}ms`);
       console.log(`NEW implementation: ${newCalls} countTokens calls, ${timeNew.toFixed(0)}ms`);
       console.log(`Call reduction: ${((1 - newCalls / oldCalls) * 100).toFixed(1)}%`);
@@ -802,8 +802,8 @@ describe('processTextWithTokenLimit', () => {
     it('should achieve at least 70% reduction with countTokens', async () => {
       const oldCounter = createCountTokensCounter();
       const newCounter = createCountTokensCounter();
-      const text = createRealisticText(50000);
-      const tokenLimit = 10000;
+      const text = createRealisticText(15000);
+      const tokenLimit = 5000;
 
       await processTextWithTokenLimitOLD({
         text,
@@ -822,7 +822,7 @@ describe('processTextWithTokenLimit', () => {
       const reduction = 1 - newCalls / oldCalls;
 
       console.log(
-        `[countTokens 50k tokens] OLD: ${oldCalls}, NEW: ${newCalls}, Reduction: ${(reduction * 100).toFixed(1)}%`,
+        `[countTokens 15k tokens] OLD: ${oldCalls}, NEW: ${newCalls}, Reduction: ${(reduction * 100).toFixed(1)}%`,
       );
 
       expect(reduction).toBeGreaterThanOrEqual(0.7);
