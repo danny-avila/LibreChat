@@ -283,16 +283,7 @@ function getDefaultHandlers({
     };
   }
 
-  handlers[GraphEvents.ON_AGENT_LOG] = {
-    handle: (_event, data) => {
-      const logFn = typeof logger[data.level] === 'function' ? logger[data.level] : logger.info;
-      logFn(`[agents:${data.scope}] ${data.message}`, {
-        ...data.data,
-        runId: data.runId,
-        agentId: data.agentId,
-      });
-    },
-  };
+  handlers[GraphEvents.ON_AGENT_LOG] = { handle: agentLogHandler };
 
   return handlers;
 }
@@ -717,6 +708,15 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
   };
 }
 
+function agentLogHandler(_event, data) {
+  const logFn = typeof logger[data.level] === 'function' ? logger[data.level] : logger.info;
+  logFn(`[agents:${data.scope}] ${data.message}`, {
+    ...data.data,
+    runId: data.runId,
+    agentId: data.agentId,
+  });
+}
+
 function markSummarizationUsage(usage, metadata) {
   const node = metadata?.langgraph_node;
   if (typeof node === 'string' && node.startsWith(GraphNodeKeys.SUMMARIZE)) {
@@ -725,8 +725,9 @@ function markSummarizationUsage(usage, metadata) {
 }
 
 module.exports = {
+  agentLogHandler,
   getDefaultHandlers,
   createToolEndCallback,
-  createResponsesToolEndCallback,
   markSummarizationUsage,
+  createResponsesToolEndCallback,
 };
