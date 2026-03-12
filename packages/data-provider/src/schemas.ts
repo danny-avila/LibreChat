@@ -630,6 +630,12 @@ export const tMessageSchema = z.object({
   feedback: feedbackSchema.optional(),
   /** metadata */
   metadata: z.record(z.unknown()).optional(),
+  contextMeta: z
+    .object({
+      calibrationRatio: z.number().optional(),
+      encoding: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type MemoryArtifact = {

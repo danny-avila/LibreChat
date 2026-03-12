@@ -334,6 +334,14 @@ class AgentClient extends BaseClient {
     /** Preserve canonical pre-format token counts for all history entering graph formatting */
     this.indexTokenCountMap = canonicalTokenCountMap;
 
+    /** Extract contextMeta from the parent response (second-to-last in ordered chain;
+     *  last is the current user message). Seeds the pruner's calibration EMA for this run. */
+    const parentResponse =
+      orderedMessages.length >= 2 ? orderedMessages[orderedMessages.length - 2] : undefined;
+    if (parentResponse?.contextMeta && !parentResponse.isCreatedByUser) {
+      this.contextMeta = parentResponse.contextMeta;
+    }
+
     const result = {
       tokenCountMap,
       prompt: payload,
@@ -807,11 +815,26 @@ class AgentClient extends BaseClient {
 
         memoryPromise = this.runMemory(messages);
 
+        /** Seed calibration ratio from previous run if encoding matches */
+        const currentEncoding = this.getEncoding();
+        const prevMeta = this.contextMeta;
+        const calibrationRatio =
+          prevMeta?.encoding === currentEncoding && prevMeta?.calibrationRatio > 0
+            ? prevMeta.calibrationRatio
+            : undefined;
+
+        if (prevMeta) {
+          logger.debug(
+            `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}`,
+          );
+        }
+
         run = await createRun({
           agents,
           messages,
           indexTokenCountMap,
           initialSummary,
+          calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
@@ -849,6 +872,21 @@ class AgentClient extends BaseClient {
 
       const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
+
+      /** Capture calibration ratio from the completed run for persistence on the response message */
+      if (this.run) {
+        const ratio = this.run.getCalibrationRatio();
+        if (ratio > 0 && ratio !== 1) {
+          this.contextMeta = {
+            calibrationRatio: Math.round(ratio * 1000) / 1000,
+            encoding: this.getEncoding(),
+          };
+          logger.debug(
+            `[AgentClient] contextMeta to persist: ratio=${this.contextMeta.calibrationRatio}, encoding=${this.contextMeta.encoding}`,
+          );
+        }
+      }
+
       /** @deprecated Agent Chain */
       if (hideSequentialOutputs) {
         this.contentParts = this.contentParts.filter((part, index) => {

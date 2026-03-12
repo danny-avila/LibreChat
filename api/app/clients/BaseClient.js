@@ -855,6 +855,10 @@ class BaseClient {
       }
     }
 
+    if (this.contextMeta) {
+      responseMessage.contextMeta = this.contextMeta;
+    }
+
     responseMessage.databasePromise = this.saveMessageToDatabase(
       responseMessage,
       saveOptions,
