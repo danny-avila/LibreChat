@@ -236,8 +236,14 @@ async function performSync(flowManager, flowId, flowType) {
       const messageCount = messageProgress.totalDocuments;
       const messagesIndexed = messageProgress.totalProcessed;
       const unindexedMessages = messageCount - messagesIndexed;
+      const freshIndex = messagesIndexed === 0 && unindexedMessages > 0;
 
-      if (settingsUpdated || unindexedMessages > syncThreshold) {
+      if (settingsUpdated || freshIndex || unindexedMessages > syncThreshold) {
+        if (freshIndex) {
+          logger.info(
+            `[indexSync] Fresh MeiliSearch index detected for messages, forcing full sync`,
+          );
+        }
         logger.info(`[indexSync] Starting message sync (${unindexedMessages} unindexed)`);
         await Message.syncWithMeili();
         messagesSync = true;
@@ -261,9 +267,13 @@ async function performSync(flowManager, flowId, flowType) {
 
       const convoCount = convoProgress.totalDocuments;
       const convosIndexed = convoProgress.totalProcessed;
-
       const unindexedConvos = convoCount - convosIndexed;
-      if (settingsUpdated || unindexedConvos > syncThreshold) {
+      const freshConvoIndex = convosIndexed === 0 && unindexedConvos > 0;
+
+      if (settingsUpdated || freshConvoIndex || unindexedConvos > syncThreshold) {
+        if (freshConvoIndex) {
+          logger.info(`[indexSync] Fresh MeiliSearch index detected for convos, forcing full sync`);
+        }
         logger.info(`[indexSync] Starting convos sync (${unindexedConvos} unindexed)`);
         await Conversation.syncWithMeili();
         convosSync = true;

@@ -581,7 +581,6 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   /** Create index only if it doesn't exist */
   const index = client.index<MeiliIndexable>(indexName);
 
-  // Check if index exists and create if needed
   (async () => {
     try {
       await index.getRawInfo();
@@ -591,18 +590,26 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       if (errorCode === 'index_not_found') {
         try {
           logger.info(`[mongoMeili] Creating new index: ${indexName}`);
-          await client.createIndex(indexName, { primaryKey });
+          const enqueued = await client.createIndex(indexName, { primaryKey });
+          const task = await client.waitForTask(enqueued.taskUid, {
+            timeOutMs: 10000,
+            intervalMs: 100,
+          });
+          logger.info(`[mongoMeili] Index ${indexName} creation task:`, task);
           logger.info(`[mongoMeili] Successfully created index: ${indexName}`);
         } catch (createError) {
-          // Index might have been created by another instance
-          logger.debug(`[mongoMeili] Index ${indexName} may already exist:`, createError);
+          const createCode = (createError as { code?: string })?.code;
+          if (createCode === 'index_already_exists') {
+            logger.debug(`[mongoMeili] Index ${indexName} was created by another instance`);
+          } else {
+            logger.warn(`[mongoMeili] Error creating index ${indexName}:`, createError);
+          }
         }
       } else {
         logger.error(`[mongoMeili] Error checking index ${indexName}:`, error);
       }
     }
 
-    // Configure index settings to make 'user' field filterable
     try {
       await index.updateSettings({
         filterableAttributes: ['user'],
