@@ -182,14 +182,6 @@ export async function recordCollectedUsage(
       });
   }
 
-  if (useBulk && allDocs.length > 0) {
-    try {
-      await bulkWriteTransactions({ user, docs: allDocs }, bulkWriteOps);
-    } catch (err) {
-      logger.error('[packages/api #recordCollectedUsage] Error in bulk write', err);
-    }
-  }
-
   const summarizationDocs: PreparedEntry[] = [];
 
   for (const usage of summarizationUsages) {
@@ -273,11 +265,12 @@ export async function recordCollectedUsage(
       });
   }
 
-  if (useBulk && summarizationDocs.length > 0) {
+  const combinedDocs = [...allDocs, ...summarizationDocs];
+  if (useBulk && combinedDocs.length > 0) {
     try {
-      await bulkWriteTransactions({ user, docs: summarizationDocs }, bulkWriteOps);
+      await bulkWriteTransactions({ user, docs: combinedDocs }, bulkWriteOps);
     } catch (err) {
-      logger.error('[packages/api #recordCollectedUsage] Error in summarization bulk write', err);
+      logger.error('[packages/api #recordCollectedUsage] Error in bulk write', err);
     }
   }
 
