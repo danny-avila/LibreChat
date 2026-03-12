@@ -5,6 +5,17 @@ import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
+const markdownComponents = {
+  a: ({ node: _n, href, children, ...otherProps }) => {
+    return (
+      <a className="text-text-secondary underline" href={href} rel="noreferrer" {...otherProps}>
+        {children}
+      </a>
+    );
+  },
+  p: ({ node: _n, ...props }) => <span {...props} />,
+};
+
 export default function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
   const localize = useLocalize();
@@ -24,13 +35,15 @@ export default function Footer({ className }: { className?: string }) {
     </a>
   );
 
-  const mainContentParts = (
+  const customFooterLines =
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : '[LibreChat ' +
-        Constants.VERSION +
-        '](https://librechat.ai) - ' +
-        localize('com_ui_latest_footer')
+          .split('|')
+          .map((line) => line.trim())
+          .filter(Boolean)
+      : null;
+  const defaultFooterParts = (
+    '[LibreChat ' + Constants.VERSION + '](https://librechat.ai) - ' + localize('com_ui_latest_footer')
   ).split('|');
 
   useEffect(() => {
@@ -42,58 +55,60 @@ export default function Footer({ className }: { className?: string }) {
     }
   }, [config?.analyticsGtmId]);
 
-  const mainContentRender = mainContentParts.map((text, index) => (
-    <React.Fragment key={`main-content-part-${index}`}>
-      <ReactMarkdown
-        components={{
-          a: ({ node: _n, href, children, ...otherProps }) => {
-            return (
-              <a
-                className="text-text-secondary underline"
-                href={href}
-                rel="noreferrer"
-                {...otherProps}
-              >
-                {children}
-              </a>
-            );
-          },
-
-          p: ({ node: _n, ...props }) => <span {...props} />,
-        }}
-      >
-        {text.trim()}
-      </ReactMarkdown>
-    </React.Fragment>
-  ));
-
-  const footerElements = [...mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
-    Boolean,
-  );
+  const defaultFooterElements = [
+    ...defaultFooterParts.map((text, index) => (
+      <React.Fragment key={`main-content-part-${index}`}>
+        <ReactMarkdown components={markdownComponents}>{text.trim()}</ReactMarkdown>
+      </React.Fragment>
+    )),
+    privacyPolicyRender,
+    termsOfServiceRender,
+  ].filter(Boolean);
 
   return (
     <div className="relative w-full">
       <div
         className={
           className ??
-          'absolute bottom-0 left-0 right-0 hidden items-center justify-center gap-2 px-2 py-2 text-center text-xs text-text-primary sm:flex md:px-[60px]'
+          'absolute bottom-0 left-0 hidden px-4 py-3 text-xs text-text-primary sm:flex md:px-[60px]'
         }
         role="contentinfo"
       >
-        {footerElements.map((contentRender, index) => {
-          const isLastElement = index === footerElements.length - 1;
-          return (
-            <React.Fragment key={`footer-element-${index}`}>
-              {contentRender}
-              {!isLastElement && (
-                <div
-                  key={`separator-${index}`}
-                  className="h-2 border-r-[1px] border-border-medium"
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
+        {customFooterLines ? (
+          <div className="flex flex-col items-start gap-1 text-left">
+            {customFooterLines.map((line, index) => (
+              <ReactMarkdown key={`custom-footer-line-${index}`} components={markdownComponents}>
+                {line}
+              </ReactMarkdown>
+            ))}
+            {(privacyPolicyRender || termsOfServiceRender) && (
+              <div className="mt-1 flex items-center gap-2">
+                {privacyPolicyRender}
+                {privacyPolicyRender && termsOfServiceRender && (
+                  <div className="h-2 border-r-[1px] border-border-medium" />
+                )}
+                {termsOfServiceRender}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-start gap-2 text-left">
+            {defaultFooterElements.map((contentRender, index) => {
+              const isLastElement = index === defaultFooterElements.length - 1;
+              return (
+                <React.Fragment key={`footer-element-${index}`}>
+                  {contentRender}
+                  {!isLastElement && (
+                    <div
+                      key={`separator-${index}`}
+                      className="h-2 border-r-[1px] border-border-medium"
+                    />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
