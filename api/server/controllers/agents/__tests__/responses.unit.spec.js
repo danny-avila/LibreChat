@@ -107,6 +107,7 @@ const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
   createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+  markSummarizationUsage: jest.fn(),
 }));
 
 jest.mock('~/server/services/PermissionService', () => ({
