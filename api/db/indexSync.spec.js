@@ -463,18 +463,16 @@ describe('performSync() - syncThreshold logic', () => {
     expect(mockLogger.info).toHaveBeenCalledWith('[indexSync] Starting convos sync (50 unindexed)');
   });
 
-  test('forces sync on fresh MeiliSearch index (zero indexed) even if below threshold', async () => {
-    process.env.MEILI_SYNC_THRESHOLD = '1000';
-
+  test('forces sync when zero documents indexed (reset scenario) even if below threshold', async () => {
     Message.getSyncProgress.mockResolvedValue({
       totalProcessed: 0,
-      totalDocuments: 680, // 680 unindexed, all need syncing but < 1000 threshold
+      totalDocuments: 680,
       isComplete: false,
     });
 
     Conversation.getSyncProgress.mockResolvedValue({
       totalProcessed: 0,
-      totalDocuments: 76, // 76 unindexed, all need syncing but < 1000 threshold
+      totalDocuments: 76,
       isComplete: false,
     });
 
@@ -487,31 +485,27 @@ describe('performSync() - syncThreshold logic', () => {
     expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
     expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
     expect(mockLogger.info).toHaveBeenCalledWith(
-      '[indexSync] Fresh MeiliSearch index detected for messages, forcing full sync',
+      '[indexSync] No messages marked as indexed, forcing full sync',
     );
     expect(mockLogger.info).toHaveBeenCalledWith(
       '[indexSync] Starting message sync (680 unindexed)',
     );
     expect(mockLogger.info).toHaveBeenCalledWith(
-      '[indexSync] Fresh MeiliSearch index detected for convos, forcing full sync',
+      '[indexSync] No conversations marked as indexed, forcing full sync',
     );
-    expect(mockLogger.info).toHaveBeenCalledWith(
-      '[indexSync] Starting convos sync (76 unindexed)',
-    );
+    expect(mockLogger.info).toHaveBeenCalledWith('[indexSync] Starting convos sync (76 unindexed)');
   });
 
   test('does NOT force sync when some documents already indexed and below threshold', async () => {
-    process.env.MEILI_SYNC_THRESHOLD = '1000';
-
     Message.getSyncProgress.mockResolvedValue({
       totalProcessed: 630,
-      totalDocuments: 680, // 50 unindexed, below threshold, partial sync state
+      totalDocuments: 680,
       isComplete: false,
     });
 
     Conversation.getSyncProgress.mockResolvedValue({
       totalProcessed: 70,
-      totalDocuments: 76, // 6 unindexed, below threshold
+      totalDocuments: 76,
       isComplete: false,
     });
 
@@ -520,6 +514,12 @@ describe('performSync() - syncThreshold logic', () => {
 
     expect(Message.syncWithMeili).not.toHaveBeenCalled();
     expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
+    expect(mockLogger.info).not.toHaveBeenCalledWith(
+      '[indexSync] No messages marked as indexed, forcing full sync',
+    );
+    expect(mockLogger.info).not.toHaveBeenCalledWith(
+      '[indexSync] No conversations marked as indexed, forcing full sync',
+    );
     expect(mockLogger.info).toHaveBeenCalledWith(
       '[indexSync] 50 messages unindexed (below threshold: 1000, skipping)',
     );

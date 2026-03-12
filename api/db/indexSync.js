@@ -236,13 +236,11 @@ async function performSync(flowManager, flowId, flowType) {
       const messageCount = messageProgress.totalDocuments;
       const messagesIndexed = messageProgress.totalProcessed;
       const unindexedMessages = messageCount - messagesIndexed;
-      const freshIndex = messagesIndexed === 0 && unindexedMessages > 0;
+      const noneIndexed = messagesIndexed === 0 && unindexedMessages > 0;
 
-      if (settingsUpdated || freshIndex || unindexedMessages > syncThreshold) {
-        if (freshIndex) {
-          logger.info(
-            `[indexSync] Fresh MeiliSearch index detected for messages, forcing full sync`,
-          );
+      if (settingsUpdated || noneIndexed || unindexedMessages > syncThreshold) {
+        if (noneIndexed && !settingsUpdated) {
+          logger.info('[indexSync] No messages marked as indexed, forcing full sync');
         }
         logger.info(`[indexSync] Starting message sync (${unindexedMessages} unindexed)`);
         await Message.syncWithMeili();
@@ -268,11 +266,11 @@ async function performSync(flowManager, flowId, flowType) {
       const convoCount = convoProgress.totalDocuments;
       const convosIndexed = convoProgress.totalProcessed;
       const unindexedConvos = convoCount - convosIndexed;
-      const freshConvoIndex = convosIndexed === 0 && unindexedConvos > 0;
+      const noneConvosIndexed = convosIndexed === 0 && unindexedConvos > 0;
 
-      if (settingsUpdated || freshConvoIndex || unindexedConvos > syncThreshold) {
-        if (freshConvoIndex) {
-          logger.info(`[indexSync] Fresh MeiliSearch index detected for convos, forcing full sync`);
+      if (settingsUpdated || noneConvosIndexed || unindexedConvos > syncThreshold) {
+        if (noneConvosIndexed && !settingsUpdated) {
+          logger.info('[indexSync] No conversations marked as indexed, forcing full sync');
         }
         logger.info(`[indexSync] Starting convos sync (${unindexedConvos} unindexed)`);
         await Conversation.syncWithMeili();
