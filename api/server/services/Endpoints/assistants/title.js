@@ -30,6 +30,7 @@ Title:`;
     ],
     temperature: 0.7,
     max_tokens: 20,
+    timeout: 60000, // 60 second timeout to prevent hanging requests
   });
 
   const title = completion.choices[0]?.message?.content?.trim() || 'New conversation';
