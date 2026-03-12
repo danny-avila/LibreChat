@@ -395,13 +395,30 @@ async function resolveGroupsFromOverage(accessToken) {
  * @returns {Promise<Object>} The authenticated user object with tokenset
  */
 async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
-  const claims = tokenset.claims ? tokenset.claims() : tokenset;
+  let claims;
+  if (tokenset.claims) {
+    try {
+      claims = tokenset.claims();
+    } catch (error) {
+      logger.warn(
+        `[openidStrategy] Failed to read token claims directly, falling back to access token: ${error.message}`,
+      );
+    }
+  }
+
+  // Some providers omit id_token and only return a JWT access_token plus userinfo.
+  // Fall back to access_token claims so the rest of the OpenID flow still has a stable subject.
+  if (!claims && tokenset.access_token) {
+    claims = jwtDecode(tokenset.access_token);
+  }
+
+  claims = claims || tokenset || {};
   const userinfo = {
     ...claims,
   };
 
   if (tokenset.access_token) {
-    const providerUserinfo = await getUserInfo(openidConfig, tokenset.access_token, claims.sub);
+    const providerUserinfo = await getUserInfo(openidConfig, tokenset.access_token, claims?.sub);
     Object.assign(userinfo, providerUserinfo);
   }
 

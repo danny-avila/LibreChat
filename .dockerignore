@@ -10,7 +10,7 @@
 data-node
 meili_data*
 librechat*
-Dockerfile*
+
 docs
 
 # Ignore all hidden files

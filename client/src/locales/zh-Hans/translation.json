@@ -1236,7 +1236,7 @@
   "com_ui_upload_invalid": "上传的文件无效。必须是图片，且不得超过大小限制",
   "com_ui_upload_invalid_var": "上传的文件无效。必须是图片，且不得超过 {{0}} MB。",
   "com_ui_upload_ocr_text": "作为文本上传",
-  "com_ui_upload_provider": "上传至提供商",
+  "com_ui_upload_provider": "上传到 Blablador（私密）",
   "com_ui_upload_success": "上传文件成功",
   "com_ui_upload_type": "选择上传类型",
   "com_ui_usage": "用量",

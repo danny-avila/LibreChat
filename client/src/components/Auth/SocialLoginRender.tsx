@@ -11,6 +11,7 @@ import {
 import SocialButton from './SocialButton';
 
 import { useLocalize } from '~/hooks';
+import resolveProviderImageUrl from '~/utils/resolveProviderImageUrl';
 
 import { TStartupConfig } from 'librechat-data-provider';
 
@@ -20,6 +21,8 @@ function SocialLoginRender({
   startupConfig: TStartupConfig | null | undefined;
 }) {
   const localize = useLocalize();
+  const openidImageUrl = resolveProviderImageUrl(startupConfig?.openidImageUrl);
+  const samlImageUrl = resolveProviderImageUrl(startupConfig?.samlImageUrl);
 
   if (!startupConfig) {
     return null;
@@ -88,8 +91,8 @@ function SocialLoginRender({
         serverDomain={startupConfig.serverDomain}
         oauthPath="openid"
         Icon={() =>
-          startupConfig.openidImageUrl ? (
-            <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
+          openidImageUrl ? (
+            <img src={openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
           ) : (
             <OpenIDIcon />
           )
@@ -105,8 +108,8 @@ function SocialLoginRender({
         serverDomain={startupConfig.serverDomain}
         oauthPath="saml"
         Icon={() =>
-          startupConfig.samlImageUrl ? (
-            <img src={startupConfig.samlImageUrl} alt="SAML Logo" className="h-5 w-5" />
+          samlImageUrl ? (
+            <img src={samlImageUrl} alt="SAML Logo" className="h-5 w-5" />
           ) : (
             <SamlIcon />
           )

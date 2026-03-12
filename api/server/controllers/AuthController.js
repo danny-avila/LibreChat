@@ -1,5 +1,6 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
+const jwtDecode = require('jsonwebtoken/decode');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, findOpenIDUser } = require('@librechat/api');
@@ -20,6 +21,24 @@ const {
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOAuthReconnectionManager } = require('~/config');
 const { getOpenIdConfig } = require('~/strategies');
+
+const getOpenIDClaims = (tokenset) => {
+  if (tokenset?.claims) {
+    try {
+      return tokenset.claims() || (tokenset.access_token ? jwtDecode(tokenset.access_token) : {});
+    } catch (error) {
+      logger.warn(
+        `[refreshController] Failed to read token claims directly, falling back to access token: ${error.message}`,
+      );
+    }
+  }
+
+  if (tokenset?.access_token) {
+    return jwtDecode(tokenset.access_token) || {};
+  }
+
+  return tokenset || {};
+};
 
 const registrationController = async (req, res) => {
   try {
@@ -80,7 +99,7 @@ const refreshController = async (req, res) => {
     try {
       const openIdConfig = getOpenIdConfig();
       const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
-      const claims = tokenset.claims();
+      const claims = getOpenIDClaims(tokenset);
       const { user, error, migration } = await findOpenIDUser({
         findUser,
         email: claims.email,

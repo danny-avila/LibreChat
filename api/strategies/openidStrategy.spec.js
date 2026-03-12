@@ -1,6 +1,7 @@
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const undici = require('undici');
+const openidClient = require('openid-client');
 const { ErrorTypes } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
 const { setupOpenId } = require('./openidStrategy');
@@ -201,6 +202,100 @@ describe('setupOpenId', () => {
         username: userinfo.preferred_username,
         email: userinfo.email,
         name: `${userinfo.given_name} ${userinfo.family_name}`,
+      }),
+      { enabled: false },
+      true,
+      true,
+    );
+  });
+
+  it('should fall back to access token claims when id_token is not returned', async () => {
+    jwtDecode.mockImplementation((token) => {
+      if (token === 'jwt-access-token') {
+        return {
+          sub: 'access-token-sub',
+          email: 'access@example.com',
+          preferred_username: 'accessuser',
+          given_name: 'Access',
+          family_name: 'Token',
+        };
+      }
+
+      return {
+        roles: ['requiredRole'],
+        permissions: ['admin'],
+      };
+    });
+
+    openidClient.fetchUserInfo.mockResolvedValue({
+      sub: 'access-token-sub',
+      email: 'access@example.com',
+      preferred_username: 'accessuser',
+    });
+
+    const { user } = await validate({
+      access_token: 'jwt-access-token',
+      refresh_token: 'refresh-token',
+      claims: () => undefined,
+    });
+
+    expect(user.openidId).toBe('access-token-sub');
+    expect(user.email).toBe('access@example.com');
+    expect(user.username).toBe('accessuser');
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openidId: 'access-token-sub',
+        email: 'access@example.com',
+        username: 'accessuser',
+        name: 'Access Token',
+      }),
+      { enabled: false },
+      true,
+      true,
+    );
+  });
+
+  it('should fall back to access token claims when tokenset.claims throws', async () => {
+    jwtDecode.mockImplementation((token) => {
+      if (token === 'jwt-access-token') {
+        return {
+          sub: 'throwing-claims-sub',
+          email: 'throwing@example.com',
+          preferred_username: 'throwinguser',
+          given_name: 'Throwing',
+          family_name: 'Claims',
+        };
+      }
+
+      return {
+        roles: ['requiredRole'],
+        permissions: ['admin'],
+      };
+    });
+
+    openidClient.fetchUserInfo.mockResolvedValue({
+      sub: 'throwing-claims-sub',
+      email: 'throwing@example.com',
+      preferred_username: 'throwinguser',
+    });
+
+    const { user } = await validate({
+      access_token: 'jwt-access-token',
+      refresh_token: 'refresh-token',
+      claims: () => {
+        throw new TypeError("Cannot read properties of undefined (reading 'sub')");
+      },
+    });
+
+    expect(user.openidId).toBe('throwing-claims-sub');
+    expect(user.email).toBe('throwing@example.com');
+    expect(user.username).toBe('throwinguser');
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openidId: 'throwing-claims-sub',
+        email: 'throwing@example.com',
+        username: 'throwinguser',
+        name: 'Throwing Claims',
       }),
       { enabled: false },
       true,

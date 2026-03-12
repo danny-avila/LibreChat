@@ -1199,7 +1199,7 @@
   "com_ui_upload_invalid": "אין אפשרות להעלות את הקובץ. התמונה חורגת מהמגבלה",
   "com_ui_upload_invalid_var": "אין אפשרות להעלות את הקובץ. התמונה צריכה להיות בגודל של עד {{0}} MB",
   "com_ui_upload_ocr_text": "העלה קובץ כקובץ טקסט",
-  "com_ui_upload_provider": "העלאה לספק",
+  "com_ui_upload_provider": "העלאה ל-Blablador (באופן פרטי)",
   "com_ui_upload_success": "הקובץ הועלה בהצלחה",
   "com_ui_upload_type": "בחר סוג העלאה",
   "com_ui_usage": "ניצול",

@@ -98,7 +98,7 @@ describe('AttachFileMenu', () => {
     // Default mock implementations
     mockUseLocalize.mockReturnValue((key: string) => {
       const translations: Record<string, string> = {
-        com_ui_upload_provider: 'Upload to Provider',
+        com_ui_upload_provider: 'Upload to Blablador (Privately)',
         com_ui_upload_image_input: 'Upload Image',
         com_ui_upload_ocr_text: 'Upload OCR Text',
         com_ui_upload_file_search: 'Upload for File Search',

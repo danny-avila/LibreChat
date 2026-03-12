@@ -37,9 +37,17 @@ RUN \
     npm config set fetch-retry-maxtimeout 600000 ; \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
-    npm ci --no-audit
+    i=1 ; \
+    until npm ci --no-audit ; do \
+      if [ "$i" -ge 3 ]; then \
+        exit 1 ; \
+      fi ; \
+      i=$((i + 1)) ; \
+      sleep 15 ; \
+    done
 
 COPY --chown=node:node . .
+COPY --chown=node:node client/public/assets /app/client/public/assets
 
 RUN \
     # React client build with configurable memory

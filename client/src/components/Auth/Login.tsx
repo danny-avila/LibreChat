@@ -8,6 +8,7 @@ import SocialButton from '~/components/Auth/SocialButton';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
+import resolveProviderImageUrl from '~/utils/resolveProviderImageUrl';
 import LoginForm from './LoginForm';
 
 function Login() {
@@ -15,6 +16,7 @@ function Login() {
   const { showToast } = useToastContext();
   const { error, setError, login } = useAuthContext();
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
+  const openidImageUrl = resolveProviderImageUrl(startupConfig?.openidImageUrl);
 
   const [searchParams, setSearchParams] = useSearchParams();
   // Determine if auto-redirect should be disabled based on the URL parameter
@@ -74,8 +76,8 @@ function Login() {
             serverDomain={startupConfig.serverDomain}
             oauthPath="openid"
             Icon={() =>
-              startupConfig.openidImageUrl ? (
-                <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
+              openidImageUrl ? (
+                <img src={openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
               ) : (
                 <OpenIDIcon />
               )
