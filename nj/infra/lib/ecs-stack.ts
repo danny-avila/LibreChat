@@ -167,8 +167,8 @@ export class EcsStack extends cdk.Stack {
     librechatTaskDef.addContainer("librechat", {
       image: ecs.ContainerImage.fromRegistry(librechatImage),
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "librechat" }),
-      cpu: 512,
-      memoryLimitMiB: 1024,
+      cpu: 2048,
+      memoryLimitMiB: 8192,
       environment: environment,
       secrets: envSecrets,
       environmentFiles: [
