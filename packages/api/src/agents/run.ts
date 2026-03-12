@@ -253,15 +253,19 @@ export async function createRun({
       ] as unknown as string) ?? agent.provider;
     const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
 
-    const resolvedSummarizationConfig: SummarizationConfig | undefined = agent.summarization ??
-      summarizationConfig ?? {
-        enabled: true,
-        provider: selfProvider,
-        model: selfModel,
-      };
+    const baseSummarizationConfig: SummarizationConfig = {
+      enabled: true,
+      provider: selfProvider,
+      model: selfModel,
+    };
+    const overrideConfig = agent.summarization ?? summarizationConfig;
+    const resolvedSummarizationConfig: SummarizationConfig =
+      overrideConfig != null
+        ? { ...baseSummarizationConfig, ...overrideConfig }
+        : baseSummarizationConfig;
 
-    const resolvedSummarizationProvider = resolvedSummarizationConfig?.provider;
-    const resolvedSummarizationModel = resolvedSummarizationConfig?.model;
+    const resolvedSummarizationProvider = resolvedSummarizationConfig.provider;
+    const resolvedSummarizationModel = resolvedSummarizationConfig.model;
     const hasSummarizationProvider =
       typeof resolvedSummarizationProvider === 'string' &&
       resolvedSummarizationProvider.trim().length > 0;
@@ -370,29 +374,25 @@ export async function createRun({
       useLegacyContent: agent.useLegacyContent ?? false,
       discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
       summarizationEnabled:
-        resolvedSummarizationConfig != null &&
         resolvedSummarizationConfig.enabled !== false &&
         hasSummarizationProvider &&
         hasSummarizationModel,
-      summarizationConfig: resolvedSummarizationConfig
-        ? ({
-            trigger:
-              resolvedSummarizationConfig.trigger?.type &&
-              resolvedSummarizationConfig.trigger?.value
-                ? {
-                    type: resolvedSummarizationConfig.trigger.type,
-                    value: resolvedSummarizationConfig.trigger.value,
-                  }
-                : undefined,
-            provider: resolvedSummarizationConfig.provider,
-            model: resolvedSummarizationConfig.model,
-            parameters: resolvedSummarizationConfig.parameters,
-            prompt: resolvedSummarizationConfig.prompt,
-            updatePrompt: resolvedSummarizationConfig.updatePrompt,
-            reserveRatio: resolvedSummarizationConfig.reserveRatio,
-            maxSummaryTokens: resolvedSummarizationConfig.maxSummaryTokens,
-          } satisfies AgentSummarizationConfig)
-        : undefined,
+      summarizationConfig: {
+        trigger:
+          resolvedSummarizationConfig.trigger?.type && resolvedSummarizationConfig.trigger?.value
+            ? {
+                type: resolvedSummarizationConfig.trigger.type,
+                value: resolvedSummarizationConfig.trigger.value,
+              }
+            : undefined,
+        provider: resolvedSummarizationConfig.provider,
+        model: resolvedSummarizationConfig.model,
+        parameters: resolvedSummarizationConfig.parameters,
+        prompt: resolvedSummarizationConfig.prompt,
+        updatePrompt: resolvedSummarizationConfig.updatePrompt,
+        reserveRatio: resolvedSummarizationConfig.reserveRatio,
+        maxSummaryTokens: resolvedSummarizationConfig.maxSummaryTokens,
+      } satisfies AgentSummarizationConfig,
       initialSummary,
       contextPruningConfig: resolvedSummarizationConfig?.contextPruning as
         | ContextPruningConfig
