@@ -25,6 +25,7 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const {
   createToolEndCallback,
   markSummarizationUsage,
+  agentLogHandler,
 } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const db = require('~/models');
@@ -439,6 +440,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       on_chain_stream: createHandler(),
       on_chain_end: createHandler(),
       on_agent_update: createHandler(),
+      on_agent_log: { handle: agentLogHandler },
       on_custom_event: createHandler(),
       // Event-driven tool execution handler
       on_tool_execute: createToolExecuteHandler(toolExecuteOptions),

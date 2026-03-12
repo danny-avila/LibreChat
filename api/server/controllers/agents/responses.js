@@ -32,8 +32,9 @@ const {
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
-  createToolEndCallback,
   markSummarizationUsage,
+  createToolEndCallback,
+  agentLogHandler,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
@@ -50,16 +51,7 @@ function setAppConfig(config) {
   appConfig = config;
 }
 
-const agentLogHandler = {
-  handle: (_event, data) => {
-    const logFn = typeof logger[data.level] === 'function' ? logger[data.level] : logger.info;
-    logFn(`[agents:${data.scope}] ${data.message}`, {
-      ...data.data,
-      runId: data.runId,
-      agentId: data.agentId,
-    });
-  },
-};
+const agentLogHandlerObj = { handle: agentLogHandler };
 
 /**
  * Creates a tool loader function for the agent.
@@ -470,7 +462,7 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
-        on_agent_log: agentLogHandler,
+        on_agent_log: agentLogHandlerObj,
         ...(summarizationConfig?.enabled !== false
           ? {
               on_summarize_start: {
@@ -655,7 +647,7 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
-        on_agent_log: agentLogHandler,
+        on_agent_log: agentLogHandlerObj,
         ...(summarizationConfig?.enabled !== false
           ? {
               on_summarize_start: { handle: () => {} },
