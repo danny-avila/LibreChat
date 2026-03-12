@@ -46,6 +46,8 @@ function SharedView() {
     docTitle = data?.title ?? config?.appTitle ?? document.title;
   }
 
+  docTitle = config?.appTitle ?? document.title; // NJ: Don't change title to match conversation
+
   useDocumentTitle(docTitle);
 
   const locale =

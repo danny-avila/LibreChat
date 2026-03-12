@@ -38,7 +38,7 @@ export default function SearchButtons({ message }: { message: TMessage }) {
       title = cachedConvo?.title ?? '';
     }
 
-    document.title = title;
+    // document.title = title; // NJ: Don't change title to match conversation
     navigateToConvo(
       cachedConvo ??
         ({

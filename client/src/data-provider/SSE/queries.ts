@@ -119,7 +119,7 @@ export function useTitleGeneration(enabled = true) {
         updateConvoInAllQueries(queryClient, conversationId, (c) => ({ ...c, title }));
         // Only update document title if this conversation is currently active
         if (window.location.pathname.includes(conversationId)) {
-          document.title = title;
+          // document.title = title; // NJ: Don't change title to match conversation
         }
         processedTitles.add(conversationId);
         titleQueue.delete(conversationId);

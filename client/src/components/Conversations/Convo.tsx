@@ -157,7 +157,7 @@ export default function Conversation({
     toggleNav();
 
     if (typeof title === 'string' && title.length > 0) {
-      document.title = title;
+      // document.title = title; // NJ: Don't change title to match conversation
     }
 
     navigateToConvo(conversation, {
