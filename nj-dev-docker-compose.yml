@@ -20,9 +20,20 @@ services:
     volumes:
       - librechat-meilisearch-data:/meili_data
 
+  redis:
+    container_name: librechat-redis
+    image: redis:8.6.1-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - librechat-redis-data:/data
+
 volumes:
   librechat-db-data:
     name: librechat-db-data
 
   librechat-meilisearch-data:
     name: librechat-meilisearch-data
+
+  librechat-redis-data:
+    name: librechat-redis-data
