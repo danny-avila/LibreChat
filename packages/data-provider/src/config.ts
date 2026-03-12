@@ -951,7 +951,7 @@ export const memorySchema = z.object({
 export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
 
 export const summarizationTriggerSchema = z.object({
-  type: z.string(),
+  type: z.enum(['token_count']),
   value: z.number().positive(),
 });
 
