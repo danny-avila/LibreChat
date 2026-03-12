@@ -136,8 +136,8 @@ export class EcsStack extends cdk.Stack {
     const librechatImage = `${this.account}.dkr.ecr.${this.region}.amazonaws.com/newjersey/librechat:${librechatTag}`;
 
     const librechatTaskDef = new ecs.FargateTaskDefinition(this, "LibreChatTaskDef", {
-      cpu: 512,
-      memoryLimitMiB: 1024,
+      cpu: 2048,
+      memoryLimitMiB: 8192,
       executionRole: commonExecRole,
       taskRole: commonExecRole,
     });
