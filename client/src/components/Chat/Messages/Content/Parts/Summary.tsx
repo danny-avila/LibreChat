@@ -3,10 +3,16 @@ import { useAtomValue } from 'jotai';
 import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import { ScrollText, ChevronDown, ChevronUp } from 'lucide-react';
 import type { MouseEvent, FocusEvent } from 'react';
+import type { SummaryContentPart } from 'librechat-data-provider';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useMessageContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+
+type SummaryProps = Pick<
+  SummaryContentPart,
+  'content' | 'model' | 'provider' | 'tokenCount' | 'summarizing'
+>;
 
 function useCopyToClipboard(content?: string) {
   const [isCopied, setIsCopied] = useState(false);
@@ -16,26 +22,22 @@ function useCopyToClipboard(content?: string) {
     (e: MouseEvent<HTMLButtonElement>) => {
       e.stopPropagation();
       if (content) {
-        navigator.clipboard.writeText(content);
-        clearTimeout(timerRef.current);
-        setIsCopied(true);
-        timerRef.current = setTimeout(() => setIsCopied(false), 2000);
+        navigator.clipboard.writeText(content).then(
+          () => {
+            clearTimeout(timerRef.current);
+            setIsCopied(true);
+            timerRef.current = setTimeout(() => setIsCopied(false), 2000);
+          },
+          () => {
+            /* clipboard permission denied — leave icon unchanged */
+          },
+        );
       }
     },
     [content],
   );
   return { isCopied, handleCopy };
 }
-
-type ContentBlock = { type?: string; text?: string };
-
-type SummaryProps = {
-  content?: ContentBlock[];
-  model?: string;
-  provider?: string;
-  tokenCount?: number;
-  summarizing?: boolean;
-};
 
 const SummaryContent = memo(({ children, meta }: { children: React.ReactNode; meta?: string }) => {
   const fontSize = useAtomValue(fontSizeAtom);
@@ -56,6 +58,8 @@ const SummaryButton = memo(
     content,
     contentId,
     showCopyButton = true,
+    isCopied,
+    onCopy,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
@@ -63,10 +67,11 @@ const SummaryButton = memo(
     content?: string;
     contentId: string;
     showCopyButton?: boolean;
+    isCopied: boolean;
+    onCopy: (e: MouseEvent<HTMLButtonElement>) => void;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
-    const { isCopied, handleCopy } = useCopyToClipboard(content);
 
     return (
       <div className="group/summary flex w-full items-center justify-between gap-2">
@@ -98,7 +103,7 @@ const SummaryButton = memo(
         {content && showCopyButton && (
           <button
             type="button"
-            onClick={handleCopy}
+            onClick={onCopy}
             aria-label={
               isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_summary')
             }
@@ -129,24 +134,22 @@ const SummaryButton = memo(
 const FloatingSummaryBar = memo(
   ({
     isVisible,
-    isExpanded,
     onClick,
     content,
     contentId,
+    isCopied,
+    onCopy,
   }: {
     isVisible: boolean;
-    isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
     content?: string;
     contentId: string;
+    isCopied: boolean;
+    onCopy: (e: MouseEvent<HTMLButtonElement>) => void;
   }) => {
     const localize = useLocalize();
-    const { isCopied, handleCopy } = useCopyToClipboard(content);
 
-    const collapseTooltip = isExpanded
-      ? localize('com_ui_collapse_summary')
-      : localize('com_ui_expand_summary');
-
+    const collapseTooltip = localize('com_ui_collapse_summary');
     const copyTooltip = isCopied
       ? localize('com_ui_copied_to_clipboard')
       : localize('com_ui_copy_summary');
@@ -173,11 +176,7 @@ const FloatingSummaryBar = memo(
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
               )}
             >
-              {isExpanded ? (
-                <ChevronUp className="h-[18px] w-[18px]" aria-hidden="true" />
-              ) : (
-                <ChevronDown className="h-[18px] w-[18px]" aria-hidden="true" />
-              )}
+              <ChevronUp className="h-[18px] w-[18px]" aria-hidden="true" />
             </button>
           }
         />
@@ -188,7 +187,7 @@ const FloatingSummaryBar = memo(
               <button
                 type="button"
                 tabIndex={isVisible ? 0 : -1}
-                onClick={handleCopy}
+                onClick={onCopy}
                 aria-label={copyTooltip}
                 className={cn(
                   'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
@@ -218,7 +217,14 @@ const Summary = memo(({ content, model, provider, tokenCount, summarizing }: Sum
   const containerRef = useRef<HTMLDivElement>(null);
   const { isSubmitting, isLatestMessage } = useMessageContext();
 
-  const text = useMemo(() => (content ?? []).map((block) => block.text ?? '').join(''), [content]);
+  const text = useMemo(
+    () =>
+      (content ?? [])
+        .map((block) => ('text' in block && typeof block.text === 'string' ? block.text : ''))
+        .join(''),
+    [content],
+  );
+  const { isCopied, handleCopy } = useCopyToClipboard(text);
 
   const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -282,6 +288,8 @@ const Summary = memo(({ content, model, provider, tokenCount, summarizing }: Sum
             content={text}
             contentId={contentId}
             showCopyButton={!isActivelyStreaming}
+            isCopied={isCopied}
+            onCopy={handleCopy}
           />
         </div>
         <div
@@ -298,10 +306,11 @@ const Summary = memo(({ content, model, provider, tokenCount, summarizing }: Sum
             <SummaryContent meta={meta}>{text}</SummaryContent>
             <FloatingSummaryBar
               isVisible={isBarVisible && isExpanded}
-              isExpanded={isExpanded}
               onClick={handleClick}
               content={text}
               contentId={contentId}
+              isCopied={isCopied}
+              onCopy={handleCopy}
             />
           </div>
         </div>
