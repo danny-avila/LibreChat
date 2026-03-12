@@ -1,4 +1,4 @@
-const { handleError } = require('@librechat/api');
+const { handleError, getProjectContext } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
   EndpointURLs,
@@ -92,6 +92,20 @@ async function buildEndpointOption(req, res, next) {
   try {
     const isAgents =
       isAgentsEndpoint(endpoint) || req.baseUrl.startsWith(EndpointURLs[EModelEndpoint.agents]);
+
+    if (!isAgents && req.body.projectId && req.user?.id) {
+      try {
+        const projectCtx = await getProjectContext(req.user.id, req.body.projectId);
+        if (projectCtx) {
+          parsedBody.promptPrefix = parsedBody.promptPrefix
+            ? `${projectCtx}\n\n${parsedBody.promptPrefix}`
+            : projectCtx;
+        }
+      } catch (err) {
+        logger.warn('[buildEndpointOption] Failed to fetch project context', err);
+      }
+    }
+
     const builder = isAgents
       ? (...args) => buildFunction[EModelEndpoint.agents](req, ...args)
       : buildFunction[endpointType ?? endpoint];

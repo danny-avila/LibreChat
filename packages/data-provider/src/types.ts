@@ -110,6 +110,7 @@ export type TPayload = Partial<TMessage> &
     conversationId: string | null;
     messages?: TMessages;
     isTemporary: boolean;
+    projectId?: string;
     ephemeralAgent?: TEphemeralAgent | null;
     editedContent?: TEditedContent | null;
     /** Added conversation for multi-convo feature */

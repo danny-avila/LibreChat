@@ -1083,3 +1083,56 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* User Projects */
+import type * as proj from './types/projects';
+
+export const getUserProjects = (
+  params?: proj.UserProjectListParams,
+): Promise<proj.UserProjectListResponse> => {
+  return request.get(endpoints.userProjects(params as Record<string, unknown>));
+};
+
+export const getUserProjectById = (projectId: string): Promise<proj.TUserProject> => {
+  return request.get(endpoints.userProjectById(projectId));
+};
+
+export const createUserProject = (
+  data: proj.UserProjectCreateParams,
+): Promise<proj.TUserProject> => {
+  return request.post(endpoints.userProjects(), data);
+};
+
+export const updateUserProject = (
+  projectId: string,
+  data: proj.UserProjectUpdateParams,
+): Promise<proj.TUserProject> => {
+  return request.patch(endpoints.userProjectById(projectId), data);
+};
+
+export const deleteUserProject = (projectId: string): Promise<{ deleted: boolean }> => {
+  return request.delete(endpoints.userProjectById(projectId));
+};
+
+export const getProjectConversations = (
+  projectId: string,
+  params?: { cursor?: string; limit?: number },
+): Promise<q.ConversationListResponse> => {
+  return request.get(
+    endpoints.userProjectConversations(projectId, params as Record<string, unknown>),
+  );
+};
+
+export const assignConversationToProject = (
+  projectId: string,
+  conversationId: string,
+): Promise<{ success: boolean }> => {
+  return request.post(endpoints.assignConversationToProject(projectId), { conversationId });
+};
+
+export const removeConversationFromProject = (
+  projectId: string,
+  conversationId: string,
+): Promise<{ success: boolean }> => {
+  return request.delete(endpoints.removeConversationFromProject(projectId, conversationId));
+};

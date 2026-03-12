@@ -40,6 +40,7 @@ export interface IConversation extends Document {
   iconURL?: string;
   greeting?: string;
   spec?: string;
+  projectId?: string;
   tags?: string[];
   tools?: string[];
   maxContextTokens?: number;

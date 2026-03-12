@@ -64,6 +64,9 @@ export enum QueryKeys {
   activeJobs = 'activeJobs',
   /* Agent API Keys */
   agentApiKeys = 'agentApiKeys',
+  /* User Projects */
+  userProjects = 'userProjects',
+  userProject = 'userProject',
 }
 
 // Dynamic query keys that require parameters
@@ -96,4 +99,10 @@ export enum MutationKeys {
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
   updateMemoryPreferences = 'updateMemoryPreferences',
+  /* User Projects */
+  createUserProject = 'createUserProject',
+  updateUserProject = 'updateUserProject',
+  deleteUserProject = 'deleteUserProject',
+  assignConvoToProject = 'assignConvoToProject',
+  removeConvoFromProject = 'removeConvoFromProject',
 }

@@ -26,6 +26,10 @@ const convoSchema: Schema<IConversation> = new Schema(
     agent_id: {
       type: String,
     },
+    projectId: {
+      type: String,
+      index: true,
+    },
     tags: {
       type: [String],
       default: [],

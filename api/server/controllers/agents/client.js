@@ -18,6 +18,7 @@ const {
   memoryInstructions,
   createTokenCounter,
   applyContextToAgent,
+  getProjectContext,
   recordCollectedUsage,
   GenerationJobManager,
   getTransactionsConfig,
@@ -144,6 +145,7 @@ class AgentClient extends BaseClient {
           resendFiles: this.options.resendFiles,
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
+          projectId: this.options.req?.body?.projectId,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
@@ -318,6 +320,15 @@ class AgentClient extends BaseClient {
     if (withoutKeys) {
       const memoryContext = `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
       sharedRunContextParts.push(memoryContext);
+    }
+
+    /** Project context (instructions, memory) */
+    const reqProjectId = this.options.req.body.projectId;
+    if (reqProjectId) {
+      const projectCtx = await getProjectContext(this.options.req.user.id, reqProjectId);
+      if (projectCtx) {
+        sharedRunContextParts.push(projectCtx);
+      }
     }
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');

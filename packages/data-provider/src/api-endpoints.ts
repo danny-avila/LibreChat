@@ -435,6 +435,21 @@ export const getEffectivePermissions = (resourceType: ResourceType, resourceId: 
 export const getAllEffectivePermissions = (resourceType: ResourceType) =>
   `${BASE_URL}/api/permissions/${resourceType}/effective/all`;
 
+/* User Projects */
+const userProjectsRoot = `${BASE_URL}/api/user-projects`;
+export const userProjects = (params?: Record<string, unknown>) =>
+  `${userProjectsRoot}${params ? buildQuery(params) : ''}`;
+export const userProjectById = (projectId: string) =>
+  `${userProjectsRoot}/${encodeURIComponent(projectId)}`;
+export const userProjectConversations = (projectId: string, params?: Record<string, unknown>) =>
+  `${userProjectsRoot}/${encodeURIComponent(projectId)}/conversations${params ? buildQuery(params) : ''}`;
+export const assignConversationToProject = (projectId: string) =>
+  `${userProjectsRoot}/${encodeURIComponent(projectId)}/conversations`;
+export const removeConversationFromProject = (projectId: string, conversationId: string) =>
+  `${userProjectsRoot}/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}`;
+export const userProjectFiles = (projectId: string) =>
+  `${userProjectsRoot}/${encodeURIComponent(projectId)}/files`;
+
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;

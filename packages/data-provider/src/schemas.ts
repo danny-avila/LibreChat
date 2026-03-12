@@ -742,6 +742,7 @@ export const tConversationSchema = z.object({
   context: z.string().nullable().optional(),
   examples: z.array(tExampleSchema).optional(),
   /* DB */
+  projectId: z.string().optional().nullable(),
   tags: z.array(z.string()).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -902,6 +903,8 @@ export const tQueryParamsSchema = tConversationSchema
     instructions: true,
     /** @endpoints openAI, google, anthropic */
     fileTokenLimit: true,
+    /** User project workspace */
+    projectId: true,
   })
   .merge(
     z.object({

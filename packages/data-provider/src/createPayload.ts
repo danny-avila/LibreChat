@@ -15,7 +15,9 @@ export default function createPayload(submission: t.TSubmission) {
     ephemeralAgent,
     endpointOption,
   } = submission;
-  const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
+  const parsed = s.tConvoUpdateSchema.parse(conversation);
+  const { conversationId } = parsed;
+  const projectId = conversation?.projectId;
   const { endpoint: _e, endpointType } = endpointOption as {
     endpoint: s.EModelEndpoint;
     endpointType?: s.EModelEndpoint;
@@ -38,6 +40,7 @@ export default function createPayload(submission: t.TSubmission) {
     isRegenerate,
     editedContent,
     conversationId,
+    projectId: projectId ?? undefined,
     isContinued: !!(isEdited && isContinued),
     ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
   };

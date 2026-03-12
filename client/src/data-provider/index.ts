@@ -4,6 +4,8 @@ export * from './Endpoints';
 export * from './Files';
 /* Memories */
 export * from './Memories';
+/* Projects */
+export * from './Projects';
 export * from './Messages';
 export * from './Misc';
 export * from './Tools';

@@ -30,8 +30,17 @@ import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
 
+const useActiveProjectId = (): [string | null, (id: string | null) => void] => {
+  const [activeProjectId, setActiveProjectId] = useLocalStorage<string | null>(
+    'activeProjectId',
+    null,
+  );
+  return [activeProjectId, setActiveProjectId];
+};
+
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
+const ProjectList = lazy(() => import('~/components/Projects/ProjectList'));
 
 export const NAV_WIDTH = {
   MOBILE: 320,
@@ -83,6 +92,7 @@ const Nav = memo(
     const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
     const [showLoading, setShowLoading] = useState(false);
     const [tags, setTags] = useState<string[]>([]);
+    const [activeProjectId, setActiveProjectId] = useActiveProjectId();
 
     const hasAccessToBookmarks = useHasAccess({
       permissionType: PermissionTypes.BOOKMARKS,
@@ -235,6 +245,15 @@ const Nav = memo(
               isSmallScreen={isSmallScreen}
             />
             <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
+              <Suspense fallback={null}>
+                <div className="mb-1 border-b border-border-light pb-1">
+                  <ProjectList
+                    activeProjectId={activeProjectId}
+                    onSelectProject={setActiveProjectId}
+                    toggleNav={itemToggleNav}
+                  />
+                </div>
+              </Suspense>
               <Conversations
                 conversations={conversations}
                 moveToTop={moveToTop}

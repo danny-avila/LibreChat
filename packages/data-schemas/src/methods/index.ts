@@ -22,6 +22,8 @@ import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
 import { createAclEntryMethods, type AclEntryMethods } from './aclEntry';
 import { createShareMethods, type ShareMethods } from './share';
 import { createTransactionMethods, type TransactionMethods } from './transaction';
+/* User Projects */
+import { createUserProjectMethods, type UserProjectMethods } from './userProject';
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -38,7 +40,8 @@ export type AllMethods = UserMethods &
   ShareMethods &
   AccessRoleMethods &
   PluginAuthMethods &
-  TransactionMethods;
+  TransactionMethods &
+  UserProjectMethods;
 
 /**
  * Creates all database methods for all collections
@@ -62,6 +65,7 @@ export function createMethods(mongoose: typeof import('mongoose')): AllMethods {
     ...createShareMethods(mongoose),
     ...createPluginAuthMethods(mongoose),
     ...createTransactionMethods(mongoose),
+    ...createUserProjectMethods(mongoose),
   };
 }
 
@@ -82,4 +86,5 @@ export type {
   AccessRoleMethods,
   PluginAuthMethods,
   TransactionMethods,
+  UserProjectMethods,
 };
