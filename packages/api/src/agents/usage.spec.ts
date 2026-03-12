@@ -758,4 +758,132 @@ describe('recordCollectedUsage', () => {
       expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
     });
   });
+
+  describe('bulk write with summarization usage', () => {
+    let mockInsertMany: jest.Mock;
+    let mockUpdateBalance: jest.Mock;
+    let mockPricing: PricingFns;
+    let mockBulkWriteOps: BulkWriteDeps;
+    let bulkDeps: RecordUsageDeps;
+
+    beforeEach(() => {
+      mockInsertMany = jest.fn().mockResolvedValue(undefined);
+      mockUpdateBalance = jest.fn().mockResolvedValue({});
+      mockPricing = {
+        getMultiplier: jest.fn().mockReturnValue(1),
+        getCacheMultiplier: jest.fn().mockReturnValue(null),
+      };
+      mockBulkWriteOps = {
+        insertMany: mockInsertMany,
+        updateBalance: mockUpdateBalance,
+      };
+      bulkDeps = {
+        spendTokens: mockSpendTokens,
+        spendStructuredTokens: mockSpendStructuredTokens,
+        pricing: mockPricing,
+        bulkWriteOps: mockBulkWriteOps,
+      };
+    });
+
+    it('combines message and summarization docs into a single bulk write', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'message',
+          input_tokens: 200,
+          output_tokens: 80,
+          model: 'gpt-4',
+        },
+        {
+          usage_type: 'summarization',
+          input_tokens: 50,
+          output_tokens: 20,
+          model: 'gpt-4.1-mini',
+        },
+      ];
+
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      expect(mockUpdateBalance).toHaveBeenCalledTimes(1);
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
+
+      const insertedDocs = mockInsertMany.mock.calls[0][0];
+      // 2 docs per entry (prompt + completion) x 2 entries = 4 docs
+      expect(insertedDocs).toHaveLength(4);
+
+      const messageContextDocs = insertedDocs.filter(
+        (d: Record<string, unknown>) => d.context === 'message',
+      );
+      const summarizationContextDocs = insertedDocs.filter(
+        (d: Record<string, unknown>) => d.context === 'summarization',
+      );
+      expect(messageContextDocs).toHaveLength(2);
+      expect(summarizationContextDocs).toHaveLength(2);
+
+      // Only message usage contributes to the returned rollup
+      expect(result).toEqual({ input_tokens: 200, output_tokens: 80 });
+    });
+
+    it('handles summarization-only usage in bulk mode', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'summarization',
+          input_tokens: 60,
+          output_tokens: 25,
+          model: 'gpt-4.1-mini',
+        },
+      ];
+
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
+
+      const insertedDocs = mockInsertMany.mock.calls[0][0];
+      expect(insertedDocs).toHaveLength(2);
+
+      const summarizationContextDocs = insertedDocs.filter(
+        (d: Record<string, unknown>) => d.context === 'summarization',
+      );
+      expect(summarizationContextDocs).toHaveLength(2);
+
+      // No message usage, so rollup should be zero
+      expect(result).toEqual({ input_tokens: 0, output_tokens: 0 });
+    });
+
+    it('handles message-only usage in bulk mode', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        { input_tokens: 200, output_tokens: 60, model: 'gpt-4' },
+      ];
+
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
+
+      const insertedDocs = mockInsertMany.mock.calls[0][0];
+      // 2 docs per entry x 2 entries = 4 docs
+      expect(insertedDocs).toHaveLength(4);
+
+      const messageContextDocs = insertedDocs.filter(
+        (d: Record<string, unknown>) => d.context === 'message',
+      );
+      expect(messageContextDocs).toHaveLength(4);
+
+      expect(result).toEqual({ input_tokens: 100, output_tokens: 110 });
+    });
+  });
 });
