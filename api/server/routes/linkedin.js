@@ -109,8 +109,29 @@ router.get('/connect', async (req, res) => {
       }
     }
     
-    // Production mode: use standard JWT auth from cookie/header
-    // We need to manually call passport.authenticate here
+    // Production mode: Try to get JWT from cookie first, then use passport
+    const jwtCookie = req.cookies?.token || req.cookies?.jwt;
+    
+    if (jwtCookie) {
+      // Try to verify JWT from cookie
+      try {
+        const decoded = jwt.verify(jwtCookie, process.env.JWT_SECRET);
+        userId = decoded.id;
+        logger.info(`[LinkedIn] Production mode - Using JWT from cookie for user ${userId}`);
+        
+        // Generate state and redirect to LinkedIn
+        const state = generateState(userId);
+        const authUrl = LinkedInService.getAuthUrl(state);
+        
+        logger.info(`[LinkedIn] Redirecting to LinkedIn OAuth for user ${userId}`);
+        return res.redirect(authUrl);
+      } catch (error) {
+        logger.error('[LinkedIn] Invalid JWT in cookie:', error.message);
+        // Fall through to passport authentication
+      }
+    }
+    
+    // Fallback: use standard JWT auth from header via passport
     passport.authenticate('jwt', { session: false }, (err, user, info) => {
       if (err) {
         logger.error('[LinkedIn] Authentication error:', err);
@@ -118,7 +139,7 @@ router.get('/connect', async (req, res) => {
       }
       
       if (!user) {
-        logger.error('[LinkedIn] No user found in JWT');
+        logger.error('[LinkedIn] No user found in JWT, info:', info);
         return res.redirect(`${clientUrl}/?settings=true&tab=social&error=unauthorized&platform=linkedin`);
       }
       
