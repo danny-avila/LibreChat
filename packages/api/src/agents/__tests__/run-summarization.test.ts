@@ -230,7 +230,9 @@ describe('summarizationConfig field passthrough', () => {
     });
     const config = agents[0].summarizationConfig as Record<string, unknown>;
     expect(config).toBeDefined();
-    expect(config.enabled).toBe(true);
+    // `enabled` is not forwarded to the agent-level config — it is resolved
+    // into the separate `summarizationEnabled` boolean on the agent input.
+    expect(agents[0].summarizationEnabled).toBe(true);
     expect(config.trigger).toEqual({ type: 'token_count', value: 8000 });
     expect(config.provider).toBe('anthropic');
     expect(config.model).toBe('claude-3-haiku');
@@ -247,7 +249,8 @@ describe('summarizationConfig field passthrough', () => {
     });
     const config = agents[0].summarizationConfig as Record<string, unknown>;
     expect(config).toBeDefined();
-    expect(config.enabled).toBe(true);
+    // `enabled` is resolved into `summarizationEnabled`, not forwarded on config
+    expect(agents[0].summarizationEnabled).toBe(true);
     expect(config.provider).toBe('openAI');
     expect(config.model).toBe('gpt-4o');
   });
