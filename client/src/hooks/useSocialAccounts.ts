@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
-import { useToastContext } from '@librechat/client';
+import { useToastContext, useAuthContext } from '@librechat/client';
 import { request } from 'librechat-data-provider';
 import { useAuthContext } from './AuthContext';
 
