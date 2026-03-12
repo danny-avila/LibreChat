@@ -1,7 +1,7 @@
 import _ from 'lodash';
-import { MeiliSearch } from 'meilisearch';
 import { parseTextParts } from 'librechat-data-provider';
-import type { SearchResponse, SearchParams, Index } from 'meilisearch';
+import { MeiliSearch, MeiliSearchTimeOutError } from 'meilisearch';
+import type { SearchResponse, SearchParams, Index, MeiliSearchErrorInfo } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,
   FilterQuery,
@@ -595,12 +595,20 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
             timeOutMs: 10000,
             intervalMs: 100,
           });
-          logger.info(`[mongoMeili] Index ${indexName} creation task:`, task);
-          logger.info(`[mongoMeili] Successfully created index: ${indexName}`);
+          logger.debug(`[mongoMeili] Index ${indexName} creation task:`, task);
+          if (task.status === 'failed') {
+            const taskError = task.error as MeiliSearchErrorInfo | null;
+            if (taskError?.code === 'index_already_exists') {
+              logger.debug(`[mongoMeili] Index ${indexName} was created by another instance`);
+            } else {
+              logger.warn(`[mongoMeili] Index ${indexName} creation failed:`, taskError);
+            }
+          } else {
+            logger.info(`[mongoMeili] Successfully created index: ${indexName}`);
+          }
         } catch (createError) {
-          const createCode = (createError as { code?: string })?.code;
-          if (createCode === 'index_already_exists') {
-            logger.debug(`[mongoMeili] Index ${indexName} was created by another instance`);
+          if (createError instanceof MeiliSearchTimeOutError) {
+            logger.warn(`[mongoMeili] Timed out waiting for index ${indexName} creation`);
           } else {
             logger.warn(`[mongoMeili] Error creating index ${indexName}:`, createError);
           }
