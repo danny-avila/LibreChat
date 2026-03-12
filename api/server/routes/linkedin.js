@@ -110,7 +110,11 @@ router.get('/connect', async (req, res) => {
     }
     
     // Production mode: Try to get JWT from cookie first, then use passport
-    const jwtCookie = req.cookies?.token || req.cookies?.jwt;
+    // Log all cookies for debugging
+    logger.info('[LinkedIn] Available cookies:', Object.keys(req.cookies || {}));
+    logger.info('[LinkedIn] Cookie values:', req.cookies);
+    
+    const jwtCookie = req.cookies?.token || req.cookies?.jwt || req.cookies?.refreshToken;
     
     if (jwtCookie) {
       // Try to verify JWT from cookie
@@ -129,6 +133,8 @@ router.get('/connect', async (req, res) => {
         logger.error('[LinkedIn] Invalid JWT in cookie:', error.message);
         // Fall through to passport authentication
       }
+    } else {
+      logger.warn('[LinkedIn] No JWT cookie found, trying passport authentication');
     }
     
     // Fallback: use standard JWT auth from header via passport
