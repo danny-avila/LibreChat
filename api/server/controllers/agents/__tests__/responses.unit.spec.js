@@ -371,28 +371,7 @@ describe('createResponse controller', () => {
     it('should collect usage from on_chat_model_end events', async () => {
       const api = require('@librechat/api');
 
-      let capturedOnChatModelEnd;
-      api.createAggregatorEventHandlers.mockImplementation(() => {
-        return {
-          on_message_delta: { handle: jest.fn() },
-          on_reasoning_delta: { handle: jest.fn() },
-          on_run_step: { handle: jest.fn() },
-          on_run_step_delta: { handle: jest.fn() },
-          on_chat_model_end: {
-            handle: jest.fn((event, data) => {
-              if (capturedOnChatModelEnd) {
-                capturedOnChatModelEnd(event, data);
-              }
-            }),
-          },
-        };
-      });
-
       api.createRun.mockImplementation(async ({ customHandlers }) => {
-        capturedOnChatModelEnd = (event, data) => {
-          customHandlers.on_chat_model_end.handle(event, data);
-        };
-
         return {
           processStream: jest.fn().mockImplementation(async () => {
             customHandlers.on_chat_model_end.handle('on_chat_model_end', {
@@ -409,7 +388,6 @@ describe('createResponse controller', () => {
       });
 
       await createResponse(req, res);
-
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
         expect.any(Object),
         expect.objectContaining({
