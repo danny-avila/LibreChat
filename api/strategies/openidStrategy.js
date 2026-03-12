@@ -772,18 +772,23 @@ const setupOpenIdAdmin = (openidConfig) => {
  */
 async function setupOpenId() {
   try {
+    const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
 
     /** @type {ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
-      client_secret: process.env.OPENID_CLIENT_SECRET,
+      response_types: ['code'],
+      grant_types: ['authorization_code']
     };
 
-    if (shouldGenerateNonce) {
-      clientMetadata.response_types = ['code'];
-      clientMetadata.grant_types = ['authorization_code'];
+    const clientSecret = process.env.OPENID_CLIENT_SECRET?.trim();
+
+    if (clientSecret) {
+      clientMetadata.client_secret = clientSecret;
       clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+    } else if (usePKCE) {
+      clientMetadata.token_endpoint_auth_method = 'none';
     }
 
     /** @type {Configuration} */
