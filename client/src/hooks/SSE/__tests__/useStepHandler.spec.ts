@@ -1024,6 +1024,386 @@ describe('useStepHandler', () => {
     });
   });
 
+  describe('summarization events', () => {
+    it('ON_SUMMARIZE_START calls announcePolite', () => {
+      mockLastAnnouncementTimeRef.current = Date.now();
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_SUMMARIZE_START,
+            data: {
+              agentId: 'agent-1',
+              provider: 'test-provider',
+              model: 'test-model',
+              messagesToRefineCount: 5,
+              summaryVersion: 1,
+            },
+          },
+          submission,
+        );
+      });
+
+      expect(mockAnnouncePolite).toHaveBeenCalledWith({
+        message: 'summarize_started',
+        isStatus: true,
+      });
+    });
+
+    it('ON_SUMMARIZE_DELTA accumulates content on known run step', () => {
+      mockLastAnnouncementTimeRef.current = Date.now();
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission();
+
+      const runStep = createRunStep({
+        summary: {
+          type: ContentTypes.SUMMARY,
+          model: 'test-model',
+          provider: 'test-provider',
+        } as TMessageContentParts & { type: typeof ContentTypes.SUMMARY },
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      mockSetMessages.mockClear();
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_SUMMARIZE_DELTA,
+            data: {
+              id: 'step-1',
+              delta: {
+                summary: {
+                  type: ContentTypes.SUMMARY,
+                  content: [{ type: ContentTypes.TEXT, text: 'chunk1' }],
+                  provider: 'test-provider',
+                  model: 'test-model',
+                  summarizing: true,
+                },
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      expect(mockSetMessages).toHaveBeenCalled();
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall[lastCall.length - 1];
+      const summaryPart = responseMsg.content?.find(
+        (c: TMessageContentParts) => c.type === ContentTypes.SUMMARY,
+      );
+      expect(summaryPart).toBeDefined();
+      expect(summaryPart.content).toContainEqual(
+        expect.objectContaining({ type: ContentTypes.TEXT, text: 'chunk1' }),
+      );
+    });
+
+    it('ON_SUMMARIZE_DELTA buffers when run step is not yet known', () => {
+      mockLastAnnouncementTimeRef.current = Date.now();
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_SUMMARIZE_DELTA,
+            data: {
+              id: 'step-1',
+              delta: {
+                summary: {
+                  type: ContentTypes.SUMMARY,
+                  content: [{ type: ContentTypes.TEXT, text: 'buffered chunk' }],
+                  provider: 'test-provider',
+                  model: 'test-model',
+                  summarizing: true,
+                },
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      expect(mockSetMessages).not.toHaveBeenCalled();
+    });
+
+    it('ON_SUMMARIZE_COMPLETE success replaces summarizing part with finalized summary', () => {
+      mockLastAnnouncementTimeRef.current = Date.now();
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission();
+
+      const runStep = createRunStep({
+        summary: {
+          type: ContentTypes.SUMMARY,
+          model: 'test-model',
+          provider: 'test-provider',
+        } as TMessageContentParts & { type: typeof ContentTypes.SUMMARY },
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_SUMMARIZE_DELTA,
+            data: {
+              id: 'step-1',
+              delta: {
+                summary: {
+                  type: ContentTypes.SUMMARY,
+                  content: [{ type: ContentTypes.TEXT, text: 'partial' }],
+                  provider: 'test-provider',
+                  model: 'test-model',
+                  summarizing: true,
+                },
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      mockSetMessages.mockClear();
+      mockAnnouncePolite.mockClear();
+
+      const lastSetCall = mockGetMessages.mock.results[mockGetMessages.mock.results.length - 1];
+      const latestMessages = lastSetCall?.value ?? [];
+      mockGetMessages.mockReturnValue(
+        latestMessages.length > 0 ? latestMessages : [responseMessage],
+      );
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_SUMMARIZE_COMPLETE,
+            data: {
+              id: 'step-1',
+              agentId: 'agent-1',
+              summary: {
+                type: ContentTypes.SUMMARY,
+                content: [{ type: ContentTypes.TEXT, text: 'Final summary' }],
+                tokenCount: 100,
+                summarizing: false,
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      expect(mockAnnouncePolite).toHaveBeenCalledWith({
+        message: 'summarize_completed',
+        isStatus: true,
+      });
+      expect(mockSetMessages).toHaveBeenCalled();
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall.find((m: TMessage) => m.messageId === 'response-msg-1');
+      const summaryPart = responseMsg?.content?.find(
+        (c: TMessageContentParts) => c.type === ContentTypes.SUMMARY,
+      );
+      expect(summaryPart).toMatchObject({ summarizing: false });
+    });
+
+    it('ON_SUMMARIZE_COMPLETE error removes summarizing parts', () => {
+      mockLastAnnouncementTimeRef.current = Date.now();
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission();
+
+      const runStep = createRunStep({
+        summary: {
+          type: ContentTypes.SUMMARY,
+          model: 'test-model',
+          provider: 'test-provider',
+        } as TMessageContentParts & { type: typeof ContentTypes.SUMMARY },
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_SUMMARIZE_DELTA,
+            data: {
+              id: 'step-1',
+              delta: {
+                summary: {
+                  type: ContentTypes.SUMMARY,
+                  content: [{ type: ContentTypes.TEXT, text: 'partial' }],
+                  provider: 'test-provider',
+                  model: 'test-model',
+                  summarizing: true,
+                },
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      mockSetMessages.mockClear();
+      mockAnnouncePolite.mockClear();
+
+      const lastSetCall = mockGetMessages.mock.results[mockGetMessages.mock.results.length - 1];
+      const latestMessages = lastSetCall?.value ?? [];
+      mockGetMessages.mockReturnValue(
+        latestMessages.length > 0 ? latestMessages : [responseMessage],
+      );
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_SUMMARIZE_COMPLETE,
+            data: {
+              id: 'step-1',
+              agentId: 'agent-1',
+              error: 'LLM failed',
+            },
+          },
+          submission,
+        );
+      });
+
+      expect(mockAnnouncePolite).toHaveBeenCalledWith({
+        message: 'summarize_failed',
+        isStatus: true,
+      });
+      expect(mockSetMessages).toHaveBeenCalled();
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall.find((m: TMessage) => m.messageId === 'response-msg-1');
+      const summaryParts =
+        responseMsg?.content?.filter(
+          (c: TMessageContentParts) => c.type === ContentTypes.SUMMARY,
+        ) ?? [];
+      expect(summaryParts).toHaveLength(0);
+    });
+
+    it('ON_SUMMARIZE_COMPLETE returns early when target message not in messageMap', () => {
+      mockLastAnnouncementTimeRef.current = Date.now();
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_SUMMARIZE_COMPLETE,
+            data: {
+              id: 'step-1',
+              agentId: 'agent-1',
+              summary: {
+                type: ContentTypes.SUMMARY,
+                content: [{ type: ContentTypes.TEXT, text: 'Final summary' }],
+                tokenCount: 100,
+                summarizing: false,
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      expect(mockSetMessages).not.toHaveBeenCalled();
+      expect(mockAnnouncePolite).not.toHaveBeenCalled();
+    });
+
+    it('ON_SUMMARIZE_COMPLETE with undefined summary does not finalize', () => {
+      mockLastAnnouncementTimeRef.current = Date.now();
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission();
+
+      const runStep = createRunStep({
+        summary: {
+          type: ContentTypes.SUMMARY,
+          model: 'test-model',
+          provider: 'test-provider',
+        } as TMessageContentParts & { type: typeof ContentTypes.SUMMARY },
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_SUMMARIZE_DELTA,
+            data: {
+              id: 'step-1',
+              delta: {
+                summary: {
+                  type: ContentTypes.SUMMARY,
+                  content: [{ type: ContentTypes.TEXT, text: 'partial' }],
+                  provider: 'test-provider',
+                  model: 'test-model',
+                  summarizing: true,
+                },
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      mockSetMessages.mockClear();
+      mockAnnouncePolite.mockClear();
+
+      const lastSetCall = mockGetMessages.mock.results[mockGetMessages.mock.results.length - 1];
+      const latestMessages = lastSetCall?.value ?? [];
+      mockGetMessages.mockReturnValue(
+        latestMessages.length > 0 ? latestMessages : [responseMessage],
+      );
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_SUMMARIZE_COMPLETE,
+            data: {
+              id: 'step-1',
+              agentId: 'agent-1',
+            },
+          },
+          submission,
+        );
+      });
+
+      expect(mockAnnouncePolite).toHaveBeenCalledWith({
+        message: 'summarize_completed',
+        isStatus: true,
+      });
+      expect(mockSetMessages).not.toHaveBeenCalled();
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle empty messages array', () => {
       mockGetMessages.mockReturnValue([]);
