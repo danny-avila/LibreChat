@@ -209,6 +209,7 @@ export async function createRun({
   indexTokenCountMap,
   summarizationConfig,
   initialSummary,
+  calibrationRatio,
   streaming = true,
   streamUsage = true,
 }: {
@@ -224,6 +225,8 @@ export async function createRun({
   summarizationConfig?: SummarizationConfig;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
+  /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
+  calibrationRatio?: number;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -421,5 +424,6 @@ export async function createRun({
     tokenCounter,
     customHandlers,
     indexTokenCountMap,
+    calibrationRatio,
   });
 }
