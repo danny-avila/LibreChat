@@ -875,20 +875,6 @@ class AgentClient extends BaseClient {
       const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
 
-      /** Capture calibration ratio from the completed run for persistence on the response message */
-      if (this.run) {
-        const ratio = this.run.getCalibrationRatio();
-        if (ratio > 0 && ratio !== 1) {
-          this.contextMeta = {
-            calibrationRatio: Math.round(ratio * 1000) / 1000,
-            encoding: this.getEncoding(),
-          };
-          logger.debug(
-            `[AgentClient] contextMeta to persist: ratio=${this.contextMeta.calibrationRatio}, encoding=${this.contextMeta.encoding}`,
-          );
-        }
-      }
-
       /** @deprecated Agent Chain */
       if (hideSequentialOutputs) {
         this.contentParts = this.contentParts.filter((part, index) => {
@@ -919,6 +905,18 @@ class AgentClient extends BaseClient {
         });
       }
     } finally {
+      /** Capture calibration ratio from the run for persistence on the response message.
+       *  Runs in finally so the ratio is captured even on abort. */
+      if (this.run) {
+        const ratio = this.run.getCalibrationRatio();
+        if (ratio > 0 && ratio !== 1) {
+          this.contextMeta = {
+            calibrationRatio: Math.round(ratio * 1000) / 1000,
+            encoding: this.getEncoding(),
+          };
+        }
+      }
+
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
         if (attachments && attachments.length > 0) {
