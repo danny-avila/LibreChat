@@ -25,7 +25,7 @@
     "test:cache-integration:mcp": "jest --testPathPatterns=\"src/mcp/.*\\.cache_integration\\.spec\\.ts$\" --coverage=false",
     "test:cache-integration:stream": "jest --testPathPatterns=\"src/stream/.*\\.stream_integration\\.spec\\.ts$\" --coverage=false --runInBand --forceExit",
     "test:cache-integration": "npm run test:cache-integration:core && npm run test:cache-integration:cluster && npm run test:cache-integration:mcp && npm run test:cache-integration:stream",
-    "test:s3-integration": "jest --testPathPatterns=\"src/storage/s3/.*\\.s3_integration\\.spec\\.ts$\" --coverage=false --runInBand",
+    "test:s3-integration": "jest --testPathPatterns=\"src/storage/s3/.*\\.integration\\.spec\\.ts$\" --coverage=false --runInBand",
     "verify": "npm run test:ci",
     "b:clean": "bun run rimraf dist",
     "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs",
@@ -85,7 +85,9 @@
   "peerDependencies": {
     "@anthropic-ai/vertex-sdk": "^0.14.3",
     "@aws-sdk/client-bedrock-runtime": "^3.970.0",
+    "@aws-sdk/client-cloudfront": "^3.1000.0",
     "@aws-sdk/client-s3": "^3.980.0",
+    "@aws-sdk/cloudfront-signer": "^3.999.0",
     "@azure/identity": "^4.7.0",
     "@azure/search-documents": "^12.0.0",
     "@azure/storage-blob": "^12.30.0",
