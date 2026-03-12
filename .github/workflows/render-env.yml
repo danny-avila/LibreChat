@@ -38,6 +38,7 @@ jobs:
           set -euo pipefail
 
           export DEBUG=$([[ "${{ inputs.environment }}" == "dev" ]] && echo true || echo false)
+          export LOG_LEVEL="${{ secrets.LOG_LEVEL }}"
           export DOMAIN="${{ secrets.DOMAIN }}"
           export AWS_REGION="${{ secrets.AWS_REGION }}"
           export AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}"
