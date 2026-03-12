@@ -1,0 +1,3 @@
+[submodule "packages/rag-api"]
+	path = packages/rag-api
+	url = https://github.com/danny-avila/rag_api.git
