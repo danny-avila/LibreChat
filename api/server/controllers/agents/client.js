@@ -329,9 +329,6 @@ class AgentClient extends BaseClient {
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
 
-    /** @type {Record<string, number> | undefined} */
-    let tokenCountMap;
-
     /** Preserve canonical pre-format token counts for all history entering graph formatting */
     this.indexTokenCountMap = canonicalTokenCountMap;
 
@@ -344,7 +341,6 @@ class AgentClient extends BaseClient {
     }
 
     const result = {
-      tokenCountMap,
       prompt: payload,
       promptTokens,
       messages,
@@ -907,14 +903,14 @@ class AgentClient extends BaseClient {
     } finally {
       /** Capture calibration ratio from the run for persistence on the response message.
        *  Runs in finally so the ratio is captured even on abort. */
-      if (this.run) {
-        const ratio = this.run.getCalibrationRatio();
-        if (ratio > 0 && ratio !== 1) {
-          this.contextMeta = {
-            calibrationRatio: Math.round(ratio * 1000) / 1000,
-            encoding: this.getEncoding(),
-          };
-        }
+      const ratio = this.run?.getCalibrationRatio() ?? 0;
+      if (ratio > 0 && ratio !== 1) {
+        this.contextMeta = {
+          calibrationRatio: Math.round(ratio * 1000) / 1000,
+          encoding: this.getEncoding(),
+        };
+      } else {
+        this.contextMeta = undefined;
       }
 
       try {
