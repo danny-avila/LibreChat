@@ -53,7 +53,7 @@ function setAppConfig(config) {
 const agentLogHandler = {
   handle: (_event, data) => {
     const logFn = typeof logger[data.level] === 'function' ? logger[data.level] : logger.info;
-    logFn(`[agentus:${data.scope}] ${data.message}`, {
+    logFn(`[agents:${data.scope}] ${data.message}`, {
       ...data.data,
       runId: data.runId,
       agentId: data.agentId,
