@@ -97,24 +97,11 @@ export default function LinkedInAccountSettings() {
     setIsConnecting(true);
     
     try {
-      // In development, use explicit backend URL and pass token as query param
-      // In production, use relative path (same server, cookie auth works)
-      const isDevelopment = import.meta.env.DEV;
-      
-      console.log('[LinkedIn] isDevelopment:', isDevelopment);
-      console.log('[LinkedIn] token available:', !!token);
-      
-      if (isDevelopment) {
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3080';
-        const connectUrl = `${backendUrl}/api/linkedin/connect?token=${encodeURIComponent(token || '')}`;
-        console.log('[LinkedIn] Redirecting to:', connectUrl);
-        // Pass token as query parameter for cross-origin dev mode
-        window.location.href = connectUrl;
-      } else {
-        // Production: use relative path, cookie auth works
-        console.log('[LinkedIn] Production mode, using relative path');
-        window.location.href = '/api/linkedin/connect';
-      }
+      // Always pass token as query parameter (works in both dev and production)
+      // This avoids cookie configuration issues
+      const connectUrl = `/api/linkedin/connect?token=${encodeURIComponent(token || '')}`;
+      console.log('[LinkedIn] Redirecting to:', connectUrl);
+      window.location.href = connectUrl;
     } catch (err: any) {
       console.error('[LinkedIn] Connect failed:', err);
       showToast({
