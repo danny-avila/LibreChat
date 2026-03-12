@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { useToastContext } from '@librechat/client';
 import { request } from 'librechat-data-provider';
+import { useAuthContext } from './AuthContext';
 
 interface SocialAccount {
   _id: string;
@@ -28,6 +29,7 @@ interface SocialAccount {
 export function useSocialAccounts() {
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
+  const { token } = useAuthContext();
   const [loading, setLoading] = useState(false);
 
   // Fetch LinkedIn account status
@@ -41,6 +43,7 @@ export function useSocialAccounts() {
       const data = await request.get('/api/linkedin/status');
       return data;
     },
+    enabled: !!token, // Only fetch when authenticated
   });
 
   // Create LinkedIn post mutation

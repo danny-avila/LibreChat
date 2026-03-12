@@ -57,7 +57,9 @@ export default function LinkedInAccountSettings() {
   };
 
   useEffect(() => {
-    fetchStatus();
+    if (token) {
+      fetchStatus();
+    }
   }, [token]);
 
   // Handle OAuth callback
