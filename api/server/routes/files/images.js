@@ -8,6 +8,7 @@ const {
   processImageFile,
   filterFile,
 } = require('~/server/services/Files/process');
+const { verifyAgentUploadPermission } = require('./agentPermCheck');
 
 const router = express.Router();
 
@@ -22,6 +23,10 @@ router.post('/', async (req, res) => {
     metadata.file_id = req.file_id;
 
     if (!isAssistantsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
+      const denied = await verifyAgentUploadPermission({ req, res, metadata });
+      if (denied) {
+        return;
+      }
       return await processAgentFileUpload({ req, res, metadata });
     }
 
