@@ -1693,12 +1693,14 @@ describe('MCP Routes', () => {
     it('should return all server configs for authenticated user', async () => {
       const mockServerConfigs = {
         'server-1': {
-          endpoint: 'http://server1.com',
-          name: 'Server 1',
+          type: 'sse',
+          url: 'http://server1.com/sse',
+          title: 'Server 1',
         },
         'server-2': {
-          endpoint: 'http://server2.com',
-          name: 'Server 2',
+          type: 'sse',
+          url: 'http://server2.com/sse',
+          title: 'Server 2',
         },
       };
 
@@ -1707,7 +1709,10 @@ describe('MCP Routes', () => {
       const response = await request(app).get('/api/mcp/servers');
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockServerConfigs);
+      expect(response.body['server-1'].type).toBe('sse');
+      expect(response.body['server-1'].url).toBe('http://server1.com/sse');
+      expect(response.body['server-1'].title).toBe('Server 1');
+      expect(response.body['server-2'].title).toBe('Server 2');
       expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith('test-user-id');
     });
 
@@ -1762,10 +1767,10 @@ describe('MCP Routes', () => {
       const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
 
       expect(response.status).toBe(201);
-      expect(response.body).toEqual({
-        serverName: 'test-sse-server',
-        ...validConfig,
-      });
+      expect(response.body.serverName).toBe('test-sse-server');
+      expect(response.body.type).toBe('sse');
+      expect(response.body.url).toBe('https://mcp-server.example.com/sse');
+      expect(response.body.title).toBe('Test SSE Server');
       expect(mockRegistryInstance.addServer).toHaveBeenCalledWith(
         'temp_server_name',
         expect.objectContaining({
@@ -1864,6 +1869,33 @@ describe('MCP Routes', () => {
       expect(mockRegistryInstance.addServer).not.toHaveBeenCalled();
     });
 
+    it('should redact secrets from create response', async () => {
+      const validConfig = {
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Test Server',
+      };
+
+      mockRegistryInstance.addServer.mockResolvedValue({
+        serverName: 'test-server',
+        config: {
+          ...validConfig,
+          apiKey: { source: 'admin', authorization_type: 'bearer', key: 'admin-secret-key' },
+          oauth: { client_id: 'cid', client_secret: 'admin-oauth-secret' },
+          headers: { Authorization: 'Bearer leaked-token' },
+        },
+      });
+
+      const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
+
+      expect(response.status).toBe(201);
+      expect(response.body.apiKey?.key).toBeUndefined();
+      expect(response.body.oauth?.client_secret).toBeUndefined();
+      expect(response.body.headers).toBeUndefined();
+      expect(response.body.apiKey?.source).toBe('admin');
+      expect(response.body.oauth?.client_id).toBe('cid');
+    });
+
     it('should return 500 when registry throws error', async () => {
       const validConfig = {
         type: 'sse',
@@ -1893,7 +1925,9 @@ describe('MCP Routes', () => {
       const response = await request(app).get('/api/mcp/servers/test-server');
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockConfig);
+      expect(response.body.type).toBe('sse');
+      expect(response.body.url).toBe('https://mcp-server.example.com/sse');
+      expect(response.body.title).toBe('Test Server');
       expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
         'test-server',
         'test-user-id',
@@ -1907,6 +1941,29 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(404);
       expect(response.body).toEqual({ message: 'MCP server not found' });
+    });
+
+    it('should redact secrets from get response', async () => {
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Secret Server',
+        apiKey: { source: 'admin', authorization_type: 'bearer', key: 'decrypted-admin-key' },
+        oauth: { client_id: 'cid', client_secret: 'decrypted-oauth-secret' },
+        headers: { Authorization: 'Bearer internal-token' },
+        oauth_headers: { 'X-OAuth': 'secret-value' },
+      });
+
+      const response = await request(app).get('/api/mcp/servers/secret-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body.title).toBe('Secret Server');
+      expect(response.body.apiKey?.key).toBeUndefined();
+      expect(response.body.apiKey?.source).toBe('admin');
+      expect(response.body.oauth?.client_secret).toBeUndefined();
+      expect(response.body.oauth?.client_id).toBe('cid');
+      expect(response.body.headers).toBeUndefined();
+      expect(response.body.oauth_headers).toBeUndefined();
     });
 
     it('should return 500 when registry throws error', async () => {
@@ -1935,7 +1992,9 @@ describe('MCP Routes', () => {
         .send({ config: updatedConfig });
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(updatedConfig);
+      expect(response.body.type).toBe('sse');
+      expect(response.body.url).toBe('https://updated-mcp-server.example.com/sse');
+      expect(response.body.title).toBe('Updated Server');
       expect(mockRegistryInstance.updateServer).toHaveBeenCalledWith(
         'test-server',
         expect.objectContaining({
@@ -1945,6 +2004,35 @@ describe('MCP Routes', () => {
         'DB',
         'test-user-id',
       );
+    });
+
+    it('should redact secrets from update response', async () => {
+      const validConfig = {
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Updated Server',
+      };
+
+      mockRegistryInstance.updateServer.mockResolvedValue({
+        ...validConfig,
+        apiKey: { source: 'admin', authorization_type: 'bearer', key: 'preserved-admin-key' },
+        oauth: { client_id: 'cid', client_secret: 'preserved-oauth-secret' },
+        headers: { Authorization: 'Bearer internal-token' },
+        env: { DATABASE_URL: 'postgres://admin:pass@localhost/db' },
+      });
+
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({ config: validConfig });
+
+      expect(response.status).toBe(200);
+      expect(response.body.title).toBe('Updated Server');
+      expect(response.body.apiKey?.key).toBeUndefined();
+      expect(response.body.apiKey?.source).toBe('admin');
+      expect(response.body.oauth?.client_secret).toBeUndefined();
+      expect(response.body.oauth?.client_id).toBe('cid');
+      expect(response.body.headers).toBeUndefined();
+      expect(response.body.env).toBeUndefined();
     });
 
     it('should return 400 for invalid configuration', async () => {
