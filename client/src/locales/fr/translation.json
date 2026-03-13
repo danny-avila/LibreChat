@@ -1203,7 +1203,7 @@
   "com_ui_upload_image_input": "Téléverser une image",
   "com_ui_upload_invalid": "Fichier non valide pour le téléchargement. L'image ne doit pas dépasser la limite",
   "com_ui_upload_invalid_var": "Fichier non valide pour le téléchargement. L'image ne doit pas dépasser {{0}} Mo",
-  "com_ui_upload_ocr_text": "Téléchager en tant que texte",
+  "com_ui_upload_ocr_text": "Télécharger en tant que texte",
   "com_ui_upload_provider": "Télécharger vers le fournisseur",
   "com_ui_upload_success": "Fichier téléversé avec succès",
   "com_ui_upload_type": "Sélectionner le type de téléversement",
