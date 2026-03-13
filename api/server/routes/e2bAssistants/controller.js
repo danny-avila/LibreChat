@@ -1,7 +1,7 @@
 const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
-const { sendEvent, sanitizeMessageForTransmit } = require('@librechat/api');
+const { sendEvent, sanitizeMessageForTransmit, countTokens } = require('@librechat/api');
 const { ContentTypes, EModelEndpoint, SystemRoles } = require('librechat-data-provider');
 const { 
   createE2BAssistantDoc, 
@@ -10,6 +10,7 @@ const {
   deleteE2BAssistantDoc 
 } = require('~/models/E2BAssistant');
 const E2BDataAnalystAgent = require('~/server/services/Agents/e2bAgent');
+const { buildE2BHistory } = require('~/server/services/Agents/e2bAgent/historyBuilder');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { saveMessage, getConvo, getMessages, getFiles } = require('~/models');
 
@@ -691,6 +692,11 @@ const chat = async (req, res) => {
     // Initialize OpenAI client
     const { openai } = await getOpenAIClient({ req, res });
 
+    // Phase1/2 config: token budget + history compaction strategy.
+    const e2bEndpointConfig =
+      req.config?.endpoints?.[EModelEndpoint.e2bAssistants] ?? req.config?.endpoints?.e2bAssistants ?? {};
+    const contextManagementConfig = e2bEndpointConfig?.contextManagement ?? {};
+
     // Load conversation history if this is a continuing conversation
     let history = [];
     // DIAGNOSTIC: Log whether conversationId was provided by frontend or generated
@@ -701,19 +707,24 @@ const chat = async (req, res) => {
         const dbMessages = await getMessages({ conversationId, user: req.user.id });
         logger.info(`[E2B Assistant] getMessages(${conversationId}) returned ${dbMessages.length} raw messages (user=${req.user.id})`);
         
-        // CRITICAL: Clean history to remove ANY file_id exposure
-        // We ONLY keep text content, NO tool_calls or internal data
-        history = dbMessages
-          .filter(msg => msg.messageId !== userMessageId) // Exclude current message
-          .map(msg => {
-            // Only include role and cleaned content
-            // DO NOT include tool_calls as they may contain file_id UUIDs
-            return {
-              role: msg.isCreatedByUser ? 'user' : 'assistant',
-              content: (msg.text || '').replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}__/gi, '')
-              // Remove any UUID__ patterns that might have leaked into text
-            };
-          });
+        const historyBuildResult = await buildE2BHistory({
+          dbMessages,
+          currentUserMessageId: userMessageId,
+          model: assistant.model || 'gpt-4o',
+          config: {
+            messageWindowSize: Number(contextManagementConfig.messageWindowSize) || 10,
+            historyMaxTokens: Number(contextManagementConfig.historyMaxTokens) || 12000,
+            summarySnippetChars: Number(contextManagementConfig.summarySnippetChars) || 220,
+            summaryMaxUserItems: Number(contextManagementConfig.summaryMaxUserItems) || 6,
+            summaryMaxAssistantItems: Number(contextManagementConfig.summaryMaxAssistantItems) || 5,
+          },
+        });
+        history = historyBuildResult.history;
+
+        const userInputTokens = await countTokens(text || '', assistant.model || 'gpt-4o');
+        logger.info(
+          `[E2B Assistant][ContextMetrics] rawMessages=${historyBuildResult.stats.rawMessages}, outputMessages=${historyBuildResult.stats.outputMessages}, rawTokens=${historyBuildResult.stats.rawTokens}, historyTokens=${historyBuildResult.stats.outputTokens}, userInputTokens=${userInputTokens}, compressed=${historyBuildResult.stats.compressed}, summaryInserted=${historyBuildResult.stats.summaryInserted}`,
+        );
         
         // Check if files were uploaded in this conversation (either now or previously)
         let conversationFiles = files || [];
@@ -792,6 +803,7 @@ const chat = async (req, res) => {
       getContentIndex: () => contentIndex++,  // 📝 Pass index generator
       startNewTextPart,  // ✨ Pass startNewTextPart function
       assistant,
+      contextConfig: contextManagementConfig,
       files,
     });
 

@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { ContentTypes } = require('librechat-data-provider');
-const { sendEvent } = require('@librechat/api');
+const { sendEvent, countTokens } = require('@librechat/api');
 const { getToolFunctions } = require('./tools');
 const { getSystemPrompt, getToolsDefinitions } = require('./prompts');
 const ContextManager = require('./contextManager');
@@ -26,7 +26,7 @@ class E2BDataAnalystAgent {
    * @param {Object} params.assistant - E2BAssistant 数据库文档对象
    * @param {Array} params.files - 附加的文件列表
    */
-  constructor({ req, res, openai, userId, conversationId, responseMessageId, contentParts, getContentIndex, startNewTextPart, assistant, files = [] }) {
+  constructor({ req, res, openai, userId, conversationId, responseMessageId, contentParts, getContentIndex, startNewTextPart, assistant, contextConfig = {}, files = [] }) {
     this.req = req;
     this.res = res;
     this.openai = openai;
@@ -38,6 +38,11 @@ class E2BDataAnalystAgent {
     this.startNewTextPart = startNewTextPart;  // Function to start new TEXT part
     this.assistant = assistant;
     this.files = files; // Store files
+    this.contextConfig = {
+      historyMaxTokens: Number(contextConfig?.historyMaxTokens) || 12000,
+      reserveOutputTokens: Number(contextConfig?.reserveOutputTokens) || 3000,
+      toolObservationMaxChars: Number(contextConfig?.toolObservationMaxChars) || 6000,
+    };
     
     // Initialize Context Manager for session state
     this.contextManager = new ContextManager({
@@ -260,6 +265,23 @@ class E2BDataAnalystAgent {
       const dynamicContext = this.contextManager.generateSystemContext();
       
       const systemPrompt = getSystemPrompt(this.assistant) + dynamicContext;
+
+      // Phase1 instrumentation: token budget visibility before entering the ReAct loop.
+      try {
+        const tokenModel = this.openai.azureDeployment || this.assistant.model || 'gpt-4o';
+        const systemTokens = await countTokens(systemPrompt, tokenModel);
+        const userTokens = await countTokens(userText || '', tokenModel);
+        let historyTokens = 0;
+        for (const msg of history) {
+          historyTokens += await countTokens(msg?.content || '', tokenModel);
+        }
+        const estimatedPromptTokens = systemTokens + historyTokens + userTokens;
+        logger.info(
+          `[E2BAgent][TokenMetrics] model=${tokenModel}, system=${systemTokens}, history=${historyTokens}, user=${userTokens}, estimatedPrompt=${estimatedPromptTokens}, historyBudget=${this.contextConfig.historyMaxTokens}, reserveOutput=${this.contextConfig.reserveOutputTokens}, toolObservationMaxChars=${this.contextConfig.toolObservationMaxChars}`,
+        );
+      } catch (tokenError) {
+        logger.warn(`[E2BAgent][TokenMetrics] failed to estimate tokens: ${tokenError.message}`);
+      }
       
       logger.debug(`[E2BAgent] Context Manager state: ${JSON.stringify(this.contextManager.getSummary())}`);
       logger.info(`[E2BAgent] Dynamic context length: ${dynamicContext.length} chars`);
