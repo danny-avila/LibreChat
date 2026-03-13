@@ -226,7 +226,15 @@ router.post('/update', validateConvoAccess, async (req, res) => {
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
 /** Fork and duplicate share one rate-limit budget (same "clone" operation class) */
 const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
-const upload = multer({ storage: storage, fileFilter: importFileFilter });
+const DEFAULT_IMPORT_MAX_FILE_SIZE = 262144000;
+const importMaxFileSize = process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
+  ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
+  : DEFAULT_IMPORT_MAX_FILE_SIZE;
+const upload = multer({
+  storage,
+  fileFilter: importFileFilter,
+  limits: { fileSize: importMaxFileSize },
+});
 
 /**
  * Imports a conversation from a JSON file and saves it to the database.
