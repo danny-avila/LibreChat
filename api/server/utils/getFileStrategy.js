@@ -1,4 +1,4 @@
-const { FileSources, FileContext } = require('librechat-data-provider');
+const { Time, FileSources, FileContext } = require('librechat-data-provider');
 
 /**
  * Determines the appropriate file storage strategy based on file type and configuration.
@@ -53,4 +53,26 @@ function getFileStrategy(appConfig, { isAvatar = false, isImage = false, context
   return selectedStrategy || FileSources.local; // Final fallback to FileSources.local
 }
 
-module.exports = { getFileStrategy };
+/**
+ * Calculates the cache duration for signed file URL refresh checks.
+ * Uses half the URL expiry time to ensure URLs are refreshed before they expire,
+ * with a minimum of one minute.
+ *
+ * @param {string} fileStrategy - The active file storage strategy (e.g. FileSources.s3, FileSources.azure_blob)
+ * @returns {number} Cache duration in milliseconds
+ */
+function getFileURLRefreshCacheTime(fileStrategy) {
+  if (fileStrategy === FileSources.s3) {
+    const expirySeconds = parseInt(process.env.S3_URL_EXPIRY_SECONDS, 10) || 120;
+    // Check for refresh at half the URL expiry time: (expirySeconds * 1000ms) / 2 => expirySeconds * 500
+    return Math.max(expirySeconds * 500, Time.ONE_MINUTE);
+  }
+  if (fileStrategy === FileSources.azure_blob) {
+    const expirySeconds = parseInt(process.env.AZURE_URL_EXPIRY_SECONDS, 10) || 120;
+    // Check for refresh at half the URL expiry time: (expirySeconds * 1000ms) / 2 => expirySeconds * 500
+    return Math.max(expirySeconds * 500, Time.ONE_MINUTE);
+  }
+  return Time.THIRTY_MINUTES;
+}
+
+module.exports = { getFileStrategy, getFileURLRefreshCacheTime };
