@@ -280,7 +280,7 @@ router.post('/fork', forkIpLimiter, forkUserLimiter, async (req, res) => {
   }
 });
 
-router.post('/duplicate', async (req, res) => {
+router.post('/duplicate', forkIpLimiter, forkUserLimiter, async (req, res) => {
   const { conversationId, title } = req.body;
 
   try {
