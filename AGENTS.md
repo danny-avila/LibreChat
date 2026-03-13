@@ -149,7 +149,15 @@ Multi-line imports count total character length across all lines. Consolidate va
 - Run tests from their workspace directory: `cd api && npx jest <pattern>`, `cd packages/api && npx jest <pattern>`, etc.
 - Frontend tests: `__tests__` directories alongside components; use `test/layout-test-utils` for rendering.
 - Cover loading, success, and error states for UI/data flows.
-- Mock data-provider hooks and external dependencies.
+
+### Philosophy
+
+- **Real logic over mocks.** Exercise actual code paths with real dependencies. Mocking is a last resort.
+- **Spies over mocks.** Assert that real functions are called with expected arguments and frequency without replacing underlying logic.
+- **MongoDB**: use `mongodb-memory-server` for a real in-memory MongoDB instance. Test actual queries and schema validation, not mocked DB calls.
+- **MCP**: use real `@modelcontextprotocol/sdk` exports for servers, transports, and tool definitions. Mirror real scenarios, don't stub SDK internals.
+- Only mock what you cannot control: external HTTP APIs, rate-limited services, non-deterministic system calls.
+- Heavy mocking is a code smell, not a testing strategy.
 
 ---
 
