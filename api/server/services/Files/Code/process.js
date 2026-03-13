@@ -3,7 +3,7 @@ const { v4 } = require('uuid');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
-const { logAxiosError, getBasePath } = require('@librechat/api');
+const { logAxiosError, getBasePath, sanitizeFilename } = require('@librechat/api');
 const {
   Tools,
   megabyte,
@@ -200,7 +200,8 @@ const processCodeOutput = async ({
       );
     }
 
-    const fileName = `${file_id}__${name}`;
+    const safeName = sanitizeFilename(name);
+    const fileName = `${file_id}__${safeName}`;
     const filepath = await saveBuffer({
       userId: req.user.id,
       buffer,
