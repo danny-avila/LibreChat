@@ -86,6 +86,8 @@ export interface AppConfig {
   mcpConfig?: TCustomConfig['mcpServers'] | null;
   /** MCP settings (domain allowlist, etc.) */
   mcpSettings?: TCustomConfig['mcpSettings'] | null;
+  /** Scheduled tasks configuration */
+  scheduledTasks?: TCustomConfig['scheduledTasks'];
   /** File configuration */
   fileConfig?: TFileConfig;
   /** Secure image links configuration */

@@ -813,6 +813,7 @@ export type TStartupConfig = {
   >;
   mcpPlaceholder?: string;
   conversationImportMaxFileSize?: number;
+  scheduledTasks?: TScheduledTasksConfig;
 };
 
 export enum OCRStrategy {
@@ -949,6 +950,29 @@ export const memorySchema = z.object({
 
 export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
 
+export const scheduledTasksSchema = z
+  .object({
+    /** Feature toggle */
+    enabled: z.boolean().optional().default(true),
+    /** Scheduler worker toggle */
+    workerEnabled: z.boolean().optional().default(true),
+    /** Minimum minutes between scheduled runs */
+    minIntervalMinutes: z.number().min(1).max(1440).default(10),
+    /** Maximum number of concurrent task runs */
+    maxConcurrentRuns: z.number().min(1).max(100).default(3),
+    /** Per-run timeout in seconds */
+    maxRuntimeSeconds: z.number().min(30).max(86400).default(900),
+  })
+  .default({
+    enabled: true,
+    workerEnabled: true,
+    minIntervalMinutes: 10,
+    maxConcurrentRuns: 3,
+    maxRuntimeSeconds: 900,
+  });
+
+export type TScheduledTasksConfig = z.infer<typeof scheduledTasksSchema>;
+
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
 export const configSchema = z.object({
@@ -957,6 +981,13 @@ export const configSchema = z.object({
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
+  scheduledTasks: scheduledTasksSchema.default({
+    enabled: true,
+    workerEnabled: true,
+    minIntervalMinutes: 10,
+    maxConcurrentRuns: 3,
+    maxRuntimeSeconds: 900,
+  }),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
