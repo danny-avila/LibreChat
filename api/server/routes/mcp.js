@@ -50,6 +50,18 @@ const router = Router();
 
 const OAUTH_CSRF_COOKIE_PATH = '/api/mcp';
 
+const checkMCPUsePermissions = generateCheckAccess({
+  permissionType: PermissionTypes.MCP_SERVERS,
+  permissions: [Permissions.USE],
+  getRoleByName,
+});
+
+const checkMCPCreate = generateCheckAccess({
+  permissionType: PermissionTypes.MCP_SERVERS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
+
 /**
  * Get all MCP tools available to the user
  * Returns only MCP tools, completely decoupled from regular LibreChat tools
@@ -470,7 +482,16 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
  * Reinitialize MCP server
  * This endpoint allows reinitializing a specific MCP server
  */
-router.post('/:serverName/reinitialize', requireJwtAuth, setOAuthSession, async (req, res) => {
+router.post(
+  '/:serverName/reinitialize',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  canAccessMCPServerResource({
+    requiredPermission: PermissionBits.VIEW,
+    resourceIdParam: 'serverName',
+  }),
+  setOAuthSession,
+  async (req, res) => {
   try {
     const { serverName } = req.params;
     const user = createSafeUser(req.user);
@@ -639,7 +660,15 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
  * Check which authentication values exist for a specific MCP server
  * This endpoint returns only boolean flags indicating if values are set, not the actual values
  */
-router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
+router.get(
+  '/:serverName/auth-values',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  canAccessMCPServerResource({
+    requiredPermission: PermissionBits.VIEW,
+    resourceIdParam: 'serverName',
+  }),
+  async (req, res) => {
   try {
     const { serverName } = req.params;
     const user = req.user;
@@ -695,19 +724,6 @@ async function getOAuthHeaders(serverName, userId) {
 /**
 MCP Server CRUD Routes (User-Managed MCP Servers)
 */
-
-// Permission checkers for MCP server management
-const checkMCPUsePermissions = generateCheckAccess({
-  permissionType: PermissionTypes.MCP_SERVERS,
-  permissions: [Permissions.USE],
-  getRoleByName,
-});
-
-const checkMCPCreate = generateCheckAccess({
-  permissionType: PermissionTypes.MCP_SERVERS,
-  permissions: [Permissions.USE, Permissions.CREATE],
-  getRoleByName,
-});
 
 /**
  * Get list of accessible MCP servers
