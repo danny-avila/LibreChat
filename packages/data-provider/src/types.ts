@@ -425,6 +425,11 @@ export type TLoginResponse = {
   tempToken?: string;
 };
 
+export type TEnable2FARequest = {
+  token?: string;
+  backupCode?: string;
+};
+
 export type TEnable2FAResponse = {
   otpauthUrl: string;
   backupCodes: string[];
@@ -476,7 +481,6 @@ export type TDisable2FAResponse = {
 export type TRegenerateBackupCodesResponse = {
   message: string;
   backupCodes: string[];
-  backupCodesHash: string[];
 };
 
 export type TRequestPasswordReset = {

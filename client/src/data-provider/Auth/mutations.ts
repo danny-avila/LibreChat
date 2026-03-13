@@ -90,11 +90,11 @@ export const useDeleteUserMutation = (
 export const useEnableTwoFactorMutation = (): UseMutationResult<
   t.TEnable2FAResponse,
   unknown,
-  void,
+  t.TEnable2FARequest | undefined,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation(() => dataService.enableTwoFactor(), {
+  return useMutation((payload?: t.TEnable2FARequest) => dataService.enableTwoFactor(payload), {
     onSuccess: (data) => {
       queryClient.setQueryData([QueryKeys.user, '2fa'], data);
     },

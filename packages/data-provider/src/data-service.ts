@@ -970,8 +970,8 @@ export function updateFeedback(
 }
 
 // 2FA
-export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
-  return request.get(endpoints.enableTwoFactor());
+export function enableTwoFactor(payload?: t.TEnable2FARequest): Promise<t.TEnable2FAResponse> {
+  return request.post(endpoints.enableTwoFactor(), payload);
 }
 
 export function verifyTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
