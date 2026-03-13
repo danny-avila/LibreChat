@@ -1,6 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useLocalize } from '~/hooks';
 import { TStartupConfig } from 'librechat-data-provider';
+import { getBlabladorCustomFooter } from '~/utils/blabladorBranding';
 
 function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | undefined }) {
   const localize = useLocalize();
@@ -10,8 +11,8 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
   const privacyPolicy = startupConfig.interface?.privacyPolicy;
   const termsOfService = startupConfig.interface?.termsOfService;
   const customFooterLines =
-    typeof startupConfig.customFooter === 'string'
-      ? startupConfig.customFooter
+    typeof getBlabladorCustomFooter(startupConfig.appTitle, startupConfig.customFooter) === 'string'
+      ? getBlabladorCustomFooter(startupConfig.appTitle, startupConfig.customFooter)
           .split('|')
           .map((line) => line.trim())
           .filter(Boolean)
@@ -56,7 +57,10 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
   };
 
   return (
-    <div className="align-end m-4 flex flex-col items-start gap-2 text-left" role="contentinfo">
+    <div
+      className="fixed bottom-4 left-0 z-10 flex max-w-[min(40rem,calc(100vw-8rem))] flex-col items-start gap-2 px-6 text-left text-text-primary sm:bottom-5 sm:px-8"
+      role="contentinfo"
+    >
       {customFooterLines?.map((line, index) => (
         <ReactMarkdown key={`auth-custom-footer-line-${index}`} components={markdownComponents}>
           {line}

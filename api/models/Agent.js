@@ -44,6 +44,70 @@ const extractMCPServerNames = (tools) => {
   return Array.from(serverNames);
 };
 
+const runtimeToolOverrides = [
+  { ephemeralKey: 'execute_code', modelSpecKey: 'executeCode', tool: Tools.execute_code },
+  { ephemeralKey: 'file_search', modelSpecKey: 'fileSearch', tool: Tools.file_search },
+  { ephemeralKey: 'web_search', modelSpecKey: 'webSearch', tool: Tools.web_search },
+];
+
+async function buildRuntimeTools({
+  baseTools = [],
+  userId,
+  ephemeralAgent,
+  modelSpec,
+}) {
+  const tools = new Set(baseTools ?? []);
+
+  for (const { ephemeralKey, modelSpecKey, tool } of runtimeToolOverrides) {
+    const overrideValue = ephemeralAgent?.[ephemeralKey];
+    if (overrideValue === false) {
+      tools.delete(tool);
+      continue;
+    }
+    if (overrideValue === true || modelSpec?.[modelSpecKey] === true) {
+      tools.add(tool);
+    }
+  }
+
+  const hasMCPOverride = Array.isArray(ephemeralAgent?.mcp);
+  const mcpServers = hasMCPOverride
+    ? new Set(ephemeralAgent.mcp)
+    : new Set(extractMCPServerNames(baseTools));
+
+  if (modelSpec?.mcpServers) {
+    for (const mcpServer of modelSpec.mcpServers) {
+      mcpServers.add(mcpServer);
+    }
+  }
+
+  if (hasMCPOverride) {
+    for (const tool of Array.from(tools)) {
+      if (tool.includes(mcp_delimiter)) {
+        tools.delete(tool);
+      }
+    }
+  }
+
+  const addedServers = new Set();
+  for (const mcpServer of mcpServers) {
+    if (addedServers.has(mcpServer)) {
+      continue;
+    }
+    const serverTools = await getMCPServerTools(userId, mcpServer);
+    if (!serverTools) {
+      tools.add(`${mcp_all}${mcp_delimiter}${mcpServer}`);
+      addedServers.add(mcpServer);
+      continue;
+    }
+    for (const toolName of Object.keys(serverTools)) {
+      tools.add(toolName);
+    }
+    addedServers.add(mcpServer);
+  }
+
+  return Array.from(tools);
+}
+
 /**
  * Create an agent with the provided data.
  * @param {Object} agentData - The agent data to create.
@@ -108,41 +172,13 @@ const loadEphemeralAgent = async ({ req, spec, endpoint, model_parameters: _m })
   }
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
-  const mcpServers = new Set(ephemeralAgent?.mcp);
   const userId = req.user?.id; // note: userId cannot be undefined at runtime
-  if (modelSpec?.mcpServers) {
-    for (const mcpServer of modelSpec.mcpServers) {
-      mcpServers.add(mcpServer);
-    }
-  }
-  /** @type {string[]} */
-  const tools = [];
-  if (ephemeralAgent?.execute_code === true || modelSpec?.executeCode === true) {
-    tools.push(Tools.execute_code);
-  }
-  if (ephemeralAgent?.file_search === true || modelSpec?.fileSearch === true) {
-    tools.push(Tools.file_search);
-  }
-  if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
-    tools.push(Tools.web_search);
-  }
-
-  const addedServers = new Set();
-  if (mcpServers.size > 0) {
-    for (const mcpServer of mcpServers) {
-      if (addedServers.has(mcpServer)) {
-        continue;
-      }
-      const serverTools = await getMCPServerTools(userId, mcpServer);
-      if (!serverTools) {
-        tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
-        addedServers.add(mcpServer);
-        continue;
-      }
-      tools.push(...Object.keys(serverTools));
-      addedServers.add(mcpServer);
-    }
-  }
+  const tools = await buildRuntimeTools({
+    userId,
+    modelSpec,
+    ephemeralAgent,
+    baseTools: [],
+  });
 
   const instructions = req.body.promptPrefix;
 
@@ -207,6 +243,24 @@ const loadAgent = async ({ req, spec, agent_id, endpoint, model_parameters }) =>
   }
 
   agent.version = agent.versions ? agent.versions.length : 0;
+  const ephemeralAgent = req.body?.ephemeralAgent;
+  const modelSpecs = req.config?.modelSpecs?.list;
+  const modelSpec =
+    spec != null && spec !== '' ? modelSpecs?.find((modelSpec) => modelSpec.name === spec) : null;
+  agent.tools = await buildRuntimeTools({
+    modelSpec,
+    ephemeralAgent,
+    userId: req.user?.id,
+    baseTools: agent.tools ?? [],
+  });
+
+  if (ephemeralAgent?.artifacts !== undefined) {
+    if (ephemeralAgent.artifacts) {
+      agent.artifacts = ephemeralAgent.artifacts;
+    } else {
+      delete agent.artifacts;
+    }
+  }
   return agent;
 };
 

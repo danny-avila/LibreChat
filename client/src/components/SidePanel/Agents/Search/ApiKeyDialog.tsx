@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
   AuthType,
@@ -12,6 +12,36 @@ import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
 import InputSection, { type DropdownOption } from './InputSection';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+
+const stripWrappingQuotes = (value?: string) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed === 'undefined' || trimmed === 'null') {
+    return undefined;
+  }
+
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    const unwrapped = trimmed.slice(1, -1).trim();
+    if (unwrapped === '' || unwrapped === 'undefined' || unwrapped === 'null') {
+      return undefined;
+    }
+    return unwrapped;
+  }
+
+  return trimmed;
+};
+
+const isSearchProvider = (value?: string): value is SearchProviders =>
+  value === SearchProviders.SERPER || value === SearchProviders.SEARXNG;
+
+const isRerankerType = (value?: string): value is RerankerTypes =>
+  value === RerankerTypes.JINA || value === RerankerTypes.COHERE;
+
+const isScraperProvider = (value?: string): value is ScraperProviders =>
+  value === ScraperProviders.FIRECRAWL || value === ScraperProviders.SERPER;
 
 export default function ApiKeyDialog({
   isOpen,
@@ -38,16 +68,37 @@ export default function ApiKeyDialog({
 }) {
   const localize = useLocalize();
   const { data: config } = useGetStartupConfig();
+  const startupProvider = stripWrappingQuotes(config?.webSearch?.searchProvider);
+  const startupReranker = stripWrappingQuotes(config?.webSearch?.rerankerType);
+  const startupScraper = stripWrappingQuotes(config?.webSearch?.scraperProvider);
 
   const [selectedProvider, setSelectedProvider] = useState(
-    config?.webSearch?.searchProvider || SearchProviders.SERPER,
+    isSearchProvider(startupProvider) ? startupProvider : SearchProviders.SERPER,
   );
   const [selectedReranker, setSelectedReranker] = useState(
-    config?.webSearch?.rerankerType || RerankerTypes.JINA,
+    isRerankerType(startupReranker) ? startupReranker : RerankerTypes.JINA,
   );
   const [selectedScraper, setSelectedScraper] = useState(
-    config?.webSearch?.scraperProvider || ScraperProviders.FIRECRAWL,
+    isScraperProvider(startupScraper) ? startupScraper : ScraperProviders.FIRECRAWL,
   );
+
+  useEffect(() => {
+    if (isSearchProvider(startupProvider)) {
+      setSelectedProvider(startupProvider);
+    }
+  }, [startupProvider]);
+
+  useEffect(() => {
+    if (isRerankerType(startupReranker)) {
+      setSelectedReranker(startupReranker);
+    }
+  }, [startupReranker]);
+
+  useEffect(() => {
+    if (isScraperProvider(startupScraper)) {
+      setSelectedScraper(startupScraper);
+    }
+  }, [startupScraper]);
 
   const providerOptions: DropdownOption[] = [
     {
@@ -197,7 +248,7 @@ export default function ApiKeyDialog({
                   selectedKey={selectedProvider}
                   onSelectionChange={handleProviderChange}
                   dropdownOptions={providerOptions}
-                  showDropdown={!config?.webSearch?.searchProvider}
+                  showDropdown={!startupProvider}
                   register={register}
                   dropdownOpen={dropdownOpen.provider}
                   setDropdownOpen={(open) =>
@@ -214,7 +265,7 @@ export default function ApiKeyDialog({
                   selectedKey={selectedScraper}
                   onSelectionChange={handleScraperChange}
                   dropdownOptions={scraperOptions}
-                  showDropdown={!config?.webSearch?.scraperProvider}
+                  showDropdown={!startupScraper}
                   register={register}
                   dropdownOpen={dropdownOpen.scraper}
                   setDropdownOpen={(open) =>
@@ -231,7 +282,7 @@ export default function ApiKeyDialog({
                   selectedKey={selectedReranker}
                   onSelectionChange={handleRerankerChange}
                   dropdownOptions={rerankerOptions}
-                  showDropdown={!config?.webSearch?.rerankerType}
+                  showDropdown={!startupReranker}
                   register={register}
                   dropdownOpen={dropdownOpen.reranker}
                   setDropdownOpen={(open) =>

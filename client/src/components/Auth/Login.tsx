@@ -9,6 +9,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import resolveProviderImageUrl from '~/utils/resolveProviderImageUrl';
+import { BLABLADOR_OPENID_IMAGE, stripWrappingQuotes } from '~/utils/blabladorBranding';
 import LoginForm from './LoginForm';
 
 function Login() {
@@ -16,7 +17,10 @@ function Login() {
   const { showToast } = useToastContext();
   const { error, setError, login } = useAuthContext();
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
-  const openidImageUrl = resolveProviderImageUrl(startupConfig?.openidImageUrl);
+  const openidImageUrl = resolveProviderImageUrl(
+    stripWrappingQuotes(startupConfig?.openidImageUrl) || BLABLADOR_OPENID_IMAGE,
+  );
+  const openidLabel = stripWrappingQuotes(startupConfig?.openidLabel) ?? startupConfig?.openidLabel;
 
   const [searchParams, setSearchParams] = useSearchParams();
   // Determine if auto-redirect should be disabled based on the URL parameter
@@ -67,7 +71,7 @@ function Login() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-4">
         <p className="text-lg font-semibold">
-          {localize('com_ui_redirecting_to_provider', { 0: startupConfig.openidLabel })}
+          {localize('com_ui_redirecting_to_provider', { 0: openidLabel })}
         </p>
         <div className="mt-4">
           <SocialButton
@@ -82,7 +86,7 @@ function Login() {
                 <OpenIDIcon />
               )
             }
-            label={startupConfig.openidLabel}
+            label={openidLabel}
             id="openid"
           />
         </div>

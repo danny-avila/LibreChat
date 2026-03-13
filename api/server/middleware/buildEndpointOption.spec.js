@@ -130,6 +130,35 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(parsedResult.temperature).toBe(0.7);
   });
 
+  it('should preserve web_search fields for agent requests', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({
+      [EModelEndpoint.agents]: {
+        capabilities: ['web_search'],
+      },
+    });
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent_123',
+        web_search: true,
+        useResponsesApi: true,
+      },
+      { modelSpecs: null },
+    );
+    const next = jest.fn();
+
+    await buildEndpointOption(req, createRes(), next);
+
+    const parsedResult = parseCompactConvo.mock.results[0].value;
+    expect(parsedResult.agent_id).toBe('agent_123');
+    expect(parsedResult.web_search).toBe(true);
+    expect(parsedResult.useResponsesApi).toBe(true);
+    expect(req.body.endpointOption.model_parameters.web_search).toBe(true);
+    expect(req.body.endpointOption.model_parameters.useResponsesApi).toBe(true);
+    expect(next).toHaveBeenCalled();
+  });
+
   it('should strip bedrock region from custom endpoint without defaultParamsEndpoint', async () => {
     mockGetEndpointsConfig.mockResolvedValue({
       MyEndpoint: {

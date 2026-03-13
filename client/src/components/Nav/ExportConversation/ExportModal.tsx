@@ -1,5 +1,5 @@
 import filenamify from 'filenamify';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Input,
   Label,
@@ -37,9 +37,6 @@ export default function ExportModal({
 
   const [filename, setFileName] = useState('');
   const [type, setType] = useState<string>('screenshot');
-
-  const [includeOptions, setIncludeOptions] = useState<boolean | 'indeterminate'>(true);
-  const [exportBranches, setExportBranches] = useState<boolean | 'indeterminate'>(false);
   const [recursive, setRecursive] = useState<boolean | 'indeterminate'>(true);
 
   useEffect(() => {
@@ -51,31 +48,19 @@ export default function ExportModal({
   useEffect(() => {
     setFileName(filenamify(String(conversation?.title ?? 'file')));
     setType('screenshot');
-    setIncludeOptions(true);
-    setExportBranches(false);
     setRecursive(true);
   }, [conversation?.title, open]);
 
   const handleTypeChange = useCallback((newType: string) => {
-    const branches = newType === 'json' || newType === 'csv' || newType === 'webpage';
-    const options = newType !== 'csv' && newType !== 'screenshot';
-    setExportBranches(branches);
-    setIncludeOptions(options);
     setType(newType);
   }, []);
-
-  const exportBranchesSupport = useMemo(
-    () => type === 'json' || type === 'csv' || type === 'webpage',
-    [type],
-  );
-  const exportOptionsSupport = useMemo(() => type !== 'csv' && type !== 'screenshot', [type]);
 
   const { exportConversation } = useExportConversation({
     conversation,
     filename: filenamify(filename),
     type,
-    includeOptions,
-    exportBranches,
+    includeOptions: false,
+    exportBranches: false,
     recursive,
   });
 
@@ -113,54 +98,6 @@ export default function ExportModal({
               </div>
             </div>
             <div className="grid w-full gap-6 sm:grid-cols-2">
-              <div className="col-span-1 flex flex-col items-start justify-start gap-2">
-                <div className="grid w-full items-center gap-2">
-                  <Label htmlFor="includeOptions" className="text-left text-sm font-medium">
-                    {localize('com_nav_export_include_endpoint_options')}
-                  </Label>
-                  <div className="flex h-[40px] w-full items-center space-x-3">
-                    <Checkbox
-                      id="includeOptions"
-                      disabled={!exportOptionsSupport}
-                      checked={includeOptions}
-                      onCheckedChange={setIncludeOptions}
-                      aria-labelledby="includeOptions-label"
-                    />
-                    <label
-                      id="includeOptions-label"
-                      htmlFor="includeOptions"
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
-                    >
-                      {exportOptionsSupport
-                        ? localize('com_nav_export_include_endpoint_options')
-                        : localize('com_nav_not_supported')}
-                    </label>
-                  </div>
-                </div>
-              </div>
-              <div className="grid w-full items-center gap-2">
-                <Label htmlFor="exportBranches" className="text-left text-sm font-medium">
-                  {localize('com_nav_export_all_message_branches')}
-                </Label>
-                <div className="flex h-[40px] w-full items-center space-x-3">
-                  <Checkbox
-                    id="exportBranches"
-                    disabled={!exportBranchesSupport}
-                    checked={exportBranches}
-                    onCheckedChange={setExportBranches}
-                    aria-labelledby="exportBranches-label"
-                  />
-                  <label
-                    id="exportBranches-label"
-                    htmlFor="exportBranches"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
-                  >
-                    {exportBranchesSupport
-                      ? localize('com_nav_export_all_message_branches')
-                      : localize('com_nav_not_supported')}
-                  </label>
-                </div>
-              </div>
               {type === 'json' ? (
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="recursive" className="text-left text-sm font-medium">

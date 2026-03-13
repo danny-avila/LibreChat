@@ -23,6 +23,90 @@ export type Paths = {
   pluginManifest: string;
 };
 
+function applyWebSearchEnvFallback(config: DeepPartial<TCustomConfig>) {
+  const stripWrappingQuotes = (value?: string) => {
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed === '' || trimmed === 'undefined' || trimmed === 'null') {
+      return undefined;
+    }
+
+    if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      const unwrapped = trimmed.slice(1, -1).trim();
+      if (unwrapped === '' || unwrapped === 'undefined' || unwrapped === 'null') {
+        return undefined;
+      }
+      return unwrapped;
+    }
+
+    return trimmed;
+  };
+
+  const searchProvider = stripWrappingQuotes(process.env.SEARCH_PROVIDER);
+  const searxngInstanceUrl = stripWrappingQuotes(process.env.SEARXNG_INSTANCE_URL);
+
+  if (!searchProvider && !searxngInstanceUrl) {
+    return {
+      ...config,
+      webSearch: config.webSearch
+        ? {
+            ...config.webSearch,
+            searchProvider: stripWrappingQuotes(config.webSearch.searchProvider),
+            scraperProvider: stripWrappingQuotes(config.webSearch.scraperProvider),
+            rerankerType: stripWrappingQuotes(config.webSearch.rerankerType),
+            searxngInstanceUrl:
+              stripWrappingQuotes(config.webSearch.searxngInstanceUrl) ??
+              config.webSearch.searxngInstanceUrl,
+          }
+        : config.webSearch,
+    };
+  }
+
+  const nextConfig: DeepPartial<TCustomConfig> = {
+    ...config,
+    interface: {
+      ...(config.interface ?? {}),
+      webSearch: true,
+    },
+    webSearch: {
+      ...(config.webSearch ?? {}),
+      searchProvider: stripWrappingQuotes(config.webSearch?.searchProvider),
+      scraperProvider: stripWrappingQuotes(config.webSearch?.scraperProvider),
+      rerankerType: stripWrappingQuotes(config.webSearch?.rerankerType),
+      searxngInstanceUrl:
+        stripWrappingQuotes(config.webSearch?.searxngInstanceUrl) ??
+        config.webSearch?.searxngInstanceUrl,
+    },
+  };
+
+  if (searchProvider) {
+    nextConfig.webSearch = {
+      ...nextConfig.webSearch,
+      searchProvider: searchProvider as TCustomConfig['webSearch']['searchProvider'],
+    };
+  } else if (searxngInstanceUrl && !nextConfig.webSearch?.searchProvider) {
+    nextConfig.webSearch = {
+      ...nextConfig.webSearch,
+      searchProvider: 'searxng',
+    };
+  }
+
+  if (
+    (searchProvider === 'searxng' || nextConfig.webSearch?.searchProvider === 'searxng') &&
+    !nextConfig.webSearch?.searxngInstanceUrl
+  ) {
+    nextConfig.webSearch = {
+      ...nextConfig.webSearch,
+      searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+    };
+  }
+
+  return nextConfig;
+}
+
 /**
  * Loads custom config and initializes app-wide variables.
  * @function AppService
@@ -36,42 +120,43 @@ export const AppService = async (params?: {
   if (!config) {
     throw new Error('Config is required');
   }
+  const normalizedConfig = applyWebSearchEnvFallback(config);
   const configDefaults = getConfigDefaults();
 
-  const ocr = loadOCRConfig(config.ocr);
-  const webSearch = loadWebSearchConfig(config.webSearch);
-  const memory = loadMemoryConfig(config.memory);
-  const filteredTools = config.filteredTools;
-  const includedTools = config.includedTools;
-  const fileStrategy = (config.fileStrategy ?? configDefaults.fileStrategy) as
+  const ocr = loadOCRConfig(normalizedConfig.ocr);
+  const webSearch = loadWebSearchConfig(normalizedConfig.webSearch);
+  const memory = loadMemoryConfig(normalizedConfig.memory);
+  const filteredTools = normalizedConfig.filteredTools;
+  const includedTools = normalizedConfig.includedTools;
+  const fileStrategy = (normalizedConfig.fileStrategy ?? configDefaults.fileStrategy) as
     | FileSources.local
     | FileSources.s3
     | FileSources.firebase
     | FileSources.azure_blob;
   const startBalance = process.env.START_BALANCE;
-  const balance = config.balance ?? {
+  const balance = normalizedConfig.balance ?? {
     enabled: process.env.CHECK_BALANCE?.toLowerCase().trim() === 'true',
     startBalance: startBalance ? parseInt(startBalance, 10) : undefined,
   };
-  const transactions = config.transactions ?? configDefaults.transactions;
-  const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
+  const transactions = normalizedConfig.transactions ?? configDefaults.transactions;
+  const imageOutputType = normalizedConfig?.imageOutputType ?? configDefaults.imageOutputType;
 
   process.env.CDN_PROVIDER = fileStrategy;
 
   const availableTools = systemTools;
 
-  const mcpServersConfig = config.mcpServers || null;
-  const mcpSettings = config.mcpSettings || null;
-  const actions = config.actions;
-  const registration = config.registration ?? configDefaults.registration;
-  const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-  const turnstileConfig = loadTurnstileConfig(config, configDefaults);
-  const speech = config.speech;
+  const mcpServersConfig = normalizedConfig.mcpServers || null;
+  const mcpSettings = normalizedConfig.mcpSettings || null;
+  const actions = normalizedConfig.actions;
+  const registration = normalizedConfig.registration ?? configDefaults.registration;
+  const interfaceConfig = await loadDefaultInterface({ config: normalizedConfig, configDefaults });
+  const turnstileConfig = loadTurnstileConfig(normalizedConfig, configDefaults);
+  const speech = normalizedConfig.speech;
 
   const defaultConfig = {
     ocr,
     paths,
-    config,
+    config: normalizedConfig,
     memory,
     speech,
     balance,
@@ -88,12 +173,12 @@ export const AppService = async (params?: {
     imageOutputType,
     interfaceConfig,
     turnstileConfig,
-    fileStrategies: config.fileStrategies,
+    fileStrategies: normalizedConfig.fileStrategies,
   };
 
-  const agentsDefaults = agentsConfigSetup(config);
+  const agentsDefaults = agentsConfigSetup(normalizedConfig);
 
-  if (!Object.keys(config).length) {
+  if (!Object.keys(normalizedConfig).length) {
     const appConfig = {
       ...defaultConfig,
       endpoints: {
@@ -103,13 +188,17 @@ export const AppService = async (params?: {
     return appConfig;
   }
 
-  const loadedEndpoints = loadEndpoints(config, agentsDefaults);
+  const loadedEndpoints = loadEndpoints(normalizedConfig, agentsDefaults);
 
   const appConfig: AppConfig = {
     ...defaultConfig,
-    fileConfig: config?.fileConfig as AppConfig['fileConfig'],
-    secureImageLinks: config?.secureImageLinks,
-    modelSpecs: processModelSpecs(config?.endpoints, config.modelSpecs, interfaceConfig),
+    fileConfig: normalizedConfig?.fileConfig as AppConfig['fileConfig'],
+    secureImageLinks: normalizedConfig?.secureImageLinks,
+    modelSpecs: processModelSpecs(
+      normalizedConfig?.endpoints,
+      normalizedConfig.modelSpecs,
+      interfaceConfig,
+    ),
     endpoints: loadedEndpoints,
   };
 

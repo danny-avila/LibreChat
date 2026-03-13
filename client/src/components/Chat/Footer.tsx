@@ -4,6 +4,7 @@ import TagManager from 'react-gtm-module';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { getBlabladorCustomFooter } from '~/utils/blabladorBranding';
 
 const markdownComponents = {
   a: ({ node: _n, href, children, ...otherProps }) => {
@@ -36,8 +37,8 @@ export default function Footer({ className }: { className?: string }) {
   );
 
   const customFooterLines =
-    typeof config?.customFooter === 'string'
-      ? config.customFooter
+    typeof getBlabladorCustomFooter(config?.appTitle, config?.customFooter) === 'string'
+      ? getBlabladorCustomFooter(config?.appTitle, config?.customFooter)
           .split('|')
           .map((line) => line.trim())
           .filter(Boolean)
@@ -70,7 +71,7 @@ export default function Footer({ className }: { className?: string }) {
       <div
         className={
           className ??
-          'absolute bottom-0 left-0 hidden px-4 py-3 text-xs text-text-primary sm:flex md:px-[60px]'
+          'absolute bottom-0 left-0 hidden px-6 py-3 text-xs text-text-primary sm:flex'
         }
         role="contentinfo"
       >

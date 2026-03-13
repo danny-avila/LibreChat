@@ -79,6 +79,8 @@ describe('AppService', () => {
 
   beforeEach(() => {
     process.env.CDN_PROVIDER = undefined;
+    process.env.SEARCH_PROVIDER = undefined;
+    process.env.SEARXNG_INSTANCE_URL = undefined;
     jest.clearAllMocks();
   });
 
@@ -139,6 +141,44 @@ describe('AppService', () => {
             minRelevanceScore: 0.45,
           }),
         }),
+      }),
+    );
+  });
+
+  it('should enable web search from environment variables when config is missing it', async () => {
+    process.env.SEARCH_PROVIDER = 'searxng';
+    process.env.SEARXNG_INSTANCE_URL = 'https://search.example.com';
+
+    const result = await AppService({ config: {} });
+
+    expect(result.config.interface?.webSearch).toBe(true);
+    expect(result.interfaceConfig?.webSearch).toBe(true);
+    expect(result.webSearch).toEqual(
+      expect.objectContaining({
+        searchProvider: 'searxng',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+      }),
+    );
+  });
+
+  it('should sanitize quoted web search provider values from config and environment', async () => {
+    process.env.SEARCH_PROVIDER = '"searxng"';
+
+    const result = await AppService({
+      config: {
+        webSearch: {
+          searchProvider: '"serper"',
+          scraperProvider: '"serper"',
+          rerankerType: '"jina"',
+        },
+      },
+    });
+
+    expect(result.webSearch).toEqual(
+      expect.objectContaining({
+        searchProvider: 'searxng',
+        scraperProvider: 'serper',
+        rerankerType: 'jina',
       }),
     );
   });

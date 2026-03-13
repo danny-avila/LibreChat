@@ -1194,6 +1194,8 @@ export const compactAgentsBaseSchema = tConversationSchema.pick({
   agent_id: true,
   instructions: true,
   additional_instructions: true,
+  useResponsesApi: true,
+  web_search: true,
 });
 
 export const compactAgentsSchema = compactAgentsBaseSchema

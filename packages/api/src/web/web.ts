@@ -77,6 +77,20 @@ export async function loadWebSearchAuth({
   let authenticated = true;
   const authResult: Partial<TWebSearchConfig> = {};
 
+  const resolveConfiguredValue = (key: TWebSearchKeys) => {
+    const value = webSearchConfig?.[key];
+    if (typeof value !== 'string') {
+      return { authField: null, literalValue: undefined };
+    }
+
+    const varName = extractVariableName(value);
+    if (varName) {
+      return { authField: varName, literalValue: undefined };
+    }
+
+    return { authField: null, literalValue: value };
+  };
+
   /** Type-safe iterator for the category-service combinations */
   async function checkAuth<C extends TWebSearchCategories>(
     category: C,
@@ -92,6 +106,17 @@ export async function loadWebSearchAuth({
       specificService = webSearchConfig.scraperProvider as unknown as ServiceType;
     } else if (category === SearchCategories.RERANKERS && webSearchConfig?.rerankerType) {
       specificService = webSearchConfig.rerankerType as unknown as ServiceType;
+    }
+
+    // Scrapers and rerankers are optional unless explicitly configured.
+    // A provider-only setup like SearXNG should still count as authenticated.
+    if (
+      category !== SearchCategories.PROVIDERS &&
+      specificService == null &&
+      ((category === SearchCategories.SCRAPERS && !webSearchConfig?.scraperProvider) ||
+        (category === SearchCategories.RERANKERS && !webSearchConfig?.rerankerType))
+    ) {
+      return [true, false];
     }
 
     // If a specific service is specified, only check that one
@@ -122,19 +147,61 @@ export async function loadWebSearchAuth({
 
       if (requiredKeys.length === 0) continue;
 
-      const requiredAuthFields = extractWebSearchEnvVars({
-        keys: requiredKeys,
-        config: webSearchConfig,
-      });
-      const optionalAuthFields = extractWebSearchEnvVars({
-        keys: optionalKeys,
-        config: webSearchConfig,
-      });
-      if (requiredAuthFields.length !== requiredKeys.length) continue;
+      const resolvedRequiredKeys = requiredKeys.map((key) => ({
+        key,
+        ...resolveConfiguredValue(key),
+      }));
+      const resolvedOptionalKeys = optionalKeys.map((key) => ({
+        key,
+        ...resolveConfiguredValue(key),
+      }));
 
-      const allKeys = [...requiredKeys, ...optionalKeys];
+      const hasMissingRequiredValue = resolvedRequiredKeys.some(
+        ({ authField, literalValue }) =>
+          authField == null && (literalValue == null || literalValue.trim() === ''),
+      );
+      if (hasMissingRequiredValue) {
+        continue;
+      }
+
+      const requiredAuthFields = resolvedRequiredKeys
+        .map(({ authField }) => authField)
+        .filter((field): field is string => Boolean(field));
+      const optionalAuthFields = resolvedOptionalKeys
+        .map(({ authField }) => authField)
+        .filter((field): field is string => Boolean(field));
+
+      const allKeys = [...resolvedRequiredKeys, ...resolvedOptionalKeys];
       const allAuthFields = [...requiredAuthFields, ...optionalAuthFields];
       const optionalSet = new Set(optionalAuthFields);
+
+      if (requiredAuthFields.length === 0) {
+        let allLiteralFieldsAuthenticated = true;
+        for (const { key, literalValue } of allKeys) {
+          if (literalValue == null || literalValue.trim() === '') {
+            const isOptional = optionalKeys.includes(key);
+            if (!isOptional) {
+              allLiteralFieldsAuthenticated = false;
+              break;
+            }
+            continue;
+          }
+          authResult[key] = literalValue;
+        }
+
+        if (!allLiteralFieldsAuthenticated) {
+          continue;
+        }
+
+        if (category === SearchCategories.PROVIDERS) {
+          authResult.searchProvider = service as SearchProviders;
+        } else if (category === SearchCategories.SCRAPERS) {
+          authResult.scraperProvider = service as ScraperProviders;
+        } else if (category === SearchCategories.RERANKERS) {
+          authResult.rerankerType = service as RerankerTypes;
+        }
+        return [true, false];
+      }
 
       try {
         const authValues = await loadAuthValues({
@@ -145,16 +212,26 @@ export async function loadWebSearchAuth({
         });
 
         let allFieldsAuthenticated = true;
-        for (let j = 0; j < allAuthFields.length; j++) {
-          const field = allAuthFields[j];
-          const value = authValues[field];
-          const originalKey = allKeys[j];
-          if (originalKey) authResult[originalKey] = value;
-          if (!optionalSet.has(field) && !value) {
+        for (const { key, authField, literalValue } of allKeys) {
+          if (literalValue != null) {
+            authResult[key] = literalValue;
+            continue;
+          }
+
+          if (!authField) {
+            continue;
+          }
+
+          const value = authValues[authField];
+          if (value != null) {
+            authResult[key] = value;
+          }
+
+          if (!optionalSet.has(authField) && !value) {
             allFieldsAuthenticated = false;
             break;
           }
-          if (!isUserProvided && process.env[field] !== value) {
+          if (!isUserProvided && process.env[authField] !== value) {
             isUserProvided = true;
           }
         }

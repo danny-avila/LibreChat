@@ -5,6 +5,7 @@ import { TranslationKeys, useLocalize } from '~/hooks';
 import SocialLoginRender from './SocialLoginRender';
 import { BlinkAnimation } from './BlinkAnimation';
 import { Banner } from '../Banners';
+import BlabladorDisclaimer from '../Branding/BlabladorDisclaimer';
 import Footer from './Footer';
 
 function AuthLayout({
@@ -69,8 +70,8 @@ function AuthLayout({
         </div>
       </BlinkAnimation>
       <DisplayError />
-      <div className="absolute bottom-0 left-0 md:m-4">
-        <ThemeSelector />
+      <div className="fixed bottom-4 right-4 z-20 sm:bottom-6 sm:right-6">
+        <ThemeSelector returnThemeOnly={true} />
       </div>
 
       <main className="flex flex-grow items-center justify-center">
@@ -91,6 +92,7 @@ function AuthLayout({
         </div>
       </main>
       <Footer startupConfig={startupConfig} />
+      <BlabladorDisclaimer />
     </div>
   );
 }

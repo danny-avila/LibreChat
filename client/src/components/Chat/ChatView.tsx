@@ -15,6 +15,7 @@ import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
+import BlabladorDisclaimer from '../Branding/BlabladorDisclaimer';
 import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -103,7 +104,10 @@ function ChatView({ index = 0 }: { index?: number }) {
                     {isLandingPage ? <ConversationStarters /> : <Footer />}
                   </div>
                 </div>
-                {isLandingPage && <Footer />}
+                {isLandingPage && (
+                  <Footer className="fixed bottom-0 left-0 z-10 hidden w-full px-6 py-3 text-xs text-text-primary sm:flex" />
+                )}
+                <BlabladorDisclaimer />
               </>
             </div>
           </Presentation>

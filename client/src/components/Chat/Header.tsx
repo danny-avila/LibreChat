@@ -1,33 +1,18 @@
-import { useMemo } from 'react';
 import { useMediaQuery } from '@librechat/client';
-import { useOutletContext } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { ContextType } from '~/common';
-import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
+import { LogOut } from 'lucide-react';
+import { HeaderNewChat } from './Menus';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
-import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
-import { useHasAccess } from '~/hooks';
+import { useAuthContext, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-const defaultInterface = getConfigDefaults().interface;
-
 export default function Header() {
+  const localize = useLocalize();
   const { data: startupConfig } = useGetStartupConfig();
-  const { navVisible, setNavVisible } = useOutletContext<ContextType>();
-
-  const interfaceConfig = useMemo(
-    () => startupConfig?.interface ?? defaultInterface,
-    [startupConfig],
-  );
-
-  const hasAccessToBookmarks = useHasAccess({
-    permissionType: PermissionTypes.BOOKMARKS,
-    permission: Permissions.USE,
-  });
+  const { logout } = useAuthContext();
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
@@ -47,11 +32,11 @@ export default function Header() {
               <HeaderNewChat />
             </motion.div>
           </AnimatePresence>
-          <div
-            className={cn(
-              'flex items-center gap-2 transition-all duration-200 ease-in-out pl-2',
-            )}
-          >
+            <div
+              className={cn(
+                'flex items-center gap-2 transition-all duration-200 ease-in-out pl-2',
+              )}
+            >
               <ModelSelector startupConfig={startupConfig} />
               {isSmallScreen && (
                 <>
@@ -59,6 +44,15 @@ export default function Header() {
                     isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
                   />
                   <TemporaryChat />
+                  <button
+                    type="button"
+                    onClick={() => logout('/login?redirect=false')}
+                    className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50"
+                    aria-label={localize('com_nav_log_out')}
+                    title={localize('com_nav_log_out')}
+                  >
+                    <LogOut className="icon-lg text-text-primary" aria-hidden="true" />
+                  </button>
                 </>
               )}
             </div>
@@ -70,6 +64,16 @@ export default function Header() {
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />
             <TemporaryChat />
+            <button
+              type="button"
+              onClick={() => logout('/login?redirect=false')}
+              className="inline-flex h-10 flex-shrink-0 items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50"
+              aria-label={localize('com_nav_log_out')}
+              title={localize('com_nav_log_out')}
+            >
+              <LogOut className="icon-md text-text-primary" aria-hidden="true" />
+              <span className="text-sm">{localize('com_nav_log_out')}</span>
+            </button>
           </div>
         )}
       </div>

@@ -1,11 +1,10 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, getBalanceConfig } = require('@librechat/api');
-const { Constants, CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
+const { Constants, defaultSocialLogins } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
 const { getProjectByName } = require('~/models/Project');
-const { getLogStores } = require('~/cache');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -23,15 +22,28 @@ const publicSharedLinksEnabled =
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
 
-router.get('/', async function (req, res) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-
-  const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
-  if (cachedStartupConfig) {
-    res.send(cachedStartupConfig);
-    return;
+const stripWrappingQuotes = (value) => {
+  if (typeof value !== 'string') {
+    return value;
   }
 
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed === 'undefined' || trimmed === 'null') {
+    return undefined;
+  }
+
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    const unwrapped = trimmed.slice(1, -1).trim();
+    if (unwrapped === '' || unwrapped === 'undefined' || unwrapped === 'null') {
+      return undefined;
+    }
+    return unwrapped;
+  }
+
+  return trimmed;
+};
+
+router.get('/', async function (req, res) {
   const isBirthday = () => {
     const today = new Date();
     return today.getMonth() === 1 && today.getDate() === 11;
@@ -42,7 +54,7 @@ router.get('/', async function (req, res) {
   const ldap = getLdapConfig();
 
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = await getAppConfig({ role: req.user?.role, refresh: true });
 
     const isOpenIdEnabled =
       !!process.env.OPENID_CLIENT_ID &&
@@ -60,8 +72,8 @@ router.get('/', async function (req, res) {
 
     /** @type {TStartupConfig} */
     const payload = {
-      appTitle: process.env.APP_TITLE || 'BLABLADOR',
-      appDescription: process.env.APP_DESCRIPTION || 'LLMs with privacy',
+      appTitle: stripWrappingQuotes(process.env.APP_TITLE) || 'BLABLADOR',
+      appDescription: stripWrappingQuotes(process.env.APP_DESCRIPTION) || 'LLMs with privacy',
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       facebookLoginEnabled:
@@ -74,13 +86,13 @@ router.get('/', async function (req, res) {
         !!process.env.APPLE_KEY_ID &&
         !!process.env.APPLE_PRIVATE_KEY_PATH,
       openidLoginEnabled: isOpenIdEnabled,
-      openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
-      openidImageUrl: process.env.OPENID_IMAGE_URL,
+      openidLabel: stripWrappingQuotes(process.env.OPENID_BUTTON_LABEL) || 'Continue with OpenID',
+      openidImageUrl: stripWrappingQuotes(process.env.OPENID_IMAGE_URL),
       openidAutoRedirect: isEnabled(process.env.OPENID_AUTO_REDIRECT),
       samlLoginEnabled: !isOpenIdEnabled && isSamlEnabled,
-      samlLabel: process.env.SAML_BUTTON_LABEL,
-      samlImageUrl: process.env.SAML_IMAGE_URL,
-      serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
+      samlLabel: stripWrappingQuotes(process.env.SAML_BUTTON_LABEL),
+      samlImageUrl: stripWrappingQuotes(process.env.SAML_IMAGE_URL),
+      serverDomain: stripWrappingQuotes(process.env.DOMAIN_SERVER) || 'http://localhost:3080',
       emailLoginEnabled,
       registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
       socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
@@ -94,7 +106,7 @@ router.get('/', async function (req, res) {
         isBirthday() ||
         isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
         process.env.SHOW_BIRTHDAY_ICON === '',
-      helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
+      helpAndFaqURL: stripWrappingQuotes(process.env.HELP_AND_FAQ_URL) || 'https://librechat.ai',
       interface: appConfig?.interfaceConfig,
       turnstile: appConfig?.turnstileConfig,
       modelSpecs: appConfig?.modelSpecs,
@@ -103,17 +115,20 @@ router.get('/', async function (req, res) {
       publicSharedLinksEnabled,
       analyticsGtmId: process.env.ANALYTICS_GTM_ID,
       instanceProjectId: instanceProject._id.toString(),
-      bundlerURL: process.env.SANDPACK_BUNDLER_URL,
-      staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
+      bundlerURL: stripWrappingQuotes(process.env.SANDPACK_BUNDLER_URL),
+      staticBundlerURL: stripWrappingQuotes(process.env.SANDPACK_STATIC_BUNDLER_URL),
       sharePointFilePickerEnabled,
-      sharePointBaseUrl: process.env.SHAREPOINT_BASE_URL,
-      sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
-      sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
+      sharePointBaseUrl: stripWrappingQuotes(process.env.SHAREPOINT_BASE_URL),
+      sharePointPickerGraphScope: stripWrappingQuotes(process.env.SHAREPOINT_PICKER_GRAPH_SCOPE),
+      sharePointPickerSharePointScope: stripWrappingQuotes(
+        process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
+      ),
       openidReuseTokens,
       conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
         ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
         : 0,
-      copyTextAppend: process.env.COPY_TEXT_APPEND || 'Text generated by AI on Blablador',
+      copyTextAppend:
+        stripWrappingQuotes(process.env.COPY_TEXT_APPEND) || 'Text generated by AI on Blablador',
     };
 
     const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
@@ -132,24 +147,25 @@ router.get('/', async function (req, res) {
     }
 
     if (webSearchConfig?.searchProvider) {
-      payload.webSearch.searchProvider = webSearchConfig.searchProvider;
+      payload.webSearch.searchProvider = stripWrappingQuotes(webSearchConfig.searchProvider);
     }
     if (webSearchConfig?.scraperProvider) {
-      payload.webSearch.scraperProvider = webSearchConfig.scraperProvider;
+      payload.webSearch.scraperProvider = stripWrappingQuotes(webSearchConfig.scraperProvider);
     }
     if (webSearchConfig?.rerankerType) {
-      payload.webSearch.rerankerType = webSearchConfig.rerankerType;
+      payload.webSearch.rerankerType = stripWrappingQuotes(webSearchConfig.rerankerType);
     }
 
     if (ldap) {
       payload.ldap = ldap;
     }
 
-    if (typeof process.env.CUSTOM_FOOTER === 'string') {
-      payload.customFooter = process.env.CUSTOM_FOOTER;
+    if (typeof appConfig?.config?.customFooter === 'string') {
+      payload.customFooter = appConfig.config.customFooter;
+    } else if (typeof process.env.CUSTOM_FOOTER === 'string') {
+      payload.customFooter = stripWrappingQuotes(process.env.CUSTOM_FOOTER);
     }
 
-    await cache.set(CacheKeys.STARTUP_CONFIG, payload);
     return res.status(200).send(payload);
   } catch (err) {
     logger.error('Error in startup config', err);

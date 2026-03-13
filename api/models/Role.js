@@ -9,6 +9,38 @@ const { logger } = require('@librechat/data-schemas');
 const getLogStores = require('~/cache/getLogStores');
 const { role: Role } = require('./index');
 
+const applyMissingSystemRoleDefaults = async (roleName, role) => {
+  if (!role || !SystemRoles[roleName] || !roleDefaults[roleName]) {
+    return role;
+  }
+
+  const defaultPermissions = roleDefaults[roleName].permissions ?? {};
+  const currentPermissions = role.permissions ?? {};
+  const updatedPermissions = { ...currentPermissions };
+  let hasChanges = false;
+
+  for (const [permissionType, defaults] of Object.entries(defaultPermissions)) {
+    const currentTypePermissions = currentPermissions[permissionType] ?? {};
+    const nextTypePermissions = { ...currentTypePermissions };
+
+    for (const [permission, value] of Object.entries(defaults)) {
+      if (nextTypePermissions[permission] === undefined) {
+        nextTypePermissions[permission] = value;
+        hasChanges = true;
+      }
+    }
+
+    updatedPermissions[permissionType] = nextTypePermissions;
+  }
+
+  if (!hasChanges) {
+    return role;
+  }
+
+  await Role.findOneAndUpdate({ name: roleName }, { $set: { permissions: updatedPermissions } });
+  return await Role.findOne({ name: roleName });
+};
+
 /**
  * Retrieve a role by name and convert the found role document to a plain object.
  * If the role with the given name doesn't exist and the name is a system defined role,
@@ -32,6 +64,8 @@ const getRoleByName = async function (roleName) {
       await cache.set(roleName, role);
       return role;
     }
+
+    role = await applyMissingSystemRoleDefaults(roleName, role);
     await cache.set(roleName, role);
     return role;
   } catch (error) {

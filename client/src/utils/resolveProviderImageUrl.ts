@@ -8,11 +8,14 @@ export default function resolveProviderImageUrl(imageUrl?: string | null) {
     return imageUrl;
   }
 
-  const normalizedPath = imageUrl.startsWith('/') ? imageUrl.slice(1) : imageUrl;
-
-  if (typeof document === 'undefined') {
-    return `/${normalizedPath}`;
+  // Preserve root-relative public asset paths as-is so they resolve against the app origin.
+  if (imageUrl.startsWith('/')) {
+    return imageUrl;
   }
 
-  return new URL(normalizedPath, document.baseURI).toString();
+  if (typeof document === 'undefined') {
+    return `/${imageUrl}`;
+  }
+
+  return new URL(imageUrl, document.baseURI).toString();
 }

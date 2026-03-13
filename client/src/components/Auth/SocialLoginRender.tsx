@@ -12,6 +12,7 @@ import SocialButton from './SocialButton';
 
 import { useLocalize } from '~/hooks';
 import resolveProviderImageUrl from '~/utils/resolveProviderImageUrl';
+import { BLABLADOR_OPENID_IMAGE, stripWrappingQuotes } from '~/utils/blabladorBranding';
 
 import { TStartupConfig } from 'librechat-data-provider';
 
@@ -21,8 +22,10 @@ function SocialLoginRender({
   startupConfig: TStartupConfig | null | undefined;
 }) {
   const localize = useLocalize();
-  const openidImageUrl = resolveProviderImageUrl(startupConfig?.openidImageUrl);
-  const samlImageUrl = resolveProviderImageUrl(startupConfig?.samlImageUrl);
+  const openidImageUrl = resolveProviderImageUrl(
+    stripWrappingQuotes(startupConfig?.openidImageUrl) || BLABLADOR_OPENID_IMAGE,
+  );
+  const samlImageUrl = resolveProviderImageUrl(stripWrappingQuotes(startupConfig?.samlImageUrl));
 
   if (!startupConfig) {
     return null;
@@ -97,7 +100,7 @@ function SocialLoginRender({
             <OpenIDIcon />
           )
         }
-        label={startupConfig.openidLabel}
+        label={stripWrappingQuotes(startupConfig.openidLabel) ?? startupConfig.openidLabel}
         id="openid"
       />
     ),
@@ -114,7 +117,9 @@ function SocialLoginRender({
             <SamlIcon />
           )
         }
-        label={startupConfig.samlLabel ? startupConfig.samlLabel : localize('com_auth_saml_login')}
+        label={
+          stripWrappingQuotes(startupConfig.samlLabel) || localize('com_auth_saml_login')
+        }
         id="saml"
       />
     ),

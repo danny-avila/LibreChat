@@ -70,6 +70,21 @@ describe('ApiKeyDialog', () => {
     expect(screen.queryByRole('button', { name: /provider/i })).not.toBeInTheDocument();
   });
 
+  it('sanitizes quoted startup config values for provider-backed sections', () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      data: {
+        webSearch: {
+          searchProvider: '"searxng"',
+        },
+      },
+    });
+    render(<ApiKeyDialog {...defaultProps} />);
+    expect(screen.getByText('com_ui_web_search_provider_searxng')).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText('com_ui_web_search_searxng_instance_url'),
+    ).toBeInTheDocument();
+  });
+
   it('shows only Jina reranker field if rerankerType is set to jina', () => {
     mockUseGetStartupConfig.mockReturnValue({
       data: { webSearch: { rerankerType: RerankerTypes.JINA } },

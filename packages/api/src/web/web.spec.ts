@@ -722,6 +722,59 @@ describe('web.ts', () => {
       expect(providerCalls.length).toBe(1);
     });
 
+    it('should allow provider-only web search without requiring scraper or reranker', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searchProvider: 'searxng' as SearchProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'SEARXNG_INSTANCE_URL') {
+            result[field] = 'https://search.example.com';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authTypes).toContainEqual(['providers', AuthType.USER_PROVIDED]);
+      expect(result.authTypes).toContainEqual(['scrapers', AuthType.SYSTEM_DEFINED]);
+      expect(result.authTypes).toContainEqual(['rerankers', AuthType.SYSTEM_DEFINED]);
+      expect(result.authResult.searchProvider).toBe('searxng');
+      expect(result.authResult.searxngInstanceUrl).toBe('https://search.example.com');
+      expect(result.authResult.scraperProvider).toBeUndefined();
+      expect(result.authResult.rerankerType).toBeUndefined();
+    });
+
+    it('should allow provider-only web search when the SearXNG URL is configured literally', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        searxngInstanceUrl: 'https://search.blablador.fz-juelich.de',
+        searchProvider: 'searxng' as SearchProviders,
+      };
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authTypes).toContainEqual(['providers', AuthType.SYSTEM_DEFINED]);
+      expect(result.authTypes).toContainEqual(['scrapers', AuthType.SYSTEM_DEFINED]);
+      expect(result.authTypes).toContainEqual(['rerankers', AuthType.SYSTEM_DEFINED]);
+      expect(result.authResult.searchProvider).toBe('searxng');
+      expect(result.authResult.searxngInstanceUrl).toBe('https://search.blablador.fz-juelich.de');
+      expect(mockLoadAuthValues).not.toHaveBeenCalled();
+    });
+
     it('should only check the specified scraperProvider', async () => {
       // Initialize a webSearchConfig with a specific scraperProvider
       const webSearchConfig: TCustomConfig['webSearch'] = {

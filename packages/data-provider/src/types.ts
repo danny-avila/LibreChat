@@ -70,6 +70,9 @@ export type TEndpointOption = Pick<
   | 'examples'
   // Context
   | 'context'
+  // Web Search / Responses
+  | 'useResponsesApi'
+  | 'web_search'
 > & {
   // Fields specific to endpoint options that don't exist on TConversation
   modelDisplayLabel?: string;

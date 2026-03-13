@@ -37,6 +37,9 @@ librechat:
     CREDS_IV: ac028c86ba23f4cd48165e0ca9f2c683
     JWT_SECRET: 16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
     JWT_REFRESH_SECRET: eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418
+    OPENID_IMAGE_URL: /assets/blablador-ng-notext.svg
+    SEARCH_PROVIDER: searxng
+    SEARXNG_INSTANCE_URL: https://search.blablador.fz-juelich.de
     # Set Config Params here
     # ENV_NAME: env-value
 
@@ -47,55 +50,43 @@ librechat:
   existingSecretName: 'librechat-credentials-env'
 
   # For adding a custom config yaml-file you can set the contents in this var. See https://www.librechat.ai/docs/configuration/librechat_yaml/example
-  configYamlContent: ''
-  # configYamlContent: |
-  #   version: 1.0.8
+  configYamlContent: |
+    version: 1.2.1
 
-  #   cache: true
+    interface:
+      endpointsMenu: false
+      sidePanel: false
+      nav: false
+      webSearch: true
+      fileSearch: false
+      runCode: false
+      temporaryChat: true
 
-  #   interface:
-  #     # Privacy policy settings
-  #     privacyPolicy:
-  #       externalUrl: 'https://librechat.ai/privacy-policy'
-  #       openNewTab: true
+    filteredTools: ["execute_code", "file_search", "artifacts"]
 
-  #     # Terms of service
-  #     termsOfService:
-  #       externalUrl: 'https://librechat.ai/tos'
-  #       openNewTab: true
+    webSearch:
+      searchProvider: searxng
+      searxngInstanceUrl: ${SEARXNG_INSTANCE_URL}
 
-  #   registration:
-  #     socialLogins: ["discord", "facebook", "github", "google", "openid"]
-  #   endpoints:
-  #     azureOpenAI:
-  #      # Endpoint-level configuration
-  #      titleModel: "gpt-4o"
-  #      plugins: true
-  #      assistants: true
-  #      groups:
-  #           Group-level configuration
-  #         - group: "my-resource-sweden"
-  #           apiKey: "${SWEDEN_API_KEY}"
-  #           instanceName: "my-resource-sweden"
-  #           deploymentName: gpt-4-1106-preview
-  #           version: "2024-03-01-preview"
-  #           assistants: true
-  #           # Model-level configuration
-  #           models:
-  #             gpt-4o: true
-  #     custom:
-  #       # OpenRouter.ai
-  #       - name: "OpenRouter"
-  #         apiKey: "${OPENROUTER_KEY}"
-  #         baseURL: "https://openrouter.ai/api/v1"
-  #         models:
-  #           default: ["openai/gpt-3.5-turbo"]
-  #           fetch: true
-  #         titleConvo: true
-  #         titleModel: "gpt-3.5-turbo"
-  #         summarize: false
-  #         summaryModel: "gpt-3.5-turbo"
-  #         modelDisplayLabel: "OpenRouter"
+    customFooter: "Made with ❤️ by Jülich Supercomputing Centre|Get in touch with us at [support@hifis.net](mailto:support@hifis.net).|[API access (see documentation)](https://sdlaml.pages.jsc.fz-juelich.de/ai/guides/blablador_api_access/) is available too!|You can also subscribe to our [blablador-news mailing list](https://lists.fz-juelich.de/postorius/lists/blablador-news.lists.fz-juelich.de/)!"
+
+    endpoints:
+      openAI: {}
+      google: {}
+      anthropic: {}
+      bedrock: {}
+      agents:
+        capabilities: ["actions", "tools", "context", "chain", "ocr", "web_search"]
+      custom:
+        - name: "Blablador"
+          apiKey: "glpat-bumfl6K16lJsSJZiON4a_m86MQp1OjNucQk.01.0z1qy89ib"
+          baseURL: "https://api.helmholtz-blablador.fz-juelich.de/v1"
+          models:
+            default: ["alias-fast"]
+            fetch: true
+          titleConvo: true
+          modelDisplayLabel: "Blablador"
+          iconURL: "/assets/blablador-ng-notext.svg"
 
   # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ''
@@ -116,9 +107,9 @@ librechat-rag-api:
 image:
   repository: registry.jsc.fz-juelich.de/kaas/rke2-clusters/blablador/librechat
   registry: ''
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
-  tag: ''
+  tag: '0.1.0'
 
 imagePullSecrets: []
 nameOverride: ''

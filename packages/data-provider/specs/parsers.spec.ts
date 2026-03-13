@@ -259,6 +259,26 @@ describe('parseCompactConvo', () => {
       expect(result?.['iconURL']).toBeUndefined();
       expect(result?.model).toBe('gpt-4');
     });
+
+    test('should preserve web search settings for agents', () => {
+      const conversation: Partial<TConversation> = {
+        agent_id: 'agent_123',
+        web_search: true,
+        useResponsesApi: true,
+        endpoint: EModelEndpoint.agents,
+      };
+
+      const result = parseCompactConvo({
+        endpoint: EModelEndpoint.agents,
+        conversation,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.agent_id).toBe('agent_123');
+      expect(result?.web_search).toBe(true);
+      expect(result?.useResponsesApi).toBe(true);
+      expect(result?.['iconURL']).toBeUndefined();
+    });
   });
 });
 
