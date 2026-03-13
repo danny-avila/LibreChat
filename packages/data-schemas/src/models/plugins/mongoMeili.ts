@@ -596,7 +596,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
             intervalMs: 100,
           });
           logger.debug(`[mongoMeili] Index ${indexName} creation task:`, task);
-          if (task.status === 'failed') {
+          if (task.status !== 'succeeded') {
             const taskError = task.error as MeiliSearchErrorInfo | null;
             if (taskError?.code === 'index_already_exists') {
               logger.debug(`[mongoMeili] Index ${indexName} was created by another instance`);
