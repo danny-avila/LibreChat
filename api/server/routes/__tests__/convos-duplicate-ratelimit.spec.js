@@ -1,61 +1,21 @@
 const express = require('express');
 const request = require('supertest');
 
-jest.mock('@librechat/agents', () => ({ sleep: jest.fn() }));
+const MOCKS = './setup/convos-route-mocks';
 
-jest.mock('@librechat/api', () => ({
-  isEnabled: jest.fn(),
-  limiterCache: jest.fn(() => undefined),
-  createAxiosInstance: jest.fn(() => ({
-    get: jest.fn(),
-    post: jest.fn(),
-    put: jest.fn(),
-    delete: jest.fn(),
-  })),
-  logAxiosError: jest.fn(),
-}));
-
-jest.mock('@librechat/data-schemas', () => ({
-  logger: {
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-  createModels: jest.fn(() => ({
-    User: {},
-    Conversation: {},
-    Message: {},
-    SharedLink: {},
-  })),
-}));
-
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: { GEN_TITLE: 'GEN_TITLE' },
-  EModelEndpoint: {
-    azureAssistants: 'azureAssistants',
-    assistants: 'assistants',
-  },
-  ViolationTypes: { FILE_UPLOAD_LIMIT: 'file_upload_limit' },
-}));
+jest.mock('@librechat/agents', () => require(MOCKS).agents());
+jest.mock('@librechat/api', () => require(MOCKS).api({ limiterCache: jest.fn(() => undefined) }));
+jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
+jest.mock('librechat-data-provider', () =>
+  require(MOCKS).dataProvider({ ViolationTypes: { FILE_UPLOAD_LIMIT: 'file_upload_limit' } }),
+);
 
 jest.mock('~/cache/logViolation', () => jest.fn().mockResolvedValue(undefined));
-jest.mock('~/cache/getLogStores', () => jest.fn());
-
-jest.mock('~/models/Conversation', () => ({
-  getConvosByCursor: jest.fn(),
-  getConvo: jest.fn(),
-  deleteConvos: jest.fn(),
-  saveConvo: jest.fn(),
-}));
-
-jest.mock('~/models/ToolCall', () => ({ deleteToolCalls: jest.fn() }));
-jest.mock('~/models', () => ({
-  deleteAllSharedLinks: jest.fn(),
-  deleteConvoSharedLink: jest.fn(),
-}));
-
-jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
+jest.mock('~/cache/getLogStores', () => require(MOCKS).logStores());
+jest.mock('~/models/Conversation', () => require(MOCKS).conversationModel());
+jest.mock('~/models/ToolCall', () => require(MOCKS).toolCallModel());
+jest.mock('~/models', () => require(MOCKS).sharedModels());
+jest.mock('~/server/middleware/requireJwtAuth', () => require(MOCKS).requireJwtAuth());
 
 jest.mock('~/server/middleware', () => {
   const { createForkLimiters } = jest.requireActual('~/server/middleware/limiters/forkLimiters');
@@ -70,34 +30,12 @@ jest.mock('~/server/middleware', () => {
   };
 });
 
-jest.mock('~/server/utils/import/fork', () => ({
-  forkConversation: jest.fn(),
-  duplicateConversation: jest.fn(),
-}));
-
-jest.mock('~/server/utils/import', () => ({ importConversations: jest.fn() }));
-
-jest.mock('~/server/routes/files/multer', () => ({
-  storage: {},
-  importFileFilter: jest.fn(),
-}));
-
-jest.mock('multer', () =>
-  jest.fn(() => ({
-    single: jest.fn(() => (req, res, next) => {
-      req.file = { path: '/tmp/test-file.json' };
-      next();
-    }),
-  })),
-);
-
-jest.mock('~/server/services/Endpoints/azureAssistants', () => ({
-  initializeClient: jest.fn(),
-}));
-
-jest.mock('~/server/services/Endpoints/assistants', () => ({
-  initializeClient: jest.fn(),
-}));
+jest.mock('~/server/utils/import/fork', () => require(MOCKS).forkUtils());
+jest.mock('~/server/utils/import', () => require(MOCKS).importUtils());
+jest.mock('~/server/routes/files/multer', () => require(MOCKS).multerSetup());
+jest.mock('multer', () => require(MOCKS).multerLib());
+jest.mock('~/server/services/Endpoints/azureAssistants', () => require(MOCKS).assistantEndpoint());
+jest.mock('~/server/services/Endpoints/assistants', () => require(MOCKS).assistantEndpoint());
 
 describe('POST /api/convos/duplicate - Rate Limiting', () => {
   let app;
@@ -109,11 +47,6 @@ describe('POST /api/convos/duplicate - Rate Limiting', () => {
     savedEnv.FORK_USER_WINDOW = process.env.FORK_USER_WINDOW;
     savedEnv.FORK_IP_MAX = process.env.FORK_IP_MAX;
     savedEnv.FORK_IP_WINDOW = process.env.FORK_IP_WINDOW;
-
-    process.env.FORK_USER_MAX = '2';
-    process.env.FORK_USER_WINDOW = '1';
-    process.env.FORK_IP_MAX = '100';
-    process.env.FORK_IP_WINDOW = '1';
   });
 
   afterAll(() => {
@@ -126,9 +59,8 @@ describe('POST /api/convos/duplicate - Rate Limiting', () => {
     }
   });
 
-  beforeEach(() => {
+  const setupApp = () => {
     jest.clearAllMocks();
-
     jest.isolateModules(() => {
       const convosRouter = require('../convos');
       ({ duplicateConversation } = require('~/server/utils/import/fork'));
@@ -145,22 +77,59 @@ describe('POST /api/convos/duplicate - Rate Limiting', () => {
     duplicateConversation.mockResolvedValue({
       conversation: { conversationId: 'duplicated-conv' },
     });
-  });
+  };
 
-  it('should return 429 after exceeding the user rate limit', async () => {
-    const userMax = parseInt(process.env.FORK_USER_MAX, 10);
+  describe('user limit', () => {
+    beforeEach(() => {
+      process.env.FORK_USER_MAX = '2';
+      process.env.FORK_USER_WINDOW = '1';
+      process.env.FORK_IP_MAX = '100';
+      process.env.FORK_IP_WINDOW = '1';
+      setupApp();
+    });
 
-    for (let i = 0; i < userMax; i++) {
+    it('should return 429 after exceeding the user rate limit', async () => {
+      const userMax = parseInt(process.env.FORK_USER_MAX, 10);
+
+      for (let i = 0; i < userMax; i++) {
+        const res = await request(app)
+          .post('/api/convos/duplicate')
+          .send({ conversationId: 'conv-123' });
+        expect(res.status).toBe(201);
+      }
+
       const res = await request(app)
         .post('/api/convos/duplicate')
-        .send({ conversationId: 'conv-123', title: 'Test' });
-      expect(res.status).toBe(201);
-    }
+        .send({ conversationId: 'conv-123' });
+      expect(res.status).toBe(429);
+      expect(res.body.message).toMatch(/too many/i);
+    });
+  });
 
-    const res = await request(app)
-      .post('/api/convos/duplicate')
-      .send({ conversationId: 'conv-123', title: 'Test' });
-    expect(res.status).toBe(429);
-    expect(res.body.message).toMatch(/too many/i);
+  describe('IP limit', () => {
+    beforeEach(() => {
+      process.env.FORK_USER_MAX = '100';
+      process.env.FORK_USER_WINDOW = '1';
+      process.env.FORK_IP_MAX = '2';
+      process.env.FORK_IP_WINDOW = '1';
+      setupApp();
+    });
+
+    it('should return 429 after exceeding the IP rate limit', async () => {
+      const ipMax = parseInt(process.env.FORK_IP_MAX, 10);
+
+      for (let i = 0; i < ipMax; i++) {
+        const res = await request(app)
+          .post('/api/convos/duplicate')
+          .send({ conversationId: 'conv-123' });
+        expect(res.status).toBe(201);
+      }
+
+      const res = await request(app)
+        .post('/api/convos/duplicate')
+        .send({ conversationId: 'conv-123' });
+      expect(res.status).toBe(429);
+      expect(res.body.message).toMatch(/too many/i);
+    });
   });
 });
