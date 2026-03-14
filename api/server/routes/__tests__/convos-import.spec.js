@@ -1,6 +1,15 @@
 const express = require('express');
 const request = require('supertest');
 const multer = require('multer');
+
+jest.mock(
+  '@librechat/data-schemas',
+  () => ({
+    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+  }),
+  { virtual: true },
+);
+
 const {
   DEFAULT_IMPORT_MAX_FILE_SIZE,
   resolveImportMaxFileSize,

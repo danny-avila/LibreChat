@@ -9,7 +9,6 @@ module.exports = {
   moduleNameMapper: {
     '~/(.*)': '<rootDir>/$1',
     '~/data/auth.json': '<rootDir>/__mocks__/auth.mock.json',
-    '^@librechat/data-schemas$': '<rootDir>/test/__mocks__/data-schemas.js',
     '^openid-client/passport$': '<rootDir>/test/__mocks__/openid-client-passport.js',
     '^openid-client$': '<rootDir>/test/__mocks__/openid-client.js',
   },
