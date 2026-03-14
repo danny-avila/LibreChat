@@ -1228,6 +1228,21 @@ class AgentClient extends BaseClient {
     const encoding = this.getEncoding();
     return Tokenizer.getTokenCount(text, encoding);
   }
+
+  /** @type {number} Anthropic message framing correction factor. */
+  static CLAUDE_TOKEN_CORRECTION = 1.1;
+
+  /**
+   * @param {object} message
+   * @returns {number}
+   */
+  getTokenCountForMessage(message) {
+    const count = super.getTokenCountForMessage(message);
+    if (this.getEncoding() === 'claude') {
+      return Math.ceil(count * AgentClient.CLAUDE_TOKEN_CORRECTION);
+    }
+    return count;
+  }
 }
 
 module.exports = AgentClient;
