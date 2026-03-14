@@ -117,7 +117,7 @@
     "node-fetch": "2.7.0",
     "pdfjs-dist": "^5.4.624",
     "rate-limit-redis": "^4.2.0",
-    "undici": "^7.18.2",
+    "undici": "^7.24.1",
     "zod": "^3.22.4"
   }
 }
