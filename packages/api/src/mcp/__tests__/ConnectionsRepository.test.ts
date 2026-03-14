@@ -396,7 +396,7 @@ describe('ConnectionsRepository', () => {
         mockServerConfigs.customVarServer = {
           type: 'stdio',
           command: 'npx',
-          args: ['-y', '@karakeep/mcp'],
+          args: ['-y', '@test/mcp-stdio-server'],
           env: { API_KEY: '{{MY_KEY}}' },
           customUserVars: {
             MY_KEY: { title: 'API Key', description: 'Your API key' },
@@ -406,11 +406,11 @@ describe('ConnectionsRepository', () => {
         expect(await repository.has('customVarServer')).toBe(false);
       });
 
-      it('should NOT allow connection to servers with customUserVars even when startup is not explicitly false', async () => {
+      it('should NOT allow connection when customUserVars is defined, even when startup is explicitly true', async () => {
         mockServerConfigs.customVarStartupServer = {
           type: 'stdio',
           command: 'npx',
-          args: ['-y', 'some-mcp'],
+          args: ['-y', '@test/mcp-stdio-server'],
           env: { TOKEN: '{{USER_TOKEN}}' },
           startup: true,
           requiresOAuth: false,
@@ -505,7 +505,7 @@ describe('ConnectionsRepository', () => {
         mockServerConfigs.customVarServer = {
           type: 'stdio',
           command: 'npx',
-          args: ['-y', '@karakeep/mcp'],
+          args: ['-y', '@test/mcp-stdio-server'],
           env: { API_KEY: '{{MY_KEY}}' },
           customUserVars: {
             MY_KEY: { title: 'API Key', description: 'Your API key' },

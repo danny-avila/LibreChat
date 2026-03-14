@@ -104,7 +104,7 @@ describe('MCPServerInspector', () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',
         command: 'npx',
-        args: ['-y', '@karakeep/mcp'],
+        args: ['-y', '@test/mcp-stdio-server'],
         env: { API_KEY: '{{MY_KEY}}' },
         customUserVars: {
           MY_KEY: { title: 'API Key', description: 'Your API key' },
@@ -116,7 +116,7 @@ describe('MCPServerInspector', () => {
       expect(result).toEqual({
         type: 'stdio',
         command: 'npx',
-        args: ['-y', '@karakeep/mcp'],
+        args: ['-y', '@test/mcp-stdio-server'],
         env: { API_KEY: '{{MY_KEY}}' },
         customUserVars: {
           MY_KEY: { title: 'API Key', description: 'Your API key' },
@@ -127,6 +127,25 @@ describe('MCPServerInspector', () => {
 
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
       expect(mockConnection.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('should NOT create a temp connection when customUserVars is defined and no connection is provided', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@test/mcp-stdio-server'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.capabilities).toBeUndefined();
+      expect(result.toolFunctions).toBeUndefined();
     });
 
     it('should keep custom serverInstructions string and not fetch from server', async () => {
