@@ -291,19 +291,18 @@ export default function useResumableSSE(
                 syncStepMessage(updated[responseIdx]);
                 console.log('[ResumableSSE] SYNC complete, handlers synced');
               } else {
-                // Add new response message
                 const responseId = serverResponseId ?? `${userMsgId}_`;
-                setMessages([
-                  ...messages,
-                  {
-                    messageId: responseId,
-                    parentMessageId: userMsgId,
-                    conversationId: currentSubmission.conversation?.conversationId ?? '',
-                    text: '',
-                    content: data.resumeState.aggregatedContent,
-                    isCreatedByUser: false,
-                  } as TMessage,
-                ]);
+                const newMessage = {
+                  messageId: responseId,
+                  parentMessageId: userMsgId,
+                  conversationId: currentSubmission.conversation?.conversationId ?? '',
+                  text: '',
+                  content: data.resumeState.aggregatedContent,
+                  isCreatedByUser: false,
+                } as TMessage;
+                setMessages([...messages, newMessage]);
+                resetContentHandler();
+                syncStepMessage(newMessage);
               }
             }
 
