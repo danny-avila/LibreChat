@@ -24,6 +24,7 @@ import {
   selectRegistrationAuthMethod,
   inferClientAuthMethod,
 } from './methods';
+import { isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 
 /** Type for the OAuth metadata from the SDK */
@@ -144,7 +145,9 @@ export class MCPOAuthHandler {
       resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, {}, fetchFn);
 
       if (resourceMetadata?.authorization_servers?.length) {
-        authServerUrl = new URL(resourceMetadata.authorization_servers[0]);
+        const discoveredAuthServer = resourceMetadata.authorization_servers[0];
+        await this.validateOAuthUrl(discoveredAuthServer, 'authorization_server');
+        authServerUrl = new URL(discoveredAuthServer);
         logger.debug(
           `[MCPOAuth] Found authorization server from resource metadata: ${authServerUrl}`,
         );
@@ -199,6 +202,19 @@ export class MCPOAuthHandler {
 
     logger.debug(`[MCPOAuth] OAuth metadata discovered successfully`);
     const metadata = await OAuthMetadataSchema.parseAsync(rawMetadata);
+
+    const endpointChecks: Promise<void>[] = [];
+    if (metadata.registration_endpoint) {
+      endpointChecks.push(
+        this.validateOAuthUrl(metadata.registration_endpoint, 'registration_endpoint'),
+      );
+    }
+    if (metadata.token_endpoint) {
+      endpointChecks.push(this.validateOAuthUrl(metadata.token_endpoint, 'token_endpoint'));
+    }
+    if (endpointChecks.length > 0) {
+      await Promise.all(endpointChecks);
+    }
 
     logger.debug(`[MCPOAuth] OAuth metadata parsed successfully`);
     return {
@@ -355,9 +371,13 @@ export class MCPOAuthHandler {
     logger.debug(`[MCPOAuth] Generated flowId: ${flowId}, state: ${state}`);
 
     try {
-      // Check if we have pre-configured OAuth settings
       if (config?.authorization_url && config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
+
+        await Promise.all([
+          this.validateOAuthUrl(config.authorization_url, 'authorization_url'),
+          this.validateOAuthUrl(config.token_url, 'token_url'),
+        ]);
 
         const skipCodeChallengeCheck =
           config?.skip_code_challenge_check === true ||
@@ -410,10 +430,11 @@ export class MCPOAuthHandler {
           code_challenge_methods_supported: codeChallengeMethodsSupported,
         };
         logger.debug(`[MCPOAuth] metadata for "${serverName}": ${JSON.stringify(metadata)}`);
+        const redirectUri = this.getDefaultRedirectUri(serverName);
         const clientInfo: OAuthClientInformation = {
           client_id: config.client_id,
           client_secret: config.client_secret,
-          redirect_uris: [config.redirect_uri || this.getDefaultRedirectUri(serverName)],
+          redirect_uris: [redirectUri],
           scope: config.scope,
           token_endpoint_auth_method: tokenEndpointAuthMethod,
         };
@@ -422,7 +443,7 @@ export class MCPOAuthHandler {
         const { authorizationUrl, codeVerifier } = await startAuthorization(serverUrl, {
           metadata: metadata as unknown as SDKOAuthMetadata,
           clientInformation: clientInfo,
-          redirectUrl: clientInfo.redirect_uris?.[0] || this.getDefaultRedirectUri(serverName),
+          redirectUrl: redirectUri,
           scope: config.scope,
         });
 
@@ -462,8 +483,7 @@ export class MCPOAuthHandler {
         `[MCPOAuth] OAuth metadata discovered, auth server URL: ${sanitizeUrlForLogging(authServerUrl)}`,
       );
 
-      /** Dynamic client registration based on the discovered metadata */
-      const redirectUri = config?.redirect_uri || this.getDefaultRedirectUri(serverName);
+      const redirectUri = this.getDefaultRedirectUri(serverName);
       logger.debug(`[MCPOAuth] Registering OAuth client with redirect URI: ${redirectUri}`);
 
       const clientInfo = await this.registerOAuthClient(
@@ -672,6 +692,24 @@ export class MCPOAuthHandler {
     return randomBytes(32).toString('base64url');
   }
 
+  /** Validates an OAuth URL is not targeting a private/internal address */
+  private static async validateOAuthUrl(url: string, fieldName: string): Promise<void> {
+    let hostname: string;
+    try {
+      hostname = new URL(url).hostname;
+    } catch {
+      throw new Error(`Invalid OAuth ${fieldName}: ${sanitizeUrlForLogging(url)}`);
+    }
+
+    if (isSSRFTarget(hostname)) {
+      throw new Error(`OAuth ${fieldName} targets a blocked address`);
+    }
+
+    if (await resolveHostnameSSRF(hostname)) {
+      throw new Error(`OAuth ${fieldName} resolves to a private IP address`);
+    }
+  }
+
   private static readonly STATE_MAP_TYPE = 'mcp_oauth_state';
 
   /**
@@ -783,10 +821,10 @@ export class MCPOAuthHandler {
           scope: metadata.clientInfo.scope,
         });
 
-        /** Use the stored client information and metadata to determine the token URL */
         let tokenUrl: string;
         let authMethods: string[] | undefined;
         if (config?.token_url) {
+          await this.validateOAuthUrl(config.token_url, 'token_url');
           tokenUrl = config.token_url;
           authMethods = config.token_endpoint_auth_methods_supported;
         } else if (!metadata.serverUrl) {
@@ -813,6 +851,7 @@ export class MCPOAuthHandler {
             tokenUrl = oauthMetadata.token_endpoint;
             authMethods = oauthMetadata.token_endpoint_auth_methods_supported;
           }
+          await this.validateOAuthUrl(tokenUrl, 'token_url');
         }
 
         const body = new URLSearchParams({
@@ -886,10 +925,10 @@ export class MCPOAuthHandler {
         return this.processRefreshResponse(tokens, metadata.serverName, 'stored client info');
       }
 
-      // Fallback: If we have pre-configured OAuth settings, use them
       if (config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for token refresh`);
 
+        await this.validateOAuthUrl(config.token_url, 'token_url');
         const tokenUrl = new URL(config.token_url);
 
         const body = new URLSearchParams({
@@ -987,6 +1026,7 @@ export class MCPOAuthHandler {
       } else {
         tokenUrl = new URL(oauthMetadata.token_endpoint);
       }
+      await this.validateOAuthUrl(tokenUrl.href, 'token_url');
 
       const body = new URLSearchParams({
         grant_type: 'refresh_token',
@@ -1036,7 +1076,9 @@ export class MCPOAuthHandler {
     },
     oauthHeaders: Record<string, string> = {},
   ): Promise<void> {
-    // build the revoke URL, falling back to the server URL + /revoke if no revocation endpoint is provided
+    if (metadata.revocationEndpoint != null) {
+      await this.validateOAuthUrl(metadata.revocationEndpoint, 'revocation_endpoint');
+    }
     const revokeUrl: URL =
       metadata.revocationEndpoint != null
         ? new URL(metadata.revocationEndpoint)
