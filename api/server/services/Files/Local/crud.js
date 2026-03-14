@@ -81,7 +81,7 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }
     const resolvedDir = path.resolve(directoryPath);
     const resolvedPath = path.resolve(resolvedDir, fileName);
     const rel = path.relative(resolvedDir, resolvedPath);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
       throw new Error('Path traversal detected in filename');
     }
     fs.writeFileSync(resolvedPath, buffer);
@@ -171,9 +171,8 @@ async function getLocalFileURL({ fileName, basePath = 'images' }) {
 }
 
 /**
- * Validates if a given filepath is within a specified subdirectory under a base path. This function constructs
- * the expected base path using the base, subfolder, and user id from the request, and then checks if the
- * provided filepath starts with this constructed base path.
+ * Validates that a filepath is strictly contained within a subdirectory under a base path,
+ * using path.relative to prevent prefix-collision bypasses.
  *
  * @param {ServerRequest} req - The request object from Express. It should contain a `user` property with an `id`.
  * @param {string} base - The base directory path.
@@ -186,7 +185,8 @@ async function getLocalFileURL({ fileName, basePath = 'images' }) {
 const isValidPath = (req, base, subfolder, filepath) => {
   const normalizedBase = path.resolve(base, subfolder, req.user.id);
   const normalizedFilepath = path.resolve(filepath);
-  return normalizedFilepath.startsWith(normalizedBase);
+  const rel = path.relative(normalizedBase, normalizedFilepath);
+  return !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.includes(`..${path.sep}`);
 };
 
 /**
