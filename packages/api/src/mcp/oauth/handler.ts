@@ -145,7 +145,9 @@ export class MCPOAuthHandler {
       resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, {}, fetchFn);
 
       if (resourceMetadata?.authorization_servers?.length) {
-        authServerUrl = new URL(resourceMetadata.authorization_servers[0]);
+        const discoveredAuthServer = resourceMetadata.authorization_servers[0];
+        await this.validateOAuthUrl(discoveredAuthServer, 'authorization_server');
+        authServerUrl = new URL(discoveredAuthServer);
         logger.debug(
           `[MCPOAuth] Found authorization server from resource metadata: ${authServerUrl}`,
         );
