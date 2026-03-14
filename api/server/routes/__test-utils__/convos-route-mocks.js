@@ -3,6 +3,7 @@ module.exports = {
 
   api: (overrides = {}) => ({
     isEnabled: jest.fn(),
+    resolveImportMaxFileSize: jest.fn(() => 262144000),
     createAxiosInstance: jest.fn(() => ({
       get: jest.fn(),
       post: jest.fn(),
