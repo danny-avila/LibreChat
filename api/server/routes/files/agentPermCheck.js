@@ -10,7 +10,7 @@ const { getAgent } = require('~/models/Agent');
  */
 const verifyAgentUploadPermission = async ({ req, res, metadata }) => {
   const isMessageAttachment = metadata.message_file === true || metadata.message_file === 'true';
-  if (!metadata.agent_id || !metadata.tool_resource || isMessageAttachment) {
+  if (!metadata.agent_id || metadata.tool_resource == null || isMessageAttachment) {
     return null;
   }
 
@@ -28,7 +28,7 @@ const verifyAgentUploadPermission = async ({ req, res, metadata }) => {
     });
   }
 
-  if (agent.author.toString() === userId) {
+  if (agent.author?.toString() === userId) {
     return null;
   }
 

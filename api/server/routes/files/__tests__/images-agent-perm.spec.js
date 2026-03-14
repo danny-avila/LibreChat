@@ -123,6 +123,7 @@ describe('POST /images - Agent Upload Permission Check', () => {
 
     expect(response.status).toBe(200);
     expect(processAgentFileUpload).toHaveBeenCalled();
+    expect(getAgent).not.toHaveBeenCalled();
   });
 
   it('should skip the permission check for regular image uploads without agent_id/tool_resource', async () => {
@@ -151,6 +152,55 @@ describe('POST /images - Agent Upload Permission Check', () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error).toBe('Not Found');
+    expect(processAgentFileUpload).not.toHaveBeenCalled();
+  });
+
+  it('should skip permission check when message_file is true (boolean) for non-owner', async () => {
+    const app = createApp(OTHER_USER_ID);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: AGENT_ID,
+      tool_resource: 'context',
+      message_file: true,
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(200);
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(checkPermission).not.toHaveBeenCalled();
+  });
+
+  it('should skip permission check when message_file is "true" (string form-data) for non-owner', async () => {
+    const app = createApp(OTHER_USER_ID);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: AGENT_ID,
+      tool_resource: 'context',
+      message_file: 'true',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(200);
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(checkPermission).not.toHaveBeenCalled();
+  });
+
+  it('should return 403 when message_file is false for non-owner with agent_id and tool_resource', async () => {
+    checkPermission.mockResolvedValue(false);
+    const app = createApp(OTHER_USER_ID);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: AGENT_ID,
+      tool_resource: 'context',
+      message_file: false,
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe('Forbidden');
     expect(processAgentFileUpload).not.toHaveBeenCalled();
   });
 
