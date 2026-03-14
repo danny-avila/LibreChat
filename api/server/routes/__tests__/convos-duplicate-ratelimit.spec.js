@@ -63,9 +63,7 @@ jest.mock('~/models', () => ({
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
 
 jest.mock('~/server/middleware', () => {
-  const { createForkLimiters } = jest.requireActual(
-    '~/server/middleware/limiters/forkLimiters',
-  );
+  const { createForkLimiters } = jest.requireActual('~/server/middleware/limiters/forkLimiters');
   return {
     createImportLimiters: jest.fn(() => ({
       importIpLimiter: (req, res, next) => next(),
