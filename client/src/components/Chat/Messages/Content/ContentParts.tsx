@@ -238,7 +238,8 @@ const ContentParts = memo(function ContentParts({
             parts={group.parts}
             isSubmitting={effectiveIsSubmitting}
             isLast={group.parts.some((p) => p.idx === lastContentIdx)}
-            attachmentMap={attachmentMap}
+            renderPart={renderPart}
+            lastContentIdx={lastContentIdx}
           />
         );
       })}

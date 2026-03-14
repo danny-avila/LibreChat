@@ -1,19 +1,10 @@
-import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, Agents } from 'librechat-data-provider';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 
 export type GroupedPart =
   | { type: 'single'; part: PartWithIndex }
   | { type: 'tool-group'; parts: PartWithIndex[] };
-
-const SPECIAL_TOOL_NAMES = new Set([
-  Tools.execute_code,
-  Constants.PROGRAMMATIC_TOOL_CALLING,
-  Tools.web_search,
-  'image_gen_oai',
-  'image_edit_oai',
-  'gemini_image_gen',
-]);
 
 function isGroupableToolCall(part: TMessageContentParts): boolean {
   if (part.type !== ContentTypes.TOOL_CALL) {
@@ -25,13 +16,7 @@ function isGroupableToolCall(part: TMessageContentParts): boolean {
   }
   const isStandardToolCall =
     'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
-  if (!isStandardToolCall) {
-    return false;
-  }
-  if (SPECIAL_TOOL_NAMES.has(toolCall.name ?? '')) {
-    return false;
-  }
-  if (toolCall.name?.startsWith(Constants.LC_TRANSFER_TO_)) {
+  if (isStandardToolCall && toolCall.name?.startsWith(Constants.LC_TRANSFER_TO_)) {
     return false;
   }
   return true;
