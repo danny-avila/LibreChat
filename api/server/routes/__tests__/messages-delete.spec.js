@@ -97,9 +97,7 @@ describe('Messages DELETE route', () => {
 
       const victimMessageId = 'victim-msg-999';
 
-      const response = await request(app).delete(
-        `/api/messages/attacker-convo/${victimMessageId}`,
-      );
+      const response = await request(app).delete(`/api/messages/attacker-convo/${victimMessageId}`);
 
       expect(response.status).toBe(204);
       expect(deleteMessages).toHaveBeenCalledWith({
