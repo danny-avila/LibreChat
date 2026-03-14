@@ -1063,6 +1063,7 @@ export enum KnownEndpoints {
   unify = 'unify',
   vercel = 'vercel',
   xai = 'xai',
+  minimax = 'minimax',
 }
 
 export enum FetchTokenConfig {
@@ -1098,6 +1099,7 @@ export const alternateName = {
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
   [KnownEndpoints.helicone]: 'Helicone',
+  [KnownEndpoints.minimax]: 'MiniMax',
 };
 
 const sharedOpenAIModels = [
