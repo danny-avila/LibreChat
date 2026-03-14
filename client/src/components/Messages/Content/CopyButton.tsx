@@ -32,7 +32,6 @@ const CopyButton = React.forwardRef<HTMLButtonElement, CopyButtonProps>(
           'inline-flex select-none items-center justify-center text-text-secondary transition-all duration-200 ease-out',
           'hover:bg-surface-hover hover:text-text-primary',
           'focus-visible:outline focus-visible:outline-2 focus-visible:outline-border-heavy',
-          'active:scale-95',
           iconOnly ? 'rounded-lg p-1.5' : 'ml-auto gap-2 rounded-md px-2 py-1',
           isCopied && 'text-text-secondary hover:text-text-primary',
           className,
