@@ -815,17 +815,23 @@ class GenerationJobManagerClass {
     onDone?: t.DoneHandler,
     onError?: t.ErrorHandler,
   ): Promise<t.SubscribeWithResumeResult> {
+    const bufferLengthAtSnapshot = !this._isRedis
+      ? (this.runtimeState.get(streamId)?.earlyEventBuffer.length ?? 0)
+      : 0;
+
     const resumeState = await this.getResumeState(streamId);
 
     let pendingEvents: t.ServerSentEvent[] = [];
     if (!this._isRedis) {
       const runtime = this.runtimeState.get(streamId);
-      if (runtime && runtime.earlyEventBuffer.length > 0) {
-        pendingEvents = [...runtime.earlyEventBuffer];
+      if (runtime) {
+        pendingEvents = runtime.earlyEventBuffer.slice(bufferLengthAtSnapshot);
         runtime.earlyEventBuffer = [];
-        logger.debug(
-          `[GenerationJobManager] Atomically drained ${pendingEvents.length} buffer events for ${streamId}`,
-        );
+        if (pendingEvents.length > 0) {
+          logger.debug(
+            `[GenerationJobManager] Captured ${pendingEvents.length} gap events for ${streamId}`,
+          );
+        }
       }
     }
 

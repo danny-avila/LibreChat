@@ -86,6 +86,68 @@ describe('GenerationJobManager Integration Tests', () => {
     process.env = originalEnv;
   });
 
+  function createInMemoryManager(): GenerationJobManagerClass {
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+    });
+    manager.initialize();
+    return manager;
+  }
+
+  function createRedisManager(): GenerationJobManagerClass {
+    const manager = new GenerationJobManagerClass();
+    manager.configure(
+      createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient!,
+      }),
+    );
+    manager.initialize();
+    return manager;
+  }
+
+  async function setupDisconnectedStream(
+    manager: GenerationJobManagerClass,
+    streamId: string,
+    delay: number,
+  ): Promise<ServerSentEvent[]> {
+    const firstEvents: ServerSentEvent[] = [];
+    const sub = await manager.subscribe(streamId, (event) => firstEvents.push(event));
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step',
+      data: { id: 'step-1', runId: 'run-1', index: 0, stepDetails: { type: 'message_creation' } },
+    });
+    await manager.emitChunk(streamId, {
+      event: 'on_message_delta',
+      data: { id: 'step-1', delta: { content: { type: 'text', text: 'Hello' } } },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    expect(firstEvents.length).toBe(2);
+
+    sub?.unsubscribe();
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    await manager.emitChunk(streamId, {
+      event: 'on_message_delta',
+      data: { id: 'step-1', delta: { content: { type: 'text', text: ' world' } } },
+    });
+    await manager.emitChunk(streamId, {
+      event: 'on_message_delta',
+      data: { id: 'step-1', delta: { content: { type: 'text', text: '!' } } },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    return firstEvents;
+  }
+
   describe('In-Memory Mode', () => {
     test('should create and manage jobs', async () => {
       // Configure with in-memory
@@ -1137,68 +1199,6 @@ describe('GenerationJobManager Integration Tests', () => {
      * skipped to prevent duplication.
      */
 
-    function createInMemoryManager(): GenerationJobManagerClass {
-      const manager = new GenerationJobManagerClass();
-      manager.configure({
-        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
-        eventTransport: new InMemoryEventTransport(),
-        isRedis: false,
-      });
-      manager.initialize();
-      return manager;
-    }
-
-    function createRedisManager(): GenerationJobManagerClass {
-      const manager = new GenerationJobManagerClass();
-      manager.configure(
-        createStreamServices({
-          useRedis: true,
-          redisClient: ioredisClient!,
-        }),
-      );
-      manager.initialize();
-      return manager;
-    }
-
-    async function setupDisconnectedStream(
-      manager: GenerationJobManagerClass,
-      streamId: string,
-      delay: number,
-    ): Promise<ServerSentEvent[]> {
-      const firstEvents: ServerSentEvent[] = [];
-      const sub = await manager.subscribe(streamId, (event) => firstEvents.push(event));
-
-      await new Promise((resolve) => setTimeout(resolve, delay));
-
-      await manager.emitChunk(streamId, {
-        event: 'on_run_step',
-        data: { id: 'step-1', runId: 'run-1', index: 0, stepDetails: { type: 'message_creation' } },
-      });
-      await manager.emitChunk(streamId, {
-        event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: 'Hello' } } },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      expect(firstEvents.length).toBe(2);
-
-      sub?.unsubscribe();
-      await new Promise((resolve) => setTimeout(resolve, delay));
-
-      await manager.emitChunk(streamId, {
-        event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: ' world' } } },
-      });
-      await manager.emitChunk(streamId, {
-        event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: '!' } } },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, delay));
-
-      return firstEvents;
-    }
-
     test('should NOT replay buffer when skipBufferReplay is true (resume scenario)', async () => {
       const manager = createInMemoryManager();
       const streamId = `skip-buf-${Date.now()}`;
@@ -1467,30 +1467,7 @@ describe('GenerationJobManager Integration Tests', () => {
   });
 
   describe('Atomic subscribeWithResume', () => {
-    function createInMemoryManager(): GenerationJobManagerClass {
-      const manager = new GenerationJobManagerClass();
-      manager.configure({
-        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
-        eventTransport: new InMemoryEventTransport(),
-        isRedis: false,
-      });
-      manager.initialize();
-      return manager;
-    }
-
-    function createRedisManager(): GenerationJobManagerClass {
-      const manager = new GenerationJobManagerClass();
-      manager.configure(
-        createStreamServices({
-          useRedis: true,
-          redisClient: ioredisClient!,
-        }),
-      );
-      manager.initialize();
-      return manager;
-    }
-
-    test('should atomically drain buffer events into pendingEvents (in-memory)', async () => {
+    test('should return empty pendingEvents for pre-snapshot buffer events (in-memory)', async () => {
       const manager = createInMemoryManager();
       const streamId = `atomic-drain-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
@@ -1516,10 +1493,7 @@ describe('GenerationJobManager Integration Tests', () => {
       );
 
       expect(resumeState).not.toBeNull();
-      expect(pendingEvents.length).toBe(2);
-      expect(pendingEvents[0].event).toBe('on_run_step');
-      expect(pendingEvents[1].event).toBe('on_message_delta');
-
+      expect(pendingEvents.length).toBe(0);
       expect(liveEvents.length).toBe(0);
 
       subscription?.unsubscribe();
@@ -1562,7 +1536,7 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { delta: { content: { type: 'text', text: 'buffered' } } },
+        data: { delta: { content: { type: 'text', text: 'buffered-pre-snapshot' } } },
       });
 
       const liveEvents: ServerSentEvent[] = [];
@@ -1570,7 +1544,7 @@ describe('GenerationJobManager Integration Tests', () => {
         liveEvents.push(event),
       );
 
-      expect(pendingEvents.length).toBe(1);
+      expect(pendingEvents.length).toBe(0);
       expect(liveEvents.length).toBe(0);
 
       await manager.emitChunk(streamId, {

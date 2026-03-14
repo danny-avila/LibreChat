@@ -87,9 +87,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
   const onDone = (event) => {
     writeEvent(event);
-    if (!res.writableEnded) {
-      res.end();
-    }
+    res.end();
   };
 
   const onError = (error) => {
@@ -108,17 +106,26 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     const { subscription, resumeState, pendingEvents } =
       await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError);
 
-    if (resumeState && !res.writableEnded) {
-      res.write(
-        `event: message\ndata: ${JSON.stringify({ sync: true, resumeState, pendingEvents })}\n\n`,
-      );
-      if (typeof res.flush === 'function') {
-        res.flush();
+    if (!res.writableEnded) {
+      if (resumeState) {
+        res.write(
+          `event: message\ndata: ${JSON.stringify({ sync: true, resumeState, pendingEvents })}\n\n`,
+        );
+        if (typeof res.flush === 'function') {
+          res.flush();
+        }
+        GenerationJobManager.markSyncSent(streamId);
+        logger.debug(
+          `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps, ${pendingEvents.length} pending events`,
+        );
+      } else if (pendingEvents.length > 0) {
+        for (const event of pendingEvents) {
+          writeEvent(event);
+        }
+        logger.warn(
+          `[AgentStream] Resume state null for ${streamId}, replayed ${pendingEvents.length} gap events directly`,
+        );
       }
-      GenerationJobManager.markSyncSent(streamId);
-      logger.debug(
-        `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps, ${pendingEvents.length} pending events`,
-      );
     }
 
     result = subscription;
