@@ -22,10 +22,7 @@ export function revokeAllUserKeys(): Promise<unknown> {
 }
 
 export function deleteUser(payload?: t.TDeleteUserRequest): Promise<unknown> {
-  return request.deleteWithOptions(endpoints.deleteUser(), {
-    data: payload,
-    headers: { 'Content-Type': 'application/json' },
-  });
+  return request.deleteWithOptions(endpoints.deleteUser(), { data: payload });
 }
 
 export type FavoriteItem = {

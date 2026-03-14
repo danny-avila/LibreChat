@@ -3,7 +3,12 @@ import { RefreshCcw } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import { motion, AnimatePresence } from 'framer-motion';
 import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
-import type { TBackupCode, TRegenerateBackupCodesResponse, TUser } from 'librechat-data-provider';
+import type {
+  TRegenerateBackupCodesResponse,
+  TRegenerateBackupCodesRequest,
+  TBackupCode,
+  TUser,
+} from 'librechat-data-provider';
 import {
   InputOTPSeparator,
   InputOTPGroup,
@@ -19,7 +24,6 @@ import {
   TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
-import type { TRegenerateBackupCodesRequest } from 'librechat-data-provider';
 import { useRegenerateBackupCodesMutation } from '~/data-provider';
 import { useAuthContext, useLocalize } from '~/hooks';
 import store from '~/store';
@@ -174,61 +178,6 @@ const BackupCodesItem: React.FC = () => {
                     );
                   })}
                 </div>
-                {needs2FA && (
-                  <div className="mt-6 space-y-3">
-                    <Label className="text-sm font-medium">
-                      {localize('com_ui_2fa_verification_required')}
-                    </Label>
-                    <div className="flex justify-center">
-                      <InputOTP
-                        value={otpToken}
-                        onChange={setOtpToken}
-                        maxLength={useBackup ? 8 : 6}
-                        pattern={useBackup ? REGEXP_ONLY_DIGITS_AND_CHARS : REGEXP_ONLY_DIGITS}
-                        className="gap-2"
-                      >
-                        {useBackup ? (
-                          <InputOTPGroup>
-                            <InputOTPSlot index={0} />
-                            <InputOTPSlot index={1} />
-                            <InputOTPSlot index={2} />
-                            <InputOTPSlot index={3} />
-                            <InputOTPSlot index={4} />
-                            <InputOTPSlot index={5} />
-                            <InputOTPSlot index={6} />
-                            <InputOTPSlot index={7} />
-                          </InputOTPGroup>
-                        ) : (
-                          <>
-                            <InputOTPGroup>
-                              <InputOTPSlot index={0} />
-                              <InputOTPSlot index={1} />
-                              <InputOTPSlot index={2} />
-                            </InputOTPGroup>
-                            <InputOTPSeparator />
-                            <InputOTPGroup>
-                              <InputOTPSlot index={3} />
-                              <InputOTPSlot index={4} />
-                              <InputOTPSlot index={5} />
-                            </InputOTPGroup>
-                          </>
-                        )}
-                      </InputOTP>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUseBackup(!useBackup);
-                        setOtpToken('');
-                      }}
-                      className="text-sm text-primary hover:underline"
-                    >
-                      {useBackup
-                        ? localize('com_ui_use_2fa_code')
-                        : localize('com_ui_use_backup_code')}
-                    </button>
-                  </div>
-                )}
                 <div className="mt-6 flex justify-center">
                   <Button
                     onClick={handleRegenerate}
@@ -251,13 +200,68 @@ const BackupCodesItem: React.FC = () => {
               <div className="flex flex-col items-center gap-4 p-6 text-center">
                 <Button
                   onClick={handleRegenerate}
-                  disabled={isLoading}
+                  disabled={isLoading || !otpReady}
                   variant="default"
                   className="px-8 py-3 transition-all disabled:opacity-50"
                 >
                   {isLoading && <Spinner className="mr-2" />}
                   {localize('com_ui_regenerate_backup')}
                 </Button>
+              </div>
+            )}
+            {needs2FA && (
+              <div className="mt-6 space-y-3">
+                <Label className="text-sm font-medium">
+                  {localize('com_ui_2fa_verification_required')}
+                </Label>
+                <div className="flex justify-center">
+                  <InputOTP
+                    value={otpToken}
+                    onChange={setOtpToken}
+                    maxLength={useBackup ? 8 : 6}
+                    pattern={useBackup ? REGEXP_ONLY_DIGITS_AND_CHARS : REGEXP_ONLY_DIGITS}
+                    className="gap-2"
+                  >
+                    {useBackup ? (
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} />
+                        <InputOTPSlot index={1} />
+                        <InputOTPSlot index={2} />
+                        <InputOTPSlot index={3} />
+                        <InputOTPSlot index={4} />
+                        <InputOTPSlot index={5} />
+                        <InputOTPSlot index={6} />
+                        <InputOTPSlot index={7} />
+                      </InputOTPGroup>
+                    ) : (
+                      <>
+                        <InputOTPGroup>
+                          <InputOTPSlot index={0} />
+                          <InputOTPSlot index={1} />
+                          <InputOTPSlot index={2} />
+                        </InputOTPGroup>
+                        <InputOTPSeparator />
+                        <InputOTPGroup>
+                          <InputOTPSlot index={3} />
+                          <InputOTPSlot index={4} />
+                          <InputOTPSlot index={5} />
+                        </InputOTPGroup>
+                      </>
+                    )}
+                  </InputOTP>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseBackup(!useBackup);
+                    setOtpToken('');
+                  }}
+                  className="text-sm text-primary hover:underline"
+                >
+                  {useBackup
+                    ? localize('com_ui_use_2fa_code')
+                    : localize('com_ui_use_backup_code')}
+                </button>
               </div>
             )}
           </motion.div>
