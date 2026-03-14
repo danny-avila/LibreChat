@@ -549,6 +549,7 @@ describe('Conversation Operations', () => {
       expect(result.messages.deletedCount).toBe(5);
       expect(deleteMessages).toHaveBeenCalledWith({
         conversationId: { $in: [mockConversationData.conversationId] },
+        user: 'user123',
       });
 
       // Verify conversation was deleted
