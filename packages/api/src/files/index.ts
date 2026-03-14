@@ -1,3 +1,4 @@
+export * from './agentUploadAuth';
 export * from './audio';
 export * from './context';
 export * from './documents/crud';
