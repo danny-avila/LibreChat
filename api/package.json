@@ -109,7 +109,7 @@
     "sharp": "^0.33.5",
     "traverse": "^0.6.7",
     "ua-parser-js": "^1.0.36",
-    "undici": "^7.18.2",
+    "undici": "^7.24.1",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^5.0.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
