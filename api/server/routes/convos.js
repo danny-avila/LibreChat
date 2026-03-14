@@ -12,6 +12,7 @@ const {
 } = require('~/server/middleware');
 const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
+const { resolveImportMaxFileSize } = require('~/server/utils/import/limits');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
@@ -223,7 +224,6 @@ router.post('/update', validateConvoAccess, async (req, res) => {
   }
 });
 
-const { resolveImportMaxFileSize } = require('~/server/utils/import/limits');
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
 /** Fork and duplicate share one rate-limit budget (same "clone" operation class) */
 const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
@@ -233,9 +233,10 @@ const upload = multer({
   fileFilter: importFileFilter,
   limits: { fileSize: importMaxFileSize },
 });
+const uploadSingle = upload.single('file');
 
 function handleUpload(req, res, next) {
-  upload.single('file')(req, res, (err) => {
+  uploadSingle(req, res, (err) => {
     if (err && err.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({ message: 'File exceeds the maximum allowed size' });
     }

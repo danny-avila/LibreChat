@@ -10,6 +10,7 @@ jest.mock(
   { virtual: true },
 );
 
+const { logger } = require('@librechat/data-schemas');
 const {
   DEFAULT_IMPORT_MAX_FILE_SIZE,
   resolveImportMaxFileSize,
@@ -98,21 +99,33 @@ describe('Conversation Import - Multer File Size Limits', () => {
     it('returns default for non-numeric string (NaN)', () => {
       process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = 'abc';
       expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
+      );
     });
 
     it('returns default for negative values', () => {
       process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '-100';
       expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
+      );
     });
 
     it('returns default for zero', () => {
       process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '0';
       expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
+      );
     });
 
     it('returns default for Infinity', () => {
       process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = 'Infinity';
       expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
+      );
     });
   });
 
