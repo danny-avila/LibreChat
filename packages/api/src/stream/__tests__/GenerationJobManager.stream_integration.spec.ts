@@ -1,3 +1,4 @@
+/* eslint jest/no-standalone-expect: ["error", { "additionalTestBlockFunctions": ["testRedis"] }] */
 import type { Redis, Cluster } from 'ioredis';
 import type { ServerSentEvent } from '~/types/events';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
@@ -27,6 +28,9 @@ describe('GenerationJobManager Integration Tests', () => {
   let dynamicKeyvClient: unknown = null;
   let dynamicKeyvReady: Promise<unknown> | null = null;
   const testPrefix = 'JobManager-Integration-Test';
+  const redisConfigured = process.env.USE_REDIS === 'true';
+  const describeRedis = redisConfigured ? describe : describe.skip;
+  const testRedis = redisConfigured ? test : test.skip;
 
   beforeAll(async () => {
     originalEnv = { ...process.env };
@@ -171,13 +175,8 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
-  describe('Redis Mode', () => {
+  describeRedis('Redis Mode', () => {
     test('should create and manage jobs via Redis', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       // Create Redis services
       const services = createStreamServices({
         useRedis: true,
@@ -209,11 +208,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should persist chunks for cross-instance resume', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const services = createStreamServices({
         useRedis: true,
         redisClient: ioredisClient,
@@ -264,11 +258,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should handle abort and return content', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const services = createStreamServices({
         useRedis: true,
         redisClient: ioredisClient,
@@ -374,7 +363,7 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
-  describe('Cross-Replica Support (Redis)', () => {
+  describeRedis('Cross-Replica Support (Redis)', () => {
     /**
      * Problem: In k8s with Redis and multiple replicas, when a user sends a message:
      * 1. POST /api/agents/chat hits Replica A, creates job
@@ -387,15 +376,10 @@ describe('GenerationJobManager Integration Tests', () => {
      * when the job exists in Redis but not in local memory.
      */
     test('should NOT return 404 when stream endpoint hits different replica than job creator', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       // === REPLICA A: Creates the job ===
       // Simulate Replica A creating the job directly in Redis
       // (In real scenario, this happens via GenerationJobManager.createJob on Replica A)
-      const replicaAJobStore = new RedisJobStore(ioredisClient);
+      const replicaAJobStore = new RedisJobStore(ioredisClient!);
       await replicaAJobStore.initialize();
 
       const streamId = `cross-replica-404-test-${Date.now()}`;
@@ -452,13 +436,8 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should lazily create runtime state for jobs created on other replicas', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       // Instance 1: Create the job directly in Redis (simulating another replica)
-      const jobStore = new RedisJobStore(ioredisClient);
+      const jobStore = new RedisJobStore(ioredisClient!);
       await jobStore.initialize();
 
       const streamId = `cross-replica-${Date.now()}`;
@@ -500,11 +479,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should persist syncSent to Redis for cross-replica consistency', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const services = createStreamServices({
         useRedis: true,
         redisClient: ioredisClient,
@@ -539,11 +513,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should persist finalEvent to Redis for cross-replica access', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const services = createStreamServices({
         useRedis: true,
         redisClient: ioredisClient,
@@ -581,11 +550,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should emit cross-replica abort signal via Redis pub/sub', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const services = createStreamServices({
         useRedis: true,
         redisClient: ioredisClient,
@@ -620,16 +584,11 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should handle abort for lazily-initialized cross-replica jobs', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       // This test validates that jobs created on Replica A and lazily-initialized
       // on Replica B can still receive and handle abort signals.
 
       // === Replica A: Create job directly in Redis ===
-      const replicaAJobStore = new RedisJobStore(ioredisClient);
+      const replicaAJobStore = new RedisJobStore(ioredisClient!);
       await replicaAJobStore.initialize();
 
       const streamId = `lazy-abort-${Date.now()}`;
@@ -675,11 +634,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should abort generation when abort signal received from another replica', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       // This test simulates:
       // 1. Replica A creates a job and starts generation
       // 2. Replica B receives abort request and emits abort signal
@@ -729,13 +683,8 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should handle wasSyncSent for cross-replica scenarios', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       // Create job directly in Redis with syncSent: true
-      const jobStore = new RedisJobStore(ioredisClient);
+      const jobStore = new RedisJobStore(ioredisClient!);
       await jobStore.initialize();
 
       const streamId = `cross-sync-${Date.now()}`;
@@ -762,7 +711,7 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
-  describe('Sequential Event Ordering (Redis)', () => {
+  describeRedis('Sequential Event Ordering (Redis)', () => {
     /**
      * These tests verify that events are delivered in strict sequential order
      * when using Redis mode. This is critical because:
@@ -773,11 +722,6 @@ describe('GenerationJobManager Integration Tests', () => {
      * The fix: emitChunk now awaits Redis publish to ensure ordered delivery.
      */
     test('should maintain strict order for rapid sequential emits', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       jest.resetModules();
 
       const services = createStreamServices({
@@ -823,11 +767,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should maintain order for tool call argument deltas', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       jest.resetModules();
 
       const services = createStreamServices({
@@ -882,11 +821,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should maintain order: on_run_step before on_run_step_delta', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       jest.resetModules();
 
       const services = createStreamServices({
@@ -945,11 +879,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should not block other streams when awaiting emitChunk', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       jest.resetModules();
 
       const services = createStreamServices({
@@ -1069,12 +998,7 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
-    test('should buffer and replay events emitted before subscribe (Redis)', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
+    testRedis('should buffer and replay events emitted before subscribe (Redis)', async () => {
       const manager = new GenerationJobManagerClass();
       const services = createStreamServices({
         useRedis: true,
@@ -1118,67 +1042,60 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
-    test('should not lose events when emitting before and after subscribe (Redis)', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
-      const manager = new GenerationJobManagerClass();
-      const services = createStreamServices({
-        useRedis: true,
-        redisClient: ioredisClient,
-      });
-
-      manager.configure(services);
-      manager.initialize();
-
-      const streamId = `no-loss-${Date.now()}`;
-      await manager.createJob(streamId, 'user-1');
-
-      await manager.emitChunk(streamId, {
-        created: true,
-        message: { text: 'hello' },
-        streamId,
-      } as unknown as ServerSentEvent);
-      await manager.emitChunk(streamId, {
-        event: 'on_run_step',
-        data: { id: 'step-1', type: 'message_creation', index: 0 },
-      });
-
-      const receivedEvents: unknown[] = [];
-      const subscription = await manager.subscribe(streamId, (event: unknown) =>
-        receivedEvents.push(event),
-      );
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      for (let i = 0; i < 10; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: `word${i} ` } }, index: i },
+    testRedis(
+      'should not lose events when emitting before and after subscribe (Redis)',
+      async () => {
+        const manager = new GenerationJobManagerClass();
+        const services = createStreamServices({
+          useRedis: true,
+          redisClient: ioredisClient,
         });
-      }
 
-      await new Promise((resolve) => setTimeout(resolve, 300));
+        manager.configure(services);
+        manager.initialize();
 
-      expect(receivedEvents.length).toBe(12);
-      expect((receivedEvents[0] as Record<string, unknown>).created).toBe(true);
-      expect((receivedEvents[1] as Record<string, unknown>).event).toBe('on_run_step');
-      for (let i = 0; i < 10; i++) {
-        expect((receivedEvents[i + 2] as Record<string, unknown>).event).toBe('on_message_delta');
-      }
+        const streamId = `no-loss-${Date.now()}`;
+        await manager.createJob(streamId, 'user-1');
 
-      subscription?.unsubscribe();
-      await manager.destroy();
-    });
+        await manager.emitChunk(streamId, {
+          created: true,
+          message: { text: 'hello' },
+          streamId,
+        } as unknown as ServerSentEvent);
+        await manager.emitChunk(streamId, {
+          event: 'on_run_step',
+          data: { id: 'step-1', type: 'message_creation', index: 0 },
+        });
 
-    test('RedisEventTransport.subscribe() should return a ready promise', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
+        const receivedEvents: unknown[] = [];
+        const subscription = await manager.subscribe(streamId, (event: unknown) =>
+          receivedEvents.push(event),
+        );
 
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        for (let i = 0; i < 10; i++) {
+          await manager.emitChunk(streamId, {
+            event: 'on_message_delta',
+            data: { delta: { content: { type: 'text', text: `word${i} ` } }, index: i },
+          });
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        expect(receivedEvents.length).toBe(12);
+        expect((receivedEvents[0] as Record<string, unknown>).created).toBe(true);
+        expect((receivedEvents[1] as Record<string, unknown>).event).toBe('on_run_step');
+        for (let i = 0; i < 10; i++) {
+          expect((receivedEvents[i + 2] as Record<string, unknown>).event).toBe('on_message_delta');
+        }
+
+        subscription?.unsubscribe();
+        await manager.destroy();
+      },
+    );
+
+    testRedis('RedisEventTransport.subscribe() should return a ready promise', async () => {
       const subscriber = (ioredisClient as unknown as { duplicate: () => unknown }).duplicate();
       const transport = new RedisEventTransport(ioredisClient as never, subscriber as never);
 
@@ -1394,7 +1311,10 @@ describe('GenerationJobManager Integration Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(sub3Events.length).toBe(1);
-      const event = sub3Events[0] as { event: string; data: { delta: { content: { text: string } } } };
+      const event = sub3Events[0] as {
+        event: string;
+        data: { delta: { content: { text: string } } };
+      };
       expect(event.data.delta.content.text).toBe('new-event');
 
       sub3?.unsubscribe();
@@ -1477,12 +1397,7 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
-    test('should NOT replay buffer when skipBufferReplay is true (Redis)', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
+    testRedis('should NOT replay buffer when skipBufferReplay is true (Redis)', async () => {
       const manager = createRedisManager();
       const streamId = `skip-buf-redis-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
@@ -1518,39 +1433,37 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
-    test('should replay buffer without skipBufferReplay after disconnect (Redis)', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
+    testRedis(
+      'should replay buffer without skipBufferReplay after disconnect (Redis)',
+      async () => {
+        const manager = createRedisManager();
+        const streamId = `replay-buf-redis-${Date.now()}`;
+        await manager.createJob(streamId, 'user-1');
 
-      const manager = createRedisManager();
-      const streamId = `replay-buf-redis-${Date.now()}`;
-      await manager.createJob(streamId, 'user-1');
+        const sub1 = await manager.subscribe(streamId, () => {});
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        sub1?.unsubscribe();
+        await new Promise((resolve) => setTimeout(resolve, 100));
 
-      const sub1 = await manager.subscribe(streamId, () => {});
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      sub1?.unsubscribe();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: 'buffered-redis' } } },
+        });
 
-      await manager.emitChunk(streamId, {
-        event: 'on_message_delta',
-        data: { delta: { content: { type: 'text', text: 'buffered-redis' } } },
-      });
+        await new Promise((resolve) => setTimeout(resolve, 100));
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+        const sub2Events: ServerSentEvent[] = [];
+        const sub2 = await manager.subscribe(streamId, (event) => sub2Events.push(event));
 
-      const sub2Events: ServerSentEvent[] = [];
-      const sub2 = await manager.subscribe(streamId, (event) => sub2Events.push(event));
+        await new Promise((resolve) => setTimeout(resolve, 200));
 
-      await new Promise((resolve) => setTimeout(resolve, 200));
+        expect(sub2Events.length).toBe(1);
+        expect(sub2Events[0].event).toBe('on_message_delta');
 
-      expect(sub2Events.length).toBe(1);
-      expect(sub2Events[0].event).toBe('on_message_delta');
-
-      sub2?.unsubscribe();
-      await manager.destroy();
-    });
+        sub2?.unsubscribe();
+        await manager.destroy();
+      },
+    );
   });
 
   describe('Error Preservation for Late Subscribers', () => {
@@ -1711,14 +1624,9 @@ describe('GenerationJobManager Integration Tests', () => {
       await GenerationJobManager.destroy();
     });
 
-    test('should handle error preservation in Redis mode (cross-replica)', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
+    testRedis('should handle error preservation in Redis mode (cross-replica)', async () => {
       // === Replica A: Creates job and emits error ===
-      const replicaAJobStore = new RedisJobStore(ioredisClient);
+      const replicaAJobStore = new RedisJobStore(ioredisClient!);
       await replicaAJobStore.initialize();
 
       const streamId = `redis-error-${Date.now()}`;
@@ -1805,13 +1713,8 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
-  describe('Cross-Replica Live Streaming (Redis)', () => {
+  describeRedis('Cross-Replica Live Streaming (Redis)', () => {
     test('should publish events to Redis even when no local subscriber exists', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const replicaA = new GenerationJobManagerClass();
       const servicesA = createStreamServices({
         useRedis: true,
@@ -1831,7 +1734,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `cross-live-${Date.now()}`;
       await replicaA.createJob(streamId, 'user-1');
 
-      const replicaBJobStore = new RedisJobStore(ioredisClient);
+      const replicaBJobStore = new RedisJobStore(ioredisClient!);
       await replicaBJobStore.initialize();
       await replicaBJobStore.createJob(streamId, 'user-1');
 
@@ -1861,11 +1764,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should not cause data loss on cross-replica subscribers when local subscriber joins', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const replicaA = new GenerationJobManagerClass();
       const servicesA = createStreamServices({
         useRedis: true,
@@ -1885,7 +1783,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `cross-seq-safe-${Date.now()}`;
 
       await replicaA.createJob(streamId, 'user-1');
-      const replicaBJobStore = new RedisJobStore(ioredisClient);
+      const replicaBJobStore = new RedisJobStore(ioredisClient!);
       await replicaBJobStore.initialize();
       await replicaBJobStore.createJob(streamId, 'user-1');
 
@@ -1945,11 +1843,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should deliver buffered events locally AND publish live events cross-replica', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const replicaA = new GenerationJobManagerClass();
       const servicesA = createStreamServices({
         useRedis: true,
@@ -1983,7 +1876,7 @@ describe('GenerationJobManager Integration Tests', () => {
       replicaB.configure(servicesB);
       replicaB.initialize();
 
-      const replicaBJobStore = new RedisJobStore(ioredisClient);
+      const replicaBJobStore = new RedisJobStore(ioredisClient!);
       await replicaBJobStore.initialize();
       await replicaBJobStore.createJob(streamId, 'user-1');
 
@@ -2013,13 +1906,8 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
-  describe('Concurrent Subscriber Readiness (Redis)', () => {
+  describeRedis('Concurrent Subscriber Readiness (Redis)', () => {
     test('should return ready promise to all concurrent subscribers for same stream', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const subscriber = (
         ioredisClient as unknown as { duplicate: () => typeof ioredisClient }
       ).duplicate()!;
@@ -2048,13 +1936,8 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
-  describe('Sequence Reset Safety (Redis)', () => {
+  describeRedis('Sequence Reset Safety (Redis)', () => {
     test('should not receive stale pre-subscribe events via Redis after sequence reset', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const manager = new GenerationJobManagerClass();
       const services = createStreamServices({
         useRedis: true,
@@ -2116,11 +1999,6 @@ describe('GenerationJobManager Integration Tests', () => {
     });
 
     test('should not reset sequence when second subscriber joins mid-stream', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const manager = new GenerationJobManagerClass();
       const services = createStreamServices({
         useRedis: true,
@@ -2179,13 +2057,8 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
-  describe('Subscribe Error Recovery (Redis)', () => {
+  describeRedis('Subscribe Error Recovery (Redis)', () => {
     test('should allow resubscription after Redis subscribe failure', async () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
       const subscriber = (
         ioredisClient as unknown as { duplicate: () => typeof ioredisClient }
       ).duplicate()!;
@@ -2234,12 +2107,7 @@ describe('GenerationJobManager Integration Tests', () => {
   });
 
   describe('createStreamServices Auto-Detection', () => {
-    test('should use Redis when useRedis is true and client is available', () => {
-      if (!ioredisClient) {
-        console.warn('Redis not available, skipping test');
-        return;
-      }
-
+    testRedis('should use Redis when useRedis is true and client is available', () => {
       const services = createStreamServices({
         useRedis: true,
         redisClient: ioredisClient,
