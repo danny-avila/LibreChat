@@ -203,6 +203,19 @@ export class MCPOAuthHandler {
     logger.debug(`[MCPOAuth] OAuth metadata discovered successfully`);
     const metadata = await OAuthMetadataSchema.parseAsync(rawMetadata);
 
+    const endpointChecks: Promise<void>[] = [];
+    if (metadata.registration_endpoint) {
+      endpointChecks.push(
+        this.validateOAuthUrl(metadata.registration_endpoint, 'registration_endpoint'),
+      );
+    }
+    if (metadata.token_endpoint) {
+      endpointChecks.push(this.validateOAuthUrl(metadata.token_endpoint, 'token_endpoint'));
+    }
+    if (endpointChecks.length > 0) {
+      await Promise.all(endpointChecks);
+    }
+
     logger.debug(`[MCPOAuth] OAuth metadata parsed successfully`);
     return {
       metadata: metadata as unknown as OAuthMetadata,
