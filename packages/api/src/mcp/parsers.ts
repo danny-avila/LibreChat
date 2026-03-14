@@ -15,6 +15,7 @@ const RECOGNIZED_PROVIDERS = new Set([
   'openrouter',
   'xai',
   'deepseek',
+  'minimax',
   'ollama',
   'bedrock',
 ]);

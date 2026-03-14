@@ -394,6 +394,19 @@ endpoints:
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
 
+    # MiniMax Example
+    # API Docs: https://platform.minimaxi.com/document/Guides
+    - name: 'MiniMax'
+      apiKey: '${MINIMAX_API_KEY}'
+      baseURL: 'https://api.minimax.io/v1'
+      models:
+        default: ['MiniMax-M2.5', 'MiniMax-M2.5-highspeed']
+        fetch: true
+      titleConvo: true
+      titleModel: 'MiniMax-M2.5-highspeed'
+      modelDisplayLabel: 'MiniMax'
+      dropParams: ['response_format']
+
     # OpenRouter Example
     - name: 'OpenRouter'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.

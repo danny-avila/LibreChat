@@ -302,6 +302,12 @@ const bedrockModels = {
   ...anthropicModels,
 };
 
+const minimaxModels = {
+  minimax: 204800,
+  'minimax-m2.5': 204800,
+  'minimax-m2.5-highspeed': 204800,
+};
+
 const xAIModels = {
   grok: 131072,
   'grok-beta': 131072,
@@ -338,6 +344,7 @@ const aggregateModels = {
   'gpt-oss:120b': 131000,
   'gpt-oss-120b': 131000,
   ...qwenModels,
+  ...minimaxModels,
   ...xAIModels,
   ...googleModels,
   ...bedrockModels,
@@ -401,11 +408,17 @@ const deepseekMaxOutputs = {
   'deepseek.r1': 64000,
 };
 
+const minimaxMaxOutputs = {
+  minimax: 192000,
+  'minimax-m2.5': 192000,
+  'minimax-m2.5-highspeed': 192000,
+};
+
 export const maxOutputTokensMap = {
   [EModelEndpoint.anthropic]: anthropicMaxOutputs,
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
-  [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
-  [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
+  [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs, ...minimaxMaxOutputs },
+  [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs, ...minimaxMaxOutputs },
 };
 
 /** Finds the longest matching key in the tokens map via substring match. */

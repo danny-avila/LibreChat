@@ -12,7 +12,7 @@ const initGoogle = require('~/server/services/Endpoints/google/initialize');
  * @returns {boolean} - True if the provider is a known custom provider, false otherwise
  */
 function isKnownCustomProvider(provider) {
-  return [Providers.XAI, Providers.DEEPSEEK, Providers.OPENROUTER, Providers.MOONSHOT].includes(
+  return [Providers.XAI, Providers.DEEPSEEK, Providers.OPENROUTER, Providers.MOONSHOT, 'minimax'].includes(
     provider?.toLowerCase() || '',
   );
 }
@@ -22,6 +22,7 @@ const providerConfigMap = {
   [Providers.DEEPSEEK]: initCustom,
   [Providers.MOONSHOT]: initCustom,
   [Providers.OPENROUTER]: initCustom,
+  minimax: initCustom,
   [EModelEndpoint.openAI]: initOpenAI,
   [EModelEndpoint.google]: initGoogle,
   [EModelEndpoint.azureOpenAI]: initOpenAI,
