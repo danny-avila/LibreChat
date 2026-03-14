@@ -1,3 +1,4 @@
+import type { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import { SystemRoles, ResourceType, PermissionBits } from 'librechat-data-provider';
 
@@ -14,12 +15,15 @@ export interface AgentUploadAuthParams {
 }
 
 export interface AgentUploadAuthDeps {
-  getAgent: (params: { id: string }) => Promise<{ _id: string; author?: string | null } | null>;
+  getAgent: (params: { id: string }) => Promise<{
+    _id: string | Types.ObjectId;
+    author?: string | Types.ObjectId | null;
+  } | null>;
   checkPermission: (params: {
     userId: string;
     role: string;
     resourceType: ResourceType;
-    resourceId: string;
+    resourceId: string | Types.ObjectId;
     requiredPermission: number;
   }) => Promise<boolean>;
 }
