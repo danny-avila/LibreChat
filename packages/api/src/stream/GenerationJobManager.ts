@@ -707,6 +707,9 @@ class GenerationJobManagerClass {
    * @param onChunk - Handler for chunk events (streamed tokens, run steps, etc.)
    * @param onDone - Handler for completion event (includes final message)
    * @param onError - Handler for error events
+   * @param options.skipBufferReplay - When true, skips replaying the earlyEventBuffer.
+   *   Use this when a sync event was already sent (resume), since the sync's
+   *   aggregatedContent already includes all buffered events.
    * @returns Subscription object with unsubscribe function, or null if job not found
    */
   async subscribe(
@@ -714,6 +717,7 @@ class GenerationJobManagerClass {
     onChunk: t.ChunkHandler,
     onDone?: t.DoneHandler,
     onError?: t.ErrorHandler,
+    options?: { skipBufferReplay?: boolean },
   ): Promise<{ unsubscribe: t.UnsubscribeFn } | null> {
     // Use lazy initialization to support cross-replica subscriptions
     const runtime = await this.getOrCreateRuntimeState(streamId);
@@ -763,11 +767,17 @@ class GenerationJobManagerClass {
       runtime.hasSubscriber = true;
 
       if (runtime.earlyEventBuffer.length > 0) {
-        logger.debug(
-          `[GenerationJobManager] Replaying ${runtime.earlyEventBuffer.length} buffered events for ${streamId}`,
-        );
-        for (const bufferedEvent of runtime.earlyEventBuffer) {
-          onChunk(bufferedEvent);
+        if (options?.skipBufferReplay) {
+          logger.debug(
+            `[GenerationJobManager] Skipping ${runtime.earlyEventBuffer.length} buffered events for ${streamId} (sync already sent)`,
+          );
+        } else {
+          logger.debug(
+            `[GenerationJobManager] Replaying ${runtime.earlyEventBuffer.length} buffered events for ${streamId}`,
+          );
+          for (const bufferedEvent of runtime.earlyEventBuffer) {
+            onChunk(bufferedEvent);
+          }
         }
         runtime.earlyEventBuffer = [];
       }

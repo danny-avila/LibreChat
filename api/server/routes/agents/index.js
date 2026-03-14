@@ -121,6 +121,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
         res.end();
       }
     },
+    isResume ? { skipBufferReplay: true } : undefined,
   );
 
   if (!result) {
