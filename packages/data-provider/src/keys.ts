@@ -100,4 +100,5 @@ export enum MutationKeys {
   updateMemoryPreferences = 'updateMemoryPreferences',
   inviteUser = 'inviteUser',
   suspendUser = 'suspendUser',
+  setUserPassword = 'setUserPassword',
 }

@@ -267,7 +267,7 @@ const requestPasswordReset = async (req) => {
     error.message = 'Email domain not allowed';
     return error;
   }
-  const user = await findUser({ email }, 'email _id');
+  const user = await findUser({ email }, 'email _id suspended');
   const emailEnabled = checkEmailConfig();
 
   logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);
@@ -277,6 +277,13 @@ const requestPasswordReset = async (req) => {
     return {
       message: 'If an account with that email exists, a password reset link has been sent to it.',
     };
+  }
+
+  if (user.suspended) {
+    logger.warn(`[requestPasswordReset] [Suspended account] [Email: ${email}] [IP: ${req.ip}]`);
+    const error = new Error('Konto gesperrt. Bitte kontaktiere den Support.');
+    error.status = 403;
+    return error;
   }
 
   await deleteTokens({ userId: user._id });

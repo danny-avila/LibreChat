@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const express = require('express');
 const { requireAdmin } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
@@ -108,10 +109,40 @@ router.patch('/:id/suspend', async (req, res) => {
     user.suspended = !user.suspended;
     await user.save();
 
-    res.status(200).json({ message: user.suspended ? 'Benutzer gesperrt' : 'Sperre aufgehoben', suspended: user.suspended });
+    res.status(200).json({
+      message: user.suspended ? 'Benutzer gesperrt' : 'Sperre aufgehoben',
+      suspended: user.suspended,
+    });
   } catch (error) {
     logger.error('[admin/users/suspend] Error toggling suspension', error);
     res.status(500).json({ message: 'Fehler beim Sperren des Benutzers' });
+  }
+});
+
+router.patch('/:id/password', async (req, res) => {
+  const { id } = req.params;
+  const { password } = req.body;
+
+  if (!password || password.length < 8) {
+    return res.status(400).json({ message: 'Das Passwort muss mindestens 8 Zeichen lang sein' });
+  }
+
+  try {
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'Benutzer nicht gefunden' });
+    }
+
+    user.password = bcrypt.hashSync(password, 10);
+    await user.save();
+
+    logger.info(
+      `[admin/users/password] Password set by admin. [Target user ID: ${id}] [Admin: ${req.user?.email}]`,
+    );
+    res.status(200).json({ message: 'Passwort erfolgreich gesetzt' });
+  } catch (error) {
+    logger.error('[admin/users/password] Error setting password', error);
+    res.status(500).json({ message: 'Fehler beim Setzen des Passworts' });
   }
 });
 

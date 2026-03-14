@@ -7,6 +7,7 @@ import {
   useDeleteAdminUser,
   useUpdateUserRole,
   useToggleSuspendUser,
+  useSetUserPassword,
 } from '~/data-provider';
 import type { TAdminUser } from 'librechat-data-provider';
 
@@ -20,7 +21,11 @@ const ALL_ROLES = [SystemRoles.ADMIN, SystemRoles.TEAM, SystemRoles.USER];
 
 const formatDate = (iso: string) => {
   try {
-    return new Date(iso).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return new Date(iso).toLocaleDateString('de-AT', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
   } catch {
     return '—';
   }
@@ -30,15 +35,19 @@ type UserRowProps = {
   user: TAdminUser;
   confirmDeleteId: string | null;
   confirmRoleId: string | null;
+  setPasswordId: string | null;
   onDeleteClick: (id: string) => void;
   onDeleteConfirm: (id: string) => void;
   onRoleClick: (id: string) => void;
   onRoleConfirm: (id: string, newRole: string) => void;
   onSuspendToggle: (id: string) => void;
+  onSetPasswordClick: (id: string) => void;
+  onSetPasswordConfirm: (id: string, password: string) => void;
   onCancel: () => void;
   isDeleting: boolean;
   isUpdatingRole: boolean;
   isSuspending: boolean;
+  isSettingPassword: boolean;
 };
 
 const RoleBadge = ({ role }: { role: string }) => {
@@ -54,21 +63,27 @@ const UserRow = ({
   user,
   confirmDeleteId,
   confirmRoleId,
+  setPasswordId,
   onDeleteClick,
   onDeleteConfirm,
   onRoleClick,
   onRoleConfirm,
   onSuspendToggle,
+  onSetPasswordClick,
+  onSetPasswordConfirm,
   onCancel,
   isDeleting,
   isUpdatingRole,
   isSuspending,
+  isSettingPassword,
 }: UserRowProps) => {
   const localize = useLocalize();
   const isPendingDelete = confirmDeleteId === user._id;
   const isPendingRole = confirmRoleId === user._id;
+  const isPendingPassword = setPasswordId === user._id;
   const availableRoles = ALL_ROLES.filter((r) => r !== user.role);
   const [selectedNewRole, setSelectedNewRole] = useState(availableRoles[0]);
+  const [newPassword, setNewPassword] = useState('');
 
   return (
     <div
@@ -85,7 +100,10 @@ const UserRow = ({
             {user.name || '—'}
           </p>
           {user.suspended && (
-            <span className="rounded px-1.5 py-0.5 text-xs font-semibold" style={{ background: 'rgba(168,26,73,0.3)', color: '#f87171' }}>
+            <span
+              className="rounded px-1.5 py-0.5 text-xs font-semibold"
+              style={{ background: 'rgba(168,26,73,0.3)', color: '#f87171' }}
+            >
               {localize('com_ui_admin_suspended')}
             </span>
           )}
@@ -104,24 +122,40 @@ const UserRow = ({
               value={selectedNewRole}
               onChange={(e) => setSelectedNewRole(e.target.value)}
               className="rounded px-2 py-1 text-xs font-semibold"
-              style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer' }}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                color: 'rgba(255,255,255,0.85)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                cursor: 'pointer',
+              }}
             >
               {availableRoles.map((r) => (
-                <option key={r} value={r} style={{ background: '#1a1a2e' }}>{r}</option>
+                <option key={r} value={r} style={{ background: '#1a1a2e' }}>
+                  {r}
+                </option>
               ))}
             </select>
             <button
               onClick={() => onRoleConfirm(user._id, selectedNewRole)}
               disabled={isUpdatingRole}
               className="rounded px-2 py-1 text-xs font-semibold"
-              style={{ background: 'rgba(201,168,124,0.25)', color: '#c9a87c', cursor: isUpdatingRole ? 'not-allowed' : 'pointer', opacity: isUpdatingRole ? 0.6 : 1 }}
+              style={{
+                background: 'rgba(201,168,124,0.25)',
+                color: '#c9a87c',
+                cursor: isUpdatingRole ? 'not-allowed' : 'pointer',
+                opacity: isUpdatingRole ? 0.6 : 1,
+              }}
             >
               {localize('com_ui_confirm')}
             </button>
             <button
               onClick={onCancel}
               className="rounded px-2 py-1 text-xs font-semibold"
-              style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                color: 'rgba(255,255,255,0.7)',
+                cursor: 'pointer',
+              }}
             >
               {localize('com_ui_cancel')}
             </button>
@@ -138,7 +172,7 @@ const UserRow = ({
         {!isPendingRole && (
           <>
             {/* Suspend / Unsuspend button */}
-            {user.role !== 'ADMIN' && (
+            {user.role !== 'ADMIN' && !isPendingPassword && !isPendingDelete && (
               <button
                 onClick={() => onSuspendToggle(user._id)}
                 disabled={isSuspending}
@@ -149,45 +183,152 @@ const UserRow = ({
                   cursor: isSuspending ? 'not-allowed' : 'pointer',
                   opacity: isSuspending ? 0.6 : 1,
                 }}
-                aria-label={user.suspended ? localize('com_ui_admin_unsuspend_user') : localize('com_ui_admin_suspend_user')}
-                title={user.suspended ? localize('com_ui_admin_unsuspend_user') : localize('com_ui_admin_suspend_user')}
+                aria-label={
+                  user.suspended
+                    ? localize('com_ui_admin_unsuspend_user')
+                    : localize('com_ui_admin_suspend_user')
+                }
+                title={
+                  user.suspended
+                    ? localize('com_ui_admin_unsuspend_user')
+                    : localize('com_ui_admin_suspend_user')
+                }
               >
                 {user.suspended ? (
                   /* Unlock icon */
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                     <path d="M7 11V7a5 5 0 0 1 9.9-1" />
                   </svg>
                 ) : (
                   /* Lock icon */
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                   </svg>
                 )}
               </button>
             )}
+            {/* Set password button */}
+            {isPendingPassword ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder={localize('com_ui_admin_set_password_placeholder')}
+                  className="rounded px-2 py-1 text-xs"
+                  style={{
+                    background: 'rgba(255,255,255,0.08)',
+                    color: 'rgba(255,255,255,0.85)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    outline: 'none',
+                    width: '160px',
+                  }}
+                  autoFocus
+                />
+                <button
+                  onClick={() => {
+                    onSetPasswordConfirm(user._id, newPassword);
+                    setNewPassword('');
+                  }}
+                  disabled={isSettingPassword || newPassword.length < 8}
+                  className="rounded px-2 py-1 text-xs font-semibold"
+                  style={{
+                    background: 'rgba(201,168,124,0.25)',
+                    color: '#c9a87c',
+                    cursor: isSettingPassword || newPassword.length < 8 ? 'not-allowed' : 'pointer',
+                    opacity: isSettingPassword || newPassword.length < 8 ? 0.6 : 1,
+                  }}
+                >
+                  {localize('com_ui_confirm')}
+                </button>
+                <button
+                  onClick={onCancel}
+                  className="rounded px-2 py-1 text-xs font-semibold"
+                  style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    color: 'rgba(255,255,255,0.7)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {localize('com_ui_cancel')}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => onSetPasswordClick(user._id)}
+                className="rounded p-1.5 transition-colors"
+                style={{ color: 'rgba(255,255,255,0.3)', background: 'transparent' }}
+                aria-label={localize('com_ui_admin_set_password')}
+                title={localize('com_ui_admin_set_password')}
+              >
+                {/* Key icon */}
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="7.5" cy="15.5" r="5.5" />
+                  <path d="M21 2l-9.6 9.6" />
+                  <path d="M15.5 7.5l3 3L22 7l-3-3" />
+                </svg>
+              </button>
+            )}
             {/* Delete button */}
-            {isPendingDelete ? (
+            {!isPendingPassword && isPendingDelete ? (
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => onDeleteConfirm(user._id)}
                   disabled={isDeleting}
                   className="rounded px-2 py-1 text-xs font-semibold"
-                  style={{ background: '#A81A49', color: '#fff', cursor: isDeleting ? 'not-allowed' : 'pointer', opacity: isDeleting ? 0.6 : 1 }}
+                  style={{
+                    background: '#A81A49',
+                    color: '#fff',
+                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                    opacity: isDeleting ? 0.6 : 1,
+                  }}
                 >
                   {localize('com_ui_admin_delete_confirm')}
                 </button>
                 <button
                   onClick={onCancel}
                   className="rounded px-2 py-1 text-xs font-semibold"
-                  style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}
+                  style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    color: 'rgba(255,255,255,0.7)',
+                    cursor: 'pointer',
+                  }}
                 >
                   {localize('com_ui_admin_delete_cancel')}
                 </button>
               </div>
             ) : (
-              user.role !== 'ADMIN' && (
+              user.role !== 'ADMIN' &&
+              !isPendingPassword && (
                 <button
                   onClick={() => onDeleteClick(user._id)}
                   className="rounded p-1.5 transition-colors"
@@ -195,7 +336,16 @@ const UserRow = ({
                   aria-label={localize('com_ui_admin_delete_user')}
                   title={localize('com_ui_admin_delete_user')}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
                     <path d="M10 11v6M14 11v6" />
@@ -219,12 +369,14 @@ export default function InvitePanel() {
   const [errorMsg, setErrorMsg] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmRoleId, setConfirmRoleId] = useState<string | null>(null);
+  const [setPasswordId, setSetPasswordId] = useState<string | null>(null);
 
   const { data: users, isLoading: loadingUsers } = useAdminUsers();
   const inviteMutation = useInviteUser();
   const deleteMutation = useDeleteAdminUser();
   const roleMutation = useUpdateUserRole();
   const suspendMutation = useToggleSuspendUser();
+  const setPasswordMutation = useSetUserPassword();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -292,7 +444,11 @@ export default function InvitePanel() {
   const handleSuspendToggle = (id: string) => {
     suspendMutation.mutate(id, {
       onSuccess: (data) => {
-        setSuccessMsg(data.suspended ? localize('com_ui_admin_suspend_success') : localize('com_ui_admin_unsuspend_success'));
+        setSuccessMsg(
+          data.suspended
+            ? localize('com_ui_admin_suspend_success')
+            : localize('com_ui_admin_unsuspend_success'),
+        );
       },
       onError: (err: unknown) => {
         const msg =
@@ -305,9 +461,31 @@ export default function InvitePanel() {
     });
   };
 
+  const handleSetPasswordConfirm = (id: string, password: string) => {
+    setPasswordMutation.mutate(
+      { id, password },
+      {
+        onSuccess: () => {
+          setSetPasswordId(null);
+          setSuccessMsg(localize('com_ui_admin_set_password_success'));
+        },
+        onError: (err: unknown) => {
+          setSetPasswordId(null);
+          const msg =
+            err &&
+            typeof err === 'object' &&
+            'response' in err &&
+            (err as { response?: { data?: { message?: string } } }).response?.data?.message;
+          setErrorMsg(msg || localize('com_ui_admin_set_password_error'));
+        },
+      },
+    );
+  };
+
   const handleCancel = () => {
     setConfirmDeleteId(null);
     setConfirmRoleId(null);
+    setSetPasswordId(null);
   };
 
   const inputStyle: React.CSSProperties = {
@@ -417,22 +595,29 @@ export default function InvitePanel() {
             {localize('com_ui_admin_no_users')}
           </p>
         )}
-        <div className="overflow-hidden rounded-xl" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div
+          className="overflow-hidden rounded-xl"
+          style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+        >
           {users?.map((u) => (
             <UserRow
               key={u._id}
               user={u}
               confirmDeleteId={confirmDeleteId}
               confirmRoleId={confirmRoleId}
+              setPasswordId={setPasswordId}
               onDeleteClick={setConfirmDeleteId}
               onDeleteConfirm={handleConfirmDelete}
               onRoleClick={setConfirmRoleId}
               onRoleConfirm={handleConfirmRole}
               onSuspendToggle={handleSuspendToggle}
+              onSetPasswordClick={setSetPasswordId}
+              onSetPasswordConfirm={handleSetPasswordConfirm}
               onCancel={handleCancel}
               isDeleting={deleteMutation.isLoading}
               isUpdatingRole={roleMutation.isLoading}
               isSuspending={suspendMutation.isLoading}
+              isSettingPassword={setPasswordMutation.isLoading}
             />
           ))}
         </div>

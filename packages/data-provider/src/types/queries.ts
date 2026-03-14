@@ -221,3 +221,8 @@ export type TAdminUser = {
   createdAt: string;
   suspended?: boolean;
 };
+
+export type TAdminSetPasswordPayload = {
+  id: string;
+  password: string;
+};

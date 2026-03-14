@@ -1097,10 +1097,20 @@ export const deleteAdminUser = (id: string): Promise<{ message: string }> => {
   return request.delete(endpoints.adminDeleteUser(id));
 };
 
-export const updateAdminUserRole = (id: string, role: string): Promise<{ message: string; role: string }> => {
+export const updateAdminUserRole = (
+  id: string,
+  role: string,
+): Promise<{ message: string; role: string }> => {
   return request.patch(endpoints.adminUpdateUserRole(id), { role });
 };
 
 export const toggleSuspendUser = (id: string): Promise<{ message: string; suspended: boolean }> => {
   return request.patch(endpoints.adminSuspendUser(id), {});
+};
+
+export const setAdminUserPassword = (
+  id: string,
+  password: string,
+): Promise<{ message: string }> => {
+  return request.patch(endpoints.adminSetUserPassword(id), { password });
 };

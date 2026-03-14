@@ -203,6 +203,7 @@
   "com_auth_reset_password_if_email_exists": "If an account with that email exists, an email with password reset instructions has been sent. Please make sure to check your spam folder.",
   "com_auth_reset_password_link_sent": "Email Sent",
   "com_auth_reset_password_success": "Password Reset Success",
+  "com_auth_account_suspended_reset": "Your account has been suspended. Please contact support.",
   "com_auth_saml_login": "Continue with SAML",
   "com_auth_sign_in": "Sign in",
   "com_auth_submit_registration": "Submit registration",
@@ -1544,5 +1545,9 @@
   "com_ui_admin_unsuspend_user": "Unsuspend user",
   "com_ui_admin_suspend_success": "User suspended",
   "com_ui_admin_unsuspend_success": "User unsuspended",
-  "com_ui_admin_suspend_error": "Error toggling suspension"
+  "com_ui_admin_suspend_error": "Error toggling suspension",
+  "com_ui_admin_set_password": "Set password",
+  "com_ui_admin_set_password_placeholder": "New password (min. 8 characters)",
+  "com_ui_admin_set_password_success": "Password set successfully",
+  "com_ui_admin_set_password_error": "Error setting password"
 }

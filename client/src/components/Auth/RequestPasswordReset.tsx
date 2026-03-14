@@ -67,9 +67,25 @@ function RequestPasswordReset() {
           setBodyText(<ResetPasswordBodyText />);
         }
       },
-      onError: () => {
-        setHeaderText('com_auth_reset_password_link_sent');
-        setBodyText(<ResetPasswordBodyText />);
+      onError: (error: unknown) => {
+        const status = (error as { response?: { status?: number } })?.response?.status;
+        if (status === 403) {
+          setHeaderText('com_auth_reset_password');
+          setBodyText(
+            <div className="flex flex-col space-y-4">
+              <p>{localize('com_auth_account_suspended_reset')}</p>
+              <a
+                className="inline-flex text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+                href={loginPage()}
+              >
+                {localize('com_auth_back_to_login')}
+              </a>
+            </div>,
+          );
+        } else {
+          setHeaderText('com_auth_reset_password_link_sent');
+          setBodyText(<ResetPasswordBodyText />);
+        }
       },
     });
   };
