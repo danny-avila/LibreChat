@@ -2,7 +2,7 @@ const mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: 
 
 jest.mock('@librechat/data-schemas', () => ({ logger: mockLogger }), { virtual: true });
 
-let resolveImportMaxFileSize: typeof import('../importLimits').resolveImportMaxFileSize;
+let resolveImportMaxFileSize: typeof import('../import').resolveImportMaxFileSize;
 let DEFAULT_IMPORT_MAX_FILE_SIZE: number;
 
 async function freshImport() {
@@ -17,6 +17,7 @@ describe('resolveImportMaxFileSize', () => {
 
   beforeEach(async () => {
     originalEnv = process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
+    mockLogger.warn.mockClear();
     await freshImport();
   });
 
