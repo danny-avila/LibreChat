@@ -2,20 +2,6 @@ const express = require('express');
 const request = require('supertest');
 const multer = require('multer');
 
-jest.mock(
-  '@librechat/data-schemas',
-  () => ({
-    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-  }),
-  { virtual: true },
-);
-
-const { logger } = require('@librechat/data-schemas');
-const {
-  DEFAULT_IMPORT_MAX_FILE_SIZE,
-  resolveImportMaxFileSize,
-} = require('~/server/utils/import/limits');
-
 const importFileFilter = (req, file, cb) => {
   if (file.mimetype === 'application/json') {
     cb(null, true);
@@ -32,9 +18,10 @@ function createImportApp(fileSize) {
     fileFilter: importFileFilter,
     limits: { fileSize },
   });
+  const uploadSingle = upload.single('file');
 
   function handleUpload(req, res, next) {
-    upload.single('file')(req, res, (err) => {
+    uploadSingle(req, res, (err) => {
       if (err && err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({ message: 'File exceeds the maximum allowed size' });
       }
@@ -57,78 +44,6 @@ function createImportApp(fileSize) {
 }
 
 describe('Conversation Import - Multer File Size Limits', () => {
-  let originalEnv;
-
-  beforeEach(() => {
-    originalEnv = process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
-  });
-
-  afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = originalEnv;
-    } else {
-      delete process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
-    }
-  });
-
-  describe('default limit when env var is not set', () => {
-    it('resolves to 262144000 (250 MiB)', () => {
-      delete process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
-      expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
-    });
-
-    it('resolves to default when env var is empty string', () => {
-      process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '';
-      expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
-    });
-  });
-
-  describe('custom env var value', () => {
-    it('respects a custom value when set', () => {
-      process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '5242880';
-      expect(resolveImportMaxFileSize()).toBe(5242880);
-    });
-
-    it('parses string env var to number', () => {
-      process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '1048576';
-      expect(resolveImportMaxFileSize()).toBe(1048576);
-    });
-  });
-
-  describe('invalid env var values fall back to default', () => {
-    it('returns default for non-numeric string (NaN)', () => {
-      process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = 'abc';
-      expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
-      );
-    });
-
-    it('returns default for negative values', () => {
-      process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '-100';
-      expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
-      );
-    });
-
-    it('returns default for zero', () => {
-      process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '0';
-      expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
-      );
-    });
-
-    it('returns default for Infinity', () => {
-      process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = 'Infinity';
-      expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
-      );
-    });
-  });
-
   describe('multer rejects files exceeding the configured limit', () => {
     it('returns 413 for files larger than the limit', async () => {
       const limit = 1024;
