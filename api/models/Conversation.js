@@ -361,6 +361,7 @@ module.exports = {
 
       const deleteMessagesResult = await deleteMessages({
         conversationId: { $in: conversationIds },
+        user,
       });
 
       return { ...deleteConvoResult, messages: deleteMessagesResult };
