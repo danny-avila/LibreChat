@@ -243,15 +243,19 @@ const deleteUserController = async (req, res) => {
   const { user } = req;
 
   try {
-    const existingUser = await getUserById(user.id, '+totpSecret +backupCodes _id twoFactorEnabled');
+    const existingUser = await getUserById(
+      user.id,
+      '+totpSecret +backupCodes _id twoFactorEnabled',
+    );
     if (existingUser && existingUser.twoFactorEnabled) {
       const { token, backupCode } = req.body;
       const result = await verifyOTPOrBackupCode({ user: existingUser, token, backupCode });
 
       if (!result.verified) {
-        return res
-          .status(result.status ?? 400)
-          .json({ message: result.message ?? 'TOTP token or backup code is required to delete account with 2FA enabled' });
+        const msg =
+          result.message ??
+          'TOTP token or backup code is required to delete account with 2FA enabled';
+        return res.status(result.status ?? 400).json({ message: msg });
       }
     }
 
