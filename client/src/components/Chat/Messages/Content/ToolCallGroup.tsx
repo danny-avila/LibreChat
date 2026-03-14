@@ -1,12 +1,24 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import { ChevronDown } from 'lucide-react';
 import type { TMessageContentParts, Agents, FunctionToolCall } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { useMCPIconMap } from '~/hooks/MCP';
 import type { PartWithIndex } from './ParallelContent';
-import { StackedToolIcons } from './ToolOutput';
+import { StackedToolIcons, getMCPServerName } from './ToolOutput';
 import { cn } from '~/utils';
+
+const FRIENDLY_NAMES: Record<string, string> = {
+  execute_code: 'Code',
+  run_tools_with_code: 'Code',
+  web_search: 'Web Search',
+  image_gen_oai: 'Image Generation',
+  image_edit_oai: 'Image Edit',
+  gemini_image_gen: 'Image Generation',
+  file_search: 'File Search',
+  code_interpreter: 'Code Analysis',
+  retrieval: 'File Search',
+};
 
 interface ToolMeta {
   name: string;
@@ -79,19 +91,23 @@ export default function ToolCallGroup({
   }, [parts]);
 
   const toolNameSummary = useMemo(() => {
-    const names = toolNames
-      .map((n) => {
-        if (!n) {
-          return '';
-        }
-        const idx = n.indexOf(Constants.mcp_delimiter);
-        return idx >= 0 ? n.slice(0, idx) : n;
-      })
-      .filter(Boolean);
-    if (names.length <= 2) {
-      return names.join(', ');
+    const seen = new Set<string>();
+    const labels: string[] = [];
+    for (const rawName of toolNames) {
+      if (!rawName) {
+        continue;
+      }
+      const serverName = getMCPServerName(rawName);
+      const label = serverName || FRIENDLY_NAMES[rawName] || rawName;
+      if (!seen.has(label)) {
+        seen.add(label);
+        labels.push(label);
+      }
     }
-    return `${names.slice(0, 2).join(', ')}, ...`;
+    if (labels.length <= 3) {
+      return labels.join(', ');
+    }
+    return `${labels.slice(0, 3).join(', ')}, +${labels.length - 3}`;
   }, [toolNames]);
 
   const autoCollapse = count >= 2 && allCompleted;
@@ -136,6 +152,7 @@ export default function ToolCallGroup({
         <StackedToolIcons
           toolNames={toolNames}
           mcpIconMap={mcpIconMap}
+          maxIcons={4}
           isAnimating={!allCompleted && isSubmitting}
         />
         <span className="tool-status-text font-medium">
