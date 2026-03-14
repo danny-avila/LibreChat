@@ -258,9 +258,7 @@ const BackupCodesItem: React.FC = () => {
                   }}
                   className="text-sm text-primary hover:underline"
                 >
-                  {useBackup
-                    ? localize('com_ui_use_2fa_code')
-                    : localize('com_ui_use_backup_code')}
+                  {useBackup ? localize('com_ui_use_2fa_code') : localize('com_ui_use_backup_code')}
                 </button>
               </div>
             )}
