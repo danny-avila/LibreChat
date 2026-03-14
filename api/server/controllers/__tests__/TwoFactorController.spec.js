@@ -1,8 +1,6 @@
 const mockGetUserById = jest.fn();
 const mockUpdateUser = jest.fn();
-const mockVerifyTOTP = jest.fn();
-const mockVerifyBackupCode = jest.fn();
-const mockGetTOTPSecret = jest.fn();
+const mockVerifyOTPOrBackupCode = jest.fn();
 const mockGenerateTOTPSecret = jest.fn();
 const mockGenerateBackupCodes = jest.fn();
 const mockEncryptV3 = jest.fn();
@@ -13,11 +11,12 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('~/server/services/twoFactorService', () => ({
+  verifyOTPOrBackupCode: (...args) => mockVerifyOTPOrBackupCode(...args),
   generateBackupCodes: (...args) => mockGenerateBackupCodes(...args),
   generateTOTPSecret: (...args) => mockGenerateTOTPSecret(...args),
-  verifyBackupCode: (...args) => mockVerifyBackupCode(...args),
-  getTOTPSecret: (...args) => mockGetTOTPSecret(...args),
-  verifyTOTP: (...args) => mockVerifyTOTP(...args),
+  verifyBackupCode: jest.fn(),
+  getTOTPSecret: jest.fn(),
+  verifyTOTP: jest.fn(),
 }));
 
 jest.mock('~/models', () => ({
@@ -35,14 +34,17 @@ function createRes() {
 }
 
 const PLAIN_CODES = ['code1', 'code2', 'code3'];
-const CODE_OBJECTS = [{ codeHash: 'h1' }, { codeHash: 'h2' }, { codeHash: 'h3' }];
+const CODE_OBJECTS = [
+  { codeHash: 'h1', used: false, usedAt: null },
+  { codeHash: 'h2', used: false, usedAt: null },
+  { codeHash: 'h3', used: false, usedAt: null },
+];
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockGenerateTOTPSecret.mockReturnValue('NEWSECRET');
   mockGenerateBackupCodes.mockResolvedValue({ plainCodes: PLAIN_CODES, codeObjects: CODE_OBJECTS });
   mockEncryptV3.mockReturnValue('encrypted-secret');
-  mockGetTOTPSecret.mockResolvedValue('decrypted-secret');
 });
 
 describe('enable2FA', () => {
@@ -58,30 +60,37 @@ describe('enable2FA', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ otpauthUrl: expect.any(String), backupCodes: PLAIN_CODES }),
     );
+    expect(mockVerifyOTPOrBackupCode).not.toHaveBeenCalled();
   });
 
-  it('requires valid TOTP when 2FA is already enabled', async () => {
+  it('verifies OTP when 2FA is already enabled', async () => {
     const req = { user: { id: 'user1' }, body: { token: '123456' } };
     const res = createRes();
-    mockGetUserById.mockResolvedValue({
+    const existingUser = {
       _id: 'user1',
       twoFactorEnabled: true,
       totpSecret: 'enc-secret',
       email: 'a@b.com',
-    });
-    mockVerifyTOTP.mockResolvedValue(true);
+    };
+    mockGetUserById.mockResolvedValue(existingUser);
+    mockVerifyOTPOrBackupCode.mockResolvedValue({ verified: true });
     mockUpdateUser.mockResolvedValue({ email: 'a@b.com' });
 
     await enable2FA(req, res);
 
-    expect(mockVerifyTOTP).toHaveBeenCalledWith('decrypted-secret', '123456');
+    expect(mockVerifyOTPOrBackupCode).toHaveBeenCalledWith({
+      user: existingUser,
+      token: '123456',
+      backupCode: undefined,
+      persistBackupUse: false,
+    });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ otpauthUrl: expect.any(String), backupCodes: PLAIN_CODES }),
     );
   });
 
-  it('allows re-enrollment with valid backup code', async () => {
+  it('allows re-enrollment with valid backup code (persistBackupUse: false)', async () => {
     const req = { user: { id: 'user1' }, body: { backupCode: 'backup123' } };
     const res = createRes();
     const existingUser = {
@@ -91,19 +100,18 @@ describe('enable2FA', () => {
       email: 'a@b.com',
     };
     mockGetUserById.mockResolvedValue(existingUser);
-    mockVerifyBackupCode.mockResolvedValue(true);
+    mockVerifyOTPOrBackupCode.mockResolvedValue({ verified: true });
     mockUpdateUser.mockResolvedValue({ email: 'a@b.com' });
 
     await enable2FA(req, res);
 
-    expect(mockVerifyBackupCode).toHaveBeenCalledWith({
-      user: existingUser,
-      backupCode: 'backup123',
-    });
+    expect(mockVerifyOTPOrBackupCode).toHaveBeenCalledWith(
+      expect.objectContaining({ persistBackupUse: false }),
+    );
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  it('rejects with 400 when no token provided and 2FA is enabled', async () => {
+  it('returns error when no token provided and 2FA is enabled', async () => {
     const req = { user: { id: 'user1' }, body: {} };
     const res = createRes();
     mockGetUserById.mockResolvedValue({
@@ -111,17 +119,15 @@ describe('enable2FA', () => {
       twoFactorEnabled: true,
       totpSecret: 'enc-secret',
     });
+    mockVerifyOTPOrBackupCode.mockResolvedValue({ verified: false, status: 400 });
 
     await enable2FA(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      message: 'TOTP token or backup code is required to re-enroll 2FA',
-    });
     expect(mockUpdateUser).not.toHaveBeenCalled();
   });
 
-  it('rejects with 401 when invalid token provided and 2FA is enabled', async () => {
+  it('returns 401 when invalid token provided and 2FA is enabled', async () => {
     const req = { user: { id: 'user1' }, body: { token: 'wrong' } };
     const res = createRes();
     mockGetUserById.mockResolvedValue({
@@ -129,7 +135,11 @@ describe('enable2FA', () => {
       twoFactorEnabled: true,
       totpSecret: 'enc-secret',
     });
-    mockVerifyTOTP.mockResolvedValue(false);
+    mockVerifyOTPOrBackupCode.mockResolvedValue({
+      verified: false,
+      status: 401,
+      message: 'Invalid token or backup code',
+    });
 
     await enable2FA(req, res);
 
@@ -140,7 +150,18 @@ describe('enable2FA', () => {
 });
 
 describe('regenerateBackupCodes', () => {
-  it('requires valid TOTP when 2FA is enabled', async () => {
+  it('returns 404 when user not found', async () => {
+    const req = { user: { id: 'user1' }, body: {} };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue(null);
+
+    await regenerateBackupCodes(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ message: 'User not found' });
+  });
+
+  it('requires OTP when 2FA is enabled', async () => {
     const req = { user: { id: 'user1' }, body: { token: '123456' } };
     const res = createRes();
     mockGetUserById.mockResolvedValue({
@@ -148,17 +169,20 @@ describe('regenerateBackupCodes', () => {
       twoFactorEnabled: true,
       totpSecret: 'enc-secret',
     });
-    mockVerifyTOTP.mockResolvedValue(true);
+    mockVerifyOTPOrBackupCode.mockResolvedValue({ verified: true });
     mockUpdateUser.mockResolvedValue({});
 
     await regenerateBackupCodes(req, res);
 
-    expect(mockVerifyTOTP).toHaveBeenCalledWith('decrypted-secret', '123456');
+    expect(mockVerifyOTPOrBackupCode).toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ backupCodes: PLAIN_CODES });
+    expect(res.json).toHaveBeenCalledWith({
+      backupCodes: PLAIN_CODES,
+      backupCodesHash: CODE_OBJECTS,
+    });
   });
 
-  it('rejects with 400 when no token provided and 2FA is enabled', async () => {
+  it('returns error when no token provided and 2FA is enabled', async () => {
     const req = { user: { id: 'user1' }, body: {} };
     const res = createRes();
     mockGetUserById.mockResolvedValue({
@@ -166,16 +190,14 @@ describe('regenerateBackupCodes', () => {
       twoFactorEnabled: true,
       totpSecret: 'enc-secret',
     });
+    mockVerifyOTPOrBackupCode.mockResolvedValue({ verified: false, status: 400 });
 
     await regenerateBackupCodes(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      message: 'TOTP token or backup code is required to regenerate backup codes',
-    });
   });
 
-  it('rejects with 401 when invalid token provided and 2FA is enabled', async () => {
+  it('returns 401 when invalid token provided and 2FA is enabled', async () => {
     const req = { user: { id: 'user1' }, body: { token: 'wrong' } };
     const res = createRes();
     mockGetUserById.mockResolvedValue({
@@ -183,7 +205,11 @@ describe('regenerateBackupCodes', () => {
       twoFactorEnabled: true,
       totpSecret: 'enc-secret',
     });
-    mockVerifyTOTP.mockResolvedValue(false);
+    mockVerifyOTPOrBackupCode.mockResolvedValue({
+      verified: false,
+      status: 401,
+      message: 'Invalid token or backup code',
+    });
 
     await regenerateBackupCodes(req, res);
 
@@ -191,7 +217,7 @@ describe('regenerateBackupCodes', () => {
     expect(res.json).toHaveBeenCalledWith({ message: 'Invalid token or backup code' });
   });
 
-  it('does NOT return backupCodesHash in response', async () => {
+  it('includes backupCodesHash in response', async () => {
     const req = { user: { id: 'user1' }, body: { token: '123456' } };
     const res = createRes();
     mockGetUserById.mockResolvedValue({
@@ -199,14 +225,14 @@ describe('regenerateBackupCodes', () => {
       twoFactorEnabled: true,
       totpSecret: 'enc-secret',
     });
-    mockVerifyTOTP.mockResolvedValue(true);
+    mockVerifyOTPOrBackupCode.mockResolvedValue({ verified: true });
     mockUpdateUser.mockResolvedValue({});
 
     await regenerateBackupCodes(req, res);
 
     const responseBody = res.json.mock.calls[0][0];
-    expect(responseBody).not.toHaveProperty('backupCodesHash');
-    expect(responseBody).toHaveProperty('backupCodes');
+    expect(responseBody).toHaveProperty('backupCodesHash', CODE_OBJECTS);
+    expect(responseBody).toHaveProperty('backupCodes', PLAIN_CODES);
   });
 
   it('allows regeneration without token when 2FA is not enabled', async () => {
@@ -220,7 +246,11 @@ describe('regenerateBackupCodes', () => {
 
     await regenerateBackupCodes(req, res);
 
+    expect(mockVerifyOTPOrBackupCode).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ backupCodes: PLAIN_CODES });
+    expect(res.json).toHaveBeenCalledWith({
+      backupCodes: PLAIN_CODES,
+      backupCodesHash: CODE_OBJECTS,
+    });
   });
 });

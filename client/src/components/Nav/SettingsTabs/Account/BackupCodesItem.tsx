@@ -1,21 +1,27 @@
 import React, { useState } from 'react';
 import { RefreshCcw } from 'lucide-react';
+import { useSetRecoilState } from 'recoil';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TBackupCode, TRegenerateBackupCodesResponse, type TUser } from 'librechat-data-provider';
+import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
+import type { TBackupCode, TRegenerateBackupCodesResponse, TUser } from 'librechat-data-provider';
 import {
-  OGDialog,
+  InputOTPSeparator,
+  InputOTPGroup,
+  InputOTPSlot,
   OGDialogContent,
   OGDialogTitle,
   OGDialogTrigger,
+  OGDialog,
+  InputOTP,
   Button,
   Label,
   Spinner,
   TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
+import type { TRegenerateBackupCodesRequest } from 'librechat-data-provider';
 import { useRegenerateBackupCodesMutation } from '~/data-provider';
 import { useAuthContext, useLocalize } from '~/hooks';
-import { useSetRecoilState } from 'recoil';
 import store from '~/store';
 
 const BackupCodesItem: React.FC = () => {
@@ -24,25 +30,30 @@ const BackupCodesItem: React.FC = () => {
   const { showToast } = useToastContext();
   const setUser = useSetRecoilState(store.user);
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
+  const [otpToken, setOtpToken] = useState('');
+  const [useBackup, setUseBackup] = useState(false);
 
   const { mutate: regenerateBackupCodes, isLoading } = useRegenerateBackupCodesMutation();
 
+  const needs2FA = !!user?.twoFactorEnabled;
+
   const fetchBackupCodes = (auto: boolean = false) => {
-    regenerateBackupCodes(undefined, {
+    let payload: TRegenerateBackupCodesRequest | undefined;
+    if (needs2FA && otpToken.trim()) {
+      payload = useBackup ? { backupCode: otpToken.trim() } : { token: otpToken.trim() };
+    }
+
+    regenerateBackupCodes(payload, {
       onSuccess: (data: TRegenerateBackupCodesResponse) => {
-        const newBackupCodes: TBackupCode[] = data.backupCodesHash.map((codeHash) => ({
-          codeHash,
-          used: false,
-          usedAt: null,
-        }));
+        const newBackupCodes: TBackupCode[] = data.backupCodesHash;
 
         setUser((prev) => ({ ...prev, backupCodes: newBackupCodes }) as TUser);
+        setOtpToken('');
         showToast({
           message: localize('com_ui_backup_codes_regenerated'),
           status: 'success',
         });
 
-        // Trigger file download only when user explicitly clicks the button.
         if (!auto && newBackupCodes.length) {
           const codesString = data.backupCodes.join('\n');
           const blob = new Blob([codesString], { type: 'text/plain;charset=utf-8' });
@@ -65,6 +76,8 @@ const BackupCodesItem: React.FC = () => {
   const handleRegenerate = () => {
     fetchBackupCodes(false);
   };
+
+  const otpReady = !needs2FA || otpToken.length === (useBackup ? 8 : 6);
 
   return (
     <OGDialog open={isDialogOpen} onOpenChange={setDialogOpen}>
@@ -161,10 +174,65 @@ const BackupCodesItem: React.FC = () => {
                     );
                   })}
                 </div>
-                <div className="mt-12 flex justify-center">
+                {needs2FA && (
+                  <div className="mt-6 space-y-3">
+                    <Label className="text-sm font-medium">
+                      {localize('com_ui_2fa_verification_required')}
+                    </Label>
+                    <div className="flex justify-center">
+                      <InputOTP
+                        value={otpToken}
+                        onChange={setOtpToken}
+                        maxLength={useBackup ? 8 : 6}
+                        pattern={useBackup ? REGEXP_ONLY_DIGITS_AND_CHARS : REGEXP_ONLY_DIGITS}
+                        className="gap-2"
+                      >
+                        {useBackup ? (
+                          <InputOTPGroup>
+                            <InputOTPSlot index={0} />
+                            <InputOTPSlot index={1} />
+                            <InputOTPSlot index={2} />
+                            <InputOTPSlot index={3} />
+                            <InputOTPSlot index={4} />
+                            <InputOTPSlot index={5} />
+                            <InputOTPSlot index={6} />
+                            <InputOTPSlot index={7} />
+                          </InputOTPGroup>
+                        ) : (
+                          <>
+                            <InputOTPGroup>
+                              <InputOTPSlot index={0} />
+                              <InputOTPSlot index={1} />
+                              <InputOTPSlot index={2} />
+                            </InputOTPGroup>
+                            <InputOTPSeparator />
+                            <InputOTPGroup>
+                              <InputOTPSlot index={3} />
+                              <InputOTPSlot index={4} />
+                              <InputOTPSlot index={5} />
+                            </InputOTPGroup>
+                          </>
+                        )}
+                      </InputOTP>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUseBackup(!useBackup);
+                        setOtpToken('');
+                      }}
+                      className="text-sm text-primary hover:underline"
+                    >
+                      {useBackup
+                        ? localize('com_ui_use_2fa_code')
+                        : localize('com_ui_use_backup_code')}
+                    </button>
+                  </div>
+                )}
+                <div className="mt-6 flex justify-center">
                   <Button
                     onClick={handleRegenerate}
-                    disabled={isLoading}
+                    disabled={isLoading || !otpReady}
                     variant="default"
                     className="px-8 py-3 transition-all disabled:opacity-50"
                   >

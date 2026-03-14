@@ -35,11 +35,7 @@ const {
   User,
 } = require('~/db/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
-const {
-  getTOTPSecret,
-  verifyTOTP,
-  verifyBackupCode,
-} = require('~/server/services/twoFactorService');
+const { verifyOTPOrBackupCode } = require('~/server/services/twoFactorService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
@@ -247,26 +243,15 @@ const deleteUserController = async (req, res) => {
   const { user } = req;
 
   try {
-    const existingUser = await getUserById(user.id, '_id totpSecret backupCodes twoFactorEnabled');
+    const existingUser = await getUserById(user.id, '+totpSecret +backupCodes _id twoFactorEnabled');
     if (existingUser && existingUser.twoFactorEnabled) {
       const { token, backupCode } = req.body;
-      if (!token && !backupCode) {
-        return res.status(400).json({
-          message: 'TOTP token or backup code is required to delete account with 2FA enabled',
-        });
-      }
+      const result = await verifyOTPOrBackupCode({ user: existingUser, token, backupCode });
 
-      const secret = await getTOTPSecret(existingUser.totpSecret);
-      let isVerified = false;
-
-      if (token) {
-        isVerified = await verifyTOTP(secret, token);
-      } else if (backupCode) {
-        isVerified = await verifyBackupCode({ user: existingUser, backupCode });
-      }
-
-      if (!isVerified) {
-        return res.status(401).json({ message: 'Invalid token or backup code' });
+      if (!result.verified) {
+        return res
+          .status(result.status ?? 400)
+          .json({ message: result.message ?? 'TOTP token or backup code is required to delete account with 2FA enabled' });
       }
     }
 

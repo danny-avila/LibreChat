@@ -21,8 +21,11 @@ export function revokeAllUserKeys(): Promise<unknown> {
   return request.delete(endpoints.revokeAllUserKeys());
 }
 
-export function deleteUser(): Promise<s.TPreset> {
-  return request.delete(endpoints.deleteUser());
+export function deleteUser(payload?: t.TDeleteUserRequest): Promise<unknown> {
+  return request.deleteWithOptions(endpoints.deleteUser(), {
+    data: payload,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 export type FavoriteItem = {
@@ -986,8 +989,10 @@ export function disableTwoFactor(payload?: t.TDisable2FARequest): Promise<t.TDis
   return request.post(endpoints.disableTwoFactor(), payload);
 }
 
-export function regenerateBackupCodes(): Promise<t.TRegenerateBackupCodesResponse> {
-  return request.post(endpoints.regenerateBackupCodes());
+export function regenerateBackupCodes(
+  payload?: t.TRegenerateBackupCodesRequest,
+): Promise<t.TRegenerateBackupCodesResponse> {
+  return request.post(endpoints.regenerateBackupCodes(), payload);
 }
 
 export function verifyTwoFactorTemp(
