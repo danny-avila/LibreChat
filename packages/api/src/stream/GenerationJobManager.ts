@@ -656,7 +656,7 @@ class GenerationJobManagerClass {
       aborted: true,
       // Flag for early abort - no messages saved, frontend should go to new chat
       earlyAbort: isEarlyAbort,
-    } as unknown as t.ServerSentEvent;
+    } satisfies t.FinalEvent as t.ServerSentEvent;
 
     if (runtime) {
       runtime.finalEvent = abortFinalEvent;
@@ -792,7 +792,7 @@ class GenerationJobManagerClass {
         logger.debug(
           `[GenerationJobManager] Cross-replica subscribe: emitting created event from metadata for ${streamId}`,
         );
-        const createdEvent = {
+        const createdEvent: t.CreatedEvent = {
           created: true,
           message: {
             ...jobData.userMessage,
@@ -801,7 +801,7 @@ class GenerationJobManagerClass {
           },
           streamId,
         };
-        onChunk(createdEvent as unknown as t.ServerSentEvent);
+        onChunk(createdEvent);
       }
 
       this.eventTransport.syncReorderBuffer?.(streamId);

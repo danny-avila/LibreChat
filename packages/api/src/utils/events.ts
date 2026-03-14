@@ -9,7 +9,7 @@ import type { ServerSentEvent } from '~/types';
  * @param event.data - The message to be sent.
  */
 export function sendEvent(res: ServerResponse, event: ServerSentEvent): void {
-  if (typeof event.data === 'string' && event.data.length === 0) {
+  if ('data' in event && typeof event.data === 'string' && event.data.length === 0) {
     return;
   }
   res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);

@@ -1,6 +1,6 @@
 /* eslint jest/no-standalone-expect: ["error", { "additionalTestBlockFunctions": ["testRedis"] }] */
 import type { Redis, Cluster } from 'ioredis';
-import type { ServerSentEvent } from '~/types/events';
+import type { ServerSentEvent, StreamEvent, CreatedEvent } from '~/types/events';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
@@ -808,15 +808,13 @@ describe('GenerationJobManager Integration Tests', () => {
       expect(subscription).not.toBeNull();
       expect(received.length).toBe(1);
 
-      const created = received[0] as Record<string, unknown>;
+      const created = received[0] as CreatedEvent;
       expect(created.created).toBe(true);
       expect(created.streamId).toBe(streamId);
-
-      const msg = created.message as Record<string, unknown>;
-      expect(msg.messageId).toBe('msg-123');
-      expect(msg.conversationId).toBe(streamId);
-      expect(msg.sender).toBe('User');
-      expect(msg.isCreatedByUser).toBe(true);
+      expect(created.message.messageId).toBe('msg-123');
+      expect(created.message.conversationId).toBe(streamId);
+      expect(created.message.sender).toBe('User');
+      expect(created.message.isCreatedByUser).toBe(true);
 
       subscription?.unsubscribe();
       await GenerationJobManager.destroy();
@@ -1163,7 +1161,7 @@ describe('GenerationJobManager Integration Tests', () => {
         created: true,
         message: { text: 'hello' },
         streamId,
-      } as unknown as ServerSentEvent);
+      } as CreatedEvent);
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { delta: { content: { type: 'text', text: 'First chunk' } } },
@@ -1200,7 +1198,7 @@ describe('GenerationJobManager Integration Tests', () => {
         created: true,
         message: { text: 'hello' },
         streamId,
-      } as unknown as ServerSentEvent);
+      } as CreatedEvent);
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { delta: { content: { type: 'text', text: 'First' } } },
@@ -1246,7 +1244,7 @@ describe('GenerationJobManager Integration Tests', () => {
           created: true,
           message: { text: 'hello' },
           streamId,
-        } as unknown as ServerSentEvent);
+        } as CreatedEvent);
         await manager.emitChunk(streamId, {
           event: 'on_run_step',
           data: { id: 'step-1', type: 'message_creation', index: 0 },
@@ -1351,7 +1349,7 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(resumeEvents.length).toBe(1);
-      expect(resumeEvents[0].event).toBe('on_message_delta');
+      expect((resumeEvents[0] as StreamEvent).event).toBe('on_message_delta');
 
       sub2?.unsubscribe();
       await manager.destroy();
@@ -1385,7 +1383,7 @@ describe('GenerationJobManager Integration Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(sub2Events.length).toBe(1);
-      expect(sub2Events[0].event).toBe('on_message_delta');
+      expect((sub2Events[0] as StreamEvent).event).toBe('on_message_delta');
 
       sub2?.unsubscribe();
       await manager.destroy();
@@ -1550,7 +1548,7 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 200));
       expect(resumeEvents.length).toBe(1);
-      expect(resumeEvents[0].event).toBe('on_message_delta');
+      expect((resumeEvents[0] as StreamEvent).event).toBe('on_message_delta');
 
       sub2?.unsubscribe();
       await manager.destroy();
@@ -1581,7 +1579,7 @@ describe('GenerationJobManager Integration Tests', () => {
         await new Promise((resolve) => setTimeout(resolve, 200));
 
         expect(sub2Events.length).toBe(1);
-        expect(sub2Events[0].event).toBe('on_message_delta');
+        expect((sub2Events[0] as StreamEvent).event).toBe('on_message_delta');
 
         sub2?.unsubscribe();
         await manager.destroy();
@@ -2120,7 +2118,7 @@ describe('GenerationJobManager Integration Tests', () => {
         created: true,
         message: { text: 'hello' },
         streamId,
-      } as unknown as ServerSentEvent);
+      } as CreatedEvent);
 
       const receivedOnA: unknown[] = [];
       const subA = await replicaA.subscribe(streamId, (event: unknown) => receivedOnA.push(event));
