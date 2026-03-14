@@ -7,7 +7,7 @@ let DEFAULT_IMPORT_MAX_FILE_SIZE: number;
 
 async function freshImport() {
   jest.resetModules();
-  const mod = await import('../importLimits');
+  const mod = await import('../import');
   resolveImportMaxFileSize = mod.resolveImportMaxFileSize;
   DEFAULT_IMPORT_MAX_FILE_SIZE = mod.DEFAULT_IMPORT_MAX_FILE_SIZE;
 }
