@@ -228,7 +228,7 @@ module.exports = {
             },
           ],
         };
-      } catch (err) {
+      } catch (_err) {
         logger.warn('[getConvosByCursor] Invalid cursor format, starting from beginning');
       }
       if (cursorFilter) {
