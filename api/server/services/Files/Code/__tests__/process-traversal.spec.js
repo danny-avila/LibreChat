@@ -8,10 +8,7 @@ jest.mock('@librechat/agents', () => ({
   getCodeBaseURL: jest.fn(() => 'http://localhost:8000'),
 }));
 
-const mockSanitizeFilename = jest.fn((n) => {
-  const path = require('path');
-  return path.basename(n).replace(/[^a-zA-Z0-9.-]/g, '_');
-});
+const mockSanitizeFilename = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   logAxiosError: jest.fn(),
@@ -62,6 +59,7 @@ jest.mock('axios', () =>
   }),
 );
 
+const { createFile } = require('~/models');
 const { processCodeOutput } = require('../process');
 
 const baseParams = {
@@ -86,25 +84,41 @@ describe('processCodeOutput path traversal protection', () => {
     jest.clearAllMocks();
   });
 
-  test('sanitizeFilename is called on the artifact name', async () => {
+  test('sanitizeFilename is called with the raw artifact name', async () => {
+    mockSanitizeFilename.mockReturnValueOnce('output.csv');
     await processCodeOutput({ ...baseParams, name: 'output.csv' });
     expect(mockSanitizeFilename).toHaveBeenCalledWith('output.csv');
   });
 
-  test('path traversal sequences are sanitized', async () => {
+  test('sanitized name is used in saveBuffer fileName', async () => {
+    mockSanitizeFilename.mockReturnValueOnce('sanitized-name.txt');
     await processCodeOutput({ ...baseParams, name: '../../../tmp/poc.txt' });
-    expect(mockSanitizeFilename).toHaveBeenCalledWith('../../../tmp/poc.txt');
 
+    expect(mockSanitizeFilename).toHaveBeenCalledWith('../../../tmp/poc.txt');
     const call = mockSaveBuffer.mock.calls[0][0];
-    expect(call.fileName).not.toContain('..');
-    expect(call.fileName).not.toContain('/');
+    expect(call.fileName).toBe('mock-uuid__sanitized-name.txt');
   });
 
-  test('normal filenames pass through unchanged', async () => {
-    mockSanitizeFilename.mockReturnValueOnce('output.csv');
-    await processCodeOutput({ ...baseParams, name: 'output.csv' });
+  test('sanitized name is stored as filename in the file record', async () => {
+    mockSanitizeFilename.mockReturnValueOnce('safe-output.csv');
+    await processCodeOutput({ ...baseParams, name: 'unsafe/../../output.csv' });
 
-    const call = mockSaveBuffer.mock.calls[0][0];
-    expect(call.fileName).toBe('mock-uuid__output.csv');
+    const fileArg = createFile.mock.calls[0][0];
+    expect(fileArg.filename).toBe('safe-output.csv');
+  });
+
+  test('sanitized name is used for image file records', async () => {
+    const { convertImage } = require('~/server/services/Files/images/convert');
+    convertImage.mockResolvedValueOnce({
+      filepath: '/images/user123/mock-uuid.webp',
+      bytes: 100,
+    });
+
+    mockSanitizeFilename.mockReturnValueOnce('safe-chart.png');
+    await processCodeOutput({ ...baseParams, name: '../../../chart.png' });
+
+    expect(mockSanitizeFilename).toHaveBeenCalledWith('../../../chart.png');
+    const fileArg = createFile.mock.calls[0][0];
+    expect(fileArg.filename).toBe('safe-chart.png');
   });
 });

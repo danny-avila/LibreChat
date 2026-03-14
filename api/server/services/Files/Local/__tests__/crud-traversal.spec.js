@@ -3,7 +3,9 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn() },
 }));
 
-const mockTmpBase = require('path').join(require('os').tmpdir(), 'crud-traversal-test');
+const mockTmpBase = require('fs').mkdtempSync(
+  require('path').join(require('os').tmpdir(), 'crud-traversal-'),
+);
 
 jest.mock('~/config/paths', () => {
   const path = require('path');
@@ -33,6 +35,18 @@ describe('saveLocalBuffer path containment', () => {
         userId: 'user1',
         buffer: Buffer.from('malicious'),
         fileName: '../../../etc/passwd',
+        basePath: 'uploads',
+      }),
+    ).rejects.toThrow('Path traversal detected in filename');
+  });
+
+  test('rejects prefix-collision traversal (startsWith bypass)', async () => {
+    fs.mkdirSync(path.join(mockTmpBase, 'uploads', 'user10'), { recursive: true });
+    await expect(
+      saveLocalBuffer({
+        userId: 'user1',
+        buffer: Buffer.from('malicious'),
+        fileName: '../user10/evil',
         basePath: 'uploads',
       }),
     ).rejects.toThrow('Path traversal detected in filename');
