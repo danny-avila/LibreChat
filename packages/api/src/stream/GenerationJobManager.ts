@@ -707,6 +707,10 @@ class GenerationJobManagerClass {
    * @param onChunk - Handler for chunk events (streamed tokens, run steps, etc.)
    * @param onDone - Handler for completion event (includes final message)
    * @param onError - Handler for error events
+   * @param options - Subscription configuration
+   * @param options.skipBufferReplay - When true, skips replaying the earlyEventBuffer.
+   *   Use this when a sync event was already sent (resume), since the sync's
+   *   aggregatedContent already includes all buffered events.
    * @returns Subscription object with unsubscribe function, or null if job not found
    */
   async subscribe(
@@ -714,6 +718,7 @@ class GenerationJobManagerClass {
     onChunk: t.ChunkHandler,
     onDone?: t.DoneHandler,
     onError?: t.ErrorHandler,
+    options?: t.SubscribeOptions,
   ): Promise<{ unsubscribe: t.UnsubscribeFn } | null> {
     // Use lazy initialization to support cross-replica subscriptions
     const runtime = await this.getOrCreateRuntimeState(streamId);
@@ -763,11 +768,17 @@ class GenerationJobManagerClass {
       runtime.hasSubscriber = true;
 
       if (runtime.earlyEventBuffer.length > 0) {
-        logger.debug(
-          `[GenerationJobManager] Replaying ${runtime.earlyEventBuffer.length} buffered events for ${streamId}`,
-        );
-        for (const bufferedEvent of runtime.earlyEventBuffer) {
-          onChunk(bufferedEvent);
+        if (options?.skipBufferReplay) {
+          logger.debug(
+            `[GenerationJobManager] Skipping ${runtime.earlyEventBuffer.length} buffered events for ${streamId} (skipBufferReplay)`,
+          );
+        } else {
+          logger.debug(
+            `[GenerationJobManager] Replaying ${runtime.earlyEventBuffer.length} buffered events for ${streamId}`,
+          );
+          for (const bufferedEvent of runtime.earlyEventBuffer) {
+            onChunk(bufferedEvent);
+          }
         }
         runtime.earlyEventBuffer = [];
       }
@@ -783,6 +794,52 @@ class GenerationJobManagerClass {
     }
 
     return subscription;
+  }
+
+  /**
+   * Atomic resume + subscribe: snapshots resume state and drains the early event buffer
+   * in one synchronous step, then subscribes with skipBufferReplay.
+   *
+   * Closes the timing gap between separate `getResumeState()` and `subscribe()` calls
+   * where events could arrive in earlyEventBuffer after the snapshot but before subscribe
+   * clears the buffer.
+   *
+   * In-memory mode: drained buffer events are returned as `pendingEvents` since
+   * they exist nowhere else. The caller must deliver them after the sync payload.
+   * Redis mode: `pendingEvents` is empty — chunks are persisted via appendChunk
+   * and will appear in aggregatedContent on the next resume.
+   */
+  async subscribeWithResume(
+    streamId: string,
+    onChunk: t.ChunkHandler,
+    onDone?: t.DoneHandler,
+    onError?: t.ErrorHandler,
+  ): Promise<t.SubscribeWithResumeResult> {
+    const bufferLengthAtSnapshot = !this._isRedis
+      ? (this.runtimeState.get(streamId)?.earlyEventBuffer.length ?? 0)
+      : 0;
+
+    const resumeState = await this.getResumeState(streamId);
+
+    let pendingEvents: t.ServerSentEvent[] = [];
+    if (!this._isRedis) {
+      const runtime = this.runtimeState.get(streamId);
+      if (runtime) {
+        pendingEvents = runtime.earlyEventBuffer.slice(bufferLengthAtSnapshot);
+        runtime.earlyEventBuffer = [];
+        if (pendingEvents.length > 0) {
+          logger.debug(
+            `[GenerationJobManager] Captured ${pendingEvents.length} gap events for ${streamId}`,
+          );
+        }
+      }
+    }
+
+    const subscription = await this.subscribe(streamId, onChunk, onDone, onError, {
+      skipBufferReplay: true,
+    });
+
+    return { subscription, resumeState, pendingEvents };
   }
 
   /**
