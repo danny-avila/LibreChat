@@ -486,10 +486,6 @@ router.post(
   '/:serverName/reinitialize',
   requireJwtAuth,
   checkMCPUsePermissions,
-  canAccessMCPServerResource({
-    requiredPermission: PermissionBits.VIEW,
-    resourceIdParam: 'serverName',
-  }),
   setOAuthSession,
   async (req, res) => {
     try {
@@ -661,62 +657,53 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
  * Check which authentication values exist for a specific MCP server
  * This endpoint returns only boolean flags indicating if values are set, not the actual values
  */
-router.get(
-  '/:serverName/auth-values',
-  requireJwtAuth,
-  checkMCPUsePermissions,
-  canAccessMCPServerResource({
-    requiredPermission: PermissionBits.VIEW,
-    resourceIdParam: 'serverName',
-  }),
-  async (req, res) => {
-    try {
-      const { serverName } = req.params;
-      const user = req.user;
+router.get('/:serverName/auth-values', requireJwtAuth, checkMCPUsePermissions, async (req, res) => {
+  try {
+    const { serverName } = req.params;
+    const user = req.user;
 
-      if (!user?.id) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
 
-      const serverConfig = await getMCPServersRegistry().getServerConfig(serverName, user.id);
-      if (!serverConfig) {
-        return res.status(404).json({
-          error: `MCP server '${serverName}' not found in configuration`,
-        });
-      }
+    const serverConfig = await getMCPServersRegistry().getServerConfig(serverName, user.id);
+    if (!serverConfig) {
+      return res.status(404).json({
+        error: `MCP server '${serverName}' not found in configuration`,
+      });
+    }
 
-      const pluginKey = `${Constants.mcp_prefix}${serverName}`;
-      const authValueFlags = {};
+    const pluginKey = `${Constants.mcp_prefix}${serverName}`;
+    const authValueFlags = {};
 
-      if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
-        for (const varName of Object.keys(serverConfig.customUserVars)) {
-          try {
-            const value = await getUserPluginAuthValue(user.id, varName, false, pluginKey);
-            authValueFlags[varName] = !!(value && value.length > 0);
-          } catch (err) {
-            logger.error(
-              `[MCP Auth Value Flags] Error checking ${varName} for user ${user.id}:`,
-              err,
-            );
-            authValueFlags[varName] = false;
-          }
+    if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
+      for (const varName of Object.keys(serverConfig.customUserVars)) {
+        try {
+          const value = await getUserPluginAuthValue(user.id, varName, false, pluginKey);
+          authValueFlags[varName] = !!(value && value.length > 0);
+        } catch (err) {
+          logger.error(
+            `[MCP Auth Value Flags] Error checking ${varName} for user ${user.id}:`,
+            err,
+          );
+          authValueFlags[varName] = false;
         }
       }
-
-      res.json({
-        success: true,
-        serverName,
-        authValueFlags,
-      });
-    } catch (error) {
-      logger.error(
-        `[MCP Auth Value Flags] Failed to check auth value flags for ${req.params.serverName}`,
-        error,
-      );
-      res.status(500).json({ error: 'Failed to check auth value flags' });
     }
-  },
-);
+
+    res.json({
+      success: true,
+      serverName,
+      authValueFlags,
+    });
+  } catch (error) {
+    logger.error(
+      `[MCP Auth Value Flags] Failed to check auth value flags for ${req.params.serverName}`,
+      error,
+    );
+    res.status(500).json({ error: 'Failed to check auth value flags' });
+  }
+});
 
 async function getOAuthHeaders(serverName, userId) {
   const serverConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
