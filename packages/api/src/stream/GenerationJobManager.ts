@@ -797,6 +797,46 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Atomic resume + subscribe: snapshots resume state and drains the early event buffer
+   * in one synchronous step, then subscribes with skipBufferReplay.
+   *
+   * Closes the timing gap between separate `getResumeState()` and `subscribe()` calls
+   * where events could arrive in earlyEventBuffer after the snapshot but before subscribe
+   * clears the buffer.
+   *
+   * In-memory mode: drained buffer events are returned as `pendingEvents` since
+   * they exist nowhere else. The caller must deliver them after the sync payload.
+   * Redis mode: `pendingEvents` is empty — chunks are persisted via appendChunk
+   * and will appear in aggregatedContent on the next resume.
+   */
+  async subscribeWithResume(
+    streamId: string,
+    onChunk: t.ChunkHandler,
+    onDone?: t.DoneHandler,
+    onError?: t.ErrorHandler,
+  ): Promise<t.SubscribeWithResumeResult> {
+    const resumeState = await this.getResumeState(streamId);
+
+    let pendingEvents: t.ServerSentEvent[] = [];
+    if (!this._isRedis) {
+      const runtime = this.runtimeState.get(streamId);
+      if (runtime && runtime.earlyEventBuffer.length > 0) {
+        pendingEvents = [...runtime.earlyEventBuffer];
+        runtime.earlyEventBuffer = [];
+        logger.debug(
+          `[GenerationJobManager] Atomically drained ${pendingEvents.length} buffer events for ${streamId}`,
+        );
+      }
+    }
+
+    const subscription = await this.subscribe(streamId, onChunk, onDone, onError, {
+      skipBufferReplay: true,
+    });
+
+    return { subscription, resumeState, pendingEvents };
+  }
+
+  /**
    * Emit a chunk event to all subscribers.
    * Uses runtime state check for performance (avoids async job store lookup per token).
    *

@@ -76,52 +76,55 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 
-  let syncWasSent = false;
-  if (isResume) {
-    const resumeState = await GenerationJobManager.getResumeState(streamId);
-    if (resumeState && !res.writableEnded) {
-      res.write(`event: message\ndata: ${JSON.stringify({ sync: true, resumeState })}\n\n`);
+  const writeEvent = (event) => {
+    if (!res.writableEnded) {
+      res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
       if (typeof res.flush === 'function') {
         res.flush();
       }
-      syncWasSent = true;
+    }
+  };
+
+  const onDone = (event) => {
+    writeEvent(event);
+    if (!res.writableEnded) {
+      res.end();
+    }
+  };
+
+  const onError = (error) => {
+    if (!res.writableEnded) {
+      res.write(`event: error\ndata: ${JSON.stringify({ error })}\n\n`);
+      if (typeof res.flush === 'function') {
+        res.flush();
+      }
+      res.end();
+    }
+  };
+
+  let result;
+
+  if (isResume) {
+    const { subscription, resumeState, pendingEvents } =
+      await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError);
+
+    if (resumeState && !res.writableEnded) {
+      res.write(
+        `event: message\ndata: ${JSON.stringify({ sync: true, resumeState, pendingEvents })}\n\n`,
+      );
+      if (typeof res.flush === 'function') {
+        res.flush();
+      }
       GenerationJobManager.markSyncSent(streamId);
       logger.debug(
-        `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps`,
+        `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps, ${pendingEvents.length} pending events`,
       );
     }
-  }
 
-  const result = await GenerationJobManager.subscribe(
-    streamId,
-    (event) => {
-      if (!res.writableEnded) {
-        res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
-        if (typeof res.flush === 'function') {
-          res.flush();
-        }
-      }
-    },
-    (event) => {
-      if (!res.writableEnded) {
-        res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
-        if (typeof res.flush === 'function') {
-          res.flush();
-        }
-        res.end();
-      }
-    },
-    (error) => {
-      if (!res.writableEnded) {
-        res.write(`event: error\ndata: ${JSON.stringify({ error })}\n\n`);
-        if (typeof res.flush === 'function') {
-          res.flush();
-        }
-        res.end();
-      }
-    },
-    syncWasSent ? { skipBufferReplay: true } : undefined,
-  );
+    result = subscription;
+  } else {
+    result = await GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError);
+  }
 
   if (!result) {
     return res.status(404).json({ error: 'Failed to subscribe to stream' });

@@ -56,3 +56,15 @@ export interface SubscribeOptions {
    */
   skipBufferReplay?: boolean;
 }
+
+/** Result of an atomic subscribe-with-resume operation */
+export interface SubscribeWithResumeResult {
+  subscription: { unsubscribe: UnsubscribeFn } | null;
+  resumeState: ResumeState | null;
+  /**
+   * Events that arrived between the resume snapshot and the subscribe call.
+   * In-memory mode: drained from earlyEventBuffer (only place they exist).
+   * Redis mode: empty — chunks are persisted to the store and appear in aggregatedContent on next resume.
+   */
+  pendingEvents: ServerSentEvent[];
+}

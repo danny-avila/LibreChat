@@ -1466,6 +1466,171 @@ describe('GenerationJobManager Integration Tests', () => {
     );
   });
 
+  describe('Atomic subscribeWithResume', () => {
+    function createInMemoryManager(): GenerationJobManagerClass {
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      return manager;
+    }
+
+    function createRedisManager(): GenerationJobManagerClass {
+      const manager = new GenerationJobManagerClass();
+      manager.configure(
+        createStreamServices({
+          useRedis: true,
+          redisClient: ioredisClient!,
+        }),
+      );
+      manager.initialize();
+      return manager;
+    }
+
+    test('should atomically drain buffer events into pendingEvents (in-memory)', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `atomic-drain-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const sub1 = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      sub1?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      await manager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: { id: 'step-1', runId: 'run-1', index: 0, stepDetails: { type: 'message_creation' } },
+      });
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: 'buffered' } } },
+      });
+
+      const liveEvents: ServerSentEvent[] = [];
+      const { subscription, resumeState, pendingEvents } = await manager.subscribeWithResume(
+        streamId,
+        (event) => liveEvents.push(event),
+      );
+
+      expect(resumeState).not.toBeNull();
+      expect(pendingEvents.length).toBe(2);
+      expect(pendingEvents[0].event).toBe('on_run_step');
+      expect(pendingEvents[1].event).toBe('on_message_delta');
+
+      expect(liveEvents.length).toBe(0);
+
+      subscription?.unsubscribe();
+      await manager.destroy();
+    });
+
+    test('should return empty pendingEvents when buffer is empty', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `atomic-empty-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const sub1 = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'delivered' } } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      sub1?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const { pendingEvents } = await manager.subscribeWithResume(streamId, () => {});
+
+      expect(pendingEvents.length).toBe(0);
+
+      await manager.destroy();
+    });
+
+    test('should deliver live events after subscribeWithResume', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `atomic-live-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const sub1 = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      sub1?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'buffered' } } },
+      });
+
+      const liveEvents: ServerSentEvent[] = [];
+      const { subscription, pendingEvents } = await manager.subscribeWithResume(streamId, (event) =>
+        liveEvents.push(event),
+      );
+
+      expect(pendingEvents.length).toBe(1);
+      expect(liveEvents.length).toBe(0);
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'live-after' } } },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(liveEvents.length).toBe(1);
+      const liveEvent = liveEvents[0] as {
+        event: string;
+        data: { delta: { content: { text: string } } };
+      };
+      expect(liveEvent.data.delta.content.text).toBe('live-after');
+
+      subscription?.unsubscribe();
+      await manager.destroy();
+    });
+
+    testRedis(
+      'should return empty pendingEvents in Redis mode (chunks already persisted)',
+      async () => {
+        const manager = createRedisManager();
+        const streamId = `atomic-redis-${Date.now()}`;
+        await manager.createJob(streamId, 'user-1');
+
+        const sub1 = await manager.subscribe(streamId, () => {});
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        sub1?.unsubscribe();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: 'buffered-redis' } } },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const liveEvents: ServerSentEvent[] = [];
+        const { subscription, resumeState, pendingEvents } = await manager.subscribeWithResume(
+          streamId,
+          (event) => liveEvents.push(event),
+        );
+
+        expect(resumeState).not.toBeNull();
+        expect(pendingEvents.length).toBe(0);
+
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: 'live-redis' } } },
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        expect(liveEvents.length).toBe(1);
+
+        subscription?.unsubscribe();
+        await manager.destroy();
+      },
+    );
+  });
+
   describe('Error Preservation for Late Subscribers', () => {
     /**
      * These tests verify the fix for the race condition where errors
