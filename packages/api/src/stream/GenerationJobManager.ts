@@ -879,8 +879,7 @@ class GenerationJobManagerClass {
       return;
     }
 
-    // Track user message from created event
-    this.trackUserMessage(streamId, event);
+    await this.trackUserMessage(streamId, event);
 
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
@@ -964,9 +963,12 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Track user message from created event.
+   * Persist user message metadata from the created event.
+   * Awaited in emitChunk so the HSET commits before the PUBLISH,
+   * guaranteeing any cross-replica getJob() after the pub/sub window
+   * finds userMessage in Redis.
    */
-  private trackUserMessage(streamId: string, event: t.ServerSentEvent): void {
+  private async trackUserMessage(streamId: string, event: t.ServerSentEvent): Promise<void> {
     const data = event as Record<string, unknown>;
     if (!data.created || !data.message) {
       return;
@@ -986,7 +988,7 @@ class GenerationJobManagerClass {
       updates.conversationId = message.conversationId as string;
     }
 
-    this.jobStore.updateJob(streamId, updates);
+    await this.jobStore.updateJob(streamId, updates);
   }
 
   /**
