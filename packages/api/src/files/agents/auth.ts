@@ -1,6 +1,9 @@
 import type { Types } from 'mongoose';
+import type { Response } from 'express';
+import type { IUser } from '@librechat/data-schemas';
 import { logger } from '@librechat/data-schemas';
 import { SystemRoles, ResourceType, PermissionBits } from 'librechat-data-provider';
+import type { ServerRequest } from '~/types';
 
 export type AgentUploadAuthResult =
   | { allowed: true }
@@ -74,4 +77,37 @@ export async function checkAgentUploadAuth(
     error: 'Forbidden',
     message: 'Insufficient permissions to upload files to this agent',
   };
+}
+
+/** @returns true if denied (response already sent), false if allowed */
+export async function verifyAgentUploadPermission({
+  req,
+  res,
+  metadata,
+  getAgent,
+  checkPermission,
+}: {
+  req: ServerRequest;
+  res: Response;
+  metadata: { agent_id?: string; tool_resource?: string | null; message_file?: boolean | string };
+  getAgent: AgentUploadAuthDeps['getAgent'];
+  checkPermission: AgentUploadAuthDeps['checkPermission'];
+}): Promise<boolean> {
+  const user = req.user as IUser;
+  const result = await checkAgentUploadAuth(
+    {
+      userId: user.id,
+      userRole: user.role ?? '',
+      agentId: metadata.agent_id,
+      toolResource: metadata.tool_resource,
+      messageFile: metadata.message_file,
+    },
+    { getAgent, checkPermission },
+  );
+
+  if (!result.allowed) {
+    res.status(result.status).json({ error: result.error, message: result.message });
+    return true;
+  }
+  return false;
 }
