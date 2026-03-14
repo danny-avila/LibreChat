@@ -1,5 +1,7 @@
 import { useMemo, useEffect, useRef, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
+import { SquareTerminal } from 'lucide-react';
+import hljs from 'highlight.js';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import { useProgress, useLocalize, useExpandCollapse } from '~/hooks';
@@ -82,13 +84,22 @@ export default function ExecuteCode({
 
   return (
     <>
-      <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1 flex size-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={toggleCode}
           inProgressText={localize('com_ui_analyzing')}
           finishedText={
             cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
+          }
+          icon={
+            <SquareTerminal
+              className={cn(
+                'size-4 shrink-0 text-text-secondary',
+                progress < 1 && !cancelled && 'animate-pulse',
+              )}
+              aria-hidden="true"
+            />
           }
           hasInput={!!code?.length}
           isExpanded={showCode}
@@ -100,8 +111,15 @@ export default function ExecuteCode({
           <div className="mt-0.5 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
             {code && <CodeWindowHeader language={lang} code={code} />}
             {code && (
-              <pre className="max-h-[300px] overflow-auto bg-surface-tertiary p-4 font-mono text-xs text-text-secondary">
-                <code>{code}</code>
+              <pre className="max-h-[300px] overflow-auto bg-surface-tertiary p-4 font-mono text-xs">
+                <code
+                  className={`hljs language-${lang} !whitespace-pre`}
+                  dangerouslySetInnerHTML={{
+                    __html: hljs.getLanguage(lang)
+                      ? hljs.highlight(code, { language: lang }).value
+                      : hljs.highlightAuto(code).value,
+                  }}
+                />
               </pre>
             )}
             {hasOutput && (

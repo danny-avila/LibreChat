@@ -124,7 +124,6 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
           'hover:bg-surface-hover hover:text-text-primary',
           'focus-visible:outline focus-visible:outline-2 focus-visible:outline-border-heavy',
           'disabled:pointer-events-none disabled:opacity-50',
-          isIdle && 'active:scale-95',
           isError && 'text-text-destructive hover:text-text-destructive',
           iconOnly ? 'rounded-lg p-1.5' : 'ml-auto gap-2 rounded-md px-2 py-1',
         )}
