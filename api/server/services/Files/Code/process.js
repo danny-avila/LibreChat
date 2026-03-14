@@ -146,6 +146,13 @@ const processCodeOutput = async ({
       );
     }
 
+    const safeName = sanitizeFilename(name);
+    if (safeName !== name) {
+      logger.warn(
+        `[processCodeOutput] Filename sanitized: "${name}" -> "${safeName}" | conv=${conversationId}`,
+      );
+    }
+
     if (isImage) {
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
       const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
@@ -156,7 +163,7 @@ const processCodeOutput = async ({
         file_id,
         messageId,
         usage,
-        filename: name,
+        filename: safeName,
         conversationId,
         user: req.user.id,
         type: `image/${appConfig.imageOutputType}`,
@@ -200,7 +207,6 @@ const processCodeOutput = async ({
       );
     }
 
-    const safeName = sanitizeFilename(name);
     const fileName = `${file_id}__${safeName}`;
     const filepath = await saveBuffer({
       userId: req.user.id,
@@ -214,7 +220,7 @@ const processCodeOutput = async ({
       filepath,
       messageId,
       object: 'file',
-      filename: name,
+      filename: safeName,
       type: mimeType,
       conversationId,
       user: req.user.id,
@@ -230,6 +236,11 @@ const processCodeOutput = async ({
     await createFile(file, true);
     return Object.assign(file, { messageId, toolCallId });
   } catch (error) {
+    if (error?.message === 'Path traversal detected in filename') {
+      logger.warn(
+        `[processCodeOutput] Path traversal blocked for file "${name}" | conv=${conversationId}`,
+      );
+    }
     logAxiosError({
       message: 'Error downloading/processing code environment file',
       error,

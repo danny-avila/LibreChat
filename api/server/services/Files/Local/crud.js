@@ -78,8 +78,10 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }
       fs.mkdirSync(directoryPath, { recursive: true });
     }
 
-    const resolvedPath = path.resolve(directoryPath, fileName);
-    if (!resolvedPath.startsWith(path.resolve(directoryPath))) {
+    const resolvedDir = path.resolve(directoryPath);
+    const resolvedPath = path.resolve(resolvedDir, fileName);
+    const rel = path.relative(resolvedDir, resolvedPath);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
       throw new Error('Path traversal detected in filename');
     }
     fs.writeFileSync(resolvedPath, buffer);
