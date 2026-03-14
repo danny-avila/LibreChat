@@ -35,7 +35,11 @@ const {
   User,
 } = require('~/db/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
-const { getTOTPSecret, verifyTOTP, verifyBackupCode } = require('~/server/services/twoFactorService');
+const {
+  getTOTPSecret,
+  verifyTOTP,
+  verifyBackupCode,
+} = require('~/server/services/twoFactorService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');

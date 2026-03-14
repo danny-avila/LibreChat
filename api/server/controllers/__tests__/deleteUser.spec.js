@@ -231,14 +231,20 @@ describe('deleteUserController - 2FA enforcement', () => {
 
     await deleteUserController(req, res);
 
-    expect(mockVerifyBackupCode).toHaveBeenCalledWith({ user: existingUser, backupCode: 'bad-code' });
+    expect(mockVerifyBackupCode).toHaveBeenCalledWith({
+      user: existingUser,
+      backupCode: 'bad-code',
+    });
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ message: 'Invalid token or backup code' });
     expect(mockDeleteMessages).not.toHaveBeenCalled();
   });
 
   it('deletes account when valid TOTP token provided with 2FA enabled', async () => {
-    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: { token: '123456' } };
+    const req = {
+      user: { id: 'user1', _id: 'user1', email: 'a@b.com' },
+      body: { token: '123456' },
+    };
     const res = createRes();
     mockGetUserById.mockResolvedValue({
       _id: 'user1',
@@ -262,14 +268,20 @@ describe('deleteUserController - 2FA enforcement', () => {
       totpSecret: 'enc-secret',
       backupCodes: [{ codeHash: 'h1', used: false }],
     };
-    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: { backupCode: 'valid-code' } };
+    const req = {
+      user: { id: 'user1', _id: 'user1', email: 'a@b.com' },
+      body: { backupCode: 'valid-code' },
+    };
     const res = createRes();
     mockGetUserById.mockResolvedValue(existingUser);
     mockVerifyBackupCode.mockResolvedValue(true);
 
     await deleteUserController(req, res);
 
-    expect(mockVerifyBackupCode).toHaveBeenCalledWith({ user: existingUser, backupCode: 'valid-code' });
+    expect(mockVerifyBackupCode).toHaveBeenCalledWith({
+      user: existingUser,
+      backupCode: 'valid-code',
+    });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.send).toHaveBeenCalledWith({ message: 'User deleted' });
     expect(mockDeleteMessages).toHaveBeenCalled();

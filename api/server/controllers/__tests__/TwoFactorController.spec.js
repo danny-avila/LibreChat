@@ -96,7 +96,10 @@ describe('enable2FA', () => {
 
     await enable2FA(req, res);
 
-    expect(mockVerifyBackupCode).toHaveBeenCalledWith({ user: existingUser, backupCode: 'backup123' });
+    expect(mockVerifyBackupCode).toHaveBeenCalledWith({
+      user: existingUser,
+      backupCode: 'backup123',
+    });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 

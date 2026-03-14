@@ -18,7 +18,10 @@ const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
 const enable2FA = async (req, res) => {
   try {
     const userId = req.user.id;
-    const existingUser = await getUserById(userId, '_id totpSecret backupCodes twoFactorEnabled email');
+    const existingUser = await getUserById(
+      userId,
+      '_id totpSecret backupCodes twoFactorEnabled email',
+    );
 
     if (existingUser && existingUser.twoFactorEnabled) {
       const { token, backupCode } = req.body;
