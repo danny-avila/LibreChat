@@ -100,6 +100,35 @@ describe('MCPServerInspector', () => {
       });
     });
 
+    it('should skip capabilities fetch when customUserVars is defined', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@karakeep/mcp'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      expect(result).toEqual({
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@karakeep/mcp'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+        requiresOAuth: false,
+        initDuration: expect.any(Number),
+      });
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(mockConnection.disconnect).not.toHaveBeenCalled();
+    });
+
     it('should keep custom serverInstructions string and not fetch from server', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',

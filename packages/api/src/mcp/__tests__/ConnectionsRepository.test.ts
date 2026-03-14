@@ -392,6 +392,36 @@ describe('ConnectionsRepository', () => {
         expect(await repository.has('oauthDisabledServer')).toBe(false);
       });
 
+      it('should NOT allow connection to servers with customUserVars', async () => {
+        mockServerConfigs.customVarServer = {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@karakeep/mcp'],
+          env: { API_KEY: '{{MY_KEY}}' },
+          customUserVars: {
+            MY_KEY: { title: 'API Key', description: 'Your API key' },
+          },
+        };
+
+        expect(await repository.has('customVarServer')).toBe(false);
+      });
+
+      it('should NOT allow connection to servers with customUserVars even when startup is not explicitly false', async () => {
+        mockServerConfigs.customVarStartupServer = {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', 'some-mcp'],
+          env: { TOKEN: '{{USER_TOKEN}}' },
+          startup: true,
+          requiresOAuth: false,
+          customUserVars: {
+            USER_TOKEN: { title: 'Token', description: 'Your token' },
+          },
+        };
+
+        expect(await repository.has('customVarStartupServer')).toBe(false);
+      });
+
       it('should disconnect existing connection when server becomes not allowed', async () => {
         // Initially setup as regular server
         mockServerConfigs.changingServer = {
@@ -469,6 +499,20 @@ describe('ConnectionsRepository', () => {
         };
 
         expect(await repository.has('oauthDisabledServer')).toBe(true);
+      });
+
+      it('should allow connection to servers with customUserVars', async () => {
+        mockServerConfigs.customVarServer = {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@karakeep/mcp'],
+          env: { API_KEY: '{{MY_KEY}}' },
+          customUserVars: {
+            MY_KEY: { title: 'API Key', description: 'Your API key' },
+          },
+        };
+
+        expect(await repository.has('customVarServer')).toBe(true);
       });
 
       it('should return null from get() when server config does not exist', async () => {

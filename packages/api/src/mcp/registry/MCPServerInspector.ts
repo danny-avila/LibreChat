@@ -54,7 +54,7 @@ export class MCPServerInspector {
   private async inspectServer(): Promise<void> {
     await this.detectOAuth();
 
-    if (this.config.startup !== false && !this.config.requiresOAuth) {
+    if (this.config.startup !== false && !this.config.requiresOAuth && !this.config.customUserVars) {
       let tempConnection = false;
       if (!this.connection) {
         tempConnection = true;
