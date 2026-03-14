@@ -44,9 +44,8 @@ const enable2FA = async (req, res) => {
     const encryptedSecret = encryptV3(secret);
 
     const user = await updateUser(userId, {
-      totpSecret: encryptedSecret,
-      backupCodes: codeObjects,
-      twoFactorEnabled: false,
+      pendingTotpSecret: encryptedSecret,
+      pendingBackupCodes: codeObjects,
     });
 
     const email = user.email || (existingUser && existingUser.email) || '';
@@ -66,13 +65,14 @@ const verify2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token, backupCode } = req.body;
-    const user = await getUserById(userId, '+totpSecret +backupCodes _id');
+    const user = await getUserById(userId, '+totpSecret +pendingTotpSecret +backupCodes _id');
+    const secretSource = user?.pendingTotpSecret ?? user?.totpSecret;
 
-    if (!user || !user.totpSecret) {
+    if (!user || !secretSource) {
       return res.status(400).json({ message: '2FA not initiated' });
     }
 
-    const secret = await getTOTPSecret(user.totpSecret);
+    const secret = await getTOTPSecret(secretSource);
     let isVerified = false;
 
     if (token) {
@@ -98,15 +98,28 @@ const confirm2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token } = req.body;
-    const user = await getUserById(userId, '+totpSecret _id');
+    const user = await getUserById(
+      userId,
+      '+totpSecret +pendingTotpSecret +pendingBackupCodes _id',
+    );
+    const secretSource = user?.pendingTotpSecret ?? user?.totpSecret;
 
-    if (!user || !user.totpSecret) {
+    if (!user || !secretSource) {
       return res.status(400).json({ message: '2FA not initiated' });
     }
 
-    const secret = await getTOTPSecret(user.totpSecret);
+    const secret = await getTOTPSecret(secretSource);
     if (await verifyTOTP(secret, token)) {
-      await updateUser(userId, { twoFactorEnabled: true });
+      const update = {
+        totpSecret: user.pendingTotpSecret ?? user.totpSecret,
+        twoFactorEnabled: true,
+        pendingTotpSecret: null,
+        pendingBackupCodes: [],
+      };
+      if (user.pendingBackupCodes?.length) {
+        update.backupCodes = user.pendingBackupCodes;
+      }
+      await updateUser(userId, update);
       return res.status(200).json();
     }
     return res.status(400).json({ message: 'Invalid token.' });
@@ -138,7 +151,13 @@ const disable2FA = async (req, res) => {
         return res.status(result.status ?? 400).json({ message: msg });
       }
     }
-    await updateUser(userId, { totpSecret: null, backupCodes: [], twoFactorEnabled: false });
+    await updateUser(userId, {
+      totpSecret: null,
+      backupCodes: [],
+      twoFactorEnabled: false,
+      pendingTotpSecret: null,
+      pendingBackupCodes: [],
+    });
     return res.status(200).json();
   } catch (err) {
     logger.error('[disable2FA]', err);

@@ -48,7 +48,7 @@ beforeEach(() => {
 });
 
 describe('enable2FA', () => {
-  it('allows first-time setup without token', async () => {
+  it('allows first-time setup without token — writes to pending fields', async () => {
     const req = { user: { id: 'user1' }, body: {} };
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false, email: 'a@b.com' });
@@ -61,9 +61,15 @@ describe('enable2FA', () => {
       expect.objectContaining({ otpauthUrl: expect.any(String), backupCodes: PLAIN_CODES }),
     );
     expect(mockVerifyOTPOrBackupCode).not.toHaveBeenCalled();
+    const updateCall = mockUpdateUser.mock.calls[0][1];
+    expect(updateCall).toHaveProperty('pendingTotpSecret', 'encrypted-secret');
+    expect(updateCall).toHaveProperty('pendingBackupCodes', CODE_OBJECTS);
+    expect(updateCall).not.toHaveProperty('twoFactorEnabled');
+    expect(updateCall).not.toHaveProperty('totpSecret');
+    expect(updateCall).not.toHaveProperty('backupCodes');
   });
 
-  it('verifies OTP when 2FA is already enabled', async () => {
+  it('re-enrollment writes to pending fields, leaving live 2FA intact', async () => {
     const req = { user: { id: 'user1' }, body: { token: '123456' } };
     const res = createRes();
     const existingUser = {
@@ -85,9 +91,11 @@ describe('enable2FA', () => {
       persistBackupUse: false,
     });
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ otpauthUrl: expect.any(String), backupCodes: PLAIN_CODES }),
-    );
+    const updateCall = mockUpdateUser.mock.calls[0][1];
+    expect(updateCall).toHaveProperty('pendingTotpSecret', 'encrypted-secret');
+    expect(updateCall).toHaveProperty('pendingBackupCodes', CODE_OBJECTS);
+    expect(updateCall).not.toHaveProperty('twoFactorEnabled');
+    expect(updateCall).not.toHaveProperty('totpSecret');
   });
 
   it('allows re-enrollment with valid backup code (persistBackupUse: false)', async () => {
