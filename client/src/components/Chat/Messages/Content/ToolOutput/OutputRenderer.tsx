@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import copy from 'copy-to-clipboard';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -164,6 +166,13 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
   const { text: displayText, rawError, error } = useMemo(() => extractText(text), [text]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    setIsCopied(true);
+    copy(displayText, { format: 'text/plain' });
+    setTimeout(() => setIsCopied(false), 3000);
+  }, [displayText]);
 
   if (!displayText) {
     return null;
@@ -176,7 +185,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
   const structured = isStructuredText(displayText);
 
   return (
-    <div>
+    <div className="relative">
       <pre
         className={cn(
           'max-h-[300px] overflow-auto whitespace-pre-wrap break-words text-xs',
@@ -187,6 +196,14 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
       >
         {visibleText}
       </pre>
+      <div className="absolute bottom-0 right-0">
+        <CopyButton
+          isCopied={isCopied}
+          onClick={handleCopy}
+          iconOnly
+          label={localize('com_ui_copy')}
+        />
+      </div>
       {needsTruncation && (
         <button
           type="button"
