@@ -782,6 +782,13 @@ class GenerationJobManagerClass {
         }
         runtime.earlyEventBuffer = [];
       } else if (this._isRedis && !options?.skipBufferReplay && jobData?.userMessage) {
+        /**
+         * Cross-replica fallback: the created event was buffered on the generating
+         * instance and published via Redis pub/sub before this subscriber was active.
+         * Reconstruct from persisted metadata. Only fields stored by trackUserMessage()
+         * are available (messageId, parentMessageId, conversationId, text);
+         * sender/isCreatedByUser are invariant for user messages and added back here.
+         */
         logger.debug(
           `[GenerationJobManager] Cross-replica subscribe: emitting created event from metadata for ${streamId}`,
         );

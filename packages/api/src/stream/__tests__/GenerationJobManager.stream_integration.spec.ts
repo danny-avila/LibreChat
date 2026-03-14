@@ -853,6 +853,47 @@ describe('GenerationJobManager Integration Tests', () => {
       await GenerationJobManager.destroy();
       await replicaAJobStore.destroy();
     });
+
+    test('should NOT emit created event when skipBufferReplay is true (resume path)', async () => {
+      const replicaAJobStore = new RedisJobStore(ioredisClient!);
+      await replicaAJobStore.initialize();
+
+      const streamId = `cross-no-replay-${Date.now()}`;
+      await replicaAJobStore.createJob(streamId, 'test-user');
+      await replicaAJobStore.updateJob(streamId, {
+        userMessage: {
+          messageId: 'msg-456',
+          conversationId: streamId,
+          text: 'hi',
+        },
+      });
+
+      jest.resetModules();
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      GenerationJobManager.initialize();
+
+      const received: unknown[] = [];
+      const subscription = await GenerationJobManager.subscribe(
+        streamId,
+        (event) => received.push(event),
+        undefined,
+        undefined,
+        { skipBufferReplay: true },
+      );
+
+      expect(subscription).not.toBeNull();
+      expect(received.length).toBe(0);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+      await replicaAJobStore.destroy();
+    });
   });
 
   describeRedis('Sequential Event Ordering (Redis)', () => {
