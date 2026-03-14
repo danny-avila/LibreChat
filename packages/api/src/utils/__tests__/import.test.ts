@@ -1,24 +1,20 @@
-const mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+jest.mock(
+  '@librechat/data-schemas',
+  () => ({
+    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+  }),
+  { virtual: true },
+);
 
-jest.mock('@librechat/data-schemas', () => ({ logger: mockLogger }), { virtual: true });
-
-let resolveImportMaxFileSize: typeof import('../import').resolveImportMaxFileSize;
-let DEFAULT_IMPORT_MAX_FILE_SIZE: number;
-
-async function freshImport() {
-  jest.resetModules();
-  const mod = await import('../import');
-  resolveImportMaxFileSize = mod.resolveImportMaxFileSize;
-  DEFAULT_IMPORT_MAX_FILE_SIZE = mod.DEFAULT_IMPORT_MAX_FILE_SIZE;
-}
+import { DEFAULT_IMPORT_MAX_FILE_SIZE, resolveImportMaxFileSize } from '../import';
+import { logger } from '@librechat/data-schemas';
 
 describe('resolveImportMaxFileSize', () => {
   let originalEnv: string | undefined;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     originalEnv = process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
-    mockLogger.warn.mockClear();
-    await freshImport();
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -53,7 +49,7 @@ describe('resolveImportMaxFileSize', () => {
   it('falls back to default and warns for non-numeric string', () => {
     process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = 'abc';
     expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
-    expect(mockLogger.warn).toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
     );
   });
@@ -61,7 +57,7 @@ describe('resolveImportMaxFileSize', () => {
   it('falls back to default and warns for negative values', () => {
     process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '-100';
     expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
-    expect(mockLogger.warn).toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
     );
   });
@@ -69,7 +65,7 @@ describe('resolveImportMaxFileSize', () => {
   it('falls back to default and warns for zero', () => {
     process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '0';
     expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
-    expect(mockLogger.warn).toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
     );
   });
@@ -77,7 +73,7 @@ describe('resolveImportMaxFileSize', () => {
   it('falls back to default and warns for Infinity', () => {
     process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = 'Infinity';
     expect(resolveImportMaxFileSize()).toBe(DEFAULT_IMPORT_MAX_FILE_SIZE);
-    expect(mockLogger.warn).toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
     );
   });
