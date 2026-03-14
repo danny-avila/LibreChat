@@ -63,7 +63,7 @@ router.post(
   resetPasswordController,
 );
 
-router.get('/2fa/enable', middleware.requireJwtAuth, enable2FA);
+router.post('/2fa/enable', middleware.requireJwtAuth, enable2FA);
 router.post('/2fa/verify', middleware.requireJwtAuth, verify2FA);
 router.post('/2fa/verify-temp', middleware.checkBan, verify2FAWithTempToken);
 router.post('/2fa/confirm', middleware.requireJwtAuth, confirm2FA);
