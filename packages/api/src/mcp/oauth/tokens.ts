@@ -83,46 +83,40 @@ export class MCPTokenStorage {
         `${logPrefix} Token expires_in: ${'expires_in' in tokens ? tokens.expires_in : 'N/A'}, expires_at: ${'expires_at' in tokens ? tokens.expires_at : 'N/A'}`,
       );
 
-      // Handle both expires_in and expires_at formats
+      const defaultTTL = 365 * 24 * 60 * 60;
+
       let accessTokenExpiry: Date;
+      let expiresInSeconds: number;
       if ('expires_at' in tokens && tokens.expires_at) {
         /** MCPOAuthTokens format - already has calculated expiry */
         logger.debug(`${logPrefix} Using expires_at: ${tokens.expires_at}`);
         accessTokenExpiry = new Date(tokens.expires_at);
+        expiresInSeconds = Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000);
       } else if (tokens.expires_in) {
-        /** Standard OAuthTokens format - calculate expiry */
+        /** Standard OAuthTokens format - use expires_in directly to avoid lossy Date round-trip */
         logger.debug(`${logPrefix} Using expires_in: ${tokens.expires_in}`);
+        expiresInSeconds = tokens.expires_in;
         accessTokenExpiry = new Date(Date.now() + tokens.expires_in * 1000);
       } else {
-        /** No expiry provided - default to 1 year */
         logger.debug(`${logPrefix} No expiry provided, using default`);
-        accessTokenExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+        expiresInSeconds = defaultTTL;
+        accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
       }
 
       logger.debug(`${logPrefix} Calculated expiry date: ${accessTokenExpiry.toISOString()}`);
-      logger.debug(
-        `${logPrefix} Date object: ${JSON.stringify({
-          time: accessTokenExpiry.getTime(),
-          valid: !isNaN(accessTokenExpiry.getTime()),
-          iso: accessTokenExpiry.toISOString(),
-        })}`,
-      );
 
-      // Ensure the date is valid before passing to createToken
       if (isNaN(accessTokenExpiry.getTime())) {
         logger.error(`${logPrefix} Invalid expiry date calculated, using default`);
-        accessTokenExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+        accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
+        expiresInSeconds = defaultTTL;
       }
-
-      // Calculate expiresIn (seconds from now)
-      const expiresIn = Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000);
 
       const accessTokenData = {
         userId,
         type: 'mcp_oauth',
         identifier,
         token: encryptedAccessToken,
-        expiresIn: expiresIn > 0 ? expiresIn : 365 * 24 * 60 * 60, // Default to 1 year if negative
+        expiresIn: expiresInSeconds > 0 ? expiresInSeconds : defaultTTL,
       };
 
       // Check if token already exists and update if it does
