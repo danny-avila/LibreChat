@@ -48,6 +48,12 @@ export function getToolIconType(name: string): ToolIconType {
   if (name === 'image_gen_oai' || name === 'image_edit_oai' || name === 'gemini_image_gen') {
     return 'image_gen';
   }
+  if (name === 'file_search' || name === 'retrieval') {
+    return 'file_search';
+  }
+  if (name === 'code_interpreter') {
+    return 'execute_code';
+  }
   if (name.startsWith(Constants.LC_TRANSFER_TO_)) {
     return 'agent_handoff';
   }

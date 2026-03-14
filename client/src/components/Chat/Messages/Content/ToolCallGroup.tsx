@@ -1,17 +1,19 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import { ChevronDown } from 'lucide-react';
-import type { TMessageContentParts, Agents, TAttachment } from 'librechat-data-provider';
+import type { TMessageContentParts, Agents, FunctionToolCall } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { useMCPIconMap } from '~/hooks/MCP';
 import type { PartWithIndex } from './ParallelContent';
 import { StackedToolIcons } from './ToolOutput';
-import ToolCall from './ToolCall';
 import { cn } from '~/utils';
 
-type AgentToolCallWithMeta = Agents.ToolCall & { progress?: number; id?: string };
+interface ToolMeta {
+  name: string;
+  hasOutput: boolean;
+}
 
-function getToolCallData(part: TMessageContentParts): AgentToolCallWithMeta | null {
+function getToolMeta(part: TMessageContentParts): ToolMeta | null {
   if (part.type !== ContentTypes.TOOL_CALL) {
     return null;
   }
@@ -19,26 +21,44 @@ function getToolCallData(part: TMessageContentParts): AgentToolCallWithMeta | nu
   if (!toolCall) {
     return null;
   }
+
   const isStandard =
     'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
-  if (!isStandard) {
-    return null;
+  if (isStandard) {
+    const tc = toolCall as Agents.ToolCall;
+    return { name: tc.name ?? '', hasOutput: !!tc.output };
   }
-  return toolCall as AgentToolCallWithMeta;
+
+  if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
+    return { name: 'code_interpreter', hasOutput: true };
+  }
+
+  if (toolCall.type === ToolCallTypes.RETRIEVAL || toolCall.type === ToolCallTypes.FILE_SEARCH) {
+    return { name: 'file_search', hasOutput: !!(toolCall as { output?: string }).output };
+  }
+
+  if (toolCall.type === ToolCallTypes.FUNCTION && ToolCallTypes.FUNCTION in toolCall) {
+    const fn = (toolCall as FunctionToolCall).function;
+    return { name: fn.name, hasOutput: !!fn.output };
+  }
+
+  return null;
 }
 
 interface ToolCallGroupProps {
   parts: PartWithIndex[];
   isSubmitting: boolean;
   isLast: boolean;
-  attachmentMap: Record<string, TAttachment[] | undefined>;
+  renderPart: (part: TMessageContentParts, idx: number, isLastPart: boolean) => React.ReactNode;
+  lastContentIdx: number;
 }
 
 export default function ToolCallGroup({
   parts,
   isSubmitting,
   isLast,
-  attachmentMap,
+  renderPart,
+  lastContentIdx,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
@@ -46,15 +66,15 @@ export default function ToolCallGroup({
 
   const allCompleted = useMemo(() => {
     return parts.every((p) => {
-      const tc = getToolCallData(p.part);
-      return tc?.output != null && tc.output.length > 0;
+      const meta = getToolMeta(p.part);
+      return meta?.hasOutput === true;
     });
   }, [parts]);
 
   const toolNames = useMemo(() => {
     return parts.map((p) => {
-      const tc = getToolCallData(p.part);
-      return tc?.name ?? '';
+      const meta = getToolMeta(p.part);
+      return meta?.name ?? '';
     });
   }, [parts]);
 
@@ -93,8 +113,8 @@ export default function ToolCallGroup({
       return false;
     }
     return parts.some((p) => {
-      const tc = getToolCallData(p.part);
-      return tc && (!tc.output || tc.output.length === 0);
+      const meta = getToolMeta(p.part);
+      return meta && !meta.hasOutput;
     });
   }, [parts, isSubmitting]);
 
@@ -134,30 +154,8 @@ export default function ToolCallGroup({
       </button>
       <div style={expandStyle}>
         <div className="overflow-hidden">
-          <div className="pl-4">
-            {parts.map(({ part, idx }) => {
-              const toolCall = getToolCallData(part);
-              if (!toolCall) {
-                return null;
-              }
-              const toolCallId = toolCall.id ?? '';
-              const partAttachments = attachmentMap[toolCallId];
-
-              return (
-                <ToolCall
-                  key={`group-tool-${idx}`}
-                  args={toolCall.args ?? ''}
-                  name={toolCall.name || ''}
-                  output={toolCall.output ?? ''}
-                  initialProgress={toolCall.progress ?? 0.1}
-                  isSubmitting={isSubmitting}
-                  attachments={partAttachments}
-                  auth={toolCall.auth}
-                  expires_at={toolCall.expires_at}
-                  isLast={isLast && idx === parts[parts.length - 1].idx}
-                />
-              );
-            })}
+          <div className="py-0.5 pl-4">
+            {parts.map(({ part, idx }) => renderPart(part, idx, isLast && idx === lastContentIdx))}
           </div>
         </div>
       </div>
