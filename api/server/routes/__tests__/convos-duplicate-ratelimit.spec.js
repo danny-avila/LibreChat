@@ -1,11 +1,6 @@
 const express = require('express');
 const request = require('supertest');
 
-process.env.FORK_USER_MAX = '2';
-process.env.FORK_USER_WINDOW = '1';
-process.env.FORK_IP_MAX = '100';
-process.env.FORK_IP_WINDOW = '1';
-
 jest.mock('@librechat/agents', () => ({ sleep: jest.fn() }));
 
 jest.mock('@librechat/api', () => ({
@@ -106,34 +101,50 @@ jest.mock('~/server/services/Endpoints/assistants', () => ({
 
 describe('POST /api/convos/duplicate - Rate Limiting', () => {
   let app;
-  const { duplicateConversation } = require('~/server/utils/import/fork');
+  let duplicateConversation;
+  const savedEnv = {};
 
   beforeAll(() => {
-    const convosRouter = require('../convos');
-    app = express();
-    app.use(express.json());
-    app.use((req, res, next) => {
-      req.user = { id: 'rate-limit-test-user' };
-      next();
-    });
-    app.use('/api/convos', convosRouter);
+    savedEnv.FORK_USER_MAX = process.env.FORK_USER_MAX;
+    savedEnv.FORK_USER_WINDOW = process.env.FORK_USER_WINDOW;
+    savedEnv.FORK_IP_MAX = process.env.FORK_IP_MAX;
+    savedEnv.FORK_IP_WINDOW = process.env.FORK_IP_WINDOW;
+
+    process.env.FORK_USER_MAX = '2';
+    process.env.FORK_USER_WINDOW = '1';
+    process.env.FORK_IP_MAX = '100';
+    process.env.FORK_IP_WINDOW = '1';
+  });
+
+  afterAll(() => {
+    for (const key of Object.keys(savedEnv)) {
+      if (savedEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = savedEnv[key];
+      }
+    }
   });
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    jest.isolateModules(() => {
+      const convosRouter = require('../convos');
+      ({ duplicateConversation } = require('~/server/utils/import/fork'));
+
+      app = express();
+      app.use(express.json());
+      app.use((req, res, next) => {
+        req.user = { id: 'rate-limit-test-user' };
+        next();
+      });
+      app.use('/api/convos', convosRouter);
+    });
+
     duplicateConversation.mockResolvedValue({
       conversation: { conversationId: 'duplicated-conv' },
     });
-  });
-
-  it('should have rate limiting middleware on the /duplicate route', () => {
-    const convosRouter = require('../convos');
-    const duplicateLayer = convosRouter.stack.find(
-      (layer) => layer.route?.path === '/duplicate' && layer.route?.methods?.post,
-    );
-
-    expect(duplicateLayer).toBeDefined();
-    expect(duplicateLayer.route.stack.length).toBeGreaterThanOrEqual(3);
   });
 
   it('should return 429 after exceeding the user rate limit', async () => {

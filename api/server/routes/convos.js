@@ -224,6 +224,7 @@ router.post('/update', validateConvoAccess, async (req, res) => {
 });
 
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
+/** Fork and duplicate share one rate-limit budget (same "clone" operation class) */
 const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
 const upload = multer({ storage: storage, fileFilter: importFileFilter });
 
