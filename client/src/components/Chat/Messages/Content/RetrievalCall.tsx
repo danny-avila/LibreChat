@@ -22,7 +22,7 @@ export default function RetrievalCall({
   const expandStyle = useExpandCollapse(showOutput);
 
   return (
-    <div className="my-2.5">
+    <div className="my-1">
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
           if (progress < 1 && !cancelled) {
@@ -34,7 +34,7 @@ export default function RetrievalCall({
           return localize('com_ui_retrieved_files');
         })()}
       </span>
-      <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={hasOutput ? () => setShowOutput((prev) => !prev) : undefined}

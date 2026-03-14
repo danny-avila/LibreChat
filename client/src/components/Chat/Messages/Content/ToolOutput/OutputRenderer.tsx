@@ -190,7 +190,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
       {needsTruncation && (
         <button
           type="button"
-          className="mt-1 text-xs text-text-tertiary underline hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          className="mt-1 text-xs text-text-secondary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
           onClick={() => setIsExpanded((prev) => !prev)}
         >
           {isExpanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}
@@ -199,14 +199,14 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
       {error && rawError && rawError !== displayText && (
         <button
           type="button"
-          className="mt-1 block text-xs text-text-tertiary underline hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          className="mt-1 block text-xs text-text-secondary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
           onClick={() => setShowErrorDetails((prev) => !prev)}
         >
           {localize('com_ui_details')}
         </button>
       )}
       {showErrorDetails && rawError && (
-        <pre className="mt-2 max-h-[200px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-red-600/70 dark:text-red-400/70">
+        <pre className="mt-2 max-h-[200px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-red-600 dark:text-red-400">
           {rawError}
         </pre>
       )}

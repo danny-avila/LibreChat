@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { PixelCard } from '@librechat/client';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { ToolIcon, OutputRenderer, isError } from '../../ToolOutput';
-import { useProgress, useExpandCollapse, useLocalize } from '~/hooks';
+import { ToolIcon, isError } from '../../ToolOutput';
+import { useProgress, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
 import { scaleImage } from '~/utils';
 
@@ -42,15 +42,6 @@ export default function OpenAIImageGen({
     }
     return hasError;
   })();
-
-  const hasTextOutput =
-    !!output &&
-    typeof output === 'string' &&
-    output.length > 0 &&
-    !isError(output) &&
-    progress >= 1;
-  const [showOutput, setShowOutput] = useState(false);
-  const expandStyle = useExpandCollapse(showOutput);
 
   let width: number | undefined;
   let height: number | undefined;
@@ -218,25 +209,9 @@ export default function OpenAIImageGen({
           return localize('com_ui_image_created');
         })()}
       </span>
-      <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1 flex h-5 shrink-0 items-center gap-2">
         <ToolIcon type="image_gen" isAnimating={isInProgress} />
-        <ProgressText
-          progress={progress}
-          error={cancelled}
-          toolName={toolName}
-          onClick={hasTextOutput ? () => setShowOutput((prev) => !prev) : undefined}
-          hasInput={hasTextOutput}
-          isExpanded={showOutput}
-        />
-      </div>
-      <div style={expandStyle}>
-        <div className="overflow-hidden">
-          {hasTextOutput && (
-            <div className="overflow-hidden rounded-lg border border-border-light bg-surface-secondary p-3">
-              <OutputRenderer text={output as string} />
-            </div>
-          )}
-        </div>
+        <ProgressText progress={progress} error={cancelled} toolName={toolName} />
       </div>
       {isAgentStyle && (
         <div className="relative mb-2 flex w-full justify-start">
