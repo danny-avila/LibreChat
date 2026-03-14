@@ -781,6 +781,20 @@ class GenerationJobManagerClass {
           }
         }
         runtime.earlyEventBuffer = [];
+      } else if (this._isRedis && !options?.skipBufferReplay && jobData?.userMessage) {
+        logger.debug(
+          `[GenerationJobManager] Cross-replica subscribe: emitting created event from metadata for ${streamId}`,
+        );
+        const createdEvent = {
+          created: true,
+          message: {
+            ...jobData.userMessage,
+            sender: 'User',
+            isCreatedByUser: true,
+          },
+          streamId,
+        };
+        onChunk(createdEvent as unknown as t.ServerSentEvent);
       }
 
       this.eventTransport.syncReorderBuffer?.(streamId);

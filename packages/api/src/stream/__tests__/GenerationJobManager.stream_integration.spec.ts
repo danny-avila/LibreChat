@@ -771,6 +771,88 @@ describe('GenerationJobManager Integration Tests', () => {
       await GenerationJobManager.destroy();
       await jobStore.destroy();
     });
+
+    test('should emit created event from metadata on cross-replica subscribe', async () => {
+      const replicaAJobStore = new RedisJobStore(ioredisClient!);
+      await replicaAJobStore.initialize();
+
+      const streamId = `cross-created-${Date.now()}`;
+      const userId = 'test-user';
+
+      await replicaAJobStore.createJob(streamId, userId);
+      await replicaAJobStore.updateJob(streamId, {
+        userMessage: {
+          messageId: 'msg-123',
+          parentMessageId: '00000000-0000-0000-0000-000000000000',
+          conversationId: streamId,
+          text: 'hello world',
+        },
+      });
+
+      jest.resetModules();
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      GenerationJobManager.initialize();
+
+      const received: unknown[] = [];
+      const subscription = await GenerationJobManager.subscribe(
+        streamId,
+        (event) => received.push(event),
+      );
+
+      expect(subscription).not.toBeNull();
+      expect(received.length).toBe(1);
+
+      const created = received[0] as Record<string, unknown>;
+      expect(created.created).toBe(true);
+      expect(created.streamId).toBe(streamId);
+
+      const msg = created.message as Record<string, unknown>;
+      expect(msg.messageId).toBe('msg-123');
+      expect(msg.conversationId).toBe(streamId);
+      expect(msg.sender).toBe('User');
+      expect(msg.isCreatedByUser).toBe(true);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+      await replicaAJobStore.destroy();
+    });
+
+    test('should NOT emit created event from metadata when userMessage is not set', async () => {
+      const replicaAJobStore = new RedisJobStore(ioredisClient!);
+      await replicaAJobStore.initialize();
+
+      const streamId = `cross-no-created-${Date.now()}`;
+      await replicaAJobStore.createJob(streamId, 'test-user');
+
+      jest.resetModules();
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      GenerationJobManager.initialize();
+
+      const received: unknown[] = [];
+      const subscription = await GenerationJobManager.subscribe(
+        streamId,
+        (event) => received.push(event),
+      );
+
+      expect(subscription).not.toBeNull();
+      expect(received.length).toBe(0);
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+      await replicaAJobStore.destroy();
+    });
   });
 
   describeRedis('Sequential Event Ordering (Redis)', () => {
