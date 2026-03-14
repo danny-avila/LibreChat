@@ -1,109 +1,24 @@
 const express = require('express');
 const request = require('supertest');
 
-jest.mock('@librechat/agents', () => ({
-  sleep: jest.fn(),
-}));
+const MOCKS = '../__test-utils__/convos-route-mocks';
 
-jest.mock('@librechat/api', () => ({
-  isEnabled: jest.fn(),
-  createAxiosInstance: jest.fn(() => ({
-    get: jest.fn(),
-    post: jest.fn(),
-    put: jest.fn(),
-    delete: jest.fn(),
-  })),
-  logAxiosError: jest.fn(),
-}));
-
-jest.mock('@librechat/data-schemas', () => ({
-  logger: {
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-  createModels: jest.fn(() => ({
-    User: {},
-    Conversation: {},
-    Message: {},
-    SharedLink: {},
-  })),
-}));
-
-jest.mock('~/models/Conversation', () => ({
-  getConvosByCursor: jest.fn(),
-  getConvo: jest.fn(),
-  deleteConvos: jest.fn(),
-  saveConvo: jest.fn(),
-}));
-
-jest.mock('~/models/ToolCall', () => ({
-  deleteToolCalls: jest.fn(),
-}));
-
-jest.mock('~/models', () => ({
-  deleteAllSharedLinks: jest.fn(),
-  deleteConvoSharedLink: jest.fn(),
-}));
-
-jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
-
-jest.mock('~/server/middleware', () => ({
-  createImportLimiters: jest.fn(() => ({
-    importIpLimiter: (req, res, next) => next(),
-    importUserLimiter: (req, res, next) => next(),
-  })),
-  createForkLimiters: jest.fn(() => ({
-    forkIpLimiter: (req, res, next) => next(),
-    forkUserLimiter: (req, res, next) => next(),
-  })),
-  configMiddleware: (req, res, next) => next(),
-  validateConvoAccess: (req, res, next) => next(),
-}));
-
-jest.mock('~/server/utils/import/fork', () => ({
-  forkConversation: jest.fn(),
-  duplicateConversation: jest.fn(),
-}));
-
-jest.mock('~/server/utils/import', () => ({
-  importConversations: jest.fn(),
-}));
-
-jest.mock('~/cache/getLogStores', () => jest.fn());
-
-jest.mock('~/server/routes/files/multer', () => ({
-  storage: {},
-  importFileFilter: jest.fn(),
-}));
-
-jest.mock('multer', () => {
-  return jest.fn(() => ({
-    single: jest.fn(() => (req, res, next) => {
-      req.file = { path: '/tmp/test-file.json' };
-      next();
-    }),
-  }));
-});
-
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: {
-    GEN_TITLE: 'GEN_TITLE',
-  },
-  EModelEndpoint: {
-    azureAssistants: 'azureAssistants',
-    assistants: 'assistants',
-  },
-}));
-
-jest.mock('~/server/services/Endpoints/azureAssistants', () => ({
-  initializeClient: jest.fn(),
-}));
-
-jest.mock('~/server/services/Endpoints/assistants', () => ({
-  initializeClient: jest.fn(),
-}));
+jest.mock('@librechat/agents', () => require(MOCKS).agents());
+jest.mock('@librechat/api', () => require(MOCKS).api());
+jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
+jest.mock('librechat-data-provider', () => require(MOCKS).dataProvider());
+jest.mock('~/models/Conversation', () => require(MOCKS).conversationModel());
+jest.mock('~/models/ToolCall', () => require(MOCKS).toolCallModel());
+jest.mock('~/models', () => require(MOCKS).sharedModels());
+jest.mock('~/server/middleware/requireJwtAuth', () => require(MOCKS).requireJwtAuth());
+jest.mock('~/server/middleware', () => require(MOCKS).middlewarePassthrough());
+jest.mock('~/server/utils/import/fork', () => require(MOCKS).forkUtils());
+jest.mock('~/server/utils/import', () => require(MOCKS).importUtils());
+jest.mock('~/cache/getLogStores', () => require(MOCKS).logStores());
+jest.mock('~/server/routes/files/multer', () => require(MOCKS).multerSetup());
+jest.mock('multer', () => require(MOCKS).multerLib());
+jest.mock('~/server/services/Endpoints/azureAssistants', () => require(MOCKS).assistantEndpoint());
+jest.mock('~/server/services/Endpoints/assistants', () => require(MOCKS).assistantEndpoint());
 
 describe('Convos Routes', () => {
   let app;

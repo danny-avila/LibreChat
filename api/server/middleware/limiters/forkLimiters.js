@@ -48,7 +48,7 @@ const createForkHandler = (ip = true) => {
     };
 
     await logViolation(req, res, type, errorMessage, forkViolationScore);
-    res.status(429).json({ message: 'Too many conversation fork requests. Try again later' });
+    res.status(429).json({ message: 'Too many requests. Try again later' });
   };
 };
 

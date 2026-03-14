@@ -224,6 +224,7 @@ router.post('/update', validateConvoAccess, async (req, res) => {
 });
 
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
+/** Fork and duplicate share one rate-limit budget (same "clone" operation class) */
 const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
 const upload = multer({ storage: storage, fileFilter: importFileFilter });
 
@@ -280,7 +281,7 @@ router.post('/fork', forkIpLimiter, forkUserLimiter, async (req, res) => {
   }
 });
 
-router.post('/duplicate', async (req, res) => {
+router.post('/duplicate', forkIpLimiter, forkUserLimiter, async (req, res) => {
   const { conversationId, title } = req.body;
 
   try {
