@@ -48,7 +48,13 @@ const createApp = (userId, userRole = SystemRoles.USER) => {
 
   app.use((req, _res, next) => {
     if (req.method === 'POST') {
-      req.file = { originalname: 'test.png', mimetype: 'image/png', size: 100, path: '/tmp/t.png', filename: 'test.png' };
+      req.file = {
+        originalname: 'test.png',
+        mimetype: 'image/png',
+        size: 100,
+        path: '/tmp/t.png',
+        filename: 'test.png',
+      };
       req.file_id = uuidv4();
     }
     next();
