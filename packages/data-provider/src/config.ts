@@ -789,6 +789,7 @@ export type TStartupConfig = {
   sharePointPickerGraphScope?: string;
   sharePointPickerSharePointScope?: string;
   openidReuseTokens?: boolean;
+  sovereignProxyEnabled?: boolean;
   minPasswordLength?: number;
   webSearch?: {
     searchProvider?: SearchProviders;
@@ -1701,6 +1702,10 @@ export enum SettingsTabValues {
    * Tab for Personalization Settings
    */
   PERSONALIZATION = 'personalization',
+  /**
+   * Tab for API Keys Settings
+   */
+  API_KEYS = 'apiKeys',
 }
 
 export enum STTProviders {

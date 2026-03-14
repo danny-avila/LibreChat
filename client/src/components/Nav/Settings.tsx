@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
-import { MessageSquare, Command, DollarSign } from 'lucide-react';
+import { MessageSquare, Command, DollarSign, KeyRound } from 'lucide-react';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import {
   GearIcon,
@@ -21,6 +21,7 @@ import {
   Data,
   Balance,
   Account,
+  ApiKeys,
 } from './SettingsTabs';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useLocalize, TranslationKeys } from '~/hooks';
@@ -44,6 +45,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       ...(hasAnyPersonalizationFeature ? [SettingsTabValues.PERSONALIZATION] : []),
       SettingsTabValues.DATA,
       ...(startupConfig?.balance?.enabled ? [SettingsTabValues.BALANCE] : []),
+      ...(startupConfig?.sovereignProxyEnabled ? [SettingsTabValues.API_KEYS] : []),
       SettingsTabValues.ACCOUNT,
     ];
     const currentIndex = tabs.indexOf(activeTab);
@@ -113,6 +115,15 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
             value: SettingsTabValues.BALANCE,
             icon: <DollarSign size={18} />,
             label: 'com_nav_setting_balance' as TranslationKeys,
+          },
+        ]
+      : ([] as { value: SettingsTabValues; icon: React.JSX.Element; label: TranslationKeys }[])),
+    ...(startupConfig?.sovereignProxyEnabled
+      ? [
+          {
+            value: SettingsTabValues.API_KEYS,
+            icon: <KeyRound className="icon-sm" aria-hidden="true" />,
+            label: 'com_nav_setting_api_keys' as TranslationKeys,
           },
         ]
       : ([] as { value: SettingsTabValues; icon: React.JSX.Element; label: TranslationKeys }[])),
@@ -246,6 +257,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     {startupConfig?.balance?.enabled && (
                       <Tabs.Content value={SettingsTabValues.BALANCE} tabIndex={-1}>
                         <Balance />
+                      </Tabs.Content>
+                    )}
+                    {startupConfig?.sovereignProxyEnabled && (
+                      <Tabs.Content value={SettingsTabValues.API_KEYS} tabIndex={-1}>
+                        <ApiKeys />
                       </Tabs.Content>
                     )}
                     <Tabs.Content value={SettingsTabValues.ACCOUNT} tabIndex={-1}>

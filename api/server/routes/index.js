@@ -11,6 +11,7 @@ const prompts = require('./prompts');
 const balance = require('./balance');
 const actions = require('./actions');
 const apiKeys = require('./apiKeys');
+const sovereignKeys = require('./sovereignKeys');
 const banner = require('./banner');
 const search = require('./search');
 const models = require('./models');
@@ -33,6 +34,7 @@ module.exports = {
   adminAuth,
   keys,
   apiKeys,
+  sovereignKeys,
   user,
   tags,
   roles,

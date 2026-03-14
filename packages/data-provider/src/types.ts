@@ -265,6 +265,31 @@ export type TAgentApiKeyListResponse = {
   keys: TAgentApiKeyListItem[];
 };
 
+export type TSovereignApiKeyCreateRequest = {
+  name: string;
+};
+
+export type TSovereignApiKeyCreateResponse = {
+  id: string;
+  key: string;
+  key_prefix: string;
+  name: string;
+  created_at: string;
+};
+
+export type TSovereignApiKeyListItem = {
+  id: string;
+  key_prefix: string;
+  name: string;
+  last_used?: string;
+  expires_at?: string;
+  created_at: string;
+};
+
+export type TSovereignApiKeyListResponse = {
+  keys: TSovereignApiKeyListItem[];
+};
+
 export type TUpdateConversationRequest = {
   conversationId: string;
   title: string;

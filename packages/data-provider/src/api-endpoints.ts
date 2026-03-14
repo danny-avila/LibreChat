@@ -101,6 +101,12 @@ export const apiKeys = () => apiKeysEndpoint;
 
 export const apiKeyById = (id: string) => `${apiKeysEndpoint}/${id}`;
 
+const sovereignKeysEndpoint = `${BASE_URL}/api/sovereign-keys`;
+
+export const sovereignKeys = () => sovereignKeysEndpoint;
+
+export const sovereignKeyById = (id: string) => `${sovereignKeysEndpoint}/${encodeURIComponent(id)}`;
+
 export const conversationsRoot = `${BASE_URL}/api/convos`;
 
 export const conversations = (params: q.ConversationListParams) => {

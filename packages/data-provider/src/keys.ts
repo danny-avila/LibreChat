@@ -64,6 +64,8 @@ export enum QueryKeys {
   activeJobs = 'activeJobs',
   /* Agent API Keys */
   agentApiKeys = 'agentApiKeys',
+  /* Sovereign API Keys */
+  sovereignKeys = 'sovereignKeys',
 }
 
 // Dynamic query keys that require parameters
@@ -74,6 +76,8 @@ export const DynamicQueryKeys = {
 export enum MutationKeys {
   createAgentApiKey = 'createAgentApiKey',
   deleteAgentApiKey = 'deleteAgentApiKey',
+  createSovereignKey = 'createSovereignKey',
+  deleteSovereignKey = 'deleteSovereignKey',
   fileUpload = 'fileUpload',
   fileDelete = 'fileDelete',
   updatePreset = 'updatePreset',

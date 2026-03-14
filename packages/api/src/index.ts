@@ -4,6 +4,8 @@ export * from './cdn';
 export * from './auth';
 /* API Keys */
 export * from './apiKeys';
+/* Sovereign Proxy */
+export * from './sovereignProxy';
 /* MCP */
 export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';

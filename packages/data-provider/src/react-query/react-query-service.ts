@@ -564,3 +564,43 @@ export const useDeleteAgentApiKeyMutation = (): UseMutationResult<void, unknown,
     },
   });
 };
+
+export const useGetSovereignKeysQuery = (
+  config?: UseQueryOptions<t.TSovereignApiKeyListResponse>,
+): QueryObserverResult<t.TSovereignApiKeyListResponse> => {
+  return useQuery<t.TSovereignApiKeyListResponse>(
+    [QueryKeys.sovereignKeys],
+    () => dataService.getSovereignKeys(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: true,
+      ...config,
+    },
+  );
+};
+
+export const useCreateSovereignKeyMutation = (): UseMutationResult<
+  t.TSovereignApiKeyCreateResponse,
+  unknown,
+  t.TSovereignApiKeyCreateRequest
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TSovereignApiKeyCreateRequest) => dataService.createSovereignKey(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.sovereignKeys]);
+      },
+    },
+  );
+};
+
+export const useDeleteSovereignKeyMutation = (): UseMutationResult<void, unknown, string> => {
+  const queryClient = useQueryClient();
+  return useMutation((id: string) => dataService.deleteSovereignKey(id), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.sovereignKeys]);
+    },
+  });
+};

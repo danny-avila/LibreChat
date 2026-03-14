@@ -95,6 +95,20 @@ export function deleteAgentApiKey(id: string): Promise<void> {
   return request.delete(endpoints.apiKeyById(id));
 }
 
+export function getSovereignKeys(): Promise<t.TSovereignApiKeyListResponse> {
+  return request.get(endpoints.sovereignKeys());
+}
+
+export function createSovereignKey(
+  payload: t.TSovereignApiKeyCreateRequest,
+): Promise<t.TSovereignApiKeyCreateResponse> {
+  return request.post(endpoints.sovereignKeys(), payload);
+}
+
+export function deleteSovereignKey(id: string): Promise<void> {
+  return request.delete(endpoints.sovereignKeyById(id));
+}
+
 export function getPresets(): Promise<s.TPreset[]> {
   return request.get(endpoints.presets());
 }
