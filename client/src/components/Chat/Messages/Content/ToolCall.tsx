@@ -181,7 +181,7 @@ export default function ToolCall({
           return getFinishedText();
         })()}
       </span>
-      <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={() => setShowInfo((prev) => !prev)}
@@ -211,7 +211,7 @@ export default function ToolCall({
       <div style={expandStyle}>
         <div className="overflow-hidden">
           {hasInfo && (
-            <div className="overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+            <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />
             </div>
           )}

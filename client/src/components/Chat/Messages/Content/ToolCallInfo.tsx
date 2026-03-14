@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Tools } from 'librechat-data-provider';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
@@ -122,7 +122,7 @@ export default function ToolCallInfo({
       }) ?? [];
 
   return (
-    <div className="w-full p-3">
+    <div className="w-full px-3 py-3.5">
       {output && <OutputRenderer text={output} />}
       {output && hasParams && <div className="my-2 border-t border-border-light" />}
       {hasParams && (
@@ -130,18 +130,20 @@ export default function ToolCallInfo({
           <button
             type="button"
             className={cn(
-              'inline-flex items-center gap-1 text-xs text-text-tertiary',
-              'hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+              'inline-flex items-center gap-1 text-xs text-text-secondary',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
             )}
             onClick={() => setShowParams((prev) => !prev)}
             aria-expanded={showParams}
           >
             <span>{localize('com_ui_parameters')}</span>
-            {showParams ? (
-              <ChevronUp className="size-3 shrink-0" aria-hidden="true" />
-            ) : (
-              <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
-            )}
+            <ChevronDown
+              className={cn(
+                'size-3 shrink-0 transition-transform duration-200 ease-out',
+                showParams && 'rotate-180',
+              )}
+              aria-hidden="true"
+            />
           </button>
           <div style={paramsExpandStyle}>
             <div className="overflow-hidden pt-1">
