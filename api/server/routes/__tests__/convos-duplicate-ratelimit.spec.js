@@ -1,7 +1,7 @@
 const express = require('express');
 const request = require('supertest');
 
-const MOCKS = './setup/convos-route-mocks';
+const MOCKS = '../__test-utils__/convos-route-mocks';
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () => require(MOCKS).api({ limiterCache: jest.fn(() => undefined) }));
