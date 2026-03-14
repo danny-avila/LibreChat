@@ -1,8 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPConnection } from './connection';
-import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import type * as t from './types';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { hasCustomUserVars } from './utils';
+import { MCPConnection } from './connection';
 
 const CONNECT_CONCURRENCY = 3;
 
@@ -139,13 +140,18 @@ export class ConnectionsRepository {
     return `[MCP][${serverName}]`;
   }
 
+  /**
+   * App-level (shared) connections cannot serve servers that need per-user context:
+   * env/header placeholders like `{{MY_KEY}}` are only resolved by `processMCPEnv()`
+   * when real `customUserVars` values exist — which requires a user-level connection.
+   */
   private isAllowedToConnectToServer(config: t.ParsedServerConfig) {
     if (config.inspectionFailed) {
       return false;
     }
     if (
       this.ownerId === undefined &&
-      (config.startup === false || config.requiresOAuth || config.customUserVars)
+      (config.startup === false || config.requiresOAuth || hasCustomUserVars(config))
     ) {
       return false;
     }

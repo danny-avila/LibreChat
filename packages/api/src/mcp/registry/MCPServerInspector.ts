@@ -6,6 +6,7 @@ import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
+import { hasCustomUserVars } from '~/mcp/utils';
 import { isEnabled } from '~/utils';
 
 /**
@@ -54,7 +55,11 @@ export class MCPServerInspector {
   private async inspectServer(): Promise<void> {
     await this.detectOAuth();
 
-    if (this.config.startup !== false && !this.config.requiresOAuth && !this.config.customUserVars) {
+    if (
+      this.config.startup !== false &&
+      !this.config.requiresOAuth &&
+      !hasCustomUserVars(this.config)
+    ) {
       let tempConnection = false;
       if (!this.connection) {
         tempConnection = true;
