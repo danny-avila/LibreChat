@@ -1709,10 +1709,18 @@ describe('MCP Routes', () => {
       const response = await request(app).get('/api/mcp/servers');
 
       expect(response.status).toBe(200);
-      expect(response.body['server-1'].type).toBe('sse');
-      expect(response.body['server-1'].url).toBe('http://server1.com/sse');
-      expect(response.body['server-1'].title).toBe('Server 1');
-      expect(response.body['server-2'].title).toBe('Server 2');
+      expect(response.body['server-1']).toMatchObject({
+        type: 'sse',
+        url: 'http://server1.com/sse',
+        title: 'Server 1',
+      });
+      expect(response.body['server-2']).toMatchObject({
+        type: 'sse',
+        url: 'http://server2.com/sse',
+        title: 'Server 2',
+      });
+      expect(response.body['server-1'].headers).toBeUndefined();
+      expect(response.body['server-2'].headers).toBeUndefined();
       expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith('test-user-id');
     });
 

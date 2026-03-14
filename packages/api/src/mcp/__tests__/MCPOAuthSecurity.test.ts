@@ -1,8 +1,9 @@
 /**
  * Tests verifying MCP OAuth security hardening:
  *
- * 1. SSRF via OAuth token_url — validates that the OAuth handler rejects
- *    token_url values pointing to private/internal addresses.
+ * 1. SSRF via OAuth URLs — validates that the OAuth handler rejects
+ *    token_url, authorization_url, and revocation_endpoint values
+ *    pointing to private/internal addresses.
  *
  * 2. redirect_uri manipulation — validates that user-supplied redirect_uri
  *    is ignored in favor of the server-controlled default.
@@ -25,6 +26,17 @@ jest.mock('@librechat/data-schemas', () => ({
   },
   encryptV2: jest.fn(async (val: string) => `enc:${val}`),
   decryptV2: jest.fn(async (val: string) => val.replace(/^enc:/, '')),
+}));
+
+/**
+ * Mock only the DNS-dependent resolveHostnameSSRF; keep isSSRFTarget real.
+ * SSRF tests use literal private IPs (127.0.0.1, 169.254.169.254, 10.0.0.1)
+ * which are caught by isSSRFTarget before resolveHostnameSSRF is reached.
+ * This avoids non-deterministic DNS lookups in test execution.
+ */
+jest.mock('~/auth', () => ({
+  ...jest.requireActual('~/auth'),
+  resolveHostnameSSRF: jest.fn(async () => false),
 }));
 
 function getFreePort(): Promise<number> {
@@ -53,7 +65,7 @@ function trackSockets(httpServer: http.Server): () => Promise<void> {
     });
 }
 
-describe('MCP OAuth SSRF via token_url', () => {
+describe('MCP OAuth SSRF protection', () => {
   let oauthServer: OAuthTestServer;
   let ssrfTargetServer: http.Server;
   let ssrfTargetPort: number;
@@ -87,11 +99,14 @@ describe('MCP OAuth SSRF via token_url', () => {
   });
 
   afterEach(async () => {
-    await oauthServer.close();
-    await destroySSRFSockets();
+    try {
+      await oauthServer.close();
+    } finally {
+      await destroySSRFSockets();
+    }
   });
 
-  it('should reject token_url pointing to a private IP', async () => {
+  it('should reject token_url pointing to a private IP (refreshOAuthTokens)', async () => {
     const code = await oauthServer.getAuthCode();
     const tokenRes = await fetch(`${oauthServer.url}token`, {
       method: 'POST',
@@ -137,6 +152,53 @@ describe('MCP OAuth SSRF via token_url', () => {
     ).rejects.toThrow(/targets a blocked address/);
 
     expect(ssrfRequestReceived).toBe(false);
+  });
+
+  it('should reject private authorization_url in initiateOAuthFlow', async () => {
+    await expect(
+      MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://mcp.example.com/',
+        'user-1',
+        {},
+        {
+          authorization_url: 'http://169.254.169.254/authorize',
+          token_url: 'https://auth.example.com/token',
+          client_id: 'client',
+          client_secret: 'secret',
+        },
+      ),
+    ).rejects.toThrow(/targets a blocked address/);
+  });
+
+  it('should reject private token_url in initiateOAuthFlow', async () => {
+    await expect(
+      MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://mcp.example.com/',
+        'user-1',
+        {},
+        {
+          authorization_url: 'https://auth.example.com/authorize',
+          token_url: `http://127.0.0.1:${ssrfTargetPort}/token`,
+          client_id: 'client',
+          client_secret: 'secret',
+        },
+      ),
+    ).rejects.toThrow(/targets a blocked address/);
+
+    expect(ssrfRequestReceived).toBe(false);
+  });
+
+  it('should reject private revocationEndpoint in revokeOAuthToken', async () => {
+    await expect(
+      MCPOAuthHandler.revokeOAuthToken('test-server', 'some-token', 'access', {
+        serverUrl: 'https://mcp.example.com/',
+        clientId: 'client',
+        clientSecret: 'secret',
+        revocationEndpoint: 'http://10.0.0.1/revoke',
+      }),
+    ).rejects.toThrow(/targets a blocked address/);
   });
 });
 

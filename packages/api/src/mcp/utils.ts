@@ -14,7 +14,7 @@ export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedServerConfig> {
   const safe: Partial<ParsedServerConfig> = {
     type: config.type,
-    url: (config as ParsedServerConfig & { url?: string }).url,
+    url: config.url,
     title: config.title,
     description: config.description,
     iconPath: config.iconPath,
@@ -45,13 +45,9 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
     safe.oauth = safeOAuth;
   }
 
-  for (const key in safe) {
-    if (safe[key as keyof typeof safe] === undefined) {
-      delete safe[key as keyof typeof safe];
-    }
-  }
-
-  return safe;
+  return Object.fromEntries(
+    Object.entries(safe).filter(([, v]) => v !== undefined),
+  ) as Partial<ParsedServerConfig>;
 }
 
 /** Applies allowlist-based sanitization to a map of server configs. */
@@ -59,11 +55,12 @@ export function redactAllServerSecrets(
   configs: Record<string, ParsedServerConfig>,
 ): Record<string, Partial<ParsedServerConfig>> {
   const result: Record<string, Partial<ParsedServerConfig>> = {};
-  for (const key in configs) {
-    result[key] = redactServerSecrets(configs[key]);
+  for (const [key, config] of Object.entries(configs)) {
+    result[key] = redactServerSecrets(config);
   }
   return result;
 }
+
 /**
  * Normalizes a server name to match the pattern ^[a-zA-Z0-9_.-]+$
  * This is required for Azure OpenAI models with Tool Calling

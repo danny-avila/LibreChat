@@ -121,6 +121,17 @@ describe('redactServerSecrets', () => {
     expect((redacted as Record<string, unknown>).oauth_headers).toBeUndefined();
   });
 
+  it('should strip apiKey.key even for user-sourced keys', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      apiKey: { source: 'user', authorization_type: 'bearer', key: 'my-own-key' },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.apiKey?.key).toBeUndefined();
+    expect(redacted.apiKey?.source).toBe('user');
+  });
+
   it('should not mutate the original config', () => {
     const config: ParsedServerConfig = {
       type: 'sse',

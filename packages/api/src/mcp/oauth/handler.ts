@@ -359,8 +359,10 @@ export class MCPOAuthHandler {
       if (config?.authorization_url && config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
 
-        await this.validateOAuthUrl(config.authorization_url, 'authorization_url');
-        await this.validateOAuthUrl(config.token_url, 'token_url');
+        await Promise.all([
+          this.validateOAuthUrl(config.authorization_url, 'authorization_url'),
+          this.validateOAuthUrl(config.token_url, 'token_url'),
+        ]);
 
         const skipCodeChallengeCheck =
           config?.skip_code_challenge_check === true ||
@@ -834,6 +836,7 @@ export class MCPOAuthHandler {
             tokenUrl = oauthMetadata.token_endpoint;
             authMethods = oauthMetadata.token_endpoint_auth_methods_supported;
           }
+          await this.validateOAuthUrl(tokenUrl, 'token_url');
         }
 
         const body = new URLSearchParams({
@@ -1008,6 +1011,7 @@ export class MCPOAuthHandler {
       } else {
         tokenUrl = new URL(oauthMetadata.token_endpoint);
       }
+      await this.validateOAuthUrl(tokenUrl.href, 'token_url');
 
       const body = new URLSearchParams({
         grant_type: 'refresh_token',
