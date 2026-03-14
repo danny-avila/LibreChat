@@ -41,6 +41,7 @@ export enum Providers {
   MOONSHOT = 'moonshot',
   OPENROUTER = 'openrouter',
   XAI = 'xai',
+  MINIMAX = 'minimax',
 }
 
 /**
@@ -61,6 +62,7 @@ export const documentSupportedProviders = new Set<string>([
   Providers.MOONSHOT,
   Providers.OPENROUTER,
   Providers.XAI,
+  Providers.MINIMAX,
 ]);
 
 const openAILikeProviders = new Set<string>([
@@ -73,6 +75,7 @@ const openAILikeProviders = new Set<string>([
   Providers.MOONSHOT,
   Providers.OPENROUTER,
   Providers.XAI,
+  Providers.MINIMAX,
 ]);
 
 export const isOpenAILikeProvider = (provider?: string | null): boolean => {
