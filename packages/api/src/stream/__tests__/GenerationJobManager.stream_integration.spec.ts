@@ -1213,20 +1213,14 @@ describe('GenerationJobManager Integration Tests', () => {
 
   describe('Resume: skipBufferReplay prevents duplication', () => {
     /**
-     * These tests verify the fix for duplicated content when navigating away
-     * from an in-progress conversation and navigating back.
-     *
-     * Root cause: When user navigates away, events accumulate in earlyEventBuffer.
-     * On resume, the backend sends a sync event with aggregatedContent (which
-     * includes all buffered events), then subscribe() replays the earlyEventBuffer.
-     * The same content is delivered twice → duplication.
-     *
-     * Fix: subscribe() accepts { skipBufferReplay: true } for resume connections.
-     * The sync event already contains all accumulated content, so buffer replay
-     * is redundant.
+     * Verifies the fix for duplicated content when navigating away from an
+     * in-progress conversation and back. Events accumulate in earlyEventBuffer
+     * while the subscriber is absent. On resume, the sync event delivers all
+     * accumulated content via aggregatedContent, so buffer replay must be
+     * skipped to prevent duplication.
      */
 
-    test('should NOT replay buffer when skipBufferReplay is true (resume scenario)', async () => {
+    function createInMemoryManager(): GenerationJobManagerClass {
       const manager = new GenerationJobManagerClass();
       manager.configure({
         jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
@@ -1234,19 +1228,31 @@ describe('GenerationJobManager Integration Tests', () => {
         isRedis: false,
       });
       manager.initialize();
+      return manager;
+    }
 
-      const streamId = `skip-buf-${Date.now()}`;
-      await manager.createJob(streamId, 'user-1');
-
-      // 1. First subscriber connects and receives initial events
-      const firstSubscriberEvents: unknown[] = [];
-      const sub1 = await manager.subscribe(streamId, (event: unknown) =>
-        firstSubscriberEvents.push(event),
+    function createRedisManager(): GenerationJobManagerClass {
+      const manager = new GenerationJobManagerClass();
+      manager.configure(
+        createStreamServices({
+          useRedis: true,
+          redisClient: ioredisClient!,
+        }),
       );
+      manager.initialize();
+      return manager;
+    }
 
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    async function setupDisconnectedStream(
+      manager: GenerationJobManagerClass,
+      streamId: string,
+      delay: number,
+    ): Promise<ServerSentEvent[]> {
+      const firstEvents: ServerSentEvent[] = [];
+      const sub = await manager.subscribe(streamId, (event) => firstEvents.push(event));
 
-      // Emit events while subscriber is connected
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
       await manager.emitChunk(streamId, {
         event: 'on_run_step',
         data: { id: 'step-1', runId: 'run-1', index: 0, stepDetails: { type: 'message_creation' } },
@@ -1256,14 +1262,12 @@ describe('GenerationJobManager Integration Tests', () => {
         data: { id: 'step-1', delta: { content: { type: 'text', text: 'Hello' } } },
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(firstSubscriberEvents.length).toBe(2);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      expect(firstEvents.length).toBe(2);
 
-      // 2. Subscriber disconnects (simulates navigation away)
-      sub1?.unsubscribe();
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      sub?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, delay));
 
-      // 3. More events arrive while no subscriber exists → go to earlyEventBuffer
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { id: 'step-1', delta: { content: { type: 'text', text: ' world' } } },
@@ -1273,23 +1277,33 @@ describe('GenerationJobManager Integration Tests', () => {
         data: { id: 'step-1', delta: { content: { type: 'text', text: '!' } } },
       });
 
-      // 4. Resume subscriber connects with skipBufferReplay (sync event was already sent)
-      const resumeEvents: unknown[] = [];
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      return firstEvents;
+    }
+
+    test('should NOT replay buffer when skipBufferReplay is true (resume scenario)', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `skip-buf-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await setupDisconnectedStream(manager, streamId, 10);
+
+      const resumeState = await manager.getResumeState(streamId);
+      expect(resumeState).not.toBeNull();
+
+      const resumeEvents: ServerSentEvent[] = [];
       const sub2 = await manager.subscribe(
         streamId,
-        (event: unknown) => resumeEvents.push(event),
+        (event) => resumeEvents.push(event),
         undefined,
         undefined,
         { skipBufferReplay: true },
       );
 
       await new Promise((resolve) => setTimeout(resolve, 20));
-
-      // Buffer should NOT have been replayed - resume subscriber gets zero buffered events
-      // (In real usage, the sync event already delivered the full aggregatedContent)
       expect(resumeEvents.length).toBe(0);
 
-      // 5. Live events after reconnection should still be delivered
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { id: 'step-1', delta: { content: { type: 'text', text: ' Live!' } } },
@@ -1297,27 +1311,19 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(resumeEvents.length).toBe(1);
-      expect((resumeEvents[0] as Record<string, unknown>).event).toBe('on_message_delta');
+      expect(resumeEvents[0].event).toBe('on_message_delta');
 
       sub2?.unsubscribe();
       await manager.destroy();
     });
 
-    test('should STILL replay buffer when skipBufferReplay is false (initial connection)', async () => {
-      const manager = new GenerationJobManagerClass();
-      manager.configure({
-        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
-        eventTransport: new InMemoryEventTransport(),
-        isRedis: false,
-      });
-      manager.initialize();
-
+    test('should replay buffer by default when no options are passed', async () => {
+      const manager = createInMemoryManager();
       const streamId = `replay-buf-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
 
-      // 1. First subscriber connects and disconnects
-      const sub1Events: unknown[] = [];
-      const sub1 = await manager.subscribe(streamId, (event: unknown) => sub1Events.push(event));
+      const sub1Events: ServerSentEvent[] = [];
+      const sub1 = await manager.subscribe(streamId, (event) => sub1Events.push(event));
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       await manager.emitChunk(streamId, {
@@ -1329,43 +1335,32 @@ describe('GenerationJobManager Integration Tests', () => {
       sub1?.unsubscribe();
       await new Promise((resolve) => setTimeout(resolve, 20));
 
-      // 2. Events accumulate while no subscriber
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { id: 'step-1', delta: { content: { type: 'text', text: 'buffered' } } },
       });
 
-      // 3. New subscriber WITHOUT skipBufferReplay → buffer should be replayed
-      const sub2Events: unknown[] = [];
-      const sub2 = await manager.subscribe(streamId, (event: unknown) => sub2Events.push(event));
+      const sub2Events: ServerSentEvent[] = [];
+      const sub2 = await manager.subscribe(streamId, (event) => sub2Events.push(event));
       await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(sub2Events.length).toBe(1);
-      expect((sub2Events[0] as Record<string, unknown>).event).toBe('on_message_delta');
+      expect(sub2Events[0].event).toBe('on_message_delta');
 
       sub2?.unsubscribe();
       await manager.destroy();
     });
 
     test('should clear earlyEventBuffer even when skipping replay (no memory leak)', async () => {
-      const manager = new GenerationJobManagerClass();
-      manager.configure({
-        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
-        eventTransport: new InMemoryEventTransport(),
-        isRedis: false,
-      });
-      manager.initialize();
-
+      const manager = createInMemoryManager();
       const streamId = `buf-clear-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
 
-      // Subscribe and disconnect to reset hasSubscriber
       const sub1 = await manager.subscribe(streamId, () => {});
       await new Promise((resolve) => setTimeout(resolve, 10));
       sub1?.unsubscribe();
       await new Promise((resolve) => setTimeout(resolve, 20));
 
-      // Buffer events
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { delta: { content: { type: 'text', text: 'buf1' } } },
@@ -1375,11 +1370,10 @@ describe('GenerationJobManager Integration Tests', () => {
         data: { delta: { content: { type: 'text', text: 'buf2' } } },
       });
 
-      // Subscribe with skipBufferReplay
-      const sub2Events: unknown[] = [];
+      const sub2Events: ServerSentEvent[] = [];
       const sub2 = await manager.subscribe(
         streamId,
-        (event: unknown) => sub2Events.push(event),
+        (event) => sub2Events.push(event),
         undefined,
         undefined,
         { skipBufferReplay: true },
@@ -1390,23 +1384,94 @@ describe('GenerationJobManager Integration Tests', () => {
       sub2?.unsubscribe();
       await new Promise((resolve) => setTimeout(resolve, 20));
 
-      // After another disconnect/reconnect cycle, buffer should be empty
-      // (it was cleared on the previous subscribe even though replay was skipped)
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { delta: { content: { type: 'text', text: 'new-event' } } },
       });
 
-      const sub3Events: unknown[] = [];
-      const sub3 = await manager.subscribe(streamId, (event: unknown) => sub3Events.push(event));
+      const sub3Events: ServerSentEvent[] = [];
+      const sub3 = await manager.subscribe(streamId, (event) => sub3Events.push(event));
       await new Promise((resolve) => setTimeout(resolve, 20));
 
-      // Should only have the one new event, not the old buf1/buf2
       expect(sub3Events.length).toBe(1);
-      const data = (sub3Events[0] as Record<string, unknown>).data as Record<string, unknown>;
-      const delta = data.delta as Record<string, unknown>;
-      const content = delta.content as Record<string, unknown>;
-      expect(content.text).toBe('new-event');
+      const event = sub3Events[0] as { event: string; data: { delta: { content: { text: string } } } };
+      expect(event.data.delta.content.text).toBe('new-event');
+
+      sub3?.unsubscribe();
+      await manager.destroy();
+    });
+
+    test('should handle multiple disconnect/reconnect cycles with skipBufferReplay', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `multi-reconnect-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const sub1 = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'initial' } } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      sub1?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'buffered-1' } } },
+      });
+
+      const resumeState1 = await manager.getResumeState(streamId);
+      expect(resumeState1).not.toBeNull();
+
+      const sub2Events: ServerSentEvent[] = [];
+      const sub2 = await manager.subscribe(
+        streamId,
+        (event) => sub2Events.push(event),
+        undefined,
+        undefined,
+        { skipBufferReplay: true },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(sub2Events.length).toBe(0);
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'live-1' } } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(sub2Events.length).toBe(1);
+
+      sub2?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'buffered-2' } } },
+      });
+
+      const resumeState2 = await manager.getResumeState(streamId);
+      expect(resumeState2).not.toBeNull();
+
+      const sub3Events: ServerSentEvent[] = [];
+      const sub3 = await manager.subscribe(
+        streamId,
+        (event) => sub3Events.push(event),
+        undefined,
+        undefined,
+        { skipBufferReplay: true },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(sub3Events.length).toBe(0);
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'live-2' } } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(sub3Events.length).toBe(1);
 
       sub3?.unsubscribe();
       await manager.destroy();
@@ -1418,75 +1483,28 @@ describe('GenerationJobManager Integration Tests', () => {
         return;
       }
 
-      const manager = new GenerationJobManagerClass();
-      const services = createStreamServices({
-        useRedis: true,
-        redisClient: ioredisClient,
-      });
-      manager.configure(services);
-      manager.initialize();
-
+      const manager = createRedisManager();
       const streamId = `skip-buf-redis-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
 
-      // 1. First subscriber connects and receives initial events
-      const firstSubscriberEvents: unknown[] = [];
-      const sub1 = await manager.subscribe(streamId, (event: unknown) =>
-        firstSubscriberEvents.push(event),
-      );
+      await setupDisconnectedStream(manager, streamId, 100);
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Emit events while subscriber is connected
-      await manager.emitChunk(streamId, {
-        event: 'on_run_step',
-        data: { id: 'step-1', runId: 'run-1', index: 0, stepDetails: { type: 'message_creation' } },
-      });
-      await manager.emitChunk(streamId, {
-        event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: 'Hello' } } },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      expect(firstSubscriberEvents.length).toBe(2);
-
-      // 2. Subscriber disconnects (simulates navigation away)
-      sub1?.unsubscribe();
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // 3. More events arrive while no subscriber exists → go to earlyEventBuffer + Redis
-      await manager.emitChunk(streamId, {
-        event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: ' world' } } },
-      });
-      await manager.emitChunk(streamId, {
-        event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: '!' } } },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // 4. Verify aggregatedContent has everything (what sync event would send)
       const resumeState = await manager.getResumeState(streamId);
       expect(resumeState).not.toBeNull();
       expect(resumeState!.aggregatedContent?.length).toBeGreaterThan(0);
 
-      // 5. Resume subscriber connects with skipBufferReplay (sync event was already sent)
-      const resumeEvents: unknown[] = [];
+      const resumeEvents: ServerSentEvent[] = [];
       const sub2 = await manager.subscribe(
         streamId,
-        (event: unknown) => resumeEvents.push(event),
+        (event) => resumeEvents.push(event),
         undefined,
         undefined,
         { skipBufferReplay: true },
       );
 
       await new Promise((resolve) => setTimeout(resolve, 200));
-
-      // Buffer should NOT have been replayed
       expect(resumeEvents.length).toBe(0);
 
-      // 6. Live events after reconnection should still be delivered
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { id: 'step-1', delta: { content: { type: 'text', text: ' Live!' } } },
@@ -1494,7 +1512,7 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 200));
       expect(resumeEvents.length).toBe(1);
-      expect((resumeEvents[0] as Record<string, unknown>).event).toBe('on_message_delta');
+      expect(resumeEvents[0].event).toBe('on_message_delta');
 
       sub2?.unsubscribe();
       await manager.destroy();
@@ -1506,24 +1524,15 @@ describe('GenerationJobManager Integration Tests', () => {
         return;
       }
 
-      const manager = new GenerationJobManagerClass();
-      const services = createStreamServices({
-        useRedis: true,
-        redisClient: ioredisClient,
-      });
-      manager.configure(services);
-      manager.initialize();
-
+      const manager = createRedisManager();
       const streamId = `replay-buf-redis-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
 
-      // 1. First subscriber connects and disconnects
       const sub1 = await manager.subscribe(streamId, () => {});
       await new Promise((resolve) => setTimeout(resolve, 100));
       sub1?.unsubscribe();
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // 2. Events accumulate while no subscriber
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { delta: { content: { type: 'text', text: 'buffered-redis' } } },
@@ -1531,14 +1540,13 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // 3. Reconnect WITHOUT skipBufferReplay → buffer should be replayed
-      const sub2Events: unknown[] = [];
-      const sub2 = await manager.subscribe(streamId, (event: unknown) => sub2Events.push(event));
+      const sub2Events: ServerSentEvent[] = [];
+      const sub2 = await manager.subscribe(streamId, (event) => sub2Events.push(event));
 
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(sub2Events.length).toBe(1);
-      expect((sub2Events[0] as Record<string, unknown>).event).toBe('on_message_delta');
+      expect(sub2Events[0].event).toBe('on_message_delta');
 
       sub2?.unsubscribe();
       await manager.destroy();

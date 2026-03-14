@@ -47,3 +47,12 @@ export type ChunkHandler = (event: ServerSentEvent) => void;
 export type DoneHandler = (event: ServerSentEvent) => void;
 export type ErrorHandler = (error: string) => void;
 export type UnsubscribeFn = () => void;
+
+/** Options for subscribing to a job event stream */
+export interface SubscribeOptions {
+  /**
+   * When true, skips replaying the earlyEventBuffer.
+   * Use for resume connections after a sync event has been sent.
+   */
+  skipBufferReplay?: boolean;
+}

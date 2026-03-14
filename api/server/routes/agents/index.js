@@ -76,17 +76,16 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 
-  // Send sync event with resume state for ALL reconnecting clients
-  // This supports multi-tab scenarios where each tab needs run step data
+  let syncWasSent = false;
   if (isResume) {
     const resumeState = await GenerationJobManager.getResumeState(streamId);
     if (resumeState && !res.writableEnded) {
-      // Send sync event with run steps AND aggregatedContent
-      // Client will use aggregatedContent to initialize message state
       res.write(`event: message\ndata: ${JSON.stringify({ sync: true, resumeState })}\n\n`);
       if (typeof res.flush === 'function') {
         res.flush();
       }
+      syncWasSent = true;
+      GenerationJobManager.markSyncSent(streamId);
       logger.debug(
         `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps`,
       );
@@ -121,7 +120,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
         res.end();
       }
     },
-    isResume ? { skipBufferReplay: true } : undefined,
+    syncWasSent ? { skipBufferReplay: true } : undefined,
   );
 
   if (!result) {
