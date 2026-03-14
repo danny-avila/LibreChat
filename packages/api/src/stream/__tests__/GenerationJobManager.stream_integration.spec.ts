@@ -1,6 +1,6 @@
 /* eslint jest/no-standalone-expect: ["error", { "additionalTestBlockFunctions": ["testRedis"] }] */
 import type { Redis, Cluster } from 'ioredis';
-import type { ServerSentEvent, StreamEvent, CreatedEvent } from '~/types/events';
+import type { ServerSentEvent, StreamEvent, CreatedEvent } from '~/types';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';

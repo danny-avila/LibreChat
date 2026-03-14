@@ -7,7 +7,14 @@ export type StreamEvent = {
 /** Control event emitted when user message is created and generation starts */
 export type CreatedEvent = {
   created: true;
-  message: Record<string, unknown>;
+  message: {
+    messageId: string;
+    parentMessageId?: string;
+    conversationId?: string;
+    text?: string;
+    sender: string;
+    isCreatedByUser: boolean;
+  };
   streamId: string;
 };
 
