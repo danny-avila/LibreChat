@@ -223,18 +223,28 @@ router.post('/update', validateConvoAccess, async (req, res) => {
   }
 });
 
+const { resolveImportMaxFileSize } = require('~/server/utils/import/limits');
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
 /** Fork and duplicate share one rate-limit budget (same "clone" operation class) */
 const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
-const DEFAULT_IMPORT_MAX_FILE_SIZE = 262144000;
-const importMaxFileSize = process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
-  ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
-  : DEFAULT_IMPORT_MAX_FILE_SIZE;
+const importMaxFileSize = resolveImportMaxFileSize();
 const upload = multer({
   storage,
   fileFilter: importFileFilter,
   limits: { fileSize: importMaxFileSize },
 });
+
+function handleUpload(req, res, next) {
+  upload.single('file')(req, res, (err) => {
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ message: 'File exceeds the maximum allowed size' });
+    }
+    if (err) {
+      return next(err);
+    }
+    next();
+  });
+}
 
 /**
  * Imports a conversation from a JSON file and saves it to the database.
@@ -247,7 +257,7 @@ router.post(
   importIpLimiter,
   importUserLimiter,
   configMiddleware,
-  upload.single('file'),
+  handleUpload,
   async (req, res) => {
     try {
       /* TODO: optimize to return imported conversations and add manually */
