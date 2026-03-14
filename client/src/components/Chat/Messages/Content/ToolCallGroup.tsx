@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import type { TMessageContentParts, Agents, TAttachment } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { useMCPIconMap } from '~/hooks/MCP';
 import type { PartWithIndex } from './ParallelContent';
 import { StackedToolIcons } from './ToolOutput';
 import ToolCall from './ToolCall';
+import { cn } from '~/utils';
 
 type AgentToolCallWithMeta = Agents.ToolCall & { progress?: number; id?: string };
 
@@ -104,7 +105,7 @@ export default function ToolCallGroup({
   }, [hasActiveToolCall]);
 
   return (
-    <div className="my-1">
+    <div className="mb-2">
       <button
         type="button"
         className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
@@ -117,17 +118,19 @@ export default function ToolCallGroup({
           mcpIconMap={mcpIconMap}
           isAnimating={!allCompleted && isSubmitting}
         />
-        <span className="text-sm font-medium">
+        <span className="tool-status-text font-medium">
           {localize('com_ui_used_n_tools', { 0: String(count) })}
         </span>
         {toolNameSummary && (
-          <span className="text-xs font-normal text-text-tertiary">— {toolNameSummary}</span>
+          <span className="text-xs font-normal text-text-secondary">— {toolNameSummary}</span>
         )}
-        {isExpanded ? (
-          <ChevronUp className="size-4 shrink-0 text-text-tertiary" aria-hidden="true" />
-        ) : (
-          <ChevronDown className="size-4 shrink-0 text-text-tertiary" aria-hidden="true" />
-        )}
+        <ChevronDown
+          className={cn(
+            'size-4 shrink-0 text-text-secondary transition-transform duration-200 ease-out',
+            isExpanded && 'rotate-180',
+          )}
+          aria-hidden="true"
+        />
       </button>
       <div style={expandStyle}>
         <div className="overflow-hidden">

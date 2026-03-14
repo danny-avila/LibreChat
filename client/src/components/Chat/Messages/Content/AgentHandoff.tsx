@@ -47,11 +47,11 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
   const hasInfo = useMemo(() => (args?.trim()?.length ?? 0) > 2, [args]);
 
   return (
-    <div className="my-2.5">
+    <div className="my-1">
       <button
         type="button"
         className={cn(
-          'flex appearance-none items-center gap-2.5 bg-transparent text-sm text-text-secondary',
+          'tool-status-text flex appearance-none items-center gap-2.5 bg-transparent text-text-secondary',
           hasInfo
             ? 'transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
             : 'pointer-events-none',
