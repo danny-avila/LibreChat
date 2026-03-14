@@ -1,4 +1,3 @@
-import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -8,16 +7,10 @@ export default function ProgressText({
   progress,
   error,
   toolName = '',
-  onClick,
-  hasInput,
-  isExpanded,
 }: {
   progress: number;
   error?: boolean;
   toolName?: string;
-  onClick?: () => void;
-  hasInput?: boolean;
-  isExpanded?: boolean;
 }) {
   const localize = useLocalize();
 
@@ -83,25 +76,13 @@ export default function ProgressText({
   const text = getText();
 
   return (
-    <button
-      type="button"
+    <span
       className={cn(
-        'progress-text-content absolute left-0 top-0 inline-flex w-full items-center gap-2 overflow-visible whitespace-nowrap',
-        hasInput
-          ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
-          : 'pointer-events-none',
+        'progress-text-content tool-status-text whitespace-nowrap font-medium',
+        progress < 1 && 'shimmer',
       )}
-      disabled={!hasInput}
-      onClick={hasInput ? onClick : undefined}
-      aria-expanded={hasInput ? isExpanded : undefined}
     >
-      <span className={cn('font-medium', progress < 1 && 'shimmer')}>{text}</span>
-      {hasInput &&
-        (isExpanded ? (
-          <ChevronUp className="size-4 shrink-0 translate-y-[1px]" aria-hidden="true" />
-        ) : (
-          <ChevronDown className="size-4 shrink-0 translate-y-[1px]" aria-hidden="true" />
-        ))}
-    </button>
+      {text}
+    </span>
   );
 }

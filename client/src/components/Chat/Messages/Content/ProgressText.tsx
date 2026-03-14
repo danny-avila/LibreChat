@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import CancelledIcon from './CancelledIcon';
 import { cn } from '~/utils';
 
@@ -100,16 +100,19 @@ export default function ProgressText({
       >
         {icon}
         <span className={cn(showShimmer ? 'shimmer' : '', 'font-medium')}>{text}</span>
-        {subtitle && <span className="font-normal text-text-tertiary">{subtitle}</span>}
+        {subtitle && <span className="font-normal text-text-secondary">{subtitle}</span>}
         {errorSuffix && (
           <span className="font-normal text-red-600 dark:text-red-400">— {errorSuffix}</span>
         )}
-        {hasInput &&
-          (isExpanded ? (
-            <ChevronUp className="size-4 shrink-0 translate-y-[1px]" aria-hidden="true" />
-          ) : (
-            <ChevronDown className="size-4 shrink-0 translate-y-[1px]" aria-hidden="true" />
-          ))}
+        {hasInput && (
+          <ChevronDown
+            className={cn(
+              'size-4 shrink-0 translate-y-[1px] transition-transform duration-200 ease-out',
+              isExpanded && 'rotate-180',
+            )}
+            aria-hidden="true"
+          />
+        )}
       </button>
     </Wrapper>
   );

@@ -173,16 +173,16 @@ export default function WebSearch({
     const completedText = localize('com_ui_web_searched');
 
     return (
-      <div className="my-1">
+      <div className="mb-2">
         <span className="sr-only" aria-live="polite" aria-atomic="true">
           {completedText}
         </span>
         <button
           type="button"
           className={cn(
-            'group flex items-center gap-2 rounded-full py-1 text-sm transition-colors',
+            'tool-status-text group flex items-center gap-2 rounded-full py-1 transition-colors',
             hasSourceData
-              ? 'text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
+              ? 'text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
               : 'pointer-events-none text-text-secondary',
           )}
           disabled={!hasSourceData}
@@ -199,7 +199,7 @@ export default function WebSearch({
           ) : (
             <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
           )}
-          <span className="text-sm font-medium">{completedText}</span>
+          <span className="font-medium">{completedText}</span>
           {hasSourceData && (
             <ChevronDown
               className={cn(
@@ -244,13 +244,15 @@ export default function WebSearch({
   }
 
   return (
-    <div className="my-2.5 flex items-center gap-2.5">
+    <div className="my-1 flex items-center gap-2.5">
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {progressText}
       </span>
       {showSources && <StackedFavicons sources={processedSources} start={-5} />}
       <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-      <span className="shimmer text-xs font-medium text-text-secondary">{progressText}</span>
+      <span className="tool-status-text shimmer font-medium text-text-secondary">
+        {progressText}
+      </span>
     </div>
   );
 }
