@@ -3,8 +3,10 @@ const { ProxyAgent } = require('undici');
 const {
   isUserProvided,
   resolveHeaders,
+  shouldUseEntraId,
   constructAzureURL,
   checkUserKeyExpiry,
+  getEntraIdAccessToken,
 } = require('@librechat/api');
 const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
 const { getUserKeyValues, getUserKeyExpiry } = require('~/models');
@@ -108,12 +110,19 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
       azureOptions,
     });
 
-    apiKey = azureOptions.azureOpenAIApiKey;
+    // For Entra ID, we need to get the actual access token
+    if (shouldUseEntraId()) {
+      apiKey = 'entra-id-placeholder';
+      headers['Authorization'] = `Bearer ${await getEntraIdAccessToken()}`;
+    } else {
+      apiKey = azureOptions.azureOpenAIApiKey;
+      headers['api-key'] = apiKey;
+    }
+
     opts.defaultQuery = { 'api-version': azureOptions.azureOpenAIApiVersion };
     opts.defaultHeaders = resolveHeaders({
       headers: {
         ...headers,
-        'api-key': apiKey,
         'OpenAI-Beta': `assistants=${version}`,
       },
       user: req.user,
@@ -136,7 +145,11 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
         clientOptions.defaultQuery = azureOptions.azureOpenAIApiVersion
           ? { 'api-version': azureOptions.azureOpenAIApiVersion }
           : undefined;
-        clientOptions.headers['api-key'] = apiKey;
+        if (shouldUseEntraId()) {
+          clientOptions.headers['Authorization'] = `Bearer ${await getEntraIdAccessToken()}`;
+        } else {
+          clientOptions.headers['api-key'] = apiKey;
+        }
       }
     }
   }
