@@ -1,11 +1,17 @@
 import dedent from 'dedent';
 
-const markdownRenderer = dedent(`import React, { useEffect, useState } from 'react';
-import Markdown from 'marked-react';
+const markdownRenderer = dedent(`import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface MarkdownRendererProps {
   content: string;
 }
+
+const isSafeUrl = (url: string): boolean => {
+  const normalizedUrl = url.trim().toLowerCase();
+  return !normalizedUrl.startsWith('javascript:') && !normalizedUrl.startsWith('data:');
+};
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   return (
@@ -17,7 +23,13 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
         minHeight: '100vh'
       }}
     >
-      <Markdown gfm={true} breaks={true}>{content}</Markdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        skipHtml={true}
+        urlTransform={(url) => (isSafeUrl(url) ? url : '')}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 };

@@ -41,7 +41,7 @@ describe('markdown artifacts', () => {
       const markdown = '# Test';
       const files = getMarkdownFiles(markdown);
 
-      expect(files['/components/ui/MarkdownRenderer.tsx']).toContain('import Markdown from');
+      expect(files['/components/ui/MarkdownRenderer.tsx']).toContain('import ReactMarkdown from');
       expect(files['/components/ui/MarkdownRenderer.tsx']).toContain('MarkdownRendererProps');
       expect(files['/components/ui/MarkdownRenderer.tsx']).toContain(
         'export default MarkdownRenderer',
@@ -162,13 +162,13 @@ describe('markdown artifacts', () => {
   });
 
   describe('markdown component structure', () => {
-    it('should generate a MarkdownRenderer component that uses marked-react', () => {
+    it('should generate a MarkdownRenderer component with safe markdown rendering', () => {
       const files = getMarkdownFiles('# Test');
       const rendererCode = files['/components/ui/MarkdownRenderer.tsx'];
 
-      // Verify the component imports and uses Markdown from marked-react
-      expect(rendererCode).toContain("import Markdown from 'marked-react'");
-      expect(rendererCode).toContain('<Markdown gfm={true} breaks={true}>{content}</Markdown>');
+      expect(rendererCode).toContain("import ReactMarkdown from 'react-markdown'");
+      expect(rendererCode).toContain('skipHtml={true}');
+      expect(rendererCode).toContain("urlTransform={(url) => (isSafeUrl(url) ? url : '')}");
     });
 
     it('should pass markdown content to the Markdown component', () => {
