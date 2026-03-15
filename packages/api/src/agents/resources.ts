@@ -10,15 +10,25 @@ import type { Request as ServerRequest } from 'express';
  * @param filter - MongoDB filter query for files
  * @param _sortOptions - Sorting options (currently unused)
  * @param selectFields - Field selection options
- * @param options - Additional options including userId and agentId for access control
  * @returns Promise resolving to array of files
  */
 export type TGetFiles = (
   filter: FilterQuery<IMongoFile>,
   _sortOptions: ProjectionType<IMongoFile> | null | undefined,
   selectFields: QueryOptions<IMongoFile> | null | undefined,
-  options?: { userId?: string; agentId?: string },
 ) => Promise<Array<TFile>>;
+
+/**
+ * Function type for filtering files by agent access permissions.
+ * Used to enforce that only files the user has access to (via ownership or agent attachment)
+ * are returned after a raw DB query.
+ */
+export type TFilterFilesByAgentAccess = (params: {
+  files: Array<TFile>;
+  userId: string;
+  role?: string;
+  agentId: string;
+}) => Promise<Array<TFile>>;
 
 /**
  * Helper function to add a file to a specific tool resource category
@@ -146,6 +156,7 @@ export const primeResources = async ({
   req,
   appConfig,
   getFiles,
+  filterFiles,
   requestFileSet,
   attachments: _attachments,
   tool_resources: _tool_resources,
@@ -157,6 +168,7 @@ export const primeResources = async ({
   attachments: Promise<Array<TFile | null>> | undefined;
   tool_resources: AgentToolResources | undefined;
   getFiles: TGetFiles;
+  filterFiles?: TFilterFilesByAgentAccess;
   agentId?: string;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
@@ -228,14 +240,22 @@ export const primeResources = async ({
 
     if (fileIds.length > 0 && isContextEnabled) {
       delete tool_resources[EToolResources.context];
-      const context = await getFiles(
+      let context = await getFiles(
         {
           file_id: { $in: fileIds },
         },
         {},
         {},
-        { userId: req.user?.id, agentId },
       );
+
+      if (filterFiles && req.user?.id && agentId) {
+        context = await filterFiles({
+          files: context,
+          userId: req.user.id,
+          role: req.user?.role,
+          agentId,
+        });
+      }
 
       for (const file of context) {
         if (!file?.file_id) {
