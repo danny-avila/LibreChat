@@ -49,6 +49,7 @@ const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
+const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const systemTools = {
@@ -99,6 +100,38 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
 };
 
 /**
+ * Filters tools, validating that MCP tool strings reference servers the user is authorized to access.
+ * Non-MCP tools are validated against availableTools and systemTools as before.
+ */
+const filterAuthorizedTools = async ({ tools, userId, availableTools }) => {
+  const filteredTools = [];
+  const hasMCPTool = tools.some((tool) => tool?.includes(Constants.mcp_delimiter));
+  const mcpServerConfigs = hasMCPTool
+    ? ((await getMCPServersRegistry().getAllServerConfigs(userId)) ?? {})
+    : null;
+
+  for (const tool of tools) {
+    if (availableTools[tool] || systemTools[tool]) {
+      filteredTools.push(tool);
+      continue;
+    }
+
+    if (!tool?.includes(Constants.mcp_delimiter) || mcpServerConfigs == null) {
+      continue;
+    }
+
+    const serverName = tool.split(Constants.mcp_delimiter).pop();
+    if (!serverName || !Object.hasOwn(mcpServerConfigs, serverName)) {
+      continue;
+    }
+
+    filteredTools.push(tool);
+  }
+
+  return filteredTools;
+};
+
+/**
  * Creates an Agent.
  * @route POST /Agents
  * @param {ServerRequest} req - The request object.
@@ -132,15 +165,7 @@ const createAgentHandler = async (req, res) => {
     agentData.tools = [];
 
     const availableTools = (await getCachedTools()) ?? {};
-    for (const tool of tools) {
-      if (availableTools[tool]) {
-        agentData.tools.push(tool);
-      } else if (systemTools[tool]) {
-        agentData.tools.push(tool);
-      } else if (tool.includes(Constants.mcp_delimiter)) {
-        agentData.tools.push(tool);
-      }
-    }
+    agentData.tools = await filterAuthorizedTools({ tools, userId, availableTools });
 
     const agent = await createAgent(agentData);
 
@@ -322,6 +347,15 @@ const updateAgentHandler = async (req, res) => {
       updateData.tools = ocrConversion.tools;
     }
 
+    if (updateData.tools) {
+      const availableTools = (await getCachedTools()) ?? {};
+      updateData.tools = await filterAuthorizedTools({
+        tools: updateData.tools,
+        userId: req.user.id,
+        availableTools,
+      });
+    }
+
     let updatedAgent =
       Object.keys(updateData).length > 0
         ? await updateAgent({ id }, updateData, {
@@ -464,6 +498,16 @@ const duplicateAgentHandler = async (req, res) => {
 
     const agentActions = await Promise.all(promises);
     newAgentData.actions = agentActions;
+
+    if (newAgentData.tools?.length) {
+      const availableTools = (await getCachedTools()) ?? {};
+      newAgentData.tools = await filterAuthorizedTools({
+        tools: newAgentData.tools,
+        userId,
+        availableTools,
+      });
+    }
+
     const newAgent = await createAgent(newAgentData);
 
     try {
