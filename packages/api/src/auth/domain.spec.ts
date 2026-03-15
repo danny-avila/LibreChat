@@ -1281,4 +1281,53 @@ describe('validateEndpointURL', () => {
       validateEndpointURL('https://api.example.com/v1/chat', 'test-ep'),
     ).resolves.toBeUndefined();
   });
+
+  it('should throw for non-HTTP/HTTPS schemes', async () => {
+    await expect(validateEndpointURL('ftp://example.com/v1', 'test-ep')).rejects.toThrow(
+      'only HTTP and HTTPS are permitted',
+    );
+    await expect(validateEndpointURL('file:///etc/passwd', 'test-ep')).rejects.toThrow(
+      'only HTTP and HTTPS are permitted',
+    );
+    await expect(validateEndpointURL('data:text/plain,hello', 'test-ep')).rejects.toThrow(
+      'only HTTP and HTTPS are permitted',
+    );
+  });
+
+  it('should throw for IPv6 loopback URL', async () => {
+    await expect(validateEndpointURL('http://[::1]:8080/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for IPv6 link-local URL', async () => {
+    await expect(validateEndpointURL('http://[fe80::1]/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for IPv6 unique-local URL', async () => {
+    await expect(validateEndpointURL('http://[fc00::1]/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for .local TLD hostname', async () => {
+    await expect(validateEndpointURL('http://myservice.local/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for .internal TLD hostname', async () => {
+    await expect(validateEndpointURL('http://api.internal/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should pass when DNS lookup fails (fail-open)', async () => {
+    mockedLookup.mockRejectedValueOnce(new Error('ENOTFOUND'));
+    await expect(
+      validateEndpointURL('https://nonexistent.example.com/v1', 'test-ep'),
+    ).resolves.toBeUndefined();
+  });
 });
