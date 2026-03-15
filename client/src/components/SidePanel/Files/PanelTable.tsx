@@ -142,7 +142,15 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         return;
       }
 
-      if (fileData.bytes > (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
+      if (endpointFileConfig.fileLimit && files.size >= endpointFileConfig.fileLimit) {
+        showToast({
+          message: `${localize('com_ui_attach_error_limit')} ${endpointFileConfig.fileLimit} files (${endpoint})`,
+          status: 'error',
+        });
+        return;
+      }
+
+      if (fileData.bytes >= (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
         showToast({
           message: `${localize('com_ui_attach_error_size')} ${
             (endpointFileConfig.fileSizeLimit ?? 0) / megabyte
@@ -155,14 +163,6 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
       if (!defaultFileConfig.checkType(file.type, endpointFileConfig.supportedMimeTypes ?? [])) {
         showToast({
           message: `${localize('com_ui_attach_error_type')} ${file.type} (${endpoint})`,
-          status: 'error',
-        });
-        return;
-      }
-
-      if (endpointFileConfig.fileLimit && files.size >= endpointFileConfig.fileLimit) {
-        showToast({
-          message: `${localize('com_ui_attach_error_limit')} ${endpointFileConfig.fileLimit} files (${endpoint})`,
           status: 'error',
         });
         return;
