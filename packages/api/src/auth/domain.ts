@@ -59,6 +59,20 @@ function isPrivateIPv4(a: number, b: number, c: number): boolean {
   return false;
 }
 
+/** Checks if a pre-normalized (lowercase, bracket-stripped) IPv6 address falls within fe80::/10 */
+function isIPv6LinkLocal(ipv6: string): boolean {
+  if (!ipv6.includes(':')) {
+    return false;
+  }
+  const firstHextet = ipv6.split(':', 1)[0];
+  if (!firstHextet || !/^[0-9a-f]{1,4}$/.test(firstHextet)) {
+    return false;
+  }
+  const hextet = parseInt(firstHextet, 16);
+  // /10 mask (0xffc0) preserves top 10 bits: fe80 = 1111_1110_10xx_xxxx
+  return (hextet & 0xffc0) === 0xfe80;
+}
+
 /** Checks if an IPv6 address embeds a private IPv4 via 6to4, NAT64, or Teredo */
 function hasPrivateEmbeddedIPv4(ipv6: string): boolean {
   if (!ipv6.startsWith('2002:') && !ipv6.startsWith('64:ff9b::') && !ipv6.startsWith('2001::')) {
@@ -132,9 +146,9 @@ export function isPrivateIP(ip: string): boolean {
   if (
     normalized === '::1' ||
     normalized === '::' ||
-    normalized.startsWith('fc') ||
+    normalized.startsWith('fc') || // fc00::/7 — exactly prefixes 'fc' and 'fd'
     normalized.startsWith('fd') ||
-    normalized.startsWith('fe80')
+    isIPv6LinkLocal(normalized) // fe80::/10 — spans 0xfe80–0xfebf; bitwise check required
   ) {
     return true;
   }

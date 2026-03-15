@@ -177,6 +177,20 @@ describe('isSSRFTarget', () => {
       expect(isSSRFTarget('fd00::1')).toBe(true);
       expect(isSSRFTarget('fe80::1')).toBe(true);
     });
+
+    it('should block full fe80::/10 link-local range (fe80–febf)', () => {
+      expect(isSSRFTarget('fe90::1')).toBe(true);
+      expect(isSSRFTarget('fea0::1')).toBe(true);
+      expect(isSSRFTarget('feb0::1')).toBe(true);
+      expect(isSSRFTarget('febf::1')).toBe(true);
+      expect(isSSRFTarget('fec0::1')).toBe(false);
+    });
+
+    it('should NOT false-positive on hostnames whose first label resembles a link-local prefix', () => {
+      expect(isSSRFTarget('fe90.example.com')).toBe(false);
+      expect(isSSRFTarget('fea0.api.io')).toBe(false);
+      expect(isSSRFTarget('febf.service.net')).toBe(false);
+    });
   });
 
   describe('internal hostnames', () => {
@@ -277,10 +291,17 @@ describe('isPrivateIP', () => {
       expect(isPrivateIP('[::1]')).toBe(true);
     });
 
-    it('should detect unique local (fc/fd) and link-local (fe80)', () => {
+    it('should detect unique local (fc/fd) and link-local (fe80::/10)', () => {
       expect(isPrivateIP('fc00::1')).toBe(true);
       expect(isPrivateIP('fd00::1')).toBe(true);
       expect(isPrivateIP('fe80::1')).toBe(true);
+      expect(isPrivateIP('fe90::1')).toBe(true);
+      expect(isPrivateIP('fea0::1')).toBe(true);
+      expect(isPrivateIP('feb0::1')).toBe(true);
+      expect(isPrivateIP('febf::1')).toBe(true);
+      expect(isPrivateIP('[fe90::1]')).toBe(true);
+      expect(isPrivateIP('fec0::1')).toBe(false);
+      expect(isPrivateIP('fe90.example.com')).toBe(false);
     });
   });
 
@@ -482,6 +503,8 @@ describe('resolveHostnameSSRF', () => {
     expect(await resolveHostnameSSRF('::1')).toBe(true);
     expect(await resolveHostnameSSRF('fc00::1')).toBe(true);
     expect(await resolveHostnameSSRF('fe80::1')).toBe(true);
+    expect(await resolveHostnameSSRF('fe90::1')).toBe(true);
+    expect(await resolveHostnameSSRF('febf::1')).toBe(true);
     expect(mockedLookup).not.toHaveBeenCalled();
   });
 
