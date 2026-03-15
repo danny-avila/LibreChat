@@ -1330,4 +1330,15 @@ describe('validateEndpointURL', () => {
       validateEndpointURL('https://nonexistent.example.com/v1', 'test-ep'),
     ).resolves.toBeUndefined();
   });
+
+  it('should throw structured JSON with type invalid_base_url', async () => {
+    const error = await validateEndpointURL('http://169.254.169.254/latest/', 'my-ep').catch(
+      (err: Error) => err,
+    );
+    expect(error).toBeInstanceOf(Error);
+    const parsed = JSON.parse((error as Error).message);
+    expect(parsed.type).toBe('invalid_base_url');
+    expect(parsed.message).toContain('my-ep');
+    expect(parsed.message).toContain('targets a restricted address');
+  });
 });

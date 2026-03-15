@@ -500,6 +500,13 @@ export async function isMCPDomainAllowed(
   return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS);
 }
 
+/** Matches ErrorTypes.INVALID_BASE_URL — string literal avoids build-time dependency on data-provider */
+const INVALID_BASE_URL_TYPE = 'invalid_base_url';
+
+function throwInvalidBaseURL(message: string): never {
+  throw new Error(JSON.stringify({ type: INVALID_BASE_URL_TYPE, message }));
+}
+
 /**
  * Validates that a user-provided endpoint URL does not target private/internal addresses.
  * Throws if the URL is unparseable, uses a non-HTTP(S) scheme, targets a known SSRF hostname,
@@ -519,18 +526,18 @@ export async function validateEndpointURL(url: string, endpoint: string): Promis
     hostname = parsed.hostname;
     protocol = parsed.protocol;
   } catch {
-    throw new Error(`Invalid base URL for ${endpoint}: unable to parse URL.`);
+    throwInvalidBaseURL(`Invalid base URL for ${endpoint}: unable to parse URL.`);
   }
 
   if (protocol !== 'http:' && protocol !== 'https:') {
-    throw new Error(`Invalid base URL for ${endpoint}: only HTTP and HTTPS are permitted.`);
+    throwInvalidBaseURL(`Invalid base URL for ${endpoint}: only HTTP and HTTPS are permitted.`);
   }
 
   if (isSSRFTarget(hostname)) {
-    throw new Error(`Base URL for ${endpoint} targets a restricted address.`);
+    throwInvalidBaseURL(`Base URL for ${endpoint} targets a restricted address.`);
   }
 
   if (await resolveHostnameSSRF(hostname)) {
-    throw new Error(`Base URL for ${endpoint} resolves to a restricted address.`);
+    throwInvalidBaseURL(`Base URL for ${endpoint} resolves to a restricted address.`);
   }
 }
