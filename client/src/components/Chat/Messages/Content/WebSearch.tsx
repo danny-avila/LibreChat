@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Globe, ChevronDown } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
@@ -163,9 +163,15 @@ export default function WebSearch({
   }, [ownTurn, localize, showSources, finalizing]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
-  const [showSourceList, setShowSourceList] = useState(autoExpand);
-  const sourceExpandStyle = useExpandCollapse(showSourceList);
   const sourceCount = allSources.length;
+  const [showSourceList, setShowSourceList] = useState(() => autoExpand && sourceCount > 0);
+  const sourceExpandStyle = useExpandCollapse(showSourceList);
+
+  useEffect(() => {
+    if (autoExpand && sourceCount > 0) {
+      setShowSourceList(true);
+    }
+  }, [autoExpand, sourceCount]);
 
   if (cancelled) {
     return null;

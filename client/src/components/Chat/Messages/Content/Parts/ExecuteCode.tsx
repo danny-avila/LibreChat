@@ -106,10 +106,17 @@ export default function ExecuteCode({
   const hasOutput = output.length > 0;
   const outputRef = useRef<string>(output);
   const autoExpand = useRecoilValue(store.autoExpandTools);
-  const [showCode, setShowCode] = useState(autoExpand);
-  const expandStyle = useExpandCollapse(showCode);
 
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
+  const hasContent = !!code || hasOutput;
+  const [showCode, setShowCode] = useState(() => autoExpand && hasContent);
+  const expandStyle = useExpandCollapse(showCode);
+
+  useEffect(() => {
+    if (autoExpand && hasContent) {
+      setShowCode(true);
+    }
+  }, [autoExpand, hasContent]);
   const progress = useProgress(initialProgress);
 
   const highlighted = useMemo(() => (code ? highlightCode(code, lang) : null), [code, lang]);
