@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { Globe, ChevronDown } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
 import type { TAttachment, ValidSource, SearchResultData } from 'librechat-data-provider';
@@ -7,6 +8,7 @@ import { StackedFavicons } from '~/components/Web/Sources';
 import { useSearchContext } from '~/Providers';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import cn from '~/utils/cn';
+import store from '~/store';
 
 type ProgressKeys =
   | 'com_ui_web_searching'
@@ -160,7 +162,8 @@ export default function WebSearch({
     return localize(text);
   }, [ownTurn, localize, showSources, finalizing]);
 
-  const [showSourceList, setShowSourceList] = useState(false);
+  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const [showSourceList, setShowSourceList] = useState(autoExpand);
   const sourceExpandStyle = useExpandCollapse(showSourceList);
   const sourceCount = allSources.length;
 
@@ -213,7 +216,7 @@ export default function WebSearch({
         {hasSourceData && (
           <div style={sourceExpandStyle}>
             <div className="overflow-hidden">
-              <div className="mt-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
+              <div className="my-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
                 {allSources.map((source, i) => {
                   const domain = getCleanDomain(source.link);
                   return (
