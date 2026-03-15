@@ -24,12 +24,12 @@ import {
   type ColumnFiltersState,
 } from '@tanstack/react-table';
 import {
-  fileConfig as defaultFileConfig,
-  checkOpenAIStorage,
-  mergeFileConfig,
   megabyte,
+  mergeFileConfig,
+  checkOpenAIStorage,
   isAssistantsEndpoint,
   getEndpointFileConfig,
+  fileConfig as defaultFileConfig,
   type TFile,
 } from 'librechat-data-provider';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
@@ -86,7 +86,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
-  const { setFiles, conversation } = useChatContext();
+  const { files, setFiles, conversation } = useChatContext();
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
@@ -160,6 +160,25 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         return;
       }
 
+      if (endpointFileConfig.fileLimit && files.size >= endpointFileConfig.fileLimit) {
+        showToast({
+          message: `${localize('com_ui_attach_error_limit')} ${endpointFileConfig.fileLimit} (${endpoint})`,
+          status: 'error',
+        });
+        return;
+      }
+
+      if (endpointFileConfig.totalSizeLimit) {
+        const currentTotalSize = Array.from(files.values()).reduce((sum, f) => sum + f.size, 0);
+        if (currentTotalSize + fileData.bytes > endpointFileConfig.totalSizeLimit) {
+          showToast({
+            message: `${localize('com_ui_attach_error_total_size')} ${endpointFileConfig.totalSizeLimit / megabyte} MB (${endpoint})`,
+            status: 'error',
+          });
+          return;
+        }
+      }
+
       addFile({
         progress: 1,
         attached: true,
@@ -175,7 +194,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         metadata: fileData.metadata,
       });
     },
-    [addFile, fileMap, conversation, localize, showToast, fileConfig],
+    [addFile, files, fileMap, conversation, localize, showToast, fileConfig],
   );
 
   const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
