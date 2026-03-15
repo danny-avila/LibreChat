@@ -1314,6 +1314,9 @@ describe('web.ts', () => {
       });
 
       expect(result.authResult.firecrawlApiUrl).toBeUndefined();
+      expect(result.authenticated).toBe(true);
+      const scrapersAuth = result.authTypes.find(([c]) => c === 'scrapers')?.[1];
+      expect(scrapersAuth).toBe(AuthType.USER_PROVIDED);
     });
 
     it('should block user-provided searxngInstanceUrl targeting metadata endpoint', async () => {
@@ -1353,43 +1356,47 @@ describe('web.ts', () => {
       mockIsSSRFTarget.mockReturnValue(true);
 
       const originalEnv = process.env;
-      process.env = {
-        ...originalEnv,
-        JINA_API_KEY: 'system-jina-key',
-        JINA_API_URL: 'http://jina-internal:8080/rerank',
-      };
+      try {
+        process.env = {
+          ...originalEnv,
+          JINA_API_KEY: 'system-jina-key',
+          JINA_API_URL: 'http://jina-internal:8080/rerank',
+        };
 
-      const webSearchConfig: TCustomConfig['webSearch'] = {
-        serperApiKey: '${SERPER_API_KEY}',
-        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
-        jinaApiKey: '${JINA_API_KEY}',
-        jinaApiUrl: '${JINA_API_URL}',
-        safeSearch: SafeSearchTypes.MODERATE,
-        rerankerType: 'jina' as RerankerTypes,
-      };
+        const webSearchConfig: TCustomConfig['webSearch'] = {
+          serperApiKey: '${SERPER_API_KEY}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          jinaApiKey: '${JINA_API_KEY}',
+          jinaApiUrl: '${JINA_API_URL}',
+          safeSearch: SafeSearchTypes.MODERATE,
+          rerankerType: 'jina' as RerankerTypes,
+        };
 
-      mockLoadAuthValues.mockImplementation(({ authFields }) => {
-        const result: Record<string, string> = {};
-        authFields.forEach((field: string) => {
-          if (field === 'JINA_API_KEY') {
-            result[field] = 'system-jina-key';
-          } else if (field === 'JINA_API_URL') {
-            result[field] = 'http://jina-internal:8080/rerank';
-          } else {
-            result[field] = 'test-api-key';
-          }
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'JINA_API_KEY') {
+              result[field] = 'system-jina-key';
+            } else if (field === 'JINA_API_URL') {
+              result[field] = 'http://jina-internal:8080/rerank';
+            } else {
+              result[field] = 'test-api-key';
+            }
+          });
+          return Promise.resolve(result);
         });
-        return Promise.resolve(result);
-      });
 
-      const result = await loadWebSearchAuth({
-        userId,
-        webSearchConfig,
-        loadAuthValues: mockLoadAuthValues,
-      });
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
 
-      expect(result.authResult.jinaApiUrl).toBe('http://jina-internal:8080/rerank');
-      process.env = originalEnv;
+        expect(result.authResult.jinaApiUrl).toBe('http://jina-internal:8080/rerank');
+        expect(result.authenticated).toBe(true);
+      } finally {
+        process.env = originalEnv;
+      }
     });
 
     it('should reject URLs with invalid format', async () => {
@@ -1421,6 +1428,41 @@ describe('web.ts', () => {
       });
 
       expect(result.authResult.firecrawlApiUrl).toBeUndefined();
+      expect(result.authenticated).toBe(true);
+      const scrapersAuth = result.authTypes.find(([c]) => c === 'scrapers')?.[1];
+      expect(scrapersAuth).toBe(AuthType.USER_PROVIDED);
+    });
+
+    it('should reject non-HTTP schemes like file://', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'file:///etc/passwd';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.firecrawlApiUrl).toBeUndefined();
+      expect(result.authenticated).toBe(true);
     });
 
     it('should allow legitimate external URLs', async () => {
