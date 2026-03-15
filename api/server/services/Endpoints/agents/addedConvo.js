@@ -1,8 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { initializeAgent, validateAgentModel } = require('@librechat/api');
-const { ResourceType, PermissionBits } = require('librechat-data-provider');
 const { loadAddedAgent, setGetAgent, ADDED_AGENT_ID } = require('~/models/loadAddedAgent');
-const { checkPermission } = require('~/server/services/PermissionService');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent } = require('~/models/Agent');
 const db = require('~/models');
@@ -71,24 +69,6 @@ const processAddedConvo = async ({
     const addedAgent = await loadAddedAgent({ req, conversation: addedConvo, primaryAgent });
     if (!addedAgent) {
       return { userMCPAuthMap };
-    }
-
-    if (addedAgent._id) {
-      const hasAccess = await checkPermission({
-        userId: req.user.id,
-        role: req.user.role,
-        resourceType: ResourceType.AGENT,
-        resourceId: addedAgent._id,
-        requiredPermission: PermissionBits.VIEW,
-      });
-
-      if (!hasAccess) {
-        // TODO: emit an SSE warning chunk so the user knows the parallel agent was blocked
-        logger.warn(
-          `[processAddedConvo] User ${req.user.id} lacks VIEW access to added agent ${addedConvo.agent_id}`,
-        );
-        return { userMCPAuthMap };
-      }
     }
 
     const addedValidation = await validateAgentModel({
