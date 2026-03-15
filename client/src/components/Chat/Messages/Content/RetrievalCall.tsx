@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
 import ProgressText from './ProgressText';
+import store from '~/store';
 
 export default function RetrievalCall({
   initialProgress = 0.1,
@@ -18,7 +20,8 @@ export default function RetrievalCall({
   const errorState = typeof output === 'string' && isError(output);
   const cancelled = !isSubmitting && initialProgress < 1 && !errorState;
   const hasOutput = !!output && !isError(output);
-  const [showOutput, setShowOutput] = useState(false);
+  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const [showOutput, setShowOutput] = useState(autoExpand);
   const expandStyle = useExpandCollapse(showOutput);
 
   return (
