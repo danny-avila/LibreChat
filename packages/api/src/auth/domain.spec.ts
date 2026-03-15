@@ -1023,8 +1023,23 @@ describe('isMCPDomainAllowed', () => {
   });
 
   describe('invalid URL handling', () => {
-    it('should allow config with invalid URL (treated as stdio)', async () => {
+    it('should reject config with invalid URL', async () => {
       const config = { url: 'not-a-valid-url' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(false);
+    });
+
+    it('should reject config with templated URL that cannot be parsed', async () => {
+      const config = { url: 'http://{{CUSTOM_HOST}}/mcp' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(false);
+    });
+
+    it('should allow config with whitespace-only URL (effectively no URL)', async () => {
+      const config = { url: '   ' };
+      expect(await isMCPDomainAllowed(config, [])).toBe(true);
+    });
+
+    it('should still allow config with no url property (stdio)', async () => {
+      const config = { command: 'node', args: ['server.js'] };
       expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
     });
   });

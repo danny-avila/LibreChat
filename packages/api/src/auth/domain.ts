@@ -428,7 +428,10 @@ export async function isActionDomainAllowed(
 /**
  * Extracts full domain spec (protocol://hostname:port) from MCP server config URL.
  * Returns the full origin for proper protocol/port matching against allowedDomains.
- * Returns null for stdio transports (no URL) or invalid URLs.
+ * @returns The full origin string, or null when:
+ *   - No `url` property, non-string, or empty (stdio transport — always allowed upstream)
+ *   - URL string present but cannot be parsed (rejected fail-closed upstream when allowlist active)
+ *   Callers must distinguish these two null cases; see {@link isMCPDomainAllowed}.
  * @param config - MCP server configuration (accepts any config with optional url field)
  */
 export function extractMCPServerDomain(config: Record<string, unknown>): string | null {
@@ -452,6 +455,11 @@ export function extractMCPServerDomain(config: Record<string, unknown>): string 
  * Validates MCP server domain against allowedDomains.
  * Supports HTTP, HTTPS, WS, and WSS protocols (per MCP specification).
  * Stdio transports (no URL) are always allowed.
+ * Configs with a non-empty URL that cannot be parsed are rejected fail-closed when an
+ * allowlist is active, preventing template placeholders (e.g. `{{HOST}}`) from bypassing
+ * domain validation after `processMCPEnv` resolves them at connection time.
+ * When no allowlist is configured, unparseable URLs fall through to connection-level
+ * SSRF protection (`createSSRFSafeUndiciConnect`).
  * @param config - MCP server configuration with optional url field
  * @param allowedDomains - List of allowed domains (with wildcard support)
  */
@@ -460,8 +468,16 @@ export async function isMCPDomainAllowed(
   allowedDomains?: string[] | null,
 ): Promise<boolean> {
   const domain = extractMCPServerDomain(config);
+  const hasAllowlist = Array.isArray(allowedDomains) && allowedDomains.length > 0;
 
-  // Stdio transports don't have domains - always allowed
+  const hasExplicitUrl =
+    Object.hasOwn(config, 'url') && typeof config.url === 'string' && config.url.trim().length > 0;
+
+  if (!domain && hasExplicitUrl && hasAllowlist) {
+    return false;
+  }
+
+  // Stdio transports (no URL) are always allowed
   if (!domain) {
     return true;
   }
