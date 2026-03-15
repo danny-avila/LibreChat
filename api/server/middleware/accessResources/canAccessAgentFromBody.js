@@ -1,52 +1,109 @@
 const { logger } = require('@librechat/data-schemas');
 const {
   Constants,
+  Permissions,
   ResourceType,
+  SystemRoles,
+  PermissionTypes,
   isAgentsEndpoint,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
 const { canAccessResource } = require('./canAccessResource');
+const { getRoleByName } = require('~/models/Role');
 const { getAgent } = require('~/models/Agent');
 
 /**
- * Agent ID resolver function for agent_id from request body
- * Resolves custom agent ID (e.g., "agent_abc123") to MongoDB ObjectId
- * This is used specifically for chat routes where agent_id comes from request body
- *
+ * Resolves custom agent ID (e.g., "agent_abc123") to MongoDB ObjectId.
  * @param {string} agentCustomId - Custom agent ID from request body
  * @returns {Promise<Object|null>} Agent document with _id field, or null if not found
  */
 const resolveAgentIdFromBody = async (agentCustomId) => {
-  // Handle ephemeral agents - they don't need permission checks
-  // Real agent IDs always start with "agent_", so anything else is ephemeral
   if (isEphemeralAgentId(agentCustomId)) {
-    return null; // No permission check needed for ephemeral agents
+    return null;
   }
 
   return await getAgent({ id: agentCustomId });
 };
 
 /**
- * Middleware factory that creates middleware to check agent access permissions from request body.
- * This middleware is specifically designed for chat routes where the agent_id comes from req.body
- * instead of route parameters.
+ * Creates a canAccessResource middleware call for the given agent ID
+ * and chains to the provided continuation on success.
+ */
+const checkAgentResourceAccess = (agentId, requiredPermission, req, res, continuation) => {
+  const middleware = canAccessResource({
+    resourceType: ResourceType.AGENT,
+    requiredPermission,
+    resourceIdParam: 'agent_id',
+    idResolver: () => resolveAgentIdFromBody(agentId),
+  });
+
+  const tempReq = {
+    ...req,
+    params: {
+      ...req.params,
+      agent_id: agentId,
+    },
+  };
+
+  return middleware(tempReq, res, continuation);
+};
+
+/**
+ * Validates that the user has MULTI_CONVO:USE permission and, when addedConvo.agent_id
+ * is a real (non-ephemeral) agent, VIEW access to that agent resource.
+ */
+const checkAddedConvoAccess = async (req, res, next, requiredPermission) => {
+  const addedConvo = req.body?.addedConvo;
+  if (!addedConvo) {
+    return next();
+  }
+
+  try {
+    if (!req.user?.role) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Insufficient permissions for multi-conversation',
+      });
+    }
+
+    if (req.user.role !== SystemRoles.ADMIN) {
+      const role = await getRoleByName(req.user.role);
+      const hasMultiConvo = role?.permissions?.[PermissionTypes.MULTI_CONVO]?.[Permissions.USE];
+      if (!hasMultiConvo) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Multi-conversation feature is not enabled',
+        });
+      }
+    }
+
+    const addedAgentId = addedConvo.agent_id;
+    if (!addedAgentId || isEphemeralAgentId(addedAgentId)) {
+      return next();
+    }
+
+    return checkAgentResourceAccess(addedAgentId, requiredPermission, req, res, next);
+  } catch (error) {
+    logger.error('Failed to validate addedConvo access permissions', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to validate addedConvo access permissions',
+    });
+  }
+};
+
+/**
+ * Middleware factory that checks agent access permissions from request body.
+ * Validates both the primary agent_id and, when present, addedConvo.agent_id
+ * (which also requires MULTI_CONVO:USE permission).
  *
  * @param {Object} options - Configuration options
  * @param {number} options.requiredPermission - The permission bit required (1=view, 2=edit, 4=delete, 8=share)
  * @returns {Function} Express middleware function
- *
- * @example
- * // Basic usage for agent chat (requires VIEW permission)
- * router.post('/chat',
- *   canAccessAgentFromBody({ requiredPermission: PermissionBits.VIEW }),
- *   buildEndpointOption,
- *   chatController
- * );
  */
 const canAccessAgentFromBody = (options) => {
   const { requiredPermission } = options;
 
-  // Validate required options
   if (!requiredPermission || typeof requiredPermission !== 'number') {
     throw new Error('canAccessAgentFromBody: requiredPermission is required and must be a number');
   }
@@ -67,28 +124,13 @@ const canAccessAgentFromBody = (options) => {
         });
       }
 
-      // Skip permission checks for ephemeral agents
-      // Real agent IDs always start with "agent_", so anything else is ephemeral
+      const afterPrimaryCheck = () => checkAddedConvoAccess(req, res, next, requiredPermission);
+
       if (isEphemeralAgentId(agentId)) {
-        return next();
+        return afterPrimaryCheck();
       }
 
-      const agentAccessMiddleware = canAccessResource({
-        resourceType: ResourceType.AGENT,
-        requiredPermission,
-        resourceIdParam: 'agent_id', // This will be ignored since we use custom resolver
-        idResolver: () => resolveAgentIdFromBody(agentId),
-      });
-
-      const tempReq = {
-        ...req,
-        params: {
-          ...req.params,
-          agent_id: agentId,
-        },
-      };
-
-      return agentAccessMiddleware(tempReq, res, next);
+      return checkAgentResourceAccess(agentId, requiredPermission, req, res, afterPrimaryCheck);
     } catch (error) {
       logger.error('Failed to validate agent access permissions', error);
       return res.status(500).json({
