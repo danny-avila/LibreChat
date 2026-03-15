@@ -143,6 +143,9 @@ router.post(
 
       if (actions_result && actions_result.length) {
         const action = actions_result[0];
+        if (action.agent_id && action.agent_id !== agent_id) {
+          return res.status(403).json({ message: 'Action does not belong to this agent' });
+        }
         metadata = { ...action.metadata, ...metadata };
       }
 
@@ -251,7 +254,7 @@ router.delete(
         { tools: updatedTools, actions: updatedActions },
         { updatingUserId: req.user.id, forceVersion: true },
       );
-      await deleteAction({ action_id });
+      await deleteAction({ action_id, agent_id });
       res.status(200).json({ message: 'Action deleted successfully' });
     } catch (error) {
       const message = 'Trouble deleting the Agent Action';

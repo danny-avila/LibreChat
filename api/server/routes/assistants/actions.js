@@ -60,6 +60,9 @@ router.post('/:assistant_id', async (req, res) => {
 
     if (actions_result && actions_result.length) {
       const action = actions_result[0];
+      if (action.assistant_id && action.assistant_id !== assistant_id) {
+        return res.status(403).json({ message: 'Action does not belong to this assistant' });
+      }
       metadata = { ...action.metadata, ...metadata };
     }
 
@@ -196,7 +199,7 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
       assistantUpdateData.user = req.user.id;
     }
     promises.push(updateAssistantDoc({ assistant_id }, assistantUpdateData));
-    promises.push(deleteAction({ action_id }));
+    promises.push(deleteAction({ action_id, assistant_id }));
 
     await Promise.all(promises);
     res.status(200).json({ message: 'Action deleted successfully' });
