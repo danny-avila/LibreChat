@@ -24,7 +24,10 @@ jest.mock('~/utils', () => ({
 import { initializeOpenAI } from './initialize';
 
 function createParams(env: Record<string, string | undefined>): BaseInitializeParams {
-  const original = process.env;
+  const savedEnv: Record<string, string | undefined> = {};
+  for (const key of Object.keys(env)) {
+    savedEnv[key] = process.env[key];
+  }
   Object.assign(process.env, env);
 
   const db = {
@@ -47,10 +50,10 @@ function createParams(env: Record<string, string | undefined>): BaseInitializePa
 
   const restore = () => {
     for (const key of Object.keys(env)) {
-      if (original[key] === undefined) {
+      if (savedEnv[key] === undefined) {
         delete process.env[key];
       } else {
-        process.env[key] = original[key];
+        process.env[key] = savedEnv[key];
       }
     }
   };
