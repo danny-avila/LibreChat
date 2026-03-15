@@ -29,20 +29,26 @@ export function initializeCloudFront(config: CloudFrontConfig): boolean {
   const keyPairId = process.env.CLOUDFRONT_KEY_PAIR_ID ?? null;
   const privateKey = process.env.CLOUDFRONT_PRIVATE_KEY ?? null;
 
+  if (config.imageSigning === 'cookies' && (!keyPairId || !privateKey)) {
+    logger.error(
+      '[initializeCloudFront] imageSigning="cookies" requires CLOUDFRONT_KEY_PAIR_ID and CLOUDFRONT_PRIVATE_KEY env vars.',
+    );
+    return false;
+  }
+
   cloudFrontConfig = { ...config, privateKey, keyPairId };
 
-  if (config.imageSigning !== 'none') {
+  if (config.imageSigning === 'cookies') {
+    logger.info(
+      '[initializeCloudFront] CloudFront cookie signing enabled. Cookies will be set during auth.',
+    );
+  } else if (config.imageSigning === 'url') {
     logger.warn(
-      `[initializeCloudFront] imageSigning="${config.imageSigning}" is configured but not yet implemented. All URLs will be unsigned. Do NOT restrict your CloudFront distribution to signed requests.`,
+      '[initializeCloudFront] imageSigning="url" is configured but not yet implemented for images.',
     );
   }
 
-  if (keyPairId && privateKey) {
-    logger.warn(
-      '[initializeCloudFront] Signing keys are configured but URL signing is not yet active. ' +
-        'All files will be served via unsigned URLs. Signing will be enabled in a follow-up release.',
-    );
-  } else {
+  if (!keyPairId || !privateKey) {
     logger.info(
       '[initializeCloudFront] CloudFront initialized without signing keys (public OAC only).',
     );
