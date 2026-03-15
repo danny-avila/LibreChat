@@ -10,6 +10,8 @@ const {
   createSequentialChainEdges,
 } = require('@librechat/api');
 const {
+  ResourceType,
+  PermissionBits,
   EModelEndpoint,
   isAgentsEndpoint,
   getResponseSender,
@@ -21,6 +23,7 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { checkPermission } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getConvoFiles } = require('~/models/Conversation');
 const { processAddedConvo } = require('./addedConvo');
@@ -224,6 +227,22 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     if (!agent) {
       logger.warn(
         `[processAgent] Handoff agent ${agentId} not found, skipping (orphaned reference)`,
+      );
+      skippedAgentIds.add(agentId);
+      return null;
+    }
+
+    const hasAccess = await checkPermission({
+      userId: req.user.id,
+      role: req.user.role,
+      resourceType: ResourceType.AGENT,
+      resourceId: agent._id,
+      requiredPermission: PermissionBits.VIEW,
+    });
+
+    if (!hasAccess) {
+      logger.warn(
+        `[processAgent] User ${req.user.id} lacks VIEW access to handoff agent ${agentId}, skipping`,
       );
       skippedAgentIds.add(agentId);
       return null;
