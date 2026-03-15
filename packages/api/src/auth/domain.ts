@@ -499,3 +499,25 @@ export async function isMCPDomainAllowed(
   // Use MCP_PROTOCOLS (HTTP/HTTPS/WS/WSS) for MCP server validation
   return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS);
 }
+
+/**
+ * Validates that a user-provided endpoint URL does not target private/internal addresses.
+ * Throws if the URL is unparseable, targets a known SSRF hostname, or DNS-resolves to a private IP.
+ */
+export async function validateEndpointURL(url: string, endpoint: string): Promise<void> {
+  let hostname: string;
+  try {
+    const parsed = new URL(url);
+    hostname = parsed.hostname;
+  } catch {
+    throw new Error(`Invalid base URL for ${endpoint}: unable to parse URL.`);
+  }
+
+  if (isSSRFTarget(hostname)) {
+    throw new Error(`Base URL for ${endpoint} targets a restricted address.`);
+  }
+
+  if (await resolveHostnameSSRF(hostname)) {
+    throw new Error(`Base URL for ${endpoint} resolves to a restricted address.`);
+  }
+}

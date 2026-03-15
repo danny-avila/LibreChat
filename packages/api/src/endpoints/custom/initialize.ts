@@ -10,6 +10,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
+import { validateEndpointURL } from '~/auth';
 import { fetchModels } from '~/endpoints/models';
 import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { standardCache } from '~/cache';
@@ -121,6 +122,10 @@ export async function initializeCustom({
 
   if (!baseURL) {
     throw new Error(`${endpoint} Base URL not provided.`);
+  }
+
+  if (userProvidesURL) {
+    await validateEndpointURL(baseURL, endpoint);
   }
 
   let endpointTokenConfig: EndpointTokenConfig | undefined;
