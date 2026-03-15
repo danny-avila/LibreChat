@@ -12,6 +12,7 @@ import {
   isPrivateIP,
   isSSRFTarget,
   resolveHostnameSSRF,
+  validateEndpointURL,
 } from './domain';
 
 const mockedLookup = lookup as jest.MockedFunction<typeof lookup>;
@@ -1207,5 +1208,137 @@ describe('isMCPDomainAllowed', () => {
         false,
       );
     });
+  });
+});
+
+describe('validateEndpointURL', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should throw for unparseable URLs', async () => {
+    await expect(validateEndpointURL('not-a-url', 'test-ep')).rejects.toThrow(
+      'Invalid base URL for test-ep',
+    );
+  });
+
+  it('should throw for localhost URLs', async () => {
+    await expect(validateEndpointURL('http://localhost:8080/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for private IP URLs', async () => {
+    await expect(validateEndpointURL('http://192.168.1.1/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+    await expect(validateEndpointURL('http://10.0.0.1/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+    await expect(validateEndpointURL('http://172.16.0.1/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for link-local / metadata IP', async () => {
+    await expect(
+      validateEndpointURL('http://169.254.169.254/latest/meta-data/', 'test-ep'),
+    ).rejects.toThrow('targets a restricted address');
+  });
+
+  it('should throw for loopback IP', async () => {
+    await expect(validateEndpointURL('http://127.0.0.1:11434/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for internal Docker/Kubernetes hostnames', async () => {
+    await expect(validateEndpointURL('http://redis:6379/', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+    await expect(validateEndpointURL('http://mongodb:27017/', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw when hostname DNS-resolves to a private IP', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '10.0.0.5', family: 4 }] as never);
+    await expect(validateEndpointURL('https://evil.example.com/v1', 'test-ep')).rejects.toThrow(
+      'resolves to a restricted address',
+    );
+  });
+
+  it('should allow public URLs', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '104.18.7.192', family: 4 }] as never);
+    await expect(
+      validateEndpointURL('https://api.openai.com/v1', 'test-ep'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('should allow public URLs that resolve to public IPs', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '8.8.8.8', family: 4 }] as never);
+    await expect(
+      validateEndpointURL('https://api.example.com/v1/chat', 'test-ep'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('should throw for non-HTTP/HTTPS schemes', async () => {
+    await expect(validateEndpointURL('ftp://example.com/v1', 'test-ep')).rejects.toThrow(
+      'only HTTP and HTTPS are permitted',
+    );
+    await expect(validateEndpointURL('file:///etc/passwd', 'test-ep')).rejects.toThrow(
+      'only HTTP and HTTPS are permitted',
+    );
+    await expect(validateEndpointURL('data:text/plain,hello', 'test-ep')).rejects.toThrow(
+      'only HTTP and HTTPS are permitted',
+    );
+  });
+
+  it('should throw for IPv6 loopback URL', async () => {
+    await expect(validateEndpointURL('http://[::1]:8080/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for IPv6 link-local URL', async () => {
+    await expect(validateEndpointURL('http://[fe80::1]/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for IPv6 unique-local URL', async () => {
+    await expect(validateEndpointURL('http://[fc00::1]/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for .local TLD hostname', async () => {
+    await expect(validateEndpointURL('http://myservice.local/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for .internal TLD hostname', async () => {
+    await expect(validateEndpointURL('http://api.internal/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should pass when DNS lookup fails (fail-open)', async () => {
+    mockedLookup.mockRejectedValueOnce(new Error('ENOTFOUND'));
+    await expect(
+      validateEndpointURL('https://nonexistent.example.com/v1', 'test-ep'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('should throw structured JSON with type invalid_base_url', async () => {
+    const error = await validateEndpointURL('http://169.254.169.254/latest/', 'my-ep').catch(
+      (err: Error) => err,
+    );
+    expect(error).toBeInstanceOf(Error);
+    const parsed = JSON.parse((error as Error).message);
+    expect(parsed.type).toBe('invalid_base_url');
+    expect(parsed.message).toContain('my-ep');
+    expect(parsed.message).toContain('targets a restricted address');
   });
 });
