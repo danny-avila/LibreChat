@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
@@ -40,8 +40,15 @@ export default function ToolCall({
 }) {
   const localize = useLocalize();
   const autoExpand = useRecoilValue(store.autoExpandTools);
-  const [showInfo, setShowInfo] = useState(autoExpand);
+  const hasOutput = (output?.length ?? 0) > 0;
+  const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
   const expandStyle = useExpandCollapse(showInfo);
+
+  useEffect(() => {
+    if (autoExpand && hasOutput) {
+      setShowInfo(true);
+    }
+  }, [autoExpand, hasOutput]);
 
   const { function_name, domain, isMCPToolCall, mcpServerName } = useMemo(() => {
     if (typeof name !== 'string') {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
@@ -21,8 +21,14 @@ export default function RetrievalCall({
   const cancelled = !isSubmitting && initialProgress < 1 && !errorState;
   const hasOutput = !!output && !isError(output);
   const autoExpand = useRecoilValue(store.autoExpandTools);
-  const [showOutput, setShowOutput] = useState(autoExpand);
+  const [showOutput, setShowOutput] = useState(() => autoExpand && hasOutput);
   const expandStyle = useExpandCollapse(showOutput);
+
+  useEffect(() => {
+    if (autoExpand && hasOutput) {
+      setShowOutput(true);
+    }
+  }, [autoExpand, hasOutput]);
 
   return (
     <div className="my-1">
