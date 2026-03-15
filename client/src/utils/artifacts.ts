@@ -108,8 +108,9 @@ const mermaidDependencies = {
 };
 
 const markdownDependencies = {
-  'react-markdown': '^9.0.1',
   'remark-gfm': '^4.0.0',
+  'remark-breaks': '^4.0.0',
+  'react-markdown': '^9.0.1',
 };
 
 const dependenciesMap: Record<

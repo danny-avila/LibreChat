@@ -1,30 +1,58 @@
 import dedent from 'dedent';
 
+const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+export const isSafeUrl = (url: string): boolean => {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('.')) {
+    return true;
+  }
+  try {
+    return SAFE_PROTOCOLS.has(new URL(trimmed).protocol);
+  } catch {
+    return false;
+  }
+};
+
 const markdownRenderer = dedent(`import React from 'react';
-import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+import ReactMarkdown from 'react-markdown';
 
 interface MarkdownRendererProps {
   content: string;
 }
 
+const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
 const isSafeUrl = (url: string): boolean => {
-  const normalizedUrl = url.trim().toLowerCase();
-  return !normalizedUrl.startsWith('javascript:') && !normalizedUrl.startsWith('data:');
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('.')) return true;
+  try {
+    return SAFE_PROTOCOLS.has(new URL(trimmed).protocol);
+  } catch {
+    return false;
+  }
 };
+
+const remarkPlugins = [remarkGfm, remarkBreaks];
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   return (
     <div
       className="markdown-body"
       style={{
-        padding: '2rem',        
+        padding: '2rem',
         margin: '1rem',
         minHeight: '100vh'
       }}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={remarkPlugins}
         skipHtml={true}
         urlTransform={(url) => (isSafeUrl(url) ? url : '')}
       >

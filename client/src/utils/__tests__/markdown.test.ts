@@ -1,4 +1,72 @@
-import { getMarkdownFiles } from '../markdown';
+import { isSafeUrl, getMarkdownFiles } from '../markdown';
+
+describe('isSafeUrl', () => {
+  it('allows https URLs', () => {
+    expect(isSafeUrl('https://example.com')).toBe(true);
+  });
+
+  it('allows http URLs', () => {
+    expect(isSafeUrl('http://example.com/path')).toBe(true);
+  });
+
+  it('allows mailto links', () => {
+    expect(isSafeUrl('mailto:user@example.com')).toBe(true);
+  });
+
+  it('allows tel links', () => {
+    expect(isSafeUrl('tel:+1234567890')).toBe(true);
+  });
+
+  it('allows relative paths', () => {
+    expect(isSafeUrl('/path/to/page')).toBe(true);
+    expect(isSafeUrl('./relative')).toBe(true);
+    expect(isSafeUrl('../parent')).toBe(true);
+  });
+
+  it('allows anchor links', () => {
+    expect(isSafeUrl('#section')).toBe(true);
+  });
+
+  it('blocks javascript: protocol', () => {
+    expect(isSafeUrl('javascript:alert(1)')).toBe(false);
+  });
+
+  it('blocks javascript: with leading whitespace', () => {
+    expect(isSafeUrl('  javascript:alert(1)')).toBe(false);
+  });
+
+  it('blocks javascript: with mixed case', () => {
+    expect(isSafeUrl('JavaScript:alert(1)')).toBe(false);
+  });
+
+  it('blocks data: protocol', () => {
+    expect(isSafeUrl('data:text/html,<b>x</b>')).toBe(false);
+  });
+
+  it('blocks blob: protocol', () => {
+    expect(isSafeUrl('blob:http://example.com/uuid')).toBe(false);
+  });
+
+  it('blocks vbscript: protocol', () => {
+    expect(isSafeUrl('vbscript:MsgBox("xss")')).toBe(false);
+  });
+
+  it('blocks file: protocol', () => {
+    expect(isSafeUrl('file:///etc/passwd')).toBe(false);
+  });
+
+  it('blocks empty strings', () => {
+    expect(isSafeUrl('')).toBe(false);
+  });
+
+  it('blocks whitespace-only strings', () => {
+    expect(isSafeUrl('   ')).toBe(false);
+  });
+
+  it('blocks unknown/custom protocols', () => {
+    expect(isSafeUrl('custom:payload')).toBe(false);
+  });
+});
 
 describe('markdown artifacts', () => {
   describe('getMarkdownFiles', () => {
@@ -167,8 +235,12 @@ describe('markdown artifacts', () => {
       const rendererCode = files['/components/ui/MarkdownRenderer.tsx'];
 
       expect(rendererCode).toContain("import ReactMarkdown from 'react-markdown'");
+      expect(rendererCode).toContain("import remarkBreaks from 'remark-breaks'");
       expect(rendererCode).toContain('skipHtml={true}');
+      expect(rendererCode).toContain('SAFE_PROTOCOLS');
+      expect(rendererCode).toContain('isSafeUrl');
       expect(rendererCode).toContain("urlTransform={(url) => (isSafeUrl(url) ? url : '')}");
+      expect(rendererCode).toContain('remarkPlugins={remarkPlugins}');
     });
 
     it('should pass markdown content to the Markdown component', () => {

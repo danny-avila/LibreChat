@@ -122,6 +122,7 @@ describe('useArtifactProps', () => {
 
       expect(result.current.sharedProps.customSetup?.dependencies).toHaveProperty('react-markdown');
       expect(result.current.sharedProps.customSetup?.dependencies).toHaveProperty('remark-gfm');
+      expect(result.current.sharedProps.customSetup?.dependencies).toHaveProperty('remark-breaks');
     });
 
     it('should update files when content changes', () => {
