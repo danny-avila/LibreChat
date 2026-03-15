@@ -3,6 +3,11 @@ import type { ParsedServerConfig } from '~/mcp/types';
 
 export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
+/** Checks that `customUserVars` is present AND non-empty (guards against truthy `{}`) */
+export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVars'>): boolean {
+  return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;
+}
+
 /**
  * Allowlist-based sanitization for API responses. Only explicitly listed fields are included;
  * new fields added to ParsedServerConfig are excluded by default until allowlisted here.
