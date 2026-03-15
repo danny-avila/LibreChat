@@ -969,23 +969,22 @@ class GenerationJobManagerClass {
    * finds userMessage in Redis.
    */
   private async trackUserMessage(streamId: string, event: t.ServerSentEvent): Promise<void> {
-    const data = event as Record<string, unknown>;
-    if (!data.created || !data.message) {
+    if (!('created' in event)) {
       return;
     }
 
-    const message = data.message as Record<string, unknown>;
+    const { message } = event;
     const updates: Partial<SerializableJobData> = {
       userMessage: {
-        messageId: message.messageId as string,
-        parentMessageId: message.parentMessageId as string | undefined,
-        conversationId: message.conversationId as string | undefined,
-        text: message.text as string | undefined,
+        messageId: message.messageId,
+        parentMessageId: message.parentMessageId,
+        conversationId: message.conversationId,
+        text: message.text,
       },
     };
 
     if (message.conversationId) {
-      updates.conversationId = message.conversationId as string;
+      updates.conversationId = message.conversationId;
     }
 
     await this.jobStore.updateJob(streamId, updates);

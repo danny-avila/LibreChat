@@ -27,6 +27,7 @@ export type FinalMessageFields = {
   sender?: string;
   isCreatedByUser?: boolean;
   unfinished?: boolean;
+  /** Per-message error flag — matches TMessage.error (boolean or error text) */
   error?: boolean | string;
   [key: string]: unknown;
 };
@@ -41,6 +42,7 @@ export type FinalEvent = {
   aborted?: boolean;
   earlyAbort?: boolean;
   runMessages?: FinalMessageFields[];
+  /** Top-level event error (abort-during-completion edge case) */
   error?: { message: string };
 };
 
