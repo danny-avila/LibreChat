@@ -13,7 +13,9 @@ let mockFileMap: Record<string, TFile> = {};
 let mockFiles: Map<string, ExtendedFile> = new Map();
 let mockConversation: Record<string, unknown> | null = { endpoint: 'openAI' };
 let mockRawFileConfig: Record<string, unknown> | null = {
-  endpoints: { default: { fileLimit: 10 } },
+  endpoints: {
+    openAI: { fileLimit: 10, supportedMimeTypes: ['application/pdf', 'text/plain'] },
+  },
 };
 
 jest.mock('@librechat/client', () => ({
@@ -111,9 +113,10 @@ function clickFilenameCell() {
   const filenameCell = cells.find(
     (cell) => cell.tagName === 'TD' && cell.textContent && !cell.textContent.includes('com_ui_'),
   );
-  if (filenameCell) {
-    fireEvent.click(filenameCell);
+  if (!filenameCell) {
+    throw new Error('Could not find filename cell with role="button" — check mock setup');
   }
+  fireEvent.click(filenameCell);
   return filenameCell;
 }
 
@@ -124,7 +127,13 @@ describe('PanelTable handleFileClick', () => {
     mockFiles = new Map();
     mockConversation = { endpoint: 'openAI' };
     mockRawFileConfig = {
-      endpoints: { default: { fileLimit: 5, totalSizeLimit: 10 } },
+      endpoints: {
+        openAI: {
+          fileLimit: 5,
+          totalSizeLimit: 10,
+          supportedMimeTypes: ['application/pdf', 'text/plain'],
+        },
+      },
     };
   });
 
