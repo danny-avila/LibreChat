@@ -25,6 +25,7 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getConvoFiles } = require('~/models/Conversation');
 const { processAddedConvo } = require('./addedConvo');
 const { getAgent } = require('~/models/Agent');
@@ -203,6 +204,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+      filterFilesByAgentAccess,
     },
   );
 
@@ -282,6 +284,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getUserCodeFiles: db.getUserCodeFiles,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+        filterFilesByAgentAccess,
       },
     );
 

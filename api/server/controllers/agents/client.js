@@ -49,6 +49,7 @@ const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { updateBalance, bulkInsertTransactions } = require('~/models');
 const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { createContextHandlers } = require('~/app/clients/prompts');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
@@ -479,6 +480,7 @@ class AgentClient extends BaseClient {
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+        filterFilesByAgentAccess,
       },
     );
 
