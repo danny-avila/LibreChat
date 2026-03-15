@@ -25,6 +25,7 @@ const {
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
+  estimateMediaTokensForMessage,
   hydrateMissingIndexTokenCounts,
 } = require('@librechat/api');
 const {
@@ -1237,8 +1238,12 @@ class AgentClient extends BaseClient {
    * @returns {number}
    */
   getTokenCountForMessage(message) {
-    const count = super.getTokenCountForMessage(message);
-    if (this.getEncoding() === 'claude') {
+    const isClaude = this.getEncoding() === 'claude';
+    let count = super.getTokenCountForMessage(message);
+    count += estimateMediaTokensForMessage(message.content ?? message.text, isClaude, (text) =>
+      this.getTokenCount(text),
+    );
+    if (isClaude) {
       return Math.ceil(count * AgentClient.CLAUDE_TOKEN_CORRECTION);
     }
     return count;
