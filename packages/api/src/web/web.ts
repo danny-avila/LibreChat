@@ -13,6 +13,27 @@ import type {
   TWebSearchConfig,
 } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
+import { isSSRFTarget, resolveHostnameSSRF } from '../auth';
+
+const WEB_SEARCH_URL_KEYS = new Set<TWebSearchKeys>([
+  'searxngInstanceUrl',
+  'firecrawlApiUrl',
+  'jinaApiUrl',
+]);
+
+/** Returns true if the URL targets a private/internal address (SSRF risk) */
+async function isSSRFUrl(url: string): Promise<boolean> {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return true;
+  }
+  if (isSSRFTarget(hostname)) {
+    return true;
+  }
+  return resolveHostnameSSRF(hostname);
+}
 
 export function extractWebSearchEnvVars({
   keys,
@@ -149,13 +170,31 @@ export async function loadWebSearchAuth({
           const field = allAuthFields[j];
           const value = authValues[field];
           const originalKey = allKeys[j];
-          if (originalKey) authResult[originalKey] = value;
+          if (originalKey) {
+            authResult[originalKey] = value;
+          }
           if (!optionalSet.has(field) && !value) {
             allFieldsAuthenticated = false;
             break;
           }
-          if (!isUserProvided && process.env[field] !== value) {
+
+          const isFieldUserProvided = process.env[field] !== value;
+          if (!isUserProvided && isFieldUserProvided) {
             isUserProvided = true;
+          }
+
+          if (
+            value &&
+            originalKey &&
+            isFieldUserProvided &&
+            WEB_SEARCH_URL_KEYS.has(originalKey as TWebSearchKeys) &&
+            (await isSSRFUrl(value))
+          ) {
+            delete authResult[originalKey];
+            if (!optionalSet.has(field)) {
+              allFieldsAuthenticated = false;
+              break;
+            }
           }
         }
 
