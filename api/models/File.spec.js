@@ -152,12 +152,11 @@ describe('File Access Control', () => {
       expect(accessMap.get(fileIds[3])).toBe(false);
     });
 
-    it('should grant access to all files when user is the agent author', async () => {
+    it('should only grant author access to files attached to the agent', async () => {
       const authorId = new mongoose.Types.ObjectId();
       const agentId = uuidv4();
       const fileIds = [uuidv4(), uuidv4(), uuidv4()];
 
-      // Create author user
       await User.create({
         _id: authorId,
         email: 'author@example.com',
@@ -165,7 +164,6 @@ describe('File Access Control', () => {
         provider: 'local',
       });
 
-      // Create agent
       await createAgent({
         id: agentId,
         name: 'Test Agent',
@@ -174,12 +172,11 @@ describe('File Access Control', () => {
         provider: 'openai',
         tool_resources: {
           file_search: {
-            file_ids: [fileIds[0]], // Only one file attached
+            file_ids: [fileIds[0]],
           },
         },
       });
 
-      // Check access as the author
       const { hasAccessToFilesViaAgent } = require('~/server/services/Files/permissions');
       const accessMap = await hasAccessToFilesViaAgent({
         userId: authorId,
@@ -188,10 +185,9 @@ describe('File Access Control', () => {
         agentId,
       });
 
-      // Author should have access to all files
       expect(accessMap.get(fileIds[0])).toBe(true);
-      expect(accessMap.get(fileIds[1])).toBe(true);
-      expect(accessMap.get(fileIds[2])).toBe(true);
+      expect(accessMap.get(fileIds[1])).toBe(false);
+      expect(accessMap.get(fileIds[2])).toBe(false);
     });
 
     it('should handle non-existent agent gracefully', async () => {
