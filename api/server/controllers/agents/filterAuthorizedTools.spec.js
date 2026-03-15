@@ -1,7 +1,10 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
+const { Constants } = require('librechat-data-provider');
 const { agentSchema } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+
+const d = Constants.mcp_delimiter;
 
 const mockGetAllServerConfigs = jest.fn();
 
@@ -72,6 +75,7 @@ const {
   filterAuthorizedTools,
   createAgent: createAgentHandler,
   updateAgent: updateAgentHandler,
+  duplicateAgent: duplicateAgentHandler,
   revertAgentVersion: revertAgentVersionHandler,
 } = require('./v1');
 
@@ -131,14 +135,14 @@ describe('MCP Tool Authorization', () => {
 
     test('should keep authorized MCP tools and strip unauthorized ones', async () => {
       const result = await filterAuthorizedTools({
-        tools: ['toolA_mcp_authorizedServer', 'toolB_mcp_forbiddenServer', 'web_search'],
+        tools: [`toolA${d}authorizedServer`, `toolB${d}forbiddenServer`, 'web_search'],
         userId,
         availableTools,
       });
 
-      expect(result).toContain('toolA_mcp_authorizedServer');
+      expect(result).toContain(`toolA${d}authorizedServer`);
       expect(result).toContain('web_search');
-      expect(result).not.toContain('toolB_mcp_forbiddenServer');
+      expect(result).not.toContain(`toolB${d}forbiddenServer`);
     });
 
     test('should keep system tools without querying MCP registry', async () => {
@@ -169,24 +173,24 @@ describe('MCP Tool Authorization', () => {
       });
 
       const result = await filterAuthorizedTools({
-        tools: ['toolA_mcp_someServer', 'web_search'],
+        tools: [`toolA${d}someServer`, 'web_search'],
         userId,
         availableTools,
       });
 
       expect(result).toEqual(['web_search']);
-      expect(result).not.toContain('toolA_mcp_someServer');
+      expect(result).not.toContain(`toolA${d}someServer`);
     });
 
     test('should handle mixed authorized and unauthorized MCP tools', async () => {
       const result = await filterAuthorizedTools({
         tools: [
           'web_search',
-          'search_mcp_authorizedServer',
-          'attack_mcp_victimServer',
+          `search${d}authorizedServer`,
+          `attack${d}victimServer`,
           'execute_code',
-          'list_mcp_anotherServer',
-          'steal_mcp_nonexistent',
+          `list${d}anotherServer`,
+          `steal${d}nonexistent`,
         ],
         userId,
         availableTools,
@@ -194,9 +198,9 @@ describe('MCP Tool Authorization', () => {
 
       expect(result).toEqual([
         'web_search',
-        'search_mcp_authorizedServer',
+        `search${d}authorizedServer`,
         'execute_code',
-        'list_mcp_anotherServer',
+        `list${d}anotherServer`,
       ]);
     });
 
@@ -223,7 +227,7 @@ describe('MCP Tool Authorization', () => {
 
     test('should call getAllServerConfigs with the correct userId', async () => {
       await filterAuthorizedTools({
-        tools: ['tool_mcp_authorizedServer'],
+        tools: [`tool${d}authorizedServer`],
         userId: 'specific-user-id',
         availableTools,
       });
@@ -233,7 +237,7 @@ describe('MCP Tool Authorization', () => {
 
     test('should only call getAllServerConfigs once even with multiple MCP tools', async () => {
       await filterAuthorizedTools({
-        tools: ['tool1_mcp_authorizedServer', 'tool2_mcp_anotherServer', 'tool3_mcp_unknownServer'],
+        tools: [`tool1${d}authorizedServer`, `tool2${d}anotherServer`, `tool3${d}unknownServer`],
         userId,
         availableTools,
       });
@@ -248,7 +252,7 @@ describe('MCP Tool Authorization', () => {
         provider: 'openai',
         model: 'gpt-4',
         name: 'MCP Test Agent',
-        tools: ['web_search', 'validTool_mcp_authorizedServer', 'attack_mcp_forbiddenServer'],
+        tools: ['web_search', `validTool${d}authorizedServer`, `attack${d}forbiddenServer`],
       };
 
       await createAgentHandler(mockReq, mockRes);
@@ -256,8 +260,8 @@ describe('MCP Tool Authorization', () => {
       expect(mockRes.status).toHaveBeenCalledWith(201);
       const agent = mockRes.json.mock.calls[0][0];
       expect(agent.tools).toContain('web_search');
-      expect(agent.tools).toContain('validTool_mcp_authorizedServer');
-      expect(agent.tools).not.toContain('attack_mcp_forbiddenServer');
+      expect(agent.tools).toContain(`validTool${d}authorizedServer`);
+      expect(agent.tools).not.toContain(`attack${d}forbiddenServer`);
     });
 
     test('should not 500 when MCP registry is uninitialized', async () => {
@@ -269,7 +273,7 @@ describe('MCP Tool Authorization', () => {
         provider: 'openai',
         model: 'gpt-4',
         name: 'MCP Uninitialized Test',
-        tools: ['tool_mcp_someServer', 'web_search'],
+        tools: [`tool${d}someServer`, 'web_search'],
       };
 
       await createAgentHandler(mockReq, mockRes);
@@ -284,7 +288,7 @@ describe('MCP Tool Authorization', () => {
         provider: 'openai',
         model: 'gpt-4',
         name: 'MCP Names Test',
-        tools: ['toolA_mcp_authorizedServer', 'toolB_mcp_forbiddenServer'],
+        tools: [`toolA${d}authorizedServer`, `toolB${d}forbiddenServer`],
       };
 
       await createAgentHandler(mockReq, mockRes);
@@ -309,14 +313,14 @@ describe('MCP Tool Authorization', () => {
         provider: 'openai',
         model: 'gpt-4',
         author: existingAgentAuthorId,
-        tools: ['web_search', 'existingTool_mcp_authorizedServer'],
+        tools: ['web_search', `existingTool${d}authorizedServer`],
         mcpServerNames: ['authorizedServer'],
         versions: [
           {
             name: 'Original Agent',
             provider: 'openai',
             model: 'gpt-4',
-            tools: ['web_search', 'existingTool_mcp_authorizedServer'],
+            tools: ['web_search', `existingTool${d}authorizedServer`],
             createdAt: new Date(),
             updatedAt: new Date(),
           },
@@ -331,14 +335,14 @@ describe('MCP Tool Authorization', () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
       mockReq.body = {
-        tools: ['web_search', 'existingTool_mcp_authorizedServer'],
+        tools: ['web_search', `existingTool${d}authorizedServer`],
       };
 
       await updateAgentHandler(mockReq, mockRes);
 
       expect(mockRes.json).toHaveBeenCalled();
       const updatedAgent = mockRes.json.mock.calls[0][0];
-      expect(updatedAgent.tools).toContain('existingTool_mcp_authorizedServer');
+      expect(updatedAgent.tools).toContain(`existingTool${d}authorizedServer`);
       expect(updatedAgent.tools).toContain('web_search');
     });
 
@@ -346,7 +350,7 @@ describe('MCP Tool Authorization', () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
       mockReq.body = {
-        tools: ['web_search', 'existingTool_mcp_authorizedServer', 'attack_mcp_forbiddenServer'],
+        tools: ['web_search', `existingTool${d}authorizedServer`, `attack${d}forbiddenServer`],
       };
 
       await updateAgentHandler(mockReq, mockRes);
@@ -354,34 +358,85 @@ describe('MCP Tool Authorization', () => {
       expect(mockRes.json).toHaveBeenCalled();
       const updatedAgent = mockRes.json.mock.calls[0][0];
       expect(updatedAgent.tools).toContain('web_search');
-      expect(updatedAgent.tools).toContain('existingTool_mcp_authorizedServer');
-      expect(updatedAgent.tools).not.toContain('attack_mcp_forbiddenServer');
+      expect(updatedAgent.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(updatedAgent.tools).not.toContain(`attack${d}forbiddenServer`);
     });
 
     test('should allow adding authorized MCP tools', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
       mockReq.body = {
-        tools: ['web_search', 'existingTool_mcp_authorizedServer', 'newTool_mcp_anotherServer'],
+        tools: ['web_search', `existingTool${d}authorizedServer`, `newTool${d}anotherServer`],
       };
 
       await updateAgentHandler(mockReq, mockRes);
 
       expect(mockRes.json).toHaveBeenCalled();
       const updatedAgent = mockRes.json.mock.calls[0][0];
-      expect(updatedAgent.tools).toContain('newTool_mcp_anotherServer');
+      expect(updatedAgent.tools).toContain(`newTool${d}anotherServer`);
     });
 
     test('should not query MCP registry when no new MCP tools added', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
       mockReq.body = {
-        tools: ['web_search', 'existingTool_mcp_authorizedServer'],
+        tools: ['web_search', `existingTool${d}authorizedServer`],
       };
 
       await updateAgentHandler(mockReq, mockRes);
 
       expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('duplicateAgentHandler - MCP tool authorization', () => {
+    let sourceAgentId;
+    let sourceAgentAuthorId;
+
+    beforeEach(async () => {
+      sourceAgentAuthorId = new mongoose.Types.ObjectId();
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Source Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: sourceAgentAuthorId,
+        tools: ['web_search', `tool${d}authorizedServer`, `tool${d}forbiddenServer`],
+        mcpServerNames: ['authorizedServer', 'forbiddenServer'],
+        versions: [
+          {
+            name: 'Source Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            tools: ['web_search', `tool${d}authorizedServer`, `tool${d}forbiddenServer`],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      });
+      sourceAgentId = agent.id;
+    });
+
+    test('should strip unauthorized MCP tools from duplicated agent', async () => {
+      mockGetAllServerConfigs.mockResolvedValue({
+        authorizedServer: { type: 'sse' },
+      });
+
+      mockReq.user.id = sourceAgentAuthorId.toString();
+      mockReq.params.id = sourceAgentId;
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const { agent: newAgent } = mockRes.json.mock.calls[0][0];
+      expect(newAgent.id).not.toBe(sourceAgentId);
+      expect(newAgent.tools).toContain('web_search');
+      expect(newAgent.tools).toContain(`tool${d}authorizedServer`);
+      expect(newAgent.tools).not.toContain(`tool${d}forbiddenServer`);
+
+      const agentInDb = await Agent.findOne({ id: newAgent.id });
+      expect(agentInDb.mcpServerNames).toContain('authorizedServer');
+      expect(agentInDb.mcpServerNames).not.toContain('forbiddenServer');
     });
   });
 
@@ -403,7 +458,7 @@ describe('MCP Tool Authorization', () => {
             name: 'Reverted Agent V1',
             provider: 'openai',
             model: 'gpt-4',
-            tools: ['web_search', 'oldTool_mcp_revokedServer'],
+            tools: ['web_search', `oldTool${d}revokedServer`],
             createdAt: new Date(Date.now() - 10000),
             updatedAt: new Date(Date.now() - 10000),
           },
@@ -434,13 +489,17 @@ describe('MCP Tool Authorization', () => {
       expect(mockRes.json).toHaveBeenCalled();
       const result = mockRes.json.mock.calls[0][0];
       expect(result.tools).toContain('web_search');
-      expect(result.tools).not.toContain('oldTool_mcp_revokedServer');
+      expect(result.tools).not.toContain(`oldTool${d}revokedServer`);
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.tools).toContain('web_search');
+      expect(agentInDb.tools).not.toContain(`oldTool${d}revokedServer`);
     });
 
     test('should keep authorized MCP tools after revert', async () => {
       await Agent.updateOne(
         { id: existingAgentId },
-        { $set: { 'versions.0.tools': ['web_search', 'tool_mcp_authorizedServer'] } },
+        { $set: { 'versions.0.tools': ['web_search', `tool${d}authorizedServer`] } },
       );
 
       mockReq.user.id = existingAgentAuthorId.toString();
@@ -452,7 +511,7 @@ describe('MCP Tool Authorization', () => {
       expect(mockRes.json).toHaveBeenCalled();
       const result = mockRes.json.mock.calls[0][0];
       expect(result.tools).toContain('web_search');
-      expect(result.tools).toContain('tool_mcp_authorizedServer');
+      expect(result.tools).toContain(`tool${d}authorizedServer`);
     });
   });
 });
