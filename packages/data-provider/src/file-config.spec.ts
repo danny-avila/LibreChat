@@ -1,14 +1,51 @@
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
+  documentParserMimeTypes,
   getEndpointFileConfig,
-  mergeFileConfig,
   applicationMimeTypes,
   defaultOCRMimeTypes,
-  documentParserMimeTypes,
   supportedMimeTypes,
+  mergeFileConfig,
+  inferMimeType,
+  textMimeTypes,
 } from './file-config';
 import { EModelEndpoint } from './schemas';
+
+describe('inferMimeType', () => {
+  it('should normalize text/x-python-script to text/x-python', () => {
+    expect(inferMimeType('test.py', 'text/x-python-script')).toBe('text/x-python');
+  });
+
+  it('should return a type that matches textMimeTypes after normalization', () => {
+    const normalized = inferMimeType('test.py', 'text/x-python-script');
+    expect(textMimeTypes.test(normalized)).toBe(true);
+  });
+
+  it('should pass through standard browser types unchanged', () => {
+    expect(inferMimeType('test.py', 'text/x-python')).toBe('text/x-python');
+    expect(inferMimeType('doc.pdf', 'application/pdf')).toBe('application/pdf');
+  });
+
+  it('should infer from extension when browser type is empty', () => {
+    expect(inferMimeType('test.py', '')).toBe('text/x-python');
+    expect(inferMimeType('code.js', '')).toBe('text/javascript');
+    expect(inferMimeType('photo.heic', '')).toBe('image/heic');
+  });
+
+  it('should return empty string for unknown extension with no browser type', () => {
+    expect(inferMimeType('file.xyz', '')).toBe('');
+  });
+
+  it('should produce a type accepted by checkType after normalizing text/x-python-script', () => {
+    const normalized = inferMimeType('test.py', 'text/x-python-script');
+    expect(baseFileConfig.checkType(normalized)).toBe(true);
+  });
+
+  it('should reject raw text/x-python-script without normalization', () => {
+    expect(baseFileConfig.checkType('text/x-python-script')).toBe(false);
+  });
+});
 
 describe('applicationMimeTypes', () => {
   const odfTypes = [
