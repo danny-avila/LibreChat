@@ -656,7 +656,7 @@ class GenerationJobManagerClass {
       aborted: true,
       // Flag for early abort - no messages saved, frontend should go to new chat
       earlyAbort: isEarlyAbort,
-    } as unknown as t.ServerSentEvent;
+    } satisfies t.FinalEvent as t.ServerSentEvent;
 
     if (runtime) {
       runtime.finalEvent = abortFinalEvent;
@@ -781,6 +781,27 @@ class GenerationJobManagerClass {
           }
         }
         runtime.earlyEventBuffer = [];
+      } else if (this._isRedis && !options?.skipBufferReplay && jobData?.userMessage) {
+        /**
+         * Cross-replica fallback: the created event was buffered on the generating
+         * instance and published via Redis pub/sub before this subscriber was active.
+         * Reconstruct from persisted metadata. Only fields stored by trackUserMessage()
+         * are available (messageId, parentMessageId, conversationId, text);
+         * sender/isCreatedByUser are invariant for user messages and added back here.
+         */
+        logger.debug(
+          `[GenerationJobManager] Cross-replica subscribe: emitting created event from metadata for ${streamId}`,
+        );
+        const createdEvent: t.CreatedEvent = {
+          created: true,
+          message: {
+            ...jobData.userMessage,
+            sender: 'User',
+            isCreatedByUser: true,
+          },
+          streamId,
+        };
+        onChunk(createdEvent);
       }
 
       this.eventTransport.syncReorderBuffer?.(streamId);
@@ -858,8 +879,7 @@ class GenerationJobManagerClass {
       return;
     }
 
-    // Track user message from created event
-    this.trackUserMessage(streamId, event);
+    await this.trackUserMessage(streamId, event);
 
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
@@ -943,29 +963,31 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Track user message from created event.
+   * Persist user message metadata from the created event.
+   * Awaited in emitChunk so the HSET commits before the PUBLISH,
+   * guaranteeing any cross-replica getJob() after the pub/sub window
+   * finds userMessage in Redis.
    */
-  private trackUserMessage(streamId: string, event: t.ServerSentEvent): void {
-    const data = event as Record<string, unknown>;
-    if (!data.created || !data.message) {
+  private async trackUserMessage(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    if (!('created' in event)) {
       return;
     }
 
-    const message = data.message as Record<string, unknown>;
+    const { message } = event;
     const updates: Partial<SerializableJobData> = {
       userMessage: {
-        messageId: message.messageId as string,
-        parentMessageId: message.parentMessageId as string | undefined,
-        conversationId: message.conversationId as string | undefined,
-        text: message.text as string | undefined,
+        messageId: message.messageId,
+        parentMessageId: message.parentMessageId,
+        conversationId: message.conversationId,
+        text: message.text,
       },
     };
 
     if (message.conversationId) {
-      updates.conversationId = message.conversationId as string;
+      updates.conversationId = message.conversationId;
     }
 
-    this.jobStore.updateJob(streamId, updates);
+    await this.jobStore.updateJob(streamId, updates);
   }
 
   /**
