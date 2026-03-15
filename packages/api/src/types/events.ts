@@ -18,16 +18,30 @@ export type CreatedEvent = {
   streamId: string;
 };
 
+export type FinalMessageFields = {
+  messageId?: string;
+  parentMessageId?: string;
+  conversationId?: string;
+  text?: string;
+  content?: unknown[];
+  sender?: string;
+  isCreatedByUser?: boolean;
+  unfinished?: boolean;
+  error?: boolean | string;
+  [key: string]: unknown;
+};
+
 /** Terminal event emitted when generation completes or is aborted */
 export type FinalEvent = {
   final: true;
-  requestMessage?: Record<string, unknown> | null;
-  responseMessage?: Record<string, unknown> | null;
-  conversation?: Record<string, unknown> | null;
+  requestMessage?: FinalMessageFields | null;
+  responseMessage?: FinalMessageFields | null;
+  conversation?: { conversationId?: string; [key: string]: unknown } | null;
   title?: string;
   aborted?: boolean;
   earlyAbort?: boolean;
-  runMessages?: Record<string, unknown>[];
+  runMessages?: FinalMessageFields[];
+  error?: { message: string };
 };
 
 export type ServerSentEvent = StreamEvent | CreatedEvent | FinalEvent;
