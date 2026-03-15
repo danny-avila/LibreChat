@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { agentSchema } = require('@librechat/data-schemas');
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, PermissionBits } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 // Only mock the dependencies that are not database-related
@@ -1720,7 +1720,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         tools: [],
       });
 
-      const permMap = new Map();
+      const permMap = new Map([[ownedAgent._id.toString(), PermissionBits.VIEW]]);
       getResourcePermissionsMap.mockResolvedValueOnce(permMap);
 
       mockReq.params = { id: ownedAgent.id };
@@ -1733,6 +1733,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.status).toHaveBeenCalledWith(403);
       const response = mockRes.json.mock.calls[0][0];
       expect(response.agent_ids).toContain(targetAgent.id);
+      expect(response.agent_ids).not.toContain(ownedAgent.id);
     });
 
     test('updateAgentHandler should succeed when edges field is absent from payload', async () => {

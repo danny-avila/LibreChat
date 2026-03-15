@@ -13,17 +13,19 @@ jest.mock('@librechat/api', () => ({
   getCustomEndpointConfig: jest.fn(),
 }));
 
-const mockGetAgent = jest.fn();
+const mockLoadAddedAgent = jest.fn();
+jest.mock('~/models/loadAddedAgent', () => ({
+  loadAddedAgent: (...args) => mockLoadAddedAgent(...args),
+  setGetAgent: jest.fn(),
+  ADDED_AGENT_ID: 'added_agent',
+}));
+
 jest.mock('~/models/Agent', () => ({
-  getAgent: (...args) => mockGetAgent(...args),
+  getAgent: jest.fn(),
 }));
 
 jest.mock('~/models/Conversation', () => ({
   getConvoFiles: jest.fn(),
-}));
-
-jest.mock('~/server/services/Config', () => ({
-  getMCPServerTools: jest.fn(),
 }));
 
 jest.mock('~/models', () => ({
@@ -61,15 +63,13 @@ describe('processAddedConvo ACL gate', () => {
   });
 
   it('should skip agent when user lacks VIEW access', async () => {
-    const storedAgent = {
+    mockLoadAddedAgent.mockResolvedValue({
       _id: 'mongo_obj_id_123',
-      id: 'agent_target',
-      version: 0,
+      id: 'agent_target_1',
       tools: [],
       provider: 'openai',
       model: 'gpt-4',
-    };
-    mockGetAgent.mockResolvedValue(storedAgent);
+    });
     mockCheckPermission.mockResolvedValue(false);
 
     const params = baseParams();
@@ -93,16 +93,13 @@ describe('processAddedConvo ACL gate', () => {
   });
 
   it('should proceed when user has VIEW access', async () => {
-    const storedAgent = {
+    mockLoadAddedAgent.mockResolvedValue({
       _id: 'mongo_obj_id_123',
       id: 'agent_target_1',
-      version: 0,
-      versions: [],
       tools: [],
       provider: 'openai',
       model: 'gpt-4',
-    };
-    mockGetAgent.mockResolvedValue(storedAgent);
+    });
     mockCheckPermission.mockResolvedValue(true);
     mockValidateAgentModel.mockResolvedValue({ isValid: true });
     mockInitializeAgent.mockResolvedValue({
@@ -125,7 +122,12 @@ describe('processAddedConvo ACL gate', () => {
   });
 
   it('should bypass ACL check for ephemeral agents (no _id)', async () => {
-    mockGetAgent.mockResolvedValue(null);
+    mockLoadAddedAgent.mockResolvedValue({
+      id: 'ephemeral_id',
+      tools: [],
+      provider: 'openai',
+      model: 'gpt-4',
+    });
     mockValidateAgentModel.mockResolvedValue({ isValid: true });
     mockInitializeAgent.mockResolvedValue({
       id: 'ephemeral_id',
