@@ -30,8 +30,8 @@ import {
   isAssistantsEndpoint,
   getEndpointFileConfig,
   fileConfig as defaultFileConfig,
-  type TFile,
 } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
@@ -162,14 +162,19 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
       if (endpointFileConfig.fileLimit && files.size >= endpointFileConfig.fileLimit) {
         showToast({
-          message: `${localize('com_ui_attach_error_limit')} ${endpointFileConfig.fileLimit} (${endpoint})`,
+          message: `${localize('com_ui_attach_error_limit')} ${endpointFileConfig.fileLimit} files (${endpoint})`,
           status: 'error',
         });
         return;
       }
 
       if (endpointFileConfig.totalSizeLimit) {
-        const currentTotalSize = Array.from(files.values()).reduce((sum, f) => sum + f.size, 0);
+        const existing = files.get(fileData.file_id);
+        let currentTotalSize = 0;
+        for (const f of files.values()) {
+          currentTotalSize += f.size;
+        }
+        currentTotalSize -= existing?.size ?? 0;
         if (currentTotalSize + fileData.bytes > endpointFileConfig.totalSizeLimit) {
           showToast({
             message: `${localize('com_ui_attach_error_total_size')} ${endpointFileConfig.totalSizeLimit / megabyte} MB (${endpoint})`,
