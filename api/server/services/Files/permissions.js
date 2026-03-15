@@ -3,13 +3,18 @@ const { PermissionBits, ResourceType } = require('librechat-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { getAgent } = require('~/models/Agent');
 
-/** Collects all file IDs attached to an agent's tool_resources */
+/**
+ * @param {Object} agent - The agent document (lean)
+ * @returns {Set<string>} All file IDs attached across all resource types
+ */
 function getAttachedFileIds(agent) {
   const attachedFileIds = new Set();
   if (agent.tool_resources) {
-    for (const [_resourceType, resource] of Object.entries(agent.tool_resources)) {
+    for (const resource of Object.values(agent.tool_resources)) {
       if (resource?.file_ids && Array.isArray(resource.file_ids)) {
-        resource.file_ids.forEach((fileId) => attachedFileIds.add(fileId));
+        for (const fileId of resource.file_ids) {
+          attachedFileIds.add(fileId);
+        }
       }
     }
   }
