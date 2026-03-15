@@ -1,7 +1,13 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Constants, EnvVar, GraphEvents, ToolEndHandler } = require('@librechat/agents');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
+const {
+  EnvVar,
+  Constants,
+  GraphEvents,
+  GraphNodeKeys,
+  ToolEndHandler,
+} = require('@librechat/agents');
 const {
   sendEvent,
   GenerationJobManager,
@@ -71,6 +77,8 @@ class ModelEndHandler {
         usage.model = modelName;
       }
 
+      markSummarizationUsage(usage, metadata);
+
       this.collectedUsage.push(usage);
     } catch (error) {
       logger.error('Error handling model end event:', error);
@@ -133,6 +141,7 @@ function getDefaultHandlers({
   collectedUsage,
   streamId = null,
   toolExecuteOptions = null,
+  summarizationOptions = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -244,6 +253,37 @@ function getDefaultHandlers({
   if (toolExecuteOptions) {
     handlers[GraphEvents.ON_TOOL_EXECUTE] = createToolExecuteHandler(toolExecuteOptions);
   }
+
+  if (summarizationOptions?.enabled !== false) {
+    handlers[GraphEvents.ON_SUMMARIZE_START] = {
+      handle: async (_event, data) => {
+        await emitEvent(res, streamId, {
+          event: GraphEvents.ON_SUMMARIZE_START,
+          data,
+        });
+      },
+    };
+    handlers[GraphEvents.ON_SUMMARIZE_DELTA] = {
+      handle: async (_event, data) => {
+        aggregateContent({ event: GraphEvents.ON_SUMMARIZE_DELTA, data });
+        await emitEvent(res, streamId, {
+          event: GraphEvents.ON_SUMMARIZE_DELTA,
+          data,
+        });
+      },
+    };
+    handlers[GraphEvents.ON_SUMMARIZE_COMPLETE] = {
+      handle: async (_event, data) => {
+        aggregateContent({ event: GraphEvents.ON_SUMMARIZE_COMPLETE, data });
+        await emitEvent(res, streamId, {
+          event: GraphEvents.ON_SUMMARIZE_COMPLETE,
+          data,
+        });
+      },
+    };
+  }
+
+  handlers[GraphEvents.ON_AGENT_LOG] = { handle: agentLogHandler };
 
   return handlers;
 }
@@ -668,8 +708,26 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
   };
 }
 
+function agentLogHandler(_event, data) {
+  const logFn = typeof logger[data.level] === 'function' ? logger[data.level] : logger.info;
+  logFn(`[agents:${data.scope}] ${data.message}`, {
+    ...data.data,
+    runId: data.runId,
+    agentId: data.agentId,
+  });
+}
+
+function markSummarizationUsage(usage, metadata) {
+  const node = metadata?.langgraph_node;
+  if (typeof node === 'string' && node.startsWith(GraphNodeKeys.SUMMARIZE)) {
+    usage.usage_type = 'summarization';
+  }
+}
+
 module.exports = {
+  agentLogHandler,
   getDefaultHandlers,
   createToolEndCallback,
+  markSummarizationUsage,
   createResponsesToolEndCallback,
 };

@@ -1,7 +1,7 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
+const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const {
   writeSSE,
   createRun,
@@ -22,7 +22,11 @@ const {
   isChatCompletionValidationFailure,
 } = require('@librechat/api');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
-const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
+const {
+  createToolEndCallback,
+  markSummarizationUsage,
+  agentLogHandler,
+} = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const db = require('~/models');
 
@@ -266,14 +270,16 @@ const OpenAIChatCompletionController = async (req, res) => {
       toolEndCallback,
     };
 
+    const summarizationConfig = appConfig?.summarization;
+
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
-    const { messages: formattedMessages, indexTokenCountMap } = formatAgentMessages(
-      openaiMessages,
-      {},
-      toolSet,
-    );
+    const {
+      messages: formattedMessages,
+      indexTokenCountMap,
+      summary: initialSummary,
+    } = formatAgentMessages(openaiMessages, {}, toolSet);
 
     /**
      * Create a simple handler that processes data
@@ -416,24 +422,53 @@ const OpenAIChatCompletionController = async (req, res) => {
       }),
 
       // Usage tracking
-      on_chat_model_end: createHandler((data) => {
-        const usage = data?.output?.usage_metadata;
-        if (usage) {
-          collectedUsage.push(usage);
-          const target = isStreaming ? tracker : aggregator;
-          target.usage.promptTokens += usage.input_tokens ?? 0;
-          target.usage.completionTokens += usage.output_tokens ?? 0;
-        }
-      }),
+      on_chat_model_end: {
+        handle: (_event, data, metadata) => {
+          const usage = data?.output?.usage_metadata;
+          if (usage) {
+            markSummarizationUsage(usage, metadata);
+            collectedUsage.push(usage);
+            const target = isStreaming ? tracker : aggregator;
+            target.usage.promptTokens += usage.input_tokens ?? 0;
+            target.usage.completionTokens += usage.output_tokens ?? 0;
+          }
+        },
+      },
       on_run_step_completed: createHandler(),
       // Use proper ToolEndHandler for processing artifacts (images, file citations, code output)
       on_tool_end: new ToolEndHandler(toolEndCallback, logger),
       on_chain_stream: createHandler(),
       on_chain_end: createHandler(),
       on_agent_update: createHandler(),
+      on_agent_log: { handle: agentLogHandler },
       on_custom_event: createHandler(),
       // Event-driven tool execution handler
       on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+      ...(summarizationConfig?.enabled !== false
+        ? {
+            on_summarize_start: {
+              handle: async (_event, data) => {
+                if (isStreaming && !res.writableEnded) {
+                  res.write(`event: on_summarize_start\ndata: ${JSON.stringify(data)}\n\n`);
+                }
+              },
+            },
+            on_summarize_delta: {
+              handle: async (_event, data) => {
+                if (isStreaming && !res.writableEnded) {
+                  res.write(`event: on_summarize_delta\ndata: ${JSON.stringify(data)}\n\n`);
+                }
+              },
+            },
+            on_summarize_complete: {
+              handle: async (_event, data) => {
+                if (isStreaming && !res.writableEnded) {
+                  res.write(`event: on_summarize_complete\ndata: ${JSON.stringify(data)}\n\n`);
+                }
+              },
+            },
+          }
+        : {}),
     };
 
     // Create and run the agent
@@ -446,7 +481,9 @@ const OpenAIChatCompletionController = async (req, res) => {
       agents: [primaryConfig],
       messages: formattedMessages,
       indexTokenCountMap,
+      initialSummary,
       runId: responseId,
+      summarizationConfig,
       signal: abortController.signal,
       customHandlers: handlers,
       requestBody: {

@@ -8,6 +8,7 @@ import {
   Constants,
   QueryKeys,
   ErrorTypes,
+  StepEvents,
   apiBaseUrl,
   createPayload,
   ViolationTypes,
@@ -234,7 +235,7 @@ export default function useResumableSSE(
             // Replay run steps
             if (data.resumeState?.runSteps) {
               for (const runStep of data.resumeState.runSteps) {
-                stepHandler({ event: 'on_run_step', data: runStep }, {
+                stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, {
                   ...currentSubmission,
                   userMessage,
                 } as EventSubmission);

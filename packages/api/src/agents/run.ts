@@ -2,7 +2,9 @@ import { Run, Providers, Constants } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
 import type {
+  SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
+  ContextPruningConfig,
   OpenAIClientOptions,
   StandardGraphConfig,
   LCToolRegistry,
@@ -13,7 +15,7 @@ import type {
   LCTool,
 } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
-import type { Agent } from 'librechat-data-provider';
+import type { Agent, SummarizationConfig } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 
@@ -162,6 +164,8 @@ export function getReasoningKey(
 type RunAgent = Omit<Agent, 'tools'> & {
   tools?: GenericTool[];
   maxContextTokens?: number;
+  /** Pre-ratio context budget from initializeAgent. */
+  baseContextTokens?: number;
   useLegacyContent?: boolean;
   toolContextMap?: Record<string, string>;
   toolRegistry?: LCToolRegistry;
@@ -169,6 +173,13 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /** Optional per-agent summarization overrides */
+  summarization?: SummarizationConfig;
+  /**
+   * Maximum characters allowed in a single tool result before truncation.
+   * Overrides the default computed from maxContextTokens.
+   */
+  maxToolResultChars?: number;
 };
 
 /**
@@ -196,6 +207,9 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
+  summarizationConfig,
+  initialSummary,
+  calibrationRatio,
   streaming = true,
   streamUsage = true,
 }: {
@@ -208,6 +222,11 @@ export async function createRun({
   user?: IUser;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
+  summarizationConfig?: SummarizationConfig;
+  /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
+  initialSummary?: { text: string; tokenCount: number };
+  /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
+  calibrationRatio?: number;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -228,6 +247,32 @@ export async function createRun({
 
   const agentInputs: AgentInputs[] = [];
   const buildAgentContext = (agent: RunAgent) => {
+    const selfProvider =
+      (providerEndpointMap[
+        agent.provider as keyof typeof providerEndpointMap
+      ] as unknown as string) ?? agent.provider;
+    const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
+
+    const baseSummarizationConfig: SummarizationConfig = {
+      enabled: true,
+      provider: selfProvider,
+      model: selfModel,
+    };
+    const overrideConfig = agent.summarization ?? summarizationConfig;
+    const resolvedSummarizationConfig: SummarizationConfig =
+      overrideConfig != null
+        ? { ...baseSummarizationConfig, ...overrideConfig }
+        : baseSummarizationConfig;
+
+    const resolvedSummarizationProvider = resolvedSummarizationConfig.provider;
+    const resolvedSummarizationModel = resolvedSummarizationConfig.model;
+    const hasSummarizationProvider =
+      typeof resolvedSummarizationProvider === 'string' &&
+      resolvedSummarizationProvider.trim().length > 0;
+    const hasSummarizationModel =
+      typeof resolvedSummarizationModel === 'string' &&
+      resolvedSummarizationModel.trim().length > 0;
+
     const provider =
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
@@ -299,6 +344,21 @@ export async function createRun({
       }
     }
 
+    // Apply configurable reserve ratio when available, falling back to the
+    // pre-computed maxContextTokens from initializeAgent.
+    const reserveRatio = resolvedSummarizationConfig?.reserveRatio;
+    const ratioComputed =
+      reserveRatio != null &&
+      reserveRatio > 0 &&
+      reserveRatio < 1 &&
+      agent.baseContextTokens != null
+        ? Math.max(1024, Math.round(agent.baseContextTokens * (1 - reserveRatio)))
+        : null;
+    const effectiveMaxContextTokens =
+      ratioComputed != null
+        ? Math.min(agent.maxContextTokens ?? ratioComputed, ratioComputed)
+        : agent.maxContextTokens;
+
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     const agentInput: AgentInputs = {
       provider,
@@ -310,9 +370,34 @@ export async function createRun({
       instructions: systemContent,
       name: agent.name ?? undefined,
       toolRegistry: agent.toolRegistry,
-      maxContextTokens: agent.maxContextTokens,
+      maxContextTokens: effectiveMaxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
       discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
+      summarizationEnabled:
+        resolvedSummarizationConfig.enabled !== false &&
+        hasSummarizationProvider &&
+        hasSummarizationModel,
+      summarizationConfig: {
+        trigger:
+          resolvedSummarizationConfig.trigger?.type && resolvedSummarizationConfig.trigger?.value
+            ? {
+                type: resolvedSummarizationConfig.trigger.type,
+                value: resolvedSummarizationConfig.trigger.value,
+              }
+            : undefined,
+        provider: resolvedSummarizationConfig.provider,
+        model: resolvedSummarizationConfig.model,
+        parameters: resolvedSummarizationConfig.parameters,
+        prompt: resolvedSummarizationConfig.prompt,
+        updatePrompt: resolvedSummarizationConfig.updatePrompt,
+        reserveRatio: resolvedSummarizationConfig.reserveRatio,
+        maxSummaryTokens: resolvedSummarizationConfig.maxSummaryTokens,
+      } satisfies AgentSummarizationConfig,
+      initialSummary,
+      contextPruningConfig: resolvedSummarizationConfig?.contextPruning as
+        | ContextPruningConfig
+        | undefined,
+      maxToolResultChars: agent.maxToolResultChars,
     };
     agentInputs.push(agentInput);
   };
@@ -339,5 +424,6 @@ export async function createRun({
     tokenCounter,
     customHandlers,
     indexTokenCountMap,
+    calibrationRatio,
   });
 }

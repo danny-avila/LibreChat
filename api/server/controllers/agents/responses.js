@@ -32,7 +32,9 @@ const {
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
+  markSummarizationUsage,
   createToolEndCallback,
+  agentLogHandler,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
@@ -48,6 +50,8 @@ let appConfig = null;
 function setAppConfig(config) {
   appConfig = config;
 }
+
+const agentLogHandlerObj = { handle: agentLogHandler };
 
 /**
  * Creates a tool loader function for the agent.
@@ -277,6 +281,7 @@ const createResponse = async (req, res) => {
   const request = validation.request;
   const agentId = request.model;
   const isStreaming = request.stream === true;
+  const summarizationConfig = req.config?.summarization;
 
   // Look up the agent
   const agent = await db.getAgent({ id: agentId });
@@ -374,11 +379,11 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    const { messages: formattedMessages, indexTokenCountMap } = formatAgentMessages(
-      allMessages,
-      {},
-      toolSet,
-    );
+    const {
+      messages: formattedMessages,
+      indexTokenCountMap,
+      summary: initialSummary,
+    } = formatAgentMessages(allMessages, {}, toolSet);
 
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = actuallyStreaming ? createResponseTracker() : null;
@@ -441,10 +446,11 @@ const createResponse = async (req, res) => {
         on_run_step: responsesHandlers.on_run_step,
         on_run_step_delta: responsesHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data) => {
+          handle: (event, data, metadata) => {
             responsesHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
+              markSummarizationUsage(usage, metadata);
               collectedUsage.push(usage);
             }
           },
@@ -456,6 +462,32 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+        on_agent_log: agentLogHandlerObj,
+        ...(summarizationConfig?.enabled !== false
+          ? {
+              on_summarize_start: {
+                handle: async (_event, data) => {
+                  if (actuallyStreaming && !res.writableEnded) {
+                    res.write(`event: on_summarize_start\ndata: ${JSON.stringify(data)}\n\n`);
+                  }
+                },
+              },
+              on_summarize_delta: {
+                handle: async (_event, data) => {
+                  if (actuallyStreaming && !res.writableEnded) {
+                    res.write(`event: on_summarize_delta\ndata: ${JSON.stringify(data)}\n\n`);
+                  }
+                },
+              },
+              on_summarize_complete: {
+                handle: async (_event, data) => {
+                  if (actuallyStreaming && !res.writableEnded) {
+                    res.write(`event: on_summarize_complete\ndata: ${JSON.stringify(data)}\n\n`);
+                  }
+                },
+              },
+            }
+          : {}),
       };
 
       // Create and run the agent
@@ -466,7 +498,9 @@ const createResponse = async (req, res) => {
         agents: [primaryConfig],
         messages: formattedMessages,
         indexTokenCountMap,
+        initialSummary,
         runId: responseId,
+        summarizationConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
@@ -597,10 +631,11 @@ const createResponse = async (req, res) => {
         on_run_step: aggregatorHandlers.on_run_step,
         on_run_step_delta: aggregatorHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data) => {
+          handle: (event, data, metadata) => {
             aggregatorHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
+              markSummarizationUsage(usage, metadata);
               collectedUsage.push(usage);
             }
           },
@@ -612,6 +647,14 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+        on_agent_log: agentLogHandlerObj,
+        ...(summarizationConfig?.enabled !== false
+          ? {
+              on_summarize_start: { handle: () => {} },
+              on_summarize_delta: { handle: () => {} },
+              on_summarize_complete: { handle: () => {} },
+            }
+          : {}),
       };
 
       const userId = req.user?.id ?? 'api-user';
@@ -621,7 +664,9 @@ const createResponse = async (req, res) => {
         agents: [primaryConfig],
         messages: formattedMessages,
         indexTokenCountMap,
+        initialSummary,
         runId: responseId,
+        summarizationConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
