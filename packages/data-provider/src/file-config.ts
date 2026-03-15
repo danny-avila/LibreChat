@@ -357,15 +357,18 @@ export const imageTypeMapping: { [key: string]: string } = {
   heif: 'image/heif',
 };
 
+/** Normalizes non-standard MIME types that browsers may report to their canonical forms */
+export const mimeTypeAliases: Record<string, string> = {
+  'text/x-python-script': 'text/x-python',
+};
+
 /**
- * Infers the MIME type from a file's extension when the browser doesn't recognize it
- * @param fileName - The name of the file including extension
- * @param currentType - The current MIME type reported by the browser (may be empty)
- * @returns The inferred MIME type if browser didn't provide one, otherwise the original type
+ * Infers the MIME type from a file's extension when the browser doesn't recognize it,
+ * and normalizes known non-standard MIME type variants to canonical forms.
  */
 export function inferMimeType(fileName: string, currentType: string): string {
   if (currentType) {
-    return currentType;
+    return mimeTypeAliases[currentType] ?? currentType;
   }
 
   const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
