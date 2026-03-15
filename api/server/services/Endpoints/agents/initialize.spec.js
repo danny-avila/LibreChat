@@ -10,25 +10,21 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const mockInitializeAgent = jest.fn();
 const mockValidateAgentModel = jest.fn();
 
-jest.mock('@librechat/api', () => {
-  const edges = require('../../../../../packages/api/src/agents/edges');
-  return {
-    createEdgeCollector: edges.createEdgeCollector,
-    filterOrphanedEdges: edges.filterOrphanedEdges,
-    createSequentialChainEdges: jest.fn(),
-    isEnabled: jest.fn(() => false),
-    getCustomEndpointConfig: jest.fn(),
-    initializeAgent: (...args) => mockInitializeAgent(...args),
-    validateAgentModel: (...args) => mockValidateAgentModel(...args),
-    GenerationJobManager: { setCollectedUsage: jest.fn() },
-  };
-});
-
 jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
   createContentAggregator: jest.fn(() => ({
     contentParts: [],
     aggregateContent: jest.fn(),
   })),
+}));
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  initializeAgent: (...args) => mockInitializeAgent(...args),
+  validateAgentModel: (...args) => mockValidateAgentModel(...args),
+  GenerationJobManager: { setCollectedUsage: jest.fn() },
+  getCustomEndpointConfig: jest.fn(),
+  createSequentialChainEdges: jest.fn(),
 }));
 
 jest.mock('~/server/controllers/agents/callbacks', () => ({
