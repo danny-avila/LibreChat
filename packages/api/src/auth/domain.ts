@@ -69,6 +69,7 @@ function isIPv6LinkLocal(ipv6: string): boolean {
     return false;
   }
   const hextet = parseInt(firstHextet, 16);
+  // /10 mask (0xffc0) preserves top 10 bits: fe80 = 1111_1110_10xx_xxxx
   return (hextet & 0xffc0) === 0xfe80;
 }
 
