@@ -59,16 +59,16 @@ function isPrivateIPv4(a: number, b: number, c: number): boolean {
   return false;
 }
 
-/** Checks if an IPv6 address falls within the fe80::/10 link-local range (fe80–febf) */
+/** Checks if a pre-normalized (lowercase, bracket-stripped) IPv6 address falls within fe80::/10 */
 function isIPv6LinkLocal(ipv6: string): boolean {
+  if (!ipv6.includes(':')) {
+    return false;
+  }
   const firstHextet = ipv6.split(':', 1)[0];
-  if (!firstHextet) {
+  if (!firstHextet || !/^[0-9a-f]{1,4}$/.test(firstHextet)) {
     return false;
   }
   const hextet = parseInt(firstHextet, 16);
-  if (isNaN(hextet)) {
-    return false;
-  }
   return (hextet & 0xffc0) === 0xfe80;
 }
 
@@ -145,9 +145,9 @@ export function isPrivateIP(ip: string): boolean {
   if (
     normalized === '::1' ||
     normalized === '::' ||
-    normalized.startsWith('fc') ||
+    normalized.startsWith('fc') || // fc00::/7 — exactly prefixes 'fc' and 'fd'
     normalized.startsWith('fd') ||
-    isIPv6LinkLocal(normalized)
+    isIPv6LinkLocal(normalized) // fe80::/10 — spans 0xfe80–0xfebf; bitwise check required
   ) {
     return true;
   }
