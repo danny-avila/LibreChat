@@ -502,15 +502,28 @@ export async function isMCPDomainAllowed(
 
 /**
  * Validates that a user-provided endpoint URL does not target private/internal addresses.
- * Throws if the URL is unparseable, targets a known SSRF hostname, or DNS-resolves to a private IP.
+ * Throws if the URL is unparseable, uses a non-HTTP(S) scheme, targets a known SSRF hostname,
+ * or DNS-resolves to a private IP.
+ *
+ * @note DNS rebinding: validation performs a single DNS lookup. An adversary controlling
+ *   DNS with TTL=0 could respond with a public IP at validation time and a private IP
+ *   at request time. This is an accepted limitation of point-in-time DNS checks.
+ * @note Fail-open on DNS errors: a resolution failure here implies a failure at request
+ *   time as well, matching {@link resolveHostnameSSRF} semantics.
  */
 export async function validateEndpointURL(url: string, endpoint: string): Promise<void> {
   let hostname: string;
+  let protocol: string;
   try {
     const parsed = new URL(url);
     hostname = parsed.hostname;
+    protocol = parsed.protocol;
   } catch {
     throw new Error(`Invalid base URL for ${endpoint}: unable to parse URL.`);
+  }
+
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    throw new Error(`Invalid base URL for ${endpoint}: only HTTP and HTTPS are permitted.`);
   }
 
   if (isSSRFTarget(hostname)) {

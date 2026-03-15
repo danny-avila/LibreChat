@@ -9,10 +9,10 @@ import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
-import { getCustomEndpointConfig } from '~/app/config';
-import { validateEndpointURL } from '~/auth';
-import { fetchModels } from '~/endpoints/models';
 import { isUserProvided, checkUserKeyExpiry } from '~/utils';
+import { getCustomEndpointConfig } from '~/app/config';
+import { fetchModels } from '~/endpoints/models';
+import { validateEndpointURL } from '~/auth';
 import { standardCache } from '~/cache';
 
 const { PROXY } = process.env;
