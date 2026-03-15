@@ -316,22 +316,83 @@ function convertToUsername(input, defaultValue = '') {
 }
 
 /**
+ * Exchange the access token for a Graph-scoped token using the On-Behalf-Of (OBO) flow.
+ *
+ * The original access token has the app's own audience (api://<client-id>), which Microsoft Graph
+ * rejects. This exchange produces a token with audience https://graph.microsoft.com and the
+ * minimum delegated scope (User.Read) required by /me/getMemberObjects.
+ *
+ * Uses a dedicated cache key (`${sub}:overage`) to avoid collisions with other OBO exchanges
+ * in the codebase (userinfo, Graph principal search).
+ *
+ * @param {string} accessToken - The original access token from the OpenID tokenset
+ * @param {string} sub - The subject identifier for cache keying
+ * @returns {Promise<string>} A Graph-scoped access token
+ * @see https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-on-behalf-of-flow
+ */
+async function exchangeTokenForOverage(accessToken, sub) {
+  if (!openidConfig) {
+    throw new Error('[openidStrategy] OpenID config not initialized; cannot exchange OBO token');
+  }
+
+  const tokensCache = getLogStores(CacheKeys.OPENID_EXCHANGED_TOKENS);
+  const cacheKey = `${sub}:overage`;
+
+  const cached = await tokensCache.get(cacheKey);
+  if (cached?.access_token) {
+    logger.debug('[openidStrategy] Using cached Graph token for overage resolution');
+    return cached.access_token;
+  }
+
+  const grantResponse = await client.genericGrantRequest(
+    openidConfig,
+    'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    {
+      scope: 'https://graph.microsoft.com/User.Read',
+      assertion: accessToken,
+      requested_token_use: 'on_behalf_of',
+    },
+  );
+
+  if (!grantResponse.access_token) {
+    throw new Error(
+      '[openidStrategy] OBO exchange succeeded but returned no access_token; cannot call Graph API',
+    );
+  }
+
+  const ttlMs =
+    Number.isFinite(grantResponse.expires_in) && grantResponse.expires_in > 0
+      ? grantResponse.expires_in * 1000
+      : 3600 * 1000;
+
+  await tokensCache.set(cacheKey, { access_token: grantResponse.access_token }, ttlMs);
+
+  return grantResponse.access_token;
+}
+
+/**
  * Resolve Azure AD groups when group overage is in effect (groups moved to _claim_names/_claim_sources).
  *
  * NOTE: Microsoft recommends treating _claim_names/_claim_sources as a signal only and using Microsoft Graph
  * to resolve group membership instead of calling the endpoint in _claim_sources directly.
  *
- * @param {string} accessToken - Access token with Microsoft Graph permissions
+ * Before calling Graph, the access token is exchanged via the OBO flow to obtain a token with the
+ * correct audience (https://graph.microsoft.com) and User.Read scope.
+ *
+ * @param {string} accessToken - Access token from the OpenID tokenset (app audience)
+ * @param {string} sub - The subject identifier of the user (for OBO exchange and cache keying)
  * @returns {Promise<string[] | null>} Resolved group IDs or null on failure
  * @see https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference#groups-overage-claim
  * @see https://learn.microsoft.com/en-us/graph/api/directoryobject-getmemberobjects
  */
-async function resolveGroupsFromOverage(accessToken) {
+async function resolveGroupsFromOverage(accessToken, sub) {
   try {
     if (!accessToken) {
       logger.error('[openidStrategy] Access token missing; cannot resolve group overage');
       return null;
     }
+
+    const graphToken = await exchangeTokenForOverage(accessToken, sub);
 
     // Use /me/getMemberObjects so least-privileged delegated permission User.Read is sufficient
     // when resolving the signed-in user's group membership.
@@ -344,7 +405,7 @@ async function resolveGroupsFromOverage(accessToken) {
     const fetchOptions = {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${graphToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ securityEnabledOnly: false }),
@@ -364,6 +425,7 @@ async function resolveGroupsFromOverage(accessToken) {
     }
 
     const data = await response.json();
+
     const values = Array.isArray(data?.value) ? data.value : null;
     if (!values) {
       logger.error(
@@ -432,6 +494,8 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   const fullName = getFullName(userinfo);
 
   const requiredRole = process.env.OPENID_REQUIRED_ROLE;
+  let resolvedOverageGroups = null;
+
   if (requiredRole) {
     const requiredRoles = requiredRole
       .split(',')
@@ -451,19 +515,21 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
     // Handle Azure AD group overage for ID token groups: when hasgroups or _claim_* indicate overage,
     // resolve groups via Microsoft Graph instead of relying on token group values.
+    const hasOverage =
+      decodedToken?.hasgroups ||
+      (decodedToken?._claim_names?.groups &&
+        decodedToken?._claim_sources?.[decodedToken._claim_names.groups]);
+
     if (
-      !Array.isArray(roles) &&
-      typeof roles !== 'string' &&
       requiredRoleTokenKind === 'id' &&
       requiredRoleParameterPath === 'groups' &&
       decodedToken &&
-      (decodedToken.hasgroups ||
-        (decodedToken._claim_names?.groups &&
-          decodedToken._claim_sources?.[decodedToken._claim_names.groups]))
+      hasOverage
     ) {
-      const overageGroups = await resolveGroupsFromOverage(tokenset.access_token);
+      const overageGroups = await resolveGroupsFromOverage(tokenset.access_token, claims.sub);
       if (overageGroups) {
         roles = overageGroups;
+        resolvedOverageGroups = overageGroups;
       }
     }
 
@@ -550,7 +616,25 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
         throw new Error('Invalid admin role token kind');
     }
 
-    const adminRoles = get(adminRoleObject, adminRoleParameterPath);
+    let adminRoles = get(adminRoleObject, adminRoleParameterPath);
+
+    // Handle Azure AD group overage for admin role when using ID token groups
+    if (adminRoleTokenKind === 'id' && adminRoleParameterPath === 'groups' && adminRoleObject) {
+      const hasAdminOverage =
+        adminRoleObject.hasgroups ||
+        (adminRoleObject._claim_names?.groups &&
+          adminRoleObject._claim_sources?.[adminRoleObject._claim_names.groups]);
+
+      if (hasAdminOverage) {
+        const overageGroups =
+          resolvedOverageGroups ||
+          (await resolveGroupsFromOverage(tokenset.access_token, claims.sub));
+        if (overageGroups) {
+          adminRoles = overageGroups;
+        }
+      }
+    }
+
     let adminRoleValues = [];
     if (Array.isArray(adminRoles)) {
       adminRoleValues = adminRoles;
