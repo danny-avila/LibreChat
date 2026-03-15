@@ -101,7 +101,8 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
 
 /**
  * Filters tools to only include those the user is authorized to use.
- * MCP tools (containing `_mcp_`) are validated against the user's accessible server configs.
+ * MCP tools must match the exact format `{toolName}_mcp_{serverName}` (exactly 2 segments).
+ * Multi-delimiter keys are rejected to prevent authorization/execution mismatch.
  * Non-MCP tools must appear in availableTools (global tool cache) or systemTools.
  * @param {object} params
  * @param {string[]} params.tools - Raw tool strings from the request
@@ -135,8 +136,15 @@ const filterAuthorizedTools = async ({ tools, userId, availableTools }) => {
       }
     }
 
-    /** MCP tool format: {toolName}_mcp_{serverName} — server name is always the last segment */
-    const serverName = tool.split(Constants.mcp_delimiter).pop();
+    const parts = tool.split(Constants.mcp_delimiter);
+    if (parts.length !== 2) {
+      logger.warn(
+        `[filterAuthorizedTools] Rejected malformed MCP tool key "${tool}" for user ${userId}`,
+      );
+      continue;
+    }
+
+    const [, serverName] = parts;
     if (!serverName || !Object.hasOwn(mcpServerConfigs, serverName)) {
       logger.warn(
         `[filterAuthorizedTools] Rejected MCP tool "${tool}" — server "${serverName}" not accessible to user ${userId}`,

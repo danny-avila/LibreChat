@@ -244,6 +244,23 @@ describe('MCP Tool Authorization', () => {
 
       expect(mockGetAllServerConfigs).toHaveBeenCalledTimes(1);
     });
+
+    test('should reject malformed MCP tool keys with multiple delimiters', async () => {
+      const result = await filterAuthorizedTools({
+        tools: [
+          `attack${d}victimServer${d}authorizedServer`,
+          `legit${d}authorizedServer`,
+          `a${d}b${d}c${d}d`,
+          'web_search',
+        ],
+        userId,
+        availableTools,
+      });
+
+      expect(result).toEqual([`legit${d}authorizedServer`, 'web_search']);
+      expect(result).not.toContainEqual(expect.stringContaining('victimServer'));
+      expect(result).not.toContainEqual(expect.stringContaining(`a${d}b`));
+    });
   });
 
   describe('createAgentHandler - MCP tool authorization', () => {
