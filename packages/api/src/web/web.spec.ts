@@ -1538,5 +1538,53 @@ describe('web.ts', () => {
       )?.[1];
       expect(providersAuthType).toBe(AuthType.USER_PROVIDED);
     });
+
+    it('should report SYSTEM_DEFINED when only user-provided field is a stripped SSRF URL', async () => {
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === 'localhost');
+
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          JINA_API_KEY: 'system-jina-key',
+        };
+
+        const webSearchConfig: TCustomConfig['webSearch'] = {
+          serperApiKey: '${SERPER_API_KEY}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          jinaApiKey: '${JINA_API_KEY}',
+          jinaApiUrl: '${JINA_API_URL}',
+          safeSearch: SafeSearchTypes.MODERATE,
+          rerankerType: 'jina' as RerankerTypes,
+        };
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'JINA_API_KEY') {
+              result[field] = 'system-jina-key';
+            } else if (field === 'JINA_API_URL') {
+              result[field] = 'http://localhost:9999/rerank';
+            } else {
+              result[field] = 'test-api-key';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authResult.jinaApiUrl).toBeUndefined();
+        expect(result.authenticated).toBe(true);
+        const rerankersAuth = result.authTypes.find(([c]) => c === 'rerankers')?.[1];
+        expect(rerankersAuth).toBe(AuthType.SYSTEM_DEFINED);
+      } finally {
+        process.env = originalEnv;
+      }
+    });
   });
 });

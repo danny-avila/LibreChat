@@ -188,6 +188,7 @@ export async function loadWebSearchAuth({
 
           const isFieldUserProvided = value != null && process.env[field] !== value;
           const isUrlKey = originalKey != null && WEB_SEARCH_URL_KEYS.has(originalKey);
+          let contributed = false;
 
           if (isUrlKey && isFieldUserProvided && (await isSSRFUrl(value))) {
             if (!optionalSet.has(field)) {
@@ -196,9 +197,10 @@ export async function loadWebSearchAuth({
             }
           } else if (originalKey) {
             authResult[originalKey] = value;
+            contributed = true;
           }
 
-          if (!isUserProvided && isFieldUserProvided) {
+          if (!isUserProvided && isFieldUserProvided && contributed) {
             isUserProvided = true;
           }
         }
