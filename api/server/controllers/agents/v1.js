@@ -6,6 +6,7 @@ const {
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
+  collectEdgeAgentIds,
   mergeAgentOcrConversion,
   MAX_AVATAR_REFRESH_AGENTS,
   convertOcrToContextInPlace,
@@ -35,6 +36,7 @@ const {
 } = require('~/models/Agent');
 const {
   findPubliclyAccessibleResources,
+  getResourcePermissionsMap,
   findAccessibleResources,
   hasPublicPermission,
   grantPermission,
@@ -59,6 +61,44 @@ const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
+ * Validates that the requesting user has VIEW access to every agent referenced in edges.
+ * Agents that do not exist in the database are skipped — at create time, the `from` field
+ * often references the agent being built, which has no DB record yet.
+ * @param {import('librechat-data-provider').GraphEdge[]} edges
+ * @param {string} userId
+ * @param {string} userRole - Used for group/role principal resolution
+ * @returns {Promise<string[]>} Agent IDs the user cannot VIEW (empty if all accessible)
+ */
+const validateEdgeAgentAccess = async (edges, userId, userRole) => {
+  const edgeAgentIds = collectEdgeAgentIds(edges);
+  if (edgeAgentIds.size === 0) {
+    return [];
+  }
+
+  const agents = (await Promise.all([...edgeAgentIds].map((id) => getAgent({ id })))).filter(
+    Boolean,
+  );
+
+  if (agents.length === 0) {
+    return [];
+  }
+
+  const permissionsMap = await getResourcePermissionsMap({
+    userId,
+    role: userRole,
+    resourceType: ResourceType.AGENT,
+    resourceIds: agents.map((a) => a._id),
+  });
+
+  return agents
+    .filter((a) => {
+      const bits = permissionsMap.get(a._id.toString()) ?? 0;
+      return (bits & PermissionBits.VIEW) === 0;
+    })
+    .map((a) => a.id);
+};
+
+/**
  * Creates an Agent.
  * @route POST /Agents
  * @param {ServerRequest} req - The request object.
@@ -75,7 +115,17 @@ const createAgentHandler = async (req, res) => {
       agentData.model_parameters = removeNullishValues(agentData.model_parameters, true);
     }
 
-    const { id: userId } = req.user;
+    const { id: userId, role: userRole } = req.user;
+
+    if (agentData.edges?.length) {
+      const unauthorized = await validateEdgeAgentAccess(agentData.edges, userId, userRole);
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
 
     agentData.id = `agent_${nanoid()}`;
     agentData.author = userId;
@@ -241,6 +291,17 @@ const updateAgentHandler = async (req, res) => {
 
     if (avatarField === null) {
       updateData.avatar = avatarField;
+    }
+
+    if (updateData.edges?.length) {
+      const { id: userId, role: userRole } = req.user;
+      const unauthorized = await validateEdgeAgentAccess(updateData.edges, userId, userRole);
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
     }
 
     // Convert OCR to context in incoming updateData
