@@ -245,6 +245,58 @@ describe('MCP Tool Authorization', () => {
       expect(mockGetAllServerConfigs).toHaveBeenCalledTimes(1);
     });
 
+    test('should preserve existing MCP tools when registry is unavailable', async () => {
+      getMCPServersRegistry.mockImplementation(() => {
+        throw new Error('MCPServersRegistry has not been initialized.');
+      });
+
+      const existingTools = [`toolA${d}serverA`, `toolB${d}serverB`];
+
+      const result = await filterAuthorizedTools({
+        tools: [...existingTools, `newTool${d}unknownServer`, 'web_search'],
+        userId,
+        availableTools,
+        existingTools,
+      });
+
+      expect(result).toContain(`toolA${d}serverA`);
+      expect(result).toContain(`toolB${d}serverB`);
+      expect(result).toContain('web_search');
+      expect(result).not.toContain(`newTool${d}unknownServer`);
+    });
+
+    test('should still reject all MCP tools when registry is unavailable and no existingTools', async () => {
+      getMCPServersRegistry.mockImplementation(() => {
+        throw new Error('MCPServersRegistry has not been initialized.');
+      });
+
+      const result = await filterAuthorizedTools({
+        tools: [`toolA${d}serverA`, 'web_search'],
+        userId,
+        availableTools,
+      });
+
+      expect(result).toEqual(['web_search']);
+    });
+
+    test('should not preserve malformed existing tools when registry is unavailable', async () => {
+      getMCPServersRegistry.mockImplementation(() => {
+        throw new Error('MCPServersRegistry has not been initialized.');
+      });
+
+      const malformedTool = `a${d}b${d}c`;
+      const result = await filterAuthorizedTools({
+        tools: [malformedTool, `legit${d}serverA`, 'web_search'],
+        userId,
+        availableTools,
+        existingTools: [malformedTool, `legit${d}serverA`],
+      });
+
+      expect(result).toContain(`legit${d}serverA`);
+      expect(result).toContain('web_search');
+      expect(result).not.toContain(malformedTool);
+    });
+
     test('should reject malformed MCP tool keys with multiple delimiters', async () => {
       const result = await filterAuthorizedTools({
         tools: [
@@ -404,6 +456,45 @@ describe('MCP Tool Authorization', () => {
 
       expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
     });
+
+    test('should preserve existing MCP tools when registry unavailable and user edits agent', async () => {
+      getMCPServersRegistry.mockImplementation(() => {
+        throw new Error('MCPServersRegistry has not been initialized.');
+      });
+
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        name: 'Renamed After Restart',
+        tools: ['web_search', `existingTool${d}authorizedServer`],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(updatedAgent.tools).toContain('web_search');
+      expect(updatedAgent.name).toBe('Renamed After Restart');
+    });
+
+    test('should preserve existing MCP tools when server not in configs (disconnected)', async () => {
+      mockGetAllServerConfigs.mockResolvedValue({});
+
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        name: 'Edited While Disconnected',
+        tools: ['web_search', `existingTool${d}authorizedServer`],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(updatedAgent.name).toBe('Edited While Disconnected');
+    });
   });
 
   describe('duplicateAgentHandler - MCP tool authorization', () => {
@@ -454,6 +545,23 @@ describe('MCP Tool Authorization', () => {
       const agentInDb = await Agent.findOne({ id: newAgent.id });
       expect(agentInDb.mcpServerNames).toContain('authorizedServer');
       expect(agentInDb.mcpServerNames).not.toContain('forbiddenServer');
+    });
+
+    test('should preserve source agent MCP tools when registry is unavailable', async () => {
+      getMCPServersRegistry.mockImplementation(() => {
+        throw new Error('MCPServersRegistry has not been initialized.');
+      });
+
+      mockReq.user.id = sourceAgentAuthorId.toString();
+      mockReq.params.id = sourceAgentId;
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const { agent: newAgent } = mockRes.json.mock.calls[0][0];
+      expect(newAgent.tools).toContain('web_search');
+      expect(newAgent.tools).toContain(`tool${d}authorizedServer`);
+      expect(newAgent.tools).toContain(`tool${d}forbiddenServer`);
     });
   });
 
@@ -529,6 +637,41 @@ describe('MCP Tool Authorization', () => {
       const result = mockRes.json.mock.calls[0][0];
       expect(result.tools).toContain('web_search');
       expect(result.tools).toContain(`tool${d}authorizedServer`);
+    });
+
+    test('should preserve version MCP tools when registry is unavailable on revert', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          $set: {
+            'versions.0.tools': [
+              'web_search',
+              `validTool${d}authorizedServer`,
+              `otherTool${d}anotherServer`,
+            ],
+          },
+        },
+      );
+
+      getMCPServersRegistry.mockImplementation(() => {
+        throw new Error('MCPServersRegistry has not been initialized.');
+      });
+
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const result = mockRes.json.mock.calls[0][0];
+      expect(result.tools).toContain('web_search');
+      expect(result.tools).toContain(`validTool${d}authorizedServer`);
+      expect(result.tools).toContain(`otherTool${d}anotherServer`);
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.tools).toContain(`validTool${d}authorizedServer`);
+      expect(agentInDb.tools).toContain(`otherTool${d}anotherServer`);
     });
   });
 });

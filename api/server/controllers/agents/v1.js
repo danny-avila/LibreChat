@@ -104,15 +104,22 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
  * MCP tools must match the exact format `{toolName}_mcp_{serverName}` (exactly 2 segments).
  * Multi-delimiter keys are rejected to prevent authorization/execution mismatch.
  * Non-MCP tools must appear in availableTools (global tool cache) or systemTools.
+ *
+ * When `existingTools` is provided and the MCP registry is unavailable (e.g. server restart),
+ * tools already present on the agent are preserved rather than stripped — they were validated
+ * when originally added, and we cannot re-verify them without the registry.
  * @param {object} params
  * @param {string[]} params.tools - Raw tool strings from the request
  * @param {string} params.userId - Requesting user ID for MCP server access check
  * @param {Record<string, unknown>} params.availableTools - Global non-MCP tool cache
+ * @param {string[]} [params.existingTools] - Tools already persisted on the agent document
  * @returns {Promise<string[]>} Only the authorized subset of tools
  */
-const filterAuthorizedTools = async ({ tools, userId, availableTools }) => {
+const filterAuthorizedTools = async ({ tools, userId, availableTools, existingTools }) => {
   const filteredTools = [];
   let mcpServerConfigs;
+  let registryUnavailable = false;
+  const existingToolSet = existingTools?.length ? new Set(existingTools) : null;
 
   for (const tool of tools) {
     if (availableTools[tool] || systemTools[tool]) {
@@ -133,6 +140,7 @@ const filterAuthorizedTools = async ({ tools, userId, availableTools }) => {
           e.message,
         );
         mcpServerConfigs = {};
+        registryUnavailable = true;
       }
     }
 
@@ -141,6 +149,11 @@ const filterAuthorizedTools = async ({ tools, userId, availableTools }) => {
       logger.warn(
         `[filterAuthorizedTools] Rejected malformed MCP tool key "${tool}" for user ${userId}`,
       );
+      continue;
+    }
+
+    if (registryUnavailable && existingToolSet?.has(tool)) {
+      filteredTools.push(tool);
       continue;
     }
 
@@ -543,6 +556,7 @@ const duplicateAgentHandler = async (req, res) => {
         tools: newAgentData.tools,
         userId,
         availableTools,
+        existingTools: newAgentData.tools,
       });
     }
 
@@ -882,6 +896,7 @@ const revertAgentVersionHandler = async (req, res) => {
         tools: updatedAgent.tools,
         userId: req.user.id,
         availableTools,
+        existingTools: updatedAgent.tools,
       });
       if (filteredTools.length !== updatedAgent.tools.length) {
         updatedAgent = await updateAgent(
