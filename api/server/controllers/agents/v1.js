@@ -100,15 +100,18 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
 };
 
 /**
- * Filters tools, validating that MCP tool strings reference servers the user is authorized to access.
- * Non-MCP tools are validated against availableTools and systemTools as before.
+ * Filters tools to only include those the user is authorized to use.
+ * MCP tools (containing `_mcp_`) are validated against the user's accessible server configs.
+ * Non-MCP tools must appear in availableTools (global tool cache) or systemTools.
+ * @param {object} params
+ * @param {string[]} params.tools - Raw tool strings from the request
+ * @param {string} params.userId - Requesting user ID for MCP server access check
+ * @param {Record<string, unknown>} params.availableTools - Global non-MCP tool cache
+ * @returns {Promise<string[]>} Only the authorized subset of tools
  */
 const filterAuthorizedTools = async ({ tools, userId, availableTools }) => {
   const filteredTools = [];
-  const hasMCPTool = tools.some((tool) => tool?.includes(Constants.mcp_delimiter));
-  const mcpServerConfigs = hasMCPTool
-    ? ((await getMCPServersRegistry().getAllServerConfigs(userId)) ?? {})
-    : null;
+  let mcpServerConfigs;
 
   for (const tool of tools) {
     if (availableTools[tool] || systemTools[tool]) {
@@ -116,12 +119,28 @@ const filterAuthorizedTools = async ({ tools, userId, availableTools }) => {
       continue;
     }
 
-    if (!tool?.includes(Constants.mcp_delimiter) || mcpServerConfigs == null) {
+    if (!tool?.includes(Constants.mcp_delimiter)) {
       continue;
     }
 
+    if (mcpServerConfigs === undefined) {
+      try {
+        mcpServerConfigs = (await getMCPServersRegistry().getAllServerConfigs(userId)) ?? {};
+      } catch (e) {
+        logger.warn(
+          '[filterAuthorizedTools] MCP registry unavailable, filtering all MCP tools',
+          e.message,
+        );
+        mcpServerConfigs = {};
+      }
+    }
+
+    /** MCP tool format: {toolName}_mcp_{serverName} — server name is always the last segment */
     const serverName = tool.split(Constants.mcp_delimiter).pop();
     if (!serverName || !Object.hasOwn(mcpServerConfigs, serverName)) {
+      logger.warn(
+        `[filterAuthorizedTools] Rejected MCP tool "${tool}" — server "${serverName}" not accessible to user ${userId}`,
+      );
       continue;
     }
 
@@ -348,12 +367,23 @@ const updateAgentHandler = async (req, res) => {
     }
 
     if (updateData.tools) {
-      const availableTools = (await getCachedTools()) ?? {};
-      updateData.tools = await filterAuthorizedTools({
-        tools: updateData.tools,
-        userId: req.user.id,
-        availableTools,
-      });
+      const existingToolSet = new Set(existingAgent.tools ?? []);
+      const newMCPTools = updateData.tools.filter(
+        (t) => !existingToolSet.has(t) && t?.includes(Constants.mcp_delimiter),
+      );
+
+      if (newMCPTools.length > 0) {
+        const availableTools = (await getCachedTools()) ?? {};
+        const approvedNew = await filterAuthorizedTools({
+          tools: newMCPTools,
+          userId: req.user.id,
+          availableTools,
+        });
+        const rejectedSet = new Set(newMCPTools.filter((t) => !approvedNew.includes(t)));
+        if (rejectedSet.size > 0) {
+          updateData.tools = updateData.tools.filter((t) => !rejectedSet.has(t));
+        }
+      }
     }
 
     let updatedAgent =
@@ -836,7 +866,23 @@ const revertAgentVersionHandler = async (req, res) => {
 
     // Permissions are enforced via route middleware (ACL EDIT)
 
-    const updatedAgent = await revertAgentVersion({ id }, version_index);
+    let updatedAgent = await revertAgentVersion({ id }, version_index);
+
+    if (updatedAgent.tools?.length) {
+      const availableTools = (await getCachedTools()) ?? {};
+      const filteredTools = await filterAuthorizedTools({
+        tools: updatedAgent.tools,
+        userId: req.user.id,
+        availableTools,
+      });
+      if (filteredTools.length !== updatedAgent.tools.length) {
+        updatedAgent = await updateAgent(
+          { id },
+          { tools: filteredTools },
+          { updatingUserId: req.user.id },
+        );
+      }
+    }
 
     if (updatedAgent.author) {
       updatedAgent.author = updatedAgent.author.toString();
@@ -904,4 +950,5 @@ module.exports = {
   uploadAgentAvatar: uploadAgentAvatarHandler,
   revertAgentVersion: revertAgentVersionHandler,
   getAgentCategories,
+  filterAuthorizedTools,
 };
