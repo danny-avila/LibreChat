@@ -143,7 +143,7 @@ const Part = memo(function Part({
           isSubmitting={isSubmitting}
           output={toolCall.output ?? ''}
           initialProgress={toolCall.progress ?? 0.1}
-          args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+          args={toolCall.args}
         />
       );
     } else if (
@@ -239,6 +239,9 @@ const Part = memo(function Part({
         }
         return null;
       }
+
+
+
 
 
 
