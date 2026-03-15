@@ -180,21 +180,4 @@ describe('DragDropModal - Provider Detection', () => {
       expect(inferredType).toBe('');
     });
   });
-
-  describe('MIME type alias normalization', () => {
-    it('should normalize text/x-python-script to text/x-python', () => {
-      const inferredType = inferMimeType('test.py', 'text/x-python-script');
-      expect(inferredType).toBe('text/x-python');
-    });
-
-    it('should pass through standard text/x-python unchanged', () => {
-      const inferredType = inferMimeType('test.py', 'text/x-python');
-      expect(inferredType).toBe('text/x-python');
-    });
-
-    it('should pass through unknown browser types unchanged', () => {
-      const inferredType = inferMimeType('data.bin', 'application/octet-stream');
-      expect(inferredType).toBe('application/octet-stream');
-    });
-  });
 });

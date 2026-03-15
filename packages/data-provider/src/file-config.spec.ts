@@ -1,14 +1,14 @@
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
+  documentParserMimeTypes,
   getEndpointFileConfig,
+  applicationMimeTypes,
+  defaultOCRMimeTypes,
+  supportedMimeTypes,
   mergeFileConfig,
   inferMimeType,
   textMimeTypes,
-  applicationMimeTypes,
-  defaultOCRMimeTypes,
-  documentParserMimeTypes,
-  supportedMimeTypes,
 } from './file-config';
 import { EModelEndpoint } from './schemas';
 
@@ -35,6 +35,15 @@ describe('inferMimeType', () => {
 
   it('should return empty string for unknown extension with no browser type', () => {
     expect(inferMimeType('file.xyz', '')).toBe('');
+  });
+
+  it('should produce a type accepted by checkType after normalizing text/x-python-script', () => {
+    const normalized = inferMimeType('test.py', 'text/x-python-script');
+    expect(baseFileConfig.checkType(normalized)).toBe(true);
+  });
+
+  it('should reject raw text/x-python-script without normalization', () => {
+    expect(baseFileConfig.checkType('text/x-python-script')).toBe(false);
   });
 });
 
