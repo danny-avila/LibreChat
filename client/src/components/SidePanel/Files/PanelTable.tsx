@@ -24,14 +24,14 @@ import {
   type ColumnFiltersState,
 } from '@tanstack/react-table';
 import {
-  fileConfig as defaultFileConfig,
-  checkOpenAIStorage,
-  mergeFileConfig,
   megabyte,
+  mergeFileConfig,
+  checkOpenAIStorage,
   isAssistantsEndpoint,
   getEndpointFileConfig,
-  type TFile,
+  fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
@@ -86,7 +86,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
-  const { setFiles, conversation } = useChatContext();
+  const { files, setFiles, conversation } = useChatContext();
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
@@ -142,7 +142,15 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         return;
       }
 
-      if (fileData.bytes > (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
+      if (endpointFileConfig.fileLimit && files.size >= endpointFileConfig.fileLimit) {
+        showToast({
+          message: `${localize('com_ui_attach_error_limit')} ${endpointFileConfig.fileLimit} files (${endpoint})`,
+          status: 'error',
+        });
+        return;
+      }
+
+      if (fileData.bytes >= (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
         showToast({
           message: `${localize('com_ui_attach_error_size')} ${
             (endpointFileConfig.fileSizeLimit ?? 0) / megabyte
@@ -160,6 +168,22 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         return;
       }
 
+      if (endpointFileConfig.totalSizeLimit) {
+        const existing = files.get(fileData.file_id);
+        let currentTotalSize = 0;
+        for (const f of files.values()) {
+          currentTotalSize += f.size;
+        }
+        currentTotalSize -= existing?.size ?? 0;
+        if (currentTotalSize + fileData.bytes > endpointFileConfig.totalSizeLimit) {
+          showToast({
+            message: `${localize('com_ui_attach_error_total_size')} ${endpointFileConfig.totalSizeLimit / megabyte} MB (${endpoint})`,
+            status: 'error',
+          });
+          return;
+        }
+      }
+
       addFile({
         progress: 1,
         attached: true,
@@ -175,7 +199,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         metadata: fileData.metadata,
       });
     },
-    [addFile, fileMap, conversation, localize, showToast, fileConfig],
+    [addFile, files, fileMap, conversation, localize, showToast, fileConfig],
   );
 
   const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
