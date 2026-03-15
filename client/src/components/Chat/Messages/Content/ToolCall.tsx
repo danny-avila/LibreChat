@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
 import {
@@ -15,6 +16,7 @@ import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
 import { logger } from '~/utils';
+import store from '~/store';
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -37,7 +39,8 @@ export default function ToolCall({
   expires_at?: number;
 }) {
   const localize = useLocalize();
-  const [showInfo, setShowInfo] = useState(false);
+  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const [showInfo, setShowInfo] = useState(autoExpand);
   const expandStyle = useExpandCollapse(showInfo);
 
   const { function_name, domain, isMCPToolCall, mcpServerName } = useMemo(() => {

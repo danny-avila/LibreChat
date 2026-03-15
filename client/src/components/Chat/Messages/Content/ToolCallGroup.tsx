@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
 import type { TMessageContentParts, Agents, FunctionToolCall } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
@@ -7,6 +8,7 @@ import { useMCPIconMap } from '~/hooks/MCP';
 import type { PartWithIndex } from './ParallelContent';
 import { StackedToolIcons, getMCPServerName } from './ToolOutput';
 import { cn } from '~/utils';
+import store from '~/store';
 
 const FRIENDLY_NAMES: Record<string, string> = {
   execute_code: 'Code',
@@ -110,8 +112,9 @@ export default function ToolCallGroup({
     return `${labels.slice(0, 3).join(', ')}, +${labels.length - 3}`;
   }, [toolNames]);
 
-  const autoCollapse = count >= 2 && allCompleted;
-  const [isExpanded, setIsExpanded] = useState(!autoCollapse);
+  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const autoCollapse = !autoExpand && count >= 2 && allCompleted;
+  const [isExpanded, setIsExpanded] = useState(autoExpand || !autoCollapse);
   const expandStyle = useExpandCollapse(isExpanded);
 
   useEffect(() => {

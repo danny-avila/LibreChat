@@ -16,8 +16,8 @@ export default function CodeAnalyze({
 }) {
   const localize = useLocalize();
   const progress = useProgress(initialProgress);
-  const showAnalysisCode = useRecoilValue(store.showCode);
-  const [showCode, setShowCode] = useState(showAnalysisCode);
+  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const [showCode, setShowCode] = useState(autoExpand);
 
   const logs = outputs.reduce((acc, output) => {
     if (output['logs']) {

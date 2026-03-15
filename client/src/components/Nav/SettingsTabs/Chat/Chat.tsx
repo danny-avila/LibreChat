@@ -36,11 +36,11 @@ const toggleSwitchConfigs = [
     key: 'showThinking',
   },
   {
-    stateAtom: store.showCode,
-    localizationKey: 'com_nav_show_code' as const,
-    switchId: 'showCode',
+    stateAtom: store.autoExpandTools,
+    localizationKey: 'com_nav_auto_expand_tools' as const,
+    switchId: 'autoExpandTools',
     hoverCardText: undefined,
-    key: 'showCode',
+    key: 'autoExpandTools',
   },
   {
     stateAtom: store.LaTeXParsing,

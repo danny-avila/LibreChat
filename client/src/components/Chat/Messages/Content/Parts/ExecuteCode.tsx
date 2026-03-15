@@ -1,5 +1,5 @@
-import React, { useMemo, useEffect, useRef, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
 import { SquareTerminal } from 'lucide-react';
 import { lowlight } from 'lowlight';
 import type { TAttachment } from 'librechat-data-provider';
@@ -105,7 +105,8 @@ export default function ExecuteCode({
   const localize = useLocalize();
   const hasOutput = output.length > 0;
   const outputRef = useRef<string>(output);
-  const [showCode, setShowCode] = useRecoilState(store.showCode);
+  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const [showCode, setShowCode] = useState(autoExpand);
   const expandStyle = useExpandCollapse(showCode);
 
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
