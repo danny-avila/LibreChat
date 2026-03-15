@@ -2156,7 +2156,8 @@ describe('GenerationJobManager Integration Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 700));
 
       expect(receivedOnA.length).toBe(4);
-      expect(receivedOnB.length).toBe(3);
+      expect(receivedOnB.length).toBe(4);
+      expect((receivedOnB[0] as CreatedEvent).created).toBe(true);
 
       subA?.unsubscribe();
       subB?.unsubscribe();
