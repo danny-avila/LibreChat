@@ -1,5 +1,11 @@
 import type { GraphEdge } from 'librechat-data-provider';
-import { getEdgeKey, getEdgeParticipants, filterOrphanedEdges, createEdgeCollector } from './edges';
+import {
+  getEdgeKey,
+  getEdgeParticipants,
+  collectEdgeAgentIds,
+  filterOrphanedEdges,
+  createEdgeCollector,
+} from './edges';
 
 describe('edges utilities', () => {
   describe('getEdgeKey', () => {
@@ -67,6 +73,49 @@ describe('edges utilities', () => {
     it('should return empty array for edge with no valid ids', () => {
       const edge = { from: undefined, to: undefined } as unknown as GraphEdge;
       expect(getEdgeParticipants(edge)).toEqual([]);
+    });
+  });
+
+  describe('collectEdgeAgentIds', () => {
+    it('should return empty set for undefined input', () => {
+      expect(collectEdgeAgentIds(undefined)).toEqual(new Set());
+    });
+
+    it('should return empty set for empty array', () => {
+      expect(collectEdgeAgentIds([])).toEqual(new Set());
+    });
+
+    it('should collect IDs from simple string from/to', () => {
+      const edges: GraphEdge[] = [{ from: 'agent_a', to: 'agent_b', edgeType: 'handoff' }];
+      expect(collectEdgeAgentIds(edges)).toEqual(new Set(['agent_a', 'agent_b']));
+    });
+
+    it('should collect IDs from array from/to values', () => {
+      const edges: GraphEdge[] = [
+        { from: ['agent_a', 'agent_b'], to: ['agent_c', 'agent_d'], edgeType: 'handoff' },
+      ];
+      expect(collectEdgeAgentIds(edges)).toEqual(
+        new Set(['agent_a', 'agent_b', 'agent_c', 'agent_d']),
+      );
+    });
+
+    it('should deduplicate IDs across edges', () => {
+      const edges: GraphEdge[] = [
+        { from: 'agent_a', to: 'agent_b', edgeType: 'handoff' },
+        { from: 'agent_b', to: 'agent_c', edgeType: 'handoff' },
+        { from: 'agent_a', to: 'agent_c', edgeType: 'direct' },
+      ];
+      expect(collectEdgeAgentIds(edges)).toEqual(new Set(['agent_a', 'agent_b', 'agent_c']));
+    });
+
+    it('should handle mixed scalar and array edges', () => {
+      const edges: GraphEdge[] = [
+        { from: 'agent_a', to: ['agent_b', 'agent_c'], edgeType: 'handoff' },
+        { from: ['agent_c', 'agent_d'], to: 'agent_e', edgeType: 'direct' },
+      ];
+      expect(collectEdgeAgentIds(edges)).toEqual(
+        new Set(['agent_a', 'agent_b', 'agent_c', 'agent_d', 'agent_e']),
+      );
     });
   });
 

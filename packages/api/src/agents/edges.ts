@@ -43,6 +43,20 @@ export function filterOrphanedEdges(edges: GraphEdge[], skippedAgentIds: Set<str
   });
 }
 
+/** Collects all unique agent IDs referenced across an array of edges. */
+export function collectEdgeAgentIds(edges: GraphEdge[] | undefined): Set<string> {
+  const ids = new Set<string>();
+  if (!edges || edges.length === 0) {
+    return ids;
+  }
+  for (const edge of edges) {
+    for (const id of getEdgeParticipants(edge)) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
 /**
  * Result of discovering and aggregating edges from connected agents.
  */
