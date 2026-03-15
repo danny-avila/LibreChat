@@ -499,3 +499,45 @@ export async function isMCPDomainAllowed(
   // Use MCP_PROTOCOLS (HTTP/HTTPS/WS/WSS) for MCP server validation
   return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS);
 }
+
+/** Matches ErrorTypes.INVALID_BASE_URL — string literal avoids build-time dependency on data-provider */
+const INVALID_BASE_URL_TYPE = 'invalid_base_url';
+
+function throwInvalidBaseURL(message: string): never {
+  throw new Error(JSON.stringify({ type: INVALID_BASE_URL_TYPE, message }));
+}
+
+/**
+ * Validates that a user-provided endpoint URL does not target private/internal addresses.
+ * Throws if the URL is unparseable, uses a non-HTTP(S) scheme, targets a known SSRF hostname,
+ * or DNS-resolves to a private IP.
+ *
+ * @note DNS rebinding: validation performs a single DNS lookup. An adversary controlling
+ *   DNS with TTL=0 could respond with a public IP at validation time and a private IP
+ *   at request time. This is an accepted limitation of point-in-time DNS checks.
+ * @note Fail-open on DNS errors: a resolution failure here implies a failure at request
+ *   time as well, matching {@link resolveHostnameSSRF} semantics.
+ */
+export async function validateEndpointURL(url: string, endpoint: string): Promise<void> {
+  let hostname: string;
+  let protocol: string;
+  try {
+    const parsed = new URL(url);
+    hostname = parsed.hostname;
+    protocol = parsed.protocol;
+  } catch {
+    throwInvalidBaseURL(`Invalid base URL for ${endpoint}: unable to parse URL.`);
+  }
+
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    throwInvalidBaseURL(`Invalid base URL for ${endpoint}: only HTTP and HTTPS are permitted.`);
+  }
+
+  if (isSSRFTarget(hostname)) {
+    throwInvalidBaseURL(`Base URL for ${endpoint} targets a restricted address.`);
+  }
+
+  if (await resolveHostnameSSRF(hostname)) {
+    throwInvalidBaseURL(`Base URL for ${endpoint} resolves to a restricted address.`);
+  }
+}
