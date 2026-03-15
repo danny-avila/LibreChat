@@ -371,7 +371,7 @@ const duplicateAgentHandler = async (req, res) => {
      */
     const duplicateAction = async (action) => {
       const newActionId = nanoid();
-      const [domain] = action.action_id.split(actionDelimiter);
+      const { domain } = action.metadata;
       const fullActionId = `${domain}${actionDelimiter}${newActionId}`;
 
       // Sanitize sensitive metadata before persisting
@@ -381,7 +381,7 @@ const duplicateAgentHandler = async (req, res) => {
       }
 
       const newAction = await updateAction(
-        { action_id: newActionId },
+        { action_id: newActionId, agent_id: newAgentId },
         {
           metadata: filteredMetadata,
           agent_id: newAgentId,
