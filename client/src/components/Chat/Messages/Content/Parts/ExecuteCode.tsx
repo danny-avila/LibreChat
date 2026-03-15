@@ -1,7 +1,7 @@
-import { useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useMemo, useEffect, useRef, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import { SquareTerminal } from 'lucide-react';
-import hljs from 'highlight.js';
+import { lowlight } from 'lowlight';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import { useProgress, useLocalize, useExpandCollapse } from '~/hooks';
@@ -16,8 +16,49 @@ interface ParsedArgs {
   code?: string;
 }
 
-export function useParseArgs(args?: string): ParsedArgs | null {
+interface HastText {
+  type: 'text';
+  value: string;
+}
+
+interface HastElement {
+  type: 'element';
+  tagName: string;
+  properties?: { className?: string[] };
+  children?: HastNode[];
+}
+
+type HastNode = HastText | HastElement;
+
+function hastToReact(nodes: HastNode[]): React.ReactNode[] {
+  return nodes.map((node, i) => {
+    if (node.type === 'text') {
+      return node.value;
+    }
+    return React.createElement(
+      node.tagName,
+      { key: i, className: node.properties?.className?.join(' ') },
+      node.children ? hastToReact(node.children) : undefined,
+    );
+  });
+}
+
+function highlightCode(code: string, lang: string): React.ReactNode[] {
+  try {
+    const tree = lowlight.registered(lang)
+      ? lowlight.highlight(lang, code)
+      : lowlight.highlightAuto(code);
+    return hastToReact(tree.children as HastNode[]);
+  } catch {
+    return [code];
+  }
+}
+
+export function useParseArgs(args?: string | Record<string, unknown>): ParsedArgs | null {
   return useMemo(() => {
+    if (typeof args === 'object' && args !== null) {
+      return { lang: String(args.lang ?? ''), code: String(args.code ?? '') };
+    }
     let parsedArgs: ParsedArgs | string | undefined | null = args;
     try {
       parsedArgs = JSON.parse(args || '');
@@ -57,7 +98,7 @@ export default function ExecuteCode({
 }: {
   initialProgress: number;
   isSubmitting: boolean;
-  args?: string;
+  args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
 }) {
@@ -69,6 +110,8 @@ export default function ExecuteCode({
 
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
   const progress = useProgress(initialProgress);
+
+  const highlighted = useMemo(() => (code ? highlightCode(code, lang) : null), [code, lang]);
 
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
 
@@ -84,7 +127,7 @@ export default function ExecuteCode({
 
   return (
     <>
-      <div className="relative my-1 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={toggleCode}
@@ -106,20 +149,13 @@ export default function ExecuteCode({
           error={cancelled}
         />
       </div>
-      <div className="mb-2" style={expandStyle}>
+      <div style={expandStyle}>
         <div className="overflow-hidden">
-          <div className="mt-0.5 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+          <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
             {code && <CodeWindowHeader language={lang} code={code} />}
             {code && (
               <pre className="max-h-[300px] overflow-auto bg-surface-tertiary p-4 font-mono text-xs">
-                <code
-                  className={`hljs language-${lang} !whitespace-pre`}
-                  dangerouslySetInnerHTML={{
-                    __html: hljs.getLanguage(lang)
-                      ? hljs.highlight(code, { language: lang }).value
-                      : hljs.highlightAuto(code).value,
-                  }}
-                />
+                <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
               </pre>
             )}
             {hasOutput && (
