@@ -239,8 +239,20 @@ describe('markdown artifacts', () => {
       expect(rendererCode).toContain('skipHtml={true}');
       expect(rendererCode).toContain('SAFE_PROTOCOLS');
       expect(rendererCode).toContain('isSafeUrl');
-      expect(rendererCode).toContain("urlTransform={(url) => (isSafeUrl(url) ? url : '')}");
+      expect(rendererCode).toContain('urlTransform={urlTransform}');
       expect(rendererCode).toContain('remarkPlugins={remarkPlugins}');
+      expect(rendererCode).toContain('isSafeUrl(url) ? url : null');
+    });
+
+    it('should embed isSafeUrl logic matching the exported version', () => {
+      const files = getMarkdownFiles('# Test');
+      const rendererCode = files['/components/ui/MarkdownRenderer.tsx'];
+
+      expect(rendererCode).toContain("new Set(['http:', 'https:', 'mailto:', 'tel:'])");
+      expect(rendererCode).toContain('new URL(trimmed).protocol');
+      expect(rendererCode).toContain("trimmed.startsWith('/')");
+      expect(rendererCode).toContain("trimmed.startsWith('#')");
+      expect(rendererCode).toContain("trimmed.startsWith('.')");
     });
 
     it('should pass markdown content to the Markdown component', () => {

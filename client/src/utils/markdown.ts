@@ -2,6 +2,11 @@ import dedent from 'dedent';
 
 const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
 
+/**
+ * Allowlist-based URL validator for markdown artifact rendering.
+ * Mirrored verbatim in the markdownRenderer template string below —
+ * any logic change MUST be applied to both copies.
+ */
 export const isSafeUrl = (url: string): boolean => {
   const trimmed = url.trim();
   if (!trimmed) {
@@ -26,6 +31,7 @@ interface MarkdownRendererProps {
   content: string;
 }
 
+/** Mirror of the exported isSafeUrl in markdown.ts — keep in sync. */
 const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
 
 const isSafeUrl = (url: string): boolean => {
@@ -40,6 +46,7 @@ const isSafeUrl = (url: string): boolean => {
 };
 
 const remarkPlugins = [remarkGfm, remarkBreaks];
+const urlTransform = (url: string) => (isSafeUrl(url) ? url : null);
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   return (
@@ -54,7 +61,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         skipHtml={true}
-        urlTransform={(url) => (isSafeUrl(url) ? url : '')}
+        urlTransform={urlTransform}
       >
         {content}
       </ReactMarkdown>
