@@ -13,6 +13,37 @@ import type {
   TWebSearchConfig,
 } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
+import { isSSRFTarget, resolveHostnameSSRF } from '../auth';
+
+/**
+ * URL-type keys in TWebSearchKeys (not API keys or version strings).
+ * Must stay in sync with URL-typed fields in webSearchAuth (packages/data-schemas).
+ */
+const WEB_SEARCH_URL_KEYS = new Set<TWebSearchKeys>([
+  'searxngInstanceUrl',
+  'firecrawlApiUrl',
+  'jinaApiUrl',
+]);
+
+/**
+ * Returns true if the URL should be blocked for SSRF risk.
+ * Fail-closed: unparseable URLs and non-HTTP(S) schemes return true.
+ */
+async function isSSRFUrl(url: string): Promise<boolean> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return true;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return true;
+  }
+  if (isSSRFTarget(parsed.hostname)) {
+    return true;
+  }
+  return resolveHostnameSSRF(parsed.hostname);
+}
 
 export function extractWebSearchEnvVars({
   keys,
@@ -149,12 +180,27 @@ export async function loadWebSearchAuth({
           const field = allAuthFields[j];
           const value = authValues[field];
           const originalKey = allKeys[j];
-          if (originalKey) authResult[originalKey] = value;
+
           if (!optionalSet.has(field) && !value) {
             allFieldsAuthenticated = false;
             break;
           }
-          if (!isUserProvided && process.env[field] !== value) {
+
+          const isFieldUserProvided = value != null && process.env[field] !== value;
+          const isUrlKey = originalKey != null && WEB_SEARCH_URL_KEYS.has(originalKey);
+          let contributed = false;
+
+          if (isUrlKey && isFieldUserProvided && (await isSSRFUrl(value))) {
+            if (!optionalSet.has(field)) {
+              allFieldsAuthenticated = false;
+              break;
+            }
+          } else if (originalKey) {
+            authResult[originalKey] = value;
+            contributed = true;
+          }
+
+          if (!isUserProvided && isFieldUserProvided && contributed) {
             isUserProvided = true;
           }
         }
