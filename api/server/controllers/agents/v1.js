@@ -381,7 +381,7 @@ const duplicateAgentHandler = async (req, res) => {
       }
 
       const newAction = await updateAction(
-        { action_id: newActionId },
+        { action_id: newActionId, agent_id: newAgentId },
         {
           metadata: filteredMetadata,
           agent_id: newAgentId,
