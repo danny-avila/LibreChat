@@ -18,13 +18,15 @@ const mockEndpointsConfig: TEndpointsConfig = {
   'Some Endpoint': { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
 
-let mockFileConfig = mergeFileConfig({
+const defaultFileConfig = mergeFileConfig({
   endpoints: {
     Moonshot: { fileLimit: 5 },
     [EModelEndpoint.agents]: { fileLimit: 20 },
     default: { fileLimit: 10 },
   },
 });
+
+let mockFileConfig = defaultFileConfig;
 
 jest.mock('~/data-provider', () => ({
   useGetEndpointsQuery: () => ({ data: mockEndpointsConfig }),
@@ -118,13 +120,16 @@ describe('AgentPanel file config resolution (useAgentFileConfig)', () => {
   });
 
   describe('disabled state', () => {
+    beforeEach(() => {
+      mockFileConfig = defaultFileConfig;
+    });
+
     it('reports not disabled for standard config', () => {
       render(<TestWrapper provider="Moonshot" />);
       expect(screen.getByTestId('disabled').textContent).toBe('false');
     });
 
     it('reports disabled when provider-specific config is disabled', () => {
-      const original = mockFileConfig;
       mockFileConfig = mergeFileConfig({
         endpoints: {
           Moonshot: { disabled: true },
@@ -135,8 +140,44 @@ describe('AgentPanel file config resolution (useAgentFileConfig)', () => {
 
       render(<TestWrapper provider="Moonshot" />);
       expect(screen.getByTestId('disabled').textContent).toBe('true');
+    });
 
-      mockFileConfig = original;
+    it('reports disabled when agents config is disabled and no provider set', () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          [EModelEndpoint.agents]: { disabled: true },
+          default: { fileLimit: 10 },
+        },
+      });
+
+      render(<TestWrapper />);
+      expect(screen.getByTestId('disabled').textContent).toBe('true');
+    });
+
+    it('reports disabled when agents is disabled and provider has no specific config', () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          [EModelEndpoint.agents]: { disabled: true },
+          default: { fileLimit: 10 },
+        },
+      });
+
+      render(<TestWrapper provider="Some Endpoint" />);
+      expect(screen.getByTestId('disabled').textContent).toBe('true');
+    });
+
+    it('provider-specific enabled overrides agents disabled', () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          Moonshot: { disabled: false, fileLimit: 5 },
+          [EModelEndpoint.agents]: { disabled: true },
+          default: { fileLimit: 10 },
+        },
+      });
+
+      render(<TestWrapper provider="Moonshot" />);
+      expect(screen.getByTestId('disabled').textContent).toBe('false');
+      expect(screen.getByTestId('fileLimit').textContent).toBe('5');
     });
   });
 

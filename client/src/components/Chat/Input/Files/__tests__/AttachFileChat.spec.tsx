@@ -13,13 +13,15 @@ const mockEndpointsConfig: TEndpointsConfig = {
   Moonshot: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
 
-const mockFileConfig = mergeFileConfig({
+const defaultFileConfig = mergeFileConfig({
   endpoints: {
     Moonshot: { fileLimit: 5 },
     [EModelEndpoint.agents]: { fileLimit: 20 },
     default: { fileLimit: 10 },
   },
 });
+
+let mockFileConfig = defaultFileConfig;
 
 let mockAgentsMap: Record<string, Partial<Agent>> = {};
 let mockAgentQueryData: Partial<Agent> | undefined;
@@ -65,6 +67,7 @@ function renderComponent(conversation: Record<string, unknown> | null, disableIn
 
 describe('AttachFileChat', () => {
   beforeEach(() => {
+    mockFileConfig = defaultFileConfig;
     mockAgentsMap = {};
     mockAgentQueryData = undefined;
     mockAttachFileMenuProps = {};
@@ -145,6 +148,60 @@ describe('AttachFileChat', () => {
       const agentType = mockAttachFileMenuProps.endpointType;
 
       expect(directType).toBe(agentType);
+    });
+  });
+
+  describe('upload disabled rendering', () => {
+    it('renders null for agents endpoint when fileConfig.agents.disabled is true', () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          [EModelEndpoint.agents]: { disabled: true },
+        },
+      });
+      const { container } = renderComponent({
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-1',
+      });
+      expect(container.innerHTML).toBe('');
+    });
+
+    it('renders null for agents endpoint when disableInputs is true', () => {
+      const { container } = renderComponent(
+        { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' },
+        true,
+      );
+      expect(container.innerHTML).toBe('');
+    });
+
+    it('renders AttachFile for assistants endpoint when not disabled', () => {
+      renderComponent({ endpoint: EModelEndpoint.assistants });
+      expect(screen.getByTestId('attach-file')).toBeInTheDocument();
+    });
+
+    it('renders AttachFileMenu when provider-specific config overrides agents disabled', () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          Moonshot: { disabled: false, fileLimit: 5 },
+          [EModelEndpoint.agents]: { disabled: true },
+        },
+      });
+      mockAgentsMap = {
+        'agent-1': { provider: 'Moonshot', model_parameters: {} } as Partial<Agent>,
+      };
+      renderComponent({ endpoint: EModelEndpoint.agents, agent_id: 'agent-1' });
+      expect(screen.getByTestId('attach-file-menu')).toBeInTheDocument();
+    });
+
+    it('renders null for assistants endpoint when fileConfig.assistants.disabled is true', () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          [EModelEndpoint.assistants]: { disabled: true },
+        },
+      });
+      const { container } = renderComponent({
+        endpoint: EModelEndpoint.assistants,
+      });
+      expect(container.innerHTML).toBe('');
     });
   });
 
