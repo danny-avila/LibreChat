@@ -178,6 +178,20 @@ describe('AttachFileChat', () => {
       expect(screen.getByTestId('attach-file')).toBeInTheDocument();
     });
 
+    it('renders AttachFileMenu when provider-specific config overrides agents disabled', () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          Moonshot: { disabled: false, fileLimit: 5 },
+          [EModelEndpoint.agents]: { disabled: true },
+        },
+      });
+      mockAgentsMap = {
+        'agent-1': { provider: 'Moonshot', model_parameters: {} } as Partial<Agent>,
+      };
+      renderComponent({ endpoint: EModelEndpoint.agents, agent_id: 'agent-1' });
+      expect(screen.getByTestId('attach-file-menu')).toBeInTheDocument();
+    });
+
     it('renders null for assistants endpoint when fileConfig.assistants.disabled is true', () => {
       mockFileConfig = mergeFileConfig({
         endpoints: {
