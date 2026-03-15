@@ -358,13 +358,16 @@ export const imageTypeMapping: { [key: string]: string } = {
 };
 
 /** Normalizes non-standard MIME types that browsers may report to their canonical forms */
-export const mimeTypeAliases: Record<string, string> = {
+export const mimeTypeAliases: Readonly<Record<string, string>> = {
   'text/x-python-script': 'text/x-python',
 };
 
 /**
  * Infers the MIME type from a file's extension when the browser doesn't recognize it,
- * and normalizes known non-standard MIME type variants to canonical forms.
+ * and normalizes known non-standard MIME type aliases to their canonical forms.
+ * @param fileName - The file name including its extension
+ * @param currentType - The MIME type reported by the browser (may be empty string)
+ * @returns The normalized or inferred MIME type; empty string if unresolvable
  */
 export function inferMimeType(fileName: string, currentType: string): string {
   if (currentType) {
