@@ -143,7 +143,7 @@ router.post(
 
       if (actions_result && actions_result.length) {
         const action = actions_result[0];
-        if (action.agent_id && action.agent_id !== agent_id) {
+        if (action.agent_id !== agent_id) {
           return res.status(403).json({ message: 'Action does not belong to this agent' });
         }
         metadata = { ...action.metadata, ...metadata };
@@ -187,7 +187,7 @@ router.post(
       }
 
       /** @type {[Action]} */
-      const updatedAction = await updateAction({ action_id }, actionUpdateData);
+      const updatedAction = await updateAction({ action_id, agent_id }, actionUpdateData);
 
       const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
       for (let field of sensitiveFields) {
@@ -254,7 +254,13 @@ router.delete(
         { tools: updatedTools, actions: updatedActions },
         { updatingUserId: req.user.id, forceVersion: true },
       );
-      await deleteAction({ action_id, agent_id });
+      const deleted = await deleteAction({ action_id, agent_id });
+      if (!deleted) {
+        logger.warn('[Agent Action Delete] No matching action document found', {
+          action_id,
+          agent_id,
+        });
+      }
       res.status(200).json({ message: 'Action deleted successfully' });
     } catch (error) {
       const message = 'Trouble deleting the Agent Action';

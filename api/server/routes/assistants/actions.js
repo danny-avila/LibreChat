@@ -60,7 +60,7 @@ router.post('/:assistant_id', async (req, res) => {
 
     if (actions_result && actions_result.length) {
       const action = actions_result[0];
-      if (action.assistant_id && action.assistant_id !== assistant_id) {
+      if (action.assistant_id !== assistant_id) {
         return res.status(403).json({ message: 'Action does not belong to this assistant' });
       }
       metadata = { ...action.metadata, ...metadata };
@@ -120,7 +120,7 @@ router.post('/:assistant_id', async (req, res) => {
       // For new actions, use the assistant owner's user ID
       actionUpdateData.user = assistant_user || req.user.id;
     }
-    promises.push(updateAction({ action_id }, actionUpdateData));
+    promises.push(updateAction({ action_id, assistant_id }, actionUpdateData));
 
     /** @type {[AssistantDocument, Action]} */
     let [assistantDocument, updatedAction] = await Promise.all(promises);
@@ -201,7 +201,13 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
     promises.push(updateAssistantDoc({ assistant_id }, assistantUpdateData));
     promises.push(deleteAction({ action_id, assistant_id }));
 
-    await Promise.all(promises);
+    const [, deletedAction] = await Promise.all(promises);
+    if (!deletedAction) {
+      logger.warn('[Assistant Action Delete] No matching action document found', {
+        action_id,
+        assistant_id,
+      });
+    }
     res.status(200).json({ message: 'Action deleted successfully' });
   } catch (error) {
     const message = 'Trouble deleting the Assistant Action';
