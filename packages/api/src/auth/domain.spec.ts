@@ -1046,8 +1046,37 @@ describe('isMCPDomainAllowed', () => {
   });
 
   describe('invalid URL handling', () => {
-    it('should allow config with invalid URL (treated as stdio)', async () => {
+    it('should reject invalid URL when allowlist is configured', async () => {
       const config = { url: 'not-a-valid-url' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(false);
+    });
+
+    it('should reject templated URL when allowlist is configured', async () => {
+      const config = { url: 'http://{{CUSTOM_HOST}}/mcp' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(false);
+    });
+
+    it('should allow invalid URL when no allowlist is configured (defers to connection-level SSRF)', async () => {
+      const config = { url: 'http://{{CUSTOM_HOST}}/mcp' };
+      expect(await isMCPDomainAllowed(config, null)).toBe(true);
+      expect(await isMCPDomainAllowed(config, undefined)).toBe(true);
+      expect(await isMCPDomainAllowed(config, [])).toBe(true);
+    });
+
+    it('should allow config with whitespace-only URL (treated as absent)', async () => {
+      const config = { url: '   ' };
+      expect(await isMCPDomainAllowed(config, [])).toBe(true);
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
+      expect(await isMCPDomainAllowed(config, null)).toBe(true);
+    });
+
+    it('should allow config with empty string URL (treated as absent)', async () => {
+      const config = { url: '' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
+    });
+
+    it('should allow config with no url property (stdio)', async () => {
+      const config = { command: 'node', args: ['server.js'] };
       expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
     });
   });
