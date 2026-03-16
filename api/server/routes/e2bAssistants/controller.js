@@ -218,8 +218,9 @@ const createAssistant = async (req, res) => {
         max_cpu_percent: 80,
       },
       code_execution_mode: code_execution_mode || 'interactive',
-      // Use the specific ID provided in user config or default to a known template ID
-      e2b_sandbox_template: e2b_sandbox_template || 'xed696qfsyzpaei3ulh5',
+      // Prefer request value, then environment template, finally official default template.
+      e2b_sandbox_template:
+        e2b_sandbox_template || process.env.E2B_SANDBOX_TEMPLATE || 'code-interpreter',
       allowed_libraries: allowed_libraries || [
         'numpy', 'pandas', 'scipy', 'statsmodels', 
         'scikit-learn', 'xgboost', 'lightgbm',

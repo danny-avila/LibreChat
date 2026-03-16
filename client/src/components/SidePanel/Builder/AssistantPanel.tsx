@@ -117,7 +117,19 @@ export default function AssistantPanel({
       });
     },
     onError: (err) => {
-      const error = err as Error;
+      const error = err as {
+        response?: { status?: number; data?: { error?: string } };
+        message?: string;
+      };
+
+      if (error.response?.status === 403) {
+        showToast({
+          message: localize('com_ui_assistant_update_forbidden'),
+          status: 'error',
+        });
+        return;
+      }
+
       showToast({
         message: `${localize('com_assistants_update_error')}${
           error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''

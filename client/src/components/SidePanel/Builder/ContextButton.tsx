@@ -68,6 +68,18 @@ export default function ContextButton({
       setCurrentAssistantId(firstAssistant.id);
     },
     onError: (error) => {
+      const requestError = error as {
+        response?: { status?: number; data?: { error?: string } };
+      };
+
+      if (requestError.response?.status === 403) {
+        showToast({
+          message: localize('com_ui_assistant_delete_forbidden'),
+          status: 'error',
+        });
+        return;
+      }
+
       console.error(error);
       showToast({
         message: localize('com_ui_assistant_delete_error'),

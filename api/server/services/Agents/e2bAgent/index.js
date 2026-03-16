@@ -71,7 +71,7 @@ class E2BDataAnalystAgent {
       if (!sandbox) {
         logger.info(`[E2BAgent] No existing sandbox, creating new one`);
         await e2bClientManager.createSandbox(
-          this.assistant.e2b_sandbox_template || 'xed696qfsyzpaei3ulh5',
+          this.assistant.e2b_sandbox_template || process.env.E2B_SANDBOX_TEMPLATE || 'code-interpreter',
           this.userId,
           this.conversationId,
           this.assistant.e2b_config
@@ -163,7 +163,7 @@ class E2BDataAnalystAgent {
           try {
             e2bClientManager.removeSandbox(this.userId, this.conversationId);
             await e2bClientManager.createSandbox(
-              this.assistant.e2b_sandbox_template || 'xed696qfsyzpaei3ulh5',
+              this.assistant.e2b_sandbox_template || process.env.E2B_SANDBOX_TEMPLATE || 'code-interpreter',
               this.userId,
               this.conversationId,
               this.assistant.e2b_config
