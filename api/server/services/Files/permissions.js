@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { PermissionBits, ResourceType } = require('librechat-data-provider');
+const { PermissionBits, ResourceType, isEphemeralAgentId } = require('librechat-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { getAgent } = require('~/models/Agent');
 
@@ -104,7 +104,7 @@ const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDele
  * @returns {Promise<Array<MongoFile>>} Filtered array of accessible files
  */
 const filterFilesByAgentAccess = async ({ files, userId, role, agentId }) => {
-  if (!userId || !agentId || !files || files.length === 0) {
+  if (!userId || !agentId || !files || files.length === 0 || isEphemeralAgentId(agentId)) {
     return files;
   }
 
