@@ -1328,7 +1328,12 @@ describe('primeResources', () => {
         agentId: 'agent_shared',
       });
 
-      expect(mockFilterFiles).toHaveBeenCalled();
+      expect(mockFilterFiles).toHaveBeenCalledWith({
+        files: [ocrFile],
+        userId: 'user1',
+        role: 'USER',
+        agentId: 'agent_shared',
+      });
       expect(result.attachments).toBeUndefined();
     });
 
@@ -1402,6 +1407,43 @@ describe('primeResources', () => {
 
       expect(mockFilterFiles).not.toHaveBeenCalled();
       expect(result.attachments).toEqual([mockFile]);
+    });
+
+    it('should gracefully handle filterFiles rejection', async () => {
+      const mockFile: TFile = {
+        user: 'user1',
+        file_id: 'file-1',
+        filename: 'doc.pdf',
+        filepath: '/uploads/doc.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: false,
+        usage: 0,
+      };
+
+      mockGetFiles.mockResolvedValue([mockFile]);
+      mockFilterFiles.mockRejectedValue(new Error('DB failure'));
+
+      const tool_resources = {
+        [EToolResources.context]: {
+          file_ids: ['file-1'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+        agentId: 'agent_test',
+      });
+
+      expect(logger.error).toHaveBeenCalledWith('Error priming resources', expect.any(Error));
+      expect(result.tool_resources).toEqual(tool_resources);
     });
 
     it('should skip filtering when agentId is missing', async () => {
