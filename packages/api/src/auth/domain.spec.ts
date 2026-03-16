@@ -8,6 +8,7 @@ import {
   extractMCPServerDomain,
   isActionDomainAllowed,
   isEmailDomainAllowed,
+  isHostnameAllowed,
   isMCPDomainAllowed,
   isPrivateIP,
   isSSRFTarget,
@@ -1208,6 +1209,48 @@ describe('isMCPDomainAllowed', () => {
         false,
       );
     });
+  });
+});
+
+describe('isHostnameAllowed', () => {
+  it('should return false when allowedDomains is null/undefined/empty', () => {
+    expect(isHostnameAllowed('example.com', null)).toBe(false);
+    expect(isHostnameAllowed('example.com', undefined)).toBe(false);
+    expect(isHostnameAllowed('example.com', [])).toBe(false);
+  });
+
+  it('should match exact hostnames', () => {
+    expect(isHostnameAllowed('example.com', ['example.com'])).toBe(true);
+    expect(isHostnameAllowed('other.com', ['example.com'])).toBe(false);
+  });
+
+  it('should match wildcard subdomains', () => {
+    expect(isHostnameAllowed('api.example.com', ['*.example.com'])).toBe(true);
+    expect(isHostnameAllowed('deep.nested.example.com', ['*.example.com'])).toBe(true);
+    expect(isHostnameAllowed('example.com', ['*.example.com'])).toBe(true);
+    expect(isHostnameAllowed('other.com', ['*.example.com'])).toBe(false);
+  });
+
+  it('should be case-insensitive', () => {
+    expect(isHostnameAllowed('EXAMPLE.COM', ['example.com'])).toBe(true);
+    expect(isHostnameAllowed('example.com', ['EXAMPLE.COM'])).toBe(true);
+  });
+
+  it('should match private/internal hostnames when in allowedDomains', () => {
+    expect(isHostnameAllowed('localhost', ['localhost'])).toBe(true);
+    expect(isHostnameAllowed('10.0.0.1', ['10.0.0.1'])).toBe(true);
+    expect(isHostnameAllowed('host.docker.internal', ['host.docker.internal'])).toBe(true);
+    expect(isHostnameAllowed('myserver.local', ['*.local'])).toBe(true);
+  });
+
+  it('should match internal hostnames with wildcard patterns', () => {
+    expect(isHostnameAllowed('auth.company.internal', ['*.company.internal'])).toBe(true);
+    expect(isHostnameAllowed('company.internal', ['*.company.internal'])).toBe(true);
+  });
+
+  it('should not match when hostname is absent from allowedDomains', () => {
+    expect(isHostnameAllowed('10.0.0.1', ['192.168.1.1'])).toBe(false);
+    expect(isHostnameAllowed('localhost', ['host.docker.internal'])).toBe(false);
   });
 });
 
