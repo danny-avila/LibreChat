@@ -2,12 +2,15 @@ const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
+const { verifyAgentUploadPermission } = require('@librechat/api');
 const { isAssistantsEndpoint } = require('librechat-data-provider');
 const {
   processAgentFileUpload,
   processImageFile,
   filterFile,
 } = require('~/server/services/Files/process');
+const { checkPermission } = require('~/server/services/PermissionService');
+const { getAgent } = require('~/models/Agent');
 
 const router = express.Router();
 
@@ -22,6 +25,16 @@ router.post('/', async (req, res) => {
     metadata.file_id = req.file_id;
 
     if (!isAssistantsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
+      const denied = await verifyAgentUploadPermission({
+        req,
+        res,
+        metadata,
+        getAgent,
+        checkPermission,
+      });
+      if (denied) {
+        return;
+      }
       return await processAgentFileUpload({ req, res, metadata });
     }
 

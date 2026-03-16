@@ -44,6 +44,7 @@ const {
   isEphemeralAgentId,
   removeNullishValues,
 } = require('librechat-data-provider');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { updateBalance, bulkInsertTransactions } = require('~/models');
@@ -479,6 +480,7 @@ class AgentClient extends BaseClient {
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+        filterFilesByAgentAccess,
       },
     );
 
@@ -1172,7 +1174,11 @@ class AgentClient extends BaseClient {
     }
   }
 
+  /** Anthropic Claude models use a distinct BPE tokenizer; all others default to o200k_base. */
   getEncoding() {
+    if (this.model && this.model.toLowerCase().includes('claude')) {
+      return 'claude';
+    }
     return 'o200k_base';
   }
 

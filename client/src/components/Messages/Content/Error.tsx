@@ -41,6 +41,7 @@ const errorMessages = {
   [ErrorTypes.NO_USER_KEY]: 'com_error_no_user_key',
   [ErrorTypes.INVALID_USER_KEY]: 'com_error_invalid_user_key',
   [ErrorTypes.NO_BASE_URL]: 'com_error_no_base_url',
+  [ErrorTypes.INVALID_BASE_URL]: 'com_error_invalid_base_url',
   [ErrorTypes.INVALID_ACTION]: `com_error_${ErrorTypes.INVALID_ACTION}`,
   [ErrorTypes.INVALID_REQUEST]: `com_error_${ErrorTypes.INVALID_REQUEST}`,
   [ErrorTypes.REFUSAL]: 'com_error_refusal',

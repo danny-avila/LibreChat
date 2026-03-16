@@ -22,8 +22,9 @@ jest.mock('winston', () => ({
 }));
 
 // Mock the Tokenizer
-jest.mock('~/utils', () => ({
-  Tokenizer: {
+jest.mock('~/utils/tokenizer', () => ({
+  __esModule: true,
+  default: {
     getTokenCount: jest.fn((text: string) => text.length), // Simple mock: 1 char = 1 token
   },
 }));

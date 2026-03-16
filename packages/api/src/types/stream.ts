@@ -47,3 +47,24 @@ export type ChunkHandler = (event: ServerSentEvent) => void;
 export type DoneHandler = (event: ServerSentEvent) => void;
 export type ErrorHandler = (error: string) => void;
 export type UnsubscribeFn = () => void;
+
+/** Options for subscribing to a job event stream */
+export interface SubscribeOptions {
+  /**
+   * When true, skips replaying the earlyEventBuffer.
+   * Use for resume connections after a sync event has been sent.
+   */
+  skipBufferReplay?: boolean;
+}
+
+/** Result of an atomic subscribe-with-resume operation */
+export interface SubscribeWithResumeResult {
+  subscription: { unsubscribe: UnsubscribeFn } | null;
+  resumeState: ResumeState | null;
+  /**
+   * Events that arrived between the resume snapshot and the subscribe call.
+   * In-memory mode: drained from earlyEventBuffer (only place they exist).
+   * Redis mode: empty — chunks are persisted to the store and appear in aggregatedContent on next resume.
+   */
+  pendingEvents: ServerSentEvent[];
+}

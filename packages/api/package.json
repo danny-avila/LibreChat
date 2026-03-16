@@ -1,6 +1,6 @@
 {
   "name": "@librechat/api",
-  "version": "1.7.24",
+  "version": "1.7.25",
   "type": "commonjs",
   "description": "MCP services for LibreChat",
   "main": "dist/index.js",
@@ -18,8 +18,8 @@
     "build:dev": "npm run clean && NODE_ENV=development rollup -c --bundleConfigAsCjs",
     "build:watch": "NODE_ENV=development rollup -c -w --bundleConfigAsCjs",
     "build:watch:prod": "rollup -c -w --bundleConfigAsCjs",
-    "test": "jest --coverage --watch --testPathIgnorePatterns=\"\\.*integration\\.|\\.*helper\\.\"",
-    "test:ci": "jest --coverage --ci --testPathIgnorePatterns=\"\\.*integration\\.|\\.*helper\\.\"",
+    "test": "jest --coverage --watch --testPathIgnorePatterns=\"\\.*integration\\.|\\.*helper\\.|__tests__/helpers/\"",
+    "test:ci": "jest --coverage --ci --testPathIgnorePatterns=\"\\.*integration\\.|\\.*helper\\.|__tests__/helpers/\"",
     "test:cache-integration:core": "jest --testPathPatterns=\"src/cache/.*\\.cache_integration\\.spec\\.ts$\" --coverage=false",
     "test:cache-integration:cluster": "jest --testPathPatterns=\"src/cluster/.*\\.cache_integration\\.spec\\.ts$\" --coverage=false --runInBand",
     "test:cache-integration:mcp": "jest --testPathPatterns=\"src/mcp/.*\\.cache_integration\\.spec\\.ts$\" --coverage=false",
@@ -90,10 +90,11 @@
     "@google/genai": "^1.19.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.80",
-    "@librechat/agents": "^3.1.55",
+    "@librechat/agents": "^3.1.56",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@smithy/node-http-handler": "^4.4.5",
+    "ai-tokenizer": "^1.0.6",
     "axios": "^1.13.5",
     "connect-redis": "^8.1.0",
     "eventsource": "^3.0.2",
@@ -116,8 +117,7 @@
     "node-fetch": "2.7.0",
     "pdfjs-dist": "^5.4.624",
     "rate-limit-redis": "^4.2.0",
-    "tiktoken": "^1.0.15",
-    "undici": "^7.18.2",
+    "undici": "^7.24.1",
     "zod": "^3.22.4"
   }
 }
