@@ -66,9 +66,7 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
     return [];
   }
 
-  const agents = (await Promise.all([...edgeAgentIds].map((id) => getAgent({ id })))).filter(
-    Boolean,
-  );
+  const agents = await db.getAgents({ id: { $in: [...edgeAgentIds] } });
 
   if (agents.length === 0) {
     return [];

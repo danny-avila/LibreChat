@@ -22,10 +22,6 @@ jest.mock('~/config', () => ({
   })),
 }));
 
-jest.mock('~/models/Project', () => ({
-  getProjectByName: jest.fn().mockResolvedValue(null),
-}));
-
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(),
 }));
@@ -34,21 +30,8 @@ jest.mock('~/server/services/Files/images/avatar', () => ({
   resizeAvatar: jest.fn(),
 }));
 
-jest.mock('~/server/services/Files/S3/crud', () => ({
-  refreshS3Url: jest.fn(),
-}));
-
 jest.mock('~/server/services/Files/process', () => ({
   filterFile: jest.fn(),
-}));
-
-jest.mock('~/models/Action', () => ({
-  updateAction: jest.fn(),
-  getActions: jest.fn().mockResolvedValue([]),
-}));
-
-jest.mock('~/models/File', () => ({
-  deleteFileByFilter: jest.fn(),
 }));
 
 jest.mock('~/server/services/PermissionService', () => ({
@@ -59,9 +42,17 @@ jest.mock('~/server/services/PermissionService', () => ({
   checkPermission: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('~/models', () => ({
-  getCategoriesWithCounts: jest.fn(),
-}));
+jest.mock('~/models', () => {
+  const mongoose = require('mongoose');
+  const { createModels, createMethods } = require('@librechat/data-schemas');
+  createModels(mongoose);
+  const methods = createMethods(mongoose);
+  return {
+    ...methods,
+    getCategoriesWithCounts: jest.fn(),
+    deleteFileByFilter: jest.fn(),
+  };
+});
 
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({
