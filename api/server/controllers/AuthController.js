@@ -119,7 +119,8 @@ const refreshController = async (req, res) => {
 
       const token = setOpenIDAuthTokens(tokenset, req, res, user._id.toString(), refreshToken);
 
-      return res.status(200).send({ token, user });
+      const { password: _pw, __v: _v, totpSecret: _ts, backupCodes: _bc, ...safeUser } = user;
+      return res.status(200).send({ token, user: safeUser });
     } catch (error) {
       logger.error('[refreshController] OpenID token refresh error', error);
       return res.status(403).send('Invalid OpenID refresh token');
