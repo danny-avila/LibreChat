@@ -24,6 +24,13 @@ jest.mock('@librechat/data-schemas', () => ({
   decryptV2: jest.fn(async (val: string) => val.replace(/^enc:/, '')),
 }));
 
+/** Bypass SSRF validation — these tests use real local HTTP servers. */
+jest.mock('~/auth', () => ({
+  ...jest.requireActual('~/auth'),
+  isSSRFTarget: jest.fn(() => false),
+  resolveHostnameSSRF: jest.fn(async () => false),
+}));
+
 describe('MCP OAuth Flow — Real HTTP Server', () => {
   afterEach(() => {
     jest.clearAllMocks();
