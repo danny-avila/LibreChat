@@ -111,12 +111,12 @@ describe('encodeHeaderValue', () => {
 describe('resolveHeaders', () => {
   beforeEach(() => {
     process.env.TEST_API_KEY = 'test-api-key-value';
-    process.env.ANOTHER_SECRET = 'another-secret-value';
+    process.env.ANOTHER_VALUE = 'another-test-value';
   });
 
   afterEach(() => {
     delete process.env.TEST_API_KEY;
-    delete process.env.ANOTHER_SECRET;
+    delete process.env.ANOTHER_VALUE;
   });
 
   it('should return empty object when headers is undefined', () => {
@@ -139,7 +139,7 @@ describe('resolveHeaders', () => {
   it('should process environment variables in headers', () => {
     const headers = {
       Authorization: '${TEST_API_KEY}',
-      'X-Secret': '${ANOTHER_SECRET}',
+      'X-Secret': '${ANOTHER_VALUE}',
       'Content-Type': 'application/json',
     };
 
@@ -147,7 +147,7 @@ describe('resolveHeaders', () => {
 
     expect(result).toEqual({
       Authorization: 'test-api-key-value',
-      'X-Secret': 'another-secret-value',
+      'X-Secret': 'another-test-value',
       'Content-Type': 'application/json',
     });
   });
@@ -672,12 +672,12 @@ describe('resolveHeaders', () => {
 describe('resolveNestedObject', () => {
   beforeEach(() => {
     process.env.TEST_API_KEY = 'test-api-key-value';
-    process.env.ANOTHER_SECRET = 'another-secret-value';
+    process.env.ANOTHER_VALUE = 'another-test-value';
   });
 
   afterEach(() => {
     delete process.env.TEST_API_KEY;
-    delete process.env.ANOTHER_SECRET;
+    delete process.env.ANOTHER_VALUE;
   });
 
   it('should preserve nested object structure', () => {
@@ -967,7 +967,7 @@ describe('resolveNestedObject', () => {
 describe('processMCPEnv', () => {
   beforeEach(() => {
     process.env.TEST_API_KEY = 'test-api-key-value';
-    process.env.ANOTHER_SECRET = 'another-secret-value';
+    process.env.ANOTHER_VALUE = 'another-test-value';
     process.env.OAUTH_CLIENT_ID = 'oauth-client-id-value';
     process.env.OAUTH_CLIENT_SECRET = 'oauth-client-secret-value';
     process.env.MCP_SERVER_URL = 'https://mcp.example.com';
@@ -975,7 +975,7 @@ describe('processMCPEnv', () => {
 
   afterEach(() => {
     delete process.env.TEST_API_KEY;
-    delete process.env.ANOTHER_SECRET;
+    delete process.env.ANOTHER_VALUE;
     delete process.env.OAUTH_CLIENT_ID;
     delete process.env.OAUTH_CLIENT_SECRET;
     delete process.env.MCP_SERVER_URL;
@@ -992,7 +992,7 @@ describe('processMCPEnv', () => {
       command: 'mcp-server',
       env: {
         API_KEY: '${TEST_API_KEY}',
-        SECRET: '${ANOTHER_SECRET}',
+        SECRET: '${ANOTHER_VALUE}',
         PLAIN_VALUE: 'plain-text',
       },
       args: ['--key', '${TEST_API_KEY}', '--url', '${MCP_SERVER_URL}'],
@@ -1005,7 +1005,7 @@ describe('processMCPEnv', () => {
       command: 'mcp-server',
       env: {
         API_KEY: 'test-api-key-value',
-        SECRET: 'another-secret-value',
+        SECRET: 'another-test-value',
         PLAIN_VALUE: 'plain-text',
       },
       args: ['--key', 'test-api-key-value', '--url', 'https://mcp.example.com'],
