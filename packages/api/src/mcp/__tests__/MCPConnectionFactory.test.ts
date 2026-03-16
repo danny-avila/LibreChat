@@ -269,6 +269,7 @@ describe('MCPConnectionFactory', () => {
         'user123',
         {},
         undefined,
+        undefined,
       );
 
       // initFlow must be awaited BEFORE the redirect to guarantee state is stored
