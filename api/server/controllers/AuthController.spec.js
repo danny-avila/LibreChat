@@ -243,6 +243,24 @@ describe('refreshController – OpenID path', () => {
     );
   });
 
+  it('should not expose federatedTokens in refresh response user payload', async () => {
+    const user = {
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+    };
+    findOpenIDUser.mockResolvedValue({ user, error: null, migration: false });
+
+    await refreshController(req, res);
+
+    expect(res.send).toHaveBeenCalledWith({
+      token: 'new-app-token',
+      user: expect.not.objectContaining({
+        federatedTokens: expect.anything(),
+      }),
+    });
+  });
+
   it('should update openidId when migration is triggered on refresh', async () => {
     const user = { _id: 'user-db-id', email: baseClaims.email, openidId: null };
     findOpenIDUser.mockResolvedValue({ user, error: null, migration: true });
