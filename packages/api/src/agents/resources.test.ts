@@ -4,7 +4,7 @@ import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-dat
 import type { TAgentsEndpoint, TFile } from 'librechat-data-provider';
 import type { IUser, AppConfig } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
-import type { TGetFiles } from './resources';
+import type { TGetFiles, TFilterFilesByAgentAccess } from './resources';
 
 // Mock logger
 jest.mock('@librechat/data-schemas', () => ({
@@ -17,16 +17,16 @@ describe('primeResources', () => {
   let mockReq: ServerRequest & { user?: IUser };
   let mockAppConfig: AppConfig;
   let mockGetFiles: jest.MockedFunction<TGetFiles>;
+  let mockFilterFiles: jest.MockedFunction<TFilterFilesByAgentAccess>;
   let requestFileSet: Set<string>;
 
   beforeEach(() => {
-    // Reset mocks
     jest.clearAllMocks();
 
-    // Setup mock request
-    mockReq = {} as unknown as ServerRequest & { user?: IUser };
+    mockReq = {
+      user: { id: 'user1', role: 'USER' },
+    } as unknown as ServerRequest & { user?: IUser };
 
-    // Setup mock appConfig
     mockAppConfig = {
       endpoints: {
         [EModelEndpoint.agents]: {
@@ -35,10 +35,9 @@ describe('primeResources', () => {
       },
     } as AppConfig;
 
-    // Setup mock getFiles function
     mockGetFiles = jest.fn();
+    mockFilterFiles = jest.fn().mockImplementation(({ files }) => Promise.resolve(files));
 
-    // Setup request file set
     requestFileSet = new Set(['file1', 'file2', 'file3']);
   });
 
@@ -70,20 +69,21 @@ describe('primeResources', () => {
         req: mockReq,
         appConfig: mockAppConfig,
         getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
         requestFileSet,
         attachments: undefined,
         tool_resources,
+        agentId: 'agent_test',
       });
 
-      expect(mockGetFiles).toHaveBeenCalledWith(
-        { file_id: { $in: ['ocr-file-1'] } },
-        {},
-        {},
-        { userId: undefined, agentId: undefined },
-      );
+      expect(mockGetFiles).toHaveBeenCalledWith({ file_id: { $in: ['ocr-file-1'] } }, {}, {});
+      expect(mockFilterFiles).toHaveBeenCalledWith({
+        files: mockOcrFiles,
+        userId: 'user1',
+        role: 'USER',
+        agentId: 'agent_test',
+      });
       expect(result.attachments).toEqual(mockOcrFiles);
-      // Context field is deleted after files are fetched and re-categorized
-      // Since the file is not embedded and has no special properties, it won't be categorized
       expect(result.tool_resources).toEqual({});
     });
   });
@@ -1108,12 +1108,10 @@ describe('primeResources', () => {
         'ocr-file-1',
       );
 
-      // Verify getFiles was called with merged file_ids
       expect(mockGetFiles).toHaveBeenCalledWith(
         { file_id: { $in: ['context-file-1', 'ocr-file-1'] } },
         {},
         {},
-        { userId: undefined, agentId: undefined },
       );
     });
 
@@ -1238,6 +1236,249 @@ describe('primeResources', () => {
 
       // getFiles should not have been called since context is disabled
       expect(mockGetFiles).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('access control filtering', () => {
+    it('should filter context files through filterFiles when provided', async () => {
+      const ownedFile: TFile = {
+        user: 'user1',
+        file_id: 'owned-file',
+        filename: 'owned.pdf',
+        filepath: '/uploads/owned.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: false,
+        usage: 0,
+      };
+
+      const inaccessibleFile: TFile = {
+        user: 'other-user',
+        file_id: 'inaccessible-file',
+        filename: 'secret.pdf',
+        filepath: '/uploads/secret.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 2048,
+        embedded: false,
+        usage: 0,
+      };
+
+      mockGetFiles.mockResolvedValue([ownedFile, inaccessibleFile]);
+      mockFilterFiles.mockResolvedValue([ownedFile]);
+
+      const tool_resources = {
+        [EToolResources.context]: {
+          file_ids: ['owned-file', 'inaccessible-file'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+        agentId: 'agent_shared',
+      });
+
+      expect(mockFilterFiles).toHaveBeenCalledWith({
+        files: [ownedFile, inaccessibleFile],
+        userId: 'user1',
+        role: 'USER',
+        agentId: 'agent_shared',
+      });
+      expect(result.attachments).toEqual([ownedFile]);
+      expect(result.attachments).not.toContainEqual(inaccessibleFile);
+    });
+
+    it('should filter OCR files merged into context through filterFiles', async () => {
+      const ocrFile: TFile = {
+        user: 'other-user',
+        file_id: 'ocr-restricted',
+        filename: 'scan.pdf',
+        filepath: '/uploads/scan.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: false,
+        usage: 0,
+      };
+
+      mockGetFiles.mockResolvedValue([ocrFile]);
+      mockFilterFiles.mockResolvedValue([]);
+
+      const tool_resources = {
+        [EToolResources.ocr]: {
+          file_ids: ['ocr-restricted'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+        agentId: 'agent_shared',
+      });
+
+      expect(mockFilterFiles).toHaveBeenCalledWith({
+        files: [ocrFile],
+        userId: 'user1',
+        role: 'USER',
+        agentId: 'agent_shared',
+      });
+      expect(result.attachments).toBeUndefined();
+    });
+
+    it('should skip filtering when filterFiles is not provided', async () => {
+      const mockFile: TFile = {
+        user: 'user1',
+        file_id: 'file-1',
+        filename: 'doc.pdf',
+        filepath: '/uploads/doc.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: false,
+        usage: 0,
+      };
+
+      mockGetFiles.mockResolvedValue([mockFile]);
+
+      const tool_resources = {
+        [EToolResources.context]: {
+          file_ids: ['file-1'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+        agentId: 'agent_test',
+      });
+
+      expect(mockFilterFiles).not.toHaveBeenCalled();
+      expect(result.attachments).toEqual([mockFile]);
+    });
+
+    it('should skip filtering when user ID is missing', async () => {
+      const reqNoUser = {} as unknown as ServerRequest & { user?: IUser };
+      const mockFile: TFile = {
+        user: 'user1',
+        file_id: 'file-1',
+        filename: 'doc.pdf',
+        filepath: '/uploads/doc.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: false,
+        usage: 0,
+      };
+
+      mockGetFiles.mockResolvedValue([mockFile]);
+
+      const tool_resources = {
+        [EToolResources.context]: {
+          file_ids: ['file-1'],
+        },
+      };
+
+      const result = await primeResources({
+        req: reqNoUser,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+        agentId: 'agent_test',
+      });
+
+      expect(mockFilterFiles).not.toHaveBeenCalled();
+      expect(result.attachments).toEqual([mockFile]);
+    });
+
+    it('should gracefully handle filterFiles rejection', async () => {
+      const mockFile: TFile = {
+        user: 'user1',
+        file_id: 'file-1',
+        filename: 'doc.pdf',
+        filepath: '/uploads/doc.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: false,
+        usage: 0,
+      };
+
+      mockGetFiles.mockResolvedValue([mockFile]);
+      mockFilterFiles.mockRejectedValue(new Error('DB failure'));
+
+      const tool_resources = {
+        [EToolResources.context]: {
+          file_ids: ['file-1'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+        agentId: 'agent_test',
+      });
+
+      expect(logger.error).toHaveBeenCalledWith('Error priming resources', expect.any(Error));
+      expect(result.tool_resources).toEqual(tool_resources);
+    });
+
+    it('should skip filtering when agentId is missing', async () => {
+      const mockFile: TFile = {
+        user: 'user1',
+        file_id: 'file-1',
+        filename: 'doc.pdf',
+        filepath: '/uploads/doc.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: false,
+        usage: 0,
+      };
+
+      mockGetFiles.mockResolvedValue([mockFile]);
+
+      const tool_resources = {
+        [EToolResources.context]: {
+          file_ids: ['file-1'],
+        },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources,
+      });
+
+      expect(mockFilterFiles).not.toHaveBeenCalled();
+      expect(result.attachments).toEqual([mockFile]);
     });
   });
 

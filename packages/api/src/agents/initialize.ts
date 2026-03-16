@@ -31,6 +31,7 @@ import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
+import type { TFilterFilesByAgentAccess } from './resources';
 
 /**
  * Extended agent type with additional fields needed after initialization
@@ -111,7 +112,9 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   /** Update usage tracking for multiple files */
   updateFilesUsage: (files: Array<{ file_id: string }>, fileIds?: string[]) => Promise<unknown[]>;
   /** Get files from database */
-  getFiles: (filter: unknown, sort: unknown, select: unknown, opts?: unknown) => Promise<unknown[]>;
+  getFiles: (filter: unknown, sort: unknown, select: unknown) => Promise<unknown[]>;
+  /** Filter files by agent access permissions (ownership or agent attachment) */
+  filterFilesByAgentAccess?: TFilterFilesByAgentAccess;
   /** Get tool files by IDs (user-uploaded files only, code files handled separately) */
   getToolFilesByIds: (fileIds: string[], toolSet: Set<EToolResources>) => Promise<unknown[]>;
   /** Get conversation file IDs */
@@ -271,6 +274,7 @@ export async function initializeAgent(
   const { attachments: primedAttachments, tool_resources } = await primeResources({
     req: req as never,
     getFiles: db.getFiles as never,
+    filterFiles: db.filterFilesByAgentAccess,
     appConfig: req.config,
     agentId: agent.id,
     attachments: currentFiles
