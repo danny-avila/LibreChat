@@ -515,6 +515,45 @@ describe('resolveHeaders', () => {
     expect(result['X-Boolean']).toBe('true');
   });
 
+  describe('env-var injection through user-controlled values', () => {
+    const envKey = 'LIBRECHAT_TEST_INJECTION_CANARY';
+    let originalValue: string | undefined;
+
+    beforeEach(() => {
+      originalValue = process.env[envKey];
+      process.env[envKey] = 'leaked-secret';
+    });
+
+    afterEach(() => {
+      if (originalValue === undefined) {
+        delete process.env[envKey];
+      } else {
+        process.env[envKey] = originalValue;
+      }
+    });
+
+    it('should not expand env vars introduced through user placeholders', () => {
+      const user = { name: `\${${envKey}}` };
+      const headers = { 'X-User-Name': '{{LIBRECHAT_USER_NAME}}' };
+      const result = resolveHeaders({ headers, user });
+      expect(result['X-User-Name']).toBe(`\${${envKey}}`);
+    });
+
+    it('should not expand env vars introduced through customUserVars', () => {
+      const customUserVars = { MCP_API_KEY: `\${${envKey}}` };
+      const headers = { Authorization: 'Bearer {{MCP_API_KEY}}' };
+      const result = resolveHeaders({ headers, customUserVars });
+      expect(result['Authorization']).toBe(`Bearer \${${envKey}}`);
+    });
+
+    it('should not expand env vars introduced through body placeholders', () => {
+      const body = { conversationId: `\${${envKey}}` };
+      const headers = { 'X-Conv': '{{LIBRECHAT_BODY_CONVERSATIONID}}' };
+      const result = resolveHeaders({ headers, body });
+      expect(result['X-Conv']).toBe(`\${${envKey}}`);
+    });
+  });
+
   it('should process LIBRECHAT_BODY placeholders', () => {
     const body = {
       conversationId: 'conv-123',

@@ -226,6 +226,10 @@ function processSingleValue({
 
   let value = originalValue;
 
+  if (!dbSourced) {
+    value = extractEnvVariable(value);
+  }
+
   if (customUserVars) {
     for (const [varName, varVal] of Object.entries(customUserVars)) {
       /** Escaped varName for use in regex to avoid issues with special characters */
@@ -249,8 +253,6 @@ function processSingleValue({
   if (body) {
     value = processBodyPlaceholders(value, body);
   }
-
-  value = extractEnvVariable(value);
 
   return value;
 }
