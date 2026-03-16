@@ -24,7 +24,7 @@ import {
   selectRegistrationAuthMethod,
   inferClientAuthMethod,
 } from './methods';
-import { isSSRFTarget, resolveHostnameSSRF, isHostnameAllowed } from '~/auth';
+import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 
 /** Type for the OAuth metadata from the SDK */
@@ -701,7 +701,11 @@ export class MCPOAuthHandler {
     return randomBytes(32).toString('base64url');
   }
 
-  /** Validates an OAuth URL is not targeting a private/internal address (skipped for admin-trusted domains) */
+  /**
+   * Validates an OAuth URL is not targeting a private/internal address.
+   * Skipped when the full URL (hostname + protocol + port) matches an admin-trusted
+   * allowedDomains entry, honoring protocol/port constraints when the admin specifies them.
+   */
   private static async validateOAuthUrl(
     url: string,
     fieldName: string,
@@ -714,7 +718,7 @@ export class MCPOAuthHandler {
       throw new Error(`Invalid OAuth ${fieldName}: ${sanitizeUrlForLogging(url)}`);
     }
 
-    if (isHostnameAllowed(hostname, allowedDomains)) {
+    if (isOAuthUrlAllowed(url, allowedDomains)) {
       return;
     }
 

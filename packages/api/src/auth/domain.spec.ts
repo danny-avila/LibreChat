@@ -8,7 +8,7 @@ import {
   extractMCPServerDomain,
   isActionDomainAllowed,
   isEmailDomainAllowed,
-  isHostnameAllowed,
+  isOAuthUrlAllowed,
   isMCPDomainAllowed,
   isPrivateIP,
   isSSRFTarget,
@@ -1212,45 +1212,93 @@ describe('isMCPDomainAllowed', () => {
   });
 });
 
-describe('isHostnameAllowed', () => {
+describe('isOAuthUrlAllowed', () => {
   it('should return false when allowedDomains is null/undefined/empty', () => {
-    expect(isHostnameAllowed('example.com', null)).toBe(false);
-    expect(isHostnameAllowed('example.com', undefined)).toBe(false);
-    expect(isHostnameAllowed('example.com', [])).toBe(false);
+    expect(isOAuthUrlAllowed('https://example.com/token', null)).toBe(false);
+    expect(isOAuthUrlAllowed('https://example.com/token', undefined)).toBe(false);
+    expect(isOAuthUrlAllowed('https://example.com/token', [])).toBe(false);
+  });
+
+  it('should return false for unparseable URLs', () => {
+    expect(isOAuthUrlAllowed('not-a-url', ['example.com'])).toBe(false);
   });
 
   it('should match exact hostnames', () => {
-    expect(isHostnameAllowed('example.com', ['example.com'])).toBe(true);
-    expect(isHostnameAllowed('other.com', ['example.com'])).toBe(false);
+    expect(isOAuthUrlAllowed('https://example.com/token', ['example.com'])).toBe(true);
+    expect(isOAuthUrlAllowed('https://other.com/token', ['example.com'])).toBe(false);
   });
 
   it('should match wildcard subdomains', () => {
-    expect(isHostnameAllowed('api.example.com', ['*.example.com'])).toBe(true);
-    expect(isHostnameAllowed('deep.nested.example.com', ['*.example.com'])).toBe(true);
-    expect(isHostnameAllowed('example.com', ['*.example.com'])).toBe(true);
-    expect(isHostnameAllowed('other.com', ['*.example.com'])).toBe(false);
+    expect(isOAuthUrlAllowed('https://api.example.com/token', ['*.example.com'])).toBe(true);
+    expect(isOAuthUrlAllowed('https://deep.nested.example.com/token', ['*.example.com'])).toBe(
+      true,
+    );
+    expect(isOAuthUrlAllowed('https://example.com/token', ['*.example.com'])).toBe(true);
+    expect(isOAuthUrlAllowed('https://other.com/token', ['*.example.com'])).toBe(false);
   });
 
   it('should be case-insensitive', () => {
-    expect(isHostnameAllowed('EXAMPLE.COM', ['example.com'])).toBe(true);
-    expect(isHostnameAllowed('example.com', ['EXAMPLE.COM'])).toBe(true);
+    expect(isOAuthUrlAllowed('https://EXAMPLE.COM/token', ['example.com'])).toBe(true);
+    expect(isOAuthUrlAllowed('https://example.com/token', ['EXAMPLE.COM'])).toBe(true);
   });
 
-  it('should match private/internal hostnames when in allowedDomains', () => {
-    expect(isHostnameAllowed('localhost', ['localhost'])).toBe(true);
-    expect(isHostnameAllowed('10.0.0.1', ['10.0.0.1'])).toBe(true);
-    expect(isHostnameAllowed('host.docker.internal', ['host.docker.internal'])).toBe(true);
-    expect(isHostnameAllowed('myserver.local', ['*.local'])).toBe(true);
+  it('should match private/internal URLs when hostname is in allowedDomains', () => {
+    expect(isOAuthUrlAllowed('http://localhost:8080/token', ['localhost'])).toBe(true);
+    expect(isOAuthUrlAllowed('http://10.0.0.1/token', ['10.0.0.1'])).toBe(true);
+    expect(
+      isOAuthUrlAllowed('http://host.docker.internal:8044/token', ['host.docker.internal']),
+    ).toBe(true);
+    expect(isOAuthUrlAllowed('http://myserver.local/token', ['*.local'])).toBe(true);
   });
 
-  it('should match internal hostnames with wildcard patterns', () => {
-    expect(isHostnameAllowed('auth.company.internal', ['*.company.internal'])).toBe(true);
-    expect(isHostnameAllowed('company.internal', ['*.company.internal'])).toBe(true);
+  it('should match internal URLs with wildcard patterns', () => {
+    expect(isOAuthUrlAllowed('https://auth.company.internal/token', ['*.company.internal'])).toBe(
+      true,
+    );
+    expect(isOAuthUrlAllowed('https://company.internal/token', ['*.company.internal'])).toBe(true);
   });
 
   it('should not match when hostname is absent from allowedDomains', () => {
-    expect(isHostnameAllowed('10.0.0.1', ['192.168.1.1'])).toBe(false);
-    expect(isHostnameAllowed('localhost', ['host.docker.internal'])).toBe(false);
+    expect(isOAuthUrlAllowed('http://10.0.0.1/token', ['192.168.1.1'])).toBe(false);
+    expect(isOAuthUrlAllowed('http://localhost/token', ['host.docker.internal'])).toBe(false);
+  });
+
+  describe('protocol and port constraint enforcement', () => {
+    it('should enforce protocol when allowedDomains specifies one', () => {
+      expect(isOAuthUrlAllowed('https://auth.internal/token', ['https://auth.internal'])).toBe(
+        true,
+      );
+      expect(isOAuthUrlAllowed('http://auth.internal/token', ['https://auth.internal'])).toBe(
+        false,
+      );
+    });
+
+    it('should allow any protocol when allowedDomains has bare hostname', () => {
+      expect(isOAuthUrlAllowed('http://auth.internal/token', ['auth.internal'])).toBe(true);
+      expect(isOAuthUrlAllowed('https://auth.internal/token', ['auth.internal'])).toBe(true);
+    });
+
+    it('should enforce port when allowedDomains specifies one', () => {
+      expect(
+        isOAuthUrlAllowed('https://auth.internal:8443/token', ['https://auth.internal:8443']),
+      ).toBe(true);
+      expect(
+        isOAuthUrlAllowed('https://auth.internal:6379/token', ['https://auth.internal:8443']),
+      ).toBe(false);
+      expect(isOAuthUrlAllowed('https://auth.internal/token', ['https://auth.internal:8443'])).toBe(
+        false,
+      );
+    });
+
+    it('should allow any port when allowedDomains has no explicit port', () => {
+      expect(isOAuthUrlAllowed('https://auth.internal:8443/token', ['auth.internal'])).toBe(true);
+      expect(isOAuthUrlAllowed('https://auth.internal:22/token', ['auth.internal'])).toBe(true);
+    });
+
+    it('should reject wrong port even when hostname matches (prevents port-scanning)', () => {
+      expect(isOAuthUrlAllowed('http://10.0.0.1:6379/token', ['http://10.0.0.1:8080'])).toBe(false);
+      expect(isOAuthUrlAllowed('http://10.0.0.1:25/token', ['http://10.0.0.1:8080'])).toBe(false);
+    });
   });
 });
 
