@@ -779,7 +779,7 @@ async function setupOpenId() {
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
       response_types: ['code'],
-      grant_types: ['authorization_code']
+      grant_types: ['authorization_code'],
     };
 
     const clientSecret = process.env.OPENID_CLIENT_SECRET?.trim();
