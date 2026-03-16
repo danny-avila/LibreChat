@@ -1,13 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
-import {
-  OGDialog,
-  OGDialogContent,
-  OGDialogTitle,
-  OGDialogDescription,
-  TooltipAnchor,
-} from '@librechat/client';
+import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -177,7 +171,7 @@ export default function FilePreviewDialog({
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent className="w-full max-w-3xl p-0" showCloseButton={true}>
+      <OGDialogContent className="w-full max-w-4xl p-0" showCloseButton={true}>
         <div className="px-6 pr-12 pt-6">
           <OGDialogTitle className="truncate text-base">{fileName}</OGDialogTitle>
           <div className="mt-0.5 flex items-center gap-3">
@@ -185,17 +179,15 @@ export default function FilePreviewDialog({
               {metaParts.join(' · ')}
             </OGDialogDescription>
             {fileId && (
-              <TooltipAnchor description={localize('com_ui_download')} side="right">
-                <button
-                  type="button"
-                  onClick={handleDownload}
-                  className="inline-flex shrink-0 items-center gap-1 text-xs text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
-                  aria-label={`${localize('com_ui_download')} ${fileName}`}
-                >
-                  <Download className="size-3" aria-hidden="true" />
-                  {localize('com_ui_download')}
-                </button>
-              </TooltipAnchor>
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="inline-flex shrink-0 items-center gap-1 text-xs text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+                aria-label={`${localize('com_ui_download')} ${fileName}`}
+              >
+                <Download className="size-3" aria-hidden="true" />
+                {localize('com_ui_download')}
+              </button>
             )}
           </div>
         </div>
