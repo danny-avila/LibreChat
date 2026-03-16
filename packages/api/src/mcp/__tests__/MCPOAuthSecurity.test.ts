@@ -8,8 +8,8 @@
  * 2. redirect_uri manipulation — validates that user-supplied redirect_uri
  *    is ignored in favor of the server-controlled default.
  *
- * 3. allowedDomains bypass — validates that admin-configured allowedDomains
- *    exempts trusted domains from SSRF checks (issue #12254).
+ * 3. allowedDomains SSRF exemption — validates that admin-configured allowedDomains
+ *    exempts trusted domains from SSRF checks, including auto-discovery paths.
  */
 
 import * as http from 'http';
@@ -230,7 +230,7 @@ describe('MCP OAuth redirect_uri enforcement', () => {
   });
 });
 
-describe('MCP OAuth allowedDomains bypass (issue #12254)', () => {
+describe('MCP OAuth allowedDomains SSRF exemption for admin-trusted hosts', () => {
   it('should allow private authorization_url when hostname is in allowedDomains', async () => {
     const result = await MCPOAuthHandler.initiateOAuthFlow(
       'internal-server',
@@ -370,5 +370,73 @@ describe('MCP OAuth allowedDomains bypass (issue #12254)', () => {
     } finally {
       global.fetch = originalFetch;
     }
+  });
+
+  describe('auto-discovery path with allowedDomains', () => {
+    let discoveryServer: OAuthTestServer;
+
+    beforeEach(async () => {
+      discoveryServer = await createOAuthMCPServer({
+        tokenTTLMs: 60000,
+        issueRefreshTokens: true,
+      });
+    });
+
+    afterEach(async () => {
+      await discoveryServer.close();
+    });
+
+    it('should allow auto-discovered OAuth endpoints when server IP is in allowedDomains', async () => {
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        'discovery-server',
+        discoveryServer.url,
+        'user-1',
+        {},
+        undefined,
+        ['127.0.0.1'],
+      );
+
+      expect(result.authorizationUrl).toContain('127.0.0.1');
+      expect(result.flowId).toBeTruthy();
+    });
+
+    it('should reject auto-discovered endpoints when allowedDomains does not cover server IP', async () => {
+      await expect(
+        MCPOAuthHandler.initiateOAuthFlow(
+          'discovery-server',
+          discoveryServer.url,
+          'user-1',
+          {},
+          undefined,
+          ['safe.example.com'],
+        ),
+      ).rejects.toThrow(/targets a blocked address/);
+    });
+
+    it('should allow auto-discovered token_url in refreshOAuthTokens branch 3 (no clientInfo/config)', async () => {
+      const code = await discoveryServer.getAuthCode();
+      const tokenRes = await fetch(`${discoveryServer.url}token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=authorization_code&code=${code}`,
+      });
+      const initial = (await tokenRes.json()) as {
+        access_token: string;
+        refresh_token: string;
+      };
+
+      const tokens = await MCPOAuthHandler.refreshOAuthTokens(
+        initial.refresh_token,
+        {
+          serverName: 'discovery-refresh-server',
+          serverUrl: discoveryServer.url,
+        },
+        {},
+        undefined,
+        ['127.0.0.1'],
+      );
+
+      expect(tokens.access_token).toBeTruthy();
+    });
   });
 });
