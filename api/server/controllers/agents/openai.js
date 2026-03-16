@@ -26,7 +26,7 @@ const { createToolEndCallback } = require('~/server/controllers/agents/callbacks
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
-const { getConvoFiles } = require('~/models/Conversation');
+const { getConvoFiles, getConvo } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
@@ -151,6 +151,14 @@ const OpenAIChatCompletionController = async (req, res) => {
   }
 
   const responseId = `chatcmpl-${nanoid()}`;
+
+  if (request.conversation_id != null) {
+    const convo = await getConvo(req.user?.id, request.conversation_id);
+    if (!convo) {
+      return sendErrorResponse(res, 404, 'Conversation not found', 'invalid_request_error');
+    }
+  }
+
   const conversationId = request.conversation_id ?? nanoid();
   const parentMessageId = request.parent_message_id ?? null;
   const created = Math.floor(Date.now() / 1000);

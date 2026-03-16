@@ -292,6 +292,14 @@ const createResponse = async (req, res) => {
 
   // Generate IDs
   const responseId = generateResponseId();
+
+  if (request.previous_response_id != null) {
+    const convo = await getConvo(req.user?.id, request.previous_response_id);
+    if (!convo) {
+      return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
+    }
+  }
+
   const conversationId = request.previous_response_id ?? uuidv4();
   const parentMessageId = null;
 
