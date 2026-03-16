@@ -1,12 +1,11 @@
 import { memo, useState, useContext, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
-import { useToastContext } from '@librechat/client';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@librechat/client';
 import type { CitationProps } from './types';
 import { SourceHovercard, FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
+import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import { CitationContext, useCitation, useCompositeCitations } from './Context';
-import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 interface CompositeCitationProps {
   citationId?: string;
@@ -22,11 +21,15 @@ export function CompositeCitation(props: CompositeCitationProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const sources = useCompositeCitations(citations || []);
 
-  if (!sources || sources.length === 0) return null;
+  if (!sources || sources.length === 0) {
+    return null;
+  }
   const totalPages = sources.length;
 
   const getCitationLabel = () => {
-    if (!sources || sources.length === 0) return localize('com_citation_source');
+    if (!sources || sources.length === 0) {
+      return localize('com_citation_source');
+    }
 
     const firstSource = sources[0];
     const remainingCount = sources.length - 1;
@@ -64,46 +67,72 @@ export function CompositeCitation(props: CompositeCitationProps) {
       onMouseEnter={() => setHoveredCitationId(citationId || null)}
       onMouseLeave={() => setHoveredCitationId(null)}
     >
-      {totalPages > 1 && (
-        <span className="mb-2 flex items-center justify-between border-b border-border-heavy pb-2">
-          <span className="flex gap-2">
-            <button
-              onClick={handlePrevPage}
-              disabled={currentPage === 0}
-              style={{ opacity: currentPage === 0 ? 0.5 : 1 }}
-              className="flex cursor-pointer items-center justify-center border-none bg-transparent p-0 text-base"
-            >
-              ←
-            </button>
-            <button
-              onClick={handleNextPage}
-              disabled={currentPage === totalPages - 1}
-              style={{ opacity: currentPage === totalPages - 1 ? 0.5 : 1 }}
-              className="flex cursor-pointer items-center justify-center border-none bg-transparent p-0 text-base"
-            >
-              →
-            </button>
-          </span>
-          <span className="text-xs text-text-tertiary">
-            {currentPage + 1}/{totalPages}
-          </span>
+      <div className="mb-1.5 overflow-hidden text-sm">
+        <FaviconImage
+          domain={getCleanDomain(currentSource.link || '')}
+          className="float-left mr-2 mt-0.5"
+        />
+        <span className="float-right ml-2 max-w-[40%] truncate text-xs text-text-secondary">
+          {getCleanDomain(currentSource.link || '')}
         </span>
-      )}
-      <span className="mb-2 flex items-center">
-        <FaviconImage domain={getCleanDomain(currentSource.link || '')} className="mr-2" />
         <a
           href={currentSource.link}
           target="_blank"
           rel="noopener noreferrer"
-          className="line-clamp-2 cursor-pointer overflow-hidden text-sm font-bold text-[#0066cc] hover:underline dark:text-blue-400 md:line-clamp-3"
+          className="font-medium text-text-primary hover:underline"
         >
-          {currentSource.attribution}
+          {currentSource.title}
         </a>
-      </span>
-      <h4 className="mb-1.5 mt-0 text-xs text-text-primary md:text-sm">{currentSource.title}</h4>
-      <p className="my-2 text-ellipsis break-all text-xs text-text-secondary md:text-sm">
-        {currentSource.snippet}
-      </p>
+      </div>
+      {currentSource.snippet && (
+        <p className="line-clamp-4 break-words text-xs text-text-secondary md:text-sm">
+          {currentSource.snippet}
+        </p>
+      )}
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1 border-t border-border-light pt-2">
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={handlePrevPage}
+            disabled={currentPage === 0}
+            className="size-7"
+            aria-label="Previous source"
+          >
+            <ChevronLeft className="size-3.5" aria-hidden="true" />
+          </Button>
+          {sources.map((source, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setCurrentPage(i);
+              }}
+              className={`flex size-6 items-center justify-center rounded text-xs transition-colors ${
+                i === currentPage
+                  ? 'bg-surface-hover font-medium text-text-primary'
+                  : 'text-text-secondary hover:bg-surface-hover'
+              }`}
+              aria-label={`Source ${i + 1}`}
+              aria-current={i === currentPage ? 'true' : undefined}
+            >
+              {i + 1}
+            </button>
+          ))}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={handleNextPage}
+            disabled={currentPage === totalPages - 1}
+            className="size-7"
+            aria-label="Next source"
+          >
+            <ChevronRight className="size-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+      )}
     </SourceHovercard>
   );
 }
@@ -118,8 +147,6 @@ interface CitationComponentProps {
 
 export function Citation(props: CitationComponentProps) {
   const localize = useLocalize();
-  const user = useRecoilValue(store.user);
-  const { showToast } = useToastContext();
   const { citation, citationId } = props.node?.properties ?? {};
   const { setHoveredCitationId } = useContext(CitationContext);
   const refData = useCitation({
@@ -128,59 +155,29 @@ export function Citation(props: CitationComponentProps) {
     index: citation?.index || 0,
   });
 
-  // Setup file download hook
-  const isFileType = refData?.refType === 'file' && (refData as any)?.fileId;
-  const isLocalFile = isFileType && (refData as any)?.metadata?.storageType === 'local';
-  const { refetch: downloadFile } = useFileDownload(
-    user?.id ?? '',
-    isFileType && !isLocalFile ? (refData as any).fileId : '',
-  );
+  const fileData = refData as unknown as Record<string, unknown> | undefined;
+  const isFileType = refData?.refType === 'file' && fileData?.fileId;
+  const fileId = isFileType ? (fileData.fileId as string) : undefined;
+  const fileName = isFileType ? (fileData.fileName as string) : undefined;
+  const filePages = isFileType ? (fileData.pages as number[] | undefined) : undefined;
+  const fileRelevance = isFileType ? (fileData.relevance as number | undefined) : undefined;
 
-  const handleFileDownload = useCallback(
-    async (e: React.MouseEvent) => {
+  const [showPreview, setShowPreview] = useState(false);
+
+  const handleFileClick = useCallback(
+    (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-
-      if (!isFileType || !(refData as any)?.fileId) return;
-
-      // Don't allow download for local files
-      if (isLocalFile) {
-        showToast({
-          status: 'error',
-          message: localize('com_sources_download_local_unavailable'),
-        });
-        return;
-      }
-
-      try {
-        const stream = await downloadFile();
-        if (stream.data == null || stream.data === '') {
-          console.error('Error downloading file: No data found');
-          showToast({
-            status: 'error',
-            message: localize('com_ui_download_error'),
-          });
-          return;
-        }
-        const link = document.createElement('a');
-        link.href = stream.data;
-        link.setAttribute('download', (refData as any).fileName || 'file');
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(stream.data);
-      } catch (error) {
-        console.error('Error downloading file:', error);
-        showToast({
-          status: 'error',
-          message: localize('com_ui_download_error'),
-        });
+      if (isFileType && fileId) {
+        setShowPreview(true);
       }
     },
-    [downloadFile, isFileType, isLocalFile, refData, localize, showToast],
+    [isFileType, fileId],
   );
 
-  if (!refData) return null;
+  if (!refData) {
+    return null;
+  }
 
   const getCitationLabel = () => {
     return (
@@ -192,15 +189,28 @@ export function Citation(props: CitationComponentProps) {
   };
 
   return (
-    <SourceHovercard
-      source={refData}
-      label={getCitationLabel()}
-      onMouseEnter={() => setHoveredCitationId(citationId || null)}
-      onMouseLeave={() => setHoveredCitationId(null)}
-      onClick={isFileType && !isLocalFile ? handleFileDownload : undefined}
-      isFile={isFileType}
-      isLocalFile={isLocalFile}
-    />
+    <>
+      <SourceHovercard
+        source={refData}
+        label={getCitationLabel()}
+        onMouseEnter={() => setHoveredCitationId(citationId || null)}
+        onMouseLeave={() => setHoveredCitationId(null)}
+        onClick={isFileType ? handleFileClick : undefined}
+        isFile={!!isFileType}
+        filePages={filePages}
+        fileRelevance={fileRelevance}
+      />
+      {isFileType && fileId && (
+        <FilePreviewDialog
+          open={showPreview}
+          onOpenChange={setShowPreview}
+          fileName={fileName || refData.title || ''}
+          fileId={fileId}
+          relevance={fileRelevance}
+          pages={filePages}
+        />
+      )}
+    </>
   );
 }
 

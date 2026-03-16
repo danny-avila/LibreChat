@@ -172,6 +172,18 @@ const Part = memo(function Part({
           isLast={isLast}
         />
       );
+    } else if (
+      isToolCall &&
+      (toolCall.name === 'file_search' || toolCall.name === 'retrieval')
+    ) {
+      return (
+        <RetrievalCall
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          output={toolCall.output ?? undefined}
+          attachments={attachments}
+        />
+      );
     } else if (isToolCall && toolCall.name?.startsWith(Constants.LC_TRANSFER_TO_)) {
       return (
         <AgentHandoff
@@ -212,6 +224,7 @@ const Part = memo(function Part({
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           output={(toolCall as { output?: string }).output}
+          attachments={attachments}
         />
       );
     } else if (
@@ -239,6 +252,11 @@ const Part = memo(function Part({
         }
         return null;
       }
+
+
+
+
+
 
 
 

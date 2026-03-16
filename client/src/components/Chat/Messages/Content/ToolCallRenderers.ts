@@ -31,6 +31,9 @@ export function resolveToolRendererType(toolCall: ContentPart): ToolRendererType
     if (name === Tools.web_search) {
       return 'web_search';
     }
+    if (name === 'file_search' || name === 'retrieval') {
+      return 'retrieval';
+    }
     if (name.startsWith(Constants.LC_TRANSFER_TO_)) {
       return 'agent_handoff';
     }
