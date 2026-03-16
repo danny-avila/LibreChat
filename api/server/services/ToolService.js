@@ -42,6 +42,7 @@ const {
 } = require('librechat-data-provider');
 const {
   createActionTool,
+  legacyDomainEncode,
   decryptMetadata,
   loadActionSets,
   domainParser,
@@ -592,6 +593,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       const domain = await domainParser(action.metadata.domain, true);
       const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
 
+      const legacyDomain = await legacyDomainEncode(action.metadata.domain);
+      const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
+
       const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
       if (!isDomainAllowed) {
         logger.warn(
@@ -611,7 +615,12 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
       for (const sig of functionSignatures) {
         const toolName = `${sig.name}${actionDelimiter}${normalizedDomain}`;
-        if (!actionToolNames.some((name) => name.replace(domainSeparatorRegex, '_') === toolName)) {
+        const legacyToolName = `${sig.name}${actionDelimiter}${legacyNormalized}`;
+        const hasMatch = actionToolNames.some((name) => {
+          const normalized = name.replace(domainSeparatorRegex, '_');
+          return normalized === toolName || normalized === legacyToolName;
+        });
+        if (!hasMatch) {
           continue;
         }
 
@@ -1310,12 +1319,21 @@ async function loadActionToolsForExecution({
   }
 
   const processedActionSets = new Map();
-  const domainMap = new Map();
+  /** Maps both new and legacy normalized domains to their canonical (new) domain key */
+  const normalizedToDomain = new Map();
   const allowedDomains = appConfig?.actions?.allowedDomains;
+  const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
   for (const action of actionSets) {
     const domain = await domainParser(action.metadata.domain, true);
-    domainMap.set(domain, action);
+    const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
+    normalizedToDomain.set(normalizedDomain, domain);
+
+    const legacyDomain = await legacyDomainEncode(action.metadata.domain);
+    const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
+    if (legacyNormalized !== normalizedDomain) {
+      normalizedToDomain.set(legacyNormalized, domain);
+    }
 
     const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
     if (!isDomainAllowed) {
@@ -1367,13 +1385,11 @@ async function loadActionToolsForExecution({
     });
   }
 
-  const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
   for (const toolName of actionToolNames) {
     let currentDomain = '';
-    for (const domain of domainMap.keys()) {
-      const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
+    for (const [normalizedDomain, canonicalDomain] of normalizedToDomain.entries()) {
       if (toolName.includes(normalizedDomain)) {
-        currentDomain = domain;
+        currentDomain = canonicalDomain;
         break;
       }
     }
@@ -1391,6 +1407,27 @@ async function loadActionToolsForExecution({
     const zodSchema = zodSchemas[functionName];
 
     if (!requestBuilder) {
+      const legacyDomain = await legacyDomainEncode(action.metadata.domain);
+      const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
+      const legacyFnName = toolName.replace(`${actionDelimiter}${legacyNormalized}`, '');
+      if (legacyFnName !== toolName && requestBuilders[legacyFnName]) {
+        const legacyTool = await createActionTool({
+          userId: req.user.id,
+          res,
+          action,
+          streamId,
+          encrypted,
+          requestBuilder: requestBuilders[legacyFnName],
+          zodSchema: zodSchemas[legacyFnName],
+          name: toolName,
+          description:
+            functionSignatures.find((sig) => sig.name === legacyFnName)?.description ?? '',
+          useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+        });
+        if (legacyTool) {
+          loadedActionTools.push(legacyTool);
+        }
+      }
       continue;
     }
 
