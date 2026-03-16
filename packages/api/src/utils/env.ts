@@ -226,9 +226,20 @@ function processSingleValue({
 
   let value = originalValue;
 
+  /**
+   * SECURITY INVARIANT — ordering matters:
+   * Resolve env vars on the admin-authored template BEFORE any user-controlled
+   * data is substituted (customUserVars, user fields, OIDC tokens, body placeholders).
+   * This prevents second-order injection where user values containing ${VAR}
+   * patterns would otherwise be expanded against process.env.
+   */
+  if (!dbSourced) {
+    value = extractEnvVariable(value);
+  }
+
+  /** Runs for both dbSourced and non-dbSourced — it is the only resolution DB-stored servers get */
   if (customUserVars) {
     for (const [varName, varVal] of Object.entries(customUserVars)) {
-      /** Escaped varName for use in regex to avoid issues with special characters */
       const escapedVarName = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const placeholderRegex = new RegExp(`\\{\\{${escapedVarName}\\}\\}`, 'g');
       value = value.replace(placeholderRegex, varVal);
@@ -249,8 +260,6 @@ function processSingleValue({
   if (body) {
     value = processBodyPlaceholders(value, body);
   }
-
-  value = extractEnvVariable(value);
 
   return value;
 }

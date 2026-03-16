@@ -1,5 +1,29 @@
 export const envVarRegex = /^\${(.+)}$/;
 
+/**
+ * Infrastructure env vars that must never be resolved via placeholder expansion.
+ * These are internal secrets whose exposure would compromise the system —
+ * they have no legitimate reason to appear in outbound headers, MCP env/args, or OAuth config.
+ *
+ * Intentionally excludes API keys (operators reference them in config) and
+ * OAuth/session secrets (referenced in MCP OAuth config via processMCPEnv).
+ */
+const SENSITIVE_ENV_VARS = new Set([
+  'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
+  'CREDS_KEY',
+  'CREDS_IV',
+  'MEILI_MASTER_KEY',
+  'MONGO_URI',
+  'REDIS_URI',
+  'REDIS_PASSWORD',
+]);
+
+/** Returns true when `varName` refers to an infrastructure secret that must not leak. */
+export function isSensitiveEnvVar(varName: string): boolean {
+  return SENSITIVE_ENV_VARS.has(varName);
+}
+
 /** Extracts the environment variable name from a template literal string */
 export function extractVariableName(value: string): string | null {
   if (!value) {
@@ -16,21 +40,20 @@ export function extractEnvVariable(value: string) {
     return value;
   }
 
-  // Trim the input
   const trimmed = value.trim();
 
-  // Special case: if it's just a single environment variable
   const singleMatch = trimmed.match(envVarRegex);
   if (singleMatch) {
     const varName = singleMatch[1];
+    if (isSensitiveEnvVar(varName)) {
+      return trimmed;
+    }
     return process.env[varName] || trimmed;
   }
 
-  // For multiple variables, process them using a regex loop
   const regex = /\${([^}]+)}/g;
   let result = trimmed;
 
-  // First collect all matches and their positions
   const matches = [];
   let match;
   while ((match = regex.exec(trimmed)) !== null) {
@@ -41,12 +64,12 @@ export function extractEnvVariable(value: string) {
     });
   }
 
-  // Process matches in reverse order to avoid position shifts
   for (let i = matches.length - 1; i >= 0; i--) {
     const { fullMatch, varName, index } = matches[i];
+    if (isSensitiveEnvVar(varName)) {
+      continue;
+    }
     const envValue = process.env[varName] || fullMatch;
-
-    // Replace at exact position
     result = result.substring(0, index) + envValue + result.substring(index + fullMatch.length);
   }
 
