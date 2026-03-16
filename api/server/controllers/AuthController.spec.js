@@ -163,6 +163,16 @@ describe('refreshController – OpenID path', () => {
     exp: 9999999999,
   };
 
+  const defaultUser = {
+    _id: 'user-db-id',
+    email: baseClaims.email,
+    openidId: baseClaims.sub,
+    password: '$2b$10$hashedpassword',
+    __v: 0,
+    totpSecret: 'encrypted-totp-secret',
+    backupCodes: ['hashed-code-1', 'hashed-code-2'],
+  };
+
   let req, res;
 
   beforeEach(() => {
@@ -174,6 +184,7 @@ describe('refreshController – OpenID path', () => {
     mockTokenset.claims.mockReturnValue(baseClaims);
     getOpenIdEmail.mockReturnValue(baseClaims.email);
     setOpenIDAuthTokens.mockReturnValue('new-app-token');
+    findOpenIDUser.mockResolvedValue({ user: { ...defaultUser }, error: null, migration: false });
     updateUser.mockResolvedValue({});
 
     req = {
@@ -189,13 +200,6 @@ describe('refreshController – OpenID path', () => {
   });
 
   it('should call getOpenIdEmail with token claims and use result for findOpenIDUser', async () => {
-    const user = {
-      _id: 'user-db-id',
-      email: baseClaims.email,
-      openidId: baseClaims.sub,
-    };
-    findOpenIDUser.mockResolvedValue({ user, error: null, migration: false });
-
     await refreshController(req, res);
 
     expect(getOpenIdEmail).toHaveBeenCalledWith(baseClaims);
@@ -229,18 +233,30 @@ describe('refreshController – OpenID path', () => {
   it('should fall back to claims.email when configured claim is absent from token claims', async () => {
     getOpenIdEmail.mockReturnValue(baseClaims.email);
 
-    const user = {
-      _id: 'user-db-id',
-      email: baseClaims.email,
-      openidId: baseClaims.sub,
-    };
-    findOpenIDUser.mockResolvedValue({ user, error: null, migration: false });
-
     await refreshController(req, res);
 
     expect(findOpenIDUser).toHaveBeenCalledWith(
       expect.objectContaining({ email: baseClaims.email }),
     );
+  });
+
+  it('should not expose sensitive fields or federatedTokens in refresh response', async () => {
+    await refreshController(req, res);
+
+    const sentPayload = res.send.mock.calls[0][0];
+    expect(sentPayload).toEqual({
+      token: 'new-app-token',
+      user: expect.objectContaining({
+        _id: 'user-db-id',
+        email: baseClaims.email,
+        openidId: baseClaims.sub,
+      }),
+    });
+    expect(sentPayload.user).not.toHaveProperty('federatedTokens');
+    expect(sentPayload.user).not.toHaveProperty('password');
+    expect(sentPayload.user).not.toHaveProperty('totpSecret');
+    expect(sentPayload.user).not.toHaveProperty('backupCodes');
+    expect(sentPayload.user).not.toHaveProperty('__v');
   });
 
   it('should update openidId when migration is triggered on refresh', async () => {
