@@ -82,7 +82,7 @@ function stripProtocol(domain) {
  * @param {string} domain
  * @returns {Promise<string>}
  */
-async function legacyDomainEncode(domain) {
+function legacyDomainEncode(domain) {
   if (!domain) {
     return '';
   }
