@@ -21,8 +21,8 @@ const {
   createToolEndCallback,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
-const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
