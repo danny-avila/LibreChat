@@ -597,7 +597,11 @@ export class MCPOAuthHandler {
   }
 
   /**
-   * Completes the OAuth flow by exchanging the authorization code for tokens
+   * Completes the OAuth flow by exchanging the authorization code for tokens.
+   *
+   * `allowedDomains` is intentionally absent: all URLs used here (serverUrl,
+   * token_endpoint) originate from {@link MCPOAuthFlowMetadata} that was
+   * SSRF-validated during {@link initiateOAuthFlow}. No new URL resolution occurs.
    */
   static async completeOAuthFlow(
     flowId: string,
