@@ -20,6 +20,7 @@ export class MCPServerInspector {
     private readonly config: t.ParsedServerConfig,
     private connection: MCPConnection | undefined,
     private readonly useSSRFProtection: boolean = false,
+    private readonly allowedDomains?: string[] | null,
   ) {}
 
   /**
@@ -46,7 +47,13 @@ export class MCPServerInspector {
 
     const useSSRFProtection = !Array.isArray(allowedDomains) || allowedDomains.length === 0;
     const start = Date.now();
-    const inspector = new MCPServerInspector(serverName, rawConfig, connection, useSSRFProtection);
+    const inspector = new MCPServerInspector(
+      serverName,
+      rawConfig,
+      connection,
+      useSSRFProtection,
+      allowedDomains,
+    );
     await inspector.inspectServer();
     inspector.config.initDuration = Date.now() - start;
     return inspector.config;
@@ -68,6 +75,7 @@ export class MCPServerInspector {
           serverName: this.serverName,
           dbSourced: !!this.config.dbId,
           useSSRFProtection: this.useSSRFProtection,
+          allowedDomains: this.allowedDomains,
         });
       }
 
