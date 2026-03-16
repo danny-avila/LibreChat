@@ -10,7 +10,7 @@ const {
   filterFile,
 } = require('~/server/services/Files/process');
 const { checkPermission } = require('~/server/services/PermissionService');
-const { getAgent } = require('~/models/Agent');
+const db = require('~/models');
 
 const router = express.Router();
 
@@ -29,7 +29,7 @@ router.post('/', async (req, res) => {
         req,
         res,
         metadata,
-        getAgent,
+        getAgent: db.getAgent,
         checkPermission,
       });
       if (denied) {
