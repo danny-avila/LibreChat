@@ -52,6 +52,8 @@ export type InitializedAgent = Agent & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
   hasDeferredTools?: boolean;
+  /** Whether the actions capability is enabled (resolved during tool loading) */
+  actionsEnabled?: boolean;
 };
 
 /**
@@ -90,6 +92,7 @@ export interface InitializeAgentParams {
     /** Serializable tool definitions for event-driven mode */
     toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
+    actionsEnabled?: boolean;
   } | null>;
   /** Endpoint option (contains model_parameters and endpoint info) */
   endpointOption?: Partial<TEndpointOption>;
@@ -283,6 +286,7 @@ export async function initializeAgent(
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    actionsEnabled,
     tools: structuredTools,
   } = (await loadTools?.({
     req,
@@ -300,6 +304,7 @@ export async function initializeAgent(
     toolRegistry: undefined,
     toolDefinitions: [],
     hasDeferredTools: false,
+    actionsEnabled: undefined,
   };
 
   const { getOptions, overrideProvider } = getProviderConfig({
@@ -409,6 +414,7 @@ export async function initializeAgent(
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    actionsEnabled,
     attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
