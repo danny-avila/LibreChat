@@ -1,4 +1,5 @@
 import React from 'react';
+import { FileText } from 'lucide-react';
 import SiC from '@icons-pack/react-simple-icons/icons/SiC';
 import SiD from '@icons-pack/react-simple-icons/icons/SiD';
 import SiR from '@icons-pack/react-simple-icons/icons/SiR';
@@ -172,6 +173,9 @@ const LANG_ALIASES: Record<string, string> = {
 
 const LangIcon = React.memo(function LangIcon({ lang, className }: LangIconProps) {
   const key = lang.toLowerCase();
+  if (key === 'txt' || key === 'text') {
+    return <FileText className={className} aria-hidden="true" />;
+  }
   const resolved = LANG_ALIASES[key] ?? key;
   const Icon = ICONS[resolved];
   if (!Icon) {
