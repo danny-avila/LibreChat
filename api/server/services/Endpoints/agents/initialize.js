@@ -128,6 +128,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         toolRegistry: ctx.toolRegistry,
         userMCPAuthMap: ctx.userMCPAuthMap,
         tool_resources: ctx.tool_resources,
+        actionsEnabled: ctx.actionsEnabled,
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
@@ -214,6 +215,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolRegistry: primaryConfig.toolRegistry,
     userMCPAuthMap: primaryConfig.userMCPAuthMap,
     tool_resources: primaryConfig.tool_resources,
+    actionsEnabled: primaryConfig.actionsEnabled,
   });
 
   const agent_ids = primaryConfig.agent_ids;
@@ -297,6 +299,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       toolRegistry: config.toolRegistry,
       userMCPAuthMap: config.userMCPAuthMap,
       tool_resources: config.tool_resources,
+      actionsEnabled: config.actionsEnabled,
     });
 
     agentConfigs.set(agentId, config);
@@ -368,6 +371,19 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   if (updatedMCPAuthMap) {
     userMCPAuthMap = updatedMCPAuthMap;
+  }
+
+  for (const [agentId, config] of agentConfigs) {
+    if (agentToolContexts.has(agentId)) {
+      continue;
+    }
+    agentToolContexts.set(agentId, {
+      agent: config,
+      toolRegistry: config.toolRegistry,
+      userMCPAuthMap: config.userMCPAuthMap,
+      tool_resources: config.tool_resources,
+      actionsEnabled: config.actionsEnabled,
+    });
   }
 
   // Ensure edges is an array when we have multiple agents (multi-agent mode)
