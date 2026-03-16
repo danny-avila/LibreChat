@@ -12,7 +12,11 @@ const {
   validateActionDomain,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
-const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
+const {
+  legacyDomainEncode,
+  encryptMetadata,
+  domainParser,
+} = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getAgent, updateAgent, getListAgentsByAccess } = require('~/models/Agent');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
@@ -126,6 +130,8 @@ router.post(
         return res.status(400).json({ message: 'No domain provided' });
       }
 
+      const legacyDomain = await legacyDomainEncode(metadata.domain);
+
       const action_id = _action_id ?? nanoid();
       const initialPromises = [];
 
@@ -165,8 +171,15 @@ router.post(
       /** @type {string[]}} */
       const { tools: _tools = [] } = agent;
 
+      const shouldRemoveTool = (tool) => {
+        if (!tool) {
+          return false;
+        }
+        return tool.includes(domain) || tool.includes(legacyDomain) || tool.includes(action_id);
+      };
+
       const tools = _tools
-        .filter((tool) => !(tool && (tool.includes(domain) || tool.includes(action_id))))
+        .filter((tool) => !shouldRemoveTool(tool))
         .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${domain}`));
 
       // Force version update since actions are changing
@@ -231,22 +244,22 @@ router.delete(
 
       const { tools = [], actions = [] } = agent;
 
-      let domain = '';
+      let storedDomain = '';
       const updatedActions = actions.filter((action) => {
         if (action.includes(action_id)) {
-          [domain] = action.split(actionDelimiter);
+          [storedDomain] = action.split(actionDelimiter);
           return false;
         }
         return true;
       });
 
-      domain = await domainParser(domain, true);
-
-      if (!domain) {
+      if (!storedDomain) {
         return res.status(400).json({ message: 'No domain provided' });
       }
 
-      const updatedTools = tools.filter((tool) => !(tool && tool.includes(domain)));
+      const updatedTools = tools.filter(
+        (tool) => !(tool && (tool.includes(storedDomain) || tool.includes(action_id))),
+      );
 
       // Force version update since actions are being removed
       await updateAgent(

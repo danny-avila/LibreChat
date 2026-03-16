@@ -3,7 +3,11 @@ const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const { isActionDomainAllowed } = require('@librechat/api');
 const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
-const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
+const {
+  legacyDomainEncode,
+  encryptMetadata,
+  domainParser,
+} = require('~/server/services/ActionService');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistantDoc, getAssistant } = require('~/models/Assistant');
@@ -46,6 +50,8 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(400).json({ message: 'No domain provided' });
     }
 
+    const legacyDomain = await legacyDomainEncode(metadata.domain);
+
     const action_id = _action_id ?? nanoid();
     const initialPromises = [];
 
@@ -86,14 +92,16 @@ router.post('/:assistant_id', async (req, res) => {
     /** @type {{ tools: FunctionTool[] | { type: 'code_interpreter'|'retrieval'}[]}} */
     const { tools: _tools = [] } = assistant;
 
+    const shouldRemoveTool = (tool) => {
+      if (!tool.function) {
+        return false;
+      }
+      const name = tool.function.name;
+      return name.includes(domain) || name.includes(legacyDomain) || name.includes(action_id);
+    };
+
     const tools = _tools
-      .filter(
-        (tool) =>
-          !(
-            tool.function &&
-            (tool.function.name.includes(domain) || tool.function.name.includes(action_id))
-          ),
-      )
+      .filter((tool) => !shouldRemoveTool(tool))
       .concat(
         functions.map((tool) => ({
           ...tool,
@@ -171,23 +179,25 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
     const { actions = [] } = assistant_data ?? {};
     const { tools = [] } = assistant ?? {};
 
-    let domain = '';
+    let storedDomain = '';
     const updatedActions = actions.filter((action) => {
       if (action.includes(action_id)) {
-        [domain] = action.split(actionDelimiter);
+        [storedDomain] = action.split(actionDelimiter);
         return false;
       }
       return true;
     });
 
-    domain = await domainParser(domain, true);
-
-    if (!domain) {
+    if (!storedDomain) {
       return res.status(400).json({ message: 'No domain provided' });
     }
 
     const updatedTools = tools.filter(
-      (tool) => !(tool.function && tool.function.name.includes(domain)),
+      (tool) =>
+        !(
+          tool.function &&
+          (tool.function.name.includes(storedDomain) || tool.function.name.includes(action_id))
+        ),
     );
 
     await openai.beta.assistants.update(assistant_id, { tools: updatedTools });
