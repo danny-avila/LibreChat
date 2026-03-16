@@ -527,18 +527,37 @@ describe('resolveHeaders', () => {
   });
 
   it('should not resolve env vars introduced via LIBRECHAT_BODY placeholders', () => {
-    process.env.TEST_API_KEY = 'test-api-key-value';
-
     const body = {
       conversationId: '${TEST_API_KEY}',
-      parentMessageId: 'parent-456',
-      messageId: 'msg-789',
+      parentMessageId: '${TEST_API_KEY}',
+      messageId: '${TEST_API_KEY}',
     };
-    const headers = { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' };
+    const headers = {
+      'X-Conv': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+      'X-Msg': '{{LIBRECHAT_BODY_MESSAGEID}}',
+    };
     const result = resolveHeaders({ headers, body });
 
-    expect(result['X-Conversation']).toBe('${TEST_API_KEY}');
-    delete process.env.TEST_API_KEY;
+    expect(result['X-Conv']).toBe('${TEST_API_KEY}');
+    expect(result['X-Parent']).toBe('${TEST_API_KEY}');
+    expect(result['X-Msg']).toBe('${TEST_API_KEY}');
+  });
+
+  it('should not resolve env vars introduced via LIBRECHAT_USER placeholders', () => {
+    const user = createTestUser({ name: '${TEST_API_KEY}' });
+    const headers = { 'X-Name': '{{LIBRECHAT_USER_NAME}}' };
+    const result = resolveHeaders({ headers, user });
+
+    expect(result['X-Name']).toBe('${TEST_API_KEY}');
+  });
+
+  it('should not resolve env vars introduced via customUserVars', () => {
+    const customUserVars = { MY_TOKEN: '${TEST_API_KEY}' };
+    const headers = { Authorization: 'Bearer {{MY_TOKEN}}' };
+    const result = resolveHeaders({ headers, customUserVars });
+
+    expect(result.Authorization).toBe('Bearer ${TEST_API_KEY}');
   });
 
   describe('non-string header values (type guard tests)', () => {
@@ -1150,6 +1169,49 @@ describe('processMCPEnv', () => {
         'X-Message-Id': 'msg-789',
       },
     });
+  });
+
+  it('should not resolve env vars introduced via body placeholders in MCP headers', () => {
+    const body = {
+      conversationId: '${TEST_API_KEY}',
+      parentMessageId: '${TEST_API_KEY}',
+      messageId: '${TEST_API_KEY}',
+    };
+
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        'X-Conv': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, body });
+
+    if (!isStreamableHTTPOptions(result)) {
+      throw new Error('Expected streamable-http options');
+    }
+    expect(result.headers?.['X-Conv']).toBe('${TEST_API_KEY}');
+    expect(result.headers?.['X-Parent']).toBe('${TEST_API_KEY}');
+  });
+
+  it('should not resolve env vars introduced via customUserVars in MCP headers', () => {
+    const customUserVars = { MY_TOKEN: '${TEST_API_KEY}' };
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        Authorization: 'Bearer {{MY_TOKEN}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, customUserVars });
+
+    if (!isStreamableHTTPOptions(result)) {
+      throw new Error('Expected streamable-http options');
+    }
+    expect(result.headers?.Authorization).toBe('Bearer ${TEST_API_KEY}');
   });
 
   it('should handle mixed placeholders in OAuth configuration', () => {
