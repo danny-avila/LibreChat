@@ -44,12 +44,12 @@ const {
   isEphemeralAgentId,
   removeNullishValues,
 } = require('librechat-data-provider');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { updateBalance, bulkInsertTransactions } = require('~/models');
 const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { createContextHandlers } = require('~/app/clients/prompts');
-const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');

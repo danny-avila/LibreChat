@@ -138,7 +138,7 @@ const categorizeFileForToolResources = ({
 /**
  * Primes resources for agent execution by processing attachments and tool resources
  * This function:
- * 1. Fetches OCR files if OCR is enabled
+ * 1. Fetches context/OCR files (filtered by agent access control when available)
  * 2. Processes attachment files
  * 3. Categorizes files into appropriate tool resources
  * 4. Prevents duplicate files across all sources
@@ -147,9 +147,11 @@ const categorizeFileForToolResources = ({
  * @param params.req - Express request object
  * @param params.appConfig - Application configuration object
  * @param params.getFiles - Function to retrieve files from database
+ * @param params.filterFiles - Optional function to enforce agent-based file access control
  * @param params.requestFileSet - Set of file IDs from the current request
  * @param params.attachments - Promise resolving to array of attachment files
  * @param params.tool_resources - Existing tool resources for the agent
+ * @param params.agentId - Agent ID used for access control filtering
  * @returns Promise resolving to processed attachments and updated tool resources
  */
 export const primeResources = async ({
@@ -252,7 +254,7 @@ export const primeResources = async ({
         context = await filterFiles({
           files: context,
           userId: req.user.id,
-          role: req.user?.role,
+          role: req.user.role,
           agentId,
         });
       }

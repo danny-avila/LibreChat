@@ -21,11 +21,11 @@ const {
   createToolEndCallback,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
-const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getConvoFiles } = require('~/models/Conversation');
 const { processAddedConvo } = require('./addedConvo');
 const { getAgent } = require('~/models/Agent');
