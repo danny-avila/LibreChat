@@ -191,6 +191,39 @@ describe('filterFilesByAgentAccess', () => {
     });
   });
 
+  describe('file with no user field', () => {
+    it('should treat file as non-owned and run through access check', async () => {
+      const noUserFile = makeFile('attached-1', undefined);
+      getAgent.mockResolvedValue(makeAgent());
+      checkPermission.mockResolvedValue(true);
+
+      const result = await filterFilesByAgentAccess({
+        files: [noUserFile],
+        userId: USER_ID,
+        role: 'USER',
+        agentId: AGENT_ID,
+      });
+
+      expect(getAgent).toHaveBeenCalled();
+      expect(result).toEqual([noUserFile]);
+    });
+
+    it('should exclude file with no user field when not attached to agent', async () => {
+      const noUserFile = makeFile('not-attached', null);
+      getAgent.mockResolvedValue(makeAgent());
+      checkPermission.mockResolvedValue(true);
+
+      const result = await filterFilesByAgentAccess({
+        files: [noUserFile],
+        userId: USER_ID,
+        role: 'USER',
+        agentId: AGENT_ID,
+      });
+
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('no owned files (all non-owned)', () => {
     const file1 = makeFile('attached-1', AUTHOR_ID);
     const file2 = makeFile('not-attached', AUTHOR_ID);
