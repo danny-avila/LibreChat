@@ -373,6 +373,19 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     userMCPAuthMap = updatedMCPAuthMap;
   }
 
+  for (const [agentId, config] of agentConfigs) {
+    if (agentToolContexts.has(agentId)) {
+      continue;
+    }
+    agentToolContexts.set(agentId, {
+      agent: config,
+      toolRegistry: config.toolRegistry,
+      userMCPAuthMap: config.userMCPAuthMap,
+      tool_resources: config.tool_resources,
+      actionsEnabled: config.actionsEnabled,
+    });
+  }
+
   // Ensure edges is an array when we have multiple agents (multi-agent mode)
   // MultiAgentGraph.categorizeEdges requires edges to be iterable
   if (agentConfigs.size > 0 && !edges) {
