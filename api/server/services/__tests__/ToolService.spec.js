@@ -123,7 +123,7 @@ describe('ToolService - Action Capability Gating', () => {
       const req = createMockReq(defaultAgentCapabilities);
       mockGetEndpointsConfig.mockResolvedValue({});
 
-      const result = await resolveAgentCapabilities(req, req.config, 'ephemeral_agent_123');
+      const result = await resolveAgentCapabilities(req, req.config, Constants.EPHEMERAL_AGENT_ID);
 
       for (const cap of defaultAgentCapabilities) {
         expect(result.has(cap)).toBe(true);
