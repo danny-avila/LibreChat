@@ -8,7 +8,7 @@ const {
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { canAccessAgentFromBody } = require('./canAccessAgentFromBody');
 const { User, Role, AclEntry } = require('~/db/models');
-const { createAgent } = require('~/models/Agent');
+const { createAgent } = require('~/models');
 
 describe('canAccessAgentFromBody middleware', () => {
   let mongoServer;
