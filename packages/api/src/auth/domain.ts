@@ -500,6 +500,52 @@ export async function isMCPDomainAllowed(
   return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS);
 }
 
+/**
+ * Checks whether an OAuth URL matches any entry in the MCP allowedDomains list,
+ * honoring protocol and port constraints when specified by the admin.
+ *
+ * Mirrors the allowlist-matching logic of {@link isDomainAllowedCore} (hostname,
+ * protocol, and explicit-port checks) but is synchronous — no DNS resolution is
+ * needed because the caller is deciding whether to *skip* the subsequent
+ * SSRF/DNS checks, not replace them.
+ *
+ * @remarks `parseDomainSpec` normalizes `www.` prefixes, so both the input URL
+ * and allowedDomains entries starting with `www.` are matched without that prefix.
+ */
+export function isOAuthUrlAllowed(url: string, allowedDomains?: string[] | null): boolean {
+  if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) {
+    return false;
+  }
+
+  const inputSpec = parseDomainSpec(url);
+  if (!inputSpec) {
+    return false;
+  }
+
+  for (const allowedDomain of allowedDomains) {
+    const allowedSpec = parseDomainSpec(allowedDomain);
+    if (!allowedSpec) {
+      continue;
+    }
+    if (!hostnameMatches(inputSpec.hostname, allowedSpec)) {
+      continue;
+    }
+    if (allowedSpec.protocol !== null) {
+      if (inputSpec.protocol === null || inputSpec.protocol !== allowedSpec.protocol) {
+        continue;
+      }
+    }
+    if (allowedSpec.explicitPort) {
+      if (!inputSpec.explicitPort || inputSpec.port !== allowedSpec.port) {
+        continue;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
 /** Matches ErrorTypes.INVALID_BASE_URL — string literal avoids build-time dependency on data-provider */
 const INVALID_BASE_URL_TYPE = 'invalid_base_url';
 

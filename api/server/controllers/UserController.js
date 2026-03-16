@@ -370,6 +370,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     serverConfig.oauth?.revocation_endpoint_auth_methods_supported ??
     clientMetadata.revocation_endpoint_auth_methods_supported;
   const oauthHeaders = serverConfig.oauth_headers ?? {};
+  const allowedDomains = getMCPServersRegistry().getAllowedDomains();
 
   if (tokens?.access_token) {
     try {
@@ -385,6 +386,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
           revocationEndpointAuthMethodsSupported,
         },
         oauthHeaders,
+        allowedDomains,
       );
     } catch (error) {
       logger.error(`Error revoking OAuth access token for ${serverName}:`, error);
@@ -405,6 +407,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
           revocationEndpointAuthMethodsSupported,
         },
         oauthHeaders,
+        allowedDomains,
       );
     } catch (error) {
       logger.error(`Error revoking OAuth refresh token for ${serverName}:`, error);

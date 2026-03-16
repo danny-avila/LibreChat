@@ -100,13 +100,16 @@ export class MCPManager extends UserConnectionManager {
 
     const useOAuth = Boolean(serverConfig.requiresOAuth || serverConfig.oauthMetadata);
 
-    const useSSRFProtection = MCPServersRegistry.getInstance().shouldEnableSSRFProtection();
+    const registry = MCPServersRegistry.getInstance();
+    const useSSRFProtection = registry.shouldEnableSSRFProtection();
+    const allowedDomains = registry.getAllowedDomains();
     const dbSourced = !!serverConfig.dbId;
     const basic: t.BasicConnectionOptions = {
       dbSourced,
       serverName,
       serverConfig,
       useSSRFProtection,
+      allowedDomains,
     };
 
     if (!useOAuth) {

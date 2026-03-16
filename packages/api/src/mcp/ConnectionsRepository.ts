@@ -77,12 +77,14 @@ export class ConnectionsRepository {
         await this.disconnect(serverName);
       }
     }
+    const registry = MCPServersRegistry.getInstance();
     const connection = await MCPConnectionFactory.create(
       {
         serverName,
         serverConfig,
         dbSourced: !!(serverConfig as t.ParsedServerConfig).dbId,
-        useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
+        useSSRFProtection: registry.shouldEnableSSRFProtection(),
+        allowedDomains: registry.getAllowedDomains(),
       },
       this.oauthOpts,
     );

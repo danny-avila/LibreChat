@@ -153,12 +153,14 @@ export abstract class UserConnectionManager {
     logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
 
     try {
+      const registry = MCPServersRegistry.getInstance();
       connection = await MCPConnectionFactory.create(
         {
           serverConfig: config,
           serverName: serverName,
           dbSourced: !!config.dbId,
-          useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
+          useSSRFProtection: registry.shouldEnableSSRFProtection(),
+          allowedDomains: registry.getAllowedDomains(),
         },
         {
           useOAuth: true,
