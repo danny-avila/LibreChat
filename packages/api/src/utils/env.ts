@@ -239,6 +239,8 @@ function processSingleValue({
     return value;
   }
 
+  value = extractEnvVariable(value);
+
   value = processUserPlaceholders(value, user, isHeader);
 
   const openidTokenInfo = extractOpenIDTokenInfo(user);
@@ -249,8 +251,6 @@ function processSingleValue({
   if (body) {
     value = processBodyPlaceholders(value, body);
   }
-
-  value = extractEnvVariable(value);
 
   return value;
 }

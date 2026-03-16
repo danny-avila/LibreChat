@@ -526,6 +526,21 @@ describe('resolveHeaders', () => {
     expect(result['X-Conversation']).toBe('conv-123');
   });
 
+  it('should not resolve env vars introduced via LIBRECHAT_BODY placeholders', () => {
+    process.env.TEST_API_KEY = 'test-api-key-value';
+
+    const body = {
+      conversationId: '${TEST_API_KEY}',
+      parentMessageId: 'parent-456',
+      messageId: 'msg-789',
+    };
+    const headers = { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' };
+    const result = resolveHeaders({ headers, body });
+
+    expect(result['X-Conversation']).toBe('${TEST_API_KEY}');
+    delete process.env.TEST_API_KEY;
+  });
+
   describe('non-string header values (type guard tests)', () => {
     it('should handle numeric header values without crashing', () => {
       const headers = {
