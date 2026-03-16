@@ -500,6 +500,30 @@ export async function isMCPDomainAllowed(
   return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS);
 }
 
+/**
+ * Checks whether a hostname matches any entry in the MCP allowedDomains list.
+ * Used to exempt admin-trusted domains from SSRF checks in the OAuth layer.
+ */
+export function isHostnameAllowed(hostname: string, allowedDomains?: string[] | null): boolean {
+  if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) {
+    return false;
+  }
+
+  const normalizedHostname = hostname.toLowerCase().trim();
+
+  for (const allowedDomain of allowedDomains) {
+    const spec = parseDomainSpec(allowedDomain);
+    if (!spec) {
+      continue;
+    }
+    if (hostnameMatches(normalizedHostname, spec)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /** Matches ErrorTypes.INVALID_BASE_URL — string literal avoids build-time dependency on data-provider */
 const INVALID_BASE_URL_TYPE = 'invalid_base_url';
 
