@@ -89,6 +89,7 @@ function MCPSelectContent() {
           portal={true}
           gutter={8}
           modal={true}
+          unmountOnHide={true}
           aria-label={localize('com_ui_mcp_servers')}
           className={cn(
             'z-50 flex min-w-[260px] max-w-[320px] flex-col rounded-xl',
