@@ -1,0 +1,38 @@
+name: Set prod release tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release tag to deploy"
+        required: true
+        type: string
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    environment:
+      name: prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+
+      - name: Validate release tag
+        run: git rev-parse "refs/tags/${{ inputs.release }}" > /dev/null
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update SSM parameter store
+        uses: joshghent/aws-ssm-parameter-store@v2.2.0
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          ssm-path: /ai-assistant/prod-image-tag
+          ssm-value: ${{ inputs.release }}
+          ssm-value-type: String
