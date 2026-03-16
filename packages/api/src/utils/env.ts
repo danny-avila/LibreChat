@@ -237,6 +237,7 @@ function processSingleValue({
     value = extractEnvVariable(value);
   }
 
+  /** Runs for both dbSourced and non-dbSourced — it is the only resolution DB-stored servers get */
   if (customUserVars) {
     for (const [varName, varVal] of Object.entries(customUserVars)) {
       const escapedVarName = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

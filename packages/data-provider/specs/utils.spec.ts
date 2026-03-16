@@ -162,6 +162,7 @@ describe('Environment Variable Extraction', () => {
       process.env.MEILI_MASTER_KEY = 'meili-key';
       process.env.MONGO_URI = 'mongodb://user:pass@host/db';
       process.env.REDIS_URI = 'redis://:pass@host:6379';
+      process.env.REDIS_PASSWORD = 'redis-pass';
       process.env.OPENAI_API_KEY = 'sk-legit-key';
     });
 
@@ -173,6 +174,7 @@ describe('Environment Variable Extraction', () => {
       expect(extractEnvVariable('${MEILI_MASTER_KEY}')).toBe('${MEILI_MASTER_KEY}');
       expect(extractEnvVariable('${MONGO_URI}')).toBe('${MONGO_URI}');
       expect(extractEnvVariable('${REDIS_URI}')).toBe('${REDIS_URI}');
+      expect(extractEnvVariable('${REDIS_PASSWORD}')).toBe('${REDIS_PASSWORD}');
     });
 
     it('should refuse to resolve sensitive vars in composite strings (multi-match path)', () => {
