@@ -1,44 +1,53 @@
 import React from 'react';
-import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { render, screen, within } from '@testing-library/react';
+import MCPSelect from '../MCPSelect';
 
 const mockToggleServerSelection = jest.fn();
-const mockGetServerStatusIconProps = jest.fn().mockReturnValue(null);
-const mockGetConfigDialogProps = jest.fn().mockReturnValue(null);
-const mockIsInitializing = jest.fn().mockReturnValue(false);
+
+const defaultMcpServerManager = {
+  localize: (key: string) => key,
+  isPinned: true,
+  mcpValues: [] as string[],
+  placeholderText: 'MCP Servers',
+  selectableServers: [
+    { serverName: 'server-a', config: { title: 'Server A' } },
+    { serverName: 'server-b', config: { title: 'Server B' } },
+  ],
+  connectionStatus: {},
+  isInitializing: () => false,
+  getConfigDialogProps: () => null,
+  toggleServerSelection: mockToggleServerSelection,
+  getServerStatusIconProps: () => null,
+};
+
+let mockCanUseMcp = true;
+let mockMcpServerManager = { ...defaultMcpServerManager };
 
 jest.mock('~/Providers', () => ({
   useBadgeRowContext: () => ({
     conversationId: 'test-conv',
     storageContextKey: undefined,
-    mcpServerManager: {
-      localize: (key: string) => key,
-      isPinned: true,
-      mcpValues: [],
-      placeholderText: 'MCP Servers',
-      selectableServers: [
-        { serverName: 'server-a', config: { title: 'Server A' } },
-        { serverName: 'server-b', config: { title: 'Server B' } },
-      ],
-      connectionStatus: {},
-      isInitializing: mockIsInitializing,
-      getConfigDialogProps: mockGetConfigDialogProps,
-      toggleServerSelection: mockToggleServerSelection,
-      getServerStatusIconProps: mockGetServerStatusIconProps,
-    },
+    mcpServerManager: mockMcpServerManager,
   }),
 }));
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
-  useHasAccess: () => true,
+  useHasAccess: () => mockCanUseMcp,
 }));
 
 jest.mock('@librechat/client', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const R = require('react');
   return {
-    TooltipAnchor: jest.fn(({ children, render }) => R.cloneElement(render, {}, children)),
+    TooltipAnchor: ({
+      children,
+      render,
+    }: {
+      children: React.ReactNode;
+      render: React.ReactElement;
+    }) => R.cloneElement(render, {}, ...(Array.isArray(children) ? children : [children])),
     MCPIcon: ({ className }: { className?: string }) => R.createElement('span', { className }),
     Spinner: ({ className }: { className?: string }) => R.createElement('span', { className }),
   };
@@ -49,11 +58,11 @@ jest.mock('~/components/MCP/MCPConfigDialog', () => ({
   default: () => null,
 }));
 
-import MCPSelect from '../MCPSelect';
-
 describe('MCPSelect', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCanUseMcp = true;
+    mockMcpServerManager = { ...defaultMcpServerManager };
   });
 
   it('renders the menu button', () => {
@@ -96,5 +105,24 @@ describe('MCPSelect', () => {
 
     expect(mockToggleServerSelection).toHaveBeenCalledWith('server-a');
     expect(screen.getByRole('menu', { name: /com_ui_mcp_servers/i })).toBeVisible();
+  });
+
+  it('renders nothing when user lacks MCP access', () => {
+    mockCanUseMcp = false;
+    const { container } = render(<MCPSelect />);
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('renders nothing when selectableServers is empty', () => {
+    mockMcpServerManager = { ...defaultMcpServerManager, selectableServers: [] };
+    const { container } = render(<MCPSelect />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders nothing when not pinned and no servers selected', () => {
+    mockMcpServerManager = { ...defaultMcpServerManager, isPinned: false, mcpValues: [] };
+    const { container } = render(<MCPSelect />);
+    expect(container.firstChild).toBeNull();
   });
 });
