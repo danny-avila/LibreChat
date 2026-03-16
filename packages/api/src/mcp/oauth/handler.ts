@@ -715,15 +715,15 @@ export class MCPOAuthHandler {
     fieldName: string,
     allowedDomains?: string[] | null,
   ): Promise<void> {
+    if (isOAuthUrlAllowed(url, allowedDomains)) {
+      return;
+    }
+
     let hostname: string;
     try {
       hostname = new URL(url).hostname;
     } catch {
       throw new Error(`Invalid OAuth ${fieldName}: ${sanitizeUrlForLogging(url)}`);
-    }
-
-    if (isOAuthUrlAllowed(url, allowedDomains)) {
-      return;
     }
 
     if (isSSRFTarget(hostname)) {
