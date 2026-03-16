@@ -30,12 +30,10 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
     } = mcpServerManager;
 
     const menuStore = Ariakit.useMenuStore({
-      focusLoop: true,
       showTimeout: 100,
       placement: 'right',
     });
 
-    // Don't render if no MCP servers are configured
     if (!selectableServers || selectableServers.length === 0) {
       return null;
     }
