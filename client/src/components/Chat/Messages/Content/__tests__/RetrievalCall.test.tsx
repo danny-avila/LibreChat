@@ -14,10 +14,12 @@ jest.mock('~/hooks', () => ({
     return translations[key] || key;
   },
   useProgress: (initialProgress: number) => (initialProgress >= 1 ? 1 : initialProgress),
-  useExpandCollapse: (isExpanded: boolean) =>
-    isExpanded
+  useExpandCollapse: (isExpanded: boolean) => ({
+    style: isExpanded
       ? { display: 'grid', gridTemplateRows: '1fr', opacity: 1 }
       : { display: 'grid', gridTemplateRows: '0fr', opacity: 0 },
+    ref: { current: null },
+  }),
 }));
 
 jest.mock('../ProgressText', () => ({

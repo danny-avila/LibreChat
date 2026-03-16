@@ -95,6 +95,7 @@ export default function ProgressText({
             : 'pointer-events-none',
         )}
         disabled={!hasInput}
+        tabIndex={hasInput ? 0 : -1}
         onClick={hasInput ? onClick : undefined}
         aria-expanded={hasInput ? isExpanded : undefined}
       >

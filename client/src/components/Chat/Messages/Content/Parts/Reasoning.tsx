@@ -42,7 +42,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   const [isExpanded, setIsExpanded] = useState(showThinking);
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const expandStyle = useExpandCollapse(isExpanded);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
   const { isSubmitting, isLatestMessage, nextType } = useMessageContext();
 
   // Strip <think> tags from the reasoning content (modern format)
@@ -117,7 +117,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
           className={cn(nextType !== ContentTypes.THINK && isExpanded && 'mb-4')}
           style={expandStyle}
         >
-          <div className="relative overflow-hidden">
+          <div className="relative overflow-hidden" ref={expandRef}>
             <ThinkingContent>{reasoningText}</ThinkingContent>
             <FloatingThinkingBar
               isVisible={isBarVisible && isExpanded}

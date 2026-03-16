@@ -17,7 +17,7 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
   const localize = useLocalize();
   const agentsMap = useAgentsMapContext();
   const [showInfo, setShowInfo] = useState(false);
-  const expandStyle = useExpandCollapse(showInfo);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showInfo);
 
   const targetAgentId = useMemo(() => {
     if (typeof name !== 'string' || !name.startsWith(Constants.LC_TRANSFER_TO_)) {
@@ -84,7 +84,7 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
         )}
       </button>
       <div style={expandStyle}>
-        <div className="overflow-hidden">
+        <div className="overflow-hidden" ref={expandRef}>
           {hasInfo && (
             <div className="ml-8 mt-2 rounded-lg border border-border-light bg-surface-secondary p-3 text-xs">
               <div className="mb-1 font-medium text-text-secondary">

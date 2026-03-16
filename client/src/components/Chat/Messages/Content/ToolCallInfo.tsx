@@ -97,7 +97,7 @@ export default function ToolCallInfo({
 }) {
   const localize = useLocalize();
   const [showParams, setShowParams] = useState(false);
-  const paramsExpandStyle = useExpandCollapse(showParams);
+  const { style: paramsExpandStyle, ref: paramsExpandRef } = useExpandCollapse(showParams);
 
   const hasParams = useMemo(() => {
     if (!input || input.trim().length === 0) {
@@ -146,7 +146,7 @@ export default function ToolCallInfo({
             />
           </button>
           <div style={paramsExpandStyle}>
-            <div className="overflow-hidden pt-1">
+            <div className="overflow-hidden pt-1" ref={paramsExpandRef}>
               <InputRenderer input={input} />
             </div>
           </div>

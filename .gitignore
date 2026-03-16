@@ -129,6 +129,7 @@ helm/**/charts/
 helm/**/.values.yaml
 
 !/client/src/@types/i18next.d.ts
+!/client/src/@types/react.d.ts
 
 # SAML Idp cert
 *.cert
