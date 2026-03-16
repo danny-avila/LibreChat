@@ -43,14 +43,13 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(400).json({ message: 'Domain not allowed' });
     }
 
-    let { domain } = metadata;
-    domain = await domainParser(domain, true);
+    const encodedDomain = await domainParser(metadata.domain, true);
 
-    if (!domain) {
+    if (!encodedDomain) {
       return res.status(400).json({ message: 'No domain provided' });
     }
 
-    const legacyDomain = await legacyDomainEncode(metadata.domain);
+    const legacyDomain = legacyDomainEncode(metadata.domain);
 
     const action_id = _action_id ?? nanoid();
     const initialPromises = [];
@@ -87,27 +86,29 @@ router.post('/:assistant_id', async (req, res) => {
       actions.push(action);
     }
 
-    actions.push(`${domain}${actionDelimiter}${action_id}`);
+    actions.push(`${encodedDomain}${actionDelimiter}${action_id}`);
 
     /** @type {{ tools: FunctionTool[] | { type: 'code_interpreter'|'retrieval'}[]}} */
     const { tools: _tools = [] } = assistant;
 
-    const shouldRemoveTool = (tool) => {
+    const shouldRemoveAssistantTool = (tool) => {
       if (!tool.function) {
         return false;
       }
       const name = tool.function.name;
-      return name.includes(domain) || name.includes(legacyDomain) || name.includes(action_id);
+      return (
+        name.includes(encodedDomain) || name.includes(legacyDomain) || name.includes(action_id)
+      );
     };
 
     const tools = _tools
-      .filter((tool) => !shouldRemoveTool(tool))
+      .filter((tool) => !shouldRemoveAssistantTool(tool))
       .concat(
         functions.map((tool) => ({
           ...tool,
           function: {
             ...tool.function,
-            name: `${tool.function.name}${actionDelimiter}${domain}`,
+            name: `${tool.function.name}${actionDelimiter}${encodedDomain}`,
           },
         })),
       );

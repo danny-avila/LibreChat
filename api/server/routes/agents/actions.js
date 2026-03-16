@@ -123,14 +123,13 @@ router.post(
         return res.status(400).json({ message: 'Domain not allowed' });
       }
 
-      let { domain } = metadata;
-      domain = await domainParser(domain, true);
+      const encodedDomain = await domainParser(metadata.domain, true);
 
-      if (!domain) {
+      if (!encodedDomain) {
         return res.status(400).json({ message: 'No domain provided' });
       }
 
-      const legacyDomain = await legacyDomainEncode(metadata.domain);
+      const legacyDomain = legacyDomainEncode(metadata.domain);
 
       const action_id = _action_id ?? nanoid();
       const initialPromises = [];
@@ -166,21 +165,25 @@ router.post(
         actions.push(action);
       }
 
-      actions.push(`${domain}${actionDelimiter}${action_id}`);
+      actions.push(`${encodedDomain}${actionDelimiter}${action_id}`);
 
       /** @type {string[]}} */
       const { tools: _tools = [] } = agent;
 
-      const shouldRemoveTool = (tool) => {
+      const shouldRemoveAgentTool = (tool) => {
         if (!tool) {
           return false;
         }
-        return tool.includes(domain) || tool.includes(legacyDomain) || tool.includes(action_id);
+        return (
+          tool.includes(encodedDomain) || tool.includes(legacyDomain) || tool.includes(action_id)
+        );
       };
 
       const tools = _tools
-        .filter((tool) => !shouldRemoveTool(tool))
-        .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${domain}`));
+        .filter((tool) => !shouldRemoveAgentTool(tool))
+        .concat(
+          functions.map((tool) => `${tool.function.name}${actionDelimiter}${encodedDomain}`),
+        );
 
       // Force version update since actions are changing
       const updatedAgent = await updateAgent(
