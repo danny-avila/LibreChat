@@ -429,6 +429,7 @@ const createResponse = async (req, res) => {
             toolRegistry: primaryConfig.toolRegistry,
             userMCPAuthMap: primaryConfig.userMCPAuthMap,
             tool_resources: primaryConfig.tool_resources,
+            actionsEnabled: primaryConfig.actionsEnabled,
           });
         },
         toolEndCallback,
@@ -586,6 +587,7 @@ const createResponse = async (req, res) => {
             toolRegistry: primaryConfig.toolRegistry,
             userMCPAuthMap: primaryConfig.userMCPAuthMap,
             tool_resources: primaryConfig.tool_resources,
+            actionsEnabled: primaryConfig.actionsEnabled,
           });
         },
         toolEndCallback,
