@@ -80,7 +80,7 @@ function stripProtocol(domain) {
  * Encodes a domain using the legacy scheme (full URL including protocol).
  * Used for backward-compatible matching against agents saved before the collision fix.
  * @param {string} domain
- * @returns {Promise<string>}
+ * @returns {string}
  */
 function legacyDomainEncode(domain) {
   if (!domain) {
@@ -493,7 +493,6 @@ module.exports = {
   createActionTool,
   encryptMetadata,
   decryptMetadata,
-  stripProtocol,
   loadActionSets,
   domainParser,
 };

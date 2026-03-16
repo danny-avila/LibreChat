@@ -1,14 +1,5 @@
-const {
-  Constants,
-  actionDelimiter,
-  actionDomainSeparator,
-} = require('librechat-data-provider');
-const {
-  domainParser,
-  stripProtocol,
-  legacyDomainEncode,
-  validateAndUpdateTool,
-} = require('./ActionService');
+const { Constants, actionDelimiter, actionDomainSeparator } = require('librechat-data-provider');
+const { domainParser, legacyDomainEncode, validateAndUpdateTool } = require('./ActionService');
 
 jest.mock('keyv');
 
@@ -39,24 +30,6 @@ const SEP = actionDomainSeparator;
 const DELIM = actionDelimiter;
 const MAX = Constants.ENCODED_DOMAIN_LENGTH;
 const domainSepRegex = new RegExp(SEP, 'g');
-
-describe('stripProtocol', () => {
-  it.each([
-    ['https://swapi.tech', 'swapi.tech'],
-    ['http://api.example.com', 'api.example.com'],
-    ['https://192.168.1.1', '192.168.1.1'],
-    ['http://localhost:3000', 'localhost:3000'],
-  ])('strips protocol from %s', (input, expected) => {
-    expect(stripProtocol(input)).toBe(expected);
-  });
-
-  it.each(['swapi.tech', 'api.example.com', 'localhost', ''])(
-    'leaves %j unchanged when no protocol present',
-    (input) => {
-      expect(stripProtocol(input)).toBe(input);
-    },
-  );
-});
 
 describe('domainParser', () => {
   describe('nullish input', () => {
@@ -143,9 +116,7 @@ describe('domainParser', () => {
       const domain = 'täst.example.com';
       const result = await domainParser(domain, true);
       expect(result).toHaveLength(MAX);
-      expect(result).toBe(
-        Buffer.from(domain).toString('base64').substring(0, MAX),
-      );
+      expect(result).toBe(Buffer.from(domain).toString('base64').substring(0, MAX));
     });
 
     it('round-trips unicode hostname through encode then decode', async () => {
@@ -241,9 +212,7 @@ describe('validateAndUpdateTool', () => {
   });
 
   it('matches action when metadata.domain has https:// prefix and tool domain is bare hostname', async () => {
-    getActions.mockResolvedValue([
-      { metadata: { domain: 'https://api.example.com' } },
-    ]);
+    getActions.mockResolvedValue([{ metadata: { domain: 'https://api.example.com' } }]);
 
     const tool = { function: { name: `getPeople${DELIM}api.example.com` } };
     const result = await validateAndUpdateTool({
@@ -258,9 +227,7 @@ describe('validateAndUpdateTool', () => {
   });
 
   it('matches action when metadata.domain has no protocol', async () => {
-    getActions.mockResolvedValue([
-      { metadata: { domain: 'api.example.com' } },
-    ]);
+    getActions.mockResolvedValue([{ metadata: { domain: 'api.example.com' } }]);
 
     const tool = { function: { name: `getPeople${DELIM}api.example.com` } };
     const result = await validateAndUpdateTool({
@@ -274,9 +241,7 @@ describe('validateAndUpdateTool', () => {
   });
 
   it('returns null when no action matches the domain', async () => {
-    getActions.mockResolvedValue([
-      { metadata: { domain: 'https://other.domain.com' } },
-    ]);
+    getActions.mockResolvedValue([{ metadata: { domain: 'https://other.domain.com' } }]);
 
     const tool = { function: { name: `getPeople${DELIM}api.example.com` } };
     const result = await validateAndUpdateTool({

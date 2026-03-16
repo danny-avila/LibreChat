@@ -181,9 +181,7 @@ router.post(
 
       const tools = _tools
         .filter((tool) => !shouldRemoveAgentTool(tool))
-        .concat(
-          functions.map((tool) => `${tool.function.name}${actionDelimiter}${encodedDomain}`),
-        );
+        .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${encodedDomain}`));
 
       // Force version update since actions are changing
       const updatedAgent = await updateAgent(

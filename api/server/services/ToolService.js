@@ -175,8 +175,7 @@ async function processRequiredActions(client, requiredActions) {
 
   const promises = [];
 
-  /** @type {Action[]} */
-  let actionSets = [];
+  let actionSetsData = null;
   let isActionTool = false;
   const ActionToolMap = {};
   const ActionBuildersMap = {};
@@ -262,9 +261,9 @@ async function processRequiredActions(client, requiredActions) {
     if (!tool) {
       // throw new Error(`Tool ${currentAction.tool} not found.`);
 
-      // Load all action sets once if not already loaded
-      if (!actionSets.length) {
-        actionSets =
+      if (!actionSetsData) {
+        /** @type {Action[]} */
+        const actionSets =
           (await loadActionSets({
             assistant_id: client.req.body.assistant_id,
           })) ?? [];
@@ -272,15 +271,15 @@ async function processRequiredActions(client, requiredActions) {
         // Process all action sets once
         // Map domains to their processed action sets
         const processedDomains = new Map();
-        const normalizedToDomain = new Map();
+        const domainLookupMap = new Map();
 
         for (const action of actionSets) {
           const domain = await domainParser(action.metadata.domain, true);
-          normalizedToDomain.set(domain, domain);
+          domainLookupMap.set(domain, domain);
 
           const legacyDomain = legacyDomainEncode(action.metadata.domain);
           if (legacyDomain !== domain) {
-            normalizedToDomain.set(legacyDomain, domain);
+            domainLookupMap.set(legacyDomain, domain);
           }
 
           const isDomainAllowed = await isActionDomainAllowed(
@@ -336,14 +335,12 @@ async function processRequiredActions(client, requiredActions) {
           ActionBuildersMap[action.metadata.domain] = requestBuilders;
         }
 
-        // Update actionSets reference to use the domain map
-        actionSets = { normalizedToDomain, processedDomains };
+        actionSetsData = { domainLookupMap, processedDomains };
       }
 
-      // Find the matching domain for this tool
       let currentDomain = '';
       let matchedKey = '';
-      for (const [key, canonical] of actionSets.normalizedToDomain.entries()) {
+      for (const [key, canonical] of actionSetsData.domainLookupMap.entries()) {
         if (currentAction.tool.includes(key)) {
           currentDomain = canonical;
           matchedKey = key;
@@ -351,11 +348,12 @@ async function processRequiredActions(client, requiredActions) {
         }
       }
 
-      if (!currentDomain || !actionSets.processedDomains.has(currentDomain)) {
+      if (!currentDomain || !actionSetsData.processedDomains.has(currentDomain)) {
         continue;
       }
 
-      const { action, requestBuilders, encrypted } = actionSets.processedDomains.get(currentDomain);
+      const { action, requestBuilders, encrypted } =
+        actionSetsData.processedDomains.get(currentDomain);
       const functionName = currentAction.tool.replace(`${actionDelimiter}${matchedKey}`, '');
       const requestBuilder = requestBuilders[functionName];
 
@@ -594,6 +592,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const definitions = [];
     const allowedDomains = appConfig?.actions?.allowedDomains;
+    const normalizedToolNames = new Set(
+      actionToolNames.map((n) => n.replace(domainSeparatorRegex, '_')),
+    );
 
     for (const action of actionSets) {
       const domain = await domainParser(action.metadata.domain, true);
@@ -622,11 +623,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       for (const sig of functionSignatures) {
         const toolName = `${sig.name}${actionDelimiter}${normalizedDomain}`;
         const legacyToolName = `${sig.name}${actionDelimiter}${legacyNormalized}`;
-        const hasMatch = actionToolNames.some((name) => {
-          const normalized = name.replace(domainSeparatorRegex, '_');
-          return normalized === toolName || normalized === legacyToolName;
-        });
-        if (!hasMatch) {
+        if (!normalizedToolNames.has(toolName) && !normalizedToolNames.has(legacyToolName)) {
           continue;
         }
 
@@ -1006,15 +1003,15 @@ async function loadAgentTools({
   }
 
   const processedActionSets = new Map();
-  const normalizedToDomain = new Map();
+  const domainLookupMap = new Map();
 
   for (const action of actionSets) {
     const domain = await domainParser(action.metadata.domain, true);
-    normalizedToDomain.set(domain, domain);
+    domainLookupMap.set(domain, domain);
 
     const legacyDomain = legacyDomainEncode(action.metadata.domain);
     if (legacyDomain !== domain) {
-      normalizedToDomain.set(legacyDomain, domain);
+      domainLookupMap.set(legacyDomain, domain);
     }
     const isDomainAllowed = await isActionDomainAllowed(
       action.metadata.domain,
@@ -1079,7 +1076,7 @@ async function loadAgentTools({
 
     let currentDomain = '';
     let matchedKey = '';
-    for (const [key, canonical] of normalizedToDomain.entries()) {
+    for (const [key, canonical] of domainLookupMap.entries()) {
       if (toolName.includes(key)) {
         currentDomain = canonical;
         matchedKey = key;
@@ -1407,14 +1404,8 @@ async function loadActionToolsForExecution({
       continue;
     }
 
-    const {
-      action,
-      encrypted,
-      zodSchemas,
-      requestBuilders,
-      functionSignatures,
-      legacyNormalized,
-    } = processedActionSets.get(currentDomain);
+    const { action, encrypted, zodSchemas, requestBuilders, functionSignatures, legacyNormalized } =
+      processedActionSets.get(currentDomain);
     const normalizedDomain = currentDomain.replace(domainSeparatorRegex, '_');
     const functionName = toolName.replace(`${actionDelimiter}${normalizedDomain}`, '');
     const functionSig = functionSignatures.find((sig) => sig.name === functionName);
