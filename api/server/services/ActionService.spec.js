@@ -1,7 +1,23 @@
-const { Constants, actionDelimiter, actionDomainSeparator } = require('librechat-data-provider');
-const { domainParser, legacyDomainEncode, stripProtocol } = require('./ActionService');
+const {
+  Constants,
+  actionDelimiter,
+  actionDomainSeparator,
+} = require('librechat-data-provider');
+const {
+  domainParser,
+  stripProtocol,
+  legacyDomainEncode,
+  validateAndUpdateTool,
+} = require('./ActionService');
 
 jest.mock('keyv');
+
+jest.mock('~/models/Action', () => ({
+  getActions: jest.fn(),
+  deleteActions: jest.fn(),
+}));
+
+const { getActions } = require('~/models/Action');
 
 let mockDomainCache = {};
 jest.mock('~/cache/getLogStores', () => {
@@ -16,6 +32,7 @@ jest.mock('~/cache/getLogStores', () => {
 
 beforeEach(() => {
   mockDomainCache = {};
+  getActions.mockReset();
 });
 
 const SEP = actionDomainSeparator;
@@ -121,6 +138,29 @@ describe('domainParser', () => {
     });
   });
 
+  describe('unicode domains', () => {
+    it('encodes unicode hostname via base64 path', async () => {
+      const domain = 'täst.example.com';
+      const result = await domainParser(domain, true);
+      expect(result).toHaveLength(MAX);
+      expect(result).toBe(
+        Buffer.from(domain).toString('base64').substring(0, MAX),
+      );
+    });
+
+    it('round-trips unicode hostname through encode then decode', async () => {
+      const domain = 'täst.example.com';
+      const key = await domainParser(domain, true);
+      expect(await domainParser(key, false)).toBe(domain);
+    });
+
+    it('strips protocol before encoding unicode hostname', async () => {
+      const withProto = 'https://täst.example.com';
+      const bare = 'täst.example.com';
+      expect(await domainParser(withProto, true)).toBe(await domainParser(bare, true));
+    });
+  });
+
   describe('decode path', () => {
     it('short-path encoded domain decodes via separator replacement', async () => {
       expect(await domainParser(`examp${SEP}com`, false)).toBe('examp.com');
@@ -136,52 +176,133 @@ describe('domainParser', () => {
       expect(await domainParser('not_base64_encoded', false)).toBe('not_base64_encoded');
     });
 
-    it('handles corrupt base64 cache entries gracefully', async () => {
-      mockDomainCache['corrupt_key'] = '!!!not-valid-base64!!!';
+    it('returns a string without throwing for corrupt cache entries', async () => {
+      mockDomainCache['corrupt_key'] = '!!!';
       const result = await domainParser('corrupt_key', false);
-      expect(result).toBeDefined();
+      expect(typeof result).toBe('string');
     });
   });
 });
 
 describe('legacyDomainEncode', () => {
-  it.each(['', null, undefined])('returns empty string for %j', async (input) => {
-    expect(await legacyDomainEncode(input)).toBe('');
+  it.each(['', null, undefined])('returns empty string for %j', (input) => {
+    expect(legacyDomainEncode(input)).toBe('');
   });
 
-  it('uses dot-replacement for short domains', async () => {
-    expect(await legacyDomainEncode('examp.com')).toBe(`examp${SEP}com`);
+  it('is synchronous (returns a string, not a Promise)', () => {
+    const result = legacyDomainEncode('examp.com');
+    expect(result).toBe(`examp${SEP}com`);
+    expect(result).not.toBeInstanceOf(Promise);
   });
 
-  it('uses base64 prefix of full input for long domains', async () => {
+  it('uses dot-replacement for short domains', () => {
+    expect(legacyDomainEncode('examp.com')).toBe(`examp${SEP}com`);
+  });
+
+  it('uses base64 prefix of full input for long domains', () => {
     const domain = 'https://swapi.tech';
     const expected = Buffer.from(domain).toString('base64').substring(0, MAX);
-    expect(await legacyDomainEncode(domain)).toBe(expected);
+    expect(legacyDomainEncode(domain)).toBe(expected);
   });
 
-  it('all https:// URLs collide to the same key', async () => {
-    const results = await Promise.all([
+  it('all https:// URLs collide to the same key', () => {
+    const results = [
       legacyDomainEncode('https://api.example.com'),
       legacyDomainEncode('https://api.weather.com'),
       legacyDomainEncode('https://totally.different.host'),
-    ]);
+    ];
     expect(new Set(results).size).toBe(1);
   });
 
-  it('matches what old domainParser would have produced', async () => {
+  it('matches what old domainParser would have produced', () => {
     const domain = 'https://api.example.com';
-    const legacy = await legacyDomainEncode(domain);
+    const legacy = legacyDomainEncode(domain);
     expect(legacy).toBe(Buffer.from(domain).toString('base64').substring(0, MAX));
+  });
+
+  it('produces same result as new domainParser for short bare hostnames', async () => {
+    const domain = 'swapi.tech';
+    expect(legacyDomainEncode(domain)).toBe(await domainParser(domain, true));
+  });
+});
+
+describe('validateAndUpdateTool', () => {
+  const mockReq = { user: { id: 'user123' } };
+
+  it('returns tool unchanged when name passes tool-name regex', async () => {
+    const tool = { function: { name: 'getPeople_action_swapi---tech' } };
+    const result = await validateAndUpdateTool({
+      req: mockReq,
+      tool,
+      assistant_id: 'asst_1',
+    });
+    expect(result).toEqual(tool);
+    expect(getActions).not.toHaveBeenCalled();
+  });
+
+  it('matches action when metadata.domain has https:// prefix and tool domain is bare hostname', async () => {
+    getActions.mockResolvedValue([
+      { metadata: { domain: 'https://api.example.com' } },
+    ]);
+
+    const tool = { function: { name: `getPeople${DELIM}api.example.com` } };
+    const result = await validateAndUpdateTool({
+      req: mockReq,
+      tool,
+      assistant_id: 'asst_1',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.function.name).toMatch(/^getPeople_action_/);
+    expect(result.function.name).not.toContain('.');
+  });
+
+  it('matches action when metadata.domain has no protocol', async () => {
+    getActions.mockResolvedValue([
+      { metadata: { domain: 'api.example.com' } },
+    ]);
+
+    const tool = { function: { name: `getPeople${DELIM}api.example.com` } };
+    const result = await validateAndUpdateTool({
+      req: mockReq,
+      tool,
+      assistant_id: 'asst_1',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.function.name).toMatch(/^getPeople_action_/);
+  });
+
+  it('returns null when no action matches the domain', async () => {
+    getActions.mockResolvedValue([
+      { metadata: { domain: 'https://other.domain.com' } },
+    ]);
+
+    const tool = { function: { name: `getPeople${DELIM}api.example.com` } };
+    const result = await validateAndUpdateTool({
+      req: mockReq,
+      tool,
+      assistant_id: 'asst_1',
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when action has no metadata', async () => {
+    getActions.mockResolvedValue([{ metadata: null }]);
+
+    const tool = { function: { name: `getPeople${DELIM}api.example.com` } };
+    const result = await validateAndUpdateTool({
+      req: mockReq,
+      tool,
+      assistant_id: 'asst_1',
+    });
+
+    expect(result).toBeNull();
   });
 });
 
 describe('backward-compatible tool name matching', () => {
-  /**
-   * Simulates the matching logic in getActionToolDefinitions and loadActionToolsForExecution.
-   * These tests verify that the real domain encoding + normalization patterns
-   * produce tool names that match against both old and new stored formats.
-   */
-
   function normalizeToolName(name) {
     return name.replace(domainSepRegex, '_');
   }
@@ -204,7 +325,7 @@ describe('backward-compatible tool name matching', () => {
 
     it('legacy encoding matches agent tools stored with legacy encoding', async () => {
       const metadataDomain = 'https://swapi.tech';
-      const legacy = await legacyDomainEncode(metadataDomain);
+      const legacy = legacyDomainEncode(metadataDomain);
       const legacyNormalized = normalizeToolName(legacy);
 
       const storedTool = buildToolName('getPeople', legacy);
@@ -216,7 +337,7 @@ describe('backward-compatible tool name matching', () => {
     it('new definition matches old stored tools via legacy fallback', async () => {
       const metadataDomain = 'https://swapi.tech';
       const newDomain = await domainParser(metadataDomain, true);
-      const legacyDomain = await legacyDomainEncode(metadataDomain);
+      const legacyDomain = legacyDomainEncode(metadataDomain);
       const newNorm = normalizeToolName(newDomain);
       const legacyNorm = normalizeToolName(legacyDomain);
 
@@ -227,6 +348,25 @@ describe('backward-compatible tool name matching', () => {
       const storedNormalized = normalizeToolName(oldStoredTool);
       const hasMatch = storedNormalized === newToolName || storedNormalized === legacyToolName;
       expect(hasMatch).toBe(true);
+    });
+
+    it('pre-normalized Set eliminates per-tool normalization', async () => {
+      const metadataDomain = 'https://api.example.com';
+      const domain = await domainParser(metadataDomain, true);
+      const legacyDomain = legacyDomainEncode(metadataDomain);
+      const normalizedDomain = normalizeToolName(domain);
+      const legacyNormalized = normalizeToolName(legacyDomain);
+
+      const storedTools = [
+        buildToolName('getWeather', legacyDomain),
+        buildToolName('getForecast', domain),
+      ];
+
+      const preNormalized = new Set(storedTools.map((t) => normalizeToolName(t)));
+
+      const toolName = `getWeather${DELIM}${normalizedDomain}`;
+      const legacyToolName = `getWeather${DELIM}${legacyNormalized}`;
+      expect(preNormalized.has(toolName) || preNormalized.has(legacyToolName)).toBe(true);
     });
   });
 
@@ -258,7 +398,7 @@ describe('backward-compatible tool name matching', () => {
     it('model-called tool name resolves via legacy entry in normalizedToDomain map', async () => {
       const metadataDomain = 'https://api.example.com';
       const domain = await domainParser(metadataDomain, true);
-      const legacyDomain = await legacyDomainEncode(metadataDomain);
+      const legacyDomain = legacyDomainEncode(metadataDomain);
       const legacyNorm = normalizeToolName(legacyDomain);
 
       const normalizedToDomain = new Map();
@@ -277,13 +417,90 @@ describe('backward-compatible tool name matching', () => {
 
       expect(matched).toBe(domain);
     });
+
+    it('legacy guard skips duplicate map entry for short bare hostnames', async () => {
+      const domain = 'swapi.tech';
+      const newEncoding = await domainParser(domain, true);
+      const legacyEncoding = legacyDomainEncode(domain);
+
+      expect(newEncoding).toBe(legacyEncoding);
+
+      const normalizedToDomain = new Map();
+      normalizedToDomain.set(newEncoding, newEncoding);
+      if (legacyEncoding !== newEncoding) {
+        normalizedToDomain.set(legacyEncoding, newEncoding);
+      }
+      expect(normalizedToDomain.size).toBe(1);
+    });
+  });
+
+  describe('processRequiredActions matching (assistants path)', () => {
+    it('legacy tool from OpenAI matches via normalizedToDomain with both encodings', async () => {
+      const metadataDomain = 'https://swapi.tech';
+      const domain = await domainParser(metadataDomain, true);
+      const legacyDomain = legacyDomainEncode(metadataDomain);
+
+      const normalizedToDomain = new Map();
+      normalizedToDomain.set(domain, domain);
+      if (legacyDomain !== domain) {
+        normalizedToDomain.set(legacyDomain, domain);
+      }
+
+      const legacyToolName = buildToolName('getPeople', legacyDomain);
+
+      let currentDomain = '';
+      let matchedKey = '';
+      for (const [key, canonical] of normalizedToDomain.entries()) {
+        if (legacyToolName.includes(key)) {
+          currentDomain = canonical;
+          matchedKey = key;
+          break;
+        }
+      }
+
+      expect(currentDomain).toBe(domain);
+      expect(matchedKey).toBe(legacyDomain);
+
+      const functionName = legacyToolName.replace(`${DELIM}${matchedKey}`, '');
+      expect(functionName).toBe('getPeople');
+    });
+
+    it('new tool name matches via the canonical domain key', async () => {
+      const metadataDomain = 'https://swapi.tech';
+      const domain = await domainParser(metadataDomain, true);
+      const legacyDomain = legacyDomainEncode(metadataDomain);
+
+      const normalizedToDomain = new Map();
+      normalizedToDomain.set(domain, domain);
+      if (legacyDomain !== domain) {
+        normalizedToDomain.set(legacyDomain, domain);
+      }
+
+      const newToolName = buildToolName('getPeople', domain);
+
+      let currentDomain = '';
+      let matchedKey = '';
+      for (const [key, canonical] of normalizedToDomain.entries()) {
+        if (newToolName.includes(key)) {
+          currentDomain = canonical;
+          matchedKey = key;
+          break;
+        }
+      }
+
+      expect(currentDomain).toBe(domain);
+      expect(matchedKey).toBe(domain);
+
+      const functionName = newToolName.replace(`${DELIM}${matchedKey}`, '');
+      expect(functionName).toBe('getPeople');
+    });
   });
 
   describe('save-route cleanup', () => {
     it('tool filter removes tools matching new encoding', async () => {
       const metadataDomain = 'https://swapi.tech';
       const domain = await domainParser(metadataDomain, true);
-      const legacyDomain = await legacyDomainEncode(metadataDomain);
+      const legacyDomain = legacyDomainEncode(metadataDomain);
 
       const tools = [
         buildToolName('getPeople', domain),
@@ -298,7 +515,7 @@ describe('backward-compatible tool name matching', () => {
     it('tool filter removes tools matching legacy encoding', async () => {
       const metadataDomain = 'https://swapi.tech';
       const domain = await domainParser(metadataDomain, true);
-      const legacyDomain = await legacyDomainEncode(metadataDomain);
+      const legacyDomain = legacyDomainEncode(metadataDomain);
 
       const tools = [
         buildToolName('getPeople', legacyDomain),
@@ -339,9 +556,9 @@ describe('backward-compatible tool name matching', () => {
       expect(tool1).not.toBe(tool2);
     });
 
-    it('two https:// actions used to collide in legacy encoding', async () => {
-      const legacy1 = await legacyDomainEncode('https://api.weather.com');
-      const legacy2 = await legacyDomainEncode('https://api.spacex.com');
+    it('two https:// actions used to collide in legacy encoding', () => {
+      const legacy1 = legacyDomainEncode('https://api.weather.com');
+      const legacy2 = legacyDomainEncode('https://api.spacex.com');
 
       const tool1 = buildToolName('getData', legacy1);
       const tool2 = buildToolName('getData', legacy2);
