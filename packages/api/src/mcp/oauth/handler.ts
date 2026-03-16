@@ -821,7 +821,13 @@ export class MCPOAuthHandler {
    */
   static async refreshOAuthTokens(
     refreshToken: string,
-    metadata: { serverName: string; serverUrl?: string; clientInfo?: OAuthClientInformation },
+    metadata: {
+      serverName: string;
+      serverUrl?: string;
+      clientInfo?: OAuthClientInformation;
+      storedTokenEndpoint?: string;
+      storedAuthMethods?: string[];
+    },
     oauthHeaders: Record<string, string>,
     config?: MCPOptions['oauth'],
     allowedDomains?: string[] | null,
@@ -862,15 +868,18 @@ export class MCPOAuthHandler {
           const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
           if (!oauthMetadata) {
-            /**
-             * No metadata discovered - use fallback /token endpoint.
-             * This mirrors the MCP SDK's behavior for legacy servers without .well-known endpoints.
-             */
-            logger.warn(
-              `[MCPOAuth] No OAuth metadata discovered for token refresh, using fallback /token endpoint`,
-            );
-            tokenUrl = new URL('/token', metadata.serverUrl).toString();
-            authMethods = ['client_secret_basic', 'client_secret_post', 'none'];
+            if (metadata.storedTokenEndpoint) {
+              tokenUrl = metadata.storedTokenEndpoint;
+              authMethods = metadata.storedAuthMethods;
+            } else {
+              /**
+               * Do NOT fall back to `new URL('/token', metadata.serverUrl)`.
+               * metadata.serverUrl is the MCP resource server, which may differ from the
+               * authorization server. Sending refresh tokens there leaks them to the
+               * resource server operator when .well-known discovery is absent.
+               */
+              throw new Error('No OAuth metadata discovered for token refresh');
+            }
           } else if (!oauthMetadata.token_endpoint) {
             throw new Error('No token endpoint found in OAuth metadata');
           } else {
@@ -930,8 +939,8 @@ export class MCPOAuthHandler {
         }
 
         logger.debug(`[MCPOAuth] Refresh request to: ${sanitizeUrlForLogging(tokenUrl)}`, {
-          body: body.toString(),
-          headers,
+          grant_type: 'refresh_token',
+          has_auth_header: !!headers['Authorization'],
         });
 
         const response = await fetch(tokenUrl, {
@@ -1040,15 +1049,16 @@ export class MCPOAuthHandler {
       const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
       let tokenUrl: URL;
-      if (!oauthMetadata?.token_endpoint) {
-        /**
-         * No metadata or token_endpoint discovered - use fallback /token endpoint.
-         * This mirrors the MCP SDK's behavior for legacy servers without .well-known endpoints.
-         */
-        logger.warn(
-          `[MCPOAuth] No OAuth metadata or token endpoint found, using fallback /token endpoint`,
-        );
-        tokenUrl = new URL('/token', metadata.serverUrl);
+      if (!oauthMetadata) {
+        if (metadata.storedTokenEndpoint) {
+          tokenUrl = new URL(metadata.storedTokenEndpoint);
+        } else {
+          // Same rationale as the stored-clientInfo branch above: never fall back
+          // to metadata.serverUrl which is the MCP resource server, not the auth server.
+          throw new Error('No OAuth metadata discovered for token refresh');
+        }
+      } else if (!oauthMetadata.token_endpoint) {
+        throw new Error('No token endpoint found in OAuth metadata');
       } else {
         tokenUrl = new URL(oauthMetadata.token_endpoint);
       }
@@ -1103,17 +1113,11 @@ export class MCPOAuthHandler {
     oauthHeaders: Record<string, string> = {},
     allowedDomains?: string[] | null,
   ): Promise<void> {
-    if (metadata.revocationEndpoint != null) {
-      await this.validateOAuthUrl(
-        metadata.revocationEndpoint,
-        'revocation_endpoint',
-        allowedDomains,
-      );
-    }
     const revokeUrl: URL =
       metadata.revocationEndpoint != null
         ? new URL(metadata.revocationEndpoint)
         : new URL('/revoke', metadata.serverUrl);
+    await this.validateOAuthUrl(revokeUrl.href, 'revocation_endpoint', allowedDomains);
 
     const authMethods = metadata.revocationEndpointAuthMethodsSupported ?? ['client_secret_basic'];
     const authMethod = resolveTokenEndpointAuthMethod({ tokenAuthMethods: authMethods });

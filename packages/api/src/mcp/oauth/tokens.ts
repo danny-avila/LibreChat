@@ -41,6 +41,8 @@ interface GetTokensParams {
       serverName: string;
       identifier: string;
       clientInfo?: OAuthClientInformation;
+      storedTokenEndpoint?: string;
+      storedAuthMethods?: string[];
     },
   ) => Promise<MCPOAuthTokens>;
   createToken?: TokenMethods['createToken'];
@@ -306,9 +308,10 @@ export class MCPTokenStorage {
           logger.info(`${logPrefix} Attempting to refresh token`);
           const decryptedRefreshToken = await decryptV2(refreshTokenData.token);
 
-          /** Client information if available */
           let clientInfo;
           let clientInfoData;
+          let storedTokenEndpoint: string | undefined;
+          let storedAuthMethods: string[] | undefined;
           try {
             clientInfoData = await findToken({
               userId,
@@ -322,6 +325,19 @@ export class MCPTokenStorage {
                 client_id: clientInfo.client_id,
                 has_client_secret: !!clientInfo.client_secret,
               });
+
+              if (clientInfoData.metadata) {
+                const raw =
+                  clientInfoData.metadata instanceof Map
+                    ? Object.fromEntries(clientInfoData.metadata)
+                    : (clientInfoData.metadata as Record<string, unknown>);
+                if (typeof raw.token_endpoint === 'string') {
+                  storedTokenEndpoint = raw.token_endpoint;
+                }
+                if (Array.isArray(raw.token_endpoint_auth_methods_supported)) {
+                  storedAuthMethods = raw.token_endpoint_auth_methods_supported as string[];
+                }
+              }
             }
           } catch {
             logger.debug(`${logPrefix} No client info found`);
@@ -332,6 +348,8 @@ export class MCPTokenStorage {
             serverName,
             identifier,
             clientInfo,
+            storedTokenEndpoint,
+            storedAuthMethods,
           };
 
           const newTokens = await refreshTokens(decryptedRefreshToken, metadata);

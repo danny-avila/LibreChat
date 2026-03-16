@@ -287,6 +287,8 @@ export class MCPConnectionFactory {
       serverName: string;
       identifier: string;
       clientInfo?: OAuthClientInformation;
+      storedTokenEndpoint?: string;
+      storedAuthMethods?: string[];
     },
   ) => Promise<MCPOAuthTokens> {
     return async (refreshToken, metadata) => {
@@ -296,6 +298,8 @@ export class MCPConnectionFactory {
           serverUrl: (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url,
           serverName: metadata.serverName,
           clientInfo: metadata.clientInfo,
+          storedTokenEndpoint: metadata.storedTokenEndpoint,
+          storedAuthMethods: metadata.storedAuthMethods,
         },
         this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
