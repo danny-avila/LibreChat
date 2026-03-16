@@ -25,7 +25,7 @@ function MCPSelectContent() {
     getServerStatusIconProps,
   } = mcpServerManager;
 
-  const menuStore = Ariakit.useMenuStore();
+  const menuStore = Ariakit.useMenuStore({ focusLoop: true });
   const isOpen = menuStore.useState('open');
 
   const selectedCount = mcpValues?.length ?? 0;
