@@ -13,9 +13,12 @@ jest.mock('~/hooks', () => ({
     return translations[key] || key;
   },
   useExpandCollapse: (isExpanded: boolean) => ({
-    display: 'grid',
-    gridTemplateRows: isExpanded ? '1fr' : '0fr',
-    opacity: isExpanded ? 1 : 0,
+    style: {
+      display: 'grid',
+      gridTemplateRows: isExpanded ? '1fr' : '0fr',
+      opacity: isExpanded ? 1 : 0,
+    },
+    ref: { current: null },
   }),
 }));
 

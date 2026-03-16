@@ -42,7 +42,7 @@ export default function ToolCall({
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = (output?.length ?? 0) > 0;
   const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
-  const expandStyle = useExpandCollapse(showInfo);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showInfo);
 
   useEffect(() => {
     if (autoExpand && hasOutput) {
@@ -219,7 +219,7 @@ export default function ToolCall({
         />
       </div>
       <div style={expandStyle}>
-        <div className="overflow-hidden">
+        <div className="overflow-hidden" ref={expandRef}>
           {hasInfo && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />

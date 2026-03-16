@@ -165,7 +165,7 @@ export default function WebSearch({
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const sourceCount = allSources.length;
   const [showSourceList, setShowSourceList] = useState(() => autoExpand && sourceCount > 0);
-  const sourceExpandStyle = useExpandCollapse(showSourceList);
+  const { style: sourceExpandStyle, ref: sourceExpandRef } = useExpandCollapse(showSourceList);
 
   useEffect(() => {
     if (autoExpand && sourceCount > 0) {
@@ -221,7 +221,7 @@ export default function WebSearch({
         </button>
         {hasSourceData && (
           <div style={sourceExpandStyle}>
-            <div className="overflow-hidden">
+            <div className="overflow-hidden" ref={sourceExpandRef}>
               <div className="my-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
                 {allSources.map((source, i) => {
                   const domain = getCleanDomain(source.link);

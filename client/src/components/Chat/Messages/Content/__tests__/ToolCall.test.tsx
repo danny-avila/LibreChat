@@ -22,9 +22,12 @@ jest.mock('~/hooks', () => ({
   },
   useProgress: (initialProgress: number) => (initialProgress >= 1 ? 1 : initialProgress),
   useExpandCollapse: (isExpanded: boolean) => ({
-    display: 'grid',
-    gridTemplateRows: isExpanded ? '1fr' : '0fr',
-    opacity: isExpanded ? 1 : 0,
+    style: {
+      display: 'grid',
+      gridTemplateRows: isExpanded ? '1fr' : '0fr',
+      opacity: isExpanded ? 1 : 0,
+    },
+    ref: { current: null },
   }),
 }));
 

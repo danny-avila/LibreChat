@@ -248,7 +248,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentId = useId();
-  const expandStyle = useExpandCollapse(isExpanded);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
 
   const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -315,7 +315,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
         className={cn(isExpanded && 'mb-8')}
         style={expandStyle}
       >
-        <div className="relative overflow-hidden">
+        <div className="relative overflow-hidden" ref={expandRef}>
           <ThinkingContent>{children}</ThinkingContent>
           <FloatingThinkingBar
             isVisible={isBarVisible && isExpanded}

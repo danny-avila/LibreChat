@@ -115,7 +115,7 @@ export default function ToolCallGroup({
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const autoCollapse = !autoExpand && count >= 2 && allCompleted;
   const [isExpanded, setIsExpanded] = useState(autoExpand || !autoCollapse);
-  const expandStyle = useExpandCollapse(isExpanded);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
 
   useEffect(() => {
     if (autoCollapse) {
@@ -173,7 +173,7 @@ export default function ToolCallGroup({
         />
       </button>
       <div style={expandStyle}>
-        <div className="overflow-hidden">
+        <div className="overflow-hidden" ref={expandRef}>
           <div className="py-0.5 pl-4">
             {parts.map(({ part, idx }) => renderPart(part, idx, isLast && idx === lastContentIdx))}
           </div>

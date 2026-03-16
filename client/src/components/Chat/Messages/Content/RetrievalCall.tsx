@@ -187,7 +187,7 @@ export default function RetrievalCall({
   const hasOutput = !!output && !isError(output);
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const [showOutput, setShowOutput] = useState(() => autoExpand && hasOutput);
-  const expandStyle = useExpandCollapse(showOutput);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showOutput);
 
   const fileSources = useMemo(() => extractFileSources(attachments), [attachments]);
   const parsedResults = useMemo(
@@ -261,7 +261,7 @@ export default function RetrievalCall({
         />
       </div>
       <div style={expandStyle}>
-        <div className="overflow-hidden">
+        <div className="overflow-hidden" ref={expandRef}>
           {hasOutput && hasResults && (
             <div className="my-2 flex flex-col gap-2">
               {(fileSources.length > 0 ? fileSources : parsedResults).map((item, i) => {
