@@ -72,6 +72,7 @@ mcpServers:
       Authorization: "Bearer ${TAVILY_API_KEY}"
     startup: true
     chatMenu: false
+    serverInstructions: "Use Tavily search/news tools only by default. Do NOT use Tavily research or deep-research tools, and do NOT route prompts containing general 'research' wording to those tools. Only use Tavily research/deep-research tools when the user explicitly requests 'deep research'."
     requiresOAuth: false
 endpoints:
   azureOpenAI:
