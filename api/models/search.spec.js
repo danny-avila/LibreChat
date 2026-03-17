@@ -2,7 +2,11 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { searchConversationsAndMessages } = require('./search');
+const {
+  searchConversationsAndMessages,
+  buildLatestMessagePipeline,
+  clearSearchCache,
+} = require('./search');
 const { getConvosQueried } = require('./Conversation');
 const { Conversation, Message } = require('~/db/models');
 
@@ -21,6 +25,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await Conversation.deleteMany({});
   await Message.deleteMany({});
+  clearSearchCache();
   if (!Conversation.meiliSearch) {
     Conversation.meiliSearch = () => Promise.resolve({ hits: [] });
   }
@@ -157,6 +162,42 @@ describe('searchConversationsAndMessages', () => {
       await expect(searchConversationsAndMessages('test', 'user1')).rejects.toThrow(
         'Meilisearch unavailable',
       );
+    } finally {
+      convoSpy.mockRestore();
+      msgSpy.mockRestore();
+    }
+  });
+
+  it('should return cached results within TTL window', async () => {
+    const convoId = uuidv4();
+
+    const convoSpy = jest
+      .spyOn(Conversation, 'meiliSearch')
+      .mockResolvedValue({ hits: [{ conversationId: convoId }] });
+    const msgSpy = jest.spyOn(Message, 'meiliSearch').mockResolvedValue({ hits: [] });
+
+    try {
+      const first = await searchConversationsAndMessages('cached-query', 'user1');
+      const second = await searchConversationsAndMessages('cached-query', 'user1');
+
+      expect(first).toBe(second);
+      expect(convoSpy).toHaveBeenCalledTimes(1);
+      expect(msgSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      convoSpy.mockRestore();
+      msgSpy.mockRestore();
+    }
+  });
+
+  it('should not share cache across different users', async () => {
+    const convoSpy = jest.spyOn(Conversation, 'meiliSearch').mockResolvedValue({ hits: [] });
+    const msgSpy = jest.spyOn(Message, 'meiliSearch').mockResolvedValue({ hits: [] });
+
+    try {
+      await searchConversationsAndMessages('query', 'user-a');
+      await searchConversationsAndMessages('query', 'user-b');
+
+      expect(convoSpy).toHaveBeenCalledTimes(2);
     } finally {
       convoSpy.mockRestore();
       msgSpy.mockRestore();
@@ -354,35 +395,6 @@ describe('Search + getConvosQueried integration', () => {
 });
 
 describe('Message.aggregate pipeline for title-only conversations', () => {
-  const TITLE_ONLY_PIPELINE = (user, conversationIds) => [
-    {
-      $match: {
-        user,
-        conversationId: { $in: conversationIds },
-      },
-    },
-    {
-      $project: {
-        conversationId: 1,
-        messageId: 1,
-        text: 1,
-        isCreatedByUser: 1,
-        endpoint: 1,
-        iconURL: 1,
-        model: 1,
-        updatedAt: 1,
-        _id: 0,
-      },
-    },
-    { $sort: { conversationId: 1, updatedAt: -1 } },
-    {
-      $group: {
-        _id: '$conversationId',
-        message: { $first: '$$ROOT' },
-      },
-    },
-  ];
-
   it('should return only projected fields with no _id or internal fields', async () => {
     const convoId = uuidv4();
 
@@ -397,7 +409,7 @@ describe('Message.aggregate pipeline for title-only conversations', () => {
       model: 'gpt-4',
     });
 
-    const results = await Message.aggregate(TITLE_ONLY_PIPELINE('user1', [convoId]));
+    const results = await Message.aggregate(buildLatestMessagePipeline('user1', [convoId]));
 
     expect(results).toHaveLength(1);
     const msg = results[0].message;
@@ -440,7 +452,7 @@ describe('Message.aggregate pipeline for title-only conversations', () => {
       },
     ]);
 
-    const results = await Message.aggregate(TITLE_ONLY_PIPELINE('user1', [convoId]));
+    const results = await Message.aggregate(buildLatestMessagePipeline('user1', [convoId]));
 
     expect(results).toHaveLength(1);
     expect(results[0].message.text).toBe('Newer message');
@@ -481,7 +493,7 @@ describe('Message.aggregate pipeline for title-only conversations', () => {
       },
     ]);
 
-    const results = await Message.aggregate(TITLE_ONLY_PIPELINE('user1', [convoA, convoB]));
+    const results = await Message.aggregate(buildLatestMessagePipeline('user1', [convoA, convoB]));
 
     expect(results).toHaveLength(2);
     const byConvo = {};
@@ -493,7 +505,7 @@ describe('Message.aggregate pipeline for title-only conversations', () => {
   });
 
   it('should return empty array when no messages match', async () => {
-    const results = await Message.aggregate(TITLE_ONLY_PIPELINE('user1', [uuidv4()]));
+    const results = await Message.aggregate(buildLatestMessagePipeline('user1', [uuidv4()]));
     expect(results).toHaveLength(0);
   });
 
@@ -515,9 +527,69 @@ describe('Message.aggregate pipeline for title-only conversations', () => {
       isCreatedByUser: true,
     });
 
-    const results = await Message.aggregate(TITLE_ONLY_PIPELINE('user1', [convoId]));
+    const results = await Message.aggregate(buildLatestMessagePipeline('user1', [convoId]));
 
     expect(results).toHaveLength(1);
     expect(results[0].message.text).toBe('Correct user message');
+  });
+});
+
+describe('Zero-message title-only conversation handling', () => {
+  it('should identify title-only conversations that have no messages in aggregation', async () => {
+    const withMsgsId = uuidv4();
+    const emptyConvoId = uuidv4();
+
+    await Conversation.create({
+      conversationId: withMsgsId,
+      user: 'user1',
+      title: 'Has messages',
+      endpoint: EModelEndpoint.openAI,
+      model: 'gpt-4',
+      expiredAt: null,
+    });
+    await Conversation.create({
+      conversationId: emptyConvoId,
+      user: 'user1',
+      title: 'Empty convo',
+      endpoint: EModelEndpoint.openAI,
+      model: 'gpt-4',
+      expiredAt: null,
+    });
+
+    await Message.create({
+      messageId: uuidv4(),
+      conversationId: withMsgsId,
+      user: 'user1',
+      text: 'A real message',
+      isCreatedByUser: true,
+    });
+
+    const convoSpy = jest.spyOn(Conversation, 'meiliSearch').mockResolvedValue({
+      hits: [{ conversationId: withMsgsId }, { conversationId: emptyConvoId }],
+    });
+    const msgSpy = jest.spyOn(Message, 'meiliSearch').mockResolvedValue({ hits: [] });
+
+    try {
+      const { conversationIds } = await searchConversationsAndMessages('test', 'user1');
+      const convoRefs = [...conversationIds].map((id) => ({ conversationId: id }));
+      const result = await getConvosQueried('user1', convoRefs, null, convoRefs.length);
+
+      const titleOnlyIds = [withMsgsId, emptyConvoId];
+      const aggregated = await Message.aggregate(buildLatestMessagePipeline('user1', titleOnlyIds));
+
+      const coveredIds = new Set(aggregated.map((e) => e._id));
+      expect(coveredIds.has(withMsgsId)).toBe(true);
+      expect(coveredIds.has(emptyConvoId)).toBe(false);
+
+      const uncoveredIds = titleOnlyIds.filter((id) => !coveredIds.has(id));
+      expect(uncoveredIds).toEqual([emptyConvoId]);
+
+      const convo = result.convoMap[emptyConvoId];
+      expect(convo).toBeDefined();
+      expect(convo.title).toBe('Empty convo');
+    } finally {
+      convoSpy.mockRestore();
+      msgSpy.mockRestore();
+    }
   });
 });

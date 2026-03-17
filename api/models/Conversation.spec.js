@@ -13,6 +13,7 @@ const {
   saveConvo,
   getConvo,
 } = require('./Conversation');
+const { clearSearchCache } = require('./search');
 jest.mock('~/server/services/Config/app');
 jest.mock('./Message');
 const { getMessages, deleteMessages } = require('./Message');
@@ -38,6 +39,7 @@ describe('Conversation Operations', () => {
   beforeEach(async () => {
     await Conversation.deleteMany({});
     jest.clearAllMocks();
+    clearSearchCache();
     getMessages.mockResolvedValue([]);
     deleteMessages.mockResolvedValue({ deletedCount: 0 });
     if (!Conversation.meiliSearch) {
