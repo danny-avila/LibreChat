@@ -2,10 +2,20 @@ const { logger } = require('@librechat/data-schemas');
 const { PrincipalType, PermissionTypes, Permissions } = require('librechat-data-provider');
 const { getRoleByName } = require('~/models/Role');
 
+const VALID_PRINCIPAL_TYPES = new Set([
+  PrincipalType.USER,
+  PrincipalType.GROUP,
+  PrincipalType.ROLE,
+]);
+
 /**
  * Middleware to check if user has permission to access people picker functionality.
- * Validates both `type` (singular) and `types` (comma-separated or array) query parameters
- * against the caller's role permissions.
+ * Validates requested principal types via `type` (singular) and `types` (comma-separated or array)
+ * query parameters against the caller's role permissions:
+ * - user: requires VIEW_USERS permission
+ * - group: requires VIEW_GROUPS permission
+ * - role: requires VIEW_ROLES permission
+ * - no type filter (mixed search): requires at least one of the above
  */
 const checkPeoplePickerAccess = async (req, res, next) => {
   try {
@@ -46,17 +56,16 @@ const checkPeoplePickerAccess = async (req, res, next) => {
       },
     };
 
-    const validTypes = new Set(Object.keys(permissionChecks));
     const requestedTypes = new Set();
 
-    if (type && validTypes.has(type)) {
+    if (type && VALID_PRINCIPAL_TYPES.has(type)) {
       requestedTypes.add(type);
     }
 
     if (types) {
       const typesArray = Array.isArray(types) ? types : types.split(',');
       for (const t of typesArray) {
-        if (validTypes.has(t)) {
+        if (VALID_PRINCIPAL_TYPES.has(t)) {
           requestedTypes.add(t);
         }
       }
@@ -82,7 +91,7 @@ const checkPeoplePickerAccess = async (req, res, next) => {
     next();
   } catch (error) {
     logger.error(
-      `[checkPeoplePickerAccess][${req.user?.id}] checkPeoplePickerAccess error for req.query.type = ${req.query.type}`,
+      `[checkPeoplePickerAccess][${req.user?.id}] error for type=${req.query.type}, types=${req.query.types}`,
       error,
     );
     return res.status(500).json({
