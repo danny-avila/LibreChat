@@ -194,11 +194,13 @@ export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getToke
   const isClaude = encoding === 'claude';
   return function (message: BaseMessage) {
     const countTokens = (text: string) => Tokenizer.getTokenCount(text, encoding);
-    const count = getTokenCountForMessage(
+    const textCount = getTokenCountForMessage(
       message,
       countTokens,
       encoding as 'claude' | 'o200k_base',
     );
+    const mediaCount = estimateMediaTokensForMessage(message.content, isClaude, countTokens);
+    const count = textCount + mediaCount;
     return isClaude ? Math.ceil(count * CLAUDE_TOKEN_CORRECTION) : count;
   };
 }
