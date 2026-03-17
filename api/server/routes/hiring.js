@@ -18,11 +18,13 @@ router.get('/whatsapp/webhook', (req, res) => {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
+  logger.info(`[WhatsApp] Webhook hit — mode=${mode} token=${token} envToken=${verifyToken}`);
+
   if (mode === 'subscribe' && token === verifyToken) {
     logger.info('[WhatsApp] Webhook verified');
     return res.status(200).send(challenge);
   }
-  return res.status(403).json({ error: 'Forbidden' });
+  return res.status(403).json({ error: 'Forbidden', debug: { mode, token, envToken: verifyToken } });
 });
 
 /**
