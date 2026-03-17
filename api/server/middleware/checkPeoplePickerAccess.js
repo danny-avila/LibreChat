@@ -3,12 +3,9 @@ const { PrincipalType, PermissionTypes, Permissions } = require('librechat-data-
 const { getRoleByName } = require('~/models/Role');
 
 /**
- * Middleware to check if user has permission to access people picker functionality
- * Checks specific permission based on the 'type' query parameter:
- * - type=user: requires VIEW_USERS permission
- * - type=group: requires VIEW_GROUPS permission
- * - type=role: requires VIEW_ROLES permission
- * - no type (mixed search): requires either VIEW_USERS OR VIEW_GROUPS OR VIEW_ROLES
+ * Middleware to check if user has permission to access people picker functionality.
+ * Validates both `type` (singular) and `types` (comma-separated or array) query parameters
+ * against the caller's role permissions.
  */
 const checkPeoplePickerAccess = async (req, res, next) => {
   try {
@@ -28,7 +25,7 @@ const checkPeoplePickerAccess = async (req, res, next) => {
       });
     }
 
-    const { type } = req.query;
+    const { type, types } = req.query;
     const peoplePickerPerms = role.permissions[PermissionTypes.PEOPLE_PICKER] || {};
     const canViewUsers = peoplePickerPerms[Permissions.VIEW_USERS] === true;
     const canViewGroups = peoplePickerPerms[Permissions.VIEW_GROUPS] === true;
@@ -49,15 +46,33 @@ const checkPeoplePickerAccess = async (req, res, next) => {
       },
     };
 
-    const check = permissionChecks[type];
-    if (check && !check.hasPermission) {
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: check.message,
-      });
+    const validTypes = new Set(Object.keys(permissionChecks));
+    const requestedTypes = new Set();
+
+    if (type && validTypes.has(type)) {
+      requestedTypes.add(type);
     }
 
-    if (!type && !canViewUsers && !canViewGroups && !canViewRoles) {
+    if (types) {
+      const typesArray = Array.isArray(types) ? types : types.split(',');
+      for (const t of typesArray) {
+        if (validTypes.has(t)) {
+          requestedTypes.add(t);
+        }
+      }
+    }
+
+    for (const requested of requestedTypes) {
+      const check = permissionChecks[requested];
+      if (!check.hasPermission) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: check.message,
+        });
+      }
+    }
+
+    if (requestedTypes.size === 0 && !canViewUsers && !canViewGroups && !canViewRoles) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Insufficient permissions to search for users, groups, or roles',
