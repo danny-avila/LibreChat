@@ -34,11 +34,12 @@ import type {
   EventHandler,
 } from '@librechat/agents';
 import { hydrateMissingIndexTokenCounts } from '~/utils';
+import { ioredisClient, keyvRedisClient } from '~/cache';
 import { createRun } from '~/agents';
 
-// @librechat/api opens a Redis connection on import; force exit after all tests.
-afterAll(() => {
-  setTimeout(() => process.exit(0), 1000);
+afterAll(async () => {
+  await ioredisClient?.quit().catch(() => {});
+  await keyvRedisClient?.disconnect().catch(() => {});
 });
 
 // ---------------------------------------------------------------------------
