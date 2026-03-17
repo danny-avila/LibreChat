@@ -110,6 +110,24 @@ jest.mock('~/server/services/Endpoints/azureAssistants', () => ({
 jest.mock('~/server/services/Endpoints/assistants', () => ({
   initializeClient: jest.fn(),
 }));
+const MOCKS = '../__test-utils__/convos-route-mocks';
+
+jest.mock('@librechat/agents', () => require(MOCKS).agents());
+jest.mock('@librechat/api', () => require(MOCKS).api());
+jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
+jest.mock('librechat-data-provider', () => require(MOCKS).dataProvider());
+jest.mock('~/models/Conversation', () => require(MOCKS).conversationModel());
+jest.mock('~/models/ToolCall', () => require(MOCKS).toolCallModel());
+jest.mock('~/models', () => require(MOCKS).sharedModels());
+jest.mock('~/server/middleware/requireJwtAuth', () => require(MOCKS).requireJwtAuth());
+jest.mock('~/server/middleware', () => require(MOCKS).middlewarePassthrough());
+jest.mock('~/server/utils/import/fork', () => require(MOCKS).forkUtils());
+jest.mock('~/server/utils/import', () => require(MOCKS).importUtils());
+jest.mock('~/cache/getLogStores', () => require(MOCKS).logStores());
+jest.mock('~/server/routes/files/multer', () => require(MOCKS).multerSetup());
+jest.mock('multer', () => require(MOCKS).multerLib());
+jest.mock('~/server/services/Endpoints/azureAssistants', () => require(MOCKS).assistantEndpoint());
+jest.mock('~/server/services/Endpoints/assistants', () => require(MOCKS).assistantEndpoint());
 
 describe('Convos Routes', () => {
   let app;
