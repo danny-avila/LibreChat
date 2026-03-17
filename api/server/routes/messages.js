@@ -12,9 +12,10 @@ const {
   deleteMessages,
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
+const { searchConversationsAndMessages } = require('~/models/search');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { getConvosQueried } = require('~/models/Conversation');
-const { Message, Conversation } = require('~/db/models');
+const { Message } = require('~/db/models');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -63,30 +64,16 @@ router.get('/', async (req, res) => {
       }
       response = { messages, nextCursor };
     } else if (search) {
-      const [searchResults, titleSearchResults] = await Promise.all([
-        Message.meiliSearch(search, { filter: `user = "${user}"` }, true),
-        Conversation.meiliSearch(search, { filter: `user = "${user}"` }),
-      ]);
-
-      const messages = searchResults.hits || [];
-      const titleHits = titleSearchResults.hits || [];
-
-      const conversationIdsSet = new Set(
-        messages.filter((m) => m?.conversationId).map((m) => m.conversationId),
+      const { messageHits, conversationIds } = await searchConversationsAndMessages(
+        search,
+        user,
+        true,
       );
-      const convoRefs = [
-        ...conversationIdsSet,
-        ...titleHits
-          .filter((c) => c?.conversationId && !conversationIdsSet.has(c.conversationId))
-          .map((c) => {
-            conversationIdsSet.add(c.conversationId);
-            return c.conversationId;
-          }),
-      ].map((id) => ({ conversationId: id }));
 
-      const result = await getConvosQueried(req.user.id, convoRefs, cursor, convoRefs.length);
+      const convoRefs = [...conversationIds].map((id) => ({ conversationId: id }));
+      const result = await getConvosQueried(req.user.id, convoRefs, null, convoRefs.length);
 
-      const cleanedMessages = messages.filter((m) => result.convoMap[m.conversationId]);
+      const cleanedMessages = messageHits.filter((m) => result.convoMap[m.conversationId]);
       const messageIds = cleanedMessages.map((m) => m.messageId);
 
       const dbMessages = await getMessages({
@@ -107,7 +94,6 @@ router.get('/', async (req, res) => {
         activeMessages.push({
           ...message,
           title: convo.title,
-          conversationId: message.conversationId,
           model: convo.model,
           isCreatedByUser: dbMessage?.isCreatedByUser,
           endpoint: dbMessage?.endpoint,
@@ -128,6 +114,19 @@ router.get('/', async (req, res) => {
               conversationId: { $in: titleOnlyConversationIds },
             },
           },
+          {
+            $project: {
+              conversationId: 1,
+              messageId: 1,
+              text: 1,
+              isCreatedByUser: 1,
+              endpoint: 1,
+              iconURL: 1,
+              model: 1,
+              updatedAt: 1,
+              _id: 0,
+            },
+          },
           { $sort: { conversationId: 1, updatedAt: -1 } },
           {
             $group: {
@@ -137,24 +136,20 @@ router.get('/', async (req, res) => {
           },
         ]);
 
-        latestMessages
-          .map((entry) => entry?.message)
-          .filter((latest) => latest?.conversationId && result.convoMap[latest.conversationId])
-          .forEach((latest) => {
-            const convo = result.convoMap[latest.conversationId];
-            activeMessages.push({
-              ...latest,
-              title: convo.title,
-              conversationId: latest.conversationId,
-              model: convo.model,
-              isCreatedByUser: latest.isCreatedByUser,
-              endpoint: latest.endpoint,
-              iconURL: latest.iconURL,
-            });
+        for (const entry of latestMessages) {
+          const latest = entry?.message;
+          if (!latest?.conversationId || !result.convoMap[latest.conversationId]) {
+            continue;
+          }
+          const convo = result.convoMap[latest.conversationId];
+          activeMessages.push({
+            ...latest,
+            title: convo.title,
+            model: convo.model,
           });
+        }
       }
 
-      // Ensure deterministic ordering of activeMessages (e.g., by most recently updated)
       activeMessages.sort((a, b) => {
         if (!a?.updatedAt || !b?.updatedAt) {
           return 0;
