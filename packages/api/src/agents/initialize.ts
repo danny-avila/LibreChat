@@ -33,6 +33,11 @@ import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
 import type { TFilterFilesByAgentAccess } from './resources';
 
+/**
+ * Fraction of context budget reserved as headroom when no explicit maxContextTokens is set.
+ * Reduced from 0.10 to 0.05 alongside the introduction of summarization, which actively
+ * manages overflow. `createRun` can further override this via `SummarizationConfig.reserveRatio`.
+ */
 const DEFAULT_RESERVE_RATIO = 0.05;
 
 /**
@@ -411,7 +416,7 @@ export async function initializeAgent(
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || 18000;
   const maxOutputTokensNum = Number(maxOutputTokens) || 0;
-  const baseContextTokens = agentMaxContextNum - maxOutputTokensNum;
+  const baseContextTokens = Math.max(0, agentMaxContextNum - maxOutputTokensNum);
 
   const finalAttachments: IMongoFile[] = (primedAttachments ?? [])
     .filter((a): a is TFile => a != null)
