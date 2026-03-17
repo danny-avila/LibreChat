@@ -109,7 +109,7 @@ describe('recordCollectedUsage', () => {
   });
 
   describe('summarization usage segregation', () => {
-    it('keeps summarization usage out of message token rollups while still spending it', async () => {
+    it('includes summarization output tokens in total while billing under separate context', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           usage_type: 'message',
@@ -130,7 +130,7 @@ describe('recordCollectedUsage', () => {
         collectedUsage,
       });
 
-      expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+      expect(result).toEqual({ input_tokens: 120, output_tokens: 52 });
       expect(mockSpendTokens).toHaveBeenCalledTimes(2);
       expect(mockSpendTokens).toHaveBeenNthCalledWith(
         1,
@@ -824,8 +824,7 @@ describe('recordCollectedUsage', () => {
       expect(messageContextDocs).toHaveLength(2);
       expect(summarizationContextDocs).toHaveLength(2);
 
-      // Only message usage contributes to the returned rollup
-      expect(result).toEqual({ input_tokens: 200, output_tokens: 80 });
+      expect(result).toEqual({ input_tokens: 200, output_tokens: 100 });
     });
 
     it('handles summarization-only usage in bulk mode', async () => {
@@ -855,8 +854,7 @@ describe('recordCollectedUsage', () => {
       );
       expect(summarizationContextDocs).toHaveLength(2);
 
-      // No message usage, so rollup should be zero
-      expect(result).toEqual({ input_tokens: 0, output_tokens: 0 });
+      expect(result).toEqual({ input_tokens: 0, output_tokens: 25 });
     });
 
     it('handles message-only usage in bulk mode', async () => {

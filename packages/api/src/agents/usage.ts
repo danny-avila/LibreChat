@@ -196,6 +196,8 @@ export async function recordCollectedUsage(
     const cache_read =
       Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
 
+    total_output_tokens += Number(usage.output_tokens) || 0;
+
     const txMetadata: TxMetadata = {
       context: 'summarization',
       balance,
