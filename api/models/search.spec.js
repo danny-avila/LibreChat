@@ -6,30 +6,30 @@ const { searchConversationsAndMessages } = require('./search');
 const { getConvosQueried } = require('./Conversation');
 const { Conversation, Message } = require('~/db/models');
 
+let mongoServer;
+
+beforeAll(async () => {
+  mongoServer = await MongoMemoryServer.create();
+  await mongoose.connect(mongoServer.getUri());
+});
+
+afterAll(async () => {
+  await mongoose.disconnect();
+  await mongoServer.stop();
+});
+
+beforeEach(async () => {
+  await Conversation.deleteMany({});
+  await Message.deleteMany({});
+  if (!Conversation.meiliSearch) {
+    Conversation.meiliSearch = () => Promise.resolve({ hits: [] });
+  }
+  if (!Message.meiliSearch) {
+    Message.meiliSearch = () => Promise.resolve({ hits: [] });
+  }
+});
+
 describe('searchConversationsAndMessages', () => {
-  let mongoServer;
-
-  beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
-  });
-
-  afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
-  });
-
-  beforeEach(async () => {
-    await Conversation.deleteMany({});
-    await Message.deleteMany({});
-    if (!Conversation.meiliSearch) {
-      Conversation.meiliSearch = () => Promise.resolve({ hits: [] });
-    }
-    if (!Message.meiliSearch) {
-      Message.meiliSearch = () => Promise.resolve({ hits: [] });
-    }
-  });
-
   it('should merge conversation IDs from both convo and message hits', async () => {
     const convoId1 = uuidv4();
     const convoId2 = uuidv4();
@@ -165,29 +165,6 @@ describe('searchConversationsAndMessages', () => {
 });
 
 describe('Search + getConvosQueried integration', () => {
-  let mongoServer;
-
-  beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    await mongoose.connect(mongoServer.getUri());
-  });
-
-  afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
-  });
-
-  beforeEach(async () => {
-    await Conversation.deleteMany({});
-    await Message.deleteMany({});
-    if (!Conversation.meiliSearch) {
-      Conversation.meiliSearch = () => Promise.resolve({ hits: [] });
-    }
-    if (!Message.meiliSearch) {
-      Message.meiliSearch = () => Promise.resolve({ hits: [] });
-    }
-  });
-
   it('should return message-matched conversations with correct convoMap', async () => {
     const convoId = uuidv4();
 
@@ -373,5 +350,174 @@ describe('Search + getConvosQueried integration', () => {
       convoSpy.mockRestore();
       msgSpy.mockRestore();
     }
+  });
+});
+
+describe('Message.aggregate pipeline for title-only conversations', () => {
+  const TITLE_ONLY_PIPELINE = (user, conversationIds) => [
+    {
+      $match: {
+        user,
+        conversationId: { $in: conversationIds },
+      },
+    },
+    {
+      $project: {
+        conversationId: 1,
+        messageId: 1,
+        text: 1,
+        isCreatedByUser: 1,
+        endpoint: 1,
+        iconURL: 1,
+        model: 1,
+        updatedAt: 1,
+        _id: 0,
+      },
+    },
+    { $sort: { conversationId: 1, updatedAt: -1 } },
+    {
+      $group: {
+        _id: '$conversationId',
+        message: { $first: '$$ROOT' },
+      },
+    },
+  ];
+
+  it('should return only projected fields with no _id or internal fields', async () => {
+    const convoId = uuidv4();
+
+    await Message.create({
+      messageId: uuidv4(),
+      conversationId: convoId,
+      user: 'user1',
+      text: 'Hello world',
+      isCreatedByUser: true,
+      endpoint: 'openAI',
+      iconURL: null,
+      model: 'gpt-4',
+    });
+
+    const results = await Message.aggregate(TITLE_ONLY_PIPELINE('user1', [convoId]));
+
+    expect(results).toHaveLength(1);
+    const msg = results[0].message;
+    expect(msg.conversationId).toBe(convoId);
+    expect(msg.messageId).toBeDefined();
+    expect(msg.text).toBe('Hello world');
+    expect(msg.isCreatedByUser).toBe(true);
+    expect(msg.endpoint).toBe('openAI');
+    expect(msg.model).toBe('gpt-4');
+    expect(msg.updatedAt).toBeDefined();
+    expect(msg._id).toBeUndefined();
+    expect(msg.__v).toBeUndefined();
+    expect(msg._meiliIndex).toBeUndefined();
+    expect(msg.content).toBeUndefined();
+    expect(msg.metadata).toBeUndefined();
+    expect(msg.addedConvo).toBeUndefined();
+  });
+
+  it('should return only the latest message per conversationId', async () => {
+    const convoId = uuidv4();
+
+    await Message.collection.insertMany([
+      {
+        messageId: uuidv4(),
+        conversationId: convoId,
+        user: 'user1',
+        text: 'Older message',
+        isCreatedByUser: true,
+        updatedAt: new Date('2025-01-01'),
+        createdAt: new Date('2025-01-01'),
+      },
+      {
+        messageId: uuidv4(),
+        conversationId: convoId,
+        user: 'user1',
+        text: 'Newer message',
+        isCreatedByUser: false,
+        updatedAt: new Date('2026-01-01'),
+        createdAt: new Date('2026-01-01'),
+      },
+    ]);
+
+    const results = await Message.aggregate(TITLE_ONLY_PIPELINE('user1', [convoId]));
+
+    expect(results).toHaveLength(1);
+    expect(results[0].message.text).toBe('Newer message');
+    expect(results[0].message.isCreatedByUser).toBe(false);
+  });
+
+  it('should group by conversationId across multiple conversations', async () => {
+    const convoA = uuidv4();
+    const convoB = uuidv4();
+
+    await Message.collection.insertMany([
+      {
+        messageId: uuidv4(),
+        conversationId: convoA,
+        user: 'user1',
+        text: 'Message A1',
+        isCreatedByUser: true,
+        updatedAt: new Date('2025-06-01'),
+        createdAt: new Date('2025-06-01'),
+      },
+      {
+        messageId: uuidv4(),
+        conversationId: convoA,
+        user: 'user1',
+        text: 'Message A2',
+        isCreatedByUser: false,
+        updatedAt: new Date('2026-06-01'),
+        createdAt: new Date('2026-06-01'),
+      },
+      {
+        messageId: uuidv4(),
+        conversationId: convoB,
+        user: 'user1',
+        text: 'Message B only',
+        isCreatedByUser: true,
+        updatedAt: new Date('2026-03-01'),
+        createdAt: new Date('2026-03-01'),
+      },
+    ]);
+
+    const results = await Message.aggregate(TITLE_ONLY_PIPELINE('user1', [convoA, convoB]));
+
+    expect(results).toHaveLength(2);
+    const byConvo = {};
+    for (const r of results) {
+      byConvo[r._id] = r.message;
+    }
+    expect(byConvo[convoA].text).toBe('Message A2');
+    expect(byConvo[convoB].text).toBe('Message B only');
+  });
+
+  it('should return empty array when no messages match', async () => {
+    const results = await Message.aggregate(TITLE_ONLY_PIPELINE('user1', [uuidv4()]));
+    expect(results).toHaveLength(0);
+  });
+
+  it('should scope results to the specified user', async () => {
+    const convoId = uuidv4();
+
+    await Message.create({
+      messageId: uuidv4(),
+      conversationId: convoId,
+      user: 'other-user',
+      text: 'Wrong user message',
+      isCreatedByUser: true,
+    });
+    await Message.create({
+      messageId: uuidv4(),
+      conversationId: convoId,
+      user: 'user1',
+      text: 'Correct user message',
+      isCreatedByUser: true,
+    });
+
+    const results = await Message.aggregate(TITLE_ONLY_PIPELINE('user1', [convoId]));
+
+    expect(results).toHaveLength(1);
+    expect(results[0].message.text).toBe('Correct user message');
   });
 });
