@@ -324,7 +324,7 @@ const createResponse = async (req, res) => {
           'invalid_request',
         );
       }
-      if (!(await getConvo(req.user?.id, request.previous_response_id))) {
+      if (!(await db.getConvo(req.user?.id, request.previous_response_id))) {
         return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
       }
     }

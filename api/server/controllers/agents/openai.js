@@ -185,7 +185,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           'invalid_request_error',
         );
       }
-      if (!(await getConvo(req.user?.id, request.conversation_id))) {
+      if (!(await db.getConvo(req.user?.id, request.conversation_id))) {
         return sendErrorResponse(res, 404, 'Conversation not found', 'invalid_request_error');
       }
     }
