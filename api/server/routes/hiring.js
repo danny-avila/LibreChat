@@ -14,17 +14,18 @@ const logger = require('~/config/winston');
  */
 router.get('/whatsapp/webhook', (req, res) => {
   const verifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+  // Some proxies/parsers nest dot-notation keys, so check both forms
+  const mode = req.query['hub.mode'] || (req.query.hub && req.query.hub.mode);
+  const token = req.query['hub.verify_token'] || (req.query.hub && req.query.hub.verify_token);
+  const challenge = req.query['hub.challenge'] || (req.query.hub && req.query.hub.challenge);
 
-  logger.info(`[WhatsApp] Webhook hit — mode=${mode} token=${token} envToken=${verifyToken}`);
+  logger.info(`[WhatsApp] Webhook hit — mode=${mode} token=${token} envToken=${verifyToken} rawQuery=${JSON.stringify(req.query)}`);
 
   if (mode === 'subscribe' && token === verifyToken) {
     logger.info('[WhatsApp] Webhook verified');
     return res.status(200).send(challenge);
   }
-  return res.status(403).json({ error: 'Forbidden', debug: { mode, token, envToken: verifyToken } });
+  return res.status(403).json({ error: 'Forbidden', debug: { mode, token, envToken: verifyToken, rawQuery: req.query } });
 });
 
 /**
