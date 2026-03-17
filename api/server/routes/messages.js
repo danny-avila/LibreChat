@@ -12,8 +12,8 @@ const {
   deleteMessages,
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
-const { searchConversationsAndMessages } = require('~/models/search');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
+const { searchConversationsAndMessages } = require('~/models/search');
 const { getConvosQueried } = require('~/models/Conversation');
 const { Message } = require('~/db/models');
 
