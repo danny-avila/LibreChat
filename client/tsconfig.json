@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ESNext",
     "useDefineForClassFields": true,
-    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ESNext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": false,
@@ -14,20 +18,36 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noImplicitAny": false,
-    "noEmit": false,
+    "noEmit": true,
     "declaration": true,
     "declarationDir": "./types",
     "jsx": "preserve",
     "baseUrl": "..",
     "paths": {
-      "~/*": ["./client/src/*"],
-      "test/*": ["./client/test/*"],
-      "*": ["./client/*", "../node_modules/*"],
-      "librechat-data-provider/*": ["./packages/data-provider/*"]
+      "~/*": [
+        "./client/src/*"
+      ],
+      "test/*": [
+        "./client/test/*"
+      ],
+      "*": [
+        "./client/*",
+        "../node_modules/*"
+      ],
+      "librechat-data-provider/*": [
+        "./packages/data-provider/*"
+      ]
     }
   },
-  "types": ["node", "jest", "@testing-library/jest-dom"],
-  "exclude": ["node_modules", "vite.config.ts"],
+  "types": [
+    "node",
+    "jest",
+    "@testing-library/jest-dom"
+  ],
+  "exclude": [
+    "node_modules",
+    "vite.config.ts"
+  ],
   "include": [
     "src/**/*",
     "test/**/*",

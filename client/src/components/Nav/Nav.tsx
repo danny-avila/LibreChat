@@ -9,6 +9,7 @@ import {
   useRef,
   startTransition,
 } from 'react';
+import { Link } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
 import { motion } from 'framer-motion';
 import { Skeleton, useMediaQuery } from '@librechat/client';
@@ -247,6 +248,21 @@ const Nav = memo(
                 setIsChatsExpanded={setIsChatsExpanded}
               />
             </div>
+          </div>
+          <div className="flex-shrink-0 pt-2 border-t border-border/10">
+            <Link
+              to="/contacts"
+              className="group flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-3 text-sm text-text-primary transition-colors duration-200 hover:bg-surface-hover"
+              onClick={itemToggleNav}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-secondary">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <line x1="19" y1="8" x2="19" y2="14"></line>
+                <line x1="22" y1="11" x2="16" y2="11"></line>
+              </svg>
+              Contacts
+            </Link>
           </div>
           <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
             <AccountSettings />

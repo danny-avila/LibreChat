@@ -16,16 +16,17 @@ const require = createRequire(import.meta.url);
  * from there and never finds the shims (installed only in client/node_modules). This map resolves
  * the shim specifiers to absolute paths via CJS require.resolve anchored to the client directory.
  */
+const clientDir = path.dirname(new URL(import.meta.url).pathname);
+const clientNodeModules = path.join(clientDir, 'node_modules');
+
+const resolveClientShim = (shimSpecifier: string): string => {
+  return require.resolve(shimSpecifier, { paths: [clientDir] });
+};
+
 const NODE_POLYFILL_SHIMS: Record<string, string> = {
-  'vite-plugin-node-polyfills/shims/process': require.resolve(
-    'vite-plugin-node-polyfills/shims/process',
-  ),
-  'vite-plugin-node-polyfills/shims/buffer': require.resolve(
-    'vite-plugin-node-polyfills/shims/buffer',
-  ),
-  'vite-plugin-node-polyfills/shims/global': require.resolve(
-    'vite-plugin-node-polyfills/shims/global',
-  ),
+  'vite-plugin-node-polyfills/shims/process': resolveClientShim('vite-plugin-node-polyfills/shims/process'),
+  'vite-plugin-node-polyfills/shims/buffer': resolveClientShim('vite-plugin-node-polyfills/shims/buffer'),
+  'vite-plugin-node-polyfills/shims/global': resolveClientShim('vite-plugin-node-polyfills/shims/global'),
 };
 
 // https://vitejs.dev/config/
@@ -61,10 +62,19 @@ export default defineConfig(({ command }) => ({
     {
       name: 'node-polyfills-shims-resolver',
       resolveId(id) {
-        return NODE_POLYFILL_SHIMS[id] ?? null;
+        if (id in NODE_POLYFILL_SHIMS) {
+          return NODE_POLYFILL_SHIMS[id];
+        }
+        return null;
       },
     },
-    nodePolyfills(),
+    nodePolyfills({
+      globals: {
+        process: true,
+        Buffer: true,
+        global: true,
+      },
+    }),
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
       registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'

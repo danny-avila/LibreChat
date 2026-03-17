@@ -68,6 +68,7 @@
     "dompurify": "^3.3.0",
     "downloadjs": "^1.4.7",
     "export-from-json": "^1.7.2",
+    "file-type": "21.3.1",
     "filenamify": "^6.0.0",
     "framer-motion": "^11.5.4",
     "heic-to": "^1.1.14",
@@ -155,7 +156,7 @@
     "typescript": "^5.3.3",
     "vite": "^7.3.1",
     "vite-plugin-compression2": "^2.2.1",
-    "vite-plugin-node-polyfills": "^0.25.0",
+    "vite-plugin-node-polyfills": "^0.22.0",
     "vite-plugin-pwa": "^1.2.0"
   }
 }

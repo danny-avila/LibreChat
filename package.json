@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "npm run backend:dev & npm run frontend:dev",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "set-balance": "node config/set-balance.js",
@@ -186,5 +187,14 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/core": "^2.6.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.213.0",
+    "@opentelemetry/resources": "^2.6.0",
+    "@opentelemetry/sdk-trace-base": "^2.6.0",
+    "csv-parser": "^3.2.0",
+    "multer": "^2.1.1"
   }
 }

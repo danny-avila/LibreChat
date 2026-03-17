@@ -36,7 +36,7 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'keepScreenAwake',
   },
-];
+] as const;
 
 export const ThemeSelector = ({
   theme,

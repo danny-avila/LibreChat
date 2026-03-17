@@ -166,5 +166,12 @@
         "optional": true
       }
     ]
+  },
+  {
+    "name": "Contacts Search",
+    "pluginKey": "contacts_search",
+    "description": "Search and retrieve information about your saved contacts.",
+    "icon": "assets/chatgpt.svg",
+    "authConfig": []
   }
 ]
