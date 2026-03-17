@@ -120,6 +120,7 @@ export default function MCPServerDialog({
             <Button
               onClick={handleDelete}
               variant="destructive"
+              size="sm"
               aria-live="polite"
               aria-label={isDeleting ? localize('com_ui_deleting') : localize('com_ui_delete')}
             >

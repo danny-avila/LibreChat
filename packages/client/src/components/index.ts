@@ -7,6 +7,7 @@ export * from './Checkbox';
 export * from './Dialog';
 export * from './DropdownMenu';
 export * from './HoverCard';
+export * from './FileInput';
 export * from './Input';
 export * from './InputNumber';
 export * from './SecretInput';

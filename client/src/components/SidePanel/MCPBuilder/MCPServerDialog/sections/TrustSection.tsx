@@ -1,8 +1,8 @@
-import { useFormContext, Controller } from 'react-hook-form';
 import { Checkbox, Label } from '@librechat/client';
+import { useFormContext, Controller } from 'react-hook-form';
+import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 import { useLocalize, useLocalizedConfig } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
-import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 
 export default function TrustSection() {
   const localize = useLocalize();

@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, type ReactElement } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { DropdownPopup, Skeleton } from '@librechat/client';
+import { DropdownPopup, FileInput, Skeleton } from '@librechat/client';
 import type { MenuItemProps } from '~/common/menus';
 import { useLocalize } from '~/hooks';
 
@@ -117,10 +117,9 @@ export function AvatarMenu({
         portal
         mountByState
       />
-      <input
-        accept="image/png,.png,image/jpeg,.jpg,.jpeg,image/gif,.gif,image/webp,.webp"
+      <FileInput
+        acceptTypes={['image']}
         multiple={false}
-        type="file"
         style={{ display: 'none' }}
         onChange={(event) => {
           handleFileChange(event);
