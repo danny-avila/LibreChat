@@ -1,34 +1,38 @@
 import * as fs from 'fs';
-import { excelMimeTypes, FileSources } from 'librechat-data-provider';
+import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
+
+type FileParseFn = (file: Express.Multer.File) => Promise<string>;
+
+const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
 
 /**
  * Parses an uploaded document and extracts its text content and metadata.
  * Handled types must stay in sync with `documentParserMimeTypes` from data-provider.
  *
- * @throws {Error} if `file.mimetype` is not handled or no text is found.
+ * @throws {Error} if `file.mimetype` is not handled, file exceeds size limit, or no text is found.
  */
 export async function parseDocument({
   file,
 }: {
   file: Express.Multer.File;
 }): Promise<MistralOCRUploadResult> {
-  let text: string;
-  if (file.mimetype === 'application/pdf') {
-    text = await pdfToText(file);
-  } else if (
-    file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  ) {
-    text = await wordDocToText(file);
-  } else if (
-    excelMimeTypes.test(file.mimetype) ||
-    file.mimetype === 'application/vnd.oasis.opendocument.spreadsheet'
-  ) {
-    text = await excelSheetToText(file);
-  } else {
+  const parseFn = getParserForMimeType(file.mimetype);
+  if (!parseFn) {
     throw new Error(`Unsupported file type in document parser: ${file.mimetype}`);
   }
+
+  const fileSize = file.size ?? (file.path != null ? (await fs.promises.stat(file.path)).size : 0);
+  if (fileSize > DOCUMENT_PARSER_MAX_FILE_SIZE) {
+    const limitMB = DOCUMENT_PARSER_MAX_FILE_SIZE / megabyte;
+    const sizeMB = Math.ceil(fileSize / megabyte);
+    throw new Error(
+      `File "${file.originalname}" exceeds the ${limitMB}MB document parser limit (${sizeMB}MB).`,
+    );
+  }
+
+  const text = await parseFn(file);
 
   if (!text?.trim()) {
     throw new Error('No text found in document');
@@ -41,6 +45,23 @@ export async function parseDocument({
     text,
     images: [],
   };
+}
+
+/** Maps a MIME type to its document parser function, or `undefined` if unsupported. */
+function getParserForMimeType(mimetype: string): FileParseFn | undefined {
+  if (mimetype === 'application/pdf') {
+    return pdfToText;
+  }
+  if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return wordDocToText;
+  }
+  if (
+    excelMimeTypes.test(mimetype) ||
+    mimetype === 'application/vnd.oasis.opendocument.spreadsheet'
+  ) {
+    return excelSheetToText;
+  }
+  return undefined;
 }
 
 /** Parses PDF, returns text inside. */
