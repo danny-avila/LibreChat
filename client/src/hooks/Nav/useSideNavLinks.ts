@@ -9,6 +9,7 @@ import {
   FileText,
   LayoutDashboard,
   Megaphone,
+  Users,
 } from 'lucide-react';
 import {
   Permissions,
@@ -28,6 +29,7 @@ import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import MCPPanel from '~/components/SidePanel/MCP/MCPPanel';
+import SocialMediaPanel from '~/components/SidePanel/SocialMediaPanel';
 import { useGetStartupConfig } from '~/data-provider';
 import { useHasAccess } from '~/hooks';
 
@@ -41,6 +43,7 @@ export default function useSideNavLinks({
   openPDFBuilder,
   openDashboard,
   openSocialDraft,
+  openHiringPanel,
 }: {
   hidePanel: () => void;
   keyProvided: boolean;
@@ -51,6 +54,7 @@ export default function useSideNavLinks({
   openPDFBuilder?: () => void;
   openDashboard?: () => void;
   openSocialDraft?: () => void;
+  openHiringPanel?: () => void;
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -109,8 +113,19 @@ export default function useSideNavLinks({
         title: 'com_sidepanel_social_draft',
         label: '',
         icon: Megaphone,
-        onClick: openSocialDraft,
-        id: 'social-draft',
+        id: 'social-media',
+        Component: SocialMediaPanel,
+      });
+    }
+
+    // Hiring & Onboarding Tool
+    if (openHiringPanel) {
+      links.push({
+        title: 'com_sidepanel_hiring_onboarding',
+        label: '',
+        icon: Users,
+        id: 'hiring-onboarding',
+        onClick: openHiringPanel,
       });
     }
 
@@ -248,6 +263,7 @@ export default function useSideNavLinks({
     openPDFBuilder,
     openDashboard,
     openSocialDraft,
+    openHiringPanel,
     startupConfig,
   ]);
 
