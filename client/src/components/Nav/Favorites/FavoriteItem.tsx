@@ -126,8 +126,8 @@ export default function FavoriteItem({
         className={cn(
           'absolute right-2 flex items-center',
           isPopoverActive
-            ? 'opacity-100'
-            : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100',
+            ? 'pointer-events-auto opacity-100'
+            : 'pointer-events-none opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100',
         )}
         onClick={(e) => e.stopPropagation()}
       >
