@@ -125,8 +125,8 @@ const errorMessages = {
 const Error = ({ text }: { text: string }) => {
   const localize = useLocalize();
   const jsonString = extractJson(text);
-  const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
-  const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
+  // const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text; // NJ: we want the whole error message
+  const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${text}`;
 
   if (!isJson(jsonString)) {
     return defaultResponse;
