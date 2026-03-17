@@ -25,6 +25,7 @@ export enum EModelEndpoint {
   agents = 'agents',
   custom = 'custom',
   bedrock = 'bedrock',
+  novita = 'novita',
 }
 
 /** Mirrors `@librechat/agents` providers */
@@ -41,6 +42,7 @@ export enum Providers {
   MOONSHOT = 'moonshot',
   OPENROUTER = 'openrouter',
   XAI = 'xai',
+  NOVITA = 'novita',
 }
 
 /**
@@ -61,6 +63,7 @@ export const documentSupportedProviders = new Set<string>([
   Providers.MOONSHOT,
   Providers.OPENROUTER,
   Providers.XAI,
+  Providers.NOVITA,
 ]);
 
 const openAILikeProviders = new Set<string>([
@@ -73,6 +76,7 @@ const openAILikeProviders = new Set<string>([
   Providers.MOONSHOT,
   Providers.OPENROUTER,
   Providers.XAI,
+  Providers.NOVITA,
 ]);
 
 export const isOpenAILikeProvider = (provider?: string | null): boolean => {

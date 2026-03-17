@@ -7,6 +7,7 @@ import { initializeAnthropic } from './anthropic/initialize';
 import { initializeBedrock } from './bedrock/initialize';
 import { initializeCustom } from './custom/initialize';
 import { initializeGoogle } from './google/initialize';
+import { initializeNovita } from './novita/initialize';
 import { initializeOpenAI } from './openai/initialize';
 import { getCustomEndpointConfig } from '~/app/config';
 
@@ -21,9 +22,13 @@ export type InitializeFn = (params: BaseInitializeParams) => Promise<InitializeR
  * @returns True if the provider is a known custom provider, false otherwise
  */
 export function isKnownCustomProvider(provider?: string): boolean {
-  return [Providers.XAI, Providers.DEEPSEEK, Providers.OPENROUTER, Providers.MOONSHOT].includes(
-    (provider?.toLowerCase() ?? '') as Providers,
-  );
+  return [
+    Providers.XAI,
+    Providers.DEEPSEEK,
+    Providers.OPENROUTER,
+    Providers.MOONSHOT,
+    Providers.NOVITA,
+  ].includes((provider?.toLowerCase() ?? '') as Providers);
 }
 
 /**
@@ -34,11 +39,13 @@ export const providerConfigMap: Record<string, InitializeFn> = {
   [Providers.DEEPSEEK]: initializeCustom,
   [Providers.MOONSHOT]: initializeCustom,
   [Providers.OPENROUTER]: initializeCustom,
+  [Providers.NOVITA]: initializeNovita,
   [EModelEndpoint.openAI]: initializeOpenAI,
   [EModelEndpoint.google]: initializeGoogle,
   [EModelEndpoint.bedrock]: initializeBedrock,
   [EModelEndpoint.azureOpenAI]: initializeOpenAI,
   [EModelEndpoint.anthropic]: initializeAnthropic,
+  [EModelEndpoint.novita]: initializeNovita,
 };
 
 /**
