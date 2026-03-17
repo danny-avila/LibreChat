@@ -12,6 +12,7 @@ import type {
 import {
   clearModelForNonEphemeralAgent,
   removeUnavailableTools,
+  specDisplayFieldReset,
   processValidSettings,
   getModelSpecIconURL,
   getConvoSwitchLogic,
@@ -128,13 +129,10 @@ export default function useQueryParams({
         endpointsConfig,
       });
 
-      let resetParams = {};
+      const resetFields = newPreset.spec == null ? specDisplayFieldReset : {};
       if (newPreset.spec == null) {
-        template.spec = null;
-        template.iconURL = null;
-        template.modelLabel = null;
-        resetParams = { spec: null, iconURL: null, modelLabel: null };
-        newPreset = { ...newPreset, ...resetParams };
+        Object.assign(template, specDisplayFieldReset);
+        newPreset = { ...newPreset, ...specDisplayFieldReset };
       }
 
       // Sync agent_id from newPreset to template, then clear model if non-ephemeral agent
@@ -152,7 +150,7 @@ export default function useQueryParams({
           conversation: {
             ...(conversation ?? {}),
             endpointType: template.endpointType,
-            ...resetParams,
+            ...resetFields,
           },
           preset: template,
           cleanOutput: newPreset.spec != null && newPreset.spec !== '',
