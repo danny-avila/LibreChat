@@ -2,13 +2,20 @@ const { logger } = require('@librechat/data-schemas');
 const { PrincipalType, PermissionTypes, Permissions } = require('librechat-data-provider');
 const { getRoleByName } = require('~/models/Role');
 
+const VALID_PRINCIPAL_TYPES = new Set([
+  PrincipalType.USER,
+  PrincipalType.GROUP,
+  PrincipalType.ROLE,
+]);
+
 /**
- * Middleware to check if user has permission to access people picker functionality
- * Checks specific permission based on the 'type' query parameter:
- * - type=user: requires VIEW_USERS permission
- * - type=group: requires VIEW_GROUPS permission
- * - type=role: requires VIEW_ROLES permission
- * - no type (mixed search): requires either VIEW_USERS OR VIEW_GROUPS OR VIEW_ROLES
+ * Middleware to check if user has permission to access people picker functionality.
+ * Validates requested principal types via `type` (singular) and `types` (comma-separated or array)
+ * query parameters against the caller's role permissions:
+ * - user: requires VIEW_USERS permission
+ * - group: requires VIEW_GROUPS permission
+ * - role: requires VIEW_ROLES permission
+ * - no type filter (mixed search): requires at least one of the above
  */
 const checkPeoplePickerAccess = async (req, res, next) => {
   try {
@@ -28,7 +35,7 @@ const checkPeoplePickerAccess = async (req, res, next) => {
       });
     }
 
-    const { type } = req.query;
+    const { type, types } = req.query;
     const peoplePickerPerms = role.permissions[PermissionTypes.PEOPLE_PICKER] || {};
     const canViewUsers = peoplePickerPerms[Permissions.VIEW_USERS] === true;
     const canViewGroups = peoplePickerPerms[Permissions.VIEW_GROUPS] === true;
@@ -49,15 +56,32 @@ const checkPeoplePickerAccess = async (req, res, next) => {
       },
     };
 
-    const check = permissionChecks[type];
-    if (check && !check.hasPermission) {
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: check.message,
-      });
+    const requestedTypes = new Set();
+
+    if (type && VALID_PRINCIPAL_TYPES.has(type)) {
+      requestedTypes.add(type);
     }
 
-    if (!type && !canViewUsers && !canViewGroups && !canViewRoles) {
+    if (types) {
+      const typesArray = Array.isArray(types) ? types : types.split(',');
+      for (const t of typesArray) {
+        if (VALID_PRINCIPAL_TYPES.has(t)) {
+          requestedTypes.add(t);
+        }
+      }
+    }
+
+    for (const requested of requestedTypes) {
+      const check = permissionChecks[requested];
+      if (!check.hasPermission) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: check.message,
+        });
+      }
+    }
+
+    if (requestedTypes.size === 0 && !canViewUsers && !canViewGroups && !canViewRoles) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Insufficient permissions to search for users, groups, or roles',
@@ -67,7 +91,7 @@ const checkPeoplePickerAccess = async (req, res, next) => {
     next();
   } catch (error) {
     logger.error(
-      `[checkPeoplePickerAccess][${req.user?.id}] checkPeoplePickerAccess error for req.query.type = ${req.query.type}`,
+      `[checkPeoplePickerAccess][${req.user?.id}] error for type=${req.query.type}, types=${req.query.types}`,
       error,
     );
     return res.status(500).json({

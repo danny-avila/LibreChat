@@ -8,10 +8,12 @@ import {
   extractMCPServerDomain,
   isActionDomainAllowed,
   isEmailDomainAllowed,
+  isOAuthUrlAllowed,
   isMCPDomainAllowed,
   isPrivateIP,
   isSSRFTarget,
   resolveHostnameSSRF,
+  validateEndpointURL,
 } from './domain';
 
 const mockedLookup = lookup as jest.MockedFunction<typeof lookup>;
@@ -177,6 +179,20 @@ describe('isSSRFTarget', () => {
       expect(isSSRFTarget('fd00::1')).toBe(true);
       expect(isSSRFTarget('fe80::1')).toBe(true);
     });
+
+    it('should block full fe80::/10 link-local range (fe80–febf)', () => {
+      expect(isSSRFTarget('fe90::1')).toBe(true);
+      expect(isSSRFTarget('fea0::1')).toBe(true);
+      expect(isSSRFTarget('feb0::1')).toBe(true);
+      expect(isSSRFTarget('febf::1')).toBe(true);
+      expect(isSSRFTarget('fec0::1')).toBe(false);
+    });
+
+    it('should NOT false-positive on hostnames whose first label resembles a link-local prefix', () => {
+      expect(isSSRFTarget('fe90.example.com')).toBe(false);
+      expect(isSSRFTarget('fea0.api.io')).toBe(false);
+      expect(isSSRFTarget('febf.service.net')).toBe(false);
+    });
   });
 
   describe('internal hostnames', () => {
@@ -277,10 +293,17 @@ describe('isPrivateIP', () => {
       expect(isPrivateIP('[::1]')).toBe(true);
     });
 
-    it('should detect unique local (fc/fd) and link-local (fe80)', () => {
+    it('should detect unique local (fc/fd) and link-local (fe80::/10)', () => {
       expect(isPrivateIP('fc00::1')).toBe(true);
       expect(isPrivateIP('fd00::1')).toBe(true);
       expect(isPrivateIP('fe80::1')).toBe(true);
+      expect(isPrivateIP('fe90::1')).toBe(true);
+      expect(isPrivateIP('fea0::1')).toBe(true);
+      expect(isPrivateIP('feb0::1')).toBe(true);
+      expect(isPrivateIP('febf::1')).toBe(true);
+      expect(isPrivateIP('[fe90::1]')).toBe(true);
+      expect(isPrivateIP('fec0::1')).toBe(false);
+      expect(isPrivateIP('fe90.example.com')).toBe(false);
     });
   });
 
@@ -482,6 +505,8 @@ describe('resolveHostnameSSRF', () => {
     expect(await resolveHostnameSSRF('::1')).toBe(true);
     expect(await resolveHostnameSSRF('fc00::1')).toBe(true);
     expect(await resolveHostnameSSRF('fe80::1')).toBe(true);
+    expect(await resolveHostnameSSRF('fe90::1')).toBe(true);
+    expect(await resolveHostnameSSRF('febf::1')).toBe(true);
     expect(mockedLookup).not.toHaveBeenCalled();
   });
 
@@ -1023,8 +1048,37 @@ describe('isMCPDomainAllowed', () => {
   });
 
   describe('invalid URL handling', () => {
-    it('should allow config with invalid URL (treated as stdio)', async () => {
+    it('should reject invalid URL when allowlist is configured', async () => {
       const config = { url: 'not-a-valid-url' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(false);
+    });
+
+    it('should reject templated URL when allowlist is configured', async () => {
+      const config = { url: 'http://{{CUSTOM_HOST}}/mcp' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(false);
+    });
+
+    it('should allow invalid URL when no allowlist is configured (defers to connection-level SSRF)', async () => {
+      const config = { url: 'http://{{CUSTOM_HOST}}/mcp' };
+      expect(await isMCPDomainAllowed(config, null)).toBe(true);
+      expect(await isMCPDomainAllowed(config, undefined)).toBe(true);
+      expect(await isMCPDomainAllowed(config, [])).toBe(true);
+    });
+
+    it('should allow config with whitespace-only URL (treated as absent)', async () => {
+      const config = { url: '   ' };
+      expect(await isMCPDomainAllowed(config, [])).toBe(true);
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
+      expect(await isMCPDomainAllowed(config, null)).toBe(true);
+    });
+
+    it('should allow config with empty string URL (treated as absent)', async () => {
+      const config = { url: '' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
+    });
+
+    it('should allow config with no url property (stdio)', async () => {
+      const config = { command: 'node', args: ['server.js'] };
       expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
     });
   });
@@ -1155,5 +1209,227 @@ describe('isMCPDomainAllowed', () => {
         false,
       );
     });
+  });
+});
+
+describe('isOAuthUrlAllowed', () => {
+  it('should return false when allowedDomains is null/undefined/empty', () => {
+    expect(isOAuthUrlAllowed('https://example.com/token', null)).toBe(false);
+    expect(isOAuthUrlAllowed('https://example.com/token', undefined)).toBe(false);
+    expect(isOAuthUrlAllowed('https://example.com/token', [])).toBe(false);
+  });
+
+  it('should return false for unparseable URLs', () => {
+    expect(isOAuthUrlAllowed('not-a-url', ['example.com'])).toBe(false);
+  });
+
+  it('should match exact hostnames', () => {
+    expect(isOAuthUrlAllowed('https://example.com/token', ['example.com'])).toBe(true);
+    expect(isOAuthUrlAllowed('https://other.com/token', ['example.com'])).toBe(false);
+  });
+
+  it('should match wildcard subdomains', () => {
+    expect(isOAuthUrlAllowed('https://api.example.com/token', ['*.example.com'])).toBe(true);
+    expect(isOAuthUrlAllowed('https://deep.nested.example.com/token', ['*.example.com'])).toBe(
+      true,
+    );
+    expect(isOAuthUrlAllowed('https://example.com/token', ['*.example.com'])).toBe(true);
+    expect(isOAuthUrlAllowed('https://other.com/token', ['*.example.com'])).toBe(false);
+  });
+
+  it('should be case-insensitive', () => {
+    expect(isOAuthUrlAllowed('https://EXAMPLE.COM/token', ['example.com'])).toBe(true);
+    expect(isOAuthUrlAllowed('https://example.com/token', ['EXAMPLE.COM'])).toBe(true);
+  });
+
+  it('should match private/internal URLs when hostname is in allowedDomains', () => {
+    expect(isOAuthUrlAllowed('http://localhost:8080/token', ['localhost'])).toBe(true);
+    expect(isOAuthUrlAllowed('http://10.0.0.1/token', ['10.0.0.1'])).toBe(true);
+    expect(
+      isOAuthUrlAllowed('http://host.docker.internal:8044/token', ['host.docker.internal']),
+    ).toBe(true);
+    expect(isOAuthUrlAllowed('http://myserver.local/token', ['*.local'])).toBe(true);
+  });
+
+  it('should match internal URLs with wildcard patterns', () => {
+    expect(isOAuthUrlAllowed('https://auth.company.internal/token', ['*.company.internal'])).toBe(
+      true,
+    );
+    expect(isOAuthUrlAllowed('https://company.internal/token', ['*.company.internal'])).toBe(true);
+  });
+
+  it('should not match when hostname is absent from allowedDomains', () => {
+    expect(isOAuthUrlAllowed('http://10.0.0.1/token', ['192.168.1.1'])).toBe(false);
+    expect(isOAuthUrlAllowed('http://localhost/token', ['host.docker.internal'])).toBe(false);
+  });
+
+  describe('protocol and port constraint enforcement', () => {
+    it('should enforce protocol when allowedDomains specifies one', () => {
+      expect(isOAuthUrlAllowed('https://auth.internal/token', ['https://auth.internal'])).toBe(
+        true,
+      );
+      expect(isOAuthUrlAllowed('http://auth.internal/token', ['https://auth.internal'])).toBe(
+        false,
+      );
+    });
+
+    it('should allow any protocol when allowedDomains has bare hostname', () => {
+      expect(isOAuthUrlAllowed('http://auth.internal/token', ['auth.internal'])).toBe(true);
+      expect(isOAuthUrlAllowed('https://auth.internal/token', ['auth.internal'])).toBe(true);
+    });
+
+    it('should enforce port when allowedDomains specifies one', () => {
+      expect(
+        isOAuthUrlAllowed('https://auth.internal:8443/token', ['https://auth.internal:8443']),
+      ).toBe(true);
+      expect(
+        isOAuthUrlAllowed('https://auth.internal:6379/token', ['https://auth.internal:8443']),
+      ).toBe(false);
+      expect(isOAuthUrlAllowed('https://auth.internal/token', ['https://auth.internal:8443'])).toBe(
+        false,
+      );
+    });
+
+    it('should allow any port when allowedDomains has no explicit port', () => {
+      expect(isOAuthUrlAllowed('https://auth.internal:8443/token', ['auth.internal'])).toBe(true);
+      expect(isOAuthUrlAllowed('https://auth.internal:22/token', ['auth.internal'])).toBe(true);
+    });
+
+    it('should reject wrong port even when hostname matches (prevents port-scanning)', () => {
+      expect(isOAuthUrlAllowed('http://10.0.0.1:6379/token', ['http://10.0.0.1:8080'])).toBe(false);
+      expect(isOAuthUrlAllowed('http://10.0.0.1:25/token', ['http://10.0.0.1:8080'])).toBe(false);
+    });
+  });
+});
+
+describe('validateEndpointURL', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should throw for unparseable URLs', async () => {
+    await expect(validateEndpointURL('not-a-url', 'test-ep')).rejects.toThrow(
+      'Invalid base URL for test-ep',
+    );
+  });
+
+  it('should throw for localhost URLs', async () => {
+    await expect(validateEndpointURL('http://localhost:8080/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for private IP URLs', async () => {
+    await expect(validateEndpointURL('http://192.168.1.1/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+    await expect(validateEndpointURL('http://10.0.0.1/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+    await expect(validateEndpointURL('http://172.16.0.1/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for link-local / metadata IP', async () => {
+    await expect(
+      validateEndpointURL('http://169.254.169.254/latest/meta-data/', 'test-ep'),
+    ).rejects.toThrow('targets a restricted address');
+  });
+
+  it('should throw for loopback IP', async () => {
+    await expect(validateEndpointURL('http://127.0.0.1:11434/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for internal Docker/Kubernetes hostnames', async () => {
+    await expect(validateEndpointURL('http://redis:6379/', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+    await expect(validateEndpointURL('http://mongodb:27017/', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw when hostname DNS-resolves to a private IP', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '10.0.0.5', family: 4 }] as never);
+    await expect(validateEndpointURL('https://evil.example.com/v1', 'test-ep')).rejects.toThrow(
+      'resolves to a restricted address',
+    );
+  });
+
+  it('should allow public URLs', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '104.18.7.192', family: 4 }] as never);
+    await expect(
+      validateEndpointURL('https://api.openai.com/v1', 'test-ep'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('should allow public URLs that resolve to public IPs', async () => {
+    mockedLookup.mockResolvedValueOnce([{ address: '8.8.8.8', family: 4 }] as never);
+    await expect(
+      validateEndpointURL('https://api.example.com/v1/chat', 'test-ep'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('should throw for non-HTTP/HTTPS schemes', async () => {
+    await expect(validateEndpointURL('ftp://example.com/v1', 'test-ep')).rejects.toThrow(
+      'only HTTP and HTTPS are permitted',
+    );
+    await expect(validateEndpointURL('file:///etc/passwd', 'test-ep')).rejects.toThrow(
+      'only HTTP and HTTPS are permitted',
+    );
+    await expect(validateEndpointURL('data:text/plain,hello', 'test-ep')).rejects.toThrow(
+      'only HTTP and HTTPS are permitted',
+    );
+  });
+
+  it('should throw for IPv6 loopback URL', async () => {
+    await expect(validateEndpointURL('http://[::1]:8080/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for IPv6 link-local URL', async () => {
+    await expect(validateEndpointURL('http://[fe80::1]/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for IPv6 unique-local URL', async () => {
+    await expect(validateEndpointURL('http://[fc00::1]/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for .local TLD hostname', async () => {
+    await expect(validateEndpointURL('http://myservice.local/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should throw for .internal TLD hostname', async () => {
+    await expect(validateEndpointURL('http://api.internal/v1', 'test-ep')).rejects.toThrow(
+      'targets a restricted address',
+    );
+  });
+
+  it('should pass when DNS lookup fails (fail-open)', async () => {
+    mockedLookup.mockRejectedValueOnce(new Error('ENOTFOUND'));
+    await expect(
+      validateEndpointURL('https://nonexistent.example.com/v1', 'test-ep'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('should throw structured JSON with type invalid_base_url', async () => {
+    const error = await validateEndpointURL('http://169.254.169.254/latest/', 'my-ep').catch(
+      (err: Error) => err,
+    );
+    expect(error).toBeInstanceOf(Error);
+    const parsed = JSON.parse((error as Error).message);
+    expect(parsed.type).toBe('invalid_base_url');
+    expect(parsed.message).toContain('my-ep');
+    expect(parsed.message).toContain('targets a restricted address');
   });
 });

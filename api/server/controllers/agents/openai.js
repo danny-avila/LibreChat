@@ -26,7 +26,7 @@ const { createToolEndCallback } = require('~/server/controllers/agents/callbacks
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
-const { getConvoFiles } = require('~/models/Conversation');
+const { getConvoFiles, getConvo } = require('~/models/Conversation');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
@@ -151,8 +151,6 @@ const OpenAIChatCompletionController = async (req, res) => {
   }
 
   const responseId = `chatcmpl-${nanoid()}`;
-  const conversationId = request.conversation_id ?? nanoid();
-  const parentMessageId = request.parent_message_id ?? null;
   const created = Math.floor(Date.now() / 1000);
 
   /** @type {import('@librechat/api').OpenAIResponseContext} — key must be `requestId` to match the type used by createChunk/buildNonStreamingResponse */
@@ -178,6 +176,23 @@ const OpenAIChatCompletionController = async (req, res) => {
   });
 
   try {
+    if (request.conversation_id != null) {
+      if (typeof request.conversation_id !== 'string') {
+        return sendErrorResponse(
+          res,
+          400,
+          'conversation_id must be a string',
+          'invalid_request_error',
+        );
+      }
+      if (!(await getConvo(req.user?.id, request.conversation_id))) {
+        return sendErrorResponse(res, 404, 'Conversation not found', 'invalid_request_error');
+      }
+    }
+
+    const conversationId = request.conversation_id ?? nanoid();
+    const parentMessageId = request.parent_message_id ?? null;
+
     // Build allowed providers set
     const allowedProviders = new Set(
       appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
@@ -265,6 +280,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           toolRegistry: primaryConfig.toolRegistry,
           userMCPAuthMap: primaryConfig.userMCPAuthMap,
           tool_resources: primaryConfig.tool_resources,
+          actionsEnabled: primaryConfig.actionsEnabled,
         });
       },
       toolEndCallback,

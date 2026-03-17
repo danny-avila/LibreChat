@@ -1,7 +1,7 @@
 import _ from 'lodash';
-import { MeiliSearch } from 'meilisearch';
 import { parseTextParts } from 'librechat-data-provider';
-import type { SearchResponse, SearchParams, Index } from 'meilisearch';
+import { MeiliSearch, MeiliSearchTimeOutError } from 'meilisearch';
+import type { SearchResponse, SearchParams, Index, MeiliSearchErrorInfo } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,
   FilterQuery,
@@ -581,7 +581,6 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   /** Create index only if it doesn't exist */
   const index = client.index<MeiliIndexable>(indexName);
 
-  // Check if index exists and create if needed
   (async () => {
     try {
       await index.getRawInfo();
@@ -591,18 +590,34 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       if (errorCode === 'index_not_found') {
         try {
           logger.info(`[mongoMeili] Creating new index: ${indexName}`);
-          await client.createIndex(indexName, { primaryKey });
-          logger.info(`[mongoMeili] Successfully created index: ${indexName}`);
+          const enqueued = await client.createIndex(indexName, { primaryKey });
+          const task = await client.waitForTask(enqueued.taskUid, {
+            timeOutMs: 10000,
+            intervalMs: 100,
+          });
+          logger.debug(`[mongoMeili] Index ${indexName} creation task:`, task);
+          if (task.status !== 'succeeded') {
+            const taskError = task.error as MeiliSearchErrorInfo | null;
+            if (taskError?.code === 'index_already_exists') {
+              logger.debug(`[mongoMeili] Index ${indexName} was created by another instance`);
+            } else {
+              logger.warn(`[mongoMeili] Index ${indexName} creation failed:`, taskError);
+            }
+          } else {
+            logger.info(`[mongoMeili] Successfully created index: ${indexName}`);
+          }
         } catch (createError) {
-          // Index might have been created by another instance
-          logger.debug(`[mongoMeili] Index ${indexName} may already exist:`, createError);
+          if (createError instanceof MeiliSearchTimeOutError) {
+            logger.warn(`[mongoMeili] Timed out waiting for index ${indexName} creation`);
+          } else {
+            logger.warn(`[mongoMeili] Error creating index ${indexName}:`, createError);
+          }
         }
       } else {
         logger.error(`[mongoMeili] Error checking index ${indexName}:`, error);
       }
     }
 
-    // Configure index settings to make 'user' field filterable
     try {
       await index.updateSettings({
         filterableAttributes: ['user'],

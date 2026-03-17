@@ -6,6 +6,7 @@ const {
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
+  collectEdgeAgentIds,
   mergeAgentOcrConversion,
   MAX_AVATAR_REFRESH_AGENTS,
   convertOcrToContextInPlace,
@@ -35,6 +36,7 @@ const {
 } = require('~/models/Agent');
 const {
   findPubliclyAccessibleResources,
+  getResourcePermissionsMap,
   findAccessibleResources,
   hasPublicPermission,
   grantPermission,
@@ -47,6 +49,7 @@ const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
+const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const systemTools = {
@@ -57,6 +60,116 @@ const systemTools = {
 
 const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Validates that the requesting user has VIEW access to every agent referenced in edges.
+ * Agents that do not exist in the database are skipped — at create time, the `from` field
+ * often references the agent being built, which has no DB record yet.
+ * @param {import('librechat-data-provider').GraphEdge[]} edges
+ * @param {string} userId
+ * @param {string} userRole - Used for group/role principal resolution
+ * @returns {Promise<string[]>} Agent IDs the user cannot VIEW (empty if all accessible)
+ */
+const validateEdgeAgentAccess = async (edges, userId, userRole) => {
+  const edgeAgentIds = collectEdgeAgentIds(edges);
+  if (edgeAgentIds.size === 0) {
+    return [];
+  }
+
+  const agents = (await Promise.all([...edgeAgentIds].map((id) => getAgent({ id })))).filter(
+    Boolean,
+  );
+
+  if (agents.length === 0) {
+    return [];
+  }
+
+  const permissionsMap = await getResourcePermissionsMap({
+    userId,
+    role: userRole,
+    resourceType: ResourceType.AGENT,
+    resourceIds: agents.map((a) => a._id),
+  });
+
+  return agents
+    .filter((a) => {
+      const bits = permissionsMap.get(a._id.toString()) ?? 0;
+      return (bits & PermissionBits.VIEW) === 0;
+    })
+    .map((a) => a.id);
+};
+
+/**
+ * Filters tools to only include those the user is authorized to use.
+ * MCP tools must match the exact format `{toolName}_mcp_{serverName}` (exactly 2 segments).
+ * Multi-delimiter keys are rejected to prevent authorization/execution mismatch.
+ * Non-MCP tools must appear in availableTools (global tool cache) or systemTools.
+ *
+ * When `existingTools` is provided and the MCP registry is unavailable (e.g. server restart),
+ * tools already present on the agent are preserved rather than stripped — they were validated
+ * when originally added, and we cannot re-verify them without the registry.
+ * @param {object} params
+ * @param {string[]} params.tools - Raw tool strings from the request
+ * @param {string} params.userId - Requesting user ID for MCP server access check
+ * @param {Record<string, unknown>} params.availableTools - Global non-MCP tool cache
+ * @param {string[]} [params.existingTools] - Tools already persisted on the agent document
+ * @returns {Promise<string[]>} Only the authorized subset of tools
+ */
+const filterAuthorizedTools = async ({ tools, userId, availableTools, existingTools }) => {
+  const filteredTools = [];
+  let mcpServerConfigs;
+  let registryUnavailable = false;
+  const existingToolSet = existingTools?.length ? new Set(existingTools) : null;
+
+  for (const tool of tools) {
+    if (availableTools[tool] || systemTools[tool]) {
+      filteredTools.push(tool);
+      continue;
+    }
+
+    if (!tool?.includes(Constants.mcp_delimiter)) {
+      continue;
+    }
+
+    if (mcpServerConfigs === undefined) {
+      try {
+        mcpServerConfigs = (await getMCPServersRegistry().getAllServerConfigs(userId)) ?? {};
+      } catch (e) {
+        logger.warn(
+          '[filterAuthorizedTools] MCP registry unavailable, filtering all MCP tools',
+          e.message,
+        );
+        mcpServerConfigs = {};
+        registryUnavailable = true;
+      }
+    }
+
+    const parts = tool.split(Constants.mcp_delimiter);
+    if (parts.length !== 2) {
+      logger.warn(
+        `[filterAuthorizedTools] Rejected malformed MCP tool key "${tool}" for user ${userId}`,
+      );
+      continue;
+    }
+
+    if (registryUnavailable && existingToolSet?.has(tool)) {
+      filteredTools.push(tool);
+      continue;
+    }
+
+    const [, serverName] = parts;
+    if (!serverName || !Object.hasOwn(mcpServerConfigs, serverName)) {
+      logger.warn(
+        `[filterAuthorizedTools] Rejected MCP tool "${tool}" — server "${serverName}" not accessible to user ${userId}`,
+      );
+      continue;
+    }
+
+    filteredTools.push(tool);
+  }
+
+  return filteredTools;
+};
 
 /**
  * Creates an Agent.
@@ -75,22 +188,24 @@ const createAgentHandler = async (req, res) => {
       agentData.model_parameters = removeNullishValues(agentData.model_parameters, true);
     }
 
-    const { id: userId } = req.user;
+    const { id: userId, role: userRole } = req.user;
+
+    if (agentData.edges?.length) {
+      const unauthorized = await validateEdgeAgentAccess(agentData.edges, userId, userRole);
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
 
     agentData.id = `agent_${nanoid()}`;
     agentData.author = userId;
     agentData.tools = [];
 
     const availableTools = (await getCachedTools()) ?? {};
-    for (const tool of tools) {
-      if (availableTools[tool]) {
-        agentData.tools.push(tool);
-      } else if (systemTools[tool]) {
-        agentData.tools.push(tool);
-      } else if (tool.includes(Constants.mcp_delimiter)) {
-        agentData.tools.push(tool);
-      }
-    }
+    agentData.tools = await filterAuthorizedTools({ tools, userId, availableTools });
 
     const agent = await createAgent(agentData);
 
@@ -243,6 +358,17 @@ const updateAgentHandler = async (req, res) => {
       updateData.avatar = avatarField;
     }
 
+    if (updateData.edges?.length) {
+      const { id: userId, role: userRole } = req.user;
+      const unauthorized = await validateEdgeAgentAccess(updateData.edges, userId, userRole);
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
     // Convert OCR to context in incoming updateData
     convertOcrToContextInPlace(updateData);
 
@@ -259,6 +385,26 @@ const updateAgentHandler = async (req, res) => {
     }
     if (ocrConversion.tools) {
       updateData.tools = ocrConversion.tools;
+    }
+
+    if (updateData.tools) {
+      const existingToolSet = new Set(existingAgent.tools ?? []);
+      const newMCPTools = updateData.tools.filter(
+        (t) => !existingToolSet.has(t) && t?.includes(Constants.mcp_delimiter),
+      );
+
+      if (newMCPTools.length > 0) {
+        const availableTools = (await getCachedTools()) ?? {};
+        const approvedNew = await filterAuthorizedTools({
+          tools: newMCPTools,
+          userId: req.user.id,
+          availableTools,
+        });
+        const rejectedSet = new Set(newMCPTools.filter((t) => !approvedNew.includes(t)));
+        if (rejectedSet.size > 0) {
+          updateData.tools = updateData.tools.filter((t) => !rejectedSet.has(t));
+        }
+      }
     }
 
     let updatedAgent =
@@ -371,7 +517,7 @@ const duplicateAgentHandler = async (req, res) => {
      */
     const duplicateAction = async (action) => {
       const newActionId = nanoid();
-      const [domain] = action.action_id.split(actionDelimiter);
+      const { domain } = action.metadata;
       const fullActionId = `${domain}${actionDelimiter}${newActionId}`;
 
       // Sanitize sensitive metadata before persisting
@@ -381,7 +527,7 @@ const duplicateAgentHandler = async (req, res) => {
       }
 
       const newAction = await updateAction(
-        { action_id: newActionId },
+        { action_id: newActionId, agent_id: newAgentId },
         {
           metadata: filteredMetadata,
           agent_id: newAgentId,
@@ -403,6 +549,17 @@ const duplicateAgentHandler = async (req, res) => {
 
     const agentActions = await Promise.all(promises);
     newAgentData.actions = agentActions;
+
+    if (newAgentData.tools?.length) {
+      const availableTools = (await getCachedTools()) ?? {};
+      newAgentData.tools = await filterAuthorizedTools({
+        tools: newAgentData.tools,
+        userId,
+        availableTools,
+        existingTools: newAgentData.tools,
+      });
+    }
+
     const newAgent = await createAgent(newAgentData);
 
     try {
@@ -731,7 +888,24 @@ const revertAgentVersionHandler = async (req, res) => {
 
     // Permissions are enforced via route middleware (ACL EDIT)
 
-    const updatedAgent = await revertAgentVersion({ id }, version_index);
+    let updatedAgent = await revertAgentVersion({ id }, version_index);
+
+    if (updatedAgent.tools?.length) {
+      const availableTools = (await getCachedTools()) ?? {};
+      const filteredTools = await filterAuthorizedTools({
+        tools: updatedAgent.tools,
+        userId: req.user.id,
+        availableTools,
+        existingTools: updatedAgent.tools,
+      });
+      if (filteredTools.length !== updatedAgent.tools.length) {
+        updatedAgent = await updateAgent(
+          { id },
+          { tools: filteredTools },
+          { updatingUserId: req.user.id },
+        );
+      }
+    }
 
     if (updatedAgent.author) {
       updatedAgent.author = updatedAgent.author.toString();
@@ -799,4 +973,5 @@ module.exports = {
   uploadAgentAvatar: uploadAgentAvatarHandler,
   revertAgentVersion: revertAgentVersionHandler,
   getAgentCategories,
+  filterAuthorizedTools,
 };

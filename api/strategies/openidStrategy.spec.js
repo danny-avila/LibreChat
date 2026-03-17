@@ -64,6 +64,10 @@ jest.mock('openid-client', () => {
       // Only return additional properties, but don't override any claims
       return Promise.resolve({});
     }),
+    genericGrantRequest: jest.fn().mockResolvedValue({
+      access_token: 'exchanged_graph_token',
+      expires_in: 3600,
+    }),
     customFetch: Symbol('customFetch'),
   };
 });
@@ -730,7 +734,7 @@ describe('setupOpenId', () => {
           expect.objectContaining({
             method: 'POST',
             headers: expect.objectContaining({
-              Authorization: `Bearer ${tokenset.access_token}`,
+              Authorization: 'Bearer exchanged_graph_token',
             }),
           }),
         );
@@ -743,6 +747,313 @@ describe('setupOpenId', () => {
         );
       },
     );
+  });
+
+  describe('OBO token exchange for overage', () => {
+    it('exchanges access token via OBO before calling Graph API', async () => {
+      const openidClient = require('openid-client');
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+
+      jwtDecode.mockReturnValue({ hasgroups: true });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      undici.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ value: ['group-required'] }),
+      });
+
+      await validate(tokenset);
+
+      expect(openidClient.genericGrantRequest).toHaveBeenCalledWith(
+        expect.anything(),
+        'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        expect.objectContaining({
+          scope: 'https://graph.microsoft.com/User.Read',
+          assertion: tokenset.access_token,
+          requested_token_use: 'on_behalf_of',
+        }),
+      );
+
+      expect(undici.fetch).toHaveBeenCalledWith(
+        'https://graph.microsoft.com/v1.0/me/getMemberObjects',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer exchanged_graph_token',
+          }),
+        }),
+      );
+    });
+
+    it('caches the exchanged token and reuses it on subsequent calls', async () => {
+      const openidClient = require('openid-client');
+      const getLogStores = require('~/cache/getLogStores');
+      const mockSet = jest.fn();
+      const mockGet = jest
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ access_token: 'exchanged_graph_token' });
+      getLogStores.mockReturnValue({ get: mockGet, set: mockSet });
+
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+
+      jwtDecode.mockReturnValue({ hasgroups: true });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      undici.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ value: ['group-required'] }),
+      });
+
+      // First call: cache miss → OBO exchange → cache set
+      await validate(tokenset);
+      expect(mockSet).toHaveBeenCalledWith(
+        '1234:overage',
+        { access_token: 'exchanged_graph_token' },
+        3600000,
+      );
+      expect(openidClient.genericGrantRequest).toHaveBeenCalledTimes(1);
+
+      // Second call: cache hit → no new OBO exchange
+      openidClient.genericGrantRequest.mockClear();
+      await validate(tokenset);
+      expect(openidClient.genericGrantRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('admin role group overage', () => {
+    it('resolves admin groups via Graph when overage is detected for admin role', async () => {
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+      process.env.OPENID_ADMIN_ROLE = 'admin-group-id';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'id';
+
+      jwtDecode.mockReturnValue({ hasgroups: true });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      undici.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ value: ['group-required', 'admin-group-id'] }),
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('ADMIN');
+    });
+
+    it('does not grant admin when overage groups do not contain admin role', async () => {
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+      process.env.OPENID_ADMIN_ROLE = 'admin-group-id';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'id';
+
+      jwtDecode.mockReturnValue({ hasgroups: true });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      undici.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ value: ['group-required', 'other-group'] }),
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user).toBeTruthy();
+      expect(user.role).toBeUndefined();
+    });
+
+    it('reuses already-resolved overage groups for admin role check (no duplicate Graph call)', async () => {
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+      process.env.OPENID_ADMIN_ROLE = 'admin-group-id';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'id';
+
+      jwtDecode.mockReturnValue({ hasgroups: true });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      undici.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ value: ['group-required', 'admin-group-id'] }),
+      });
+
+      await validate(tokenset);
+
+      // Graph API should be called only once (for required role), admin role reuses the result
+      expect(undici.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('demotes existing admin when overage groups no longer contain admin role', async () => {
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+      process.env.OPENID_ADMIN_ROLE = 'admin-group-id';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'id';
+
+      const existingAdminUser = {
+        _id: 'existingAdminId',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'adminuser',
+        name: 'Admin User',
+        role: 'ADMIN',
+      };
+
+      findUser.mockImplementation(async (query) => {
+        if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+          return existingAdminUser;
+        }
+        return null;
+      });
+
+      jwtDecode.mockReturnValue({ hasgroups: true });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      undici.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ value: ['group-required'] }),
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('USER');
+    });
+
+    it('does not attempt overage for admin role when token kind is not id', async () => {
+      process.env.OPENID_REQUIRED_ROLE = 'requiredRole';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+      process.env.OPENID_ADMIN_ROLE = 'admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'access';
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+        hasgroups: true,
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      const { user } = await validate(tokenset);
+
+      // No Graph call since admin uses access token (not id)
+      expect(undici.fetch).not.toHaveBeenCalled();
+      expect(user.role).toBeUndefined();
+    });
+
+    it('resolves admin via Graph independently when OPENID_REQUIRED_ROLE is not configured', async () => {
+      delete process.env.OPENID_REQUIRED_ROLE;
+      process.env.OPENID_ADMIN_ROLE = 'admin-group-id';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'id';
+
+      jwtDecode.mockReturnValue({ hasgroups: true });
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      undici.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ value: ['admin-group-id'] }),
+      });
+
+      const { user } = await validate(tokenset);
+      expect(user.role).toBe('ADMIN');
+      expect(undici.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('denies admin when OPENID_REQUIRED_ROLE is absent and Graph does not contain admin group', async () => {
+      delete process.env.OPENID_REQUIRED_ROLE;
+      process.env.OPENID_ADMIN_ROLE = 'admin-group-id';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'id';
+
+      jwtDecode.mockReturnValue({ hasgroups: true });
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      undici.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ value: ['other-group'] }),
+      });
+
+      const { user } = await validate(tokenset);
+      expect(user).toBeTruthy();
+      expect(user.role).toBeUndefined();
+    });
+
+    it('denies login and logs error when OBO exchange throws', async () => {
+      const openidClient = require('openid-client');
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+
+      jwtDecode.mockReturnValue({ hasgroups: true });
+      openidClient.genericGrantRequest.mockRejectedValueOnce(new Error('OBO exchange rejected'));
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      const { user, details } = await validate(tokenset);
+      expect(user).toBe(false);
+      expect(details.message).toBe('You must have "group-required" role to log in.');
+      expect(undici.fetch).not.toHaveBeenCalled();
+    });
+
+    it('denies login when OBO exchange returns no access_token', async () => {
+      const openidClient = require('openid-client');
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+
+      jwtDecode.mockReturnValue({ hasgroups: true });
+      openidClient.genericGrantRequest.mockResolvedValueOnce({ expires_in: 3600 });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+      const { user, details } = await validate(tokenset);
+      expect(user).toBe(false);
+      expect(details.message).toBe('You must have "group-required" role to log in.');
+      expect(undici.fetch).not.toHaveBeenCalled();
+    });
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
