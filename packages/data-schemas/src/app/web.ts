@@ -12,6 +12,11 @@ export const webSearchAuth = {
       /** Optional (0) */
       searxngApiKey: 0 as const,
     },
+    tavily: {
+      tavilyApiKey: 1 as const,
+      /** Optional (0) */
+      tavilySearchUrl: 0 as const,
+    },
   },
   scrapers: {
     firecrawl: {
@@ -22,6 +27,11 @@ export const webSearchAuth = {
     },
     serper: {
       serperApiKey: 1 as const,
+    },
+    tavily: {
+      tavilyApiKey: 1 as const,
+      /** Optional (0) */
+      tavilyExtractUrl: 0 as const,
     },
   },
   rerankers: {
@@ -66,6 +76,9 @@ export function loadWebSearchConfig(
   const serperApiKey = config?.serperApiKey ?? '${SERPER_API_KEY}';
   const searxngInstanceUrl = config?.searxngInstanceUrl ?? '${SEARXNG_INSTANCE_URL}';
   const searxngApiKey = config?.searxngApiKey ?? '${SEARXNG_API_KEY}';
+  const tavilyApiKey = config?.tavilyApiKey ?? '${TAVILY_API_KEY}';
+  const tavilySearchUrl = config?.tavilySearchUrl ?? '${TAVILY_SEARCH_URL}';
+  const tavilyExtractUrl = config?.tavilyExtractUrl ?? '${TAVILY_EXTRACT_URL}';
   const firecrawlApiKey = config?.firecrawlApiKey ?? '${FIRECRAWL_API_KEY}';
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
   const firecrawlVersion = config?.firecrawlVersion ?? '${FIRECRAWL_VERSION}';
@@ -82,6 +95,9 @@ export function loadWebSearchConfig(
     cohereApiKey,
     serperApiKey,
     searxngApiKey,
+    tavilyApiKey,
+    tavilySearchUrl,
+    tavilyExtractUrl,
     firecrawlApiKey,
     firecrawlApiUrl,
     firecrawlVersion,

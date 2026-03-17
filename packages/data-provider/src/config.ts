@@ -832,11 +832,13 @@ export enum SearchCategories {
 export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
+  TAVILY = 'tavily',
 }
 
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
+  TAVILY = 'tavily',
 }
 
 export enum RerankerTypes {
@@ -854,6 +856,9 @@ export const webSearchSchema = z.object({
   serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
   searxngInstanceUrl: z.string().optional().default('${SEARXNG_INSTANCE_URL}'),
   searxngApiKey: z.string().optional().default('${SEARXNG_API_KEY}'),
+  tavilyApiKey: z.string().optional().default('${TAVILY_API_KEY}'),
+  tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
+  tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),

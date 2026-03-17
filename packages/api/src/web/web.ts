@@ -21,6 +21,8 @@ import { isSSRFTarget, resolveHostnameSSRF } from '../auth';
  */
 const WEB_SEARCH_URL_KEYS = new Set<TWebSearchKeys>([
   'searxngInstanceUrl',
+  'tavilySearchUrl',
+  'tavilyExtractUrl',
   'firecrawlApiUrl',
   'jinaApiUrl',
 ]);
