@@ -152,4 +152,19 @@ router.post('/', validateWebhookSecret, async (req, res) => {
   }
 });
 
+// DELETE /api/social-drafts/:id – delete a draft (must belong to current user)
+router.delete('/:id', requireJwtAuth, async (req, res) => {
+  try {
+    const userId = currentUserId(req);
+    const doc = await SocialDraft.findOneAndDelete({ _id: req.params.id, userId });
+    if (!doc) {
+      return res.status(404).json({ success: false, error: 'Draft not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[socialDrafts] DELETE error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

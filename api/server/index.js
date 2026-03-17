@@ -368,6 +368,16 @@ const startServer = async () => {
     console.error('[ERROR] LinkedIn routes error:', e.message);
   }
 
+  // Hiring & Onboarding Tool
+  try {
+    const hiringRoutes = require('./routes/hiring');
+    app.use('/api/hiring', hiringRoutes);
+    console.log('[OK] Hiring & Onboarding routes loaded');
+  } catch (e) {
+    console.log('[SKIP] Hiring & Onboarding routes (error loading)');
+    console.error('[ERROR] Hiring routes error:', e.message);
+  }
+
   // Error Controller
   if (ErrorController) {
     app.use(ErrorController);

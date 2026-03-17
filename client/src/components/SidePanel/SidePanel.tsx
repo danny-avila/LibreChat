@@ -102,7 +102,12 @@ const SidePanel = ({
     setSocialDraftState({ isOpen: true });
   }, [setSocialDraftState]);
 
+  const openHiringPanel = useCallback(() => {
+    navigate('/hiring');
+  }, [navigate]);
+
   const showSocialDraft = import.meta.env.VITE_SOCIAL_MEDIA_AUTOMATION === 'true';
+  const showHiringPanel = import.meta.env.VITE_HIRING_ONBOARDING_TOOL === 'true';
 
   const Links = useSideNavLinks({
     endpoint,
@@ -114,6 +119,7 @@ const SidePanel = ({
     openPDFBuilder,
     openDashboard,
     openSocialDraft: showSocialDraft ? openSocialDraft : undefined,
+    openHiringPanel: showHiringPanel ? openHiringPanel : undefined,
   });
 
   const toggleNavVisible = useCallback(() => {
