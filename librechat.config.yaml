@@ -127,7 +127,7 @@ mcpServers:
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
   weather:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.28:9004/mcp
+    url: http://100.100.108.43:9004/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
 
     
