@@ -13,7 +13,7 @@ const {
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
-const { searchConversationsAndMessages } = require('~/models/search');
+const { searchConversationsAndMessages, buildLatestMessagePipeline } = require('~/models/search');
 const { getConvosQueried } = require('~/models/Conversation');
 const { Message } = require('~/db/models');
 
@@ -107,45 +107,39 @@ router.get('/', async (req, res) => {
         .map((c) => c.conversationId);
 
       if (titleOnlyConversationIds.length > 0) {
-        const latestMessages = await Message.aggregate([
-          {
-            $match: {
-              user,
-              conversationId: { $in: titleOnlyConversationIds },
-            },
-          },
-          {
-            $project: {
-              conversationId: 1,
-              messageId: 1,
-              text: 1,
-              isCreatedByUser: 1,
-              endpoint: 1,
-              iconURL: 1,
-              model: 1,
-              updatedAt: 1,
-              _id: 0,
-            },
-          },
-          { $sort: { conversationId: 1, updatedAt: -1 } },
-          {
-            $group: {
-              _id: '$conversationId',
-              message: { $first: '$$ROOT' },
-            },
-          },
-        ]);
+        const latestMessages = await Message.aggregate(
+          buildLatestMessagePipeline(user, titleOnlyConversationIds),
+        );
 
+        const coveredConvoIds = new Set();
         for (const entry of latestMessages) {
           const latest = entry?.message;
           if (!latest?.conversationId || !result.convoMap[latest.conversationId]) {
             continue;
           }
+          coveredConvoIds.add(latest.conversationId);
           const convo = result.convoMap[latest.conversationId];
           activeMessages.push({
             ...latest,
             title: convo.title,
             model: convo.model,
+          });
+        }
+
+        for (const convoId of titleOnlyConversationIds) {
+          if (coveredConvoIds.has(convoId)) {
+            continue;
+          }
+          const convo = result.convoMap[convoId];
+          if (!convo) {
+            continue;
+          }
+          activeMessages.push({
+            conversationId: convoId,
+            title: convo.title,
+            model: convo.model,
+            endpoint: convo.endpoint,
+            updatedAt: convo.updatedAt,
           });
         }
       }
