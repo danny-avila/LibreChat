@@ -36,15 +36,16 @@ describe('Conversation Operations', () => {
   });
 
   beforeEach(async () => {
-    // Clear database
     await Conversation.deleteMany({});
-
-    // Reset mocks
     jest.clearAllMocks();
-
-    // Default mock implementations
     getMessages.mockResolvedValue([]);
     deleteMessages.mockResolvedValue({ deletedCount: 0 });
+    if (!Conversation.meiliSearch) {
+      Conversation.meiliSearch = () => Promise.resolve({ hits: [] });
+    }
+    if (!Message.meiliSearch) {
+      Message.meiliSearch = () => Promise.resolve({ hits: [] });
+    }
 
     mockReq = {
       user: { id: 'user123' },
@@ -532,24 +533,26 @@ describe('Conversation Operations', () => {
         updatedAt: new Date('2026-01-03T00:00:00.000Z'),
       });
 
-      const originalConvoMeiliSearch = Conversation.meiliSearch;
-      const convoSearchMock = jest
-        .fn()
+      const convoSearchSpy = jest
+        .spyOn(Conversation, 'meiliSearch')
         .mockResolvedValue({ hits: [{ conversationId: convoIdFromConvo }] });
-      Conversation.meiliSearch = convoSearchMock;
-      const originalMessageMeiliSearch = Message.meiliSearch;
-      const messageSearchMock = jest
-        .fn()
+      const messageSearchSpy = jest
+        .spyOn(Message, 'meiliSearch')
         .mockResolvedValue({ hits: [{ conversationId: convoIdFromMessage }] });
-      Message.meiliSearch = messageSearchMock;
       const findSpy = jest.spyOn(Conversation, 'find');
 
-      const result = await getConvosByCursor('user123', { search: 'hello' });
-
-      expect(convoSearchMock).toHaveBeenCalledWith('hello', { filter: 'user = "user123"' });
-      expect(messageSearchMock).toHaveBeenCalledWith('hello', { filter: 'user = "user123"' });
-
       try {
+        const result = await getConvosByCursor('user123', { search: 'hello' });
+
+        expect(convoSearchSpy).toHaveBeenCalledWith('hello', { filter: 'user = "user123"' });
+        expect(messageSearchSpy).toHaveBeenCalledWith(
+          'hello',
+          {
+            filter: 'user = "user123"',
+          },
+          false,
+        );
+
         const findArg = findSpy.mock.calls[0]?.[0];
         const conversationIdFilter = findArg?.$and?.find((clause) => clause?.conversationId?.$in);
         expect(conversationIdFilter).toBeTruthy();
@@ -560,9 +563,54 @@ describe('Conversation Operations', () => {
         expect(resultIds).toEqual(expect.arrayContaining([convoIdFromConvo, convoIdFromMessage]));
         expect(resultIds).not.toContain(extraId);
       } finally {
+        convoSearchSpy.mockRestore();
+        messageSearchSpy.mockRestore();
         findSpy.mockRestore();
-        Conversation.meiliSearch = originalConvoMeiliSearch;
-        Message.meiliSearch = originalMessageMeiliSearch;
+      }
+    });
+
+    it('should filter out null conversationIds from search hits', async () => {
+      const validConvoId = uuidv4();
+
+      await Conversation.create({
+        conversationId: validConvoId,
+        user: 'user123',
+        title: 'Valid conversation',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
+
+      const convoSearchSpy = jest
+        .spyOn(Conversation, 'meiliSearch')
+        .mockResolvedValue({ hits: [{ conversationId: validConvoId }] });
+      const messageSearchSpy = jest.spyOn(Message, 'meiliSearch').mockResolvedValue({
+        hits: [{ conversationId: null }, { conversationId: undefined }],
+      });
+
+      try {
+        const result = await getConvosByCursor('user123', { search: 'hello' });
+        expect(result.conversations).toHaveLength(1);
+        expect(result.conversations[0].conversationId).toBe(validConvoId);
+      } finally {
+        convoSearchSpy.mockRestore();
+        messageSearchSpy.mockRestore();
+      }
+    });
+
+    it('should return empty when both searches return no hits', async () => {
+      const convoSearchSpy = jest
+        .spyOn(Conversation, 'meiliSearch')
+        .mockResolvedValue({ hits: [] });
+      const messageSearchSpy = jest.spyOn(Message, 'meiliSearch').mockResolvedValue({ hits: [] });
+
+      try {
+        const result = await getConvosByCursor('user123', { search: 'nonexistent' });
+        expect(result.conversations).toHaveLength(0);
+        expect(result.nextCursor).toBeNull();
+      } finally {
+        convoSearchSpy.mockRestore();
+        messageSearchSpy.mockRestore();
       }
     });
   });
