@@ -109,6 +109,11 @@ describe('domainParser', () => {
       const result = await domainParser('https://a.b.c', true);
       expect(result).toBe(`a${SEP}b${SEP}c`);
     });
+
+    it('strips path and query from full URL before encoding', async () => {
+      const result = await domainParser('https://api.example.com/v1/endpoint?foo=bar', true);
+      expect(result).toBe(await domainParser('api.example.com', true));
+    });
   });
 
   describe('unicode domains', () => {

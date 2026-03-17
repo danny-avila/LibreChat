@@ -52,7 +52,7 @@ const validateAndUpdateTool = async ({ req, tool, assistant_id }) => {
       if (!metadata) {
         return false;
       }
-      const strippedMetaDomain = metadata.domain.replace(protocolRegex, '');
+      const strippedMetaDomain = stripProtocol(metadata.domain);
       return strippedMetaDomain === domain || metadata.domain === domain;
     });
     const action = matchingActions[0];
@@ -73,7 +73,9 @@ const validateAndUpdateTool = async ({ req, tool, assistant_id }) => {
 
 /** @param {string} domain */
 function stripProtocol(domain) {
-  return domain.replace(protocolRegex, '');
+  const stripped = domain.replace(protocolRegex, '');
+  const pathIdx = stripped.indexOf('/');
+  return pathIdx === -1 ? stripped : stripped.substring(0, pathIdx);
 }
 
 /**
