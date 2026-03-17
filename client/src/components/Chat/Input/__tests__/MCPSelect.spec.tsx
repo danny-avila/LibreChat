@@ -107,6 +107,20 @@ describe('MCPSelect', () => {
     expect(screen.getByRole('menu', { name: /com_ui_mcp_servers/i })).toBeVisible();
   });
 
+  it('arrow-key navigation wraps from last item to first', async () => {
+    const user = userEvent.setup();
+    render(<MCPSelect />);
+
+    await user.click(screen.getByRole('button', { name: /MCP Servers/i }));
+    const items = screen.getAllByRole('menuitemcheckbox');
+    expect(items).toHaveLength(2);
+
+    await user.keyboard('{ArrowDown}');
+    await user.keyboard('{ArrowDown}');
+    await user.keyboard('{ArrowDown}');
+    expect(items[0]).toHaveFocus();
+  });
+
   it('renders nothing when user lacks MCP access', () => {
     mockCanUseMcp = false;
     const { container } = render(<MCPSelect />);

@@ -127,6 +127,21 @@ describe('MCPSubMenu', () => {
     expect(mockSetIsPinned).toHaveBeenCalledWith(true);
   });
 
+  it('arrow-key navigation wraps from last item to first', async () => {
+    const user = userEvent.setup();
+    renderSubMenu();
+
+    await user.click(screen.getByText('MCP Servers'));
+    const items = screen.getAllByRole('menuitemcheckbox');
+    expect(items).toHaveLength(2);
+
+    await user.click(items[1]);
+    expect(items[1]).toHaveFocus();
+
+    await user.keyboard('{ArrowDown}');
+    expect(items[0]).toHaveFocus();
+  });
+
   it('pin button shows unpin label when pinned', () => {
     mockMcpServerManager = { ...defaultMcpServerManager, isPinned: true };
     renderSubMenu();
