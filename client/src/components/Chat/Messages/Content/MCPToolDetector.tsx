@@ -13,6 +13,8 @@ import SiteKeywordForm from './SiteKeywordForm';
 import KeywordClusterForm from './KeywordClusterForm';
 import XofuLoginForm from './XofuLoginForm';
 import AddCrawlConfigForm from './AddCrawlConfigForm';
+import PIRRecommendationForm from './PIRRecommendationForm';
+import PIRStatusUpdateForm from './PIRStatusUpdateForm';
 
 interface MCPToolDetectorProps {
   toolCall: any; // Tool call data
@@ -656,6 +658,95 @@ const MCP_TOOL_CONFIGS = {
       }
     },
   },
+  render_prod_int_create_reco_form: {
+    triggerForm: true,
+    formType: 'pir_recommendation',
+    extractOptions: (output: string) => {
+      try {
+        let parsedData;
+        try {
+          const outputArray = JSON.parse(output);
+          if (Array.isArray(outputArray) && outputArray[0]?.text) {
+            parsedData = JSON.parse(outputArray[0].text);
+          } else {
+            parsedData = outputArray;
+          }
+        } catch {
+          parsedData = JSON.parse(output);
+        }
+
+        // Verify this is actual form data — must have form_id, prefilled_params, and non-empty recommendations
+        if (
+          !parsedData ||
+          typeof parsedData !== 'object' ||
+          !parsedData.form_id ||
+          !parsedData.prefilled_params ||
+          !Array.isArray(parsedData.prefilled_params?.recommendations) ||
+          parsedData.prefilled_params.recommendations.length === 0
+        ) {
+          console.warn('PIR form output is not valid form data, skipping:', {
+            hasFormId: !!parsedData?.form_id,
+            hasPrefilled: !!parsedData?.prefilled_params,
+            recsCount: parsedData?.prefilled_params?.recommendations?.length ?? 0,
+          });
+          return {};
+        }
+
+        const prefilled = parsedData.prefilled_params;
+        return {
+          formId: parsedData.form_id,
+          functionToolName: parsedData.function_tool_name,
+          reportMeta: prefilled.reportMeta || {},
+          recommendations: prefilled.recommendations,
+          implementationRoadmap: prefilled.implementationRoadmap || {},
+          citationOptimizationTargets: prefilled.citationOptimizationTargets || [],
+        };
+      } catch (e) {
+        console.error('Failed to parse PIR form output:', e);
+        return {};
+      }
+    },
+  },
+  render_pir_update_status_form: {
+    triggerForm: true,
+    formType: 'pir_status_update',
+    extractOptions: (output: string) => {
+      try {
+        let parsedData;
+        try {
+          const outputArray = JSON.parse(output);
+          if (Array.isArray(outputArray) && outputArray[0]?.text) {
+            parsedData = JSON.parse(outputArray[0].text);
+          } else {
+            parsedData = outputArray;
+          }
+        } catch {
+          parsedData = JSON.parse(output);
+        }
+
+        if (
+          !parsedData ||
+          typeof parsedData !== 'object' ||
+          !parsedData.form_id ||
+          !Array.isArray(parsedData.recommendations) ||
+          parsedData.recommendations.length === 0
+        ) {
+          console.warn('PIR status update form output is not valid form data, skipping:', parsedData);
+          return {};
+        }
+
+        return {
+          formId: parsedData.form_id,
+          functionToolName: parsedData.function_tool_name,
+          report: parsedData.report || {},
+          recommendations: parsedData.recommendations,
+        };
+      } catch (e) {
+        console.error('Failed to parse PIR status update form output:', e);
+        return {};
+      }
+    },
+  },
   // Add more MCP tool configurations here
 };
 
@@ -694,8 +785,23 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
   const requestId = useMemo(() => {
     if (!output) return null;
     const requestMatch = output.match(/request_id::([a-f0-9-]+)/);
-    return requestMatch ? requestMatch[1] : null;
-  }, [output]);
+    if (requestMatch) return requestMatch[1];
+
+    // Also try to extract form_id from JSON output (for PIR form tools)
+    if (function_name === 'render_prod_int_create_reco_form' || function_name === 'render_pir_update_status_form') {
+      try {
+        let parsed = JSON.parse(output);
+        if (Array.isArray(parsed) && parsed[0]?.text) {
+          parsed = JSON.parse(parsed[0].text);
+        }
+        if (parsed.form_id) return parsed.form_id;
+      } catch {
+        /* ignore parse errors */
+      }
+    }
+
+    return null;
+  }, [output, function_name]);
 
   // Create unique form identifier using request ID if available
   const formId = useMemo(() => {
@@ -713,6 +819,21 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
 
   useEffect(() => {
     if (!toolConfig || !toolConfig.triggerForm || !output) {
+      return;
+    }
+
+    // Don't render form if output can't be parsed as JSON (tool call failed with error text)
+    try {
+      let parsed = JSON.parse(output);
+      // Handle TextContent array: [{"type":"text","text":"..."}]
+      if (Array.isArray(parsed) && parsed[0]?.text) {
+        JSON.parse(parsed[0].text);
+      }
+    } catch {
+      console.warn('⚠️ MCP Tool Detector: Output is not parseable JSON, skipping form', {
+        function_name,
+        outputPreview: output.substring(0, 300),
+      });
       return;
     }
 
@@ -982,6 +1103,109 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
             : `Manual LinkedIn URLs`;
 
         message = `I have submitted the outreach campaign configuration:\n\n👤 **Sender:** ${sender?.name || 'Unknown'} (${sender?.occupation || 'No title'}) at ${sender?.company_name || 'Unknown Company'}\n👥 **Audience:** ${audienceInfo}\n🎯 **Campaign:** ${campaign?.name || 'Unknown'}\n✉️ **Email Template:** ${template?.name || 'Unknown'}${operationInfo}`;
+      } else if (toolConfig?.formType === 'pir_recommendation') {
+        // Handle PIR recommendation form submission
+        const selectedCount = data.selectedCount || 0;
+        const totalCount = data.totalCount || 0;
+        const productName = data.reportMeta?.productName || 'Unknown Product';
+
+        let resultInfo = '';
+        if (data.toolResponse?.result) {
+          try {
+            const resultString =
+              typeof data.toolResponse.result === 'string'
+                ? data.toolResponse.result
+                : JSON.stringify(data.toolResponse.result);
+
+            if (resultString.includes('success')) {
+              resultInfo = '\n\n✅ **Status:** Recommendations created successfully';
+
+              // Try to extract report_id and recommendation IDs from the result
+              const reportIdMatch = resultString.match(/report_id['":\s]+([a-z]+-[a-f0-9-]+)/);
+              if (reportIdMatch) {
+                resultInfo += `\n📋 **Report ID:** ${reportIdMatch[1]}`;
+              }
+
+              // Extract individual recommendation IDs
+              const recIdMatches = [...resultString.matchAll(/recommendation_id['":\s]+([a-z]+-[a-f0-9-]+)/g)];
+              if (recIdMatches.length > 0) {
+                const recIds = recIdMatches.map((m) => m[1]);
+                resultInfo += `\n🔖 **Recommendation ID${recIds.length > 1 ? 's' : ''}:** ${recIds.join(', ')}`;
+              }
+            } else if (resultString.includes('error') || resultString.includes('Error')) {
+              resultInfo = `\n\n❌ **Status:** Failed\n⚠️ **Error:** ${resultString}`;
+            } else {
+              resultInfo = '\n\n✅ **Status:** Request completed';
+            }
+          } catch {
+            resultInfo = '\n\n✅ **Status:** Request completed';
+          }
+        } else if (data.toolResponse?.error) {
+          resultInfo = `\n\n❌ **Status:** Failed\n⚠️ **Error:** ${data.toolResponse.error}`;
+        }
+
+        const tierBreakdown = ['critical', 'high', 'medium', 'low']
+          .map((t) => {
+            const c = (data.recommendations || []).filter(
+              (r: any) => r.priorityTier === t,
+            ).length;
+            return c > 0 ? `${c} ${t}` : '';
+          })
+          .filter(Boolean)
+          .join(', ');
+
+        message = `I have submitted product intelligence recommendations for **${productName}**:\n\n📊 **Recommendations:** ${selectedCount} of ${totalCount} selected${tierBreakdown ? ` (${tierBreakdown} priority)` : ''}${resultInfo}`;
+
+        submittedDataWithLabels = {
+          ...data,
+          productLabel: productName,
+          selectedCount,
+          totalCount,
+        };
+      } else if (toolConfig?.formType === 'pir_status_update') {
+        // Handle PIR status update form submission
+        const updatedCount = data.updatedCount || 0;
+        const totalCount = data.totalCount || 0;
+        const productName = data.report?.productName || 'Unknown Product';
+
+        let resultInfo = '';
+        if (data.toolResponse?.result) {
+          try {
+            const resultData =
+              typeof data.toolResponse.result === 'string'
+                ? JSON.parse(data.toolResponse.result)
+                : data.toolResponse.result;
+
+            if (resultData.success) {
+              resultInfo = `\n\n✅ **Status:** ${resultData.updated} recommendation${resultData.updated !== 1 ? 's' : ''} updated successfully`;
+            } else if (resultData.failed > 0) {
+              resultInfo = `\n\n⚠️ **Status:** ${resultData.updated} updated, ${resultData.failed} failed`;
+              if (resultData.errors?.length > 0) {
+                resultInfo += `\n❌ **Errors:** ${resultData.errors.map((e: any) => e.recommendationId).join(', ')}`;
+              }
+            } else {
+              resultInfo = '\n\n✅ **Status:** Request completed';
+            }
+          } catch {
+            resultInfo = '\n\n✅ **Status:** Request completed';
+          }
+        } else if (data.toolResponse?.error) {
+          resultInfo = `\n\n❌ **Status:** Failed\n⚠️ **Error:** ${data.toolResponse.error}`;
+        }
+
+        // Build status change summary
+        const statusSummary = (data.updates || [])
+          .map((u: any) => `${u.recommendationId} → ${u.status}`)
+          .join(', ');
+
+        message = `I have updated recommendation statuses for **${productName}**:\n\n📊 **Updated:** ${updatedCount} of ${totalCount} recommendations${statusSummary ? `\n🔄 **Changes:** ${statusSummary}` : ''}${resultInfo}`;
+
+        submittedDataWithLabels = {
+          ...data,
+          productLabel: productName,
+          updatedCount,
+          totalCount,
+        };
       } else if (toolConfig?.formType === 'site_keyword') {
         // Handle site keyword form submission with tool response
         const sourceLabel = data.keywords_source === 'gsc' ? 'Google Search Console' : 'DataForSEO';
@@ -1200,7 +1424,12 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     return null;
   }
 
-  // HTML preview and/or S3 download for convert_digest_json_to_html (weekly digest email)
+  // Don't render form if the useEffect didn't populate form state (e.g. tool call failed)
+  if (!thisFormState.toolName && !thisFormState.isSubmitted && !thisFormState.isCancelled) {
+    return null;
+  }
+
+  // HTML preview for convert_digest_json_to_html (weekly digest email)
   const htmlPreview =
     'renderHtmlPreview' in toolConfig &&
     toolConfig.renderHtmlPreview &&
@@ -1503,6 +1732,66 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
         <XofuLoginForm
           onSubmit={handleFormSubmit}
           onCancel={handleFormCancel}
+          isSubmitted={thisFormState.isSubmitted}
+          isCancelled={thisFormState.isCancelled}
+          submittedData={thisFormState.submittedData as any}
+        />
+      </>
+    );
+  }
+
+  if (toolConfig.formType === 'pir_recommendation') {
+    const options = (thisFormState as any).options || {};
+    return (
+      <>
+        {!thisFormState.isSubmitted && !thisFormState.isCancelled && (
+          <div className="my-4 rounded-xl border border-orange-400 bg-orange-50 p-4 shadow-lg dark:bg-orange-900/20">
+            <div className="mb-4 flex items-center gap-2">
+              <div className="h-2 w-2 animate-pulse rounded-full bg-orange-500"></div>
+              <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                {localize('com_ui_chat_disabled_complete_form')}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <PIRRecommendationForm
+          onSubmit={handleFormSubmit}
+          onCancel={handleFormCancel}
+          reportMeta={options.reportMeta || {}}
+          recommendations={options.recommendations || []}
+          implementationRoadmap={options.implementationRoadmap || {}}
+          citationOptimizationTargets={options.citationOptimizationTargets || []}
+          serverName={serverName}
+          isSubmitted={thisFormState.isSubmitted}
+          isCancelled={thisFormState.isCancelled}
+          submittedData={thisFormState.submittedData as any}
+        />
+      </>
+    );
+  }
+
+  if (toolConfig.formType === 'pir_status_update') {
+    const options = (thisFormState as any).options || {};
+    return (
+      <>
+        {!thisFormState.isSubmitted && !thisFormState.isCancelled && (
+          <div className="my-4 rounded-xl border border-orange-400 bg-orange-50 p-4 shadow-lg dark:bg-orange-900/20">
+            <div className="mb-4 flex items-center gap-2">
+              <div className="h-2 w-2 animate-pulse rounded-full bg-orange-500"></div>
+              <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                {localize('com_ui_chat_disabled_complete_form')}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <PIRStatusUpdateForm
+          onSubmit={handleFormSubmit}
+          onCancel={handleFormCancel}
+          report={options.report || {}}
+          recommendations={options.recommendations || []}
+          serverName={serverName}
           isSubmitted={thisFormState.isSubmitted}
           isCancelled={thisFormState.isCancelled}
           submittedData={thisFormState.submittedData as any}
