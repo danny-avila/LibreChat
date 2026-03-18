@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useMessageContext } from '~/Providers';
 import { useRecoilState, useSetRecoilState } from 'recoil';
@@ -1419,6 +1419,25 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     }));
   }, [formId, function_name, submitMessage, setChatBlocked, setSubmittedForms]);
 
+  // NOTE: All hooks must be called before any conditional returns (Rules of Hooks)
+  const digestIdFromInput = useMemo(() => {
+    if (function_name !== 'convert_digest_json_to_html' || !toolCall?.args) return null;
+    try {
+      const args = typeof toolCall.args === 'string' ? JSON.parse(toolCall.args) : toolCall.args;
+      const digest = args?.digest;
+      return typeof digest?.digest_id === 'string' && digest.digest_id.length > 0
+        ? digest.digest_id
+        : null;
+    } catch {
+      return null;
+    }
+  }, [function_name, toolCall?.args]);
+
+  const [downloadState, setDownloadState] = useState<{ loading: boolean; error: string | null }>({
+    loading: false,
+    error: null,
+  });
+
   // If no tool config, don't render anything
   if (!toolConfig) {
     return null;
@@ -1430,6 +1449,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
   }
 
   // HTML preview for convert_digest_json_to_html (weekly digest email)
+  // These are plain computations (not hooks), safe after conditional returns
   const htmlPreview =
     'renderHtmlPreview' in toolConfig &&
     toolConfig.renderHtmlPreview &&
@@ -1445,25 +1465,9 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     'extractDigestId' in toolConfig && typeof toolConfig.extractDigestId === 'function'
       ? toolConfig.extractDigestId(output ?? '')
       : null;
-  const digestIdFromInput = useMemo(() => {
-    if (function_name !== 'convert_digest_json_to_html' || !toolCall?.args) return null;
-    try {
-      const args = typeof toolCall.args === 'string' ? JSON.parse(toolCall.args) : toolCall.args;
-      const digest = args?.digest;
-      return typeof digest?.digest_id === 'string' && digest.digest_id.length > 0
-        ? digest.digest_id
-        : null;
-    } catch {
-      return null;
-    }
-  }, [function_name, toolCall?.args]);
   const digestId = digestIdFromInput ?? digestIdFromOutput;
 
-  const [downloadState, setDownloadState] = useState<{ loading: boolean; error: string | null }>({
-    loading: false,
-    error: null,
-  });
-  const handleDownloadHtml = useCallback(() => {
+  const handleDownloadHtml = () => {
     const filename = (digestId && digestId.length > 0) ? `${digestId}.html` : 'weekly-digest.html';
     if (htmlPreview) {
       const blob = new Blob([htmlPreview], { type: 'text/html;charset=utf-8' });
@@ -1495,7 +1499,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
         setDownloadState({ loading: false, error: null });
         window.open(s3Url, '_blank', 'noopener,noreferrer');
       });
-  }, [htmlPreview, s3Url, digestId]);
+  };
 
   if (htmlPreview || s3Url) {
     return (
